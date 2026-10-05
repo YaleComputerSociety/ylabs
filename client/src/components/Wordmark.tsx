@@ -7,7 +7,7 @@ interface WordmarkProps {
 }
 
 const Wordmark = ({ className }: WordmarkProps) => (
-  <span className={className ? `yr-wordmark ${className}` : 'yr-wordmark'}>
+  <span translate="no" className={className ? `yr-wordmark ${className}` : 'yr-wordmark'}>
     y<span className="yr-wordmark-slash">/</span>labs
   </span>
 );

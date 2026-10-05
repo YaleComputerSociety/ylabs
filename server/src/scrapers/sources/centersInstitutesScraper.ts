@@ -13,8 +13,9 @@
  *     downstream tooling can join against User by name)
  *   - one ResearchGroupMember observation per member, keyed
  *     `center-<centerKey>:<member-slug>` with role 'core-faculty' (default) or
- *     'director' when the title clearly indicates leadership. The materializer
- *     can resolve the User by name (lname + fname) at write time.
+ *     'director' when the title clearly indicates leadership, plus the identity
+ *     evidence the member's own Yale profile page states. The materializer joins a
+ *     member to a researcher only through that evidence, never by name (#3802).
  *
  * Centers DO NOT have a single PI — they are intentionally many-to-many.
  *
@@ -26,15 +27,35 @@
  * one-row config change.
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
+import {
+  resolveCenterConfigKey,
+  type CenterConfigKeyResolution,
+} from '../centerConfigKeyResolution';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  type CenterRosterReadMember,
+  type CenterRosterStopReason,
+} from '../centerRosterRetirement';
+import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
+import {
+  extractRosterMemberIdentityEvidence,
+  isYaleHostedUrl,
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+  type RosterMemberIdentityEvidence,
+} from '../utils/rosterMemberIdentityEvidence';
+import { mapWithConcurrency } from '../utils/mapWithConcurrency';
+import { fetchPageWithPolicy, retryOnRetryableStatus } from '../utils/httpFetch';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import {
   createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
   measureRenderedFetch,
   summarizeFetchMetrics,
   type RenderedFetcher,
-  type RenderedFetchResult,
 } from '../renderedFetch';
 import type {
   IScraper,
@@ -46,11 +67,26 @@ import type {
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { facultyResearchAreaSlugForPersonName } from '../../utils/researchEntityShellSlug';
+import {
+  researchHomeWebsiteUrlWriteRefusal,
+  type ResearchHomeWebsiteUrlRefusal,
+} from '../../utils/researchHomeWebsiteUrl';
+import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  trackingEmittedEntityKeys,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
+const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
+const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
+const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = 'member-identity-evidence:v1:';
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -61,6 +97,7 @@ export interface CenterMember {
   profileUrl?: string;
   title?: string;
   role?: MemberRole;
+  identityEvidence?: RosterMemberIdentityEvidence;
 }
 
 /** A child research entity discovered on a parent index page (Jackson School). */
@@ -82,6 +119,8 @@ export interface ExtractorResult {
 /** Context handed to each extractor — used to absolutize relative URLs. */
 export interface ExtractorCtx {
   pageUrl: string;
+  /** The entity the roster is being read for, so a title-derived role can be scoped to it. */
+  centerName?: string;
 }
 
 /** Pure HTML → structured rows. No I/O. */
@@ -122,10 +161,19 @@ export interface CenterConfig {
    * a member-roster subpage distinct from the entity's own landing page (e.g. a
    * West Campus institute whose members live under `/institutes/<slug>/<slug>-labs`
    * while its identity page is `/institutes/<slug>`). Also added to `sourceUrls`.
-   * Defaults to `url` when unset. Ignored in `entityKey` enrichment mode, where the
-   * owning source keeps the identity website.
+   * Required in practice: the roster `url` must sit on this site
+   * (`centerRosterSiteRefusal`), and a config without one is refused. Ignored for
+   * `websiteUrl` and `sourceUrls` in `entityKey` enrichment mode, where the owning
+   * source keeps the identity website.
    */
   homeUrl?: string;
+  /**
+   * A partner site that publishes this center's roster on its behalf. The roster
+   * guard accepts `url` on this site as well as on `homeUrl`, and only with a
+   * non-empty `reason`, so a cross-site roster is a reviewed decision rather than a
+   * copied URL.
+   */
+  sharedRosterSite?: { url: string; reason: string };
   /**
    * Further pages of the center's own site to cite as provenance, such as the
    * mission or about page. These reach the description lane through `sourceUrls`:
@@ -154,8 +202,116 @@ export interface CenterConfig {
   crawlChildCenters?: boolean;
 }
 
+export type CenterRosterSiteRefusal =
+  | 'no-declared-home'
+  | 'unparseable-url'
+  | 'shared-roster-site-without-reason'
+  | 'roster-off-center-host'
+  | 'roster-outside-center-path';
+
+function parseSiteUrl(value: string | undefined): URL | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function siteHost(url: URL): string {
+  return url.hostname.toLowerCase().replace(/^www\./, '');
+}
+
+function sitePathPrefix(url: URL): string {
+  return url.pathname.toLowerCase().replace(/\/+$/, '');
+}
+
+function pageIsWithinSite(page: URL, site: URL): boolean {
+  if (siteHost(page) !== siteHost(site)) return false;
+  const prefix = sitePathPrefix(site);
+  if (!prefix) return true;
+  const path = sitePathPrefix(page);
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/**
+ * Every member a roster yields is attributed to this config's entity, so the
+ * roster page has to be published by that entity: on the host of its declared
+ * `homeUrl`, and under the home page's path when the host is shared by several
+ * units (medicine.yale.edu, macmillan.yale.edu, westcampus.yale.edu). A roster
+ * on any other site is another organization's membership (#3703), and a config
+ * with no declared home has nothing to check against, so both fail closed.
+ * `sharedRosterSite` is the explicit, reasoned exception for a roster genuinely
+ * published by a partner site on the center's behalf.
+ */
+export function centerRosterPageSiteRefusal(
+  config: CenterConfig,
+  pageUrl: string,
+): CenterRosterSiteRefusal | null {
+  if (!config.homeUrl) return 'no-declared-home';
+  const home = parseSiteUrl(config.homeUrl);
+  const page = parseSiteUrl(pageUrl);
+  if (!home || !page) return 'unparseable-url';
+  const sites = [home];
+  if (config.sharedRosterSite) {
+    if (!config.sharedRosterSite.reason.trim()) return 'shared-roster-site-without-reason';
+    const shared = parseSiteUrl(config.sharedRosterSite.url);
+    if (!shared) return 'unparseable-url';
+    sites.push(shared);
+  }
+  if (!sites.some((site) => siteHost(site) === siteHost(page))) return 'roster-off-center-host';
+  if (!sites.some((site) => pageIsWithinSite(page, site))) return 'roster-outside-center-path';
+  return null;
+}
+
+export function centerRosterSiteRefusal(config: CenterConfig): CenterRosterSiteRefusal | null {
+  return centerRosterPageSiteRefusal(config, config.url);
+}
+
 export function centerEntityKey(config: CenterConfig): string {
   return config.entityKey || `center-${config.centerKey}`;
+}
+
+export type CenterConfigRouteRefusal =
+  'archived-without-survivor' | 'survivor-claimed-by-another-config';
+
+export type CenterConfigRoute =
+  { config: CenterConfig; redirectedFrom?: string } | { refusal: CenterConfigRouteRefusal };
+
+export async function routeCenterConfigsToLiveRows(
+  configs: readonly CenterConfig[],
+  resolve: (entityKey: string) => Promise<CenterConfigKeyResolution> = resolveCenterConfigKey,
+): Promise<CenterConfigRoute[]> {
+  const resolutions = await Promise.all(configs.map((config) => resolve(centerEntityKey(config))));
+  const readKeys = configs.map((config, index) => {
+    const resolution = resolutions[index];
+    if (resolution.kind === 'archived-without-survivor') return null;
+    return resolution.kind === 'survivor' ? resolution.survivorKey : centerEntityKey(config);
+  });
+  return configs.map((config, index): CenterConfigRoute => {
+    const resolution = resolutions[index];
+    if (resolution.kind === 'live' || resolution.kind === 'unminted') return { config };
+    if (resolution.kind === 'archived-without-survivor') return { refusal: resolution.kind };
+    const survivorIsReadByAnotherConfig = readKeys.some(
+      (key, otherIndex) => otherIndex !== index && key === resolution.survivorKey,
+    );
+    if (survivorIsReadByAnotherConfig) return { refusal: 'survivor-claimed-by-another-config' };
+    return {
+      config: { ...config, entityKey: resolution.survivorKey },
+      redirectedFrom: centerEntityKey(config),
+    };
+  });
+}
+
+export function centerHomeUrlWriteRefusal(
+  config: CenterConfig,
+): ResearchHomeWebsiteUrlRefusal | null {
+  return researchHomeWebsiteUrlWriteRefusal(config.homeUrl ?? config.url, {
+    name: config.centerName,
+    entityType: mapResearchGroupKindToEntityType(config.kind),
+    kind: config.kind,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -184,15 +340,143 @@ function flipLastFirst(name: string): string {
   return `${m[2].trim()} ${m[1].trim()}`;
 }
 
+const ORGANIZATION_NAME_FILLER_WORDS = new Set([
+  'a',
+  'and',
+  'at',
+  'center',
+  'centre',
+  'committee',
+  'council',
+  'for',
+  'foundation',
+  'in',
+  'initiative',
+  'institute',
+  'institution',
+  'of',
+  'on',
+  'program',
+  'research',
+  'school',
+  'studies',
+  'the',
+  'university',
+  'yale',
+]);
+
+const INITIALISM_SKIPPED_WORDS = new Set(['a', 'and', 'at', 'for', 'in', 'of', 'on', 'the']);
+
+function organizationNameWords(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function organizationNameInitialisms(words: string[]): string[] {
+  const initials = words.filter((word) => !INITIALISM_SKIPPED_WORDS.has(word)).map((w) => w[0]);
+  const withoutYale = words
+    .filter((word) => word !== 'yale' && !INITIALISM_SKIPPED_WORDS.has(word))
+    .map((w) => w[0]);
+  return [initials.join(''), withoutYale.join('')].filter((initialism) => initialism.length >= 2);
+}
+
+function distinctiveWordRuns(words: string[]): string[] {
+  const runs: string[][] = [[]];
+  for (const word of words) {
+    if (ORGANIZATION_NAME_FILLER_WORDS.has(word)) runs.push([]);
+    else runs[runs.length - 1].push(word);
+  }
+  return runs.filter((run) => run.length > 0).map((run) => run.join(' '));
+}
+
+function organizationTextNamesUnit(organizationText: string, unitName: string): boolean {
+  const unitWords = organizationNameWords(unitName);
+  const unitProperName = distinctiveWordRuns(unitWords)[0];
+  const initialisms = new Set(organizationNameInitialisms(unitWords));
+  const textWords = organizationNameWords(organizationText);
+  return (
+    textWords.some((word) => initialisms.has(word)) ||
+    (unitProperName !== undefined && distinctiveWordRuns(textWords).includes(unitProperName))
+  );
+}
+
+const DIRECTORSHIP_OF_NAMED_UNIT =
+  /\bdirector\s+(?:of|for|at)\s+(?:the\s+)?([^,;]+?)(?:\s+and\s+|,|$)/i;
+const DIRECTORSHIP_COMMA_NAMED_UNIT = /\bdirector\s*,\s*([^,;]+)/i;
+const ORGANIZATION_NOUN =
+  /\b(?:center|centre|institute|institution|program|programme|lab|laboratory|council|initiative|foundation|school|department|office|project|committee)\b/i;
+
+function directorshipNamedUnit(clause: string): string | undefined {
+  const ofUnit = clause.match(DIRECTORSHIP_OF_NAMED_UNIT)?.[1];
+  if (ofUnit) return ofUnit;
+  const commaUnit = clause.match(DIRECTORSHIP_COMMA_NAMED_UNIT)?.[1];
+  return commaUnit && ORGANIZATION_NOUN.test(commaUnit) ? commaUnit : undefined;
+}
+
+function organizationTextIsGenericSelfReference(organizationText: string): boolean {
+  const words = organizationNameWords(organizationText);
+  return (
+    words.some((word) => ORGANIZATION_NOUN.test(word)) &&
+    words.every((word) => ORGANIZATION_NAME_FILLER_WORDS.has(word) || ORGANIZATION_NOUN.test(word))
+  );
+}
+const FORMER_DIRECTORSHIP =
+  /\bformer(?:ly)?\s+(?:\S+\s+){0,4}\S*director\b|\bdirector\s+emerit(?:us|a)\b|\bemerit(?:us|a)\s+\S*director\b/i;
+const CLOSED_YEAR_RANGE = /\b((?:19|20)\d{2})\s*[-\u2013\u2014]\s*((?:19|20)?\d{2})\b/g;
+
+function closedRangeEndYear(startText: string, endText: string): number {
+  const start = Number(startText);
+  if (endText.length === 4) return Number(endText);
+  const end = Math.floor(start / 100) * 100 + Number(endText);
+  return end < start ? end + 100 : end;
+}
+
+function isHistoricalDirectorship(clause: string): boolean {
+  if (FORMER_DIRECTORSHIP.test(clause)) return true;
+  const endYears = [...clause.matchAll(CLOSED_YEAR_RANGE)].map(([, start, end]) =>
+    closedRangeEndYear(start, end),
+  );
+  const currentYear = new Date().getFullYear();
+  return endYears.length > 0 && endYears.every((endYear) => endYear < currentYear);
+}
+
+/**
+ * A professional title lists every directorship the person holds or has held
+ * anywhere, so only a clause that is current and does not name some other unit
+ * can make the person a lead of the unit being read: on a shared economics theme
+ * a past director's "(2011-14)" and another center's "Faculty Director of ..."
+ * both read as this center's director otherwise.
+ */
+function directorClausesForUnit(title: string, unitName: string | undefined): string[] {
+  const directorClauses = title
+    .split(/[;|\n]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => /\bdirector\b/i.test(clause));
+  if (!unitName) return directorClauses;
+  return directorClauses
+    .filter((clause) => !isHistoricalDirectorship(clause))
+    .filter((clause) => {
+      const namedUnit = directorshipNamedUnit(clause);
+      return (
+        !namedUnit ||
+        organizationTextIsGenericSelfReference(namedUnit) ||
+        organizationTextNamesUnit(namedUnit, unitName)
+      );
+    });
+}
+
 /** Heuristic: classify member role from their title string. */
-function inferRole(title: string | undefined): MemberRole {
+function inferRole(title: string | undefined, unitName?: string): MemberRole {
   if (!title) return 'core-faculty';
-  const t = title.toLowerCase();
+  const t = directorClausesForUnit(title, unitName).join('; ').toLowerCase();
   if (/\b(co[- ]?director|associate director|deputy director|interim director)\b/.test(t)) {
     return 'co-director';
   }
   if (/\bdirector\b/.test(t)) return 'director';
-  if (/\baffiliated|affiliate\b/.test(t)) return 'affiliated';
+  if (/\baffiliated|affiliate\b/.test(title.toLowerCase())) return 'affiliated';
   return 'core-faculty';
 }
 
@@ -202,7 +486,7 @@ function inferRole(title: string | undefined): MemberRole {
 
 /**
  * Generic Drupal "node-teaser--person" extractor — used by the Yale Economics
- * theme, which Tobin, Cowles/EGC, and MacMillan all share.
+ * theme, which Tobin, Cowles, and MacMillan all share.
  *   <article class="node-teaser node-teaser--person ...">
  *     <div class="node-teaser__heading"><a href="/people/<slug>"><span>Name</span></a></div>
  *     <div class="node-teaser__professional-title">Title…</div>
@@ -219,7 +503,7 @@ export const nodeTeaserPersonExtractor: CenterExtractor = (html, ctx) => {
     const href = link.attr('href') || '';
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title = card.find('.node-teaser__professional-title').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -230,7 +514,7 @@ export const nodeTeaserPersonExtractor: CenterExtractor = (html, ctx) => {
  *   <p  class="teaser__text">Faculty Member, Department</p>
  * No profile URL is exposed in the listing.
  */
-export const wuTsaiExtractor: CenterExtractor = (html) => {
+export const wuTsaiExtractor: CenterExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
   $('.teaser__heading').each((_i, el) => {
@@ -240,7 +524,7 @@ export const wuTsaiExtractor: CenterExtractor = (html) => {
     // teaser__text lives in the same teaser__content sibling block
     const titleEl = heading.parent().find('.teaser__text').first();
     const title = titleEl.text().replace(/\s+/g, ' ').trim() || undefined;
-    members.push({ name, title, role: inferRole(title) });
+    members.push({ name, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -342,7 +626,7 @@ export const viewsFieldNameExtractor: CenterExtractor = (html, ctx) => {
           : link.closest('tr');
     const title =
       row.find('.views-field-field-title .field-content').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -368,7 +652,7 @@ export const ispsExtractor: CenterExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       row.find('.field-name-field-team-member-creds').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -517,8 +801,9 @@ function collectPeopleCards(
     const name = link.text().replace(/\s+/g, ' ').trim();
     if (!name) return;
     const href = link.attr('href') || '';
-    const dedupeKey = href || slugify(name);
-    if (!dedupeKey || seen.has(dedupeKey)) return;
+    // Two members can link the same lab site, so the name is part of the key (#3787).
+    const dedupeKey = `${href}|${slugify(name)}`;
+    if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const subheading = selectors.subheading
@@ -532,7 +817,7 @@ function collectPeopleCards(
       name,
       profileUrl,
       title: subheading || undefined,
-      role: inferRole(roleText),
+      role: inferRole(roleText, ctx.centerName),
     });
   });
 }
@@ -598,6 +883,49 @@ const REFERENCE_CARD_SELECTORS: PeopleCardSelectors = {
  */
 export const directoryListingCardExtractor: CenterExtractor = (html, ctx) =>
   extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
+
+function extractPeopleCardsWhere(
+  html: string,
+  ctx: ExtractorCtx,
+  selectors: PeopleCardSelectors,
+  keepCard: ($: cheerio.CheerioAPI, card: cheerio.Cheerio<any>) => boolean,
+): ExtractorResult {
+  const $ = cheerio.load(html);
+  $(selectors.card)
+    .filter((_i, el) => !keepCard($, $(el)))
+    .remove();
+  const members: CenterMember[] = [];
+  collectPeopleCards($, $.root(), ctx, selectors, new Set<string>(), members);
+  return { members };
+}
+
+const YQI_MEMBER_CATEGORY = 'YQI Member';
+
+/**
+ * The YQI roster tags each card with categories, and a card without the member
+ * category is institute staff, whose "Managing Director" title would otherwise
+ * read as a lead (#3787).
+ */
+export const yqiMemberReferenceCardExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCardsWhere(html, ctx, REFERENCE_CARD_SELECTORS, ($, card) =>
+    card
+      .find('.taxonomy-list__item')
+      .toArray()
+      .some((item) => $(item).text().trim() === YQI_MEMBER_CATEGORY),
+  );
+
+/**
+ * A leadership-and-staff page lists the center's directors beside deputy and
+ * administrative staff, and only the directors are center members a student can
+ * reach (#3787).
+ */
+export const directoryListingLeadershipExtractor: CenterExtractor = (html, ctx) => {
+  const { members, ...rest } = extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
+  return {
+    ...rest,
+    members: members.filter((member) => member.role === 'director'),
+  };
+};
 
 /**
  * YaleSites "reference-card" people block (Data-Intensive Social Science Center
@@ -711,7 +1039,7 @@ export const fdsUsersGridExtractor: CenterExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       card.find('.grid__user__job-title').first().text().replace(/\s+/g, ' ').trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -787,7 +1115,7 @@ export const jacksonProfileItemExtractor: CenterExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       card.find('.profile-positions').first().text().replace(/\s+/g, ' ').trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title) });
+    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
   });
   return { members };
 };
@@ -912,6 +1240,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Neuroscience', 'Psychology', 'Molecular, Cellular and Developmental Biology'],
     url: 'https://wti.yale.edu/humans/faculty',
+    homeUrl: 'https://wti.yale.edu/',
     paginated: true,
     extractor: wuTsaiExtractor,
   },
@@ -921,6 +1250,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Yale School of Medicine',
     kind: 'center',
     url: 'https://medicine.yale.edu/cancer/research/membership/directory',
+    homeUrl: 'https://medicine.yale.edu/cancer/',
     paginated: false,
     extractor: yaleCancerCenterExtractor,
   },
@@ -930,9 +1260,10 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     departments: ['Physics', 'Applied Physics', 'Computer Science', 'Electrical Engineering'],
-    url: 'https://quantuminstitute.yale.edu/people/members',
+    url: 'https://quantuminstitute.yale.edu/our-mission/our-members',
+    homeUrl: 'https://quantuminstitute.yale.edu/',
     paginated: false,
-    extractor: viewsFieldNameExtractor,
+    extractor: yqiMemberReferenceCardExtractor,
   },
   {
     centerKey: 'cowles',
@@ -940,7 +1271,8 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Yale Faculty of Arts and Sciences',
     kind: 'center',
     departments: ['Economics'],
-    url: 'https://egc.yale.edu/people/faculty',
+    url: 'https://cowles.yale.edu/cowles-researchers',
+    homeUrl: 'https://cowles.yale.edu/',
     paginated: true,
     extractor: nodeTeaserPersonExtractor,
   },
@@ -951,6 +1283,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'center',
     departments: ['Economics'],
     url: 'https://tobin.yale.edu/people',
+    homeUrl: 'https://tobin.yale.edu/',
     paginated: true,
     extractor: nodeTeaserPersonExtractor,
   },
@@ -961,6 +1294,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Political Science', 'Economics', 'Sociology'],
     url: 'https://isps.yale.edu/team/directory/faculty-fellows',
+    homeUrl: 'https://isps.yale.edu/',
     paginated: true,
     extractor: ispsExtractor,
   },
@@ -970,6 +1304,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://macmillan.yale.edu/people',
+    homeUrl: 'https://macmillan.yale.edu/',
     paginated: true,
     extractor: nodeTeaserPersonExtractor,
   },
@@ -1138,9 +1473,10 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     centerName: 'Whitney Humanities Center',
     schoolName: 'Yale Faculty of Arts and Sciences',
     kind: 'center',
-    url: 'https://whc.yale.edu/people/our-people',
+    url: 'https://whc.yale.edu/leadership-and-staff',
+    homeUrl: 'https://whc.yale.edu/',
     paginated: false,
-    extractor: viewsFieldNameExtractor,
+    extractor: directoryListingLeadershipExtractor,
   },
   {
     centerKey: 'ycga',
@@ -1149,6 +1485,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'center',
     departments: ['Genetics'],
     url: 'https://medicine.yale.edu/genetics/research/ycga/people/',
+    homeUrl: 'https://medicine.yale.edu/genetics/research/ycga/',
     paginated: false,
     extractor: ycgaExtractor,
   },
@@ -1158,6 +1495,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://qbio.yale.edu/members',
+    homeUrl: 'https://qbio.yale.edu/',
     paginated: false,
     extractor: directoryListingCardExtractor,
   },
@@ -1167,6 +1505,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://dissc.yale.edu/about/dissc-faculty-and-staff',
+    homeUrl: 'https://dissc.yale.edu/',
     paginated: false,
     extractor: referenceCardPeopleExtractor,
   },
@@ -1176,6 +1515,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://fds.yale.edu/people/',
+    homeUrl: 'https://fds.yale.edu/',
     paginated: false,
     extractor: fdsUsersGridExtractor,
     entityKey: 'research-yale-yale-institute-for-foundations-of-data-science',
@@ -1186,6 +1526,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'center',
     url: 'https://naturalcarboncapture.yale.edu/people',
+    homeUrl: 'https://naturalcarboncapture.yale.edu/',
     paginated: false,
     extractor: naturalCarbonCaptureExtractor,
     entityKey: 'yse-natural-carbon-capture',
@@ -1247,6 +1588,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     url: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
     paginated: false,
     extractor: customCardLabsExtractor,
   },
@@ -1256,6 +1598,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: 'Jackson School of Global Affairs',
     kind: 'center',
     url: 'https://jackson.yale.edu/centers-initiatives/',
+    homeUrl: 'https://jackson.yale.edu/centers-initiatives/',
     paginated: false,
     extractor: jacksonCentersExtractor,
     crawlChildCenters: true,
@@ -1267,6 +1610,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'institute',
     departments: ['Medicine', 'Nursing', 'Public Health'],
     url: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
+    homeUrl: 'https://medicine.yale.edu/yigh/',
     paginated: false,
     extractor: yighAffiliatedFacultyExtractor,
   },
@@ -1313,6 +1657,14 @@ function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   }
 }
 
+export type MemberPageFetcher = (url: string) => Promise<string>;
+
+// medicine.yale.edu answers a burst of member pages with 403, so these go through the shared
+// per-host limiter and its 403/429/5xx backoff rather than the roster fetch.
+async function fetchMemberProfilePage(url: string): Promise<string> {
+  return (await fetchPageWithPolicy(url, { timeoutMs: FETCH_TIMEOUT_MS })).html;
+}
+
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
@@ -1322,13 +1674,15 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;
@@ -1358,7 +1712,7 @@ export function centerToGroupObservations(
     ...new Set(
       [
         sourceUrl,
-        config.homeUrl && config.homeUrl !== sourceUrl ? config.homeUrl : '',
+        !config.entityKey && config.homeUrl && config.homeUrl !== sourceUrl ? config.homeUrl : '',
         ...(config.extraSourceUrls || []),
       ].filter(Boolean),
     ),
@@ -1378,7 +1732,7 @@ export function centerToGroupObservations(
   // research home. Emitting it as `websiteUrl` would compete with and clear the
   // target's canonical website, so the roster only adds members and provenance
   // and leaves the identity website to the owning source.
-  if (!config.entityKey) {
+  if (!config.entityKey && !centerHomeUrlWriteRefusal(config)) {
     obs.push({ ...base, field: 'websiteUrl', value: homeUrl });
   }
   if (config.schoolName) {
@@ -1393,9 +1747,8 @@ export function centerToGroupObservations(
 /**
  * Build the ResearchGroupMember observation set for one member.
  *
- * The materializer resolves the `inferredUserName` (lname + fname) into a
- * userId at write time. We deliberately keep the join logic out of the scraper
- * — extractors stay pure and the Yale-name → User mapping lives in one place.
+ * The materializer decides who the member is from the profile URL and the page's
+ * identity evidence; the join logic stays out of the scraper so extractors stay pure.
  */
 export function memberToObservations(
   member: CenterMember,
@@ -1433,11 +1786,18 @@ export function memberObservationsForEntityKey(
   if (member.title) {
     obs.push({ ...base, field: 'title', value: member.title });
   }
+  if (member.identityEvidence) {
+    obs.push({
+      ...base,
+      field: ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+      value: member.identityEvidence,
+    });
+  }
   return obs;
 }
 
 function facultyResearchAreaKey(memberName: string): string {
-  return `faculty-research-area-${slugify(memberName)}`.slice(0, 100);
+  return facultyResearchAreaSlugForPersonName(memberName) || 'faculty-research-area-';
 }
 
 /**
@@ -1493,6 +1853,56 @@ export function centerMemberRelationshipObservationsForEntityKey(
     { ...relationshipBase, field: 'evidenceStrength', value: 'MODERATE' },
     { ...relationshipBase, field: 'confidence', value: 0.72 },
   ];
+}
+
+export interface CenterRosterReadOutcome {
+  pagesRead: number;
+  readMode: 'html' | 'rendered';
+  stopReason: CenterRosterStopReason;
+}
+
+export function centerRosterReadMember(
+  member: CenterMember,
+  memberObs: readonly ObservationInput[],
+  relationshipObs: readonly ObservationInput[],
+): CenterRosterReadMember | null {
+  const memberKey = memberObs[0]?.entityKey || '';
+  if (!memberKey) return null;
+  const role = member.role || 'core-faculty';
+  return {
+    memberKey,
+    role,
+    membershipKey: rosterMembershipKey(officialProfileIdentityKey(member.profileUrl || ''), role),
+    relationshipKey: relationshipObs[0]?.entityKey || '',
+  };
+}
+
+export function centerRosterHealthObservation(
+  config: CenterConfig,
+  members: readonly CenterRosterReadMember[],
+  sourceUrl: string,
+  read: CenterRosterReadOutcome,
+  options: { cacheAllowed: boolean; readAt?: Date },
+): ObservationInput {
+  const readAt = options.readAt ?? new Date();
+  const entityKey = centerEntityKey(config);
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    value: buildCenterRosterHealthSnapshot({
+      centerKey: config.centerKey,
+      entityKey,
+      members,
+      pagesRead: read.pagesRead,
+      readMode: read.readMode,
+      stopReason: read.stopReason,
+      cacheAllowed: options.cacheAllowed,
+      readAt,
+    }),
+    sourceUrl,
+    observedAt: readAt,
+  };
 }
 
 /**
@@ -1557,9 +1967,18 @@ export class CentersInstitutesScraper implements IScraper {
     private readonly configs: CenterConfig[] = DEFAULT_CENTER_CONFIGS,
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly memberPageFetcher: MemberPageFetcher = fetchMemberProfilePage,
+    private readonly probePage?: LanePageProbe,
   ) {}
 
-  async run(ctx: ScraperContext): Promise<ScraperResult> {
+  private pageReads = new LanePageReads();
+
+  private readonly readHtml: HtmlFetcher = (...args) =>
+    fetchRecordedBy(this.pageReads, this.htmlFetcher)(...args);
+
+  async run(laneCtx: ScraperContext): Promise<ScraperResult> {
+    const { ctx, entityKeys: emittedEntityKeys } = trackingEmittedEntityKeys(laneCtx);
+    this.pageReads = new LanePageReads();
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
@@ -1576,24 +1995,47 @@ export class CentersInstitutesScraper implements IScraper {
     let centersProcessed = 0;
     const perCenter: Array<{ key: string; status: string; count: number }> = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
+    const rosterSiteRefusals: Array<{ key: string; reason: CenterRosterSiteRefusal }> = [];
+    const survivorRoutes: Array<{ key: string; from: string; to: string }> = [];
+    const selectedEntityKeys = new Set<string>();
+
+    const refuseRosterSite = (
+      config: CenterConfig,
+      pageUrl: string,
+      reason: CenterRosterSiteRefusal,
+    ): void => {
+      ctx.log(
+        `[${config.centerKey}] refused - roster page ${sanitizeLogValue(pageUrl)} is not on the center's own site (${reason}); no members emitted`,
+      );
+      rosterSiteRefusals.push({ key: config.centerKey, reason });
+      perCenter.push({ key: config.centerKey, status: `roster-site-refused:${reason}`, count: 0 });
+    };
 
     const emitCenterResults = async (
       config: CenterConfig,
       allMembers: CenterMember[],
       allChildCenters: ChildCenter[],
       sourceUrl: string,
-      pagesFetched: number,
+      read: CenterRosterReadOutcome,
     ): Promise<void> => {
       const { observations: groupObs } = centerToGroupObservations(config, allMembers, sourceUrl);
       await ctx.emit(groupObs);
       totalObs += groupObs.length;
 
       const seenMemberSlugs = new Set<string>();
-      for (const member of allMembers) {
-        const cleaned = normalizeName(member.name);
-        const slug = slugify(cleaned);
-        if (!slug || seenMemberSlugs.has(slug)) continue;
+      const uniqueMembers = allMembers.filter((member) => {
+        const slug = slugify(normalizeName(member.name));
+        if (!slug || seenMemberSlugs.has(slug)) return false;
         seenMemberSlugs.add(slug);
+        return true;
+      });
+      const listedMembers = await this.withMemberIdentityEvidence(
+        config.centerKey,
+        uniqueMembers,
+        ctx,
+      );
+      const readMembers: CenterRosterReadMember[] = [];
+      for (const member of listedMembers) {
         const memberObs = memberToObservations(member, config, sourceUrl);
         if (memberObs.length > 0) {
           await ctx.emit(memberObs);
@@ -1606,7 +2048,15 @@ export class CentersInstitutesScraper implements IScraper {
           await ctx.emit(relationshipObs);
           totalObs += relationshipObs.length;
         }
+        const readMember = centerRosterReadMember(member, memberObs, relationshipObs);
+        if (readMember) readMembers.push(readMember);
       }
+
+      const snapshot = centerRosterHealthObservation(config, readMembers, sourceUrl, read, {
+        cacheAllowed: Boolean(ctx.options.useCache),
+      });
+      await ctx.emit(snapshot);
+      totalObs += 1;
 
       for (const child of allChildCenters) {
         let engagementUrl: string | undefined;
@@ -1633,10 +2083,18 @@ export class CentersInstitutesScraper implements IScraper {
           const childKey = childCenterEntityKey(config, child);
           const memberSourceUrl = engagementUrl || child.url;
           const seenChildMemberSlugs = new Set<string>();
-          for (const member of childMembers) {
+          const uniqueChildMembers = childMembers.filter((member) => {
             const slug = slugify(normalizeName(member.name));
-            if (!slug || seenChildMemberSlugs.has(slug)) continue;
+            if (!slug || seenChildMemberSlugs.has(slug)) return false;
             seenChildMemberSlugs.add(slug);
+            return true;
+          });
+          const listedChildMembers = await this.withMemberIdentityEvidence(
+            childKey,
+            uniqueChildMembers,
+            ctx,
+          );
+          for (const member of listedChildMembers) {
             const memberObs = memberObservationsForEntityKey(childKey, member, memberSourceUrl);
             if (memberObs.length > 0) {
               await ctx.emit(memberObs);
@@ -1657,7 +2115,7 @@ export class CentersInstitutesScraper implements IScraper {
       }
 
       ctx.log(
-        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${pagesFetched} page(s))`,
+        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${read.pagesRead} page(s), ${read.stopReason})`,
       );
       perCenter.push({
         key: config.centerKey,
@@ -1666,9 +2124,40 @@ export class CentersInstitutesScraper implements IScraper {
       });
     };
 
-    for (const config of this.configs) {
-      if (onlyFilter && !onlyFilter.has(config.centerKey.toLowerCase())) continue;
+    const routes = await routeCenterConfigsToLiveRows(this.configs);
+    for (const [index, configured] of this.configs.entries()) {
+      if (onlyFilter && !onlyFilter.has(configured.centerKey.toLowerCase())) continue;
       if (centersProcessed >= limit) break;
+
+      const route = routes[index];
+      selectedEntityKeys.add(centerEntityKey(configured));
+      if ('config' in route) selectedEntityKeys.add(centerEntityKey(route.config));
+      if ('refusal' in route) {
+        ctx.log(
+          `[${configured.centerKey}] refused - its row ${sanitizeLogValue(centerEntityKey(configured))} is archived (${route.refusal}); nothing read`,
+        );
+        perCenter.push({ key: configured.centerKey, status: route.refusal, count: 0 });
+        centersProcessed++;
+        continue;
+      }
+      const config = route.config;
+      if (route.redirectedFrom) {
+        ctx.log(
+          `[${config.centerKey}] its row ${sanitizeLogValue(route.redirectedFrom)} was merged into ${sanitizeLogValue(centerEntityKey(config))}; reading the roster onto the survivor`,
+        );
+        survivorRoutes.push({
+          key: config.centerKey,
+          from: route.redirectedFrom,
+          to: centerEntityKey(config),
+        });
+      }
+
+      const rosterSiteRefusal = centerRosterSiteRefusal(config);
+      if (rosterSiteRefusal) {
+        refuseRosterSite(config, config.url, rosterSiteRefusal);
+        centersProcessed++;
+        continue;
+      }
 
       if (config.jsRenderedSkip) {
         if (!this.renderedFetcher) {
@@ -1684,7 +2173,16 @@ export class CentersInstitutesScraper implements IScraper {
           config.url,
           'scrapling',
           () =>
-            fetchRenderedCenterPage(this.name, ctx.options.useCache, config, this.renderedFetcher),
+            fetchUsableRenderedPage({
+              sourceName: this.name,
+              useCache: ctx.options.useCache,
+              request: {
+                url: config.url,
+                waitSelector: config.renderWaitSelector,
+                timeoutMs: FETCH_TIMEOUT_MS,
+              },
+              renderedFetcher: this.renderedFetcher,
+            }),
           { selectorName: config.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
@@ -1697,10 +2195,17 @@ export class CentersInstitutesScraper implements IScraper {
         }
 
         const pageUrl = rendered.result.url || config.url;
+        const renderedSiteRefusal = centerRosterPageSiteRefusal(config, pageUrl);
+        if (renderedSiteRefusal) {
+          refuseRosterSite(config, pageUrl, renderedSiteRefusal);
+          centersProcessed++;
+          continue;
+        }
         let result: ExtractorResult;
         try {
           result = (config.renderedExtractor || config.extractor)(rendered.result.html, {
             pageUrl,
+            centerName: config.centerName,
           });
         } catch (err: any) {
           ctx.log(`[${config.centerKey}] rendered extractor error: ${sanitizeLogValue(err)}`);
@@ -1709,13 +2214,11 @@ export class CentersInstitutesScraper implements IScraper {
           continue;
         }
 
-        await emitCenterResults(
-          config,
-          result.members || [],
-          result.childCenters || [],
-          pageUrl,
-          1,
-        );
+        await emitCenterResults(config, result.members || [], result.childCenters || [], pageUrl, {
+          pagesRead: 1,
+          readMode: 'rendered',
+          stopReason: 'rendered-page',
+        });
         centersProcessed++;
         continue;
       }
@@ -1726,54 +2229,72 @@ export class CentersInstitutesScraper implements IScraper {
       let firstPageUrl: string | null = null;
       let pagesFetched = 0;
       const maxPages = config.paginated ? MAX_PAGES_PER_CENTER : 1;
-      let lastPageHadNewEntries = true;
-      let fetchFailed = false;
+      let consecutiveRepeatedPages = 0;
+      let stopReason: CenterRosterStopReason = 'page-cap';
 
-      for (let pageIdx = 0; pageIdx < maxPages && lastPageHadNewEntries; pageIdx++) {
+      for (let pageIdx = 0; pageIdx < maxPages; pageIdx++) {
         const pageUrl = pageUrlForIndex(config.url, pageIdx);
         if (!firstPageUrl) firstPageUrl = pageUrl;
         let html: string;
         try {
-          html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
+          html = await this.readHtml(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
           ctx.log(
             `[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`,
           );
-          fetchFailed = true;
+          stopReason = 'fetch-failed';
           break;
         }
         pagesFetched++;
         let result: ExtractorResult;
         try {
-          result = config.extractor(html, { pageUrl });
+          result = config.extractor(html, { pageUrl, centerName: config.centerName });
         } catch (err: any) {
           ctx.log(
             `[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`,
           );
+          stopReason = 'extractor-error';
           break;
         }
-        const newMembers = (result.members ?? []).filter((member) => {
+        const pageMembers = result.members ?? [];
+        const pageChildCenters = result.childCenters ?? [];
+        if (pageMembers.length === 0 && pageChildCenters.length === 0) {
+          stopReason = 'empty-page';
+          break;
+        }
+        const newMembers = pageMembers.filter((member) => {
           const key = `member:${slugify(normalizeName(member.name))}`;
           if (key === 'member:' || seenPaginationKeys.has(key)) return false;
           seenPaginationKeys.add(key);
           return true;
         });
-        const newChildCenters = (result.childCenters ?? []).filter((child) => {
+        const newChildCenters = pageChildCenters.filter((child) => {
           const key = `child:${slugify(child.name)}`;
           if (key === 'child:' || seenPaginationKeys.has(key)) return false;
           seenPaginationKeys.add(key);
           return true;
         });
         if (newMembers.length === 0 && newChildCenters.length === 0) {
-          lastPageHadNewEntries = false;
-          break;
+          consecutiveRepeatedPages++;
+          if (!config.paginated || consecutiveRepeatedPages >= CONSECUTIVE_REPEATED_PAGES_TO_STOP) {
+            stopReason = config.paginated ? 'repeated-page' : 'not-paginated';
+            break;
+          }
+          continue;
         }
+        consecutiveRepeatedPages = 0;
         allMembers.push(...newMembers);
         allChildCenters.push(...newChildCenters);
-        if (!config.paginated) break;
+        if (!config.paginated) {
+          stopReason = 'not-paginated';
+          break;
+        }
       }
 
-      if (fetchFailed && allMembers.length === 0 && allChildCenters.length === 0) {
+      if (
+        pagesFetched === 0 ||
+        (stopReason === 'fetch-failed' && allMembers.length === 0 && allChildCenters.length === 0)
+      ) {
         perCenter.push({ key: config.centerKey, status: 'fetch-failed', count: 0 });
         centersProcessed++;
         continue;
@@ -1781,7 +2302,11 @@ export class CentersInstitutesScraper implements IScraper {
 
       const sourceUrl = firstPageUrl || config.url;
 
-      await emitCenterResults(config, allMembers, allChildCenters, sourceUrl, pagesFetched);
+      await emitCenterResults(config, allMembers, allChildCenters, sourceUrl, {
+        pagesRead: pagesFetched,
+        readMode: 'html',
+        stopReason,
+      });
       centersProcessed++;
     }
 
@@ -1792,12 +2317,88 @@ export class CentersInstitutesScraper implements IScraper {
       `Emitted ${totalObs} observations across ${centersProcessed} centers, ${totalMembers} members, ${totalChildCenters} child centers (${summary})`,
     );
 
+    if (survivorRoutes.length > 0) {
+      ctx.log(
+        `Routed ${survivorRoutes.length} center config(s) onto their merge survivor: ${survivorRoutes
+          .map((route) => `${route.key} (${route.from} -> ${route.to})`)
+          .join(', ')}`,
+      );
+    }
+
+    if (rosterSiteRefusals.length > 0) {
+      ctx.log(
+        `Refused ${rosterSiteRefusals.length} center roster(s) off the center's own site: ${rosterSiteRefusals
+          .map((refusal) => `${refusal.key} (${refusal.reason})`)
+          .join(', ')}`,
+      );
+    }
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      this.pageReads,
+      this.probePage,
+      onlyFilter ? { entityKeys: [...selectedEntityKeys, ...emittedEntityKeys] } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
+
     return {
       observationCount: totalObs,
       entitiesObserved: centersProcessed + totalMembers + totalChildCenters,
-      notes: `Centers: ${summary}`,
+      notes: `Centers: ${summary}${
+        survivorRoutes.length > 0
+          ? `; routed onto merge survivor: ${survivorRoutes.map((route) => route.key).join(', ')}`
+          : ''
+      }`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
+  }
+
+  private async withMemberIdentityEvidence(
+    rosterKey: string,
+    members: CenterMember[],
+    ctx: ScraperContext,
+  ): Promise<CenterMember[]> {
+    const profiled = members
+      .filter((member) => isYaleHostedUrl(member.profileUrl))
+      .slice(0, ctx.options.limit ?? Infinity);
+    const evidenceByMember = new Map<CenterMember, RosterMemberIdentityEvidence>();
+    await mapWithConcurrency(profiled, MEMBER_PROFILE_FETCH_CONCURRENCY, async (member) => {
+      const evidence = await this.readMemberIdentityEvidence(member, ctx);
+      if (evidence) evidenceByMember.set(member, evidence);
+    });
+    if (profiled.length > 0) {
+      ctx.log(
+        `[${rosterKey}] member identity evidence: ${evidenceByMember.size} of ${profiled.length} profile page(s) read`,
+      );
+    }
+    return members.map((member) => {
+      const identityEvidence = evidenceByMember.get(member);
+      return identityEvidence ? { ...member, identityEvidence } : member;
+    });
+  }
+
+  // Only the extracted evidence is cached, never the page: a center's member pages run to
+  // hundreds of megabytes, and caching them whole fills the Development quota.
+  private async readMemberIdentityEvidence(
+    member: CenterMember,
+    ctx: ScraperContext,
+  ): Promise<RosterMemberIdentityEvidence | undefined> {
+    const profileUrl = member.profileUrl || '';
+    const cacheKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}`;
+    if (ctx.options.useCache) {
+      const cached = await getCached<RosterMemberIdentityEvidence>(this.name, cacheKey);
+      if (cached) return cached;
+    }
+    let html: string;
+    try {
+      html = await this.memberPageFetcher(profileUrl);
+    } catch {
+      return undefined;
+    }
+    if (typeof html !== 'string' || !html) return undefined;
+    const evidence = extractRosterMemberIdentityEvidence(html, profileUrl, member.name);
+    if (ctx.options.useCache) await setCached(this.name, cacheKey, evidence);
+    return evidence;
   }
 
   /**
@@ -1814,7 +2415,7 @@ export class CentersInstitutesScraper implements IScraper {
   ): Promise<{ engagementUrl?: string; members: CenterMember[] }> {
     let homepageHtml: string;
     try {
-      homepageHtml = await this.htmlFetcher(child.url, ctx.options.useCache, this.name);
+      homepageHtml = await this.readHtml(child.url, ctx.options.useCache, this.name);
     } catch (err: any) {
       ctx.log(`[child ${slugify(child.name)}] homepage fetch failed: ${sanitizeLogValue(err)}`);
       return { members: [] };
@@ -1828,7 +2429,7 @@ export class CentersInstitutesScraper implements IScraper {
     for (const candidate of deriveChildEngagementCandidates(homepageHtml, child.url)) {
       let html: string;
       try {
-        html = await this.htmlFetcher(candidate, ctx.options.useCache, this.name);
+        html = await this.readHtml(candidate, ctx.options.useCache, this.name);
       } catch {
         continue;
       }
@@ -1839,25 +2440,4 @@ export class CentersInstitutesScraper implements IScraper {
 
     return { engagementUrl, members };
   }
-}
-
-async function fetchRenderedCenterPage(
-  sourceName: string,
-  useCache: boolean,
-  config: CenterConfig,
-  renderedFetcher: RenderedFetcher | null,
-): Promise<RenderedFetchResult | null> {
-  if (!renderedFetcher) return null;
-  const cacheKey = `rendered-page:v1:${config.url}`;
-  if (useCache) {
-    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
-    if (cached) return cached;
-  }
-  const result = await renderedFetcher({
-    url: config.url,
-    waitSelector: config.renderWaitSelector,
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
-  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
-  return result;
 }

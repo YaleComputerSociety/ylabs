@@ -26,7 +26,7 @@ vi.mock('../researchSearchQueryEmbedding', () => ({
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     searchSimilarDocuments: mocks.searchSimilarDocuments,
     getEmbedders: mocks.getEmbedders,
@@ -69,7 +69,10 @@ describe('one student search embeds its query once (#3149)', () => {
     mocks.getEmbedders.mockReset();
     mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
     mocks.getResearchSearchQueryVector.mockReset();
-    mocks.getResearchSearchQueryVector.mockResolvedValue(QUERY_VECTOR);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: QUERY_VECTOR,
+      semanticLegAffordable: true,
+    });
     invalidateResearchEntitySearchEmbedderCache();
   });
 
@@ -102,7 +105,10 @@ describe('one student search embeds its query once (#3149)', () => {
   // request behaves exactly as it did before, paying Meilisearch's embeddings rather
   // than losing a result.
   it('falls back to letting Meilisearch embed when no vector is available', async () => {
-    mocks.getResearchSearchQueryVector.mockResolvedValue(null);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: null,
+      semanticLegAffordable: true,
+    });
 
     await searchResearchGroupsViaMeili('machine learning', {}, 1, 18);
 

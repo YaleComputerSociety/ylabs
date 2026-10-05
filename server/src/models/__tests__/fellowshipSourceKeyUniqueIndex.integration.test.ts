@@ -37,8 +37,7 @@ async function buildDeclaredSourceKeyIndex(): Promise<void> {
 async function liveSourceKeyIndex(): Promise<Record<string, unknown> | undefined> {
   const indexes = await mongoose.connection.db!.collection('fellowships').indexes();
   return indexes.find((index) => index.name === 'sourceKey_1') as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
 }
 
 describe('the declared fellowship sourceKey unique index can actually be built (#3081)', () => {
@@ -51,11 +50,11 @@ describe('the declared fellowship sourceKey unique index can actually be built (
     // explicitly. Without it a background `autoIndex` build races the explicit
     // one this file is asserting.
     await mongoose.connect(server.getUri(), { autoIndex: false, autoCreate: false });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {

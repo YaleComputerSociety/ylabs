@@ -1,26 +1,32 @@
 /**
  * List view row component for browsable listings and fellowships.
  */
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useMemo, type ReactNode } from 'react';
 import {
   BrowsableItem,
   getItemId,
-  isItemOpen,
   getItemTags,
   getItemSubtitle,
   getItemSubtitleColor,
   getFellowshipJourneySummary,
   getDaysUntilDeadline,
   getItemCardSummary,
+  getItemStatusBadge,
   TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
-import StatusBadge from './StatusBadge';
 import FavoriteButton from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
-import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { programCardFacts } from '../../utils/programBoard';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  departmentResearchGuidanceHref,
+  isDepartmentResearchGuidance,
+} from '../../utils/programJourney';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
+import { EditIcon, ExternalLinkIcon } from './icons';
 
 interface BrowseListItemProps {
   item: BrowsableItem;
@@ -29,6 +35,8 @@ interface BrowseListItemProps {
   onOpenModal: () => void;
   onAdminEdit?: () => void;
   isCompact?: boolean;
+  /** Controls that act on this item, rendered inside the card's own border. */
+  footer?: ReactNode;
 }
 
 const BrowseListItem = React.memo(
@@ -39,10 +47,10 @@ const BrowseListItem = React.memo(
     onOpenModal,
     onAdminEdit,
     isCompact,
+    footer,
   }: BrowseListItemProps) => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
-    const open = isItemOpen(item);
     const tags = useMemo(() => getItemTags(item), [item]);
     const trackView = useViewTracking(item.type, getItemId(item));
 
@@ -52,12 +60,15 @@ const BrowseListItem = React.memo(
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
-    const fellowshipCycleStatus =
-      item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
+    const statusBadge = getItemStatusBadge(item);
+    const guidanceHref = isDepartmentResearchGuidance(item.data)
+      ? departmentResearchGuidanceHref(item.data)
+      : undefined;
     const fellowshipJourneySummary =
       item.type === 'fellowship' ? getFellowshipJourneySummary(item.data) : null;
 
     const isAudited = isAdmin && item.data.audited;
+    const programFacts = programCardFacts(item.data);
 
     const handleClick = () => {
       trackView();
@@ -66,8 +77,7 @@ const BrowseListItem = React.memo(
 
     return (
       <div
-        className={`group bg-panel rounded-card border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised transition-all duration-200 cursor-pointer`}
-        onClick={item.type === 'fellowship' ? undefined : handleClick}
+        className={`group relative bg-panel rounded-card border ${isAudited ? 'border-green-400 ring-1 ring-green-200' : 'border-line'} hover:border-line-strong hover:shadow-yr-raised active:shadow-none [transition-property:border-color,box-shadow] duration-200`}
       >
         <div className="p-4 grid grid-cols-12 gap-4 items-start">
           <div className={`col-span-12 ${isCompact ? 'md:col-span-10' : 'md:col-span-4'}`}>
@@ -79,13 +89,36 @@ const BrowseListItem = React.memo(
                 <button
                   type="button"
                   onClick={handleClick}
-                  className="yr-focus-ring block max-w-full truncate text-left hover:text-brand focus-visible:rounded-control"
+                  className="yr-focus-ring -my-3 flex min-h-11 max-w-full items-center text-left after:absolute after:inset-0 after:content-[''] hover:text-brand focus-visible:rounded-control [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
                   aria-label={`View details for ${item.data.title}`}
                 >
-                  {item.data.title}
+                  <span className="truncate">{item.data.title}</span>
                 </button>
               </h3>
               <p className={`text-xs ${subtitleColor} truncate`}>{subtitle}</p>
+              {!isCompact && programFacts.length > 0 && (
+                <p className="mt-0.5 truncate text-xs text-ink-soft">{programFacts.join(' · ')}</p>
+              )}
+              {guidanceHref && (
+                <a
+                  href={guidanceHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    trackView();
+                    void trackResearchEvent({
+                      eventType: 'source_link_click',
+                      entityType: 'fellowship',
+                      entityId: item.data.id,
+                      payload: { sourceCategory: 'external', url: guidanceHref },
+                    });
+                  }}
+                  className="yr-focus-ring relative z-[1] -my-2 inline-flex min-h-11 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+                >
+                  {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                  <ExternalLinkIcon size={14} />
+                </a>
+              )}
             </>
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1.5">
@@ -117,17 +150,13 @@ const BrowseListItem = React.memo(
 
           <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
             <div className="flex items-center gap-1">
-              {fellowshipCycleStatus ? (
-                <span
-                  className={`text-[10px] font-medium px-1.5 py-0.5 rounded-card ${fellowshipCycleStatus.className}`}
-                >
-                  {fellowshipCycleStatus.label}
-                </span>
-              ) : (
-                <StatusBadge isOpen={open} />
-              )}
+              <span
+                className={`text-xs font-medium px-1.5 py-0.5 rounded-card ${statusBadge.className}`}
+              >
+                {statusBadge.label}
+              </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="relative z-[1] flex items-center gap-1">
               {isAdmin && onAdminEdit && (
                 <button
                   onClick={(e) => {
@@ -138,21 +167,7 @@ const BrowseListItem = React.memo(
                   title="Edit listing (Admin)"
                   aria-label="Admin edit"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
+                  <EditIcon size={14} />
                 </button>
               )}
               {onToggleFavorite && (
@@ -161,6 +176,7 @@ const BrowseListItem = React.memo(
             </div>
           </div>
         </div>
+        {footer && <div className="relative z-[1] border-t border-line px-4 py-3">{footer}</div>}
       </div>
     );
   },

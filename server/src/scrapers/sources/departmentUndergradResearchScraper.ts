@@ -27,14 +27,26 @@ import {
 } from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
-import { classifyProgram } from '../../services/programClassifier';
-import { readCourseCreditRouteFromHtml } from '../utils/courseCreditRouteEvidence';
+import {
+  readCourseCreditRouteFromHtml,
+  type CourseCreditRouteReading,
+} from '../utils/courseCreditRouteEvidence';
 import {
   ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
+  type OrgUnitCourseCreditRouteObservationValue,
   resolveOrgUnitSlugForDepartmentName,
 } from '../orgUnitSignalMaterializer';
 import { evidenceAssertsALab, personScopedResearchRecordIdentity } from '../utils/labClaimEvidence';
+import { joinPageAnchorTextRefusal, joinPageUrlRefusal } from '../undergradJoinPageAdmission';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import { statedAdministeringOffice } from '../utils/administeringOffice';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -42,9 +54,7 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 export type DepartmentUndergradResearchParser =
-  | 'physics-project-list'
-  | 'general-guidance'
-  | 'structured-opportunity';
+  'physics-project-list' | 'general-guidance' | 'structured-opportunity';
 
 export interface DepartmentUndergradResearchPageConfig {
   key: string;
@@ -71,14 +81,22 @@ export interface DepartmentUndergradResearchRecord {
   contactName?: string;
   contactEmail?: string;
   contactRole?: string;
+  contactOffice?: string;
   joinPageUrl?: string;
+  pageTitle?: string;
 }
 
-type FetchHtml = (url: string, useCache: boolean) => Promise<string>;
+type FetchHtml = (url: string, useCache: boolean, pageReads?: LanePageReads) => Promise<string>;
+
+interface DepartmentCourseCreditRead {
+  sourceUrl: string;
+  reading: CourseCreditRouteReading | null;
+}
 
 export interface DepartmentUndergradResearchScraperDeps {
   pageConfigs?: DepartmentUndergradResearchPageConfig[];
   fetchHtml?: FetchHtml;
+  probePage?: LanePageProbe;
 }
 
 /**
@@ -292,6 +310,30 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       school: 'Yale School of Engineering & Applied Science',
       parser: 'structured-opportunity',
       title: 'Computer Science Research Internship Program',
+    },
+    {
+      key: 'isps-dahl-scholars',
+      url: 'https://isps.yale.edu/isps-opportunities/student-fellowships/dahl-scholars',
+      department: 'Institution for Social and Policy Studies',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'ISPS Dahl Scholars',
+    },
+    {
+      key: 'global-affairs-undergraduate-research-award',
+      url: 'https://jackson.yale.edu/academics-admissions/global-affairs-major/undergraduate-research',
+      department: 'Global Affairs',
+      school: 'Jackson School of Global Affairs',
+      parser: 'structured-opportunity',
+      title: 'Jackson School Undergraduate Research Award',
+    },
+    {
+      key: 'gsas-summer-undergraduate-research-fellowship',
+      url: 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program',
+      department: 'Graduate School of Arts and Sciences',
+      school: 'Graduate School of Arts and Sciences',
+      parser: 'structured-opportunity',
+      title: 'Yale Summer Undergraduate Research Fellowship (SURF) Program',
     },
     {
       key: 'sociology',
@@ -528,6 +570,28 @@ function pageMainText($: cheerio.CheerioAPI): string {
   return normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
 }
 
+function pageOwnTitle($: cheerio.CheerioAPI): string | undefined {
+  const documentTitle = normalizeText($('title').first().text()).split(/\s+\|\s+/)[0];
+  return documentTitle || normalizeText($('h1').first().text()) || undefined;
+}
+
+function seededOpportunityHeading(
+  $: cheerio.CheerioAPI,
+  pageTitle: string | undefined,
+  seededTitle: string | undefined,
+): string | undefined {
+  if (!pageTitle || !seededTitle) return undefined;
+  const page = pageTitle.toLowerCase();
+  const seeded = seededTitle.toLowerCase();
+  return $('h2, h3, h4')
+    .toArray()
+    .map((heading) => normalizeText($(heading).text()))
+    .find((heading) => {
+      const lower = heading.toLowerCase();
+      return lower.length > page.length && lower.includes(page) && seeded.includes(lower);
+    });
+}
+
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {
   return `department-undergrad-research-${slugify(config.department || config.key)}`.slice(0, 100);
 }
@@ -549,8 +613,11 @@ function bestApplicationUrl($: cheerio.CheerioAPI, pageUrl: string): string | un
       url: absoluteUrl($(node).attr('href'), pageUrl),
     }))
     .filter((link): link is { text: string; url: string } => Boolean(link.url));
-  return links.find((link) =>
-    /apply|application|form|qualtrics|survey/i.test(`${link.text} ${link.url}`),
+  return links.find(
+    (link) =>
+      /apply|application|\bforms?\b|qualtrics|survey/i.test(`${link.text} ${link.url}`) &&
+      !joinPageUrlRefusal(link.url) &&
+      !joinPageAnchorTextRefusal(link.text),
   )?.url;
 }
 
@@ -654,6 +721,7 @@ export function parseGeneralDepartmentResearchPage(
       evidenceQuote: description.evidenceQuote,
       undergradAccessEvidence: true,
       contactRole: 'Faculty member for undergraduate research',
+      pageTitle: pageOwnTitle($),
     },
   ];
 }
@@ -674,6 +742,7 @@ export function parseStructuredOpportunityPage(
   const contactEmail = firstEmail(text);
   const joinPageUrl = bestApplicationUrl($, config.url);
   const description = departmentGuidanceDescription(config, text);
+  const pageTitle = pageOwnTitle($);
 
   return [
     {
@@ -690,7 +759,9 @@ export function parseStructuredOpportunityPage(
       undergradAccessEvidence: true,
       contactEmail,
       contactRole: contactEmail ? 'Program contact for undergraduate research' : undefined,
+      contactOffice: statedAdministeringOffice([text]),
       joinPageUrl,
+      pageTitle: seededOpportunityHeading($, pageTitle, config.title) || pageTitle,
     },
   ];
 }
@@ -715,32 +786,15 @@ function programRecordToFellowshipObservations(
     sourceUrl: record.sourceUrl,
   };
   const summary = record.shortDescription || record.description;
-  const classification = classifyProgram({
-    title: record.name,
-    summary,
-    description: record.description,
-    sourceUrl: record.sourceUrl,
-  });
   const observations: ObservationInput[] = [
     { ...base, field: 'sourceKey', value: record.entityKey },
     { ...base, field: 'sourceName', value: DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE },
+    { ...base, field: 'sourceUrl', value: record.sourceUrl },
     { ...base, field: 'title', value: record.name },
     { ...base, field: 'summary', value: summary },
     { ...base, field: 'description', value: record.description },
-    { ...base, field: 'programCategory', value: classification.programCategory },
-    { ...base, field: 'programKind', value: classification.programKind },
-    { ...base, field: 'entryMode', value: classification.entryMode },
-    { ...base, field: 'studentFacingCategory', value: classification.studentFacingCategory },
-    {
-      ...base,
-      field: 'requiresMentorBeforeApply',
-      value: classification.requiresMentorBeforeApply,
-    },
-    { ...base, field: 'mentorMatching', value: classification.mentorMatching },
-    { ...base, field: 'undergraduateOnly', value: classification.undergraduateOnly ?? true },
+    { ...base, field: 'undergraduateOnly', value: true },
     { ...base, field: 'researchFocused', value: true },
-    { ...base, field: 'bestNextStep', value: classification.bestNextStep },
-    { ...base, field: 'prepSteps', value: classification.prepSteps },
     {
       ...base,
       field: 'applicationLink',
@@ -755,6 +809,12 @@ function programRecordToFellowshipObservations(
       value: record.contactEmail,
       confidenceOverride: 0.75,
     });
+  }
+  if (record.contactOffice) {
+    observations.push({ ...base, field: 'contactOffice', value: record.contactOffice });
+  }
+  if (record.pageTitle) {
+    observations.push({ ...base, field: 'sourcePageTitle', value: record.pageTitle });
   }
   return observations;
 }
@@ -820,7 +880,11 @@ export function departmentUndergradResearchRecordsToObservations(
   });
 }
 
-async function defaultFetchHtml(url: string, useCache: boolean): Promise<string> {
+async function defaultFetchHtml(
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -829,25 +893,19 @@ async function defaultFetchHtml(url: string, useCache: boolean): Promise<string>
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const response = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const response = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
+  pageReads?.recordRead(url, response.request?.res?.responseUrl || url);
   const html = response.data as string;
   if (useCache) await setCached(DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE, cacheKey, html);
   return html;
-}
-
-function fetchFailureStatusCode(err: unknown): number | undefined {
-  const status = (err as { response?: { status?: unknown } } | null)?.response?.status;
-  return typeof status === 'number' ? status : undefined;
-}
-
-function failureMessage(err: unknown): string {
-  return sanitizeLogValue(err instanceof Error ? err.message : err);
 }
 
 function parseRuntimeIntegerOption(
@@ -867,51 +925,100 @@ export class DepartmentUndergradResearchScraper implements IScraper {
   readonly displayName = 'Department undergraduate research pages';
   private readonly pageConfigs: DepartmentUndergradResearchPageConfig[];
   private readonly fetchHtml: FetchHtml;
+  private readonly probePage?: LanePageProbe;
 
   constructor(deps: DepartmentUndergradResearchScraperDeps = {}) {
     this.pageConfigs = deps.pageConfigs || DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES;
     this.fetchHtml = deps.fetchHtml || defaultFetchHtml;
+    this.probePage = deps.probePage;
   }
 
   /**
-   * Emits the department's for-credit route as an `orgUnit` observation. Returns
-   * false and emits nothing when the page does not say it or when the org chart
-   * does not know the department, because a signal that cannot cite a page which
-   * states the fact is exactly the fabrication the evidence-first rule forbids.
+   * A withdrawal is emitted only when every page configured for the department's
+   * OrgUnit, under any spelling of its name, was read on this run, so a fetch failure or an `--only` filter never
+   * withdraws a route another page still states (#4045).
    */
-  private async emitCourseCreditRoute(
+  private async emitCourseCreditRoutes(
     ctx: ScraperContext,
+    readsByDepartment: Map<string, DepartmentCourseCreditRead[]>,
+  ): Promise<{ stated: number; withdrawn: number }> {
+    const slugByDepartmentName = new Map<string, string | null>();
+    const resolveSlug = async (departmentName: string): Promise<string | null> => {
+      if (!slugByDepartmentName.has(departmentName)) {
+        slugByDepartmentName.set(
+          departmentName,
+          await resolveOrgUnitSlugForDepartmentName(departmentName),
+        );
+      }
+      return slugByDepartmentName.get(departmentName) ?? null;
+    };
+    const readsByOrgUnit = new Map<string, DepartmentCourseCreditRead[]>();
+    for (const [departmentName, reads] of readsByDepartment) {
+      const orgUnitSlug = await resolveSlug(departmentName);
+      if (!orgUnitSlug) {
+        ctx.log(`No OrgUnit resolves "${departmentName}"; course-credit route not emitted.`);
+        continue;
+      }
+      readsByOrgUnit.set(orgUnitSlug, [...(readsByOrgUnit.get(orgUnitSlug) ?? []), ...reads]);
+    }
+    const configuredUrlsByOrgUnit = new Map<string, Set<string>>();
+    for (const config of [...this.pageConfigs, ...COURSE_CREDIT_ROUTE_SEED_PAGES]) {
+      const orgUnitSlug = await resolveSlug(config.department);
+      if (!orgUnitSlug || !readsByOrgUnit.has(orgUnitSlug)) continue;
+      const urls = configuredUrlsByOrgUnit.get(orgUnitSlug) ?? new Set<string>();
+      urls.add(config.url);
+      configuredUrlsByOrgUnit.set(orgUnitSlug, urls);
+    }
+    let stated = 0;
+    let withdrawn = 0;
+    for (const [orgUnitSlug, reads] of readsByOrgUnit) {
+      const stating = reads.filter((read) => read.reading !== null);
+      const latestStating = stating[stating.length - 1];
+      const readUrls = new Set(reads.map((read) => read.sourceUrl));
+      const everyPageRead = [...(configuredUrlsByOrgUnit.get(orgUnitSlug) ?? [])].every((url) =>
+        readUrls.has(url),
+      );
+      if (!latestStating && !everyPageRead) continue;
+      const value: OrgUnitCourseCreditRouteObservationValue = latestStating?.reading
+        ? {
+            schemaVersion: 1,
+            evidenceQuote: latestStating.reading.evidenceQuote,
+            supportingQuoteCount: latestStating.reading.supportingQuoteCount,
+          }
+        : { schemaVersion: 1, routeStated: false };
+      await ctx.emit([
+        {
+          entityType: 'orgUnit',
+          entityKey: orgUnitSlug,
+          field: ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
+          value,
+          sourceUrl: (latestStating ?? reads[reads.length - 1]).sourceUrl,
+        },
+      ]);
+      if (latestStating) stated += 1;
+      else withdrawn += 1;
+    }
+    return { stated, withdrawn };
+  }
+
+  private readCourseCreditRoute(
+    ctx: ScraperContext,
+    readsByDepartment: Map<string, DepartmentCourseCreditRead[]>,
     departmentName: string,
     sourceUrl: string,
     html: string,
-  ): Promise<boolean> {
-    let reading: ReturnType<typeof readCourseCreditRouteFromHtml> = null;
+  ): boolean {
+    let reading: CourseCreditRouteReading | null;
     try {
       reading = readCourseCreditRouteFromHtml(html, sourceUrl);
     } catch (err: unknown) {
       ctx.log(`Course-credit read failed for ${sourceUrl}: ${sanitizeLogValue(err)}`);
       return false;
     }
-    if (!reading) return false;
-    const orgUnitSlug = await resolveOrgUnitSlugForDepartmentName(departmentName);
-    if (!orgUnitSlug) {
-      ctx.log(`No OrgUnit resolves "${departmentName}"; course-credit route not emitted.`);
-      return false;
-    }
-    await ctx.emit([
-      {
-        entityType: 'orgUnit',
-        entityKey: orgUnitSlug,
-        field: ORG_UNIT_COURSE_CREDIT_ROUTE_FIELD,
-        value: {
-          schemaVersion: 1,
-          evidenceQuote: reading.evidenceQuote,
-          supportingQuoteCount: reading.supportingQuoteCount,
-        },
-        sourceUrl,
-      },
-    ]);
-    return true;
+    const reads = readsByDepartment.get(departmentName) ?? [];
+    reads.push({ sourceUrl, reading });
+    readsByDepartment.set(departmentName, reads);
+    return reading !== null;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -935,7 +1042,8 @@ export class DepartmentUndergradResearchScraper implements IScraper {
     let failedPages = 0;
     const summaries: string[] = [];
     const fetchAttempts: ScraperFetchMetric[] = [];
-    let courseCreditRoutes = 0;
+    const courseCreditReads = new Map<string, DepartmentCourseCreditRead[]>();
+    const pageReads = new LanePageReads();
 
     const pages = this.pageConfigs.filter((page) => !only || only.has(page.key.toLowerCase()));
     for (const page of pages) {
@@ -945,14 +1053,15 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       const startedAt = performance.now();
       let html: string;
       try {
-        html = await this.fetchHtml(page.url, ctx.options.useCache);
+        html = await this.fetchHtml(page.url, ctx.options.useCache, pageReads);
       } catch (err: unknown) {
+        pageReads.recordFailure(page.url, err);
         failedPages += 1;
         fetchAttempts.push({
           ...buildFetchAttemptMetrics({ fetchMode: 'http', success: false, startedAt }),
           target: page.url,
           statusCode: fetchFailureStatusCode(err),
-          errorMessage: failureMessage(err),
+          errorMessage: fetchFailureMessage(err),
         });
         ctx.log(`[${page.key}] fetch failed, skipping page: ${sanitizeLogValue(err)}`);
         summaries.push(`${page.key}=fetch-failed`);
@@ -973,7 +1082,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
           success: false,
           selectorBreakage: true,
           target: page.url,
-          errorMessage: failureMessage(err),
+          errorMessage: fetchFailureMessage(err),
         });
         ctx.log(`[${page.key}] parse failed, skipping page: ${sanitizeLogValue(err)}`);
         summaries.push(`${page.key}=parse-failed`);
@@ -985,11 +1094,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       if (observations.length > 0) await ctx.emit(observations);
       totalObs += observations.length;
       totalEntities += selected.length;
-      const routeEmitted = await this.emitCourseCreditRoute(ctx, page.department, page.url, html);
-      if (routeEmitted) {
-        totalObs += 1;
-        courseCreditRoutes += 1;
-      }
+      this.readCourseCreditRoute(ctx, courseCreditReads, page.department, page.url, html);
       summaries.push(`${page.key}=${selected.length}`);
     }
 
@@ -1005,9 +1110,7 @@ export class DepartmentUndergradResearchScraper implements IScraper {
         summaries.push(`${seed.key}=course-credit-fetch-failed`);
         continue;
       }
-      if (await this.emitCourseCreditRoute(ctx, seed.department, seed.url, seedHtml)) {
-        totalObs += 1;
-        courseCreditRoutes += 1;
+      if (this.readCourseCreditRoute(ctx, courseCreditReads, seed.department, seed.url, seedHtml)) {
         summaries.push(`${seed.key}=course-credit`);
       } else {
         summaries.push(`${seed.key}=no-course-credit-evidence`);
@@ -1020,12 +1123,22 @@ export class DepartmentUndergradResearchScraper implements IScraper {
       );
     }
 
+    const courseCreditRoutes = await this.emitCourseCreditRoutes(ctx, courseCreditReads);
+    totalObs += courseCreditRoutes.stated + courseCreditRoutes.withdrawn;
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only ? { sourceUrls: pages.map((page) => page.url) } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
+
     const failureNote =
       failedPages > 0 ? ` (${failedPages} page(s) skipped after fetch/parse failure)` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: totalEntities,
-      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}; course-credit routes: ${courseCreditRoutes}`,
+      notes: `Department undergraduate research evidence rows: ${summaries.join(', ')}${failureNote}; course-credit routes: ${courseCreditRoutes.stated}; course-credit routes withdrawn: ${courseCreditRoutes.withdrawn}`,
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

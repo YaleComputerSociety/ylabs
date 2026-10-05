@@ -1,4 +1,9 @@
 import { Fellowship } from '../types/types';
+import {
+  newYorkCalendarDateParts,
+  programDeadlineClosingInstant,
+  programStatedClockLabel,
+} from './programDates';
 
 export interface ProgramDeadlineEvent {
   programId: string;
@@ -7,22 +12,14 @@ export interface ProgramDeadlineEvent {
   date: Date;
 }
 
-const validDeadlineDate = (value?: string | null): Date | null => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const deadlineEndOfUtcDay = (date: Date): Date =>
-  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
-
 export const fellowshipFutureDeadlineDate = (
   fellowship: Fellowship,
   now: Date = new Date(),
 ): Date | null => {
-  const date = validDeadlineDate(fellowship.deadline);
-  if (!date || deadlineEndOfUtcDay(date).getTime() < now.getTime()) return null;
-  return date;
+  if (fellowship.deadlineProjectedNextCycle || fellowship.deadlineStale) return null;
+  const closesAt = programDeadlineClosingInstant(fellowship.deadline);
+  if (!closesAt || closesAt.getTime() < now.getTime()) return null;
+  return closesAt;
 };
 
 export const upcomingProgramDeadlineEvents = (
@@ -50,10 +47,12 @@ const escapeIcsText = (value: string): string =>
     .replace(/,/g, '\\,')
     .replace(/\r\n|\r|\n/g, '\\n');
 
-const formatIcsAllDayDate = (date: Date): string =>
-  `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(
+const formatIcsDate = (year: number, month: number, day: number): string => {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(
     date.getUTCDate(),
   ).padStart(2, '0')}`;
+};
 
 const formatIcsTimestamp = (date: Date): string =>
   `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(
@@ -62,21 +61,23 @@ const formatIcsTimestamp = (date: Date): string =>
     date.getUTCMinutes(),
   ).padStart(2, '0')}${String(date.getUTCSeconds()).padStart(2, '0')}Z`;
 
-const nextUtcDay = (date: Date): Date =>
-  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
-
 const ICS_LINE_BREAK = '\r\n';
 
 const buildVEvent = (event: ProgramDeadlineEvent, now: Date): string => {
-  const description = event.link
-    ? `Application deadline for ${event.title}. Program link: ${event.link}`
+  const statedTime = programStatedClockLabel(event.date);
+  const deadlineSentence = statedTime
+    ? `Application deadline for ${event.title}, due ${statedTime}.`
     : `Application deadline for ${event.title}.`;
+  const description = event.link
+    ? `${deadlineSentence} Program link: ${event.link}`
+    : deadlineSentence;
+  const { year, month, day } = newYorkCalendarDateParts(event.date);
   return [
     'BEGIN:VEVENT',
     `UID:program-deadline-${event.programId}@ylabs.app`,
     `DTSTAMP:${formatIcsTimestamp(now)}`,
-    `DTSTART;VALUE=DATE:${formatIcsAllDayDate(event.date)}`,
-    `DTEND;VALUE=DATE:${formatIcsAllDayDate(nextUtcDay(event.date))}`,
+    `DTSTART;VALUE=DATE:${formatIcsDate(year, month, day)}`,
+    `DTEND;VALUE=DATE:${formatIcsDate(year, month, day + 1)}`,
     `SUMMARY:${escapeIcsText(`${event.title} application deadline`)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     ...(event.link ? [`URL:${escapeIcsText(event.link)}`] : []),

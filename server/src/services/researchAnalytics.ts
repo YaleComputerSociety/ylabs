@@ -19,13 +19,9 @@ import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '.
 import { Fellowship, ResearchEntity } from '../models/index';
 import { Account } from '../models/account';
 import { logEvent } from './analyticsService';
-import type { LogEventParams } from './analyticsService';
-import {
-  listPlanningContextsForResearchEntities,
-  PLANNING_CONTEXT_CATEGORIES,
-  type PlanningContextCategory,
-  type PublicPlanningContext,
-} from './planningContextService';
+import type { AnalyticsWriteOutcome, LogEventParams } from './analyticsService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { routeParam } from '../utils/routeParams';
 
 /** The subset of AnalyticsEventType that describes research-surface activity. */
 export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
@@ -35,45 +31,45 @@ export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.CONTACT_ROUTE_CLICK,
   AnalyticsEventType.SOURCE_LINK_CLICK,
   AnalyticsEventType.RESEARCH_SEARCH,
-  AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+  AnalyticsEventType.RESEARCH_RESULTS_VIEW,
   AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
   AnalyticsEventType.RESEARCH_SAVE,
   AnalyticsEventType.RESEARCH_COMPARE,
   AnalyticsEventType.RESEARCH_PLAN_UPDATE,
-  AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
 ];
 
 export const RESEARCH_JOURNEY_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.RESEARCH_SEARCH,
-  AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+  AnalyticsEventType.RESEARCH_RESULTS_VIEW,
   AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
   AnalyticsEventType.RESEARCH_SAVE,
   AnalyticsEventType.RESEARCH_COMPARE,
   AnalyticsEventType.RESEARCH_PLAN_UPDATE,
-  AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
 ];
 
-export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'error'] as const;
+export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'degraded', 'error'] as const;
 export const RESEARCH_RESULT_COUNT_BUCKETS = ['0', '1-5', '6-20', '21-50', '51+'] as const;
 export const RESEARCH_SEARCH_KINDS = ['query', 'filtered', 'department'] as const;
 export const RESEARCH_FILTER_COUNT_BUCKETS = ['0', '1', '2', '3+'] as const;
-export const RESEARCH_IMPRESSION_SURFACES = [
+export const RESEARCH_RESULTS_SURFACES = [
   'browse',
   'search',
   'saved_plans',
   'related_programs',
 ] as const;
-export const RESEARCH_POSITION_BUCKETS = ['1-3', '4-10', '11-24', '25+'] as const;
+export const RESEARCH_RESULTS_PAGE_BUCKETS = ['1', '2', '3-4', '5+'] as const;
+export const MAX_RESEARCH_RESULTS_VIEW_ENTITIES = 50;
 export const RESEARCH_PROFILE_OPEN_SOURCES = [
   'browse',
   'search',
   'direct',
   'saved_plans',
   'related_programs',
+  'related_research',
 ] as const;
 export const RESEARCH_SOURCE_CATEGORIES = [
   'entity_website',
@@ -121,6 +117,9 @@ const JOURNEY_EVENTS_WITHOUT_ENTITY = new Set<AnalyticsEventType>([
   // A compare describes a set of 2-4 entities, so it carries an entityCountBucket
   // instead of a single entityId.
   AnalyticsEventType.RESEARCH_COMPARE,
+  // A results view describes the ordered page of entities it showed, so it
+  // carries entityIds instead of a single entityId.
+  AnalyticsEventType.RESEARCH_RESULTS_VIEW,
 ]);
 const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 
@@ -210,9 +209,9 @@ export const sanitizeResearchPayload = (
       out.filterCountBucket = oneOf(input.filterCountBucket, RESEARCH_FILTER_COUNT_BUCKETS) ?? '0';
       break;
     }
-    case AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION: {
-      out.surface = oneOf(input.surface, RESEARCH_IMPRESSION_SURFACES) ?? 'search';
-      out.positionBucket = oneOf(input.positionBucket, RESEARCH_POSITION_BUCKETS) ?? '25+';
+    case AnalyticsEventType.RESEARCH_RESULTS_VIEW: {
+      out.surface = oneOf(input.surface, RESEARCH_RESULTS_SURFACES) ?? 'search';
+      out.pageBucket = oneOf(input.pageBucket, RESEARCH_RESULTS_PAGE_BUCKETS) ?? '1';
       break;
     }
     case AnalyticsEventType.RESEARCH_PROFILE_OPEN: {
@@ -239,11 +238,6 @@ export const sanitizeResearchPayload = (
     }
     case AnalyticsEventType.RESEARCH_PLAN_UPDATE: {
       out.field = oneOf(input.field, RESEARCH_PLAN_FIELDS) ?? 'stage';
-      break;
-    }
-    case AnalyticsEventType.RESEARCH_QUALIFIED_ACTION: {
-      const actionCategory = oneOf(input.actionCategory, PLANNING_CONTEXT_CATEGORIES);
-      if (actionCategory) out.actionCategory = actionCategory;
       break;
     }
     case AnalyticsEventType.CONTACT_ROUTE_CLICK: {
@@ -336,18 +330,46 @@ export const researchEntityExists = async (
   return Boolean(await Fellowship.exists({ _id: id }));
 };
 
+/**
+ * The subset of `entityIds` that name a research entity, in the order given.
+ * One query for the whole page, where a per-entity row used to cost one lookup
+ * each.
+ */
+export const existingResearchEntityIds = async (entityIds: unknown): Promise<string[]> => {
+  if (!Array.isArray(entityIds)) return [];
+  const ids = [
+    ...new Set(
+      entityIds
+        .slice(0, MAX_RESEARCH_RESULTS_VIEW_ENTITIES)
+        .filter(isNonEmptyString)
+        .map((id) => id.trim().slice(0, 128)),
+    ),
+  ];
+  if (ids.length === 0) return [];
+  const objectIds = ids.filter((id) => mongoose.isValidObjectId(id));
+  const found = await ResearchEntity.find(
+    { $or: [{ slug: { $in: ids } }, ...(objectIds.length ? [{ _id: { $in: objectIds } }] : [])] },
+    { slug: 1 },
+  ).lean<Array<{ _id: mongoose.Types.ObjectId; slug?: string }>>();
+  const known = new Set(found.flatMap((entity) => [String(entity._id), entity.slug ?? '']));
+  return ids.filter((id) => known.has(id));
+};
+
 export interface BuildResearchEventInput {
   eventType: AnalyticsEventType;
   netid: string;
   userType: string;
   entityType?: ResearchEntityType;
   entityId?: string;
+  entityIds?: string[];
   payload?: unknown;
   dedupeKey?: string;
 }
 
 type AnalyticsUser = { netId?: string; userType?: string };
-type ResearchLogFn = (params: LogEventParams) => Promise<void> | void;
+type ResearchLogFn = (params: LogEventParams) => Promise<AnalyticsWriteOutcome>;
+
+export type ResearchEventOutcome = AnalyticsWriteOutcome | 'rejected';
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== '';
@@ -364,6 +386,7 @@ export const buildResearchEvent = (input: BuildResearchEventInput): LogEventPara
     userType: input.userType,
     ...(input.entityType ? { entityType: input.entityType } : {}),
     ...(input.entityId ? { entityId: String(input.entityId).slice(0, 128) } : {}),
+    ...(input.entityIds?.length ? { entityIds: input.entityIds } : {}),
     ...(metadata ? { metadata } : {}),
     ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
   };
@@ -373,50 +396,35 @@ export interface EmitResearchEventInput {
   eventType: unknown;
   entityType: unknown;
   entityId: unknown;
+  entityIds?: string[];
   user?: AnalyticsUser;
   payload?: unknown;
   dedupeKey?: unknown;
 }
 
-type PlanningContextResolver = (
-  ids: Array<string | mongoose.Types.ObjectId>,
-) => Promise<Map<string, PublicPlanningContext>>;
-
 export const emitResearchEvent = async (
   input: EmitResearchEventInput,
   log: ResearchLogFn = logEvent,
-  resolvePlanningContexts: PlanningContextResolver = listPlanningContextsForResearchEntities,
-): Promise<boolean> => {
+): Promise<ResearchEventOutcome> => {
   if (!isResearchEventType(input.eventType) || !isNonEmptyString(input.user?.netId)) {
-    return false;
+    return 'rejected';
   }
 
   const entityOptional = JOURNEY_EVENTS_WITHOUT_ENTITY.has(input.eventType);
   const hasEntity = isResearchEntityType(input.entityType) && isNonEmptyString(input.entityId);
-  if (!entityOptional && !hasEntity) return false;
+  if (!entityOptional && !hasEntity) return 'rejected';
+  if (input.eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW) {
+    if (input.entityType !== 'research_entity' || !input.entityIds?.length) return 'rejected';
+  }
   if (
     input.dedupeKey !== undefined &&
     !(typeof input.dedupeKey === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(input.dedupeKey))
   )
-    return false;
+    return 'rejected';
 
-  let payload = input.payload;
-  if (input.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION) {
-    if (input.entityType !== 'research_entity' || !isNonEmptyString(input.entityId)) return false;
-    const contexts = await resolvePlanningContexts([input.entityId.trim()]);
-    const context = contexts.get(input.entityId.trim());
-    if (!context) return false;
-    const requestedCategory = (input.payload as { actionCategory?: unknown } | undefined)
-      ?.actionCategory;
-    if (
-      requestedCategory !== undefined &&
-      requestedCategory !== (context.category as PlanningContextCategory)
-    )
-      return false;
-    payload = { actionCategory: context.category };
-  }
+  const payload = input.payload;
 
-  await log(
+  return log(
     buildResearchEvent({
       eventType: input.eventType,
       netid: input.user.netId,
@@ -427,18 +435,19 @@ export const emitResearchEvent = async (
             entityId: (input.entityId as string).trim(),
           }
         : {}),
+      ...(input.eventType === AnalyticsEventType.RESEARCH_RESULTS_VIEW
+        ? { entityType: 'research_entity' as const, entityIds: input.entityIds }
+        : {}),
       payload,
       ...(typeof input.dedupeKey === 'string' ? { dedupeKey: input.dedupeKey } : {}),
     }),
   );
-
-  return true;
 };
 
 export const logResearchEventOnSuccess = (
   eventType: AnalyticsEventType,
   entityType: ResearchEntityType,
-  getEntityId: (req: Request) => string | undefined = (req) => req.params.id,
+  getEntityId: (req: Request) => string | undefined = (req) => routeParam(req, 'id'),
   getPayload: (req: Request) => unknown = () => ({ surface: entityType }),
 ) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -452,7 +461,9 @@ export const logResearchEventOnSuccess = (
           entityId: getEntityId(req),
           user: req.user as AnalyticsUser | undefined,
           payload: getPayload(req),
-        }).catch((err) => console.error(`Error logging ${eventType} event:`, err));
+        }).catch((err) =>
+          console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)),
+        );
       }
 
       return originalSend(data);

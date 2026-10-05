@@ -44,6 +44,12 @@ export function parseArchivedLabRestoreAuditArgs(argv: string[]): ArchivedLabRes
   return options;
 }
 
+const trimmedLength = (value: unknown): number =>
+  typeof value === 'string' ? value.trim().length : 0;
+
+const servedDescriptionChars = (row: { shortDescription?: unknown; fullDescription?: unknown }) =>
+  Math.max(trimmedLength(row.fullDescription), trimmedLength(row.shortDescription));
+
 const sourceUrlText = (entry: unknown): string =>
   typeof entry === 'string' ? entry : ((entry as { url?: string } | null)?.url ?? '');
 
@@ -75,7 +81,8 @@ async function main() {
       slug: 1,
       name: 1,
       websiteUrl: 1,
-      description: 1,
+      shortDescription: 1,
+      fullDescription: 1,
       archivedReason: 1,
       canonicalGroupId: 1,
       sourceLinkHealth: 1,
@@ -92,7 +99,7 @@ async function main() {
       name: row.name,
       websiteUrl: row.websiteUrl,
       archivedReason: (row as { archivedReason?: unknown }).archivedReason,
-      descriptionChars: typeof row.description === 'string' ? row.description.trim().length : 0,
+      descriptionChars: servedDescriptionChars(row),
       canonicalResolvesToLiveRow: row.canonicalGroupId
         ? liveIds.has(String(row.canonicalGroupId))
         : false,
@@ -121,7 +128,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   main().catch((error) => {
     console.error('Failed to audit archived-lab restore candidates:', sanitizeLogValue(error));
     process.exitCode = 1;

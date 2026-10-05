@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { declaredIndexName, mongoOptions, reportMissingMongoIndexes } from '../connections';
 import { planDeclaredIndexes } from '../../scripts/buildMongoIndexes';
 
@@ -20,10 +20,10 @@ describe('connecting must not be a schema-mutating act (#2233)', () => {
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     uri = server.getUri();
-  }, 60000);
+  });
 
   afterAll(async () => {
-    await server.stop();
+    await server?.stop();
   });
 
   /** What a booting process does: open the connection, register the model, nothing else. */
@@ -90,15 +90,25 @@ describe('connecting must not be a schema-mutating act (#2233)', () => {
 describe('index drift is reported rather than silently self-healed (#2233)', () => {
   let server: MongoMemoryServer;
   let connection: mongoose.Connection;
+  let databaseCount = 0;
 
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
-    connection = await mongoose.createConnection(server.getUri(), mongoOptions).asPromise();
-  }, 60000);
+  });
+
+  beforeEach(async () => {
+    databaseCount += 1;
+    connection = await mongoose
+      .createConnection(server.getUri(`drift_${databaseCount}`), mongoOptions)
+      .asPromise();
+  });
+
+  afterEach(async () => {
+    await connection.close();
+  });
 
   afterAll(async () => {
-    await connection.close();
-    await server.stop();
+    await server?.stop();
   });
 
   it('names a declared index the way the driver does, including a text index', () => {
@@ -131,8 +141,9 @@ describe('index drift is reported rather than silently self-healed (#2233)', () 
   });
 
   it('builds additively: an index the schema no longer declares survives a build', async () => {
+    const model = connection.model('DriftPresent', probeSchema());
+    await connection.db!.collection(COLLECTION).insertOne({ slug: 'a', name: 'a' });
     await connection.db!.collection(COLLECTION).createIndex({ retired: 1 }, { name: 'retired_1' });
-    const model = connection.model('DriftPresent');
 
     await model.createIndexes();
 
@@ -142,6 +153,7 @@ describe('index drift is reported rather than silently self-healed (#2233)', () 
   });
 
   it('plans every model that declares an index and none that declares none', () => {
+    connection.model('DriftPresent', probeSchema());
     const bare = new mongoose.Schema({ note: String }, { collection: 'autoindex_probe_bare' });
     connection.model('DriftBare', bare);
     const plans = planDeclaredIndexes(connection);

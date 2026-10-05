@@ -26,7 +26,7 @@ interface ResearchPlanStageControlProps {
 const statusMessage = (status?: PlanSaveStatus): string => {
   switch (status) {
     case 'saving':
-      return 'Saving...';
+      return 'Saving…';
     case 'saved':
       return 'Saved';
     case 'error':

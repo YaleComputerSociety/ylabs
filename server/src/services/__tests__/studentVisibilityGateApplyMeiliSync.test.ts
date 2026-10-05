@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   queueBulkWrite: vi.fn(async (..._args: unknown[]) => ({})),
   queueUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
   researchUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
+  fellowshipUpdateMany: vi.fn(async (..._args: unknown[]) => ({ modifiedCount: 0 })),
   researchDocsById: new Map<string, Record<string, unknown>>(),
 }));
 
@@ -42,6 +43,7 @@ vi.mock('../../models/researchEntity', () => ({
 vi.mock('../../models/fellowship', () => ({
   Fellowship: {
     bulkWrite: (...args: unknown[]) => mocks.fellowshipBulkWrite(...args),
+    updateMany: (...args: unknown[]) => mocks.fellowshipUpdateMany(...args),
   },
 }));
 
@@ -92,6 +94,26 @@ beforeEach(() => {
   mocks.readIndexedFieldByDocumentId.mockImplementation(async () => new Map<string, unknown>());
   mocks.researchBulkWrite.mockClear();
   mocks.researchDocsById.clear();
+});
+
+describe('applyStudentVisibilityGatePlans with deferred search index writes', () => {
+  it('neither reads nor syncs the index and reports the deferral instead of a blocker', async () => {
+    vi.stubEnv('SEARCH_INDEX_WRITES', 'deferred');
+    try {
+      const recordId = objectIdHex(1);
+      mocks.researchDocsById.set(recordId, { _id: recordId, slug: 'changed-lab' });
+
+      const result = await applyStudentVisibilityGatePlans([changedPlan(recordId)]);
+
+      expect(mocks.researchBulkWrite).toHaveBeenCalledTimes(1);
+      expect(mocks.readIndexedFieldByDocumentId).not.toHaveBeenCalled();
+      expect(mocks.syncEntities).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ indexDeferred: true, indexReadFailed: false });
+      expect(studentVisibilityGateIndexSyncBlocker(result)).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('applyStudentVisibilityGatePlans Meili sync', () => {

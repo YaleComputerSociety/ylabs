@@ -45,8 +45,7 @@ export const DEAD_WEBSITE_VALUE_REFUSAL_RULE = 'confirmed_dead_page';
 export const GONE_HTTP_STATUS_CODES: ReadonlySet<number> = new Set([404, 410]);
 
 export type DeadValueVerdict =
-  | { eligible: true; httpStatusCode: number }
-  | { eligible: false; because: string };
+  { eligible: true; httpStatusCode: number } | { eligible: false; because: string };
 
 export function deadValueRefusalVerdict(probe: SourceLinkProbeResult): DeadValueVerdict {
   if (probe.privateAddressHost) {
@@ -75,8 +74,7 @@ export function deadValueRefusalVerdict(probe: SourceLinkProbeResult): DeadValue
 }
 
 export type RevivedVerdict =
-  | { revived: true; httpStatusCode: number }
-  | { revived: false; because: string };
+  { revived: true; httpStatusCode: number } | { revived: false; because: string };
 
 /**
  * Whether a later probe shows the resource answering again, which withdraws the

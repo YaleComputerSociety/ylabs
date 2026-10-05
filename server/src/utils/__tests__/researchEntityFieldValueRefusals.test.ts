@@ -52,6 +52,29 @@ describe('a refusal keeps the refused value out', () => {
     ).toBe(true);
   });
 
+  it('matches one prose value wrapped differently, so a newline cannot evade a refusal', () => {
+    const body = 'The Fixture Lab studies how metabolic pathways are regulated in disease.';
+    const refusals = {
+      fullDescription: [
+        {
+          valueKey: fieldValueRefusalKey('fullDescription', body),
+          rule: 'not_this_rows_research' as const,
+          refusedBy: 'test',
+          refusedAt: new Date(),
+          note: '',
+        },
+      ],
+    };
+
+    expect(
+      valueIsRefused(
+        refusals,
+        'fullDescription',
+        '  The Fixture Lab studies how metabolic\n   pathways are regulated in disease.  ',
+      ),
+    ).toBe(true);
+  });
+
   it('drops only the refused observation, leaving the rest to resolve', () => {
     const screened = refusedResolverObservations(
       [
@@ -277,5 +300,39 @@ describe('an operator judgement must carry its reason (#3368)', () => {
     expect(() =>
       planFieldValueRefusal(undefined, { ...declaration, rule: 'confirmed_dead_page' }),
     ).not.toThrow();
+  });
+});
+
+describe('planFieldValueRefusal sourceName', () => {
+  const declaration = {
+    field: 'websiteUrl',
+    value: 'https://example.edu/lab',
+    rule: 'wrong_owner' as const,
+    refusedBy: 'test',
+  };
+
+  it('records the lane that produced the refused value', () => {
+    const update = planFieldValueRefusal(undefined, {
+      ...declaration,
+      sourceName: 'labMicrositeScraper',
+    });
+    const [refusal] = update['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+
+    expect(refusal.sourceName).toBe('labMicrositeScraper');
+    expect(refusal.refusedBy).toBe('test');
+  });
+
+  it('omits the field entirely when no lane is named, rather than storing a blank', () => {
+    const update = planFieldValueRefusal(undefined, declaration);
+    const [refusal] = update['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+
+    expect('sourceName' in refusal).toBe(false);
+  });
+
+  it('treats a whitespace-only lane name as absent', () => {
+    const update = planFieldValueRefusal(undefined, { ...declaration, sourceName: '   ' });
+    const [refusal] = update['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+
+    expect('sourceName' in refusal).toBe(false);
   });
 });

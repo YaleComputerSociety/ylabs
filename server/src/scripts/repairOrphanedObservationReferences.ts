@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import {
   deriveAccessArtifactsForResearchGroup,
   materializeAccessForResearchGroup,
@@ -36,8 +36,11 @@ import {
   type ValidatedOrphanReferenceDecision,
 } from './orphanedObservationReferenceRepairCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { attributedArchiveSet } from '../models/entityArchival';
 
-dotenv.config();
+const ORPHANED_REFERENCE_ARCHIVE_REASON = 'observations:repair-orphaned-references';
+
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   execute: boolean;
@@ -331,7 +334,7 @@ async function loadResearchEntityObservationContext(
   const identifiers: Record<string, unknown>[] = [{ entityId: objectId }];
   if (entityKey) identifiers.push({ entityKey });
   const observations = await Observation.find({
-    entityType: { $in: ['researchEntity', 'researchGroup'] },
+    entityType: { $in: researchEntityObservationSubjects },
     $or: identifiers,
     superseded: { $ne: true },
   }).lean();
@@ -366,17 +369,8 @@ async function currentMaterializationEvidenceIds(input: {
     }
     const derived = context.accessArtifacts;
     const exact = derived.accessSignals.find((item) => item.derivationKey === key);
-    const legacyReplacement =
-      key.startsWith('signal:REACH_OUT_PLAUSIBLE:OFFICIAL_PROFILE:') ||
-      key.startsWith('visibility-repair:official-profile-outreach:')
-        ? derived.accessSignals.find(
-            (item) =>
-              item.type === 'REACH_OUT_PLAUSIBLE' &&
-              /:(IDENTIFIED_FACULTY_LEAD|ORGANIZATIONAL_HOME)$/.test(item.derivationKey),
-          )
-        : undefined;
-    const id = exact?.sourceEvidenceId || legacyReplacement?.sourceEvidenceId;
-    return { evidenceIds: id ? [id] : [], replacesOwner: !exact && Boolean(legacyReplacement) };
+    const id = exact?.sourceEvidenceId;
+    return { evidenceIds: id ? [id] : [], replacesOwner: false };
   }
 
   return { evidenceIds: [], replacesOwner: false };
@@ -725,7 +719,7 @@ async function applyRematerialization(
       },
       {
         $set: {
-          archived: true,
+          ...attributedArchiveSet(ORPHANED_REFERENCE_ARCHIVE_REASON),
           'suppression.reason': 'evidence_replaced',
           'suppression.suppressedAt': new Date(),
           'suppression.note':
@@ -813,7 +807,7 @@ async function applyArchiveOwner(
     },
     {
       $set: {
-        archived: true,
+        ...attributedArchiveSet(ORPHANED_REFERENCE_ARCHIVE_REASON),
         'suppression.reason': 'evidence_lost',
         'suppression.suppressedAt': new Date(),
         'suppression.note':

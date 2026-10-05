@@ -1,20 +1,33 @@
 import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
+import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import {
+  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
+  leadTitlesAreRuledNonHostingRanks,
+} from '../utils/leadTitleRuledNonHostingRank';
 import {
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { servedDescriptionCitationIsGone } from './descriptionGrounding';
 import {
+  isComposedFullNameLabName,
+  labNameBackedByOwnOfficialText,
+} from '../utils/unbackedLabSelfDescription';
+import {
   buildResearchEntityPublicDescriptionRepresentation,
+  servedBodyIsBiographyWithoutResearch,
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
-import { detectProfileIdentityRisk } from './leadProfileIdentity';
+import { detectProfileIdentityRisk, isLikelyOfficialPersonProfileUrl } from './leadProfileIdentity';
 import { hasLiveSourceCitation } from './sourceLinkHealth';
+import { genericYaleWebsiteSubdomains } from '../utils/researchHomeWebsiteUrl';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import {
@@ -22,14 +35,34 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   isExternalScholarlyPlatformLinkLabelName,
+  personScopedResearchEntityNameNamesSomethingElse,
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
+  researchHomeIdentitySource,
+  NO_SURNAME_ROSTER,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
   hasRecordedClosureEvidence,
 } from '../utils/researchEntityYaleStatus';
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
+import { programAudience, programAudienceAdmitsUndergraduates } from './programAudience';
+import {
+  AWARD_SUSPENDED_REASON,
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
+  hasStaleExternalAwardCycle,
+  isPrizeForCompletedWork,
+  isProgramListingPage,
+  statesAwardSuspension,
+} from './programApplicability';
+import type { UpcomingDuplicateWindow } from './programUpcomingDuplicateWindow';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_REASON,
+  isDepartmentResearchGuidance,
+  statesApplicationCycle,
+} from './departmentResearchGuidance';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
@@ -45,7 +78,6 @@ export interface ResearchEntityStudentVisibilityInput {
   openPostedOpportunityCount?: number;
   duplicateRisk?: boolean;
   exactUrlDuplicateRisk?: boolean;
-  contentPageRisk?: boolean;
   /**
    * Every citation on this person-scoped row is one that many other person rows
    * cite byte-identically, so none of them is evidence about this person. Derived
@@ -54,6 +86,26 @@ export interface ResearchEntityStudentVisibilityInput {
    */
   citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
+  /**
+   * The one corpus fact the name-identity authority cannot derive from one record,
+   * supplied here for the same reason `ResearchEntityNameIdentityAuthority` supplies
+   * it to the materializer: whether an eponym is anybody's surname at all. The other
+   * half of that judgement - whether the somebody is this record's own person - is
+   * read off `leadMembers`, so no caller can select a weaker verdict by omitting it.
+   *
+   * Optional only because a corpus roster is a corpus load: both production callers
+   * supply a real one, and a single-record caller that cannot reach the corpus gets
+   * the explicitly weaker `NO_SURNAME_ROSTER`.
+   *
+   * What omitting it costs is narrower than it sounds, and it was measured rather
+   * than reasoned about: the umbrella and shared-host arms need it not at all, and
+   * the foreign-lab arm still refuses an eponym the row's own cited URL corroborates,
+   * because the page itself says whose lab it is. The roster is what decides an eponym
+   * no cited URL corroborates, which corpus-wide is the difference between the arm
+   * reaching 11 of the 90 condemned rows and 87 of them. Either way the gate gets
+   * weaker, never wider, when it is absent (#3499).
+   */
+  knownPersonSurnames?: ReadonlySet<string>;
 }
 
 export function hasProfileAreaShellDuplicateRisk({
@@ -81,6 +133,7 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   links?: Array<{ url?: string }>;
   undergraduateOnly?: boolean;
   yaleCollegeOnly?: boolean;
+  yearOfStudy?: string[];
   programKind?: string;
   entryMode?: string;
   mentorMatching?: boolean;
@@ -89,6 +142,10 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   summary?: string;
   description?: string;
   eligibility?: string;
+  sourcePageTitle?: string;
+  deadline?: unknown;
+  applicationOpenDate?: unknown;
+  isAcceptingApplications?: boolean;
 }
 
 const textValue = (value: unknown): string =>
@@ -201,7 +258,7 @@ function isNonOwnerResearchTitle(value: unknown): boolean {
   );
 }
 
-function isGrantOrOrcidSourceUrl(value: string): boolean {
+export function isGrantOrOrcidSourceUrl(value: string): boolean {
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
@@ -293,9 +350,94 @@ function citedUrls(entity: Record<string, any>): string[] {
   return [...entityUrls(entity), ...provenanceUrls].filter((value) => hasHttpUrl(value));
 }
 
+const YALE_HOST = /(?:^|\.)yale\.edu$/i;
+
+const letterTokensOf = (value: string): string[] => value.toLowerCase().split(/[^a-z]+/);
+
+const nameTokensOf = (value: unknown): string[] =>
+  letterTokensOf(textValue(value)).filter(
+    (token) =>
+      token.length >= 3 &&
+      !/^(?:lab|labs|laboratory|the|and|for|faculty|research|yale)$/.test(token),
+  );
+
+// A personal-site platform publishes one person's site under its own path, and a lab
+// or person site on Yale is its own subdomain (`<name>.yale.edu`,
+// `<name>.research.yale.edu`). A school or department host publishes shared sections.
+// Measured on Development, those two shapes covered every served Yale lab or personal
+// site whose address spells a netid or an abbreviation rather than the row's name.
+const PERSONAL_SITE_PLATFORM_HOSTS = new Set(['campuspress.yale.edu', 'sites.yale.edu']);
+const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
+  'www',
+  'm',
+  'art',
+  'medicine',
+  'ysph',
+  'law',
+  'som',
+  'environment',
+  'divinity',
+  'nursing',
+  'music',
+  'drama',
+  'architecture',
+  'news',
+  'college',
+  'gsas',
+  'seas',
+  'engineering',
+]);
+
+const isSchoolOrDepartmentLabel = (label: string): boolean =>
+  SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(label) || genericYaleWebsiteSubdomains.has(label);
+
+function isYaleOwnSite(url: URL): boolean {
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (PERSONAL_SITE_PLATFORM_HOSTS.has(host)) {
+    const [siteName] = url.pathname.toLowerCase().split('/').filter(Boolean);
+    return Boolean(siteName) && !isSchoolOrDepartmentLabel(siteName);
+  }
+  const labels = host
+    .replace(/\.?yale\.edu$/, '')
+    .split('.')
+    .filter(Boolean);
+  if (labels.length === 0 || isSchoolOrDepartmentLabel(labels[0])) return false;
+  if (labels.length >= 2 && labels[labels.length - 1] === 'research') return true;
+  return labels.length === 1 && /^[a-z]+$/.test(labels[0]) && labels[0].length > 4;
+}
+
+/**
+ * A website specific enough to stand for this lab or this person: any non-Yale host, or a
+ * Yale URL that names a laboratory, is an official person profile, is a lab's or person's
+ * own site (`isYaleOwnSite`), or carries a token of the row's own name as a whole host
+ * label or path word. Any other Yale page, whether a
+ * school section ("/opportunities", "/pediatrics/") or a department host's listing, is
+ * shared by rows with different leads, so it is evidence of neither a lab nor this row
+ * and backs no lab name (measured on Development: one such page was the only website of
+ * four served rows with four different leads).
+ */
+function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>): boolean {
+  const text = textValue(value);
+  if (!hasHttpUrl(text)) return false;
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return false;
+  }
+  if (!YALE_HOST.test(url.hostname)) return true;
+  if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
+  if (isYaleOwnSite(url)) return true;
+  const urlWords = new Set([
+    ...url.hostname.toLowerCase().split('.'),
+    ...letterTokensOf(url.pathname),
+  ]);
+  return nameTokensOf(entity.name || entity.displayName).some((token) => urlWords.has(token));
+}
+
 /**
  * A row whose heading claims a laboratory that nothing it cites names, and whose
- * `name` no source is recorded for.
+ * `name` no lane recorded together with its `LAB` type (#4050).
  *
  * `student_ready` is the claim that a card will not mislead a student, and a title
  * is the loudest claim a card makes. These rows were minted from a person's own
@@ -308,9 +450,13 @@ function citedUrls(entity: Record<string, any>): string[] {
  * Kept out of `student_ready` rather than suppressed, on the same terms as
  * `lab_name_org_type_mismatch`: the person is usually real and the row becomes
  * legitimate again the moment the name is reconciled with the evidence. The
- * durable remedy is #3350's substitution - swap the lead-derived person-scoped
- * name for the unbacked lab name at the observation - which this guard does not
- * perform and does not wait for.
+ * materializer performs that reconciliation with this same predicate
+ * (`reclassifyUnbackedLabAsFacultyResearch`), so a row reaches the gate held here
+ * only when the materializer leaves it a lab: a live `name` or `displayName`
+ * observation asserts the lab, its `entityType`, `kind` or `name` is locked, or its
+ * name is not the row's own lead's name plus "Lab". A full-name heading
+ * (`isComposedFullNameLabName`) is decided by that predicate instead, and its live
+ * observations do not exempt it.
  *
  * The absence of a lab-named URL is the discriminator rather than the presence of
  * a person-page one, because a paginated department listing
@@ -320,12 +466,50 @@ function citedUrls(entity: Record<string, any>): string[] {
  * `name` observation after all, so the row-local reading agrees with the
  * observation log on 57 of 58.
  */
-function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
+export function isUnbackedLabNameShell(
+  entity: Record<string, any>,
+  leadPersonName?: unknown,
+): boolean {
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
-  if (hasAnyHttpUrl([entity.websiteUrl, entity.website])) return false;
-  if (entity.fieldProvenance?.name) return false;
+  if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
+  if (isComposedFullNameLabName(entity, leadPersonName)) {
+    return !labNameBackedByOwnOfficialText(entity);
+  }
+  if (
+    [entity.websiteUrl, entity.website].some((value) => isSpecificResearchWebsite(value, entity))
+  ) {
+    return false;
+  }
+  if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
+  if (labNameBackedByOwnOfficialText(entity)) return false;
   return !citedUrls(entity).some(urlNamesALaboratory);
+}
+
+// `manual-data-correction` is kept beside the operator-authored sources because #4050 scopes
+// the one served row it names out: its name is operator-locked, and a repair that needs
+// revisiting is a judgement on that row rather than this arm's to withdraw.
+const OPERATOR_NAME_SOURCES: ReadonlySet<string> = new Set([
+  ...OPERATOR_AUTHORED_SOURCE_NAMES,
+  'manual-data-correction',
+]);
+
+/**
+ * A recorded name source backs a lab name only when the lane that recorded it also
+ * recorded the `LAB` type from the same page (#4050). A name recorded from a grant
+ * record while the type came from elsewhere, or with no type beside it, was composed
+ * rather than read: hand-reading every served row in that shape found the lab name on
+ * no cited page, while each row whose lane recorded both from one page described a lab
+ * that page names.
+ */
+function labNameAndTypeReadTogether(fieldProvenance: Record<string, any> | undefined): boolean {
+  const name = fieldProvenance?.name;
+  const type = fieldProvenance?.entityType;
+  if (!name || !type) return false;
+  const sourceName = textValue(name.sourceName);
+  const sourceUrl = textValue(name.sourceUrl);
+  if (!sourceName || !sourceUrl) return false;
+  return sourceName === textValue(type.sourceName) && sourceUrl === textValue(type.sourceUrl);
 }
 
 function isNonOwnerGrantShell({
@@ -370,7 +554,7 @@ function isNonOwnerGrantShell({
  * An entity with any non-grant URL is unaffected: a real lab website or official
  * Yale page is exactly the corroboration this requires.
  */
-function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
+export function isUncorroboratedGrantOnlyEntity(entity: Record<string, any>): boolean {
   const urls = entityUrls(entity);
   if (urls.length === 0) return false;
   return urls.every(isGrantOrOrcidSourceUrl);
@@ -386,6 +570,7 @@ const FORMALIZATION_PROGRAM_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
+  'RESEARCH_AWARD',
 ]);
 
 const ENTRY_PROGRAM_KINDS = new Set([
@@ -393,12 +578,14 @@ const ENTRY_PROGRAM_KINDS = new Set([
   'CENTER_INTERNSHIP',
   'RA_PROGRAM',
   'MENTOR_MATCHING',
+  'DEPARTMENT_RESEARCH_GUIDE',
 ]);
 
 const ENTRY_PROGRAM_MODES = new Set([
   'APPLY_TO_PROGRAM',
   'APPLY_TO_PROJECT',
   'DIRECT_FACULTY_MATCHING',
+  'CONTACT_FACULTY',
 ]);
 
 const formalizationCategoryPattern =
@@ -493,7 +680,49 @@ export function researchEntityDescriptionServesRequiredCard(
     isProgramLikeResearchEntity(entity) || isOrganizationalResearchEntity(entity);
   const servedCardIsPresent = Boolean(textValue(publicDescription.servedCard));
   return (
-    publicDescription.invariant.cardDescriptionUseful || (cardIsOptional && !servedCardIsPresent)
+    publicDescription.invariant.cardDescriptionUseful ||
+    (cardIsOptional && !servedCardIsPresent) ||
+    storedCardRepeatsUsefulBody(entity, publicDescription)
+  );
+}
+
+const comparableCopy = (value: unknown): string =>
+  textValue(value).replace(/\s+/g, ' ').trim().toLowerCase();
+
+const EVIDENCE_RATIONALE_PATTERN =
+  /\bas\s+(?:evidenced|indicated|reflected|suggested)\s+by\s+(?:(?:its|his|her|their|the)\s+)?(?:inclusion|listing|mention|appearance)\b/i;
+
+const SWALLOWED_CLAUSE_PATTERN =
+  /^Studies\b[^.]*?,\s+including\s+[^.,;:]{0,80}?\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:\w+ly\s+)?(?:focused|centered|centred|devoted|dedicated|organized|organised|structured)\b/i;
+
+/**
+ * A card the source itself stored that is the same sentence as a useful body. The
+ * card bar refuses a "Studies A, including B and C." card identical to its body
+ * because it adds nothing over the body, which held well-formed rows whose only
+ * prose is that one source-asserted sentence. Only the stored card qualifies: a card
+ * the serve path derived from a different stored card is still judged by the bar, and
+ * the stored card and body must be the same source text. Any flag other
+ * than that identical-text arm still refuses the card, and so does a sentence that
+ * states why a model guessed the topic ("as evidenced by inclusion in news ...")
+ * rather than the research itself, or whose "including" swallowed a whole sentence
+ * from the body so the list item carries its own finite verb.
+ */
+function storedCardRepeatsUsefulBody(
+  entity: Record<string, any>,
+  publicDescription: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const { quality, servedCard } = publicDescription;
+  if (!quality.full.isUseful) return false;
+  if (!quality.short.flags.every((flag) => flag === 'topic-label-list')) return false;
+  const storedCardText = textValue(entity.shortDescription);
+  if (EVIDENCE_RATIONALE_PATTERN.test(storedCardText)) return false;
+  if (SWALLOWED_CLAUSE_PATTERN.test(storedCardText)) return false;
+  const storedCard = comparableCopy(storedCardText);
+  const card = comparableCopy(servedCard);
+  return (
+    Boolean(storedCard) &&
+    storedCard === comparableCopy(entity.fullDescription) &&
+    card === comparableCopy(publicDescription.entity.fullDescription)
   );
 }
 
@@ -545,9 +774,19 @@ const PUBLIC_DESCRIPTION_INVARIANT_FIELDS = [
 // it as usable let the gate promote a chips-only ghost card the serve DTO
 // blanks, inconsistent with every other served `student_ready` card (#1547
 // serve/quality unification). Only the free-text research fields carry this
-// template; program `description`/`summary` are unaffected.
+// template; program `description`/`summary` are unaffected. The exception is a
+// body echo that is the row's only body: the serve sanitizer keeps it as thin but
+// accurate prose (owner decision, 2026-10-04), so it is usable here too.
 const isStudiesResearchAreaEchoField = (record: Record<string, any>, field: string): boolean => {
   if (field !== 'fullDescription' && field !== 'shortDescription') return false;
+  const otherBody = record.profileSynthesisDescription;
+  if (
+    field === 'fullDescription' &&
+    !(typeof otherBody === 'string' && otherBody.trim()) &&
+    !isStudiesSentenceNestingTopicsUnderTheFirst(record[field])
+  ) {
+    return false;
+  }
   const value = record[field];
   if (typeof value !== 'string' || !value.trim()) return false;
   return (
@@ -602,10 +841,11 @@ export function enforceStudentReadyDescriptionInvariant(
 // (`fieldProvenance[*].sourceUrl` / observations' `sourceUrl`), so a bare
 // `entity.sourceUrls` is a PROJECTION GAP - closed at write time by the
 // materializer - never a genuinely source-less entity.
+export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fallback';
+
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
-  'concrete_next_step',
-  'missing_action_evidence',
+  BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
   'missing_facet_signal',
   'missing_alternate_access_path',
   'missing_application_route',
@@ -616,6 +856,11 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
 
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
   STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
+
+// A person-scoped page whose body is a CV or biography that states no research
+// (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
+// real and the row returns once a source states the research.
+export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
 
 // HARD blockers: genuine correctness/quality failures that would MISLEAD a
 // student, so any one holds a card out of `student_ready`. Grouped by the
@@ -631,21 +876,26 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   'missing_lead',
   'unusable_name',
-  'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
   'profile_identity_risk',
   'generic_directory_shell',
   'profile_biography_shell',
-  'content_page_risk',
   'non_research_entity',
   'non_research_program',
+  'duplicate_program',
+  'common_application_container',
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  AWARD_SUSPENDED_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
   'research_infrastructure_only',
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
   'permanently_closed',
   'lab_name_org_type_mismatch',
   'unbacked_lab_name',
+  LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
   'inactive_at_yale',
   'archive_review',
   'not_undergraduate_relevant',
@@ -655,6 +905,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   // rows has no evidence about its own subject (#2464). Left unclassified it read
   // as non-blocking, so a row held by it alone would count as unexplained.
   'citations_identify_no_person',
+  BIOGRAPHY_WITHOUT_RESEARCH_REASON,
 ]);
 
 export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
@@ -728,15 +979,15 @@ export function computeResearchEntityStudentVisibility({
   openPostedOpportunityCount = 0,
   duplicateRisk = false,
   exactUrlDuplicateRisk = false,
-  contentPageRisk = false,
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
+  knownPersonSurnames = NO_SURNAME_ROSTER,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
     entity,
     leadMembers,
   });
-  const quality = buildResearchEntityQualitySummary({ entity, leadMembers });
+  const quality = buildResearchEntityQualitySummary({ entity, leadMembers, publicDescription });
   const reasons: string[] = [];
   const hasActionEvidence =
     openPostedOpportunityCount > 0 || accessSignalCount > 0 || actionablePathwayCount > 0;
@@ -794,7 +1045,10 @@ export function computeResearchEntityStudentVisibility({
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
   const uncorroboratedGrantOnly = isUncorroboratedGrantOnlyEntity(entity);
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
-  const unbackedLabName = isUnbackedLabNameShell(entity);
+  const unbackedLabName = isUnbackedLabNameShell(
+    entity,
+    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean),
+  );
   const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
@@ -816,24 +1070,63 @@ export function computeResearchEntityStudentVisibility({
   // is no substitution to make and a blank heading would be worse than a held row.
   // Scoped to person-scoped records because an organization may legitimately be
   // named after the chair that endowed it (#2373/#2507).
-  // A shared academic host organization's name is unusable on the same terms, and
-  // reaches this list for the same reason the brand does: the materializer refuses
-  // the value but keeps a refused `name` when no ranked candidate passes, so a row
-  // whose only name observation IS the host organization's would go on titling its
-  // card with a 13-faculty umbrella's name while the serve paths withhold only the
-  // alias (#2360). Held rather than blanked, because nothing on the row derives a
-  // research-record name from a host's.
+  // A name that names something other than this record is unusable on the same terms,
+  // and reaches this list for the same reason the brand does: the materializer refuses
+  // the value but keeps a refused `name` when no ranked candidate passes and no lead
+  // name can be derived, so a row whose only name observation IS another person's lab
+  // or a 13-faculty umbrella would go on titling its card with it while the serve paths
+  // withhold only the alias (#2360, #2351). Held rather than blanked, because nothing on
+  // the row derives a research-record name from somebody else's.
+  //
+  // The whole name-identity authority rather than its shared-host arm alone, which is
+  // what was wired here: the eponymous-foreign-lab case - 81 of the 90 rows whose
+  // stored `name` the authority condemns - had no gate blocker at all and published
+  // another person's lab name (#3499).
+  //
+  // "Another person's" is a comparison, so it needs the person this record belongs to,
+  // and only a lead resolves that. The authority also accepts the entity key's tokens,
+  // which it documents as strictly weaker because a key spells the research rather
+  // than the person, and on a leadless row that weaker reading condemns a lab for its
+  // OWN eponym: `synthetic-eponymous-neonatal-lab` named "Quimby Lab" on
+  // `/lab/quimby/` matches no key token. Those rows are already held by `missing_lead`,
+  // so the stamp adds nothing a student sees and costs the lead-attachment lanes the
+  // rows they exist for: `leadWouldUnblock` refuses a row a second hard blocker also
+  // holds, so `unusable_name` would shut the #1930 recovery lane over exactly its own
+  // population and nothing could ever clear either reason.
+  const recordCitedUrls = [entity.websiteUrl, entity.website, entity.sourceUrls];
+  const leadPersonName =
+    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean) || '';
+  // The shared-host arm stays unconditional, because it asks whether the name belongs
+  // to an organization at all rather than to which person, and answers that from the
+  // URLs the row cites (#2360).
   const namesASharedHostOrganization =
     isPersonScopedResearchEntity(entity) &&
     nameNamesACitedSharedAcademicHost({
       harvestedName: entity.name,
-      recordCitedUrls: [entity.websiteUrl, entity.website, entity.sourceUrls],
+      recordCitedUrls,
       identityTokens: entityKeyPersonTokens(entity.slug),
+    });
+  const namesAnotherPersonsResearch =
+    researchHomeIdentitySource({ personName: leadPersonName, slug: entity.slug }) ===
+      'resolved_lead' &&
+    personScopedResearchEntityNameNamesSomethingElse({
+      entityType: entity.entityType,
+      kind: entity.kind,
+      slug: entity.slug,
+      personName: leadPersonName,
+      candidateName: entity.name,
+      // The provenance URL first, because an eponym is corroborated by the page the name
+      // was harvested from; the row's own site is the fallback a manual value leaves.
+      websiteUrl: entity.fieldProvenance?.name?.sourceUrl || entity.websiteUrl || entity.website,
+      knownPersonSurnames,
+      recordCitedUrls,
+      siteDeclaredOwnNames: entity.siteDeclaredOwnNames,
     });
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
     !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
     !namesASharedHostOrganization &&
+    !namesAnotherPersonsResearch &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
@@ -848,7 +1141,6 @@ export function computeResearchEntityStudentVisibility({
   if (permanentlyClosed) reasons.push('permanently_closed');
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
-  if (contentPageRisk) reasons.push('content_page_risk');
   // `source_backed_description` is the one signal that claims a source backs the copy,
   // and `descriptionState` derives it from copy QUALITY alone - nothing in it consults
   // the cited page. So a description whose citation had died kept asserting the claim
@@ -858,13 +1150,20 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'source_backed' && !servedDescriptionCitationIsGone(entity)) {
     reasons.push('source_backed_description');
   }
+  if (
+    publicDescription.invariant.fullDescriptionUseful &&
+    isBiographyRatherThanResearch(publicDescription.fullDescription)
+  ) {
+    reasons.push(BIOGRAPHY_DESCRIPTION_FALLBACK_REASON);
+  }
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
   if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
   if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
-  if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
+  const missingLead = requiresLead && quality.leadState !== 'lead_attached';
+  if (missingLead) reasons.push('missing_lead');
   if (organizationalDeadEnd) reasons.push('missing_alternate_access_path');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
@@ -873,11 +1172,13 @@ export function computeResearchEntityStudentVisibility({
   if (uncorroboratedGrantOnly) reasons.push('grant_only_no_current_yale_source');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (unbackedLabName) reasons.push('unbacked_lab_name');
+  const biographyWithoutResearch = servedBodyIsBiographyWithoutResearch(publicDescription);
+  if (biographyWithoutResearch) reasons.push(BIOGRAPHY_WITHOUT_RESEARCH_REASON);
+  const leadTitleRuledNonHostingRank =
+    !missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers);
+  if (leadTitleRuledNonHostingRank) reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
   if (missingFacetSignal) reasons.push('missing_facet_signal');
   if (citationsSharedAcrossPersonRows) reasons.push('citations_identify_no_person');
-
-  if (hasActionEvidence) reasons.push('concrete_next_step');
-  else reasons.push('missing_action_evidence');
 
   // The single source of truth for `student_ready` correctness (issue #1802).
   // Every hard-blocker category is one field; enrichment signals never appear.
@@ -891,14 +1192,17 @@ export function computeResearchEntityStudentVisibility({
   if (!hasAnyLiveCitation) reasons.push('all_citations_dead');
 
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
-    descriptionCoherent: publicDescription.invariant.pass && hasRequiredResearchFocusCard,
+    descriptionCoherent:
+      publicDescription.invariant.pass && hasRequiredResearchFocusCard && !biographyWithoutResearch,
     // Folded in beside the org-type mismatch rather than added as a new
     // correctness field, because it is the same question asked of the other half
     // of the title: a heading claiming a laboratory the row cites no evidence for
     // does not match the content underneath it either.
     entityContentMatchesCard: !labNameOrgTypeMismatch && !unbackedLabName,
     rightLeadAttached:
-      (!requiresLead || quality.leadState === 'lead_attached') && !profileIdentityRisk,
+      (!requiresLead || quality.leadState === 'lead_attached') &&
+      !profileIdentityRisk &&
+      !leadTitleRuledNonHostingRank,
     // A citation cannot identify this subject if the entity has no citation that
     // resolves. Folded in here rather than added as a new blocker because it is the
     // same correctness question: does a real source stand behind this card (#2635).
@@ -911,7 +1215,6 @@ export function computeResearchEntityStudentVisibility({
   if (
     entity.activeAtYaleCache === false ||
     outsideResearchScope ||
-    contentPageRisk ||
     exactUrlDuplicateRisk ||
     genericDirectoryShell ||
     profileBiographyShell ||
@@ -932,6 +1235,8 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
+    !biographyWithoutResearch &&
+    !leadTitleRuledNonHostingRank &&
     !duplicateRisk &&
     hasUsableName
   ) {
@@ -1004,8 +1309,44 @@ export function computeResearchEntityStudentVisibility({
   return enforceStudentReadyDescriptionInvariant(result, entity);
 }
 
+const comparableUrl = (value: unknown): string =>
+  textValue(value)
+    .replace(/^https?:\/\/(www\.)?/i, '')
+    .replace(/[#?].*$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+
+/**
+ * `/programs` is the board a student applies from, so an "apply" link that is the program's own
+ * information page, on a record with no deadline, no opening date and no accepting-applications
+ * evidence, is not an application: it is a department's guidance page served as if it were one.
+ * On Development 18 of 146 served programs were this shape, among them a department's
+ * senior-essay registration rules (#3904). A link to
+ * the program's own page still counts when the record has an application cycle, because many
+ * real programs take applications on the page that describes them. A page whose own title
+ * earns department research guidance is served as guidance instead of being held (#4285).
+ */
+function isInfoPageWithoutApplicationCycle(
+  program: ProgramStudentVisibilityInput,
+  routeUrls: unknown[],
+): boolean {
+  if (statesApplicationCycle(program)) return false;
+  const source = comparableUrl(program.sourceUrl);
+  const routes = routeUrls.map(comparableUrl).filter(Boolean);
+  return Boolean(source) && routes.length > 0 && routes.every((route) => route === source);
+}
+
+export interface ProgramStudentVisibilityContext {
+  duplicateOfServedCopy?: boolean;
+  now?: Date;
+  upcomingDuplicateWindow?: UpcomingDuplicateWindow | null;
+}
+
+const COMMON_APPLICATION_TITLE = /\bcommon application\b/i;
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
+  context: ProgramStudentVisibilityContext = {},
 ): StudentVisibilityResult {
   const reasons: string[] = [];
   const title = textValue(program.title);
@@ -1017,14 +1358,16 @@ export function computeProgramStudentVisibility(
   ];
   const sourceUrls = [sourceUrl, ...routeUrls];
   const hasOfficialSource = hasHttpUrl(sourceUrl);
-  const hasApplicationRoute = hasAnyHttpUrl(routeUrls);
-  const sourceIsApplicationPortal =
-    /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(sourceUrl);
+  const departmentResearchGuidance = isDepartmentResearchGuidance(program);
+  const applicationRouteIsInfoPage =
+    !departmentResearchGuidance && isInfoPageWithoutApplicationCycle(program, routeUrls);
+  const hasApplicationRoute =
+    !departmentResearchGuidance && hasAnyHttpUrl(routeUrls) && !applicationRouteIsInfoPage;
   const isArchiveReview = category === 'Archive / review';
-  const graduateOnly = program.undergraduateOnly === false;
-  const undergraduateRelevant =
-    program.undergraduateOnly === true || program.yaleCollegeOnly === true;
-  const audienceKnown = undergraduateRelevant || graduateOnly;
+  const audience = programAudience(program);
+  const graduateOnly = audience === 'GRADUATE';
+  const undergraduateRelevant = programAudienceAdmitsUndergraduates(audience);
+  const audienceKnown = audience !== null;
   const formalizationOnly = isFormalizationOnlyProgram(program);
   const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
   const descriptionState = programPublicDescriptionState(program);
@@ -1032,12 +1375,24 @@ export function computeProgramStudentVisibility(
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
       title,
     );
+  const now = context.now ?? new Date();
+  const staleExternalAwardCycle = hasStaleExternalAwardCycle(
+    program,
+    now,
+    context.upcomingDuplicateWindow === undefined
+      ? program.upcomingDuplicateWindow
+      : context.upcomingDuplicateWindow,
+  );
+  const awardSuspended = statesAwardSuspension(program);
+  const prizeForCompletedWork = isPrizeForCompletedWork(program);
+  const listingPage = isProgramListingPage(program);
 
   if (hasOfficialSource) reasons.push('official_source');
   else reasons.push('missing_official_source');
-  if (sourceIsApplicationPortal) reasons.push('application_source_only');
-  if (hasApplicationRoute) reasons.push('application_route');
+  if (departmentResearchGuidance) reasons.push(DEPARTMENT_RESEARCH_GUIDANCE_REASON);
+  else if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
+  if (applicationRouteIsInfoPage) reasons.push('application_link_is_info_page');
   if (isArchiveReview) reasons.push('archive_review');
   if (catalogOrAdmin) reasons.push('not_undergraduate_relevant');
   if (undergraduateRelevant) reasons.push('undergraduate_relevant');
@@ -1046,18 +1401,35 @@ export function computeProgramStudentVisibility(
   if (descriptionState === 'missing') reasons.push('missing_description');
   else if (descriptionState === 'thin') reasons.push('thin_description');
   if (!researchRelated) reasons.push('non_research_program');
+  if (context.duplicateOfServedCopy) reasons.push('duplicate_program');
+  // A common application admits to several funds, each served as its own program that links
+  // the application as its route, so the application is a container rather than a program
+  // a student chooses.
+  const applicationContainer = COMMON_APPLICATION_TITLE.test(title);
+  if (applicationContainer) reasons.push('common_application_container');
+  if (staleExternalAwardCycle) reasons.push(EXTERNAL_AWARD_CYCLE_STALE_REASON);
+  if (awardSuspended) reasons.push(AWARD_SUSPENDED_REASON);
+  if (prizeForCompletedWork) reasons.push(PRIZE_FOR_COMPLETED_WORK_REASON);
+  if (listingPage) reasons.push(PROGRAM_LISTING_PAGE_REASON);
+  const notACurrentProgram =
+    staleExternalAwardCycle || awardSuspended || prizeForCompletedWork || listingPage;
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (catalogOrAdmin || !researchRelated) {
+  if (
+    catalogOrAdmin ||
+    !researchRelated ||
+    context.duplicateOfServedCopy ||
+    applicationContainer ||
+    notACurrentProgram
+  ) {
     computedTier = 'suppressed';
   } else if (
     !isArchiveReview &&
     audienceKnown &&
     hasOfficialSource &&
-    hasApplicationRoute &&
-    !sourceIsApplicationPortal
+    (hasApplicationRoute || departmentResearchGuidance)
   ) {
-    // A research program with a known audience, a real (non-portal) official source, and an
+    // A research program with a known audience, an official source, and an
     // application route is student-ready regardless of whether that audience is undergraduate
     // or graduate: on a research-discovery surface, audience is an honest label (surfaced as a
     // Graduate badge for graduate-only records), not a suppression trigger. Only catalog/admin

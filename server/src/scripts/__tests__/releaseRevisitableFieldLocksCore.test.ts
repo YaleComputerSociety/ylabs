@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   decideFieldLockReleases,
+  describeFieldLockReleaseDecision,
   resolveFieldLockReleases,
   summarizeFieldLockReleaseDecisions,
   type MaterializerProjectionAnswer,
@@ -338,6 +339,35 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
     expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_engine_disagrees']);
   });
 
+  it('releases a moved value only for a field the operator accepted after reading it', () => {
+    const plan = { plannedSet: { name: 'Robin Roster Lab' } };
+    const accepted = decideFieldLockReleases(unrecordedLock, plan, {
+      releaseProvenInert: true,
+      acceptEngineValueFields: ['name'],
+    });
+    expect(accepted[0]).toMatchObject({
+      verdict: 'release',
+      acceptsEngineValue: true,
+      engineValue: 'Robin Roster Lab',
+    });
+    expect(accepted[0].provenInert).toBeUndefined();
+
+    const otherField = decideFieldLockReleases(unrecordedLock, plan, {
+      releaseProvenInert: true,
+      acceptEngineValueFields: ['displayName'],
+    });
+    expect(otherField[0].verdict).toBe('keep_engine_disagrees');
+  });
+
+  it('still keeps an accepted field the plan is silent about', () => {
+    const decisions = decideFieldLockReleases(
+      unrecordedLock,
+      { plannedSet: { departments: ['Fictional Studies'] } },
+      { releaseProvenInert: true, acceptEngineValueFields: ['name'] },
+    );
+    expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_not_revisitable']);
+  });
+
   it('keeps a lock whose release would move a sibling field', () => {
     const decisions = decideFieldLockReleases(
       {
@@ -356,6 +386,32 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
     );
 
     expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_sibling_field_moves']);
+  });
+
+  it('marks a release that moves an accepted sibling as accepting the engine value, not inert', () => {
+    const decisions = decideFieldLockReleases(
+      {
+        slug: 'unrecorded-row',
+        fullDescription: 'A body a student reads.',
+        shortDescription: 'A card a student reads.',
+        manuallyLockedFields: ['fullDescription'],
+      },
+      {
+        plannedSet: {
+          fullDescription: 'A body a student reads.',
+          shortDescription: 'A different card.',
+        },
+      },
+      { releaseProvenInert: true, acceptEngineValueFields: ['shortDescription'] },
+    );
+
+    expect(decisions[0]).toMatchObject({
+      verdict: 'release',
+      acceptsEngineValue: true,
+      movedSiblingValues: { shortDescription: 'A different card.' },
+    });
+    expect(decisions[0].provenInert).toBeUndefined();
+    expect(summarizeFieldLockReleaseDecisions(decisions).plannedReleasesProvenInert).toBe(0);
   });
 
   it('still refuses a lock that holds a reconciler shut', () => {
@@ -392,5 +448,143 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
 
     expect(asked).toEqual([['name']]);
     expect(decisions.map((decision) => decision.verdict)).toEqual(['release']);
+  });
+});
+
+describe('a lock over provenance its lane never observed (#3788)', () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    slug: 'never-backed-row',
+    shortDescription: 'A repair wrote this card.',
+    fullDescription: 'A repair wrote this description.',
+    manuallyLockedFields: ['shortDescription', 'fullDescription'],
+    ...overrides,
+  });
+  const rules = { neverBackedFields: ['shortDescription', 'fullDescription'] };
+
+  it('stays shut without the rule, because the lock records no reason', () => {
+    const decisions = decideFieldLockReleases(row(), { plannedSet: {} });
+    expect(decisions.map((decision) => decision.verdict)).toEqual([
+      'keep_not_revisitable',
+      'keep_not_revisitable',
+    ]);
+  });
+
+  it('keeps a lock-suppressed field shut when the engine is silent about it', () => {
+    const decisions = decideFieldLockReleases(row(), { plannedSet: {} }, rules);
+    expect(decisions.map((decision) => [decision.verdict, decision.neverBacked])).toEqual([
+      ['keep_engine_silent', true],
+      ['keep_engine_silent', true],
+    ]);
+  });
+
+  it('releases a silent lock-suppressed field only for a field the operator accepted', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['shortDescription'] }),
+      { plannedSet: {} },
+      { ...rules, acceptEngineValueFields: ['shortDescription'] },
+    );
+    expect(decision.verdict).toBe('release');
+    expect(decision.acceptsEngineValue).toBe(true);
+  });
+
+  it('releases where no projection writes a field the lock does not stop collecting', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ websiteUrl: 'https://example.edu/lab/', manuallyLockedFields: ['websiteUrl'] }),
+      { plannedSet: {} },
+      { neverBackedFields: ['websiteUrl'] },
+    );
+    expect(decision.verdict).toBe('release');
+    expect(decision.acceptsEngineValue).toBeUndefined();
+    expect(decision.engineValue).toBe('https://example.edu/lab/');
+  });
+
+  it('releases where the engine derives the held value', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['shortDescription'] }),
+      { plannedSet: { shortDescription: 'A repair wrote this card.' } },
+      rules,
+    );
+    expect(decision.verdict).toBe('release');
+  });
+
+  it('keeps the lock when the engine derives a different value nobody accepted', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['shortDescription'] }),
+      { plannedSet: { shortDescription: 'A lane states this card.' } },
+      rules,
+    );
+    expect(decision.verdict).toBe('keep_engine_disagrees');
+    expect(decision.engineValue).toBe('A lane states this card.');
+  });
+
+  it('releases a different engine value only for a field the operator accepted', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['shortDescription'] }),
+      { plannedSet: { shortDescription: 'A lane states this card.' } },
+      { ...rules, acceptEngineValueFields: ['shortDescription'] },
+    );
+    expect(decision.verdict).toBe('release');
+    expect(decision.acceptsEngineValue).toBe(true);
+  });
+
+  it('keeps a lock over a cleared field shut when the engine is silent about it', () => {
+    const [decision] = decideFieldLockReleases(
+      row({ shortDescription: '', manuallyLockedFields: ['shortDescription'] }),
+      { plannedSet: {} },
+      rules,
+    );
+    expect(decision.verdict).toBe('keep_engine_silent');
+  });
+
+  it('reports the engine value of a sibling the release would move', () => {
+    const answer = {
+      plannedSet: {
+        fullDescription: 'A repair wrote this description.',
+        shortDescription: 'The engine derives this card.',
+      },
+    };
+    const [kept] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['fullDescription'] }),
+      answer,
+      rules,
+    );
+    expect(kept.verdict).toBe('keep_sibling_field_moves');
+    expect(kept.movedSiblingValues).toEqual({
+      shortDescription: 'The engine derives this card.',
+    });
+    expect(describeFieldLockReleaseDecision(kept)).toContain(
+      'engine shortDescription The engine derives this card.',
+    );
+
+    const [released] = decideFieldLockReleases(
+      row({ manuallyLockedFields: ['fullDescription'] }),
+      answer,
+      { ...rules, acceptEngineValueFields: ['shortDescription'] },
+    );
+    expect(released.verdict).toBe('release');
+    expect(released.acceptsEngineValue).toBe(true);
+    expect(released.movedSiblingValues).toEqual({
+      shortDescription: 'The engine derives this card.',
+    });
+  });
+
+  it('asks the engine with every never-backed lock ignored, then about the agreeing subset', async () => {
+    const asked: string[][] = [];
+    const decisions = await resolveFieldLockReleases(
+      row({
+        websiteUrl: 'https://example.edu/lab/',
+        manuallyLockedFields: ['websiteUrl', 'shortDescription'],
+      }),
+      async (revised) => {
+        asked.push([...revised]);
+        return { plannedSet: {} };
+      },
+      { neverBackedFields: ['websiteUrl', 'shortDescription'] },
+    );
+    expect(asked).toEqual([['websiteUrl', 'shortDescription'], ['websiteUrl']]);
+    expect(decisions.map((decision) => decision.verdict)).toEqual([
+      'release',
+      'keep_engine_silent',
+    ]);
   });
 });

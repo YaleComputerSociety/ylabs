@@ -218,3 +218,23 @@ export const containsInternalLabels = (value, options = {}) => {
     return haystack.includes(label);
   });
 };
+
+const researchSearchRows = (json) => [
+  ...(Array.isArray(json?.researchEntities) ? json.researchEntities : []),
+  ...(Array.isArray(json?.hits) ? json.hits : []),
+];
+
+export const evaluateResearchSearchResponse = (statusCode, json) => {
+  const degraded = json?.degraded === true;
+  const rowCount = researchSearchRows(json).length;
+  const healthy = statusCode === 200 && !degraded && rowCount > 0;
+  return {
+    status: healthy ? 'pass' : 'fail',
+    details: { statusCode, degraded, rowCount },
+  };
+};
+
+export const discoverResearchSlug = (json) =>
+  researchSearchRows(json)
+    .map((entity) => entity?.slug || entity?.data?.slug)
+    .find(Boolean);

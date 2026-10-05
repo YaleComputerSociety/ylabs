@@ -24,17 +24,25 @@
  * `--only` (filter by deptKey, e.g. `--only econ,mcdb`).
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import {
   buildFetchAttemptMetrics,
   createScraplingRenderedFetcher,
+  fetchUsableRenderedPage,
   measureRenderedFetch,
   summarizeFetchMetrics,
   type RenderedFetcher,
-  type RenderedFetchResult,
 } from '../renderedFetch';
 import { getCached, setCached } from '../snapshotCache';
+import { observeSweepPageReuse } from '../utils/sweepPageReuse';
+import {
+  labUrlUnusabilityFor,
+  loadLabUrlEvidenceBySlug,
+  type LabUrlEvidenceLoader,
+  type LabUrlIsUnusable,
+} from '../utils/labUrlEvidence';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
@@ -49,12 +57,18 @@ import type {
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
+  isPhotoSceneDescription,
   normalizeName,
+  normalizeNameKeepingCaption,
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
+import {
+  isMeshIndexedProfileUrl,
+  withoutMeshNonSubjectDescriptors,
+} from '../utils/meshNonSubjectDescriptors';
 import {
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
@@ -64,7 +78,10 @@ import {
   isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import { personIdentityTokens } from '../../utils/researchHomeNameIdentityAuthority';
-import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
+import {
+  extractOfficialResearchDescription,
+  visibleDescriptionTextWithLineBreaks,
+} from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
   sanitizeResearchEntityDescription,
@@ -82,15 +99,26 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
 import { orgUnitMatchKey } from '../orgUnitCanonicalization';
-import { DEPARTMENT_ROSTER_HEALTH_FIELD } from '../facultyRosterDepartureReconciler';
+import {
+  DEPARTMENT_ROSTER_HEALTH_FIELD,
+  ROSTER_LANE_FAILED_READ_STATUSES,
+  rosterLaneStatusLeftRosterUnread,
+} from '../facultyRosterDepartureReconciler';
 import {
   isFacultyTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
+  ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
-import { rosterEntryIdentityKey, walkRosterLanePages } from '../utils/rosterLanePaging';
+import {
+  rosterEntryIdentityKey,
+  walkRosterLanePages,
+  type RosterLaneWalk,
+} from '../utils/rosterLanePaging';
 import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
+import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -113,6 +141,7 @@ interface LaneRead {
   status: string;
   pagesRead: number;
   readMode: LaneReadMode;
+  pagesReusedWithinSweep?: number;
 }
 
 interface LaneOutcome extends LaneRead {
@@ -143,12 +172,51 @@ export function collapseLaneOutcomesByDepartment(outcomes: LaneOutcome[]): LaneO
     }
     existing.count += outcome.count;
     existing.pagesRead += outcome.pagesRead;
-    if (existing.status === 'ok' && outcome.status !== 'ok') existing.status = outcome.status;
+    existing.pagesReusedWithinSweep =
+      (existing.pagesReusedWithinSweep ?? 0) + (outcome.pagesReusedWithinSweep ?? 0);
+    if (collapsedStatusYieldsTo(existing.status, outcome.status)) existing.status = outcome.status;
     if (existing.readMode === 'none' && outcome.readMode !== 'none') {
       existing.readMode = outcome.readMode;
     }
   }
   return Array.from(byDeptKey.values());
+}
+
+function collapsedStatusYieldsTo(existing: string, incoming: string): boolean {
+  if (existing === 'ok') return incoming !== 'ok';
+  return !rosterLaneStatusLeftRosterUnread(existing) && rosterLaneStatusLeftRosterUnread(incoming);
+}
+
+/** A lane that never tried to read: no renderer was available, or `--limit` ran out first. */
+const ROSTER_LANES_NEVER_ATTEMPTED_STATUSES: ReadonlySet<string> = new Set([
+  'js-rendered-skip',
+  'skipped-by-limit',
+]);
+
+/**
+ * The status an HTML lane reports for its walk.
+ *
+ * Only a walk that reached the roster's own end and was not cut by `--limit` may be
+ * `ok`, because `ok` is what makes the department's snapshot `complete`, and a
+ * complete snapshot tells the departure lane that everybody it did not list is gone
+ * (#3647). A page that was never fetched is `fetch-failed` rather than `empty`: an
+ * empty roster is a read that listed nobody, which a failed fetch is not.
+ *
+ * `empty` is decided on the rows the page listed, not on the people this lane emitted,
+ * because a tab sharing its `deptKey` with an earlier tab emits nobody new when it
+ * re-lists the same people, and an `empty` status withholds the whole department.
+ */
+export function htmlLaneStatus(
+  walk: Pick<
+    RosterLaneWalk,
+    'pages' | 'pagesFetched' | 'stopReason' | 'readWholeRoster' | 'distinctEntries'
+  >,
+  truncatedByLimit: boolean,
+): string {
+  if (walk.pagesFetched === 0) return 'fetch-failed';
+  if (walk.pages.length === 0 && walk.stopReason === 'extractor-error') return 'extractor-error';
+  if (!walk.readWholeRoster || truncatedByLimit) return 'partial-read';
+  return walk.distinctEntries.length === 0 ? 'empty' : 'ok';
 }
 
 /**
@@ -183,10 +251,18 @@ const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
 // one-liner while matching the shared profile-page tier used by the lab-microsite
 // extractor so a later microsite full-page description still wins.
 const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
+const STATED_LAB_NAME_CONFIDENCE = 0.8;
 
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
   name: string;
+  /**
+   * The name this row's slug and user key were first derived from, when the listing's
+   * readable name differs from it. Identity continuity: re-keying an existing row
+   * would retire it through the departure lane and mint a replacement without its
+   * evidence, so the key keeps its first spelling while `name` carries the real one.
+   */
+  identityName?: string;
   /**
    * True when `name` is a slug-derived placeholder (the listing exposed only a
    * profile-URL slug, no readable name). Profile enrichment replaces it with the
@@ -237,6 +313,8 @@ export interface FacultyEntry {
   profileSourceUrl?: string;
   /** Official roster/profile image URL. */
   imageUrl?: string;
+  /** A lab the person's own official profile says that person leads (#4468). */
+  statedLabName?: string;
 }
 
 /** Context passed to each per-department extractor for URL resolution and logging. */
@@ -1345,10 +1423,11 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
 /**
  * Yale School of Music Drupal `node--type-person` cards. The listing hydrates
  * client-side, so this runs against rendered HTML (renderedExtractor). Each
- * card carries the person on the article's `about` attribute and the name on
- * the profile image's alt text.
+ * card carries the person on the article's `about` attribute and the name in the
+ * card heading. The headshot's alt text is a caption, sometimes "Photo of <title>
+ * <name>.", so it is a fallback only (#4716).
  *   <article about="/people/<slug>" class="node node--type-person node--view-mode-card">
- *     <img alt="Name" src="...">
+ *     <img alt="Photo of Name." src="..."> <div class="card-content"><h2><span>Name</span></h2>
  */
 const nameFromPeopleSlug = (about: string): string => {
   const match = about.match(/\/people\/([^/?#]+)/);
@@ -1368,10 +1447,14 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
   $('article.node--type-person').each((_i, el) => {
     const card = $(el);
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
-    const name =
-      normalizeName(cleanText(card.find('img[alt]').first().attr('alt') || '')) ||
-      nameFromPeopleSlug(about);
+    const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
+    const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
+    const altName = isPhotoSceneDescription(altText) ? '' : normalizeName(altText);
+    const name = headingName || altName || nameFromPeopleSlug(about);
     if (!name) return;
+    const firstKeyedName = normalizeNameKeepingCaption(altText) || nameFromPeopleSlug(about);
+    const identityName =
+      firstKeyedName && slugify(firstKeyedName) !== slugify(name) ? firstKeyedName : undefined;
 
     const profileUrl = about ? absolutize(about, ctx.pageUrl) : undefined;
     const title =
@@ -1385,7 +1468,13 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
       ) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      ...(identityName ? { identityName } : {}),
+      profileUrl,
+      title,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
 
   return out;
@@ -2819,11 +2908,18 @@ function isTopicLabelChrome(value: string): boolean {
   );
 }
 
-function splitTopicText(value: string | undefined | null): string[] {
+const TOPIC_SEPARATORS = /[,;|•\n\r]+/;
+// A MeSH heading carries its own comma ("Infant, Newborn"), so it is split only between headings.
+const MESH_HEADING_SEPARATORS = /[;|•\n\r]+/;
+
+function splitTopicText(
+  value: string | undefined | null,
+  separators: RegExp = TOPIC_SEPARATORS,
+): string[] {
   const cleaned = String(value || '').trim();
   if (!cleaned) return [];
   const parts = cleaned
-    .split(/[,;|•\n\r]+/)
+    .split(separators)
     .map((part) => stripTopicLabelPrefix(part))
     .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part) && !isTopicLabelChrome(part));
   return uniqueStrings(parts);
@@ -3105,7 +3201,8 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
   return undefined;
 }
 
-function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
+function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: boolean): string[] {
+  const separators = meshIndexed ? MESH_HEADING_SEPARATORS : TOPIC_SEPARATORS;
   const values: string[] = [];
   const selectors = [
     '[class*="research-interest"]',
@@ -3118,7 +3215,7 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
   for (const selector of selectors) {
     $(selector).each((_i, el) => {
       const text = elementTextWithChildSeparators($, el);
-      values.push(...splitTopicText(text));
+      values.push(...splitTopicText(text, separators));
     });
   }
 
@@ -3126,10 +3223,12 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI): string[] {
     const label = cleanText($(heading).text()).toLowerCase();
     if (!/\b(research interests?|fields? of study|topics?)\b/.test(label)) return;
     const next = $(heading).next();
-    if (next[0]) values.push(...splitTopicText(elementTextWithChildSeparators($, next[0])));
+    if (next[0])
+      values.push(...splitTopicText(elementTextWithChildSeparators($, next[0]), separators));
   });
 
-  return uniqueStrings(values).slice(0, 20);
+  const interests = meshIndexed ? withoutMeshNonSubjectDescriptors(values) : values;
+  return uniqueStrings(interests).slice(0, 20);
 }
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
@@ -3141,13 +3240,15 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;
@@ -3170,16 +3271,18 @@ async function fetchDeptData(
 
   const body = new URLSearchParams(request);
   const agents = ssrfSafeAgents();
-  const res = await axios.post(safeDataUrlText, body, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(safeDataUrlText, body, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const data = res.data;
   if (useCache) await setCached(sourceName, cacheKey, data);
   return data;
@@ -3211,6 +3314,7 @@ export function profileEnrichmentFromHtml(
     | 'profileSourceUrl'
     | 'researchHomeDescription'
     | 'researchHomeShortDescription'
+    | 'statedLabName'
   >
 > {
   const $ = cheerio.load(html);
@@ -3302,14 +3406,25 @@ export function profileEnrichmentFromHtml(
     labUrl = absolute;
   });
 
-  const researchInterests = extractResearchInterestsFromHtml($);
+  const researchInterests = extractResearchInterestsFromHtml(
+    $,
+    isMeshIndexedProfileUrl(canonicalUrl),
+  );
   const bio = extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
+  const declaredName = personNameFromProfileHtml($);
+  const statedLabName = declaredName
+    ? labNameStatedForPerson({
+        text: visibleDescriptionTextWithLineBreaks(html),
+        personName: declaredName,
+        pageUrl: canonicalUrl,
+      })
+    : undefined;
 
   return {
     profileUrl: canonicalUrl,
     profileSourceUrl: canonicalUrl,
-    name: personNameFromProfileHtml($),
+    name: declaredName,
     email,
     title,
     labUrl,
@@ -3318,6 +3433,7 @@ export function profileEnrichmentFromHtml(
     bio,
     researchHomeDescription: officialProse?.fullDescription,
     researchHomeShortDescription: officialProse?.shortDescription || undefined,
+    statedLabName,
     researchInterests: researchInterests.length > 0 ? researchInterests : undefined,
     topics: researchInterests.length > 0 ? researchInterests : undefined,
     scholarCandidateProfileUrls:
@@ -3388,6 +3504,7 @@ function mergeProfileEnrichment(
       | 'imageUrl'
       | 'researchHomeDescription'
       | 'researchHomeShortDescription'
+      | 'statedLabName'
     >
   >,
 ): FacultyEntry {
@@ -3408,6 +3525,7 @@ function mergeProfileEnrichment(
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
     researchHomeShortDescription:
       entry.researchHomeShortDescription || enrichment.researchHomeShortDescription,
+    statedLabName: entry.statedLabName || enrichment.statedLabName,
     researchInterests:
       uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
         .length > 0
@@ -3549,14 +3667,26 @@ export function profileBelongsToRosterPerson(args: {
   return isPersonProfileOrDirectoryUrl(args.profileUrl);
 }
 
-async function enrichEntryFromOfficialProfile(
+/**
+ * The official profile is where most rows carry their lab link, so an entry whose
+ * profile went unread says nothing about the slot, whatever the roster card showed,
+ * and a profile refused as someone else's page is a refusal (#3135, #2647).
+ */
+function withUnreadProfileSlot(entry: FacultyEntry, outcome: 'unread' | 'refused'): FacultyEntry {
+  if (entry.labUrl) return entry;
+  if (outcome === 'refused') return { ...entry, labSlotAttestation: 'refused' };
+  return entry.labSlotAttestation === 'empty' ? { ...entry, labSlotAttestation: undefined } : entry;
+}
+
+export async function enrichEntryFromOfficialProfile(
   entry: FacultyEntry,
   sourceName: string,
   useCache: boolean,
   htmlFetcher: HtmlFetcher,
   log: ScraperContext['log'],
 ): Promise<FacultyEntry> {
-  if (!entry.profileUrl || !isOfficialYaleUrl(entry.profileUrl)) return entry;
+  if (!entry.profileUrl) return entry;
+  if (!isOfficialYaleUrl(entry.profileUrl)) return withUnreadProfileSlot(entry, 'unread');
   // A shared roster page is never one person's profile, so reading one back
   // would attribute the whole department's prose to whichever row linked it.
   if (isSharedPeopleRosterUrl(entry.profileUrl)) return entry;
@@ -3585,12 +3715,12 @@ async function enrichEntryFromOfficialProfile(
       log(
         `[profile] refused enrichment, cited profile names someone else: ${sanitizeLogValue(declaredProfileUrl)}`,
       );
-      return entry;
+      return withUnreadProfileSlot(entry, 'refused');
     }
     return mergeProfileEnrichment(entry, enrichment);
   } catch (err: any) {
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
-    return entry;
+    return withUnreadProfileSlot(entry, 'unread');
   }
 }
 
@@ -3606,6 +3736,53 @@ function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
   // Stripping a value the page still carries is a refusal, so the slot must stop
   // being claimable as empty even if an earlier parse attested it (#3135).
   return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
+}
+
+export function withoutAnotherRosterPersonsStatedLab(
+  entry: FacultyEntry,
+  rosterSurnames: ReadonlySet<string>,
+): FacultyEntry {
+  if (
+    !entry.statedLabName ||
+    !statedLabNameClaimsAnotherPerson({
+      statedLabName: entry.statedLabName,
+      personName: entry.name,
+      knownPersonSurnames: rosterSurnames,
+    })
+  ) {
+    return entry;
+  }
+  return { ...entry, statedLabName: undefined };
+}
+
+const labUrlIdentity = (url: string): string => fieldValueRefusalKey('websiteUrl', url);
+
+/**
+ * A website one roster lists for two or more different people is a group site, not any
+ * one of them's own research website, so it is refused for all of them rather than handed to
+ * whichever row materializes first. Measured on Development before this landed: 20 URLs
+ * this lane assigned to 2 to 5 different people, 20 of those rows already refused
+ * `wrong_owner` by an operator and 37 still served as the row's own website.
+ *
+ * The same person listed twice is not a sharer, because their rows are one research entity
+ * however many departments print them, which is duplicate-row work rather than a wrong URL.
+ * Stripping marks the slot `refused`, never empty, because the page still carries the link
+ * (#3135).
+ */
+export function withoutSharedGroupWebsites<T extends { entry: FacultyEntry; personKey: string }>(
+  items: readonly T[],
+): T[] {
+  const peopleByUrl = new Map<string, Set<string>>();
+  for (const { entry, personKey } of items) {
+    if (!entry.labUrl) continue;
+    const key = labUrlIdentity(entry.labUrl);
+    peopleByUrl.set(key, (peopleByUrl.get(key) ?? new Set()).add(personKey));
+  }
+  return items.map((item) => {
+    const url = item.entry.labUrl;
+    if (!url || (peopleByUrl.get(labUrlIdentity(url))?.size ?? 0) < 2) return item;
+    return { ...item, entry: { ...item.entry, labUrl: undefined, labSlotAttestation: 'refused' } };
+  });
 }
 
 const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
@@ -3639,6 +3816,12 @@ const FACULTY_HELD_PROGRAMME_OFFICE_PATTERNS: RegExp[] = [
  * Whether a roster subheading asserts a faculty appointment. Strict: a subheading
  * that states a subordinate research rank, a staff role, or no rank at all asserts
  * nothing.
+ *
+ * Deliberately NOT extended with `isResearchSupportStaffTitle` (#3410). The entity mint
+ * asks `ownsNoResearchEntityByTitle` directly, so adding it here would change nothing
+ * about minting and would instead reject a cross-listed-programme row from the roster
+ * lane outright and withhold its `userType` stamp, which is person-level behaviour
+ * that change did not set out to alter.
  */
 function statesFacultyAppointment(title: string | undefined): boolean {
   const cleaned = title ? stripInvisibleFormatCharacters(title).trim() : '';
@@ -3689,7 +3872,7 @@ function entryToUserObservations(
     ? entry.email
     : undefined;
   const netid = netidFromEmail(personEmail);
-  const slug = slugify(cleaned);
+  const slug = rosterIdentityNameSlug(entry);
   const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
   const entityKey = netid ? `netid:${netid}` : `dept:${entityKeyNamespace}:${slug || 'unknown'}`;
 
@@ -3791,6 +3974,37 @@ export function rosterResearchHomeEvidence(entry: FacultyEntry): RosterResearchH
 }
 
 /**
+ * The roster research-entity mint, plus whether a stated title was the ONLY reason it emitted
+ * nothing. The call site needs that distinction: it records a title-refused entry as
+ * still discovered on this roster, and an entry that would have minted nothing
+ * anyway must not be recorded, because that inflates the roster-drop guard.
+ */
+export function rosterResearchEntityMint(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  sourceUrl: string,
+  ownerEntityKey: string,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
+): { observations: ObservationInput[]; refusedByTitle: boolean } {
+  const observations = entryToResearchEntityObservationsUnscreened(
+    entry,
+    dept,
+    sourceUrl,
+    ownerEntityKey,
+    labUrlIsUnusable,
+  );
+  // The screen sits at this choke point rather than at the one call site, so a
+  // future caller cannot mint a research row for somebody who owns no research. A roster
+  // entry's subheading is the person's stated title, and a stated title that fails a
+  // screen refuses; absence of a title is absence of evidence and still mints
+  // (#3410).
+  if (observations.length > 0 && ownsNoResearchEntityByTitle(entry.title)) {
+    return { observations: [], refusedByTitle: true };
+  }
+  return { observations, refusedByTitle: false };
+}
+
+/**
  * A faculty member with no off-directory lab website is still a research home:
  * a school whose faculty publish research on their own official profile and
  * never run a separate lab site (Art, Architecture) otherwise materializes
@@ -3798,27 +4012,72 @@ export function rosterResearchHomeEvidence(entry: FacultyEntry): RosterResearchH
  * lab-less FACULTY_RESEARCH_AREA needs positive research evidence on the
  * person's own official profile, never a bare roster row.
  */
-export function entryToResearchEntityObservations(
+/**
+ * The research-entity slug this lane mints for a roster row, exported so the run
+ * loop can read the corpus's verdicts for the same keys before the loop starts, and
+ * so the loop can record that the roster still lists a person whose stated title
+ * refuses them an entity of their own (#3410).
+ * Sharing the formula is the point: a second copy would drift and the lookup would
+ * silently miss.
+ */
+export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig): string {
+  const nameSlug = rosterIdentityNameSlug(entry) || (entry.labUrl ? slugify(entry.labUrl) : '');
+  if (!nameSlug) return '';
+  return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+}
+
+/**
+ * A scene alt text keeps its key only for a row the corpus already holds under it,
+ * so an existing row is not re-keyed while a new one is never minted from a scene.
+ */
+function withoutUnheldSceneIdentity(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  corpusRowsBySlug: ReadonlyMap<string, unknown>,
+): FacultyEntry {
+  if (!entry.identityName || !isPhotoSceneDescription(entry.identityName)) return entry;
+  if (corpusRowsBySlug.has(rosterResearchEntitySlug(entry, dept))) return entry;
+  const { identityName: _sceneIdentity, ...rest } = entry;
+  return rest;
+}
+
+function rosterIdentityNameSlug(entry: FacultyEntry): string {
+  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
+}
+
+function entryToResearchEntityObservationsUnscreened(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
   ownerEntityKey: string,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
 ): ObservationInput[] {
-  const isExplicitLab = Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry);
-  if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
+  // `isLikelyExplicitLabWebsite` reads the roster row. It cannot see what the
+  // corpus has since decided about that URL, and a refusal is exactly the verdict
+  // it misses - most often `wrong_owner`, where the row links a lab this person
+  // works in rather than runs. Without this the refusal withheld only the
+  // `websiteUrl` while the name, kind, and `entityType` kept asserting the lab
+  // (#3452). Withdrawal needs a positive verdict, never silence - see
+  // `labUrlIsUnusableForResearchHome`.
+  const isExplicitLab =
+    Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
+  const profileCitationUrl = officialProfileCitationUrl(entry);
+  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
+  const admittedOnlyByStatedLabName = !isExplicitLab && dept.emitPersonalResearchEntities === false;
+  if (admittedOnlyByStatedLabName && !statedLabName) return [];
+  const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
   const evidence = rosterResearchHomeEvidence(entry);
   const { groundedDescription, topics } = evidence;
-  const profileCitationUrl = officialProfileCitationUrl(entry);
-  const labLessCitationUrl = entry.labUrl ? '' : profileCitationUrl;
+  const labLessCitationUrl = labUrl ? '' : profileCitationUrl;
   const hasLabLessResearchEvidence =
-    Boolean(labLessCitationUrl) && (Boolean(groundedDescription) || topics.length > 0);
-  if (!entry.labUrl && !hasLabLessResearchEvidence) return [];
+    Boolean(labLessCitationUrl) &&
+    (Boolean(statedLabName) || Boolean(groundedDescription) || topics.length > 0);
+  if (!labUrl && !hasLabLessResearchEvidence) return [];
 
   const cleanedName = normalizeName(entry.name);
-  const nameSlug = slugify(cleanedName) || (entry.labUrl ? slugify(entry.labUrl) : '');
-  if (!nameSlug) return [];
-  const slug = `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+  const slug = rosterResearchEntitySlug(entry, dept);
+  if (!slug) return [];
   const entityName = cleanedName
     ? isExplicitLab
       ? `${cleanedName} Lab`
@@ -3829,6 +4088,26 @@ export function entryToResearchEntityObservations(
     entityKey: slug,
     sourceUrl: labLessCitationUrl || sourceUrl,
   };
+  const identityObservations: ObservationInput[] = statedLabName
+    ? [
+        { field: 'name', value: statedLabName },
+        { field: 'kind', value: 'lab' },
+        { field: 'entityType', value: 'LAB' },
+      ].map((identity) => ({
+        ...base,
+        ...identity,
+        sourceUrl: profileCitationUrl,
+        confidenceOverride: STATED_LAB_NAME_CONFIDENCE,
+      }))
+    : [
+        { ...base, field: 'name', value: entityName },
+        { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
+        {
+          ...base,
+          field: 'entityType',
+          value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA',
+        },
+      ];
   // Only a positively attested empty slot is an absence. A refusal, and silence from
   // a parse that never looked, both leave the claim unmade (#3135, #2647).
   const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
@@ -3840,21 +4119,19 @@ export function entryToResearchEntityObservations(
       value: slug,
       ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
     },
-    { ...base, field: 'name', value: entityName },
-    { ...base, field: 'kind', value: isExplicitLab ? 'lab' : 'individual' },
-    { ...base, field: 'entityType', value: isExplicitLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
+    ...identityObservations,
     ...(dept.crossListedProgramme
       ? []
       : [{ ...base, field: 'school' as const, value: dept.schoolName }]),
     ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
-    ...(entry.labUrl ? [{ ...base, field: 'websiteUrl' as const, value: entry.labUrl }] : []),
+    ...(labUrl ? [{ ...base, field: 'websiteUrl' as const, value: labUrl }] : []),
     {
       ...base,
       field: 'sourceUrls',
-      value: entry.labUrl
-        ? uniqueStrings([profileCitationUrl, sourceUrl, entry.labUrl].filter(Boolean))
+      value: labUrl
+        ? uniqueStrings([profileCitationUrl, sourceUrl, labUrl].filter(Boolean))
         : [labLessCitationUrl],
     },
     {
@@ -3912,6 +4189,7 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly configs: DeptConfig[] = DEFAULT_DEPT_CONFIGS,
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
   ) {}
 
   /**
@@ -3922,7 +4200,8 @@ export class DepartmentRosterScraper implements IScraper {
    * zero was then read as "the fetch layer was never entered". The mode carries
    * whether a cache hit was permitted, because `fetchHtml` serves a 24-hour
    * snapshot cache when `--use-cache` is set and cannot say afterwards which it
-   * did: `http` is a read that could only have come off the wire.
+   * did: `http` is a read that could only have come off the wire, and
+   * `http-sweep-reused` is a page another lane fetched earlier in the same sweep (#3568).
    *
    * Per-row profile enrichment is deliberately still uncounted. It costs one
    * request per faculty row, so counting it would store tens of thousands of
@@ -3933,11 +4212,19 @@ export class DepartmentRosterScraper implements IScraper {
     pageUrl: string,
     ctx: ScraperContext,
     fetchAttempts: ScraperFetchMetric[],
+    laneReuse: { pagesReused: number },
   ): Promise<string> {
-    const fetchMode = ctx.options.useCache ? 'http-cache-allowed' : 'http';
     const startedAt = Date.now();
     try {
-      const html = await this.htmlFetcher(pageUrl, ctx.options.useCache, this.name);
+      const { value: html, pagesReused } = await observeSweepPageReuse(() =>
+        this.htmlFetcher(pageUrl, ctx.options.useCache, this.name),
+      );
+      laneReuse.pagesReused += pagesReused;
+      const fetchMode = ctx.options.useCache
+        ? 'http-cache-allowed'
+        : pagesReused > 0
+          ? 'http-sweep-reused'
+          : 'http';
       fetchAttempts.push(
         buildFetchAttemptMetrics({
           fetchMode,
@@ -3951,7 +4238,7 @@ export class DepartmentRosterScraper implements IScraper {
     } catch (error) {
       fetchAttempts.push(
         buildFetchAttemptMetrics({
-          fetchMode,
+          fetchMode: ctx.options.useCache ? 'http-cache-allowed' : 'http',
           success: false,
           startedAt,
           blocked: false,
@@ -3984,40 +4271,77 @@ export class DepartmentRosterScraper implements IScraper {
       entries: FacultyEntry[],
       dept: DeptConfig,
       sourceUrl: string,
-    ): Promise<{ faculty: number; labs: number; observations: number }> => {
+    ): Promise<{
+      faculty: number;
+      labs: number;
+      observations: number;
+      truncatedByLimit: boolean;
+    }> => {
       let faculty = 0;
       let labs = 0;
       let observations = 0;
+      let truncatedByLimit = false;
+      // One read per batch rather than one per row, and keyed by the slug this lane
+      // itself mints so the lookup cannot miss.
+      const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
+        entries.map((entry) => rosterResearchEntitySlug(entry, dept)).filter(Boolean),
+      );
 
+      // Enriched before anything is emitted, because whether a website is one person's
+      // or a group's is a fact about the whole roster, not about one row.
+      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      const rosterSurnames: ReadonlySet<string> = new Set(
+        entries
+          .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
+          .filter((surname): surname is string => Boolean(surname)),
+      );
       for (const rawEntry of entries) {
-        if (totalFaculty >= limit) break;
+        if (totalFaculty + enriched.length >= limit) {
+          truncatedByLimit = true;
+          break;
+        }
         if (dept.crossListedProgramme && programmeRosterRowIsRejectableFromRosterAlone(rawEntry)) {
           continue;
         }
-        const entry = withoutOffsiteInstitutionWebsite(
-          await enrichEntryFromOfficialProfile(
-            rawEntry,
-            this.name,
-            ctx.options.useCache,
-            this.htmlFetcher,
-            ctx.log,
+        const entry = withoutAnotherRosterPersonsStatedLab(
+          withoutOffsiteInstitutionWebsite(
+            await enrichEntryFromOfficialProfile(
+              withoutUnheldSceneIdentity(rawEntry, dept, labUrlEvidenceBySlug),
+              this.name,
+              ctx.options.useCache,
+              this.htmlFetcher,
+              ctx.log,
+            ),
           ),
+          rosterSurnames,
         );
         if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
+        const personKey = entryToUserObservations(entry, dept, sourceUrl).entityKey;
+        const userDedupeKey = `${dept.deptKey}:${personKey}`;
+        if (seenUserKeys.has(userDedupeKey)) continue;
+        seenUserKeys.add(userDedupeKey);
+        enriched.push({ entry, personKey });
+      }
+
+      for (const { entry } of withoutSharedGroupWebsites(enriched)) {
         const { observations: userObs, entityKey } = entryToUserObservations(
           entry,
           dept,
           sourceUrl,
         );
-        const userDedupeKey = `${dept.deptKey}:${entityKey}`;
-        if (seenUserKeys.has(userDedupeKey)) continue;
-        seenUserKeys.add(userDedupeKey);
         await ctx.emit(userObs);
         observations += userObs.length;
 
-        const labObs = dept.officialProfileOnly
-          ? []
-          : entryToResearchEntityObservations(entry, dept, sourceUrl, entityKey);
+        const mint = dept.officialProfileOnly
+          ? { observations: [] as ObservationInput[], refusedByTitle: false }
+          : rosterResearchEntityMint(
+              entry,
+              dept,
+              sourceUrl,
+              entityKey,
+              labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
+            );
+        const labObs = mint.observations;
         const labKey = labObs[0]?.entityKey;
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);
@@ -4028,25 +4352,48 @@ export class DepartmentRosterScraper implements IScraper {
         // A programme lane reads cross-listed faculty from other departments, so
         // letting it add to this key's discovered set credits the department with a
         // roster it does not publish (#3251).
-        if (
-          labObs.length > 0 &&
-          typeof labKey === 'string' &&
-          labKey &&
-          !dept.crossListedProgramme
-        ) {
+        //
+        // A title screen refusing a research row is not the roster dropping the person, and
+        // the two must not be conflated: `loadRosterObservedEntityKeys` remembers
+        // every key this lane ever emitted, so a previously minted row whose key
+        // stops appearing in the discovered set reads as `absent` to
+        // `classifyEntityRunSignal` and the departure lane can mark somebody as
+        // having left Yale for holding a support title (#3410).
+        //
+        // The cost is accepted rather than unnoticed: this set is also the roster
+        // drop guard's numerator, while `countRosterGovernedEntities` counts live
+        // rows only, so a refused key with no live row makes the ratio read high and
+        // a real roster breakage slightly harder to detect. Asserting that somebody
+        // left Yale is the worse error. Closing it needs a live-row join this lane
+        // cannot do, because it holds no `ResearchEntity` read at all.
+        const discoveredKey =
+          typeof labKey === 'string' && labKey
+            ? labKey
+            : mint.refusedByTitle
+              ? rosterResearchEntitySlug(entry, dept)
+              : '';
+        if (discoveredKey && !dept.crossListedProgramme) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
-          deptDiscovered.add(labKey);
+          deptDiscovered.add(discoveredKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
         }
         faculty++;
         totalFaculty++;
       }
 
-      return { faculty, labs, observations };
+      return { faculty, labs, observations, truncatedByLimit };
     };
 
-    const runLane = async (dept: DeptConfig): Promise<LaneRead | null> => {
-      if (totalFaculty >= limit) return null;
+    const runLane = async (dept: DeptConfig): Promise<LaneRead> => {
+      if (totalFaculty >= limit) {
+        return {
+          deptKey: dept.deptKey,
+          count: 0,
+          status: 'skipped-by-limit',
+          pagesRead: 0,
+          readMode: 'none',
+        };
+      }
 
       if (dept.jsRenderedSkip && dept.dataUrl && dept.dataExtractor) {
         try {
@@ -4060,7 +4407,7 @@ export class DepartmentRosterScraper implements IScraper {
             return {
               deptKey: dept.deptKey,
               count: processed.faculty,
-              status: 'ok',
+              status: processed.truncatedByLimit ? 'partial-read' : 'ok',
               pagesRead: 1,
               readMode: 'data-endpoint',
             };
@@ -4086,7 +4433,17 @@ export class DepartmentRosterScraper implements IScraper {
         const rendered = await measureRenderedFetch(
           dept.url,
           'scrapling',
-          () => fetchRenderedDeptPage(this.name, ctx.options.useCache, dept, this.renderedFetcher),
+          () =>
+            fetchUsableRenderedPage({
+              sourceName: this.name,
+              useCache: ctx.options.useCache,
+              request: {
+                url: dept.url,
+                waitSelector: dept.renderWaitSelector,
+                timeoutMs: FETCH_TIMEOUT_MS,
+              },
+              renderedFetcher: this.renderedFetcher,
+            }),
           { selectorName: dept.renderWaitSelector },
         );
         fetchAttempts.push(rendered.metric);
@@ -4125,17 +4482,22 @@ export class DepartmentRosterScraper implements IScraper {
         return {
           deptKey: dept.deptKey,
           count: processed.faculty,
-          status: processed.faculty === 0 ? 'empty' : 'ok',
+          status: processed.truncatedByLimit
+            ? 'partial-read'
+            : entries.length === 0
+              ? 'empty'
+              : 'ok',
           pagesRead: 1,
           readMode: 'rendered',
         };
       }
 
+      const laneReuse = { pagesReused: 0 };
       const walk = await walkRosterLanePages({
         url: dept.url,
         paginated: dept.paginated,
         extractor: dept.extractor,
-        fetchHtml: (pageUrl) => this.measuredHtmlFetch(pageUrl, ctx, fetchAttempts),
+        fetchHtml: (pageUrl) => this.measuredHtmlFetch(pageUrl, ctx, fetchAttempts, laneReuse),
       });
       if (walk.error) {
         ctx.log(`[${dept.deptKey}] ${walk.stopReason}: ${sanitizeLogValue(walk.error)}`);
@@ -4148,6 +4510,7 @@ export class DepartmentRosterScraper implements IScraper {
       // one keys on the ENRICHED identity, which a profile page can change.
       const seenRawKeys = new Set<string>();
       let deptCount = 0;
+      let truncatedByLimit = false;
       for (const page of walk.pages) {
         const unread = page.entries.filter((entry) => {
           const key = rosterEntryIdentityKey(entry);
@@ -4161,6 +4524,10 @@ export class DepartmentRosterScraper implements IScraper {
         totalObs += processed.observations;
         totalLabs += processed.labs;
         deptCount += processed.faculty;
+        if (processed.truncatedByLimit) {
+          truncatedByLimit = true;
+          break;
+        }
       }
 
       ctx.log(
@@ -4169,9 +4536,10 @@ export class DepartmentRosterScraper implements IScraper {
       return {
         deptKey: dept.deptKey,
         count: deptCount,
-        status: deptCount === 0 ? 'empty' : 'ok',
+        status: htmlLaneStatus(walk, truncatedByLimit),
         pagesRead: walk.pagesFetched,
         readMode: walk.pagesFetched > 0 ? 'html' : 'none',
+        pagesReusedWithinSweep: laneReuse.pagesReused,
       };
     };
 
@@ -4185,9 +4553,7 @@ export class DepartmentRosterScraper implements IScraper {
     const outcomeByIndex = new Array<LaneOutcome | null>(this.configs.length).fill(null);
     const runSelectedLane = async ({ dept, index }: { dept: DeptConfig; index: number }) => {
       const read = await runLane(dept);
-      outcomeByIndex[index] = read
-        ? { ...read, crossListedProgramme: Boolean(dept.crossListedProgramme) }
-        : null;
+      outcomeByIndex[index] = { ...read, crossListedProgramme: Boolean(dept.crossListedProgramme) };
     };
 
     // A rendered lane drives a headless browser, so those six run one at a time
@@ -4203,6 +4569,19 @@ export class DepartmentRosterScraper implements IScraper {
     const laneOutcomes = outcomeByIndex.filter(
       (outcome): outcome is LaneOutcome => outcome !== null,
     );
+    const attemptedLanes = laneOutcomes.filter(
+      (outcome) => !ROSTER_LANES_NEVER_ATTEMPTED_STATUSES.has(outcome.status),
+    );
+    const failedLanes = attemptedLanes.filter((outcome) =>
+      ROSTER_LANE_FAILED_READ_STATUSES.has(outcome.status),
+    );
+    if (attemptedLanes.length > 0 && failedLanes.length === attemptedLanes.length) {
+      throw new Error(
+        `Every attempted roster lane failed to read its page (${failedLanes
+          .map((outcome) => `${outcome.deptKey}(${outcome.status})`)
+          .join(', ')}); the run read no roster and is a failure, not a success`,
+      );
+    }
     // One department is one roster-health snapshot, even when several configs
     // share its `deptKey` (economics has four person-type pages, and 13 of the 125
     // non-programme lanes collapse this way). A per-config snapshot published two
@@ -4245,9 +4624,11 @@ export class DepartmentRosterScraper implements IScraper {
     const snapshotObservedAt = new Date();
     const rosterHealthObservations: ObservationInput[] = perDept.map((deptResult) => {
       const dept = authoritativeConfigByKey.get(deptResult.deptKey);
+      // Sorted because the set fills in fetch-completion order, which would
+      // otherwise make identical replays emit different values.
       const discoveredEntityKeys = Array.from(
         discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
-      );
+      ).sort();
       // A department whose page was not read in this run is not authoritative
       // about who its roster lists, whatever its lane status says. This is the
       // half of #3251 that was real: the snapshot asserted "this is who the
@@ -4274,6 +4655,7 @@ export class DepartmentRosterScraper implements IScraper {
             pagesRead: deptResult.pagesRead,
             readMode: deptResult.readMode,
             cacheAllowed: Boolean(ctx.options.useCache),
+            pagesReusedWithinSweep: deptResult.pagesReusedWithinSweep ?? 0,
             readAt: snapshotObservedAt.toISOString(),
           },
         },
@@ -4293,12 +4675,30 @@ export class DepartmentRosterScraper implements IScraper {
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
 
-    const breakageStatuses = new Set(['empty', 'rendered-extractor-error']);
+    const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
     const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
     if (brokenSources.length > 0) {
       ctx.log(
         `WARNING: ${brokenSources.length} configured roster source(s) fetched but yielded no faculty - likely a site migration or renamed layout; re-verify the URL and extractor: ${brokenSources
           .map((d) => `${d.deptKey}(${d.status})`)
+          .join(', ')}`,
+      );
+    }
+    const unreadSources = perDept.filter((d) =>
+      ['fetch-failed', 'rendered-unavailable'].includes(d.status),
+    );
+    if (unreadSources.length > 0) {
+      ctx.log(
+        `WARNING: ${unreadSources.length} configured roster source(s) could not be read in this run, so they assert nothing about who is listed: ${unreadSources
+          .map((d) => `${d.deptKey}(${d.status})`)
+          .join(', ')}`,
+      );
+    }
+    const partialSources = perDept.filter((d) => d.status === 'partial-read');
+    if (partialSources.length > 0) {
+      ctx.log(
+        `WARNING: ${partialSources.length} configured roster source(s) read only part of their roster, so they are not authoritative about who is absent: ${partialSources
+          .map((d) => d.deptKey)
           .join(', ')}`,
       );
     }
@@ -4310,25 +4710,4 @@ export class DepartmentRosterScraper implements IScraper {
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }
-}
-
-async function fetchRenderedDeptPage(
-  sourceName: string,
-  useCache: boolean,
-  dept: DeptConfig,
-  renderedFetcher: RenderedFetcher | null,
-): Promise<RenderedFetchResult | null> {
-  if (!renderedFetcher) return null;
-  const cacheKey = `rendered-page:v1:${dept.url}`;
-  if (useCache) {
-    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
-    if (cached) return cached;
-  }
-  const result = await renderedFetcher({
-    url: dept.url,
-    waitSelector: dept.renderWaitSelector,
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
-  if (useCache && result?.html) await setCached(sourceName, cacheKey, result);
-  return result;
 }

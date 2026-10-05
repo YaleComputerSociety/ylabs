@@ -16,6 +16,11 @@ describe('parseSourceLinkHealthBackfillArgs', () => {
     expect(parseSourceLinkHealthBackfillArgs(['--stale-only']).staleOnly).toBe(true);
   });
 
+  it('parses --http-websites-only', () => {
+    expect(parseSourceLinkHealthBackfillArgs(['--http-websites-only']).httpWebsitesOnly).toBe(true);
+    expect(parseSourceLinkHealthBackfillArgs([]).httpWebsitesOnly).toBe(false);
+  });
+
   it('still rejects an unknown flag', () => {
     expect(() => parseSourceLinkHealthBackfillArgs(['--stale'])).toThrow();
   });
@@ -33,6 +38,15 @@ describe('sourceLinkHealthRunOptions', () => {
       dryRun: false,
       limit: 100,
       staleOnly: true,
+    });
+  });
+
+  it('carries --http-websites-only through to the run, so the scope is not inert', () => {
+    const options = parseSourceLinkHealthBackfillArgs(['--http-websites-only']);
+    expect(sourceLinkHealthRunOptions(options)).toEqual({
+      dryRun: true,
+      staleOnly: false,
+      httpWebsitesOnly: true,
     });
   });
 
@@ -81,5 +95,29 @@ describe('--checked-before', () => {
       dryRun: true,
       staleOnly: false,
     });
+  });
+});
+
+describe('--reprobe-healthy-after-days', () => {
+  it('parses the window and carries it through to the run', () => {
+    const options = parseSourceLinkHealthBackfillArgs(['--reprobe-healthy-after-days=7']);
+    expect(options.reprobeHealthyAfterDays).toBe(7);
+    expect(sourceLinkHealthRunOptions(options)).toEqual({
+      dryRun: true,
+      staleOnly: false,
+      reprobeHealthyAfterDays: 7,
+    });
+  });
+
+  it('rejects a non-positive window', () => {
+    expect(() => parseSourceLinkHealthBackfillArgs(['--reprobe-healthy-after-days=0'])).toThrow(
+      /--reprobe-healthy-after-days must be a positive integer/,
+    );
+  });
+
+  it('refuses to combine with --stale-only, which scopes by row instead', () => {
+    expect(() =>
+      parseSourceLinkHealthBackfillArgs(['--stale-only', '--reprobe-healthy-after-days=7']),
+    ).toThrow(/alternative scopes/);
   });
 });

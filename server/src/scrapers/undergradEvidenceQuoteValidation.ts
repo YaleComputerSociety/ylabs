@@ -68,7 +68,21 @@ const SELF_REFERENTIAL_DEGREE_HISTORY_PATTERN =
   /\b(?:completed|received|earned|holds?|has)\b[^.!?]{0,60}\b(?:her|his|their|my)\b[^.!?]{0,30}\b(?:undergraduate|bachelor'?s?)\s+degree\b/i;
 
 const ALUMNI_OR_HISTORICAL_POPULATION_PATTERN =
-  /\balumn(?:i|us|ae|a)\b|\bformer\s+undergrad(?:uate)?s?\b|\b(?:has|have)\s+graduated\b|\bclass\s+of\s+\d{4}\b/i;
+  /\balumn(?:i|us|ae|a)\b|\bformer\s+undergrad(?:uate)?s?\b|\b(?:has|have)\s+graduated\b/i;
+
+const CLASS_YEAR = /\bclass\s+of\s+((?:19|20)\d{2})\b/gi;
+const COMMENCEMENT_MONTH_INDEX = 5;
+
+/**
+ * A class year names alumni only once it has graduated: "class of 2027" read in 2026 is a
+ * current student (#3775). Commencement is in May, so a class whose year has arrived counts as
+ * graduated from June.
+ */
+export function namesGraduatedClassYear(quote: string, now: Date = new Date()): boolean {
+  const year = now.getFullYear();
+  const graduatedThrough = now.getMonth() >= COMMENCEMENT_MONTH_INDEX ? year : year - 1;
+  return [...quote.matchAll(CLASS_YEAR)].some((match) => Number(match[1]) <= graduatedThrough);
+}
 
 const VISITING_SCHOLAR_POPULATION_PATTERN =
   /\bvisiting\s+(?:scholars?|researchers?|students?|fellows?|undergrads?|undergraduates?)\b/i;
@@ -89,15 +103,84 @@ export function isExplicitUndergradUnavailabilityPhrase(quote?: string): boolean
   return EXPLICIT_UNDERGRAD_UNAVAILABILITY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const MODEL_SEARCH_NOTE_PATTERNS: RegExp[] = [
+  /\b(?:the|these|this|those)\s+(?:provided|profiled|supplied|given|available)\s+(?:pages?|profiles?|profile\s+pages?|sub-?pages?|text|sites?|content)\b/i,
+  /\b(?:pages?|profiles?|text|content)\s+(?:provided|supplied|given)\b/i,
+  /^\W*(?:no|there\s+(?:is|are)\s+no)\s+(?:(?:explicit|clear|direct|specific)\s+)?(?:mentions?|evidence|text|language|statements?|references?|indications?|information|invitations?)\b/i,
+  /\bno\s+(?:(?:explicit|clear|direct|specific)\s+)?mentions?\s+of\b/i,
+  /\bno\s+(?:(?:explicit|clear|direct|specific)\s+)?(?:text|language|statements?)\s+on\s+(?:the|these|this)\s+(?:pages?|sites?|profiles?)\b/i,
+  /\b(?:does|do)\s+not\s+(?:explicitly\s+)?mention\s+(?:any\s+)?(?:accepting\s+)?undergrad/i,
+  /\b(?:members?|people|team|staff)\s*\(?pages?\)?\s+(?:lists|shows|contains|includes)\b/i,
+  /^\W*the\s+page\s+(?:lists|shows|contains|includes)\b[^.]*\b(?:no|not)\b/i,
+  /\b(?:people|members?|directory)\b[^()]*\((?:lists|shows|includes)\b/i,
+  /\bno\s+(?:one|(?:current\s+)?(?:yale\s+)?(?:students\s+or\s+)?undergrad(?:uate)?s?)\b[^.;)]{0,40}?\b(?:(?:explicitly\s+)?(?:listed|mentioned)|labell?ed)\b/i,
+  /\bbut\s+no\s+(?:current\s+)?(?:yale\s+)?undergrad(?:uate)?s?\b/i,
+  /\bnav(?:igation)?\s+item\b/i,
+];
+
+/**
+ * The model describing its own search ("No explicit mention of undergraduates was found on
+ * the provided pages") rather than quoting the lab. It names an undergraduate population, so
+ * without this it reads as evidence that the lab hosts them (#3683).
+ */
+export function isModelSearchNote(quote: string | undefined | null): boolean {
+  const text = (quote || '').trim();
+  return Boolean(text) && MODEL_SEARCH_NOTE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | null): boolean {
   const text = (quote || '').trim();
   if (!text) return false;
+  if (isModelSearchNote(text)) return false;
   if (HIGH_SCHOOL_POPULATION_PATTERN.test(text)) return false;
   if (RESUME_EDUCATION_LINE_PATTERN.test(text)) return false;
   if (SELF_REFERENTIAL_DEGREE_HISTORY_PATTERN.test(text)) return false;
   if (ALUMNI_OR_HISTORICAL_POPULATION_PATTERN.test(text)) return false;
+  if (namesGraduatedClassYear(text)) return false;
   if (VISITING_SCHOLAR_POPULATION_PATTERN.test(text)) return false;
   if (quoteExplicitlyDeclinesUndergraduates(text)) return false;
   if (isExplicitUndergradUnavailabilityPhrase(text)) return false;
   return quoteHasUndergraduatePopulation(text);
+}
+
+export const UNDERGRAD_MICROSITE_LANE = 'lab-microsite-undergrad-llm';
+
+export const RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE = 'research-entity-cache-backfill';
+
+const EXPLICIT_UNDERGRADUATE_POPULATION =
+  /(?:\b|(?<=[a-z]))(?:undergrads?|undergraduates?)\b|\b(?:college\s+students?|yale\s+college|freshm(?:an|en)|sophomores?)\b|\b(?:first[- ]years?|juniors?)\b(?![\s-]+(?:graduate|grad|ph\.?\s?d|doctoral|postdoc|post-doc|medical|faculty|investigators?|researchers?|scientists?|fellows?|staff))/i;
+
+const UNDERGRADUATE_PROGRAM_ACRONYM = /\b(?:SURF|STARS)\b/;
+
+const UNDERGRADUATE_CONTEXT_CUE =
+  /\b(?:summer\s+(?:months|research|interns?|internships?|students?|program)|in\s+the\s+summer|course\s+credit|for\s+credit|senior[\s-]+(?:thesis|essay|project)|research\s+theses|independent\s+study|class\s+of\s+20\d{2}|b\.?[as]\.?\s+candidates?)\b/i;
+
+const BARE_POPULATION_HEADING =
+  /^\W*(?:(?:current|former|our)\s+)?(?:undergrad(?:uate)?s?|college\s+students?)(?:\s+(?:research|lab|laboratory|students?|researchers?|members?|interns?|assistants?)){0,3}\W*$/i;
+
+/**
+ * Whether text carries an undergraduate marker at all, with none of the quote-shape checks a
+ * standalone evidence quote needs. A roster line is read under a section heading that already
+ * says who the people are, so it has no population word of its own to check.
+ */
+export function namesAnUndergraduateMarker(text: string): boolean {
+  return (
+    EXPLICIT_UNDERGRADUATE_POPULATION.test(text) ||
+    UNDERGRADUATE_PROGRAM_ACRONYM.test(text) ||
+    UNDERGRADUATE_CONTEXT_CUE.test(text)
+  );
+}
+
+/**
+ * The microsite lane's own admission rule for a quote that backs "Has hosted undergraduate
+ * researchers" (#3764). The shared plausibility check accepts a bare "students", which on a lab
+ * site is usually a postdoc, rotation, or PhD invitation, and a bare "Undergraduate Students"
+ * navigation heading, which names no one. The department undergraduate-research lane keeps
+ * the looser rule because its pages are about undergraduates by construction.
+ */
+export function laneQuoteStatesUndergraduates(quote: string | undefined | null): boolean {
+  const text = (quote || '').trim();
+  if (!isPlausibleUndergradEvidenceQuote(text)) return false;
+  if (BARE_POPULATION_HEADING.test(text)) return false;
+  return namesAnUndergraduateMarker(text);
 }

@@ -3,6 +3,7 @@ import {
   isUmbrellaOrganizationName,
   namesAServiceFacility,
 } from '../utils/researchHomeNameIdentityAuthority';
+import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import { resolveBackfillWebsiteUrl } from './backfillResearchEntityWebsiteUrlsCore';
 
 export interface OrganizationIdentityWebsite {
@@ -22,6 +23,7 @@ export interface PersonScopedWebsiteRow {
   website?: unknown;
   sourceUrls?: unknown;
   manuallyLockedFields?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -136,9 +138,19 @@ export function canonicalWebsitePageKey(value: unknown): string {
  * them. Once the organization is a first-class row, the student reaches it there
  * and the person row is free of a website that was never its own.
  *
- * A manually locked `websiteUrl` is left alone: it is either an operator decision, or
- * this lane's own `engine_gap_workaround` lock from a previous apply, which is what
- * makes a second run plan nothing.
+ * A manually locked `websiteUrl` is left alone, because that is an operator decision.
+ *
+ * What makes a second run plan nothing is the RECORDED REFUSAL, not a lock. The lane
+ * used to pair its clear with an `engine_gap_workaround` lock because no engine arm
+ * could refuse this value: whether a page is an organization's identity page is a fact
+ * about the corpus rather than about the URL's shape, so none of the pure URL
+ * predicates in `isPromotableWebsiteUrl` can see it. `fieldValueRefusals` closed that
+ * gap, and it is keyed on the VALUE rather than on the field, so the borrowed page can
+ * stay in `website` and `sourceUrls` and still never be promoted: the resolver screen
+ * drops refused observations before `resolveAllFields`, and the citation-promotion path
+ * checks `valueIsRefused` as well. A refusal is therefore the durable form a lock was
+ * standing in for, and it leaves the field open so the row still improves when a real
+ * research home arrives, which a lock does not.
  */
 export function planOrganizationIdentityWebsiteGraft(
   row: PersonScopedWebsiteRow,
@@ -149,6 +161,7 @@ export function planOrganizationIdentityWebsiteGraft(
   if (!websiteUrl) return null;
   if (!isPersonScopedResearchEntity(row)) return null;
   if (stringList(row.manuallyLockedFields).includes('websiteUrl')) return null;
+  if (valueIsRefused(row.fieldValueRefusals, 'websiteUrl', websiteUrl)) return null;
 
   const token = organizationWebsiteIdentityToken(websiteUrl);
   if (!token) return null;

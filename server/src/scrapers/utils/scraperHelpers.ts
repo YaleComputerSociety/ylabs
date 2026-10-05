@@ -6,6 +6,9 @@
  * external data (names, emails, URLs).
  */
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
+import { stripPersonNameCaptionWrapper } from '../../utils/personNameHygiene';
+
+export const SLUG_MAX_LENGTH = 100;
 
 /**
  * Lowercase, ASCII-fold (basic), strip diacritics, and replace any run of
@@ -21,6 +24,14 @@ import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatChara
  * the two keys never join (#2874).
  */
 export function slugify(input: string): string {
+  return unboundedSlug(input).slice(0, SLUG_MAX_LENGTH);
+}
+
+export function slugTokens(input: string): string[] {
+  return unboundedSlug(input).split('-').filter(Boolean);
+}
+
+function unboundedSlug(input: string): string {
   if (!input) return '';
   return stripInvisibleFormatCharacters(input)
     .normalize('NFKD')
@@ -29,8 +40,7 @@ export function slugify(input: string): string {
     .replace(/['\u2018\u2019]s\b/g, '') // drop possessive 's
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100);
+    .replace(/^-+|-+$/g, '');
 }
 
 /**
@@ -139,7 +149,37 @@ export function isLikelyPersonSpecificYaleEmail(
  */
 export function normalizeName(name: string | undefined | null): string {
   if (!name) return '';
-  let n = stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
+  return normalizeNameKeepingCaption(stripPersonNameCaptionWrapper(collapseNameWhitespace(name)));
+}
+
+const photoSceneOpenerPattern =
+  /^(?:an?\s+|the\s+)?(?:man|woman|person|people|group\s+of)\s+(?:in|with|wearing|holding|standing|sitting|seated|smiling|posing|playing|leaning|looking|on|at)\b/iu;
+const photoSceneWordPattern =
+  /(?<![\p{L}\p{N}])(?:wearing|holding|standing|sitting|seated|smiling|posing|playing|leaning|suit|shirt|jacket|glasses|background|in\s+front\s+of)(?![\p{L}\p{N}])/iu;
+
+/**
+ * Image alt text that describes the photo ("man in green suit holding guitar")
+ * rather than naming the person in it. A roster that falls back to the headshot's
+ * alt text for a name must refuse it, or the scene becomes the person's name.
+ */
+export function isPhotoSceneDescription(text: string | undefined | null): boolean {
+  const value = collapseNameWhitespace(String(text || ''));
+  if (!value) return false;
+  return photoSceneOpenerPattern.test(value) || photoSceneWordPattern.test(value);
+}
+
+function collapseNameWhitespace(name: string): string {
+  return stripInvisibleFormatCharacters(String(name)).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * `normalizeName` without the headshot-caption rule: the form a roster row's slug and
+ * user key were first minted from, before that rule existed, so identity continuity
+ * can re-derive them unchanged (#4716).
+ */
+export function normalizeNameKeepingCaption(name: string | undefined | null): string {
+  if (!name) return '';
+  let n = collapseNameWhitespace(name);
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // drop parenthetical nicknames/asides e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu",

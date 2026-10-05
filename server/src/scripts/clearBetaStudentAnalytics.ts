@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
-import type { FilterQuery } from 'mongoose';
+import type { QueryFilter } from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
@@ -17,9 +17,9 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
-export function buildBetaStudentAnalyticsEventFilter(): FilterQuery<typeof AnalyticsEvent> {
+export function buildBetaStudentAnalyticsEventFilter(): QueryFilter<typeof AnalyticsEvent> {
   return {
     userType: { $in: [...BETA_STUDENT_ANALYTICS_USER_TYPES] },
     netid: { $nin: ['devadmin', 'test123'], $not: /^(dev|test)/i },

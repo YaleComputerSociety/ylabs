@@ -1,6 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState, type MouseEvent } from 'react';
 
@@ -11,8 +11,9 @@ import FellowshipSearchContext, {
 import UserContext from '../../contexts/UserContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
-import { summarizeProgramJourney } from '../../utils/programJourney';
 import axios from '../../utils/axios';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
+import { showAlert } from '../../utils/appDialogs';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -22,22 +23,42 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
+
+vi.mock('../../utils/researchAnalytics', async () => ({
+  ...(await vi.importActual<typeof import('../../utils/researchAnalytics')>(
+    '../../utils/researchAnalytics',
+  )),
+  trackResearchEvent: vi.fn(),
+}));
+
 vi.mock('../../components/shared/BrowseGrid', () => ({
   default: ({
     items,
     favIds = [],
     onToggleFavorite,
+    onOpenModal,
     emptyMessage,
   }: {
-    items: Array<{ data: Fellowship }>;
+    items: Array<{ type: 'fellowship'; data: Fellowship }>;
     favIds?: string[];
     onToggleFavorite?: (id: string, event: MouseEvent) => void;
+    onOpenModal?: (item: { type: 'fellowship'; data: Fellowship }) => void;
     emptyMessage: string;
   }) => (
     <section aria-label={emptyMessage}>
       {items.map((item) => (
         <article key={item.data.id}>
           <span>{item.data.title}</span>
+          {onOpenModal && (
+            <button
+              type="button"
+              aria-label={`Open program ${item.data.id}`}
+              onClick={() => onOpenModal(item)}
+            >
+              Open
+            </button>
+          )}
           {onToggleFavorite && (
             <button
               type="button"
@@ -108,6 +129,7 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -151,10 +173,28 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   ...overrides,
 });
 
+const HistoryControls = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (
+    <>
+      <button type="button" onClick={() => void navigate(-1)}>
+        Browser back
+      </button>
+      <button type="button" onClick={() => void navigate(1)}>
+        Browser forward
+      </button>
+      <span data-testid="current-location">{`${location.pathname}${location.search}`}</span>
+    </>
+  );
+};
+
 const renderPage = (
   fellowships: Fellowship[],
   overrides: Partial<FellowshipSearchContextType> = {},
   initialEntries: string[] = ['/programs'],
+  initialIndex: number = initialEntries.length - 1,
+  user: { userType: string; isAdmin?: boolean } = { userType: 'student' },
 ) => {
   if (!mockedAxios.get.getMockImplementation()) {
     mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
@@ -163,6 +203,8 @@ const renderPage = (
   const value: FellowshipSearchContextType = {
     queryString: '',
     setQueryString: vi.fn(),
+    queryCorrection: null,
+    searchTypedSpelling: vi.fn(),
     selectedProgramCategory: [],
     setSelectedProgramCategory: vi.fn(),
     selectedProgramKind: [],
@@ -191,12 +233,12 @@ const renderPage = (
     onToggleSortDirection: vi.fn(),
     fellowships,
     isLoading: false,
+    loadError: false,
     searchExhausted: true,
     page: 1,
     setPage: vi.fn(),
     pageSize: 500,
     total: fellowships.length,
-    journeySummary: summarizeProgramJourney(fellowships),
     filterOptions: {
       programCategory: [],
       programKind: [],
@@ -212,6 +254,7 @@ const renderPage = (
     refreshFellowships: vi.fn(),
     quickFilter: null,
     setQuickFilter: vi.fn(),
+    resetProgramFilters: vi.fn(),
     filterBarHeight: 0,
     setFilterBarHeight: vi.fn(),
     ...overrides,
@@ -220,18 +263,22 @@ const renderPage = (
   };
 
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
+    <MemoryRouter initialEntries={initialEntries} initialIndex={initialIndex}>
+      <HistoryControls />
       <UserContext.Provider
         value={{
           isLoading: false,
           isAuthenticated: true,
-          user: { userType: 'student' } as any,
+          user: user as any,
           checkContext: vi.fn(),
         }}
       >
         <UIContext.Provider value={defaultUIContext}>
           <FellowshipSearchContext.Provider value={value}>
-            <Fellowships />
+            <Routes>
+              <Route path="/programs" element={<Fellowships />} />
+              <Route path="/previous" element={<p>Previous page</p>} />
+            </Routes>
           </FellowshipSearchContext.Provider>
         </UIContext.Provider>
       </UserContext.Provider>
@@ -262,6 +309,8 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
               value={{
                 queryString: '',
                 setQueryString: vi.fn(),
+                queryCorrection: null,
+                searchTypedSpelling: vi.fn(),
                 selectedProgramCategory: [],
                 setSelectedProgramCategory: vi.fn(),
                 selectedProgramKind: [],
@@ -293,12 +342,12 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                   setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc')),
                 fellowships,
                 isLoading: false,
+                loadError: false,
                 searchExhausted: true,
                 page: 1,
                 setPage: vi.fn(),
                 pageSize: 500,
                 total: fellowships.length,
-                journeySummary: summarizeProgramJourney(fellowships),
                 filterOptions: {
                   programCategory: ['FELLOWSHIP', 'SUMMER_RESEARCH_PROGRAM'],
                   programKind: ['FELLOWSHIP_FUNDING', 'STRUCTURED_PROGRAM'],
@@ -314,6 +363,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 refreshFellowships: vi.fn(),
                 quickFilter,
                 setQuickFilter,
+                resetProgramFilters: () => setQuickFilter(null),
                 filterBarHeight: 0,
                 setFilterBarHeight: vi.fn(),
               }}
@@ -337,7 +387,7 @@ afterEach(() => {
 });
 
 describe('Programs page', () => {
-  it('frames programs and fellowships as structured application planning with status counts', async () => {
+  it('frames the page as an application board with status counts', async () => {
     renderPage([
       baseFellowship({
         id: 'closing',
@@ -364,109 +414,134 @@ describe('Programs page', () => {
     ]);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
-    expect(
-      screen.getByText(/track structured applications, recurring research programs/i),
-    ).toBeTruthy();
-    expect(screen.getByText('Apply now')).toBeTruthy();
-    expect(screen.getByText('Opening soon')).toBeTruthy();
-    expect(screen.getByText('Structured programs')).toBeTruthy();
-    expect(screen.getByText('Funding after mentor')).toBeTruthy();
-    expect(screen.getByText('Plan next cycle')).toBeTruthy();
-    expect(screen.getByText('Archive / review')).toBeTruthy();
-    expect(screen.queryByText('Likely next cycle')).toBeNull();
+    expect(screen.getByText(/you can apply to, soonest deadline first/i)).toBeTruthy();
+    expect(screen.getByText('Due soon', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Open now', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Opening soon', { selector: 'dt' })).toBeTruthy();
+    expect(screen.getByText('Next cycle', { selector: 'dt' })).toBeTruthy();
+    expect(screen.queryByText('Get started')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
   });
 
-  it('shows full-set journey partition counts in the stat tiles rather than the loaded page count', async () => {
-    const journeySummary = {
-      applyNow: 20,
-      openingSoon: 7,
-      structured: 40,
-      fundingAfterMentor: 30,
-      nextCycle: 3,
-      archive: 33,
-    };
-    const total = Object.values(journeySummary).reduce((sum, value) => sum + value, 0);
-
-    renderPage(
-      [
-        baseFellowship({
-          id: 'solo',
-          title: 'Solo Loaded Program',
-          isAcceptingApplications: false,
-          deadline: isoDaysFromNow(-10),
-        }),
-      ],
-      { total, journeySummary },
-    );
+  it('does not claim zero results while the first load is still in flight', async () => {
+    renderPage([], { isLoading: true, searchExhausted: false, total: 0 });
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
-    expect(total).toBe(133);
-    expect(screen.getByText('20')).toBeTruthy();
-    expect(screen.getByText('7')).toBeTruthy();
-    expect(screen.getByText('40')).toBeTruthy();
-    expect(screen.getByText('3')).toBeTruthy();
-    expect(screen.getByText('33')).toBeTruthy();
-    expect(screen.getAllByText('30').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/^0 results$/)).toBeNull();
   });
 
-  it('keeps each stat tile equal to its matching journey section header', async () => {
+  it('keeps the status tiles in place without zero counts when the load fails', async () => {
+    renderPage([], { loadError: true, total: 0 });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Could not load programs and fellowships' }),
+      ).toBeTruthy();
+    });
+
+    expect(screen.getAllByText('Not available')).toHaveLength(4);
+    expect(screen.getByText('Due soon')).toBeTruthy();
+    expect(screen.queryByText(/^0$/)).toBeNull();
+  });
+
+  it('keeps the same four status tiles from first paint to a load that fills every section', async () => {
+    const statusTileLabels = () =>
+      screen.getAllByRole('term').map((term) => term.textContent?.trim());
+    const timingTiles = ['Due soon', 'Open now', 'Opening soon', 'Next cycle'];
+
+    renderPage([], { isLoading: true, searchExhausted: false, total: 0 });
+    await waitFor(() => {
+      expect(screen.getAllByText('Loading')).toHaveLength(4);
+    });
+    expect(statusTileLabels()).toEqual(timingTiles);
+    cleanup();
+
+    renderPage([
+      baseFellowship({
+        id: 'closing',
+        title: 'Closing Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(10),
+      }),
+      baseFellowship({
+        id: 'guidance',
+        title: 'Guidance Record',
+        departmentResearchGuidance: true,
+      }),
+      baseFellowship({
+        id: 'undated',
+        title: 'Undated Program',
+        isAcceptingApplications: true,
+        deadline: null,
+      }),
+      baseFellowship({
+        id: 'archived',
+        title: 'Archived Program',
+        studentFacingCategory: 'Archive / review',
+        deadline: isoDaysFromNow(90),
+      }),
+    ]);
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Archive / review' })).toBeTruthy();
+    });
+    expect(screen.getByRole('heading', { name: 'Department research guidance' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'No dates posted' })).toBeTruthy();
+    expect(statusTileLabels()).toEqual(timingTiles);
+  });
+
+  it('keeps each stat tile equal to its matching section header', async () => {
     const fellowships = [
       baseFellowship({
-        id: 'apply-now',
-        title: 'Open Apply Program',
-        programKind: 'STRUCTURED_PROGRAM',
-        requiresMentorBeforeApply: false,
-        studentFacingCategory: 'Structured program',
+        id: 'closing',
+        title: 'Closing Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(10),
+      }),
+      baseFellowship({
+        id: 'open-a',
+        title: 'Open Program A',
         isAcceptingApplications: true,
         deadline: isoDaysFromNow(60),
       }),
       baseFellowship({
-        id: 'structured',
-        title: 'Structured Program Record',
-        programKind: 'STRUCTURED_PROGRAM',
-        requiresMentorBeforeApply: false,
-        studentFacingCategory: 'Structured program',
-        isAcceptingApplications: false,
-        deadline: isoDaysFromNow(-40),
-      }),
-      baseFellowship({
-        id: 'funding',
-        title: 'Funding After Mentor Record',
-        isAcceptingApplications: false,
-        deadline: isoDaysFromNow(-40),
+        id: 'open-b',
+        title: 'Open Program B',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(90),
       }),
     ];
 
     renderPage(fellowships);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
-    const summary = summarizeProgramJourney(fellowships);
-    expect(Object.values(summary).reduce((sum, value) => sum + value, 0)).toBe(fellowships.length);
-
-    for (const [title, key] of [
-      ['Apply Now', 'applyNow'],
-      ['Structured Research Programs', 'structured'],
-      ['Funding After You Have a Mentor', 'fundingAfterMentor'],
+    for (const [title, tile, count] of [
+      ['Due in the next 30 days', 'Due soon', 1],
+      ['Accepting applications', 'Open now', 2],
     ] as const) {
-      if (summary[key] === 0) continue;
       const header = screen.getByRole('heading', { name: title }).parentElement;
-      expect(header?.textContent).toContain(String(summary[key]));
+      expect(header?.textContent).toContain(String(count));
+      expect(screen.getByText(tile).parentElement?.textContent).toContain(String(count));
     }
   });
 
-  it('renders the Apply Now section on first paint when an open program is present among closed records', async () => {
+  it('puts an open program above every closed record on first paint', async () => {
     const fellowships = [
       ...Array.from({ length: 40 }, (_, index) =>
         baseFellowship({
@@ -487,12 +562,18 @@ describe('Programs page', () => {
     renderPage(fellowships);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
     });
 
-    const applyNowHeader = screen.getByRole('heading', { name: 'Apply Now' });
-    expect(applyNowHeader.parentElement?.textContent).toContain('1');
-    expect(screen.getByText('Open Late Program')).toBeTruthy();
+    const [firstCard] = screen.getAllByRole('article');
+    expect(within(firstCard).getByText('Open Late Program')).toBeTruthy();
+    const openSection = screen.getByRole('region', { name: 'Accepting applications' });
+    const nextCycleSection = screen.getByRole('region', { name: 'Plan for the next cycle' });
+    expect(openSection.compareDocumentPosition(nextCycleSection)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 
   it('renders program controls on the page and wires filter selection to program context', async () => {
@@ -519,8 +600,10 @@ describe('Programs page', () => {
     expect(searchInput.className).toContain('min-h-[44px]');
     await userEvent.type(searchInput, 'summer');
     expect(screen.getByRole('button', { name: /filters/i }).className).toContain('min-h-[44px]');
-    expect(screen.getByRole('button', { name: /sort/i }).className).toContain('min-h-[44px]');
-    expect(screen.getByRole('button', { name: 'Open Only' }).className).toContain('min-h-[44px]');
+    expect(screen.getByRole('combobox', { name: /sort programs/i }).className).toContain(
+      'min-h-[44px]',
+    );
+    expect(screen.getByRole('button', { name: 'Open only' }).className).toContain('min-h-[44px]');
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Year' }));
@@ -531,11 +614,60 @@ describe('Programs page', () => {
     expect(typeof update).toBe('function');
     expect(update([])).toEqual(['Senior']);
     expect(screen.queryByRole('option')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Open Only' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Open only' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
+  });
+
+  it('seeds the search from a handed-off query and then drops it from the URL', async () => {
+    const setQueryString = vi.fn();
+    renderPage([baseFellowship()], { setQueryString }, ['/programs?q=summer+funding&type=x']);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('current-location').textContent).toBe('/programs?type=x'),
+    );
+    expect(setQueryString).toHaveBeenCalledTimes(1);
+    expect(setQueryString).toHaveBeenCalledWith('summer funding');
+  });
+
+  it('starts from an empty search when the URL carries no handed-off query', async () => {
+    const setQueryString = vi.fn();
+    renderPage([baseFellowship()], { setQueryString });
+
+    await screen.findByText('Summer Research Fellowship');
+    expect(setQueryString).toHaveBeenCalledTimes(1);
+    expect(setQueryString).toHaveBeenCalledWith('');
+  });
+
+  it('keeps keyboard focus on the program search after Enter and Escape', async () => {
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })]);
+
+    const searchInput = screen.getByLabelText('Search programs and fellowships');
+    await userEvent.click(searchInput);
+    expect(searchInput).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+    expect(searchInput).toHaveFocus();
+
+    await userEvent.keyboard('{Escape}');
+    expect(searchInput).toHaveFocus();
+  });
+
+  it('clears the subject filter along with every other program filter from Clear all', async () => {
+    const resetProgramFilters = vi.fn();
+    const setSelectedStudentVisibilityTier = vi.fn();
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })], {
+      selectedSubjects: ['Biology'],
+      resetProgramFilters,
+      setSelectedStudentVisibilityTier,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+
+    expect(resetProgramFilters).toHaveBeenCalledTimes(1);
+    expect(setSelectedStudentVisibilityTier).toHaveBeenCalledWith([]);
   });
 
   it('contains mobile filter focus and restores the trigger on Escape', async () => {
@@ -575,6 +707,95 @@ describe('Programs page', () => {
     expect(searchInput).toHaveFocus();
   });
 
+  describe('student-facing copy', () => {
+    const PROPER_NOUNS = new Set(['Yale', 'RA']);
+    const isSentenceCase = (text: string) =>
+      text
+        .split(/\s+/)
+        .slice(1)
+        .every((word) => {
+          const bare = word.replace(/[^A-Za-z-]/g, '');
+          return !/^[A-Z]/.test(bare) || PROPER_NOUNS.has(bare);
+        });
+    const allFilterOptions = {
+      programCategory: ['FELLOWSHIP'],
+      programKind: ['STRUCTURED_PROGRAM'],
+      entryMode: ['APPLY_TO_PROGRAM'],
+      studentFacingCategory: ['Structured research program'],
+      yearOfStudy: ['Junior'],
+      termOfAward: ['Summer'],
+      purpose: ['Research'],
+      globalRegions: ['Asia'],
+      citizenshipStatus: ['US Citizen'],
+    };
+    const filterTabNames = async () => {
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      const dialog = screen.getByRole('dialog', { name: 'Program filters' });
+      return within(dialog)
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim() || '')
+        .filter(Boolean);
+    };
+
+    it('shows a student only student-worded filter tabs', async () => {
+      renderPage([baseFellowship()], { filterOptions: allFilterOptions });
+
+      const tabs = await filterTabNames();
+
+      expect(tabs).toEqual(
+        expect.arrayContaining(['Opportunity', 'Program type', 'How you apply']),
+      );
+      for (const internal of [
+        'Journey',
+        'Program Kind',
+        'Entry Mode',
+        'Legacy Type',
+        'Legacy category',
+      ]) {
+        expect(tabs).not.toContain(internal);
+      }
+    });
+
+    it('keeps the legacy category facet for operators', async () => {
+      renderPage([baseFellowship()], { filterOptions: allFilterOptions }, ['/programs'], 0, {
+        userType: 'admin',
+        isAdmin: true,
+      });
+
+      expect(await filterTabNames()).toContain('Legacy category');
+    });
+
+    it('sets every quick filter and board section title in sentence case', async () => {
+      renderPage([
+        baseFellowship({
+          id: 'closing',
+          isAcceptingApplications: true,
+          deadline: isoDaysFromNow(10),
+        }),
+        baseFellowship({ id: 'open', isAcceptingApplications: true, deadline: isoDaysFromNow(60) }),
+        baseFellowship({
+          id: 'past',
+          isAcceptingApplications: false,
+          deadline: isoDaysFromNow(-30),
+        }),
+      ]);
+
+      const quickFilters = within(screen.getByRole('group', { name: 'Quick filters' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim() || '');
+      const sectionTitles = screen
+        .getAllByRole('heading', { level: 2 })
+        .map((heading) => heading.textContent?.trim() || '')
+        .filter((title) => title !== 'Programs & Fellowships');
+
+      expect(quickFilters.length).toBeGreaterThan(0);
+      expect(sectionTitles.length).toBeGreaterThan(0);
+      expect([...quickFilters, ...sectionTitles].filter((label) => !isSentenceCase(label))).toEqual(
+        [],
+      );
+    });
+  });
+
   it('starts desktop filter focus on the first visible tab', async () => {
     const originalMatchMedia = window.matchMedia;
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
@@ -600,7 +821,7 @@ describe('Programs page', () => {
       await userEvent.click(screen.getByRole('button', { name: /filters/i }));
       const dialog = screen.getByRole('dialog', { name: 'Program filters' });
       await waitFor(() =>
-        expect(within(dialog).getByRole('button', { name: 'Journey' })).toHaveFocus(),
+        expect(within(dialog).getByRole('button', { name: 'Opportunity' })).toHaveFocus(),
       );
       expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
     } finally {
@@ -608,13 +829,13 @@ describe('Programs page', () => {
     }
   });
 
-  it('sorts visible program cards inside their cycle section from local sort controls', async () => {
+  it('sorts visible program cards inside their section from local sort controls', async () => {
     renderStatefulPage([
       baseFellowship({
         id: 'zeta',
         title: 'Zeta Open Fellowship',
         isAcceptingApplications: true,
-        deadline: isoDaysFromNow(30),
+        deadline: isoDaysFromNow(45),
       }),
       baseFellowship({
         id: 'alpha',
@@ -624,11 +845,11 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /sort/i }));
+    await userEvent.click(screen.getByRole('combobox', { name: /sort programs/i }));
     await userEvent.click(screen.getByText('Name'));
-    await userEvent.click(screen.getByRole('button', { name: /sort descending/i }));
+    await userEvent.click(screen.getByRole('button', { name: /sorted descending/i }));
 
-    const openSection = screen.getByRole('region', { name: 'No apply now records' });
+    const openSection = screen.getByRole('region', { name: 'Accepting applications' });
     expect(
       within(openSection)
         .getAllByRole('article')
@@ -662,11 +883,28 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /Next Cycle/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Next cycle/i }));
 
     expect(screen.queryByText('Open Fellowship')).toBeNull();
     expect(screen.queryByText('Closing Soon Fellowship')).toBeNull();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
+  });
+
+  it('returns to the top of the board when a quick filter changes', async () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
+    renderStatefulPage([
+      baseFellowship({
+        id: 'open',
+        title: 'Open Fellowship',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(60),
+      }),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Open only/i }));
+
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+    scrollTo.mockRestore();
   });
 
   it('updates the results counter and shows next-cycle guidance when Open Only has no matches', async () => {
@@ -685,15 +923,17 @@ describe('Programs page', () => {
 
     expect(screen.getByText('1 result')).toBeTruthy();
 
-    await userEvent.click(screen.getByRole('button', { name: /Open Only/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Open only/i }));
 
     expect(screen.getByText('0 results')).toBeTruthy();
     expect(
       screen.getByRole('heading', { name: 'No application windows are open right now' }),
     ).toBeTruthy();
-    expect(screen.getByText(/Use Next Cycle to track recurring opportunities/i)).toBeTruthy();
+    expect(
+      screen.getByText(/Use the next cycle filter to track recurring opportunities/i),
+    ).toBeTruthy();
 
-    await userEvent.click(screen.getByRole('button', { name: 'View Next Cycle' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View next cycle' }));
 
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
     expect(screen.getByText('1 result')).toBeTruthy();
@@ -713,7 +953,7 @@ describe('Programs page', () => {
       }),
     ]);
 
-    await userEvent.click(screen.getByRole('button', { name: /Closing Soon/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Closing soon/i }));
 
     expect(screen.getByText('0 results')).toBeTruthy();
     expect(
@@ -740,6 +980,7 @@ describe('Programs page', () => {
       '/dashboard',
     );
     expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
+      withCredentials: true,
       data: { watchedPrograms: ['open'] },
     });
   });
@@ -785,5 +1026,302 @@ describe('Programs page', () => {
 
     const detailFetches = mockedAxios.get.mock.calls.filter((call) => call[0] === '/programs/f1');
     expect(detailFetches).toHaveLength(1);
+  });
+
+  it('records one view for a program opened from a direct link, keyed by its stored id', async () => {
+    mockedAxios.put.mockResolvedValue({ data: {} });
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/f1') {
+        const { id: _id, ...stored } = baseFellowship({ id: 'f1', title: 'Deep Linked Program' });
+        return Promise.resolve({ data: { program: { ...stored, _id: 'f1' } } });
+      }
+      return Promise.resolve({ data: { watchedProgramIds: [] } });
+    });
+
+    renderPage([], {}, ['/programs?program=f1']);
+
+    await screen.findByRole('dialog', { name: 'Deep Linked Program' });
+    await waitFor(() =>
+      expect(mockedAxios.put.mock.calls.map((call) => call[0])).toEqual(['fellowships/f1/addView']),
+    );
+  });
+
+  describe('watching programs', () => {
+    const twoPrograms = () => [
+      baseFellowship({ id: 'program-a', title: 'Synthetic Program A' }),
+      baseFellowship({ id: 'program-b', title: 'Synthetic Program B' }),
+    ];
+
+    it('a failed watch does not revert a different program that saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      const serverWatchedIds: string[] = [];
+      mockedAxios.get.mockImplementation((url: string) =>
+        Promise.resolve({
+          data:
+            url === '/users/watchedProgramIds' ? { watchedProgramIds: [...serverWatchedIds] } : {},
+        }),
+      );
+      let rejectA: (reason: unknown) => void = () => {};
+      mockedAxios.put.mockImplementation((_url: string, body: any) => {
+        const [id] = body.data.watchedPrograms;
+        if (id === 'program-a') {
+          return new Promise((_resolve, reject) => {
+            rejectA = reject;
+          });
+        }
+        serverWatchedIds.push(id);
+        return Promise.resolve({ data: {} });
+      });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-b' }));
+      expect(await screen.findByRole('button', { name: 'Saved program program-b' })).toBeTruthy();
+
+      rejectA(new Error('network'));
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Saved program program-a' })).toBeNull(),
+      );
+      expect(screen.queryByRole('button', { name: 'Saved program program-b' })).toBeTruthy();
+    });
+
+    it('tells the student when a watch could not be saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      mockedAxios.put.mockRejectedValue(new Error('network'));
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+
+      await waitFor(() =>
+        expect(showAlert).toHaveBeenCalledWith(
+          expect.objectContaining({ tone: 'warning', text: expect.stringMatching(/program/i) }),
+        ),
+      );
+    });
+
+    it('keeps a watch made before the watched list finished loading', async () => {
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      let resolveIds: (value: unknown) => void = () => {};
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === '/users/watchedProgramIds'
+          ? new Promise((resolve) => {
+              resolveIds = resolve;
+            })
+          : Promise.resolve({ data: {} }),
+      );
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+      await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());
+      await act(async () => resolveIds({ data: { watchedProgramIds: ['program-b'] } }));
+
+      expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Saved program program-b' })).toBeTruthy();
+    });
+
+    it('says so when the watched list could not be loaded', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === '/users/watchedProgramIds'
+          ? Promise.reject(new Error('network'))
+          : Promise.resolve({ data: {} }),
+      );
+      renderPage(twoPrograms());
+
+      expect(await screen.findByText(/could not load the programs you are watching/i)).toBeTruthy();
+    });
+
+    it('watching a program from /programs records a research_save', async () => {
+      localStorage.setItem('yale-research.firstSave.program.v1', 'true');
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      renderPage([baseFellowship({ id: 'program-a', title: 'Synthetic Program A' })]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Save program program-a' }));
+      await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());
+
+      await waitFor(() =>
+        expect(trackResearchEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'research_save',
+            entityType: 'fellowship',
+            entityId: 'program-a',
+            payload: { operation: 'save', surface: 'search' },
+          }),
+        ),
+      );
+    });
+
+    it('offers an undo after unwatching that restores the note and stage', async () => {
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/users/watchedProgramIds') {
+          return Promise.resolve({ data: { watchedProgramIds: ['program-a'] } });
+        }
+        if (url === '/users/watchedProgramPlans') {
+          return Promise.resolve({
+            data: {
+              watchedProgramPlans: {
+                'program-a': { privateNotes: 'Synthetic note', stage: 'APPLIED' },
+              },
+            },
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      mockedAxios.delete.mockResolvedValue({ data: {} });
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Saved program program-a' }));
+
+      const undo = await screen.findByRole('button', { name: 'Undo' });
+      expect(mockedAxios.delete).toHaveBeenCalledWith('/users/watchedPrograms', {
+        withCredentials: true,
+        data: { watchedPrograms: ['program-a'] },
+      });
+      expect(screen.getByRole('button', { name: 'Save program program-a' })).toBeTruthy();
+      const region = undo.closest('[role="status"]');
+      expect(region?.textContent).toContain('Synthetic Program A');
+      expect(region?.textContent).toContain('Undo restores your note and stage too');
+
+      await userEvent.click(undo);
+
+      await waitFor(() =>
+        expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/program-a', {
+          data: { plan: { privateNotes: 'Synthetic note', stage: 'APPLIED' } },
+        }),
+      );
+      expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    });
+
+    it('does not unwatch when the plan to protect could not be read first', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/users/watchedProgramIds') {
+          return Promise.resolve({ data: { watchedProgramIds: ['program-a'] } });
+        }
+        if (url === '/users/watchedProgramPlans') {
+          return Promise.reject(new Error('network'));
+        }
+        return Promise.resolve({ data: {} });
+      });
+      renderPage(twoPrograms());
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Saved program program-a' }));
+
+      await waitFor(() => expect(showAlert).toHaveBeenCalled());
+      expect(mockedAxios.delete).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Saved program program-a' })).toBeTruthy();
+    });
+  });
+
+  describe('program modal history', () => {
+    const openProgram = () =>
+      baseFellowship({
+        id: 'open-1',
+        title: 'Browse Opened Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(30),
+      });
+
+    const mockProgramDetail = (program: Fellowship) =>
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === `/programs/${program.id}`) {
+          return Promise.resolve({ data: { program } });
+        }
+        return Promise.resolve({ data: { watchedProgramIds: [] } });
+      });
+
+    const currentLocation = () => screen.getByTestId('current-location');
+
+    it('closes a program opened from browse when the student presses Back', async () => {
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      expect(await screen.findByRole('dialog', { name: 'Browse Opened Program' })).toBeTruthy();
+      expect(currentLocation().textContent).toBe('/programs?program=open-1');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
+      );
+      expect(currentLocation().textContent).toBe('/programs');
+    });
+
+    it('leaves view recording to the card when a program is opened from browse', async () => {
+      mockedAxios.put.mockResolvedValue({ data: {} });
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Browser forward' }));
+      await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+
+      const addViewCalls = mockedAxios.put.mock.calls.filter((call) =>
+        String(call[0]).endsWith('/addView'),
+      );
+      expect(addViewCalls).toHaveLength(0);
+    });
+
+    it('reopens the program when the student presses Forward after Back', async () => {
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program]);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser forward' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Browse Opened Program' })).toBeTruthy();
+    });
+
+    it('leaves no extra history entry after opening and closing a program', async () => {
+      const program = openProgram();
+      mockProgramDetail(program);
+      renderPage([program], {}, ['/previous', '/programs']);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open program open-1' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Browse Opened Program' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Browse Opened Program' })).toBeNull(),
+      );
+      expect(currentLocation().textContent).toBe('/programs');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+
+      expect(await screen.findByText('Previous page')).toBeTruthy();
+    });
+
+    it('closes a deep-linked program without adding a history entry', async () => {
+      const program = baseFellowship({ id: 'f1', title: 'Deep Linked Program' });
+      mockProgramDetail(program);
+      renderPage([], {}, ['/previous', '/programs?program=f1']);
+
+      const dialog = await screen.findByRole('dialog', { name: 'Deep Linked Program' });
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Deep Linked Program' })).toBeNull(),
+      );
+      expect(currentLocation().textContent).toBe('/programs');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Browser back' }));
+
+      expect(await screen.findByText('Previous page')).toBeTruthy();
+    });
   });
 });

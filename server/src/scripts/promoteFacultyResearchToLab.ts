@@ -11,7 +11,7 @@ import { buildObservationFingerprint } from '../scrapers/observationStore';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { extractVisibleText } from './findLabWebsitesCore';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
@@ -29,8 +29,8 @@ import {
  * The promotion is evidence-backed rather than a bare field write. `entityType` is
  * asserted by the department roster at 0.7-0.8 on every materialization, so a write
  * with no observation behind it is reverted the next time the row materializes -
- * which is why `repairLabNamedFacultyResearchTypes` needed a `manuallyLockedFields`
- * entry to make the same correction stick. A probe observation outranks the roster
+ * which is why the since-deleted hand-judged repair (#3675) needed a
+ * `manuallyLockedFields` entry to make the same correction stick. A probe observation outranks the roster
  * and needs no lock (#2686, #2612).
  */
 const PROBE_SOURCE_NAME = 'lab-site-type-probe';
@@ -40,7 +40,7 @@ const PROBE_TIMEOUT_MS = 12_000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SYNC_BATCH_SIZE = 200;
 
@@ -113,6 +113,7 @@ export interface FacultyResearchPromotionResult {
   kindRealigned: number;
   updated: number;
   synced: number;
+  indexSyncFailures: number;
   errors: number;
   byHoldReason: Record<string, number>;
   promotedSamples: FacultyResearchPromotionRow[];
@@ -236,6 +237,7 @@ export async function runFacultyResearchPromotion(options: {
     kindRealigned: summary.kindRealigned,
     updated: 0,
     synced: 0,
+    indexSyncFailures: 0,
     errors: 0,
     byHoldReason: summary.byHoldReason,
     promotedSamples: promotions.slice(0, 25),
@@ -291,8 +293,9 @@ export async function runFacultyResearchPromotion(options: {
       );
       result.updated += batch.length;
       const fresh = await ResearchEntity.find({ _id: { $in: batch.map((row) => row.id) } }).lean();
-      await syncEntities('researchEntity', fresh);
-      result.synced += fresh.length;
+      const indexSync = await syncResearchEntitiesWithOutcome(fresh);
+      result.synced += indexSync.resynced;
+      result.indexSyncFailures += indexSync.indexSyncFailures;
     } catch (error) {
       result.errors += batch.length;
       console.error('faculty-research promotion batch failed:', sanitizeLogValue(error));

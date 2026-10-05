@@ -25,10 +25,10 @@ const UNREACHABLE_BACKEND_VALUES: Record<string, string> = {
   DEVELOPMENT_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   BETA_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   PRODUCTION_MONGODBURL: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
-  FELLOWSHIP_REFRESH_BETA_DB: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
-  FELLOWSHIP_REFRESH_PROD_DB: 'mongodb://127.0.0.1:1/ylabs-hermetic-fence',
   MEILISEARCH_HOST: 'http://127.0.0.1:1',
   MEILISEARCH_API_KEY: 'ylabs-hermetic-fence',
+  MEILISEARCH_SEARCH_API_KEY: 'ylabs-hermetic-fence',
+  MEILISEARCH_WRITE_API_KEY: 'ylabs-hermetic-fence',
   MEILISEARCH_INDEX_PREFIX: 'ylabs_hermetic_fence',
 };
 
@@ -64,6 +64,9 @@ export const fencedEnvironmentKeys = (): string[] =>
 export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
   for (const key of fencedEnvironmentKeys()) delete env[key];
   env.YLABS_SKIP_LOCAL_DOTENV = 'true';
+  // A suite must never join, or become, the machine-wide host slot broker a live scrape on
+  // the same machine is using; a suite that tests the broker re-enables it in a private directory.
+  env.SCRAPER_MACHINE_HOST_SLOTS = 'off';
   return env;
 };
 
@@ -138,7 +141,10 @@ vi.mock('dotenv/config', () => ({}));
 vi.mock('../utils/meiliClient', () => ({
   getMeiliClient: async () => searchFence.unreachableSurface(),
   getMeiliIndex: async () => searchFence.unreachableSurface(),
+  getMeiliSearchClient: async () => searchFence.unreachableSurface(),
+  getMeiliSearchIndex: async () => searchFence.unreachableSurface(),
   resolveIndexName: (name: string) => name,
+  assertDeployedMeiliConnectionConfig: () => undefined,
 }));
 
 applyEnvironmentFence(process.env);

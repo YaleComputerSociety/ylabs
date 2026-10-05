@@ -1,0 +1,9 @@
+# Read by the no-mistakes gate only from the trusted default branch (beta).
+pr:
+  # The full appendix pastes the gate's test logs and pipeline round history,
+  # which quote test fixtures from the diff; 246 of 250 strings the gh
+  # identifier guard refused in gate-written bodies sat there (#4666).
+  # minimal keeps the one-line risk summary and the attestation marker.
+  # Needs no-mistakes v1.85.0 or later; older gates ignore the key and
+  # keep publishing the full appendix, so run `no-mistakes update`.
+  appendix: minimal

@@ -9,6 +9,7 @@ import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
@@ -22,9 +23,9 @@ import {
   type VerifiedDirectoryPage,
 } from './attachDirectoryNamedLeadsCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-directory-named-leads';
 const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
@@ -61,15 +62,15 @@ export function parseArgs(argv: string[]): Args {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function fetchOnce(url: string): Promise<VerifiedDirectoryPage> {
+export async function fetchOnce(url: string): Promise<VerifiedDirectoryPage> {
   try {
-    const response = await fetch(url, {
-      redirect: 'follow',
+    const response = await fetchPublicHttpUrl(url, {
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
-      signal: AbortSignal.timeout(25000),
     });
-    if (!response.ok) return { status: response.status, headingName: '' };
-    return { status: response.status, headingName: headingNameFromHtml(await response.text()) };
+    if (response.status < 200 || response.status >= 300) {
+      return { status: response.status, headingName: '' };
+    }
+    return { status: response.status, headingName: headingNameFromHtml(response.body) };
   } catch {
     return { status: 0, headingName: '' };
   }

@@ -35,11 +35,11 @@ describe('materializeEntity clears stale observation-backed fields on rematerial
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -81,8 +81,8 @@ describe('materializeEntity clears stale observation-backed fields on rematerial
 
   const persisted = () => ResearchEntity.findOne({ slug: 'unset-fixture' }).lean<PersistedEntity>();
 
-  it('unsets methods and inferredPiUserId that no longer have a live observation', async () => {
-    await seedEntity({ methods: ['Cryo-EM'], inferredPiUserId: STALE_PI });
+  it('unsets methods that no longer has a live observation', async () => {
+    await seedEntity({ methods: ['Cryo-EM'] });
     await seedObservation('name', 'Unset Lab');
     await seedObservation('methods', ['Cryo-EM'], true);
 
@@ -90,7 +90,42 @@ describe('materializeEntity clears stale observation-backed fields on rematerial
 
     const doc = await persisted();
     expect(doc?.methods).toBeUndefined();
-    expect(doc?.inferredPiUserId).toBeUndefined();
+  });
+
+  /**
+   * `inferredPiUserId` is in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and the
+   * projection duly plans `$unset` for it, but the schema declares no path and the
+   * schemas are `strict`, so mongoose drops it from the update in both directions.
+   * The engine cannot set the field and cannot clear it either.
+   *
+   * This was asserted the other way and passed for the wrong reason: the fixture
+   * seeded the value through `ResearchEntity.create`, which strips it as well, so
+   * the row never held a value and `toBeUndefined` held whatever the engine did.
+   * The seed here goes through the raw driver so the row really does hold one, and
+   * the assertion states what actually happens (#3883).
+   */
+  it('cannot clear inferredPiUserId, because no schema path declares it', async () => {
+    await seedEntity({ methods: ['Cryo-EM'] });
+    const collection = mongoose.connection.db?.collection('research_entities');
+    if (!collection) throw new Error('no db');
+    await collection.updateOne({ slug: 'unset-fixture' }, { $set: { inferredPiUserId: STALE_PI } });
+    await seedObservation('name', 'Unset Lab');
+    await seedObservation('methods', ['Cryo-EM'], true);
+
+    const planned = await materializeEntity(
+      'researchEntity',
+      { entityKey: 'unset-fixture' },
+      { dryRun: true },
+    );
+    expect(planned.plannedUnset?.inferredPiUserId).toBe('');
+
+    await materializeEntity('researchEntity', { entityKey: 'unset-fixture' });
+
+    const doc = await persisted();
+    expect(doc?.inferredPiUserId).toBe(STALE_PI);
+    // The same pass clears a declared field, so the survival above is the undeclared
+    // path and not a pass that failed to run.
+    expect(doc?.methods).toBeUndefined();
   });
 
   it('keeps methods that still have a live observation', async () => {

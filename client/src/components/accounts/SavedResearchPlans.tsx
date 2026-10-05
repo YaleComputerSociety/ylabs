@@ -5,11 +5,16 @@
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
+import useLatestRequest from '../../hooks/useLatestRequest';
+import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import useUndoableRemoval from '../../hooks/useUndoableRemoval';
+import UndoRemovalBanner from '../shared/UndoRemovalBanner';
 import LoadingSpinner from '../shared/LoadingSpinner';
+import LoadErrorNotice from '../shared/LoadErrorNotice';
 import { safeRouteSegment } from '../../utils/url';
 import {
   deriveUndergraduateAccessStatus,
@@ -20,6 +25,7 @@ import ResearchHomeComparison from './ResearchHomeComparison';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
   createResearchAnalyticsInteractionId,
+  researchProfileOpenState,
   trackResearchEvent,
 } from '../../utils/researchAnalytics';
 import {
@@ -29,9 +35,10 @@ import {
   researchPlanStageOrder,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
+import useLoadEffect from '../../hooks/useLoadEffect';
 
 interface SavedResearchPlansProps {
-  onCountChange?: (count: number) => void;
+  onCountChange?: (count: number | null) => void;
 }
 
 interface SavedResearchEntity {
@@ -101,105 +108,106 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
+const persistResearchPlanNote = async (entityId: string, note: string) => {
+  try {
+    await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
+      data: { plan: { privateNotes: note } },
+    });
+  } catch (error) {
+    console.error('Error saving research plan note.');
+    throw error;
+  }
+  void trackResearchEvent({
+    eventType: 'research_plan_update',
+    entityType: 'research_entity',
+    entityId,
+    payload: { field: 'note_presence' },
+    dedupeKey: createResearchAnalyticsInteractionId('plan'),
+  });
+};
+
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
-  const { favIds: savedSlugs, setFavorite } = useFavorites('researchPlans');
+  const {
+    favIds: savedSlugs,
+    loaded: savedSlugsLoaded,
+    loadError: savedSlugsLoadFailed,
+    setFavorite,
+    reloadFavorites,
+  } = useFavorites('researchPlans');
   const [entities, setEntities] = useState<SavedResearchEntity[]>([]);
   const [unavailable, setUnavailable] = useState<UnavailableSavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [plansLoadFailed, setPlansLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
-  const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const { noteSaveStatuses, saveNote, scheduleNoteSave, markNotePersisted } =
+    usePlanNoteAutosave(persistResearchPlanNote);
 
   // The count is how many plans the owner has, not how many of them are servable:
   // reporting only the servable ones is what let the dashboard read "0 research
   // plans" beside a notice about a saved item it was holding back (#2174).
   useEffect(() => {
-    onCountChange?.(savedSlugs.length + unavailable.length);
-  }, [savedSlugs.length, unavailable.length, onCountChange]);
+    onCountChange?.(savedSlugsLoaded ? savedSlugs.length + unavailable.length : null);
+  }, [savedSlugsLoaded, savedSlugs.length, unavailable.length, onCountChange]);
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const [entityResponse, planResponse] = await Promise.all([
-          axios.get('/users/savedResearchEntities', { withCredentials: true }),
-          axios.get('/users/savedResearchEntityPlans', { withCredentials: true }),
-        ]);
-        if (!active) return;
-        const loadedEntities: SavedResearchEntity[] =
-          entityResponse.data.savedResearchEntities || [];
-        const loadedUnavailable: UnavailableSavedResearchEntity[] =
-          entityResponse.data.unavailableSavedResearchEntities || [];
-        const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
-          string,
-          { privateNotes?: string; stage?: string }
-        >;
-        const loadedNotes: Record<string, string> = {};
-        const loadedStages: Record<string, ResearchPlanStage> = {};
-        for (const entity of loadedEntities) {
-          loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
-          loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
-        }
-        setEntities(loadedEntities);
-        setUnavailable(loadedUnavailable);
-        setNotes(loadedNotes);
-        setStages(loadedStages);
-      } catch {
-        if (!active) return;
-        console.error('Error fetching saved research plans.');
-        setEntities([]);
-        setUnavailable([]);
-        setNotes({});
-        setStages({});
-      } finally {
-        if (active) setIsLoading(false);
-      }
-    };
-    void load();
-    const timers = noteTimersRef.current;
-    return () => {
-      active = false;
-      Object.values(timers).forEach(clearTimeout);
-    };
-  }, []);
+  const planRequest = useLatestRequest();
 
-  const savePlanNote = useCallback(async (entityId: string, note: string) => {
-    setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
+  const loadPlans = useCallback(async () => {
+    const ticket = planRequest.begin();
+    setIsLoading(true);
+    setPlansLoadFailed(false);
     try {
-      await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-        data: { plan: { privateNotes: note } },
-      });
-      setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
-      void trackResearchEvent({
-        eventType: 'research_plan_update',
-        entityType: 'research_entity',
-        entityId,
-        payload: { field: 'note_presence' },
-        dedupeKey: createResearchAnalyticsInteractionId('plan'),
-      });
+      const [entityResponse, planResponse] = await Promise.all([
+        axios.get('/users/savedResearchEntities', {
+          withCredentials: true,
+          signal: ticket.signal,
+        }),
+        axios.get('/users/savedResearchEntityPlans', {
+          withCredentials: true,
+          signal: ticket.signal,
+        }),
+      ]);
+      if (!ticket.isCurrent()) return;
+      const loadedEntities: SavedResearchEntity[] = entityResponse.data.savedResearchEntities || [];
+      const loadedUnavailable: UnavailableSavedResearchEntity[] =
+        entityResponse.data.unavailableSavedResearchEntities || [];
+      const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
+        string,
+        { privateNotes?: string; stage?: string }
+      >;
+      const loadedNotes: Record<string, string> = {};
+      const loadedStages: Record<string, ResearchPlanStage> = {};
+      for (const entity of loadedEntities) {
+        loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
+        loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
+        markNotePersisted(entity._id, loadedNotes[entity._id]);
+      }
+      setEntities(loadedEntities);
+      setUnavailable(loadedUnavailable);
+      setNotes(loadedNotes);
+      setStages(loadedStages);
     } catch {
-      console.error('Error saving research plan note.');
-      setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
+      if (!ticket.isCurrent()) return;
+      console.error('Error fetching saved research plans.');
+      setEntities([]);
+      setUnavailable([]);
+      setNotes({});
+      setStages({});
+      setPlansLoadFailed(true);
+    } finally {
+      if (ticket.isCurrent()) setIsLoading(false);
     }
-  }, []);
+  }, [planRequest, markNotePersisted]);
 
-  const scheduleNoteSave = (entityId: string, note: string) => {
-    clearTimeout(noteTimersRef.current[entityId]);
-    setSaveStatuses((statuses) => ({ ...statuses, [entityId]: 'idle' }));
-    noteTimersRef.current[entityId] = setTimeout(() => {
-      void savePlanNote(entityId, note);
-    }, 700);
-  };
+  useLoadEffect(loadPlans);
 
-  const flushNoteSave = (entityId: string) => {
-    clearTimeout(noteTimersRef.current[entityId]);
-    void savePlanNote(entityId, notes[entityId] || '');
+  const retryLoad = () => {
+    void reloadFavorites();
+    void loadPlans();
   };
 
   const changeStage = useCallback(
@@ -229,14 +237,51 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     [stages],
   );
 
-  const unsavePlan = (slug: string) => {
-    void setFavorite(slug, false);
+  /**
+   * The server keeps an unsaved plan whole for a restore window, so re-favouriting
+   * within it brings back the stage, note, checklist and deadlines (#3643). Undo
+   * still re-posts the note captured here, so a restore that lands after the window
+   * does not lose the one field this surface holds.
+   *
+   * An undo window is the right shape rather than a confirmation dialog:
+   * Shneiderman's sixth rule is about the reassurance as much as the recovery, and a
+   * dialog taxes every removal to guard against the rare regretted one.
+   */
+  const {
+    undoableItem: undoableUnsave,
+    offerUndo,
+    undoRemoval,
+  } = useUndoableRemoval<{ slug: string; entityId: string; name: string; note: string }>();
+
+  const unsavePlan = (slug: string, entityId: string, name: string) => {
+    // Read the note before the row leaves the list, because afterwards no read path
+    // serves it.
+    const note = notes[entityId] || '';
+    const removal = setFavorite(slug, false, 'saved_plans');
+    void removal.then((removed) => {
+      if (removed) markNotePersisted(entityId, '');
+    });
+    offerUndo({ slug, entityId, name, note }, removal);
   };
+
+  const undoUnsave = () =>
+    undoRemoval(async ({ slug, entityId, note }) => {
+      const restored = await setFavorite(slug, true, 'saved_plans');
+      // The note write is not gated on the favourite succeeding. Gating it means a
+      // failed re-favourite outside the server's restore window discards the only copy
+      // of the note, which is the loss this undo exists to prevent.
+      if (note) {
+        setNotes((current) => ({ ...current, [entityId]: note }));
+        await saveNote(entityId, note);
+      }
+      // Put the affordance back rather than stranding the student with no way to retry.
+      return restored;
+    });
 
   // Keyed by entity id rather than slug: an unavailable target has no slug the list
   // can trust, and the remove endpoint accepts either.
   const removeUnavailablePlan = async (entityId: string) => {
-    if (await setFavorite(entityId, false)) {
+    if (await setFavorite(entityId, false, 'saved_plans')) {
       setUnavailable((current) => current.filter((item) => item._id !== entityId));
     }
   };
@@ -310,15 +355,39 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     );
   }
 
+  const heading = (
+    <div className="mb-2">
+      <h2 className="yr-display text-2xl font-semibold text-ink">Saved research plans</h2>
+      <p className="mt-1 text-sm text-muted">
+        Open saved research to find its official profile and reach out, keep private notes, or
+        remove it from your plans.
+      </p>
+    </div>
+  );
+
+  if (plansLoadFailed || savedSlugsLoadFailed) {
+    return (
+      <section className="mb-8">
+        {heading}
+        <LoadErrorNotice
+          title="Could not load your saved research"
+          detail="This is a loading problem, not an empty list. Check your connection, then try again."
+          onRetry={retryLoad}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="mb-8">
-      <div className="mb-2">
-        <h2 className="yr-display text-2xl font-semibold text-ink">Saved research plans</h2>
-        <p className="mt-1 text-sm text-muted">
-          Open saved research to find its official profile and reach out, keep private notes, or
-          remove it from your plans.
-        </p>
-      </div>
+      {heading}
+
+      {undoableUnsave && (
+        <UndoRemovalBanner onUndo={() => void undoUnsave()}>
+          Removed <span className="font-semibold text-ink">{undoableUnsave.name}</span> from saved
+          research.{undoableUnsave.note ? ' Undo restores your notes too.' : ''}
+        </UndoRemovalBanner>
+      )}
 
       {unavailable.length > 0 && (
         <div
@@ -364,7 +433,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
           <p className="text-sm text-ink-soft">
             {selectedCount === 0
-              ? 'Select 2 to 4 saved homes to compare them side by side.'
+              ? 'Select 2 to 4 saved research profiles to compare them side by side.'
               : `${selectedCount} selected to compare`}
           </p>
           <button
@@ -396,7 +465,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       {visibleEntities.length > 0 ? (
         <ul>
           {orderedEntities.map((entity) => {
-            const status = saveStatuses[entity._id];
+            const status = noteSaveStatuses[entity._id];
             const accessStatus = accessStatuses.get(entity._id) || null;
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
@@ -426,6 +495,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         <h3 className="truncate text-sm font-semibold text-ink">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}
+                            state={researchProfileOpenState('saved_plans')}
                             className="hover:text-brand focus-visible:rounded-control yr-focus-ring"
                           >
                             {entityDisplayName(entity)}
@@ -456,7 +526,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         aria-expanded={isEditing}
                         className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
-                            ? 'border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                            ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
                             : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
@@ -464,13 +534,16 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
+                        state={researchProfileOpenState('saved_plans')}
                         className="yr-pressable inline-flex min-h-[44px] items-center rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-xs font-semibold text-brand hover:bg-panel yr-focus-ring"
                       >
                         Open
                       </Link>
                       <button
                         type="button"
-                        onClick={() => unsavePlan(entity.slug)}
+                        onClick={() =>
+                          unsavePlan(entity.slug, entity._id, entityDisplayName(entity))
+                        }
                         aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
                         className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
@@ -503,11 +576,11 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           setNotes((current) => ({ ...current, [entity._id]: value }));
                           scheduleNoteSave(entity._id, value);
                         }}
-                        onBlur={() => flushNoteSave(entity._id)}
+                        onBlur={() => void saveNote(entity._id, note)}
                         maxLength={MAX_PLAN_NOTES_LENGTH}
-                        placeholder="Add a private note about this research..."
+                        placeholder="Add a private note about this research…"
                         rows={2}
-                        className="w-full rounded-control border border-[var(--yr-line)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
+                        className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
                       <p
                         className={`mt-1 text-xs ${
@@ -517,7 +590,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         aria-live="polite"
                       >
                         {status === 'saving'
-                          ? 'Saving...'
+                          ? 'Saving…'
                           : status === 'saved'
                             ? 'Saved'
                             : status === 'error'

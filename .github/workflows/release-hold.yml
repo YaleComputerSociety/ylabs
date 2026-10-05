@@ -6,25 +6,28 @@ on:
     branches:
       - main
 
+# pull-requests: read is what lets the job read the pull request's live label
+# and draft state. github.event is a frozen copy of the payload that started the
+# run, so a re-run of an earlier attempt would otherwise clear a hold that is
+# still in effect (#3911).
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   hold:
     name: release-hold
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Block while the hold label is present
-        if: contains(github.event.pull_request.labels.*.name, 'hold')
-        run: |
-          echo "::error::The 'hold' label is set on this promotion. Beta verification is not signed off."
-          exit 1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Block while the pull request is a draft
-        if: github.event.pull_request.draft
-        run: |
-          echo "::error::This promotion is still a draft. Mark it ready for review once beta verification passes."
-          exit 1
-
-      - name: Report clear
-        run: echo "No release hold in effect."
+      - name: Block while a release hold is in effect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TARGET_REPO: ${{ github.repository }}
+        run: scripts/release-hold-check.sh

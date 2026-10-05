@@ -6,6 +6,8 @@
  * emit. We deliberately do NOT touch the network: the scraper class itself is
  * exercised with an in-memory config whose extractor returns canned rows.
  */
+import { gzipSync } from 'zlib';
+import axios from 'axios';
 import { describe, it, expect, vi } from 'vitest';
 
 // The scraper SSRF-guards every dept URL with a real DNS resolution; tests use
@@ -16,6 +18,8 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
   assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
 }));
 
+import { attachSweepPageReuse } from '../utils/sweepPageReuse';
+import { SweepPageStore } from '../utils/sweepPageStore';
 import {
   artPeopleListExtractor,
   DepartmentRosterScraper,
@@ -38,15 +42,18 @@ import {
   nursingFacultyExtractor,
   referenceCardExtractor,
   rosterDeptNameNamesItsOwnSchool,
+  rosterResearchEntitySlug,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
   csRenderedExtractor,
   csFacultyDataExtractor,
   chemEnvFacultyExtractor,
+  collapseLaneOutcomesByDepartment,
   type DeptConfig,
   type FacultyEntry,
   type FacultyExtractor,
+  withoutSharedGroupWebsites,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -1140,6 +1147,133 @@ describe('nodePersonCardExtractor', () => {
   });
 });
 
+describe('nodePersonCardExtractor never takes a photo scene description as a name', () => {
+  const sceneCard = (heading: string) => `
+    <article about="/people/sam-fixture" class="node node--type-person node--view-mode-card">
+      <div class="top"><div class="field field--name-field-profile-image field__item">
+        <img src="/img/sam-fixture.jpg" alt="man in a grey suit holding a cello"></div></div>
+      <div class="card-content"><h2><span>${heading}</span></h2></div>
+    </article>`;
+
+  it('falls back to the profile slug when the heading is empty and the alt text is a scene', () => {
+    const [entry] = nodePersonCardExtractor(sceneCard(''), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Sam Fixture');
+  });
+
+  it('still prefers the heading over a scene alt text', () => {
+    const [entry] = nodePersonCardExtractor(sceneCard('Sam Fixture'), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Sam Fixture');
+  });
+
+  const runSceneRoster = async (corpusSlugs: string[]) => {
+    const music = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+    const htmlFetcher = vi.fn(async () => sceneCard('Sam Fixture'));
+    const scraper = new DepartmentRosterScraper(
+      [{ ...music, renderedExtractor: undefined }],
+      null,
+      htmlFetcher,
+      async () => new Map(corpusSlugs.map((slug) => [slug, {}])),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return new Set(emitted.filter((o) => o.entityType === 'user').map((o) => o.entityKey));
+  };
+
+  it('never mints a new row key from a scene alt text', async () => {
+    expect(await runSceneRoster([])).toEqual(new Set(['dept:school-of-music:sam-fixture']));
+  });
+
+  it('keeps the scene-derived key of a row the corpus already holds under it', async () => {
+    expect(
+      await runSceneRoster(['dept-school-of-music-man-in-a-grey-suit-holding-a-cello']),
+    ).toEqual(new Set(['dept:school-of-music:man-in-a-grey-suit-holding-a-cello']));
+  });
+});
+
+describe('nodePersonCardExtractor reads the card heading, not the headshot caption', () => {
+  const captionedCard = `
+    <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+      <div class="top"><div class="field field--name-field-profile-image field__item">
+        <img src="/img/robin-fixture.jpg" alt="Photo of Dean Robin Fixture."></div></div>
+      <div class="card-content"><h2> <span>Robin Fixture</span> </h2>
+        <div class="paragraph--type--title-affiliation">Dean, School of Synthetic Music</div></div>
+    </article>`;
+  const music = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+
+  it('takes the name from the heading when the alt text is a caption', () => {
+    const [entry] = nodePersonCardExtractor(captionedCard, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Robin Fixture');
+  });
+
+  it('keeps the slug the caption-derived name first minted, so the row is not re-keyed', () => {
+    const [entry] = nodePersonCardExtractor(captionedCard, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(rosterResearchEntitySlug(entry, music)).toBe(
+      'dept-school-of-music-photo-of-dean-robin-fixture',
+    );
+  });
+
+  it('records no identity name when the alt text already is the name', () => {
+    const html = captionedCard.replace('Photo of Dean Robin Fixture.', 'Robin Fixture');
+    const [entry] = nodePersonCardExtractor(html, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.identityName).toBeUndefined();
+    expect(rosterResearchEntitySlug(entry, music)).toBe('dept-school-of-music-robin-fixture');
+  });
+
+  it('keeps the slug an honorific or parenthetical alt text first normalized to', () => {
+    const honorific = captionedCard.replace('Photo of Dean Robin Fixture.', 'Dr. Robin Fixture');
+    const [plain] = nodePersonCardExtractor(honorific, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(plain.identityName).toBeUndefined();
+    expect(rosterResearchEntitySlug(plain, music)).toBe('dept-school-of-music-robin-fixture');
+
+    const parenthetical = captionedCard.replace(
+      'Photo of Dean Robin Fixture.',
+      'Photo of Robin (Bo) Fixture.',
+    );
+    const [captioned] = nodePersonCardExtractor(parenthetical, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(rosterResearchEntitySlug(captioned, music)).toBe(
+      'dept-school-of-music-photo-of-robin-fixture',
+    );
+  });
+
+  it('keeps the profile-slug key for a card without alt text', () => {
+    const html = captionedCard
+      .replace(' alt="Photo of Dean Robin Fixture."', '')
+      .replace('<span>Robin Fixture</span>', '<span>Robin Q. Fixture</span>');
+    const [entry] = nodePersonCardExtractor(html, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Robin Q. Fixture');
+    expect(rosterResearchEntitySlug(entry, music)).toBe('dept-school-of-music-robin-fixture');
+  });
+});
+
+describe('normalizeName strips a headshot caption', () => {
+  it('drops the caption lead-in, its trailing period and a title inside it', () => {
+    expect(normalizeName('Photo of Robin Fixture.')).toBe('Robin Fixture');
+    expect(normalizeName('Image of Dean Robin Fixture.')).toBe('Robin Fixture');
+    expect(normalizeName('Headshot of Professor Robin Q. Fixture')).toBe('Robin Q. Fixture');
+  });
+
+  it('leaves a given name that reads like a title alone', () => {
+    expect(normalizeName('Dean Fixture')).toBe('Dean Fixture');
+    expect(normalizeName('Photo of Dean Fixture.')).toBe('Dean Fixture');
+  });
+});
+
 describe('directoryListingCardExtractor', () => {
   const DIRECTORY_LISTING_CARD_HTML = `
     <ul>
@@ -2124,6 +2258,45 @@ describe('DepartmentRosterScraper.run', () => {
     ).toBe(true);
   });
 
+  // The whole lane read, not just the mint: a support-staff roster entry carrying the
+  // PI's lab link mints no research row of its own, while the professor beside it still does
+  // (#3410).
+  it('mints no research row for a title-refused roster entry on an HTML-read lane', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Ada Fixture',
+        profileUrl: 'https://mcdb.yale.edu/profile/ada-fixture',
+        title: 'Laboratory Assistant 3',
+        labUrl: 'https://principal-lab.example.org/',
+      },
+      {
+        name: 'Blake Principal',
+        profileUrl: 'https://mcdb.yale.edu/profile/blake-principal',
+        title: 'Professor of Fixtures',
+        labUrl: 'https://blake-lab.example.org/',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body><main>roster</main></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mcdb',
+        deptName: 'Molecular, Cellular and Developmental Biology',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://mcdb.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const mintedSlugs = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'slug')
+      .map((o) => o.value);
+    expect(mintedSlugs).toEqual(['dept-mcdb-blake-principal']);
+  });
+
   it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
@@ -2335,6 +2508,79 @@ describe('DepartmentRosterScraper.run', () => {
     expect(
       emitted.filter((o) => o.entityType === 'user' && o.field === 'departments'),
     ).toHaveLength(2);
+  });
+
+  it('keeps a programme PI website that a non-faculty row also lists', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://earlymodern.yale.edu/profile/robin-roster',
+        title: 'Professor of English',
+        labUrl: 'https://robinlab.example.org',
+      },
+      {
+        name: 'Ali Postdoc',
+        profileUrl: 'https://earlymodern.yale.edu/profile/ali-postdoc',
+        labUrl: 'https://robinlab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/ali-postdoc')
+        ? '<html><body><h1>Ali Postdoc</h1><div class="job-title">Postdoctoral Associate</div></body></html>'
+        : '<html><body></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const websites = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl')
+      .map((o) => o.value);
+    expect(websites).toEqual(['https://robinlab.example.org']);
+  });
+
+  it('counts only admitted programme faculty toward --limit', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Sam Student', profileUrl: 'https://earlymodern.yale.edu/profile/sam-student' },
+      { name: 'Robin Roster', title: 'Professor of English' },
+      { name: 'Robin Roster', title: 'Professor of English' },
+      { name: 'Ada Second', title: 'Assistant Professor' },
+    ]);
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/sam-student')
+        ? '<html><body><h1>Sam Student</h1><div class="job-title">Graduate School Student</div></body></html>'
+        : '<html><body></body></html>',
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'early-modern-studies',
+        deptName: 'Early Modern Studies',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://earlymodern.yale.edu/people',
+        paginated: false,
+        extractor: cannedExtractor,
+        crossListedProgramme: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext({ limit: 2 });
+    await scraper.run(ctx);
+
+    const admittedNames = emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'fname')
+      .map((o) => o.value);
+    expect(admittedNames).toEqual(['Robin', 'Ada']);
   });
 
   it('walks every page of a paginated cross-listed programme directory', async () => {
@@ -2568,6 +2814,7 @@ describe('DepartmentRosterScraper.run', () => {
       pagesRead: 1,
       readMode: 'html',
       cacheAllowed: false,
+      pagesReusedWithinSweep: 0,
       readAt: expect.any(String),
     });
     // A lane that needs a browser it does not have read nothing, and says so, so
@@ -2576,12 +2823,99 @@ describe('DepartmentRosterScraper.run', () => {
       pagesRead: 0,
       readMode: 'none',
       cacheAllowed: false,
+      pagesReusedWithinSweep: 0,
       readAt: expect.any(String),
     });
     const cs = emitted.find(
       (o) => o.entityType === 'departmentRosterHealth' && o.entityKey === 'cs',
     );
     expect((cs?.value as any).complete).toBe(false);
+  });
+
+  it('records a roster page served from within-sweep reuse on the snapshot and the attempt', async () => {
+    const url = 'https://italian.yale.edu/people/faculty';
+    const store = new SweepPageStore(1024 * 1024, ['italian.yale.edu']);
+    store.put(url, false, {
+      finalUrl: url,
+      contentType: 'text/html',
+      fetchedAt: '2026-09-26T08:30:00.000Z',
+      gzipBase64: gzipSync('<html><body></body></html>').toString('base64'),
+    });
+    const instance = axios.create();
+    const reuse = attachSweepPageReuse(instance, {
+      source: { lookup: async (key) => (key ? store.get(key) : null), offer: () => {} },
+      hosts: ['italian.yale.edu'],
+    });
+    const htmlFetcher = vi.fn(async (pageUrl: string) =>
+      String((await instance.get(pageUrl)).data),
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url,
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => [{ name: 'Test Faculty', email: 'tf@example.edu' }]),
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    try {
+      const result = await scraper.run(ctx);
+      const snapshot = emitted.find((o) => o.entityType === 'departmentRosterHealth');
+      expect((snapshot?.value as any).read).toMatchObject({
+        pagesRead: 1,
+        readMode: 'html',
+        cacheAllowed: false,
+        pagesReusedWithinSweep: 1,
+      });
+      expect((snapshot?.value as any).complete).toBe(true);
+      expect(result.fetchMetrics?.attempts.map((attempt) => attempt.fetchMode)).toEqual([
+        'http-sweep-reused',
+      ]);
+    } finally {
+      reuse.detach();
+    }
+  });
+
+  it('lists discovered entity keys in a stable sorted order', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Zoe Zephyr',
+        title: 'Professor of Italian',
+        labUrl: 'https://zephyr-lab.example.org',
+      },
+      {
+        name: 'Mia Middle',
+        title: 'Professor of Italian',
+        labUrl: 'https://middle-lab.example.org',
+      },
+      {
+        name: 'Ada Alpha',
+        title: 'Professor of Italian',
+        labUrl: 'https://alpha-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'italian',
+        deptName: 'Italian Language and Literature',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://italian.yale.edu/people/faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const snapshot = emitted.find((o) => o.entityType === 'departmentRosterHealth');
+    const keys = (snapshot?.value as any).discoveredEntityKeys as string[];
+    expect(keys).toHaveLength(3);
+    expect(keys).toEqual([...keys].sort());
   });
 
   it('publishes for a department whose last-declared lane is a programme tab', async () => {
@@ -4441,6 +4775,49 @@ describe('DepartmentRosterScraper.run', () => {
     postSpy.mockRestore();
   });
 
+  it('reports a rendered 404 page as unavailable instead of parsing it as an empty roster', async () => {
+    const renderedExtractor = vi.fn((): FacultyEntry[] => []);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => []),
+        renderedExtractor,
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: 'https://example.invalid/cs',
+      html: '<html><body><h1>Page not found</h1></body></html>',
+      statusCode: 404,
+      blocked: false,
+      fetchMode: 'scrapling',
+    });
+    const readable: DeptConfig = {
+      deptKey: 'econ',
+      deptName: 'Economics',
+      schoolName: 'FAS',
+      url: 'https://example.invalid/econ',
+      paginated: false,
+      extractor: () => [{ name: 'Econ Person', email: 'ep123@yale.edu' }],
+    };
+
+    const scraper = new DepartmentRosterScraper(
+      [...configs, readable],
+      renderedFetcher,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedExtractor).not.toHaveBeenCalled();
+    expect(result.notes).toContain('cs=rendered-unavailable');
+    expect(result.fetchMetrics?.summary.byMode.scrapling?.succeeded).toBe(0);
+  });
+
   it('skips JS-rendered depts when the injected rendered page fetcher returns null', async () => {
     const renderedExtractor = vi.fn((): FacultyEntry[] => [{ name: 'Unexpected Faculty' }]);
     const configs: DeptConfig[] = [
@@ -4457,7 +4834,19 @@ describe('DepartmentRosterScraper.run', () => {
     ];
     const renderedFetcher = vi.fn().mockResolvedValue(null);
 
-    const scraper = new DepartmentRosterScraper(configs, renderedFetcher);
+    const readable: DeptConfig = {
+      deptKey: 'econ',
+      deptName: 'Economics',
+      schoolName: 'FAS',
+      url: 'https://example.invalid/econ',
+      paginated: false,
+      extractor: () => [{ name: 'Econ Person', email: 'ep123@yale.edu' }],
+    };
+    const scraper = new DepartmentRosterScraper(
+      [...configs, readable],
+      renderedFetcher,
+      vi.fn(async () => '<html></html>'),
+    );
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -4467,8 +4856,12 @@ describe('DepartmentRosterScraper.run', () => {
       timeoutMs: 30000,
     });
     expect(renderedExtractor).not.toHaveBeenCalled();
-    const rosterHealth = emitted.filter((o) => o.entityType === 'departmentRosterHealth');
-    expect(emitted.filter((o) => o.entityType !== 'departmentRosterHealth')).toEqual([]);
+    const rosterHealth = emitted.filter(
+      (o) => o.entityType === 'departmentRosterHealth' && o.entityKey === 'cs',
+    );
+    expect(emitted.some((o) => o.entityType === 'user' && /cs/i.test(String(o.entityKey)))).toBe(
+      false,
+    );
     expect(rosterHealth).toHaveLength(1);
     expect(rosterHealth[0].value).toMatchObject({
       deptKey: 'cs',
@@ -4476,8 +4869,26 @@ describe('DepartmentRosterScraper.run', () => {
       complete: false,
       discoveredCount: 0,
     });
-    expect(result.entitiesObserved).toBe(0);
     expect(result.notes).toContain('cs=rendered-unavailable');
+  });
+
+  it('fails the run when the only lane is a rendered page that could not be obtained', async () => {
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'cs',
+        deptName: 'Computer Science',
+        schoolName: 'SEAS',
+        url: 'https://example.invalid/cs',
+        paginated: false,
+        extractor: vi.fn((): FacultyEntry[] => []),
+        jsRenderedSkip: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, vi.fn().mockResolvedValue(null));
+    const { ctx, emitted } = makeContext();
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/cs\(rendered-unavailable\)/);
+    expect(emitted).toEqual([]);
   });
 
   it('only-filter skips depts not in the list', async () => {
@@ -5015,5 +5426,281 @@ describe('DepartmentRosterScraper lane execution', () => {
 
     expect(result.notes).toBe('Departments: wanted=1');
     expect(htmlFetcher.mock.calls.some((call) => String(call[0]).includes('skipped.'))).toBe(false);
+  });
+});
+
+describe('withoutSharedGroupWebsites', () => {
+  const item = (personKey: string, labUrl?: string) => ({
+    personKey,
+    entry: { name: `Person ${personKey}`, labUrl } as Parameters<
+      typeof withoutSharedGroupWebsites
+    >[0][number]['entry'],
+  });
+
+  it('refuses a website the roster lists for two different people, for both', () => {
+    const out = withoutSharedGroupWebsites([
+      item('a', 'https://group.example.org/'),
+      item('b', 'http://www.group.example.org'),
+      item('c', 'https://own.example.org/'),
+    ]);
+    expect(out[0].entry.labUrl).toBeUndefined();
+    expect(out[0].entry.labSlotAttestation).toBe('refused');
+    expect(out[1].entry.labUrl).toBeUndefined();
+    expect(out[2].entry.labUrl).toBe('https://own.example.org/');
+  });
+
+  it('keeps a website one person is listed with twice', () => {
+    const out = withoutSharedGroupWebsites([
+      item('a', 'https://own.example.org/'),
+      item('a', 'https://own.example.org/'),
+    ]);
+    expect(out.map((entry) => entry.entry.labUrl)).toEqual([
+      'https://own.example.org/',
+      'https://own.example.org/',
+    ]);
+  });
+
+  it('never marks a row with no website', () => {
+    const [out] = withoutSharedGroupWebsites([item('a')]);
+    expect(out.entry.labSlotAttestation).toBeUndefined();
+  });
+});
+
+describe('DepartmentRosterScraper.run read completeness (#3647)', () => {
+  const professor = (name: string): FacultyEntry => ({
+    name,
+    title: 'Professor of Physics',
+    labUrl: `https://${name.toLowerCase().replace(/\s+/g, '-')}-lab.example.org`,
+  });
+  const physicsLane = (overrides: Partial<DeptConfig> = {}): DeptConfig => ({
+    deptKey: 'physics',
+    deptName: 'Physics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://physics.yale.edu/people',
+    paginated: false,
+    extractor: () => [professor('Ann Alpha')],
+    ...overrides,
+  });
+  const rosterHealthOf = (emitted: ObservationInput[], deptKey: string) =>
+    emitted.find((o) => o.entityType === 'departmentRosterHealth' && o.entityKey === deptKey)
+      ?.value as Record<string, any> | undefined;
+
+  it('does not publish a walk that failed on a later page as the complete roster', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.includes('page=1')) throw new Error('503 unavailable');
+      return '<html></html>';
+    });
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane({
+          paginated: true,
+          extractor: () => [professor('Ann Alpha'), professor('Bob Beta')],
+        }),
+      ],
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    const snapshot = rosterHealthOf(emitted, 'physics');
+    expect(snapshot).toMatchObject({ status: 'partial-read', complete: false });
+    expect(snapshot?.discoveredEntityKeys).toHaveLength(2);
+    expect(result.notes).toContain('physics=partial-read');
+  });
+
+  it('does not publish a walk that stopped at the page cap as the complete roster', async () => {
+    let page = 0;
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane({
+          paginated: true,
+          extractor: () => [professor(`Person ${page++}`)],
+        }),
+      ],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext();
+
+    await scraper.run(ctx);
+
+    expect(rosterHealthOf(emitted, 'physics')).toMatchObject({
+      status: 'partial-read',
+      complete: false,
+    });
+  });
+
+  it('does not publish a lane cut short by --limit as the complete roster', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane({
+          extractor: () => [professor('Ann Alpha'), professor('Bob Beta'), professor('Cal Gamma')],
+        }),
+      ],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext({ limit: 2 });
+
+    await scraper.run(ctx);
+
+    expect(rosterHealthOf(emitted, 'physics')).toMatchObject({
+      status: 'partial-read',
+      complete: false,
+    });
+  });
+
+  it('keeps a lane that --limit exactly exhausts authoritative', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [physicsLane({ extractor: () => [professor('Ann Alpha'), professor('Bob Beta')] })],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext({ limit: 2 });
+
+    await scraper.run(ctx);
+
+    expect(rosterHealthOf(emitted, 'physics')).toMatchObject({ status: 'ok', complete: true });
+  });
+
+  it('does not publish a department whose sibling config --limit never reached', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane({ url: 'https://physics.yale.edu/people?type=1' }),
+        physicsLane({
+          url: 'https://physics.yale.edu/people?type=2',
+          extractor: () => [professor('Bob Beta')],
+        }),
+      ],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext({ limit: 1 });
+
+    await scraper.run(ctx);
+
+    const snapshot = rosterHealthOf(emitted, 'physics');
+    expect(snapshot?.complete).toBe(false);
+    expect(snapshot?.status).toBe('skipped-by-limit');
+  });
+
+  it('reports a page that could not be fetched as a failed read, not an empty roster', async () => {
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url.startsWith('https://physics.')) throw new Error('403 refused');
+      return '<html></html>';
+    });
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane(),
+        physicsLane({
+          deptKey: 'econ',
+          deptName: 'Economics',
+          url: 'https://econ.yale.edu/people',
+        }),
+      ],
+      null,
+      htmlFetcher,
+    );
+    const { ctx, emitted } = makeContext();
+    const logs: string[] = [];
+    ctx.log = (message: string) => logs.push(message);
+
+    const result = await scraper.run(ctx);
+
+    expect(rosterHealthOf(emitted, 'physics')).toMatchObject({
+      status: 'fetch-failed',
+      complete: false,
+      read: expect.objectContaining({ pagesRead: 0, readMode: 'none' }),
+    });
+    expect(rosterHealthOf(emitted, 'econ')).toMatchObject({ status: 'ok', complete: true });
+    expect(result.notes).toContain('physics=fetch-failed');
+    expect(logs.some((l) => /yielded no faculty/.test(l) && l.includes('physics'))).toBe(false);
+    expect(
+      logs.some((l) => /could not be read/.test(l) && l.includes('physics(fetch-failed)')),
+    ).toBe(true);
+  });
+
+  it('fails the run when every attempted lane failed to read, so it is not recorded a success', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane(),
+        physicsLane({
+          deptKey: 'econ',
+          deptName: 'Economics',
+          url: 'https://econ.yale.edu/people',
+        }),
+      ],
+      null,
+      vi.fn(async () => {
+        throw new Error('ENOTFOUND');
+      }),
+    );
+    const { ctx, emitted } = makeContext();
+
+    await expect(scraper.run(ctx)).rejects.toThrow(/every attempted roster lane failed/i);
+    expect(emitted.filter((o) => o.entityType === 'departmentRosterHealth')).toEqual([]);
+  });
+
+  it('does not report a tab that re-lists people an earlier same-key tab listed as empty', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [
+        physicsLane({ url: 'https://physics.yale.edu/people?type=1' }),
+        physicsLane({ url: 'https://physics.yale.edu/people?type=2' }),
+      ],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext();
+
+    await scraper.run(ctx);
+
+    expect(rosterHealthOf(emitted, 'physics')).toMatchObject({ status: 'ok', complete: true });
+  });
+
+  it('does not fail the run when a lane read a page that listed nobody', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [physicsLane({ extractor: () => [] })],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx } = makeContext();
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toContain('physics=empty');
+  });
+});
+
+describe('collapseLaneOutcomesByDepartment', () => {
+  const lane = (status: string, pagesRead: number) => ({
+    deptKey: 'som',
+    count: 0,
+    status,
+    pagesRead,
+    readMode: 'html' as const,
+    crossListedProgramme: false,
+  });
+
+  it.each(['partial-read', 'fetch-failed', 'skipped-by-limit'])(
+    'reports a later %s config rather than an earlier empty one',
+    (incomplete) => {
+      const [collapsed] = collapseLaneOutcomesByDepartment([
+        lane('ok', 1),
+        lane('empty', 1),
+        lane(incomplete, 0),
+      ]);
+      expect(collapsed.status).toBe(incomplete);
+      expect(collapsed.pagesRead).toBe(2);
+    },
+  );
+
+  it('keeps the first incomplete-read status when several configs left the roster unread', () => {
+    const [collapsed] = collapseLaneOutcomesByDepartment([
+      lane('partial-read', 1),
+      lane('fetch-failed', 0),
+    ]);
+    expect(collapsed.status).toBe('partial-read');
   });
 });

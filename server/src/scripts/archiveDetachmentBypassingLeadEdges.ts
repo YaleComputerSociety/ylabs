@@ -36,7 +36,7 @@ import {
 } from './archiveDetachmentBypassingLeadEdgesCore';
 
 const __filename = fileURLToPath(import.meta.url);
-dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env') });
+dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'archive-detachment-bypassing-leads';
 
@@ -132,16 +132,14 @@ export async function runArchiveDetachmentBypassingLeadEdges(
         role: String(detached.role),
       },
       twinPersonIds: twins.map((t) => idOf(t._id)),
-      entityLeadEdges: entityLeadEdges.map(
-        (edge): LeadEdgeLike => ({
-          edgeId: idOf(edge._id),
-          personId: idOf(edge.personId),
-          entityId,
-          role: String(edge.role),
-          archived: edge.archived === true,
-          reviewStatus: edge.reviewStatus ?? null,
-        }),
-      ),
+      entityLeadEdges: entityLeadEdges.map((edge): LeadEdgeLike => ({
+        edgeId: idOf(edge._id),
+        personId: idOf(edge.personId),
+        entityId,
+        role: String(edge.role),
+        archived: edge.archived === true,
+        reviewStatus: edge.reviewStatus ?? null,
+      })),
     });
     if (plan.verdict !== 'archive_bypassing_edge') continue;
 

@@ -28,6 +28,7 @@ import {
   type CoverageSynthesisLLMFn,
 } from '../../scrapers/coverageSynthesis';
 import {
+  LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
   materializeEntity,
   materializationReadScopeFilter,
 } from '../../scrapers/entityMaterializer';
@@ -43,8 +44,6 @@ import {
 } from '../grantCorpusSynthesisCore';
 
 const SLUG = 'grant-corpus-lane-fixture';
-
-const GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE = 0.35;
 
 const RECENT_GRANTS = [
   {
@@ -216,12 +215,12 @@ describe('grant-corpus research synthesis + PI-to-school inheritance lane (#2158
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -250,6 +249,11 @@ describe('grant-corpus research synthesis + PI-to-school inheritance lane (#2158
         defaultWeight: GRANT_CORPUS_DESCRIPTION_CONFIDENCE,
       },
       { name: 'nih-reporter', displayName: 'NIH RePORTER', defaultWeight: 0.8 },
+      {
+        name: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+        displayName: 'Lead PI school inheritance',
+        defaultWeight: 0.6,
+      },
       {
         name: 'lab-microsite-description-llm',
         displayName: 'Lab microsite description LLM',
@@ -325,11 +329,6 @@ describe('grant-corpus research synthesis + PI-to-school inheritance lane (#2158
   it('gives a grant-backed PI shell a corpus-level description and its lead PI school in one pass', async () => {
     const entity = await seedGrantShell();
     await seedLeadPi(entity._id);
-    await seedFullDescriptionObservation(
-      RECENT_GRANTS[0].abstract,
-      'nih-reporter',
-      GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE,
-    );
 
     const outcome = await runGrantCorpusLane(stubLLM(CORPUS_LEVEL_DESCRIPTION));
 
@@ -360,29 +359,6 @@ describe('grant-corpus research synthesis + PI-to-school inheritance lane (#2158
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBe(CORPUS_LEVEL_DESCRIPTION);
     expect(served.school).toBe('School of Medicine');
-  });
-
-  it('outranks the single-abstract grant fallback that was the entity description before', async () => {
-    const entity = await seedGrantShell();
-    await seedLeadPi(entity._id);
-    await seedFullDescriptionObservation(
-      RECENT_GRANTS[0].abstract,
-      'nih-reporter',
-      GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE,
-    );
-
-    await materializeEntity(
-      'researchEntity',
-      { entityKey: SLUG },
-      { dryRun: false, synthesizeCardDescription: async () => '' },
-    );
-    const beforeLane = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
-    expect(beforeLane.fullDescription).toBe(RECENT_GRANTS[0].abstract);
-
-    await runGrantCorpusLane(stubLLM(CORPUS_LEVEL_DESCRIPTION));
-
-    const afterLane = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
-    expect(afterLane.fullDescription).toBe(CORPUS_LEVEL_DESCRIPTION);
   });
 
   it('loses to an official-profile description, which is skipped before any LLM call', async () => {

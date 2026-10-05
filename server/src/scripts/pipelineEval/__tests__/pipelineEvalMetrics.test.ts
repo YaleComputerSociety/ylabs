@@ -27,6 +27,13 @@ describe('scoreAccuracy', () => {
     expect(result.byTier).toEqual({ unknown: 1 });
     expect(result.studentReady).toBe(0);
   });
+
+  it('reports null rates for an empty population', () => {
+    const result = scoreAccuracy([]);
+    expect(result.entityCount).toBe(0);
+    expect(result.cardCompleteRate).toBeNull();
+    expect(result.studentReadyRate).toBeNull();
+  });
 });
 
 describe('buildChurnMetrics', () => {
@@ -44,7 +51,7 @@ describe('buildChurnMetrics', () => {
     expect(churn.redirects).toBe(100);
   });
 
-  it('is zero-safe with an empty corpus', () => {
+  it('reports a null rate for an empty corpus', () => {
     const churn = buildChurnMetrics({
       liveEntityCount: 0,
       redirects: 0,
@@ -53,7 +60,7 @@ describe('buildChurnMetrics', () => {
       releaseQueueItems: 0,
       referenceRepairAudits: 0,
     });
-    expect(churn.mintedThenMergedRate).toBe(0);
+    expect(churn.mintedThenMergedRate).toBeNull();
   });
 });
 
@@ -76,10 +83,20 @@ describe('scoreDedupe', () => {
     expect(score.f1).toBeCloseTo(0.6667, 3);
   });
 
-  it('returns zeros when nothing is predicted', () => {
+  it('returns null precision rather than 0 when nothing is predicted', () => {
     const score = scoreDedupe([], [{ mergedKey: 'a', canonicalKey: 'x' }]);
-    expect(score.precision).toBe(0);
+    expect(score.precision).toBeNull();
     expect(score.recall).toBe(0);
-    expect(score.f1).toBe(0);
+    expect(score.f1).toBeNull();
+  });
+
+  it('credits a correct merge whichever member is chosen as canonical', () => {
+    const score = scoreDedupe(
+      [{ mergedKey: 'x', canonicalKey: 'a' }],
+      [{ mergedKey: 'a', canonicalKey: 'x' }],
+    );
+    expect(score.truePositives).toBe(1);
+    expect(score.precision).toBe(1);
+    expect(score.recall).toBe(1);
   });
 });

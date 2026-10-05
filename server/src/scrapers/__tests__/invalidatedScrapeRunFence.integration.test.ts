@@ -69,7 +69,7 @@ const seedRuns = async () => {
 };
 
 const observation = (runId: mongoose.Types.ObjectId, field: string, value: unknown) => ({
-  entityType: 'researchEntity',
+  entityType: 'researchEntity' as const,
   entityKey: SLUG,
   field,
   value,
@@ -88,11 +88,11 @@ describe('invalidated scrape runs are fenced out of the write path (#2469)', () 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {

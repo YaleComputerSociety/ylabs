@@ -1,7 +1,5 @@
-import { Signal } from '../models/signal';
 import { observationStoreIsPopulated } from '../scrapers/observationStoreAvailability';
-import { accessSignalTypes } from '../models/researchAccessTypes';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
@@ -11,10 +9,7 @@ import {
 } from '../models/visibilityReleaseQueueItem';
 import { serializedDocumentId } from '../utils/idSerialization';
 
-type LaunchAcquisitionStage = Extract<
-  VisibilityRepairStage,
-  'pi_identity' | 'action_evidence' | 'source_description'
->;
+type LaunchAcquisitionStage = Extract<VisibilityRepairStage, 'pi_identity' | 'source_description'>;
 
 const LAUNCH_ACQUISITION_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
@@ -40,10 +35,6 @@ export interface LaunchAcquisitionReportQueueItem {
   sourceNames?: string[];
 }
 
-interface AccessRecordCounts {
-  accessSignals: number;
-}
-
 interface LaunchAcquisitionReportDeps {
   findQueueItems: (options: {
     stages: LaunchAcquisitionStage[];
@@ -52,8 +43,6 @@ interface LaunchAcquisitionReportDeps {
   findResearchEntityMembers: (id: string) => Promise<Array<Record<string, any>>>;
   countSourceObservations: (entity: Record<string, any>) => Promise<number>;
   findUsersByUrls: (urls: string[]) => Promise<Array<Record<string, any>>>;
-  countUndergraduateAccessObservations: (entity: Record<string, any>) => Promise<number>;
-  countAccessRecords: (id: string) => Promise<AccessRecordCounts>;
   observationStorePopulated: () => Promise<boolean>;
 }
 
@@ -76,14 +65,6 @@ interface PiIdentityGroups {
   leadNotRequiredByEntityType: LaunchAcquisitionGroup;
   exactSingleUserMatch: LaunchAcquisitionGroup;
   ambiguousOrMismatchedUserMatch: LaunchAcquisitionGroup;
-}
-
-interface ActionEvidenceGroups {
-  noSourceObservations: LaunchAcquisitionGroup;
-  observationStoreUnavailable: LaunchAcquisitionGroup;
-  sourceObservationsWithoutUndergradAccess: LaunchAcquisitionGroup;
-  untrustedExternalRouteEvidence: LaunchAcquisitionGroup;
-  sourceBackedRouteNotLaunchMaterialized: LaunchAcquisitionGroup;
 }
 
 interface SourceDescriptionGroups {
@@ -126,18 +107,11 @@ export interface LaunchAcquisitionReport {
    * report unavailable rather than negative (#2458).
    */
   observationStorePopulated: boolean;
-  bySource: Record<
-    string,
-    { piIdentity: number; actionEvidence: number; sourceDescription: number }
-  >;
+  bySource: Record<string, { piIdentity: number; sourceDescription: number }>;
   manifest: LaunchAcquisitionManifestRow[];
   piIdentity?: {
     total: number;
     groups: PiIdentityGroups;
-  };
-  actionEvidence?: {
-    total: number;
-    groups: ActionEvidenceGroups;
   };
   sourceDescription?: {
     total: number;
@@ -145,10 +119,8 @@ export interface LaunchAcquisitionReport {
   };
 }
 
-const defaultStages: LaunchAcquisitionStage[] = ['pi_identity', 'action_evidence'];
+const defaultStages: LaunchAcquisitionStage[] = ['pi_identity'];
 const yaleHostPattern = /(^|\.)yale\.edu$/i;
-const undergradAccessPattern =
-  /\b(undergrad|undergraduate|student|students|research assistant|ra\b|internship|apply|application|contact|mentor|summer|work-study|volunteer|opportunit)/i;
 
 const newGroup = (): LaunchAcquisitionGroup => ({ count: 0, samples: [] });
 
@@ -274,11 +246,6 @@ const isYaleUrl = (value: unknown): boolean => {
   }
 };
 
-const hasUntrustedExternalRouteEvidence = (entity: Record<string, any>): boolean => {
-  const urls = cleanStrings([entity.websiteUrl, entity.website, ...(entity.sourceUrls || [])]);
-  return urls.length > 0 && urls.some((url) => hasHttpUrl(url) && !isYaleUrl(url));
-};
-
 const rejectedDescriptionSourcePatterns = [
   /\/membership\/directory\/?$/i,
   /\/(?:people|faculty|directory|members)\/?$/i,
@@ -340,8 +307,6 @@ const groundedDescriptionCommand =
   'SCRAPER_ENV=beta yarn --cwd server research-homes:backfill-descriptions --dry-run --limit=100 --output /tmp/ylabs-research-home-description-backfill.json';
 const piIdentityCommand =
   'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=pi_identity --limit=250 --sample-limit=25 --output /tmp/ylabs-pi-identity-acquisition.json';
-const actionEvidenceCommand =
-  'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=action_evidence --limit=250 --sample-limit=25 --output /tmp/ylabs-action-evidence-acquisition.json';
 const reviewExceptionCommand =
   'SCRAPER_ENV=beta yarn --cwd server launch:review-exceptions --collection=all --limit=500 --decision-template-output /tmp/ylabs-launch-review-exceptions-template.json --accepted-decisions=/tmp/ylabs-launch-review-exceptions-decisions.json --allow-empty-decisions --output /tmp/ylabs-launch-review-exceptions.json';
 
@@ -354,11 +319,9 @@ const incrementSource = (
   for (const sourceName of sourceNames.length ? sourceNames : ['unattributed']) {
     bySource[sourceName] = bySource[sourceName] || {
       piIdentity: 0,
-      actionEvidence: 0,
       sourceDescription: 0,
     };
     if (stage === 'pi_identity') bySource[sourceName].piIdentity += 1;
-    else if (stage === 'action_evidence') bySource[sourceName].actionEvidence += 1;
     else bySource[sourceName].sourceDescription += 1;
   }
 };
@@ -370,14 +333,6 @@ const buildPiGroups = (): PiIdentityGroups => ({
   leadNotRequiredByEntityType: newGroup(),
   exactSingleUserMatch: newGroup(),
   ambiguousOrMismatchedUserMatch: newGroup(),
-});
-
-const buildActionGroups = (): ActionEvidenceGroups => ({
-  noSourceObservations: newGroup(),
-  observationStoreUnavailable: newGroup(),
-  sourceObservationsWithoutUndergradAccess: newGroup(),
-  untrustedExternalRouteEvidence: newGroup(),
-  sourceBackedRouteNotLaunchMaterialized: newGroup(),
 });
 
 const buildSourceDescriptionGroups = (): SourceDescriptionGroups => ({
@@ -448,88 +403,6 @@ async function buildPiManifestRow(
       : users.length > 1
         ? 'Official profile or source URL matches multiple/mismatched users; do not attach a lead without disambiguation.'
         : 'No unique source-backed PI/director user is currently available for this research home.',
-  };
-}
-
-async function classifyActionItem(
-  item: LaunchAcquisitionReportQueueItem,
-  entity: Record<string, any>,
-  deps: LaunchAcquisitionReportDeps,
-  groups: ActionEvidenceGroups,
-  sampleLimit: number,
-  observationStorePopulated: boolean,
-): Promise<void> {
-  const label = textValue(entity.displayName || entity.name || item.label);
-  const [sourceObservationCount, undergraduateObservationCount, accessCounts] = await Promise.all([
-    deps.countSourceObservations(entity),
-    deps.countUndergraduateAccessObservations(entity),
-    deps.countAccessRecords(item.recordId),
-  ]);
-
-  // Without an observation store, "no source observations" is unavailable rather
-  // than false, and the early return below would suppress the three verdicts that
-  // do not depend on observations. Reporting the condition instead of a false
-  // diagnosis is the whole point: an empty read must not become a decision
-  // (#2458).
-  if (!observationStorePopulated) {
-    addGroup(groups.observationStoreUnavailable, item, label, sampleLimit);
-    if (hasUntrustedExternalRouteEvidence(entity)) {
-      addGroup(groups.untrustedExternalRouteEvidence, item, label, sampleLimit);
-    }
-    if (accessCounts.accessSignals > 0) {
-      addGroup(groups.sourceBackedRouteNotLaunchMaterialized, item, label, sampleLimit);
-    }
-    return;
-  }
-
-  if (sourceObservationCount === 0) {
-    addGroup(groups.noSourceObservations, item, label, sampleLimit);
-    return;
-  }
-
-  if (undergraduateObservationCount === 0 && accessCounts.accessSignals === 0) {
-    addGroup(groups.sourceObservationsWithoutUndergradAccess, item, label, sampleLimit);
-  }
-  if (hasUntrustedExternalRouteEvidence(entity)) {
-    addGroup(groups.untrustedExternalRouteEvidence, item, label, sampleLimit);
-  }
-  if (accessCounts.accessSignals > 0) {
-    addGroup(groups.sourceBackedRouteNotLaunchMaterialized, item, label, sampleLimit);
-  }
-}
-
-async function buildActionManifestRow(
-  item: LaunchAcquisitionReportQueueItem,
-  entity: Record<string, any>,
-  deps: LaunchAcquisitionReportDeps,
-): Promise<LaunchAcquisitionManifestRow> {
-  const label = textValue(entity.displayName || entity.name || item.label);
-  const [sourceObservationCount, undergraduateObservationCount, accessCounts] = await Promise.all([
-    deps.countSourceObservations(entity),
-    deps.countUndergraduateAccessObservations(entity),
-    deps.countAccessRecords(item.recordId),
-  ]);
-  const currentSourceUrl = currentSourceUrlForEntity(entity);
-  const grantOnly = hasGrantSourceUrl(entity) && !isYaleUrl(currentSourceUrl);
-  const hasMaterializedAccess = accessCounts.accessSignals > 0;
-
-  return {
-    recordId: item.recordId,
-    label,
-    stage: 'action_evidence',
-    rootCauseCategory: grantOnly ? 'grant_not_action_evidence' : 'manual_review_required',
-    currentSourceUrl,
-    candidateSourceUrls: candidateOfficialSourceUrlsForEntity(entity),
-    requiredFact:
-      'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
-    safeNextCommand: actionEvidenceCommand,
-    blockedBecause: grantOnly
-      ? 'Current evidence describes funded research but does not prove a student action route.'
-      : sourceObservationCount === 0
-        ? 'No source observations are available to support an access route.'
-        : undergraduateObservationCount === 0 && !hasMaterializedAccess
-          ? 'Source observations exist, but none contain accepted undergraduate access or next-step evidence.'
-          : 'Access artifacts exist or need review, but the launch gate still does not accept them as concrete action evidence.',
   };
 }
 
@@ -634,7 +507,6 @@ async function buildManifestRow(
   deps: LaunchAcquisitionReportDeps,
 ): Promise<LaunchAcquisitionManifestRow> {
   if (item.repairStage === 'pi_identity') return buildPiManifestRow(item, entity, deps);
-  if (item.repairStage === 'action_evidence') return buildActionManifestRow(item, entity, deps);
   return buildSourceDescriptionManifestRow(item, entity);
 }
 
@@ -680,7 +552,7 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     if (entity.slug) clauses.push({ entityKey: entity.slug });
     if (clauses.length === 0) return 0;
     return Observation.countDocuments({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityType: { $in: researchEntityObservationSubjects },
       superseded: false,
       $or: clauses,
     });
@@ -700,37 +572,6 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     )
       .limit(3)
       .lean();
-  },
-  async countUndergraduateAccessObservations(entity) {
-    const id = idValue(entity._id);
-    const clauses: Record<string, unknown>[] = [];
-    if (id) clauses.push({ entityId: id });
-    if (entity.slug) clauses.push({ entityKey: entity.slug });
-    if (clauses.length === 0) return 0;
-    return Observation.countDocuments({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
-      superseded: false,
-      $and: [
-        { $or: clauses },
-        {
-          $or: [
-            { field: undergradAccessPattern },
-            { value: undergradAccessPattern },
-            { sourceUrl: undergradAccessPattern },
-          ],
-        },
-      ],
-    });
-  },
-  async countAccessRecords(id) {
-    const safeId = normalizeLaunchAcquisitionObjectId(id);
-    if (!safeId) return { accessSignals: 0 };
-    const accessSignals = await Signal.countDocuments({
-      researchEntityId: safeId,
-      type: { $in: accessSignalTypes },
-      archived: { $ne: true },
-    });
-    return { accessSignals };
   },
   observationStorePopulated: observationStoreIsPopulated,
 };
@@ -762,23 +603,16 @@ export async function buildLaunchAcquisitionReport(
   const bySource: LaunchAcquisitionReport['bySource'] = {};
   const manifest: LaunchAcquisitionManifestRow[] = [];
   const piGroups = stages.includes('pi_identity') ? buildPiGroups() : undefined;
-  const actionGroups = stages.includes('action_evidence') ? buildActionGroups() : undefined;
   const sourceDescriptionGroups = stages.includes('source_description')
     ? buildSourceDescriptionGroups()
     : undefined;
   const observationStorePopulated = await deps.observationStorePopulated();
   let piTotal = 0;
-  let actionTotal = 0;
   let sourceDescriptionTotal = 0;
 
   for (const item of items) {
     if (item.collection !== 'research') continue;
-    if (
-      item.repairStage !== 'pi_identity' &&
-      item.repairStage !== 'action_evidence' &&
-      item.repairStage !== 'source_description'
-    )
-      continue;
+    if (item.repairStage !== 'pi_identity' && item.repairStage !== 'source_description') continue;
     const entity = await deps.findResearchEntity(item.recordId);
     if (!entity) continue;
 
@@ -787,17 +621,6 @@ export async function buildLaunchAcquisitionReport(
     if (item.repairStage === 'pi_identity' && piGroups) {
       piTotal += 1;
       await classifyPiItem(item, entity, deps, piGroups, sampleLimit);
-    }
-    if (item.repairStage === 'action_evidence' && actionGroups) {
-      actionTotal += 1;
-      await classifyActionItem(
-        item,
-        entity,
-        deps,
-        actionGroups,
-        sampleLimit,
-        observationStorePopulated,
-      );
     }
     if (item.repairStage === 'source_description' && sourceDescriptionGroups) {
       sourceDescriptionTotal += 1;
@@ -814,7 +637,6 @@ export async function buildLaunchAcquisitionReport(
     bySource,
     manifest,
     ...(piGroups ? { piIdentity: { total: piTotal, groups: piGroups } } : {}),
-    ...(actionGroups ? { actionEvidence: { total: actionTotal, groups: actionGroups } } : {}),
     ...(sourceDescriptionGroups
       ? { sourceDescription: { total: sourceDescriptionTotal, groups: sourceDescriptionGroups } }
       : {}),

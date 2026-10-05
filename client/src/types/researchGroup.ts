@@ -7,14 +7,7 @@
  */
 
 export type ResearchGroupKind =
-  | 'lab'
-  | 'center'
-  | 'institute'
-  | 'program'
-  | 'initiative'
-  | 'group'
-  | 'individual'
-  | 'solo';
+  'lab' | 'center' | 'institute' | 'program' | 'initiative' | 'group' | 'individual' | 'solo';
 
 export const researchEntityTypes = [
   'LAB',
@@ -27,12 +20,6 @@ export const researchEntityTypes = [
 ] as const;
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];
-
-export interface ResearchPlanningContext {
-  category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
-  label: string;
-  url: string;
-}
 
 export type StudentDecisionRecommendedAction =
   | 'APPLY'
@@ -54,20 +41,17 @@ export interface StudentDecisionExplanation {
   reviewFlags?: string[];
 }
 
-export interface TimeCommitmentRange {
-  min?: number;
-  max?: number;
-}
-
 export interface PastUndergradAdvisee {
   year?: number;
   programName?: string;
   count?: number;
 }
 
-export interface IndependentStudyCourse {
-  code?: string;
-  title?: string;
+export interface LeadHonor {
+  key?: string;
+  label?: string;
+  kind?: 'fellowship' | 'prize' | 'membership';
+  year?: number;
 }
 
 export interface RecentGrant {
@@ -92,6 +76,8 @@ export interface ResearchEntitySourceLinkHealth {
   healthStatus?: string;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
+  httpsLandingUrl?: string;
 }
 
 export interface ResearchGroup {
@@ -106,13 +92,10 @@ export interface ResearchGroup {
   entityType?: ResearchEntityType;
   shortDescription?: string;
   fullDescription?: string;
-  profileSynthesisDescription?: string;
   // Present only on trimmed list/related responses that omit fullDescription;
   // callers must use it directly rather than re-deriving from raw fields.
   cardDescription?: { text: string; state: 'complete' | 'sparse'; label: string };
-  descriptionSource?: 'ENTITY_SOURCE' | 'PI_PROFILE_SYNTHESIS' | 'NONE';
   websiteUrl: string;
-  location: string;
   departments: string[];
   researchAreas: string[];
   methods?: string[];
@@ -127,17 +110,12 @@ export interface ResearchGroup {
   undergradEvidenceQuote?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
-  /** True when the lab is reachable via an independent-study course. */
-  offersIndependentStudy?: boolean;
-  independentStudyCourses?: IndependentStudyCourse[];
+  /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */
+  hasUndergradHostingEvidence?: boolean;
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
-  typicalUndergradRoles: string[];
-  prerequisiteCourses: string[];
-  creditOptions: string[];
-  fundingPrograms: string[];
-  timeCommitmentHoursPerWeek?: TimeCommitmentRange;
+  leadHonors?: LeadHonor[];
   contactEmail?: string;
   contactName?: string;
   contactRole?: string;
@@ -159,10 +137,12 @@ export interface ResearchGroup {
    * has any non-archived Listings. Optional because the search endpoint does
    * not include it.
    */
-  planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
   leadIdentityStatus?: 'verified' | 'under_review';
   leadProfessorPublicKey?: string;
+  emeritusLed?: boolean;
+  wayInWithheld?: boolean;
+  creativePractice?: boolean;
   studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }
 
@@ -183,4 +163,13 @@ export interface ResearchGroupSearchResponse {
   // Set when the requested page sits past the server's reachable pagination
   // depth. The search never ran, so the response carries no result-set size.
   depthLimited?: boolean;
+  // The server answered from a fallback path, so the result set may be incomplete
+  // and an empty one is not evidence that nothing matches.
+  degraded?: boolean;
+  queryCorrection?: ResearchSearchQueryCorrection;
+}
+
+export interface ResearchSearchQueryCorrection {
+  originalQuery: string;
+  correctedQuery: string;
 }

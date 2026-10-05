@@ -6,10 +6,10 @@ import UsersRoutes from './users';
 import FellowshipsRoutes from './fellowships';
 import ProgramsRoutes from './programs';
 import AnalyticsRoutes from './analytics';
-import ResearchAreasRoutes from './researchAreas';
 import ConfigRoutes from './config';
 import AdminRoutes from './admin';
 import ResearchGroupsRoutes from './researchGroups';
+import ReadinessRoutes from './ready';
 
 const router = Router();
 
@@ -26,8 +26,8 @@ router.use(
 router.use('/users', UsersRoutes);
 router.use('/research', ResearchGroupsRoutes);
 router.use('/analytics', AnalyticsRoutes);
-router.use('/research-areas', ResearchAreasRoutes);
 router.use('/config', ConfigRoutes);
 router.use('/admin', AdminRoutes);
+router.use('/ready', ReadinessRoutes);
 
 export default router;

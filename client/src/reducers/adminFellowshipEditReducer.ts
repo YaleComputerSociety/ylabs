@@ -6,6 +6,7 @@
  * only manage the value arrays it mutates.
  */
 import { Fellowship } from '../types/types';
+import { ProgramDateDraft, programDateDraft } from '../utils/programDateDraft';
 
 export interface AdminFellowshipEditState {
   title: string;
@@ -16,8 +17,8 @@ export interface AdminFellowshipEditState {
   applicationLink: string;
   awardAmount: string;
   isAcceptingApplications: boolean;
-  deadline: string;
-  applicationOpenDate: string;
+  deadline: ProgramDateDraft;
+  applicationOpenDate: ProgramDateDraft;
   contactName: string;
   contactEmail: string;
   archived: boolean;
@@ -39,8 +40,8 @@ export type AdminFellowshipEditAction =
   | { type: 'SET_APPLICATION_LINK'; payload: string }
   | { type: 'SET_AWARD_AMOUNT'; payload: string }
   | { type: 'SET_IS_ACCEPTING_APPLICATIONS'; payload: boolean }
-  | { type: 'SET_DEADLINE'; payload: string }
-  | { type: 'SET_APPLICATION_OPEN_DATE'; payload: string }
+  | { type: 'SET_DEADLINE'; payload: ProgramDateDraft }
+  | { type: 'SET_APPLICATION_OPEN_DATE'; payload: ProgramDateDraft }
   | { type: 'SET_CONTACT_NAME'; payload: string }
   | { type: 'SET_CONTACT_EMAIL'; payload: string }
   | { type: 'SET_ARCHIVED'; payload: boolean }
@@ -51,16 +52,6 @@ export type AdminFellowshipEditAction =
   | { type: 'SET_GLOBAL_REGIONS'; payload: string[] }
   | { type: 'SET_CITIZENSHIP_STATUS'; payload: string[] }
   | { type: 'SET_SAVING'; payload: boolean };
-
-/**
- * Fellowship.deadline and .applicationOpenDate come in as ISO strings or null.
- * The datetime-local input needs a "YYYY-MM-DDTHH:mm" string. Extracting
- * here keeps the reducer pure (component stays free of the date quirk).
- */
-const toInputDateString = (iso: string | null | undefined): string => {
-  if (!iso) return '';
-  return new Date(iso).toISOString().slice(0, 16);
-};
 
 export const createInitialAdminFellowshipEditState = (
   fellowship: Fellowship,
@@ -73,8 +64,8 @@ export const createInitialAdminFellowshipEditState = (
   applicationLink: fellowship.applicationLink || '',
   awardAmount: fellowship.awardAmount || '',
   isAcceptingApplications: fellowship.isAcceptingApplications,
-  deadline: toInputDateString(fellowship.deadline),
-  applicationOpenDate: toInputDateString(fellowship.applicationOpenDate),
+  deadline: programDateDraft(fellowship.deadline, 'deadline'),
+  applicationOpenDate: programDateDraft(fellowship.applicationOpenDate, 'opens'),
   contactName: fellowship.contactName || '',
   contactEmail: fellowship.contactEmail || '',
   archived: fellowship.archived,

@@ -1,7 +1,22 @@
 import { Signal } from '../models/signal';
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
-import { Observation } from '../models/observation';
+import { selectDuplicateProgramCopies } from './programDuplicateIdentity';
+import {
+  AWARD_SUSPENDED_REASON,
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
+} from './programApplicability';
+import {
+  deriveUpcomingDuplicateWindows,
+  sameUpcomingDuplicateWindow,
+  storedUpcomingDuplicateWindow,
+  UPCOMING_DUPLICATE_WINDOW_FIELD,
+  type UpcomingDuplicateWindow,
+} from './programUpcomingDuplicateWindow';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { researchEntityLeadStateForMembers } from './researchEntityQuality';
@@ -12,7 +27,9 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import {
+  archivedProgramStudentVisibilityVerdictFilter,
   archivedStudentVisibilityVerdictFilter,
+  clearedProgramStudentVisibilityVerdict,
   clearedStudentVisibilityVerdict,
 } from '../models/entityArchival';
 import {
@@ -31,6 +48,7 @@ import {
   isStudentReadySoftSignalReason,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 } from './studentVisibilityTier';
+import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
 import {
   buildResearchEntityPiDedupePlan,
   piLedRestrictedDuplicateEntityIds,
@@ -44,14 +62,18 @@ import {
   type RosterLeadResolutionResult,
 } from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { readIndexedFieldByDocumentId, syncEntities } from './meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
-import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
-import { IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS } from './accessAcceptanceLevel';
+import {
+  RE_DERIVED_ACCESS_SIGNAL_TYPES,
+  underivedAccessSignalIds,
+} from '../scrapers/accessMaterializer';
+import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
@@ -79,9 +101,7 @@ export interface StudentVisibilityGateOptions {
    * The tier emits `duplicate_risk` alongside `exact_url_duplicate_risk` unconditionally,
    * so a row's own cause cannot be recovered from gate output and "clearing the duplicate
    * reasons releases N rows" was unfalsifiable in both directions: 261 of 382 duplicate
-   * members carry no other blocking reason and all 261 carry affirmative evidence, yet 145
-   * also carry `missing_action_evidence`, which is neither blocking nor evidence under this
-   * module's own predicates (#3272).
+   * members carry no other blocking reason and all 261 carry affirmative evidence (#3272).
    *
    * Refused in apply mode. This exists to read a counterfactual, and writing tiers computed
    * from a premise that is false of the corpus would be the opposite of measuring it.
@@ -102,6 +122,32 @@ export interface StudentVisibilityGatePlan {
   sourceNames: string[];
   nextRepairAction: string;
   hasResolvedLead?: boolean;
+  /**
+   * The per-row inputs this verdict was reached on, reported so the engine benchmark can
+   * freeze them (#3589). Every one of them is either corpus-wide (the duplicate and
+   * shared-citation flags) or a join (the counts, the lead rows), so a benchmark that
+   * recomputed them from a scoped read would be measuring its own reimplementation
+   * rather than the gate. Read here, never rebuilt.
+   */
+  gateInput?: ResearchEntityGateRowInput;
+  /**
+   * Programs only: the window the row stores and the one this run derives from the fund's
+   * other copies (#4382). `null` is a decided absence, so an apply clears a stale window.
+   */
+  currentUpcomingDuplicateWindow?: UpcomingDuplicateWindow | null;
+  upcomingDuplicateWindow?: UpcomingDuplicateWindow | null;
+}
+
+/** The serializable half of `ResearchEntityStudentVisibilityInput`, minus the record itself. */
+export interface ResearchEntityGateRowInput {
+  leadMembers: Array<Record<string, any>>;
+  accessSignalCount: number;
+  actionablePathwayCount: number;
+  openPostedOpportunityCount: number;
+  duplicateRisk: boolean;
+  exactUrlDuplicateRisk: boolean;
+  citationsSharedAcrossPersonRows: boolean;
+  relatedEntityAccessPathCount: number;
 }
 
 export interface VisibilityQueueUpsert {
@@ -126,7 +172,7 @@ export interface StudentVisibilityGateDeps {
     collection: VisibilityReleaseQueueCollection,
     recordId: string,
     patch: Record<string, any>,
-    options: { timestamps: boolean },
+    options: { timestamps: boolean; unset?: string[] },
   ) => Promise<void>;
   upsertOpenQueueItem: (item: VisibilityQueueUpsert) => Promise<void>;
   resolveQueueItem: (
@@ -136,6 +182,7 @@ export interface StudentVisibilityGateDeps {
   ) => Promise<void>;
   resolveArchivedResearchQueueItems?: () => Promise<number>;
   clearArchivedResearchStudentVisibility?: () => Promise<number>;
+  clearArchivedProgramStudentVisibility?: () => Promise<number>;
 }
 
 export interface StudentVisibilityGateReport {
@@ -149,6 +196,7 @@ export interface StudentVisibilityGateReport {
     resolved: number;
     changed: number;
     unexplainedHeld: number;
+    upcomingDuplicateWindowsChanged: number;
   };
   reasonCounts: Record<string, number>;
   blockerCounts: Record<string, number>;
@@ -160,7 +208,6 @@ const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
 
 const evidenceReasons = new Set([
   'application_route',
-  'concrete_next_step',
   'graduate_relevant',
   'official_source',
   'source_backed_description',
@@ -192,19 +239,17 @@ export const SOURCE_DESCRIPTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
 ]);
 export const PI_IDENTITY_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'missing_lead',
-  'duplicate_name_risk',
   'duplicate_risk',
   'profile_identity_risk',
 ]);
-export const ACTION_EVIDENCE_REPAIR_REASONS: ReadonlySet<string> = new Set([
-  'missing_action_evidence',
-  'missing_alternate_access_path',
-  'missing_application_route',
-  'missing_source_route',
-]);
 export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'archive_review',
-  'content_page_risk',
+  'duplicate_program',
+  'common_application_container',
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  AWARD_SUSPENDED_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
   'exact_url_duplicate_risk',
   'generic_directory_shell',
   'inactive_at_yale',
@@ -318,8 +363,6 @@ export const repairStageForReasons = (reasons: string[]) => {
     return 'source_description';
   }
   if (reasons.some((reason) => PI_IDENTITY_REPAIR_REASONS.has(reason))) return 'pi_identity';
-  if (reasons.some((reason) => ACTION_EVIDENCE_REPAIR_REASONS.has(reason)))
-    return 'action_evidence';
   if (reasons.some((reason) => SUPPRESSION_REPAIR_REASONS.has(reason))) return 'suppression';
   return 'review_exception';
 };
@@ -416,6 +459,49 @@ export function isStudentVisibilityGatePlanMateriallyChanged(
   return false;
 }
 
+export function isUpcomingDuplicateWindowChanged(plan: StudentVisibilityGatePlan): boolean {
+  if (plan.upcomingDuplicateWindow === undefined) return false;
+  return !sameUpcomingDuplicateWindow(
+    plan.currentUpcomingDuplicateWindow,
+    plan.upcomingDuplicateWindow,
+  );
+}
+
+function upcomingDuplicateWindowUnset(plan: StudentVisibilityGatePlan): string[] {
+  return isUpcomingDuplicateWindowChanged(plan) && !plan.upcomingDuplicateWindow
+    ? [UPCOMING_DUPLICATE_WINDOW_FIELD]
+    : [];
+}
+
+function upcomingDuplicateWindowSet(plan: StudentVisibilityGatePlan): Record<string, unknown> {
+  return isUpcomingDuplicateWindowChanged(plan) && plan.upcomingDuplicateWindow
+    ? { [UPCOMING_DUPLICATE_WINDOW_FIELD]: plan.upcomingDuplicateWindow }
+    : {};
+}
+
+/**
+ * A changed window changes what a student is served, so it is written like a changed
+ * verdict, with `updatedAt`, even when the verdict itself is unchanged.
+ */
+function studentVisibilityGateRecordWritesServedChange(plan: StudentVisibilityGatePlan): boolean {
+  return (
+    isStudentVisibilityGatePlanMateriallyChanged(plan) || isUpcomingDuplicateWindowChanged(plan)
+  );
+}
+
+function studentVisibilityGateRecordUpdate(
+  plan: StudentVisibilityGatePlan,
+  now: Date,
+): { $set: Record<string, unknown>; $unset?: Record<string, ''> } {
+  const unset = upcomingDuplicateWindowUnset(plan);
+  return {
+    $set: { ...studentVisibilityGateRecordPatch(plan, now), ...upcomingDuplicateWindowSet(plan) },
+    ...(unset.length > 0
+      ? { $unset: Object.fromEntries(unset.map((field) => [field, ''] as const)) }
+      : {}),
+  };
+}
+
 /**
  * The one owner of what an apply writes to a decided record, so the two apply paths
  * cannot drift: a materially changed row records the verdict and both stamps, and a row
@@ -457,15 +543,41 @@ const exactDuplicateUrlRejectedPathPatterns = [
 // research home, so a shared URL on them is not a duplicate signal.
 const genericDuplicateSignalHosts = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
 
+const identityQueryParamsByPage: Readonly<Record<string, readonly string[]>> = {
+  'scholar.google.com/citations': ['user'],
+};
+
+const regionalScholarHost = /^(?:www\.)?scholar\.google\.[a-z]{2,3}(?:\.[a-z]{2})?$/;
+
+const schoolLandingPagePath = /^\/(?:research|opportunities)$/i;
+
+const hostWithoutWww = (hostname: string): string => hostname.toLowerCase().replace(/^www\./, '');
+
+const identityQueryParamsFor = (url: URL): readonly string[] =>
+  identityQueryParamsByPage[`${hostWithoutWww(url.hostname)}${url.pathname}`] || [];
+
+function identityQueryString(url: URL, identityParams: readonly string[]): string {
+  const kept = new URLSearchParams();
+  for (const param of identityParams) {
+    const value = url.searchParams.get(param)?.trim();
+    if (value) kept.set(param, value);
+  }
+  return kept.toString();
+}
+
+const isSchoolLandingPage = (url: URL, path: string): boolean =>
+  Object.hasOwn(SCHOOL_PROFILE_HOSTS, hostWithoutWww(url.hostname)) &&
+  schoolLandingPagePath.test(path);
+
 function normalizedExactDuplicateUrl(value: unknown): string {
   const raw = unwrapMicrosoftSafeLinksUrl(value);
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';
-    url.search = '';
     url.protocol = 'https:';
     url.hostname = url.hostname.toLowerCase();
+    if (regionalScholarHost.test(url.hostname)) url.hostname = 'scholar.google.com';
     // A trailing default document addresses the same page as the directory, so
     // `/lab/x/index.aspx` and `/lab/x/` are one destination. Without this, two rows
     // citing one lab under the two spellings read as distinct and both serve (#2708).
@@ -474,6 +586,7 @@ function normalizedExactDuplicateUrl(value: unknown): string {
     if (url.hostname === 'medicine.yale.edu') {
       url.pathname = url.pathname.replace(/^\/[^/]+\/profile\//i, '/profile/');
     }
+    url.search = identityQueryString(url, identityQueryParamsFor(url));
     return url.toString();
   } catch {
     return '';
@@ -488,6 +601,8 @@ function isSpecificDuplicateSignalUrl(value: string): boolean {
     if (path === '/' && /(^|\.)yale\.edu$/i.test(url.hostname)) return false;
     if (genericDuplicateSignalHosts.has(url.hostname.toLowerCase())) return false;
     if (exactDuplicateUrlRejectedPathPatterns.some((pattern) => pattern.test(path))) return false;
+    if (isSchoolLandingPage(url, path)) return false;
+    if (identityQueryParamsFor(url).length > 0 && !url.search) return false;
     return true;
   } catch {
     return false;
@@ -594,18 +709,12 @@ function exactDuplicateCanonicalScore(
  */
 export const SHARED_CITATION_PERSON_ROW_THRESHOLD = 25;
 
-const PERSON_SCOPED_GATE_ENTITY_TYPES = new Set([
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-]);
-
 export function selectSharedCitationOnlyEntityIds(
   entities: any[],
   threshold: number = SHARED_CITATION_PERSON_ROW_THRESHOLD,
 ): Set<string> {
   const personRows = entities.filter((entity) =>
-    PERSON_SCOPED_GATE_ENTITY_TYPES.has(String(entity?.entityType || '')),
+    isPersonScopedResearchEntityType(entity?.entityType),
   );
   const personRowsPerUrl = new Map<string, number>();
   for (const entity of personRows) {
@@ -742,6 +851,7 @@ export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup
 
 type IndexUrlAuthority = {
   assertsOwnershipOf: (entity: any, url: string) => boolean;
+  publishedOwnHomeOf: (entity: any) => boolean;
 };
 
 const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
@@ -754,17 +864,42 @@ const indexUrlAuthorityOver = (entities: any[]): IndexUrlAuthority => {
   return {
     assertsOwnershipOf: (entity: any, url: string): boolean =>
       indexAuthorityUrlByEntityId.get(studentVisibilityGateEntityIdKey(entity)) === url,
+    publishedOwnHomeOf: (entity: any): boolean =>
+      indexAuthorityUrlByEntityId.has(studentVisibilityGateEntityIdKey(entity)),
   };
 };
 
-const exactDuplicateGroupByCanonicalPreference = (
+/**
+ * Whether an index with authority over research homes vouches for this member in the
+ * contest over `url`.
+ *
+ * When some member publishes the URL as its own home, only an index that published
+ * that very URL settles the contest, so authority over a different address never
+ * outranks the row that owns this one. When nobody publishes it, the members collide
+ * on a citation none of them owns, typically the lead's profile page, and the
+ * already-public bonus in `exactDuplicateCanonicalScore` would otherwise decide: a
+ * transient demotion of the index-published row handed the canonical slot to its twin
+ * for good, so the outcome depended on the gate's previous output rather than on
+ * evidence (#3575).
+ */
+const indexVouchesForMemberInUrlContest = (
   { url, members }: ExactDuplicateUrlGroup,
+  authority: IndexUrlAuthority,
+): ((entity: any) => boolean) => {
+  const urlHasPublisher = members.some((entity) => entityPublishesUrlAsItsOwnHome(entity, url));
+  return urlHasPublisher
+    ? (entity) => authority.assertsOwnershipOf(entity, url)
+    : (entity) => authority.publishedOwnHomeOf(entity);
+};
+
+const exactDuplicateGroupByCanonicalPreference = (
+  group: ExactDuplicateUrlGroup,
   leadCountsByEntityId: Map<string, number>,
   authority: IndexUrlAuthority,
-): any[] =>
-  [...members].sort((a, b) => {
-    const byAuthority =
-      Number(authority.assertsOwnershipOf(b, url)) - Number(authority.assertsOwnershipOf(a, url));
+): any[] => {
+  const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
+  return [...group.members].sort((a, b) => {
+    const byAuthority = Number(indexVouchesFor(b)) - Number(indexVouchesFor(a));
     if (byAuthority !== 0) return byAuthority;
     const byScore =
       exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
@@ -774,16 +909,31 @@ const exactDuplicateGroupByCanonicalPreference = (
       studentVisibilityGateEntitySortKey(b),
     );
   });
+};
 
-type ExactDuplicateUrlIdGroup = { url: string; memberIds: string[] };
+type ExactDuplicateUrlIdGroup = {
+  memberIds: string[];
+  indexOwnerIds: string[];
+  indexVouchedIds: string[];
+};
 
-const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] =>
-  exactDuplicateUrlGroups(entities)
-    .map(({ url, members }) => ({
-      url,
-      memberIds: uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity))),
-    }))
+const exactUrlDuplicateGroupEntityIds = (entities: any[]): ExactDuplicateUrlIdGroup[] => {
+  const authority = indexUrlAuthorityOver(entities);
+  return exactDuplicateUrlGroups(entities)
+    .map((group) => {
+      const indexVouchesFor = indexVouchesForMemberInUrlContest(group, authority);
+      const idsOf = (members: any[]) =>
+        uniqueStrings(members.map((entity) => studentVisibilityGateEntityIdKey(entity)));
+      return {
+        memberIds: idsOf(group.members),
+        indexOwnerIds: idsOf(
+          group.members.filter((entity) => authority.assertsOwnershipOf(entity, group.url)),
+        ),
+        indexVouchedIds: idsOf(group.members.filter(indexVouchesFor)),
+      };
+    })
     .filter(({ memberIds }) => memberIds.length > 1);
+};
 
 export function selectExactUrlDuplicateRiskEntityIds(
   entities: any[],
@@ -852,7 +1002,7 @@ const duplicateClusterByReleasePreference = (
   memberIds: string[],
   entityById: Map<string, any>,
   leadCountsByEntityId: Map<string, number>,
-  assertsIndexUrlOwnership: (entityId: string) => boolean,
+  indexAuthorityRank: (entityId: string) => number,
 ): string[] =>
   [...memberIds].sort((a, b) => {
     // A row with no lead and no lead exemption is held by `missing_lead` whatever
@@ -862,8 +1012,7 @@ const duplicateClusterByReleasePreference = (
       Number(canClearLeadRequirement(entityById.get(b), leadCountsByEntityId.get(b) || 0)) -
       Number(canClearLeadRequirement(entityById.get(a), leadCountsByEntityId.get(a) || 0));
     if (byLeadReachability !== 0) return byLeadReachability;
-    const byIndexUrlAuthority =
-      Number(assertsIndexUrlOwnership(b)) - Number(assertsIndexUrlOwnership(a));
+    const byIndexUrlAuthority = indexAuthorityRank(b) - indexAuthorityRank(a);
     if (byIndexUrlAuthority !== 0) return byIndexUrlAuthority;
     const byScore =
       exactDuplicateCanonicalScore(entityById.get(b), leadCountsByEntityId) -
@@ -927,12 +1076,14 @@ export function selectDuplicateGroupSurvivorEntityIds({
   const urlJoinedClusterRoots = new Set(
     urlGroups.map(({ memberIds }) => rootById.get(memberIds[0])),
   );
-  const sharedUrlsByClusterRoot = new Map<string, Set<string>>();
-  for (const { url, memberIds } of urlGroups) {
-    const root = rootById.get(memberIds[0]);
-    if (!root) continue;
-    sharedUrlsByClusterRoot.set(root, new Set([...(sharedUrlsByClusterRoot.get(root) || []), url]));
-  }
+  const indexOwnerIds = new Set(urlGroups.flatMap((group) => group.indexOwnerIds));
+  const indexVouchedIds = new Set(urlGroups.flatMap((group) => group.indexVouchedIds));
+  // Owning a shared address outranks a vouch in a contest nobody publishes: two
+  // index-published rows are both vouched on their lead's profile page, and only the
+  // ownership of an address the cluster shares still separates them without the
+  // already-public bonus.
+  const indexAuthorityRank = (entityId: string): number =>
+    indexOwnerIds.has(entityId) ? 2 : indexVouchedIds.has(entityId) ? 1 : 0;
   const membersByRoot = new Map<string, string[]>();
   for (const [id, root] of rootById) {
     membersByRoot.set(root, [...(membersByRoot.get(root) || []), id]);
@@ -942,15 +1093,11 @@ export function selectDuplicateGroupSurvivorEntityIds({
   for (const [root, memberIds] of membersByRoot) {
     if (memberIds.length < 2 || !urlJoinedClusterRoots.has(root)) continue;
     if (memberIds.some((id) => !duplicateRiskEntityIds.has(id))) continue;
-    const clusterSharedUrls = sharedUrlsByClusterRoot.get(root) || new Set<string>();
     const released = duplicateClusterByReleasePreference(
       memberIds,
       entityById,
       leadCountsByEntityId,
-      (entityId) => {
-        const authorityUrl = researchHomeUrlUnderIndexAuthority(entityById.get(entityId));
-        return !!authorityUrl && clusterSharedUrls.has(authorityUrl);
-      },
+      indexAuthorityRank,
     )[0];
     if (released) survivorIds.add(released);
   }
@@ -963,52 +1110,6 @@ const increment = (counts: Record<string, number>, key: string) => {
 
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
   new Map(rows.map((row) => [studentVisibilityGateDocumentId(row._id), row.count]));
-
-const REACH_OUT_PLAUSIBLE_SIGNAL_TYPE = 'REACH_OUT_PLAUSIBLE';
-
-const hasHttpSourceUrl = (value: unknown): boolean =>
-  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
-
-export interface ReachOutPlausibleGateSignal {
-  type?: unknown;
-  archived?: unknown;
-  derivationKey?: unknown;
-  source?: { url?: unknown; evidenceIds?: unknown; name?: unknown } | null;
-}
-
-// A REACH_OUT_PLAUSIBLE signal is a derived exploratory ways-in, so it inherently
-// carries no external http `source.url`; requiring one hides an already-earned
-// signal from the action-evidence gate. It still counts only when it is backed by
-// a supporting source observation and the entity itself carries an official
-// non-grant page, so no weaker or unbacked signal can pass. Signals that already
-// carry an http `source.url` are counted by the primary aggregation and excluded
-// here to avoid double counting.
-export function reachOutPlausibleSignalCreditsActionEvidence(input: {
-  signal: ReachOutPlausibleGateSignal;
-  entity: {
-    websiteUrl?: unknown;
-    website?: unknown;
-    sourceUrls?: unknown;
-    // Declared because `officialNonGrantSourceUrl` reads it to exclude a known-dead
-    // URL. Omitting it here made a health-aware helper read as blind, and a caller
-    // that built a fresh literal would have silently disabled that exclusion.
-    sourceLinkHealth?: unknown;
-  };
-}): boolean {
-  const { signal, entity } = input;
-  if (signal.archived === true) return false;
-  if (signal.type !== REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) return false;
-  if (
-    typeof signal.derivationKey === 'string' &&
-    IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS.has(signal.derivationKey)
-  ) {
-    return false;
-  }
-  if (hasHttpSourceUrl(signal.source?.url)) return false;
-  const evidenceIds = Array.isArray(signal.source?.evidenceIds) ? signal.source?.evidenceIds : [];
-  if (evidenceIds.length === 0) return false;
-  return Boolean(officialNonGrantSourceUrl(entity));
-}
 
 const profileAreaDuplicateCounterpartEntityTypes = new Set(['LAB', 'FACULTY_PROJECT']);
 
@@ -1158,7 +1259,14 @@ function buildNameOnlyVisibilityDedupeRows(args: {
 const defaultGateDeps: StudentVisibilityGateDeps = {
   async updateRecordVisibility(collection, recordId, patch, options) {
     const model: any = collection === 'research' ? ResearchEntity : Fellowship;
-    await model.updateOne({ _id: recordId }, { $set: patch }, { timestamps: options.timestamps });
+    const unset = options.unset?.length
+      ? { $unset: Object.fromEntries(options.unset.map((field) => [field, ''])) }
+      : {};
+    await model.updateOne(
+      { _id: recordId },
+      { $set: patch, ...unset },
+      { timestamps: options.timestamps },
+    );
   },
   async upsertOpenQueueItem(item) {
     const now = new Date();
@@ -1195,6 +1303,9 @@ const defaultGateDeps: StudentVisibilityGateDeps = {
   },
   async clearArchivedResearchStudentVisibility() {
     return clearArchivedResearchStudentVisibility();
+  },
+  async clearArchivedProgramStudentVisibility() {
+    return clearArchivedProgramStudentVisibility();
   },
 };
 
@@ -1355,6 +1466,19 @@ export async function clearArchivedResearchStudentVisibility(): Promise<number> 
   return result.modifiedCount || 0;
 }
 
+/**
+ * The program half of the same reconciliation. `planProgramGateUpdates` scopes itself
+ * to `archived: false` exactly as the research planner does, so an archived program
+ * kept the tier it held when it was last gated: 17 archived Development programs
+ * stored `student_ready` (#3753).
+ */
+export async function clearArchivedProgramStudentVisibility(): Promise<number> {
+  const result = await Fellowship.updateMany(archivedProgramStudentVisibilityVerdictFilter(), {
+    $unset: clearedProgramStudentVisibilityVerdict(),
+  });
+  return result.modifiedCount || 0;
+}
+
 export async function runStudentVisibilityGateForPlans(
   plans: StudentVisibilityGatePlan[],
   options: {
@@ -1374,6 +1498,7 @@ export async function runStudentVisibilityGateForPlans(
     resolved: 0,
     changed: 0,
     unexplainedHeld: 0,
+    upcomingDuplicateWindowsChanged: 0,
   };
 
   for (const plan of plans) {
@@ -1387,6 +1512,7 @@ export async function runStudentVisibilityGateForPlans(
     if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
     if (materiallyChanged) counts.changed += 1;
+    if (isUpcomingDuplicateWindowChanged(plan)) counts.upcomingDuplicateWindowsChanged += 1;
     for (const reason of plan.reasons) {
       increment(reasonCounts, reason);
       if (isBlockingVisibilityReason(reason)) increment(blockerCounts, reason);
@@ -1395,12 +1521,11 @@ export async function runStudentVisibilityGateForPlans(
 
     if (options.mode !== 'apply') continue;
 
-    await deps.updateRecordVisibility(
-      plan.collection,
-      plan.recordId,
-      studentVisibilityGateRecordPatch(plan, new Date()),
-      { timestamps: materiallyChanged },
-    );
+    const { $set, $unset } = studentVisibilityGateRecordUpdate(plan, new Date());
+    await deps.updateRecordVisibility(plan.collection, plan.recordId, $set, {
+      timestamps: studentVisibilityGateRecordWritesServedChange(plan),
+      ...($unset ? { unset: Object.keys($unset) } : {}),
+    });
 
     if (publicSafe) {
       await deps.resolveQueueItem(plan.collection, plan.recordId, { resolvedByTier: plan.tier });
@@ -1440,6 +1565,7 @@ export async function runStudentVisibilityGateForPlans(
   if (options.mode === 'apply') {
     await deps.resolveArchivedResearchQueueItems?.();
     await deps.clearArchivedResearchStudentVisibility?.();
+    await deps.clearArchivedProgramStudentVisibility?.();
   }
 
   return {
@@ -1487,8 +1613,8 @@ export function buildStudentVisibilityGateApplyOps(
 
   for (const plan of plans) {
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
-    const update = { $set: studentVisibilityGateRecordPatch(plan, now) };
-    if (materiallyChanged) {
+    const update = studentVisibilityGateRecordUpdate(plan, now);
+    if (studentVisibilityGateRecordWritesServedChange(plan)) {
       const recordOp = { updateOne: { filter: { _id: plan.recordId }, update } };
       if (plan.collection === 'research') researchOps.push(recordOp);
       else programOps.push(recordOp);
@@ -1618,6 +1744,7 @@ export async function applyStudentVisibilityGatePlans(
   ]);
   await resolveArchivedResearchQueueItems(now);
   await clearArchivedResearchStudentVisibility();
+  await clearArchivedProgramStudentVisibility();
   return syncGatedResearchEntitiesToIndex(researchOps, plans);
 }
 
@@ -1629,6 +1756,7 @@ export interface StudentVisibilityGateIndexDrift {
   divergentTierRecordIds: string[];
   missingFromIndex: number;
   indexReadFailed: boolean;
+  indexDeferred?: true;
 }
 
 export interface StudentVisibilityGateIndexSyncResult extends StudentVisibilityGateIndexDrift {
@@ -1639,6 +1767,7 @@ export interface StudentVisibilityGateIndexSyncResult extends StudentVisibilityG
 export function studentVisibilityGateIndexSyncBlocker(
   result: StudentVisibilityGateIndexSyncResult,
 ): string | undefined {
+  if (result.indexDeferred) return undefined;
   if (result.indexReadFailed) {
     return 'Could not read the search index, so the applied tiers are unverified and any divergence is unrepaired.';
   }
@@ -1672,6 +1801,7 @@ export async function readStudentVisibilityGateIndexDrift(
     indexReadFailed: false,
   };
   if (plannedIds.length === 0) return empty;
+  if (searchIndexWritesDeferred()) return { ...empty, indexDeferred: true };
 
   let indexedTiers: Map<string, unknown>;
   try {
@@ -1722,6 +1852,7 @@ async function syncGatedResearchEntitiesToIndex(
     researchOps.map((op) => op?.updateOne?.filter?._id),
   );
   const drift = await readStudentVisibilityGateIndexDrift(plans);
+  if (drift.indexDeferred) return { ...drift, syncedRecordIds: [], unsyncedRecordIds: [] };
   const recordIds = Array.from(new Set([...changedRecordIds, ...drift.divergentTierRecordIds]));
   const syncedRecordIds: string[] = [];
   const unsyncedRecordIds: string[] = [];
@@ -1747,6 +1878,36 @@ async function syncGatedResearchEntitiesToIndex(
   return result;
 }
 
+/**
+ * The corpus read's ordering, done in process rather than by the database.
+ *
+ * `sort({ name: 1 })` had no index to serve it, so MongoDB sorted the projected
+ * documents in memory, and the cluster refuses an in-memory sort above 33,554,432
+ * bytes unless the query opts in to disk use. On Development that sort already moved
+ * 24,526,308 of those bytes over 4,510 live rows, 73% of the limit, and the same sort
+ * without the projection fails outright, so the projection was the only thing holding
+ * the gate under a ceiling that rises with every new row and every longer description.
+ * When it crossed, every run, dry and apply alike, threw before planning a single row.
+ *
+ * Nothing downstream needs database order, because the plans are keyed by `recordId`.
+ * The report's samples do want label order, so it is restored here instead (#3748, the
+ * shape #3543 and #3574 already chose). Do not put a `name` or `title` sort back on
+ * either read: an `{ archived: 1, name: 1 }` index would also serve it, but the read
+ * then depends on an index nothing else needs, and the sort orders a list the caller
+ * re-orders anyway. The program read sorted only 1,662,371 bytes over 452 rows, 5% of
+ * the same limit, and is changed with it because it is the same read waiting to grow.
+ */
+const orderedByGateLabel = <T extends Record<string, any>>(
+  rows: T[],
+  field: 'name' | 'title',
+): T[] =>
+  [...rows].sort((a, b) => {
+    const left = typeof a?.[field] === 'string' ? (a[field] as string) : '';
+    const right = typeof b?.[field] === 'string' ? (b[field] as string) : '';
+    if (left === right) return 0;
+    return left < right ? -1 : 1;
+  });
+
 async function planResearchEntityGateUpdates(
   options: Pick<
     StudentVisibilityGateOptions,
@@ -1764,13 +1925,13 @@ async function planResearchEntityGateUpdates(
       }),
       Observation.distinct('entityId', {
         sourceName: options.sourceName,
-        entityType: { $in: ['researchEntity', 'researchGroup'] },
+        entityType: { $in: researchEntityObservationSubjects },
         superseded: false,
         entityId: { $exists: true, $ne: null },
       }),
       Observation.distinct('entityKey', {
         sourceName: options.sourceName,
-        entityType: { $in: ['researchEntity', 'researchGroup'] },
+        entityType: { $in: researchEntityObservationSubjects },
         superseded: false,
         entityKey: { $exists: true, $ne: '' },
       }),
@@ -1796,9 +1957,9 @@ async function planResearchEntityGateUpdates(
     }
   }
 
-  const query = ResearchEntity.find(match).select(researchEntityGateProjection).sort({ name: 1 });
+  const query = ResearchEntity.find(match).select(researchEntityGateProjection).sort({ _id: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
-  const entities = await query.lean();
+  const entities = orderedByGateLabel(await query.lean(), 'name');
   const needsDuplicateReferenceCorpus =
     Boolean(options.recordIds?.length) ||
     Boolean(options.sourceName) ||
@@ -1809,13 +1970,17 @@ async function planResearchEntityGateUpdates(
         .lean()
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
-
-  const [
-    rosterByEntityId,
-    accessRows,
-    reachOutPlausibleWithoutHttpSource,
-    alternateAccessPathCounts,
-  ] = await Promise.all([
+  const underivedSignalIds = await underivedAccessSignalIds(
+    await Signal.find({
+      researchEntityId: { $in: entityIds },
+      type: { $in: [...RE_DERIVED_ACCESS_SIGNAL_TYPES] },
+      archived: false,
+    })
+      .select('_id researchEntityId type')
+      .lean(),
+    entities as any[],
+  );
+  const [rosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -1823,8 +1988,10 @@ async function planResearchEntityGateUpdates(
           researchEntityId: { $in: entityIds },
           type: { $in: [...accessSignalTypes] },
           archived: false,
+          _id: {
+            $nin: [...underivedSignalIds].map((id) => new mongoose.Types.ObjectId(id)),
+          },
           'source.url': { $regex: '^https?://', $options: 'i' },
-          derivationKey: { $nin: Array.from(IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS) },
         },
       },
       {
@@ -1835,16 +2002,6 @@ async function planResearchEntityGateUpdates(
         },
       },
     ]),
-    Signal.find({
-      researchEntityId: { $in: entityIds },
-      type: REACH_OUT_PLAUSIBLE_SIGNAL_TYPE,
-      archived: false,
-      'source.url': { $not: /^https?:\/\//i },
-    })
-      .select(
-        'researchEntityId type archived derivationKey source.url source.evidenceIds source.name',
-      )
-      .lean(),
     countResearchEntityAlternateAccessPaths(entityIds),
   ]);
 
@@ -1894,6 +2051,13 @@ async function planResearchEntityGateUpdates(
     return map;
   };
   const leadsByEntityId = buildLeadsByEntityId(leadRows);
+  // One cached corpus load for the whole pass: the name-identity authority needs the
+  // surname vocabulary to tell a foreign eponym from a self-naming one, and judging
+  // 4,600 records one lookup at a time would be a second query per row. The record's
+  // own person comes from `leadMembers` above rather than from a second read, so the
+  // arm's identity is the gate's own lead and never a lead the roster accessor
+  // already dropped as archived (#3499).
+  const knownPersonSurnames = await loadKnownPersonSurnameRoster();
   const duplicateReferenceLeadsByEntityId = needsDuplicateReferenceCorpus
     ? buildLeadsByEntityId(duplicateReferenceLeadRows)
     : leadsByEntityId;
@@ -1904,23 +2068,6 @@ async function planResearchEntityGateUpdates(
       uniqueStrings(row.sourceNames || []),
     ]),
   );
-  const entityById = new Map(
-    (entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
-  );
-
-  for (const signal of reachOutPlausibleWithoutHttpSource as any[]) {
-    const entityId = studentVisibilityGateDocumentId(signal.researchEntityId);
-    const entity = entityById.get(entityId);
-    if (!entity) continue;
-    if (!reachOutPlausibleSignalCreditsActionEvidence({ signal, entity })) continue;
-    accessCounts.set(entityId, (accessCounts.get(entityId) || 0) + 1);
-    const sourceName = typeof signal.source?.name === 'string' ? signal.source.name.trim() : '';
-    sourceNamesByEntityId.set(
-      entityId,
-      uniqueStrings([...(sourceNamesByEntityId.get(entityId) || []), sourceName]),
-    );
-  }
-
   /**
    * Entities the person is PI of. Only these may be CALLED a duplicate.
    *
@@ -2039,8 +2186,7 @@ async function planResearchEntityGateUpdates(
     const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
     const isDuplicateGroupSurvivor = duplicateGroupSurvivorEntityIds.has(recordId);
-    const result = computeResearchEntityStudentVisibility({
-      entity,
+    const gateInput: ResearchEntityGateRowInput = {
       leadMembers,
       accessSignalCount: accessCounts.get(recordId) || 0,
       actionablePathwayCount: 0,
@@ -2060,6 +2206,11 @@ async function planResearchEntityGateUpdates(
         exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
+    };
+    const result = computeResearchEntityStudentVisibility({
+      entity,
+      ...gateInput,
+      knownPersonSurnames,
     });
     return {
       collection: 'research' as const,
@@ -2076,8 +2227,90 @@ async function planResearchEntityGateUpdates(
       sourceNames: sourceNamesByEntityId.get(recordId) || [],
       nextRepairAction: nextRepairActionForReasons(result.reasons),
       hasResolvedLead: leadMembers.length > 0,
+      gateInput,
     };
   });
+}
+
+export interface DuplicateProgramCopies {
+  keptCopyById: Map<string, string>;
+  upcomingWindowByKeptId: Map<string, UpcomingDuplicateWindow>;
+}
+
+// Which copy of a fund serves is a corpus-wide question, so it is answered over every live
+// program even when the plan is scoped to some of them.
+export async function loadDuplicateProgramCopies(now: Date): Promise<DuplicateProgramCopies> {
+  const livePrograms = await Fellowship.find({ archived: false }).lean();
+  const copies = livePrograms.map((program: any) => ({
+    program,
+    id: studentVisibilityGateDocumentId(program._id),
+    tier: computeProgramStudentVisibility(program, { now }).tier,
+  }));
+  const keptCopyById = selectDuplicateProgramCopies(
+    copies.map(({ program, id, tier }) => ({
+      id,
+      title: program.title,
+      description: program.description,
+      sourceName: program.sourceName,
+      sourceUrl: program.sourceUrl,
+      applicationLink: program.applicationLink,
+      links: program.links,
+      tier,
+    })),
+  );
+  const upcomingWindowByKeptId = deriveUpcomingDuplicateWindows(
+    copies.map(({ program, id, tier }) => ({
+      id,
+      title: program.title,
+      deadline: program.deadline,
+      applicationOpenDate: program.applicationOpenDate,
+      isAcceptingApplications: program.isAcceptingApplications,
+      servableOnItsOwn: PUBLIC_TIERS.has(tier),
+    })),
+    keptCopyById,
+    now,
+  );
+  return { keptCopyById, upcomingWindowByKeptId };
+}
+
+export function duplicateProgramFundMateIds(
+  scopedIds: readonly string[],
+  keptCopyById: ReadonlyMap<string, string>,
+): string[] {
+  const membersByKeptId = new Map<string, Set<string>>();
+  for (const [copyId, keptId] of keptCopyById) {
+    const members = membersByKeptId.get(keptId) ?? new Set<string>([keptId]);
+    members.add(copyId);
+    membersByKeptId.set(keptId, members);
+  }
+  const scoped = new Set(scopedIds);
+  const mates = new Set<string>();
+  for (const id of scoped) {
+    for (const member of membersByKeptId.get(keptCopyById.get(id) ?? id) ?? []) {
+      if (!scoped.has(member)) mates.add(member);
+    }
+  }
+  return [...mates].sort();
+}
+
+async function outOfScopeProgramIdsToRegate(
+  scopedIds: readonly string[],
+  keptCopyById: ReadonlyMap<string, string>,
+): Promise<string[]> {
+  const scoped = new Set(scopedIds);
+  const staleDuplicateSuppressions = (
+    await Fellowship.find({ archived: false, studentVisibilityReasons: 'duplicate_program' })
+      .select('_id')
+      .lean()
+  )
+    .map((program: any) => studentVisibilityGateDocumentId(program._id))
+    .filter((id) => !scoped.has(id) && !keptCopyById.has(id));
+  return [
+    ...new Set([
+      ...duplicateProgramFundMateIds([...scopedIds, ...staleDuplicateSuppressions], keptCopyById),
+      ...staleDuplicateSuppressions,
+    ]),
+  ].sort();
 }
 
 async function planProgramGateUpdates(
@@ -2086,13 +2319,35 @@ async function planProgramGateUpdates(
   const match: Record<string, any> = { archived: false };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
   if (options.sourceName) match.sourceName = options.sourceName;
-  const query = Fellowship.find(match).sort({ title: 1 });
+  const query = Fellowship.find(match).sort({ _id: 1 });
   if (options.limit && Number.isFinite(options.limit)) query.limit(options.limit);
-  const programs = await query.lean();
+  const now = new Date();
+  const [scopedPrograms, duplicateProgramCopies] = await Promise.all([
+    query.lean(),
+    loadDuplicateProgramCopies(now),
+  ]);
+  const planIsScoped = Boolean(options.recordIds?.length || options.sourceName);
+  const fundMateIds = planIsScoped
+    ? await outOfScopeProgramIdsToRegate(
+        scopedPrograms.map((program: any) => studentVisibilityGateDocumentId(program._id)),
+        duplicateProgramCopies.keptCopyById,
+      )
+    : [];
+  const fundMates =
+    fundMateIds.length > 0
+      ? await Fellowship.find({ _id: { $in: fundMateIds }, archived: false }).lean()
+      : [];
+  const programs = orderedByGateLabel([...scopedPrograms, ...fundMates], 'title');
 
   return programs.map((program: any) => {
     const recordId = studentVisibilityGateDocumentId(program._id);
-    const result = computeProgramStudentVisibility(program);
+    const upcomingDuplicateWindow =
+      duplicateProgramCopies.upcomingWindowByKeptId.get(recordId) ?? null;
+    const result = computeProgramStudentVisibility(program, {
+      duplicateOfServedCopy: duplicateProgramCopies.keptCopyById.has(recordId),
+      now,
+      upcomingDuplicateWindow,
+    });
     return {
       collection: 'programs' as const,
       recordId,
@@ -2107,6 +2362,10 @@ async function planProgramGateUpdates(
       reasons: result.reasons,
       sourceNames: uniqueStrings([program.sourceName]),
       nextRepairAction: nextRepairActionForReasons(result.reasons),
+      currentUpcomingDuplicateWindow: storedUpcomingDuplicateWindow(
+        program.upcomingDuplicateWindow,
+      ),
+      upcomingDuplicateWindow,
     };
   });
 }

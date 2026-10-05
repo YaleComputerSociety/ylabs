@@ -18,11 +18,11 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -248,8 +248,9 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
   });
 
   it('never attaches a lead on a bare surname, because the name resolver refuses one token', async () => {
-    // Not a guard in this file: `resolveResearcherIdForPersonName` itself declines a
-    // single-token name, returning `absent` even when exactly one researcher bears it.
+    // Not a guard in this file: `resolveResearcherIdForPersonName` itself declines to match
+    // a single-token name. It reports a researcher who bears that token as `ambiguous` rather
+    // than `absent`, so the mint guard sees the record instead of minting the token again.
     // Pinned here because a surname-only match is how #2768 put a person who does not lead
     // the lab onto a served page, so if the resolver ever starts matching one token this
     // test is where that shows up.
@@ -257,7 +258,8 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     const researcher = await seedCanonicalResearcher({ displayName: 'Vance' });
 
     const resolution = await resolveResearcherIdForPersonName('vance', {});
-    expect(resolution.status).toBe('absent');
+    expect(resolution.status).toBe('ambiguous');
+    expect(resolution.researcherId).toBeUndefined();
     expect(researcher._id).toBeDefined();
 
     await materializeInferredPiMembership(String(entity._id), [

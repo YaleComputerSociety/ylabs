@@ -1,10 +1,7 @@
 export type MovedCitationAction = 'rewrite' | 'supersede' | 'skip';
 
 export type MovedCitationSkipReason =
-  | 'already-superseded'
-  | 'no-candidate'
-  | 'old-url-still-live'
-  | 'candidate-not-live';
+  'already-superseded' | 'no-candidate' | 'old-url-still-live' | 'candidate-not-live';
 
 export interface ProbeVerdict {
   status: number | 'error';

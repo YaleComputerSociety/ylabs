@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import mongoose from 'mongoose';
+import { researchEntityBrowseTiebreakKey } from '../../utils/researchEntityBrowseTiebreakKey';
 
 const mocks = vi.hoisted(() => {
   const addDocuments = vi.fn();
   const deleteDocument = vi.fn();
+  const deleteDocuments = vi.fn();
+  const waitForTask = vi.fn();
   return {
     addDocuments,
     deleteDocument,
+    deleteDocuments,
+    waitForTask,
     roleAssignmentFind: vi.fn(),
     personFind: vi.fn(),
     accountFind: vi.fn(),
@@ -14,6 +19,8 @@ const mocks = vi.hoisted(() => {
     getMeiliIndex: vi.fn(async (_name: string) => ({
       addDocuments,
       deleteDocument,
+      deleteDocuments,
+      tasks: { waitForTask },
     })),
   };
 });
@@ -45,11 +52,18 @@ import {
   syncEntities,
   deleteFromIndex,
   isSyncableEntityType,
+  withDeferredIndexConfirmation,
 } from '../meiliSyncService';
 
 beforeEach(() => {
   mocks.addDocuments.mockReset();
   mocks.deleteDocument.mockReset();
+  mocks.deleteDocuments.mockReset();
+  mocks.waitForTask.mockReset();
+  mocks.addDocuments.mockResolvedValue({ taskUid: 1 });
+  mocks.deleteDocument.mockResolvedValue({ taskUid: 2 });
+  mocks.deleteDocuments.mockResolvedValue({ taskUid: 3 });
+  mocks.waitForTask.mockResolvedValue({ status: 'succeeded' });
   mocks.roleAssignmentFind.mockReset();
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
@@ -59,6 +73,25 @@ beforeEach(() => {
   mocks.personFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.accountFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+});
+
+describe('deferred search index writes', () => {
+  it('writes and deletes nothing in any index while SEARCH_INDEX_WRITES is deferred', async () => {
+    vi.stubEnv('SEARCH_INDEX_WRITES', 'deferred');
+    try {
+      const live = { _id: new mongoose.Types.ObjectId(), name: 'Synthetic Lab' };
+      const archived = { ...live, _id: new mongoose.Types.ObjectId(), archived: true };
+
+      expect(await syncEntity('researchEntity', live)).toBe(false);
+      expect(await syncEntity('researchEntity', archived)).toBe(false);
+      expect(await syncEntities('researchEntity', [live, archived])).toBe(0);
+      expect(mocks.getMeiliIndex).not.toHaveBeenCalled();
+      expect(mocks.addDocuments).not.toHaveBeenCalled();
+      expect(mocks.deleteDocuments).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('isSyncableEntityType', () => {
@@ -100,6 +133,9 @@ describe('syncEntity transform', () => {
       kind: 'lab',
       departments: ['Bio'],
       researchAreas: ['Genetics'],
+      sortTitle: 'smith lab',
+      sortTitleQualifier: 'bio)',
+      browseTiebreakKey: researchEntityBrowseTiebreakKey('rg-id-42'),
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -162,9 +198,18 @@ describe('syncEntity transform', () => {
     expect(mocks.addDocuments).not.toHaveBeenCalled();
   });
 
-  it('swallows Meilisearch errors so callers do not break', async () => {
+  it('reports a submitted document as synced', async () => {
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(true);
+  });
+
+  it('reports a Meilisearch error as not synced instead of throwing', async () => {
     mocks.addDocuments.mockRejectedValueOnce(new Error('meili down'));
-    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBeUndefined();
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+  });
+
+  it('reports nothing synced for a null doc or an unregistered type', async () => {
+    await expect(syncEntity('researchEntity', null)).resolves.toBe(false);
+    await expect(syncEntity('user', { _id: 'x' })).resolves.toBe(false);
   });
 });
 
@@ -182,8 +227,20 @@ describe('syncEntities', () => {
     const [meiliDocs, opts] = mocks.addDocuments.mock.calls[0];
     expect(opts).toEqual({ primaryKey: 'id' });
     expect(meiliDocs).toEqual([
-      { id: 'a', name: 'A' },
-      { id: 'b', name: 'B' },
+      {
+        id: 'a',
+        name: 'A',
+        sortTitle: 'a',
+        sortTitleQualifier: '',
+        browseTiebreakKey: researchEntityBrowseTiebreakKey('a'),
+      },
+      {
+        id: 'b',
+        name: 'B',
+        sortTitle: 'b',
+        sortTitleQualifier: '',
+        browseTiebreakKey: researchEntityBrowseTiebreakKey('b'),
+      },
     ]);
   });
 
@@ -236,8 +293,217 @@ describe('deleteFromIndex', () => {
     expect(mocks.deleteDocument).not.toHaveBeenCalled();
   });
 
-  it('swallows Meilisearch errors', async () => {
+  it('swallows Meilisearch errors and reports the delete as not done', async () => {
     mocks.deleteDocument.mockRejectedValueOnce(new Error('boom'));
-    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBeUndefined();
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBe(false);
+  });
+
+  it('reports a delete whose task succeeded as done', async () => {
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBe(true);
+  });
+});
+
+describe('an archived row leaves the index (#3449)', () => {
+  beforeEach(() => {
+    mocks.addDocuments.mockClear();
+    mocks.deleteDocument.mockClear();
+    mocks.deleteDocuments.mockClear();
+  });
+
+  it('deletes rather than indexes a single archived row', async () => {
+    const id = new mongoose.Types.ObjectId();
+    await expect(
+      syncEntity('researchEntity', { _id: id, slug: 'a-row', archived: true }),
+    ).resolves.toBe(true);
+    expect(mocks.deleteDocument).toHaveBeenCalledWith(String(id));
+    expect(mocks.addDocuments).not.toHaveBeenCalled();
+  });
+
+  it('keeps indexing a row that is not archived', async () => {
+    const id = new mongoose.Types.ObjectId();
+    await syncEntity('researchEntity', { _id: id, slug: 'a-row', archived: false });
+    expect(mocks.deleteDocument).not.toHaveBeenCalled();
+    expect(mocks.addDocuments).toHaveBeenCalled();
+  });
+
+  it('splits a mixed batch: archived ids deleted, live rows indexed', async () => {
+    const liveId = new mongoose.Types.ObjectId();
+    const archivedId = new mongoose.Types.ObjectId();
+    const written = await syncEntities('researchEntity', [
+      { _id: liveId, slug: 'live-row' },
+      { _id: archivedId, slug: 'archived-row', archived: true },
+    ]);
+    expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(archivedId)]);
+    expect(written).toBe(1);
+  });
+
+  it('still deletes when every row in the batch is archived', async () => {
+    const a = new mongoose.Types.ObjectId();
+    const b = new mongoose.Types.ObjectId();
+    const written = await syncEntities('researchEntity', [
+      { _id: a, slug: 'x', archived: true },
+      { _id: b, slug: 'y', archived: true },
+    ]);
+    // Returns 0 because nothing was indexed, but the deletes must still have happened:
+    // an all-archived batch is exactly the shape a dedupe pass produces.
+    expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(a), String(b)]);
+    expect(mocks.addDocuments).not.toHaveBeenCalled();
+    expect(written).toBe(0);
+  });
+});
+
+describe('an accepted write counts only once its task succeeds (#3720)', () => {
+  const failedTask = {
+    status: 'failed',
+    error: { code: 'invalid_document_fields', message: 'rejected' },
+  };
+
+  it('reports a single document as not synced when its task later fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+    expect(mocks.waitForTask).toHaveBeenCalledWith(1, expect.anything());
+  });
+
+  it('reports a batch as zero synced when its task later fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(
+      syncEntities('researchEntity', [
+        { _id: 'a', name: 'A' },
+        { _id: 'b', name: 'B' },
+      ]),
+    ).resolves.toBe(0);
+  });
+
+  it('reports a batch as zero synced when deleting its archived rows fails', async () => {
+    mocks.waitForTask.mockImplementation(async (taskUid: number) =>
+      taskUid === 3 ? failedTask : { status: 'succeeded' },
+    );
+    await expect(
+      syncEntities('researchEntity', [
+        { _id: 'a', name: 'A' },
+        { _id: 'b', name: 'B', archived: true },
+      ]),
+    ).resolves.toBe(0);
+  });
+
+  it('reports an archived row as not synced when its delete task fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(
+      syncEntity('researchEntity', { _id: 'a', slug: 'x', archived: true }),
+    ).resolves.toBe(false);
+  });
+
+  it('reports a delete as not done when its task fails', async () => {
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+    await expect(deleteFromIndex('researchEntity', 'id-1')).resolves.toBe(false);
+  });
+
+  it('treats a wait that times out as a failure, not a success', async () => {
+    mocks.waitForTask.mockRejectedValueOnce(new Error('timeout of 60000ms has exceeded'));
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+  });
+
+  it('bounds every wait with a finite timeout', async () => {
+    await syncEntity('researchEntity', { _id: 'a', name: 't' });
+    const [, options] = mocks.waitForTask.mock.calls[0];
+    expect(Number.isFinite(options?.timeout)).toBe(true);
+    expect(options.timeout).toBeGreaterThan(0);
+  });
+
+  it('reports an index that cannot confirm the task as not synced', async () => {
+    mocks.addDocuments.mockResolvedValueOnce(undefined);
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 't' })).resolves.toBe(false);
+  });
+});
+
+describe('withDeferredIndexConfirmation confirms every write once the pass ends', () => {
+  const failedTask = { status: 'failed', error: { code: 'invalid_document_fields' } };
+
+  it('enqueues without waiting and reports a document whose task later failed', async () => {
+    let taskUid = 10;
+    mocks.addDocuments.mockImplementation(async () => ({ taskUid: taskUid++ }));
+    mocks.waitForTask.mockImplementation(async (uid: number) =>
+      uid === 11 ? failedTask : { status: 'succeeded' },
+    );
+
+    const { value, failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      const first = await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+      const second = await syncEntity('researchEntity', { _id: 'b', name: 'B' });
+      expect(mocks.waitForTask).not.toHaveBeenCalled();
+      return [first, second];
+    });
+
+    expect(value).toEqual([true, true]);
+    expect([...failedDocumentIds]).toEqual(['b']);
+    expect(mocks.waitForTask).toHaveBeenCalledTimes(2);
+  });
+
+  it('judges a document by its latest write, so a later success supersedes a failure', async () => {
+    let taskUid = 20;
+    mocks.addDocuments.mockImplementation(async () => ({ taskUid: taskUid++ }));
+    mocks.waitForTask.mockImplementation(async (uid: number) =>
+      uid === 20 ? failedTask : { status: 'succeeded' },
+    );
+
+    const { failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+      await syncEntity('researchEntity', { _id: 'a', name: 'A again' });
+    });
+
+    expect(failedDocumentIds.size).toBe(0);
+    expect(mocks.waitForTask).toHaveBeenCalledTimes(1);
+    expect(mocks.waitForTask).toHaveBeenCalledWith(21, expect.anything());
+  });
+
+  it('reports a document whose latest enqueue threw, even after an earlier success', async () => {
+    mocks.addDocuments
+      .mockResolvedValueOnce({ taskUid: 30 })
+      .mockRejectedValueOnce(new Error('meili down'));
+
+    const { value, failedDocumentIds } = await withDeferredIndexConfirmation(async () => [
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' }),
+      await syncEntity('researchEntity', { _id: 'a', name: 'A again' }),
+    ]);
+
+    expect(value).toEqual([true, false]);
+    expect([...failedDocumentIds]).toEqual(['a']);
+  });
+
+  it('treats a confirmation that times out as a failure', async () => {
+    mocks.waitForTask.mockRejectedValue(new Error('timeout of 60000ms has exceeded'));
+
+    const { failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+    });
+
+    expect([...failedDocumentIds]).toEqual(['a']);
+  });
+
+  it('confirms an archived-row delete the same way', async () => {
+    mocks.waitForTask.mockResolvedValue(failedTask);
+
+    const { failedDocumentIds } = await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'gone', slug: 'x', archived: true });
+    });
+
+    expect([...failedDocumentIds]).toEqual(['gone']);
+  });
+
+  it('waits once per task when several documents share it', async () => {
+    mocks.addDocuments.mockResolvedValue({ taskUid: 40 });
+
+    await withDeferredIndexConfirmation(async () => {
+      await syncEntity('researchEntity', { _id: 'a', name: 'A' });
+      await syncEntity('researchEntity', { _id: 'b', name: 'B' });
+    });
+
+    expect(mocks.waitForTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms immediately again once the scope has ended', async () => {
+    await withDeferredIndexConfirmation(async () => undefined);
+    mocks.waitForTask.mockResolvedValueOnce(failedTask);
+
+    await expect(syncEntity('researchEntity', { _id: 'a', name: 'A' })).resolves.toBe(false);
   });
 });

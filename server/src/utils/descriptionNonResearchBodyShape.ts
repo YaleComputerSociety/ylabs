@@ -1,0 +1,197 @@
+import type { ResearchEntityType } from '../models/researchAccessTypes';
+import { splitDescriptionSentences } from './careerBiographyDescription';
+import {
+  creativePracticeEvidence,
+  type CreativePracticeEvidence,
+} from './creativePracticeDescription';
+
+export type NonResearchBodyShape = 'role-biography' | 'third-party-page' | 'instruction-offering';
+
+const textValue = (value: unknown): string =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+const sentencesOf = (text: string): string[] =>
+  text.split(/(?<=[.!?])\s+(?=["“A-Z])/).filter(Boolean);
+
+// Lower case on purpose, so a department name ("Africana Studies") or an office ("Graduate
+// Studies") is not read as a statement that the person studies something.
+const STATES_RESEARCH_OR_CARE =
+  /\b(?:research\w*|stud(?:y|ies|ied|ying)|investigat\w*|examin\w*|explor\w*|analy[sz]\w*|scholar\w*|inquiry|publish\w*|publications?|papers?|articles?|books?|authored|grants?|funded|laborator\w*|experiment\w*|interventions?|trials?|evaluat\w*|novel|clinical|clinician|patients?|physician|surgeon|nurs\w*|treat(?:s|ing|ment)|specializ\w*|science|scientist|interests?|interested in|focus(?:es|ed)? on|works? on)\b/;
+
+const RESEARCH_VOICE_OPENING =
+  /^(?:studies|examines|investigates|analy[sz]es|develops|development of)\b/i;
+
+const lowerFirstLetter = (sentence: string): string =>
+  sentence.replace(
+    /^(["“]?)([A-Z])/,
+    (_match, quote: string, letter: string) => quote + letter.toLowerCase(),
+  );
+
+const anySentenceStates = (text: string, statement: RegExp): boolean =>
+  sentencesOf(text).some(
+    (sentence) =>
+      RESEARCH_VOICE_OPENING.test(sentence) || statement.test(lowerFirstLetter(sentence)),
+  );
+
+const FACULTY_RANK = /\b(?:professor|associate professor|assistant professor)\b/i;
+
+const ADMINISTRATIVE_ROLE =
+  /\b(?:(?:executive|managing|associate|assistant|deputy|program|operations|communications|marketing|development|admissions|finance|financial|administrative|inaugural)\s+director|director of (?:diversity|equity|inclusion|dei|communications|operations|admissions|development|marketing|finance|human resources|student|programs?|administration|events|alumni|outreach|engagement|external)|dean of (?:students|admissions)|associate dean|assistant dean|chief (?:executive|operating|financial|diversity)|manager|coordinator|administrator|strategist|consultant|career (?:and executive )?coach|executive coach|responsible for|oversees|leads the (?:office|team)|human resources|diversity, equity)\b/gi;
+
+const TEACHING_ROLE =
+  /\b(?:teach(?:es|ing|er)?|taught|instructor|lector|lecturer|curricul\w*|courses?|classes|classroom|pedagog\w*)\b/gi;
+
+// Organ, brass and brand identity have ordinary meanings outside the arts, so an instrument
+// or design word alone does not show creative practice in a biography read in any department.
+const AMBIGUOUS_OUTSIDE_THE_ARTS: ReadonlySet<CreativePracticeEvidence> = new Set([
+  'design',
+  'instrument',
+]);
+
+const statesCreativePracticeOutsideTheArts = (text: string): boolean =>
+  creativePracticeEvidence(text).some((kind) => !AMBIGUOUS_OUTSIDE_THE_ARTS.has(kind));
+
+const MIN_ADMINISTRATIVE_ROLE_MENTIONS = 2;
+const MIN_TEACHING_ROLE_MENTIONS = 3;
+
+const PAST_ROLE_SENTENCE =
+  /\b(?:was|were)\s+(?:also\s+)?(?:(?:the|a|an)\s+)?(?:\w+\s+){0,3}(?:director|manager|officer|advisor|adviser|counsel|consultant|analyst|chief|head|president|fellow|staffer|associate|assistant|aide)\b|^(?:Prior\s+to|Before\s+(?:joining|coming))\b|\bserved\s+as\b/i;
+const DEGREE_HOLDING_SENTENCE =
+  /\b(?:has|have|holds|hold|earned|received)\s+(?:an?\s+)?(?:B\.?A\.?|B\.?S\.?|M\.?A\.?|M\.?S\.?|M\.?P\.?A\.?|M\.?P\.?H\.?|M\.?B\.?A\.?|J\.?D\.?|M\.?D\.?|Ph\.?\s?D\.?|degree)/i;
+const CURRENT_EXPERTISE =
+  /\b(?:expert\s+(?:in|on)|speciali[sz]\w*\s+in|research|scholar\s+of|studies|professor)\b/i;
+
+// Every sentence is a past post or a degree: a career narrative of positions held
+// elsewhere. A research or care word inside one of those posts ("where she focused on
+// treatment access") describes the old job, not the person's research.
+const isPastRoleHistoryOnly = (text: string): boolean => {
+  if (CURRENT_EXPERTISE.test(text)) return false;
+  const sentences = splitDescriptionSentences(text);
+  return (
+    sentences.some((sentence) => PAST_ROLE_SENTENCE.test(sentence)) &&
+    sentences.every(
+      (sentence) => PAST_ROLE_SENTENCE.test(sentence) || DEGREE_HOLDING_SENTENCE.test(sentence),
+    )
+  );
+};
+
+/**
+ * A biography of a teaching or administrative appointment that states no research, no
+ * creative practice and no clinical work: a career office director, a language lector, a
+ * diversity office lead. A faculty rank, any research or care word, or a single kind of
+ * practice evidence keeps the body, because the cost of refusing a real research biography
+ * is the row. The one exception is a career narrative made only of past posts and degrees,
+ * which is held even when a research or care word appears inside one of those posts.
+ */
+export function isRoleBiographyWithoutResearchOrPractice(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if (isPastRoleHistoryOnly(text)) return true;
+  if (anySentenceStates(text, STATES_RESEARCH_OR_CARE)) return false;
+  if (FACULTY_RANK.test(text) || statesCreativePracticeOutsideTheArts(text)) return false;
+  return (
+    (text.match(ADMINISTRATIVE_ROLE) ?? []).length >= MIN_ADMINISTRATIVE_ROLE_MENTIONS ||
+    (text.match(TEACHING_ROLE) ?? []).length >= MIN_TEACHING_ROLE_MENTIONS
+  );
+}
+
+const SUBMISSION_TERMS =
+  /\b(?:by submitting|interested in (?:collaborating|applying|submitting)|will receive an overview|retains? (?:all )?(?:ownership|copyright)|usage (?:&|and) rights|non-exclusive (?:right|license)|submission deadline|submit (?:your|an?) (?:application|portfolio|proposal))\b/gi;
+
+const MIN_SUBMISSION_TERMS = 2;
+
+const EVENT_PAGE_LEAD =
+  /^the\s[^.]{0,80}\b(?:biennale|biennial|festival|conference|exhibition|symposium|summit|fair)\b[^.]{0,60}\bwas\s(?:open|held)\b/i;
+
+const SECTION_BLURB_LEAD =
+  /^(?:highlights|lists?|documentation|information|resources|links|news|overview|details|descriptions?|summaries|examples|types|guidance|tools?|answers|announcements|updates|research goals|funding opportunities)\s+(?:of|on|for|from|about|and|to)\b/i;
+
+const MIN_SECTION_BLURBS = 3;
+
+/**
+ * Another organization's page text: a call for submissions with its usage terms, an
+ * event's own page, or a site's section blurbs ("Highlights of ...", "Lists of ...").
+ * None of the three describes the row's own work, whatever subject the row carries.
+ */
+export function isThirdPartyPageText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  if ((text.match(SUBMISSION_TERMS) ?? []).length >= MIN_SUBMISSION_TERMS) return true;
+  if (EVENT_PAGE_LEAD.test(text)) return true;
+  return (
+    sentencesOf(text).filter((sentence) => SECTION_BLURB_LEAD.test(sentence)).length >=
+    MIN_SECTION_BLURBS
+  );
+}
+
+const INSTRUCTION_OFFERING =
+  /\b(?:provides? (?:opportunities|hands-on|training|instruction|lessons|classes)|hands-on (?:lessons|classes|training)|(?:classes|lessons|courses|workshops) (?:focus|are|cover|teach|include)|taught (?:at|in|by)\b[^.]{0,80}\b(?:kitchen|studio|classroom))\b/gi;
+
+const MIN_INSTRUCTION_OFFERING_MENTIONS = 2;
+
+const STATES_RESEARCH =
+  /\b(?:research\w*|investigat\w*|experiment\w*|laborator\w*|scientists?|publish\w*|publications?)\b/;
+
+/**
+ * An education program's description: the body's subject is the instruction it offers
+ * ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course,
+ * not a group a student could join. Only a lab is refused for it, because a core facility's
+ * or a center's training and workshops are its own service. A research statement keeps the
+ * body, so a research core that also trains its users is not read as a course.
+ */
+export function isInstructionOfferingText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text || anySentenceStates(text, STATES_RESEARCH)) return false;
+  return (text.match(INSTRUCTION_OFFERING) ?? []).length >= MIN_INSTRUCTION_OFFERING_MENTIONS;
+}
+
+const PRACTICE_SETTING =
+  /\b(?:private practice|clinical practice|(?:surgical|clinical|psychotherapy|legal|law) practice (?:at|in|for|focused)|(?:sees|treats|cares for|caring for|works? with) (?:patients|clients)|has practiced as|board[- ]certified|attending (?:physician|psychiatrist|surgeon|pathologist)|clinical (?:lead|director) (?:at|of|for)|nurse practitioner|(?:her|his|their) clinical (?:interests?|work|care) (?:are|is|include|focus))\b/gi;
+
+const PRACTICE_AT_NAMED_PLACE = /\b[Pp]ractices? (?:at|in) (?:the )?[A-Z]/g;
+
+const PRACTICE_DETAIL =
+  /\b(?:clinical interests?|diagnosis and (?:management|treatment)|(?:the )?treatment of (?:patients|mood|anxiety|children|adults|adolescents)|patient care|clinical care|clients?|counsel(?:s|ed|ing)? clients|represent(?:s|ed)? (?:clients|companies)|medical staff|practice locations?)\b/gi;
+
+const MIN_PRACTICE_MENTIONS = 2;
+
+// Case-insensitive on purpose, unlike the role-biography test: a capitalised "Research
+// Fellowship" or "State Incentive Grant" is still a research statement, and reading one
+// keeps a body, which is the cheaper error here.
+const STATES_RESEARCH_BESIDE_PRACTICE =
+  /\b(?:research\w*|investigat\w*|stud(?:y|ies|ied|ying)|trials?|experiment\w*|laborator\w*|scientists?|scien(?:ce|tific)|publish\w*|publications?|papers?|articles?|books?|authored|co-?authored|grants?|funded|nih|examin\w*|explor\w*|analy[sz]\w*|scholar\w*|inquiry|outcomes|evaluat\w*|test(?:s|ed|ing)?|projects?|proof of concept|cohorts?|data|discover\w*|innovat\w*|develop(?:s|ed|ing)? (?:new|novel|methods|models|tools|approaches|interventions|treatments|therapies)|writes|written|teaches|taught|courses?|seminars?)\b/i;
+
+/**
+ * A practitioner's biography that states no research: where a clinician sees patients and
+ * what they treat, or a lawyer's private practice and clients. Practice of this kind is
+ * neither research nor creative practice, so a row carrying only this names no work a
+ * student could join. One mention of where the person practises is required, and any
+ * research, publication or teaching statement keeps the body, because most clinical and
+ * professional faculty describe both. Read on a row's body only: a card is derived from
+ * the body, and a clinical card beside a research body is a card defect rather than a
+ * row with no research.
+ */
+export function isPracticeBiographyWithoutResearch(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text || STATES_RESEARCH_BESIDE_PRACTICE.test(text)) return false;
+  const settings =
+    (text.match(PRACTICE_SETTING) ?? []).length +
+    (text.match(PRACTICE_AT_NAMED_PLACE) ?? []).length;
+  if (settings === 0) return false;
+  return settings + (text.match(PRACTICE_DETAIL) ?? []).length >= MIN_PRACTICE_MENTIONS;
+}
+
+const isLabEntityType = (entityType?: ResearchEntityType): boolean =>
+  typeof entityType === 'string' && entityType.toUpperCase() === 'LAB';
+
+export function nonResearchBodyShape(
+  value: unknown,
+  entityType?: ResearchEntityType,
+): NonResearchBodyShape | null {
+  if (isThirdPartyPageText(value)) return 'third-party-page';
+  if (isLabEntityType(entityType) && isInstructionOfferingText(value)) {
+    return 'instruction-offering';
+  }
+  if (isRoleBiographyWithoutResearchOrPractice(value)) return 'role-biography';
+  return null;
+}

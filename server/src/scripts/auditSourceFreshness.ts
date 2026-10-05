@@ -183,7 +183,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  dotenv.config();
+  dotenv.config({ quiet: true });
   main()
     .catch((error) => {
       console.error('Failed to audit source freshness:', sanitizeLogValue(error));

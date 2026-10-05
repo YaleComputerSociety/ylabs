@@ -138,8 +138,7 @@ const seedRow = async (row: SeedRow) => {
 const servedFullDescription = async (slug: string): Promise<string> => {
   const detail = await getResearchGroupDetail(slug);
   const served = (detail as Record<string, any> | null)?.researchEntity as
-    | Record<string, any>
-    | undefined;
+    Record<string, any> | undefined;
   return typeof served?.fullDescription === 'string' ? served.fullDescription : '';
 };
 
@@ -151,11 +150,11 @@ describe('a served research body never opens in the scraped bio voice (#1871)', 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

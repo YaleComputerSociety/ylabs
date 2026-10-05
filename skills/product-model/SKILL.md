@@ -8,7 +8,7 @@ description: Use when changing or evaluating y/labs product behavior, student-fa
 y/labs is a simple, source-driven directory of Yale research whose two co-equal priorities are good data and good search.
 Its first responsibility is broad, accurate coverage of research entities and researchers with the correct lead and official links, made findable through fast, relevant search.
 Signals and research-entity affiliations are factual enrichments that inform a student; they never gate visibility, score trust, or condition contact.
-Per the 2026-08-25 "Simple Directory First" decision, the access-plausibility tier (the `Signal`-driven browse trust filter, `REACH_OUT_PLAUSIBLE` plausibility signals, the "Evidence" and "Best Next Step" framing, and "Ways in") is retired, and "research home" and "research area" are deprecated framings; see `docs/decisions.md`.
+Per the 2026-08-25 "Simple Directory First" decision, the access-plausibility tier (the `Signal`-driven browse trust filter, `REACH_OUT_PLAUSIBLE` plausibility signals, the "Evidence" and "Best Next Step" framing, and "Ways in") is retired, and #4637 removed the `REACH_OUT_PLAUSIBLE`, `CONTACT_INSTRUCTIONS_EXIST`, `NOT_CURRENTLY_AVAILABLE`, `FELLOWSHIP_COMPATIBLE` and `COURSE_CREDIT_PATHWAY` types, and "research home" and "research area" are deprecated framings; see `docs/decisions.md`.
 Say "research", or the entity's own kind noun (lab, center, faculty research profile), for the thing itself; "research website" for `websiteUrl`; and "topics" for `researchAreas`.
 The stored `researchAreas` field keeps its name because renaming a schema field is a migration, and the topics themselves stay student-facing content rather than a background search signal.
 
@@ -18,10 +18,9 @@ Yale research includes labs, centers, institutes, faculty projects, digital huma
 ## Student-facing surfaces
 
 - **Explore Research**: directory-first browsing of labs, centers, faculty projects, institutes, archives, collections projects, and thesis-adviser-like faculty research.
-- **Planning Context**: optional practical evidence for plausible homes, including access, timing, formalization possibilities, and explicit constraints when sources support them.
+- **Entity pages**: factual detail for one lab, center, or faculty research profile, including its lead, official links, topics, and any source-backed signals such as timing or explicit constraints.
 
-Keep Ways In as an internal model embedded in y/labs rather than spinning it into a separate product surface.
-Use warmer student-facing vocabulary such as "Planning Context", "Evidence", and "Best Next Step" where appropriate.
+Use the plain directory language in `docs/glossary.md`; the retired framings it lists are not student-facing vocabulary.
 Do not manufacture a `Signal` for every lab or expose model complexity that does not improve a student decision.
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.
 Do not create student-facing versioned routes like `/v1`, `/research-v2`, or similar for ordinary product iteration.
@@ -53,7 +52,7 @@ Entity pages should answer:
 | `ResearchEntity`             | `research_entities`             | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc.                                                                                                                                                                                                                                             |
 | `Researcher`                 | `researchers`                   | Public research identity (a PI, grad student, or researcher), surfaced through the research entities they lead rather than a standalone person page (the person page and researcher search are retired). Roster membership joins here, not an embedded person record.                                                                 |
 | `RoleAssignment`             | `role_assignments`              | The canonical roster edge: a `Researcher` in a role (`PI`, `CO_PI`, `DIRECTOR`, and similar) on a `ResearchEntity`. Replaces the retired `ResearchGroupMember`; never embedded on `ResearchEntity`.                                                                                                                                   |
-| `Signal`                     | `signals`                       | Source-attributed, typed fact about a research entity or about an `OrgUnit`. Exactly one of `researchEntityId` and `orgUnitId` is set; the org-unit arm carries a department-scoped fact such as `COURSE_CREDIT_PATHWAY`, which the detail serve path inherits at read time and attributes to the department by name, never copying it onto an entity (#2214). Consolidates the former `AccessSignal`, each access type being its own `Signal.type`, keeping the per-type confidence gradient. It also absorbed `UndergraduateLogisticsClaim`, whose five claim types are now retired (#3088), so `signalTypes` is exactly `accessSignalTypes`. |
+| `Signal`                     | `signals`                       | Source-attributed, typed fact about a research entity or about an `OrgUnit`. Exactly one of `researchEntityId` and `orgUnitId` is set; the org-unit arm held the department-scoped `COURSE_CREDIT_PATHWAY` fact (#2214), retired in #4637, and nothing writes an org-unit signal today. Consolidates the former `AccessSignal`, each access type being its own `Signal.type`, keeping the per-type confidence gradient. It also absorbed `UndergraduateLogisticsClaim`, whose five claim types are now retired (#3088), so `signalTypes` is exactly `accessSignalTypes`. |
 | `ResearchEntityRelationship` | `research_entity_relationships` | A source-backed affiliation, hosting, membership, or umbrella relationship between research entities.                                                                                                                                                                                                                                  |
 | `ResearchPlan`               | `research_plans`                | Private, account-owned saved planning, keyed on `accountId` plus a `ResearchEntity` or program target. The only student write surface.                                                                                                                                                                                                |
 
@@ -65,6 +64,7 @@ Entity pages should answer:
 - Programs and fellowships live only on `/programs` (backed by the `Fellowship` collection), never in the `/research` corpus.
   A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research entities (see `docs/decisions.md` 2026-08-26).
   A program is lead-optional and surfaces an "Apply to this program" next step rather than the generic email-a-PI default.
+  The exception is department research guidance (`DEPARTMENT_RESEARCH_GUIDE`), a department's own page on getting into research, which `/programs` serves with no application affordance and the action "Read the department's guidance" (see `docs/glossary.md`).
   The distinct `researchPlanTargetKinds` `'PROGRAM'` is a saved-plan target for a program and is unrelated to any research-entity type.
 - `LAB` and `FACULTY_RESEARCH_AREA` are both first-class, and the line between them is organizational identity versus topical scope.
 A `LAB` is a named organization a student could join; a `FACULTY_RESEARCH_AREA` is the topic a professor works on.
@@ -78,11 +78,18 @@ Where one person leads both, the 2026-08-25 precedence applies: the `FACULTY_RES
   Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
   Use a `Signal` row (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
+- A signal past its `expiresAt` is not served, so a posted opening stops reading as open once its deadline passes rather than when its source is next re-materialized (#4628).
+  Every student-facing signal query spreads `unexpiredSignalClause` from `server/src/services/servedSignalExpiry.ts` into the query itself, so expired rows cannot crowd live ones out of a capped read, and a signal with no `expiresAt` never expires.
+  Today that is the detail page's access signals and its inherited department course-credit routes; browse, search and the Meili documents carry no signal data.
 - `sourceCoverageArtifactTypes` no longer lists `EntryPathway`, `AccessSignal`, `ContactRoute`, `PostedOpportunity` or `UndergraduateLogisticsClaim` (#2829).
   This doc already described them as consolidated into `Signal`; the coverage registry had not caught up, so 15 sources declared a capability nothing could materialize and every successful scrape run warned that expected access artifacts were missing.
   A permanent warning is what a real coverage gap would have had to be noticed against.
   Declare the surviving `Signal` evidence categories instead, and never add an artifact type without a model, a collection and a materializer behind it.
 - Contact is fail-closed and purely derived, never a stored `ContactRoute` or surfaced scraped email.
+- A faculty row whose own body describes creative practice (exhibitions, performances, compositions, productions, creative writing, design practice, an instrument's practice) rather than research is served and labelled "Creative practice", never withheld (`server/src/utils/creativePracticeDescription.ts`, `docs/decisions.md` 2026-10-03, #4519).
+  The label is derived at serve time from the served body and the row's arts department or school, and a labelled row's copy never claims a lab, a research group or an opening.
+- A row whose every lead holds only emeritus appointments stays served and is labelled, and claims no way in unless a running research award or a fresh official team roster shows current activity (`server/src/services/emeritusLeadWayIn.ts`, `docs/decisions.md` 2026-10-02, #4431).
+  The label and the withhold are derived at serve time on the detail, browse and search payloads alike, never written to a field.
   Prefer official and public URLs.
   Redact scraped emails from public payloads.
 - The normal PI action is a link to the official Yale profile and does not imply permission to contact.

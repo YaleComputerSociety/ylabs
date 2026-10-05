@@ -15,6 +15,7 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -70,20 +71,19 @@ describe('adminFellowshipEditReducer', () => {
       expect(state.isSaving).toBe(false);
     });
 
-    it('serializes deadline ISO to datetime-local format when present', () => {
+    it('reads a date-only deadline as its New York date with no time', () => {
       const state = createInitialAdminFellowshipEditState(
-        makeFellowship({ deadline: '2026-04-01T12:00:00.000Z' }),
+        makeFellowship({ deadline: '2026-01-16T04:59:59.999Z' }),
       );
-      // "YYYY-MM-DDTHH:mm"
-      expect(state.deadline).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+      expect(state.deadline).toEqual({ date: '2026-01-15', time: '' });
     });
 
     it('leaves date strings empty when source fields are null', () => {
       const state = createInitialAdminFellowshipEditState(
         makeFellowship({ deadline: null, applicationOpenDate: null }),
       );
-      expect(state.deadline).toBe('');
-      expect(state.applicationOpenDate).toBe('');
+      expect(state.deadline).toEqual({ date: '', time: '' });
+      expect(state.applicationOpenDate).toEqual({ date: '', time: '' });
     });
 
     it('copies arrays defensively (no shared references)', () => {
@@ -115,13 +115,13 @@ describe('adminFellowshipEditReducer', () => {
       expect(next.isAcceptingApplications).toBe(false);
     });
 
-    it('SET_DEADLINE stores the datetime-local string as-is', () => {
+    it('SET_DEADLINE stores the date and time draft as-is', () => {
       const state = createInitialAdminFellowshipEditState(makeFellowship());
       const next = adminFellowshipEditReducer(state, {
         type: 'SET_DEADLINE',
-        payload: '2026-05-01T10:00',
+        payload: { date: '2026-05-01', time: '10:00' },
       });
-      expect(next.deadline).toBe('2026-05-01T10:00');
+      expect(next.deadline).toEqual({ date: '2026-05-01', time: '10:00' });
     });
 
     it('SET_SAVING flips isSaving', () => {

@@ -35,8 +35,11 @@
  * already does for YSE.
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
+import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
+import { fetchFailureStatusCode } from '../utils/fetchFailure';
 import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
 import {
@@ -44,8 +47,10 @@ import {
   personSurnamesFromDisplayNames,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { isPersonalNameDomainWebsite } from '../../utils/personalNameWebsite';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
@@ -53,17 +58,33 @@ import {
 } from '../utils/scraperHelpers';
 import {
   classifyUserType,
+  isResearchSupportStaffTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
 } from './yaleDirectoryScraper';
+import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescriptors';
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
+  labUrlUnusabilityFor,
+  loadLabUrlEvidenceBySlug,
+  type LabUrlEvidenceLoader,
+  type LabUrlIsUnusable,
+} from '../utils/labUrlEvidence';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';
 const SCHOOL_NAME = 'Yale School of Medicine';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
+const PROFILE_FETCH_LOOKAHEAD = 4;
+export const REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
+const REFUSAL_STATUS_CODES: ReadonlySet<number> = new Set([403, 429]);
 // The profile-page research prose is the faculty's own official description but
 // lives on a profile page, so it must rank at the profile-page description tier:
 // above the synthesized roster one-liner and below a lab-microsite full page.
@@ -74,7 +95,11 @@ const INFERRED_PI_CONFIDENCE = 0.7;
 const MAX_RESEARCH_AREAS = 24;
 const MAX_DEPARTMENTS = 10;
 
-export type HtmlFetcher = (url: string, useCache: boolean) => Promise<string>;
+export type HtmlFetcher = (
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+) => Promise<string>;
 
 export interface RawYsmFaculty {
   name: string;
@@ -94,6 +119,11 @@ export interface YsmFacultyProfile {
   description?: string;
   bio?: string;
   labUrl?: string;
+  /**
+   * `empty` only when the profile carries no lab-website link at all; a link the page
+   * carries and this lane cannot adopt is `refused`, which licenses no absence (#2647).
+   */
+  labSlotAttestation?: 'empty' | 'refused';
   labName?: string;
   labDescription?: string;
 }
@@ -246,11 +276,18 @@ function extractOrcid(research: Record<string, unknown>): string | undefined {
 function extractLabWebsite(
   research: Record<string, unknown>,
   about: Record<string, unknown>,
-): { url?: string; name?: string; description?: string } {
+): {
+  url?: string;
+  slotAttestation?: YsmFacultyProfile['labSlotAttestation'];
+  name?: string;
+  description?: string;
+} {
   const raw = (research.labWebsite || about.labWebsite) as Record<string, unknown> | null;
   const url = raw && isHttpUrl(raw.url) ? textValue(raw.url) : undefined;
+  const pageCarriesLink = Boolean(raw && textValue(raw.url));
   return {
     url,
+    ...(url ? {} : { slotAttestation: pageCarriesLink ? 'refused' : 'empty' }),
     name: url ? textValue(raw?.name) || undefined : undefined,
     description: url ? htmlToText(raw?.description) || undefined : undefined,
   };
@@ -285,7 +322,9 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
   const meshKeywords = Array.isArray(research.meshKeywords)
     ? (research.meshKeywords as Record<string, unknown>[])
     : [];
-  const researchAreas = uniqueStrings(meshKeywords.map((k) => k.name)).slice(0, MAX_RESEARCH_AREAS);
+  const researchAreas = withoutMeshNonSubjectDescriptors(
+    uniqueStrings(meshKeywords.map((k) => k.name)),
+  ).slice(0, MAX_RESEARCH_AREAS);
   const labWebsite = extractLabWebsite(research, about);
 
   return {
@@ -300,6 +339,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     description: clippedText(htmlToText(research.researchDescription)),
     bio: clippedText(htmlToText(about.bio)),
     labUrl: labWebsite.url,
+    labSlotAttestation: labWebsite.slotAttestation,
     labName: labWebsite.name,
     labDescription: labWebsite.description,
   };
@@ -394,6 +434,25 @@ export function classifyProfileLabWebsite(
   };
 }
 
+function researchEntityKeyOf(faculty: Pick<RawYsmFaculty, 'slug'>): string {
+  return `ysm-faculty-${faculty.slug}`.slice(0, 100);
+}
+
+export function skippedProfileRefusedWebsiteObservations(
+  profile: YsmFacultyProfile,
+): ObservationInput[] {
+  if (!profile.labUrl) return [];
+  return [
+    {
+      entityType: 'researchEntity',
+      entityKey: researchEntityKeyOf(profile),
+      sourceUrl: profile.profileUrl,
+      field: REFUSED_WEBSITE_URL_FIELD,
+      value: profile.labUrl,
+    },
+  ];
+}
+
 /**
  * ResearchEntity observations. A profile whose own research section links a
  * lab website that is plausibly that person's own research home seeds a LAB home
@@ -414,16 +473,33 @@ export function facultyToResearchEntityObservations(
   profile: YsmFacultyProfile,
   fallbackUserKey: string,
   knownPersonSurnames: ReadonlySet<string>,
+  labUrlIsUnusable: LabUrlIsUnusable = () => false,
 ): ObservationInput[] {
   const linkedSite = classifyProfileLabWebsite(profile, knownPersonSurnames);
   if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];
-  const hasLab = linkedSite.isOwnResearchHome;
+  // `classifyProfileLabWebsite` answers whose lab the link names from the page
+  // alone. It cannot see what the corpus has since decided about that URL, and
+  // `wrong_owner` is exactly the verdict it misses: the slot names a lab this
+  // person works in rather than runs, which reads as an own research home on the
+  // page and is refused at write time. Without this the refusal withheld only the
+  // `websiteUrl`, and the name, kind, and `entityType` kept asserting the lab
+  // (#3452). Withdrawal needs a positive verdict, never silence - see
+  // `labUrlIsUnusableForResearchHome`.
+  const linkIsOwnSite =
+    linkedSite.isOwnResearchHome && !(profile.labUrl && labUrlIsUnusable(profile.labUrl));
+  // The slot is labelled for a lab whatever it links, so a person's own name-domain site
+  // under a non-identifying label names no lab: it is the person's website (#4552).
+  const linksPersonalWebsite =
+    linkIsOwnSite &&
+    !linkedSite.adoptableName &&
+    isPersonalNameDomainWebsite(profile.labUrl, profile.name);
+  const hasLab = linkIsOwnSite && !linksPersonalWebsite;
 
-  const slug = `ysm-faculty-${profile.slug}`.slice(0, 100);
+  const slug = researchEntityKeyOf(profile);
   const entityName = hasLab
     ? linkedSite.adoptableName || `${profile.name} Lab`
     : `${profile.name} Faculty Research`;
-  const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
+  const sourceUrls = linkIsOwnSite ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
   const piUserKey = profile.email || fallbackUserKey;
   const base = {
     entityType: 'researchEntity' as const,
@@ -437,7 +513,7 @@ export function facultyToResearchEntityObservations(
   // link the page still carries - the opposite of the page having dropped it. Field
   // retraction cannot tell the two apart from the observation log, so the
   // distinction has to be stated here, at the only place that knows it (#2647).
-  const labSlotIsEmpty = !profile.labUrl;
+  const labSlotIsEmpty = !profile.labUrl && profile.labSlotAttestation === 'empty';
 
   const obs: ObservationInput[] = [
     {
@@ -462,7 +538,10 @@ export function facultyToResearchEntityObservations(
   if (profile.departments.length > 0) {
     obs.push({ ...base, field: 'departments', value: profile.departments });
   }
-  if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  if (linkIsOwnSite) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  else if (profile.labUrl) {
+    obs.push({ ...base, field: REFUSED_WEBSITE_URL_FIELD, value: profile.labUrl });
+  }
   if (profile.researchAreas.length > 0) {
     obs.push({ ...base, field: 'researchAreas', value: profile.researchAreas });
   }
@@ -485,7 +564,11 @@ function matchesOnlyFilter(faculty: RawYsmFaculty, only: string[]): boolean {
   return only.some((value) => normalized.has(value.toLowerCase().trim()));
 }
 
-async function fetchHtml(url: string, useCache: boolean): Promise<string> {
+async function fetchHtml(
+  url: string,
+  useCache: boolean,
+  pageReads?: LanePageReads,
+): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `page:${safeUrlText}`;
@@ -494,13 +577,16 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
+  pageReads?.recordRead(url, res.request?.res?.responseUrl || url);
   const html = res.data as string;
   if (useCache) await setCached(SOURCE_KEY, cacheKey, html);
   return html;
@@ -510,7 +596,13 @@ export class YsmFacultyDirectoryScraper implements IScraper {
   readonly name = SOURCE_KEY;
   readonly displayName = 'YSM faculty directory and individual profiles';
 
-  constructor(private readonly htmlFetcher: HtmlFetcher = fetchHtml) {}
+  constructor(
+    private readonly htmlFetcher: HtmlFetcher = fetchHtml,
+    private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
+    private readonly pause: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms)),
+    private readonly probePage?: LanePageProbe,
+  ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const limitOption = ctx.options.limit;
@@ -546,56 +638,132 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // cannot be narrowed to research roles here - a role needs the person's own
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+    const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
+      limited.map((faculty) => `ysm-faculty-${faculty.slug}`),
+    );
 
     let totalObs = 0;
     let profilesScanned = 0;
     let researchersEnriched = 0;
     let entityCount = 0;
     let subordinateRankSkipped = 0;
+    let supportStaffSkipped = 0;
     let labCount = 0;
+    let withdrawnLabCount = 0;
     let areaCount = 0;
 
-    for (const faculty of limited) {
-      profilesScanned += 1;
-      let profileHtml: string;
-      try {
-        profileHtml = await this.htmlFetcher(faculty.profileUrl, ctx.options.useCache);
-      } catch (err) {
-        ctx.log(`[${faculty.slug}] profile fetch failed: ${sanitizeLogValue(err)}`);
-        continue;
-      }
+    const emitSkippedProfileRefusal = async (profile: YsmFacultyProfile): Promise<number> => {
+      const refusal = skippedProfileRefusedWebsiteObservations(profile);
+      if (refusal.length > 0) await ctx.emit(refusal);
+      return refusal.length;
+    };
 
-      const profile = extractProfile(profileHtml, faculty);
-      if (!profile) continue;
-      if (looksLikeNonResearchTitle(profile.title)) continue;
-      // A trainee works in somebody else's lab, so their profile mints no
-      // research home of their own and cannot inherit their PI's lab name
-      // (#2304, the mint-side cause of the #2285 grafts).
-      if (isSubordinateResearchRank(profile.title)) {
-        subordinateRankSkipped += 1;
-        continue;
-      }
-      if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) continue;
+    const pageReads = new LanePageReads();
+    const refusedProfiles: RawYsmFaculty[] = [];
+    let refusedProfilesRecovered = 0;
+    const fetchProfile = (faculty: RawYsmFaculty) =>
+      this.htmlFetcher(faculty.profileUrl, ctx.options.useCache, pageReads);
+    const consumeProfile =
+      (pass: 'first' | 'retry') =>
+      async (faculty: RawYsmFaculty, fetched: PromiseSettledResult<string>): Promise<void> => {
+        if (pass === 'first') profilesScanned += 1;
+        if (fetched.status === 'rejected') {
+          pageReads.recordFailure(faculty.profileUrl, fetched.reason);
+          const status = fetchFailureStatusCode(fetched.reason);
+          if (pass === 'first' && status !== undefined && REFUSAL_STATUS_CODES.has(status)) {
+            refusedProfiles.push(faculty);
+            return;
+          }
+          ctx.log(`[${faculty.slug}] profile fetch failed: ${sanitizeLogValue(fetched.reason)}`);
+          return;
+        }
+        if (pass === 'retry') refusedProfilesRecovered += 1;
+        const profileHtml = fetched.value;
 
-      researchersEnriched += 1;
-      const { observations: userObs, entityKey } = facultyToUserObservations(profile);
-      await ctx.emit(userObs);
-      totalObs += userObs.length;
+        const profile = extractProfile(profileHtml, faculty);
+        if (!profile) return;
+        if (looksLikeNonResearchTitle(profile.title)) {
+          totalObs += await emitSkippedProfileRefusal(profile);
+          return;
+        }
+        // A trainee works in somebody else's lab, so their profile mints no
+        // research home of their own and cannot inherit their PI's lab name
+        // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
+        // instrument technologist or research librarian works in somebody else's
+        // lab for the same reason, and matched neither screen before #3410.
+        if (isSubordinateResearchRank(profile.title)) {
+          subordinateRankSkipped += 1;
+          totalObs += await emitSkippedProfileRefusal(profile);
+          return;
+        }
+        if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return;
 
-      const entityObs = facultyToResearchEntityObservations(profile, entityKey, directorySurnames);
-      if (entityObs.length > 0) {
-        await ctx.emit(entityObs);
-        totalObs += entityObs.length;
-        entityCount += 1;
-        if (profile.labUrl) labCount += 1;
-        if (profile.researchAreas.length > 0) areaCount += 1;
-      }
+        researchersEnriched += 1;
+        const { observations: userObs, entityKey } = facultyToUserObservations(profile);
+        await ctx.emit(userObs);
+        totalObs += userObs.length;
+
+        // After the person observations, not before them, because a support-staff
+        // profile still describes a real person: their title is the evidence the
+        // retirement pass keys on, so screening ahead of the emit would stop
+        // refreshing the very claim that judges the row (#3410). The two screens above
+        // still skip person enrichment, which predates this change.
+        if (isResearchSupportStaffTitle(profile.title)) {
+          supportStaffSkipped += 1;
+          totalObs += await emitSkippedProfileRefusal(profile);
+          return;
+        }
+
+        const entityObs = facultyToResearchEntityObservations(
+          profile,
+          entityKey,
+          directorySurnames,
+          labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
+        );
+        if (entityObs.length > 0) {
+          await ctx.emit(entityObs);
+          totalObs += entityObs.length;
+          entityCount += 1;
+          if (entityObs.some((obs) => obs.field === 'websiteUrl')) labCount += 1;
+          else if (profile.labUrl) withdrawnLabCount += 1;
+          if (profile.researchAreas.length > 0) areaCount += 1;
+        }
+      };
+    await forEachInOrderWithPrefetch(
+      limited,
+      PROFILE_FETCH_LOOKAHEAD,
+      fetchProfile,
+      consumeProfile('first'),
+    );
+
+    if (refusedProfiles.length > 0) {
+      ctx.log(
+        `Retrying ${refusedProfiles.length} refused profile(s) once after a ${REFUSED_PROFILE_RETRY_PAUSE_MS} ms pause`,
+      );
+      await this.pause(REFUSED_PROFILE_RETRY_PAUSE_MS);
+      await forEachInOrderWithPrefetch(
+        refusedProfiles,
+        PROFILE_FETCH_LOOKAHEAD,
+        fetchProfile,
+        consumeProfile('retry'),
+      );
     }
+    const refusedProfilesLost = refusedProfiles.length - refusedProfilesRecovered;
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length ? { entityKeys: selected.map(researchEntityKeyOf) } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
-        `(${labCount} with lab sites, ${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
-        `${subordinateRankSkipped} skipped as subordinate research ranks`,
+        `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site the corpus refuses, ` +
+        `${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
+        `${subordinateRankSkipped} skipped as subordinate research ranks, ` +
+        `${supportStaffSkipped} skipped as research-support staff; ` +
+        `${refusedProfiles.length} refused on the first pass, ${refusedProfilesRecovered} recovered on the retry, ${refusedProfilesLost} lost`,
     );
 
     return {
@@ -604,7 +772,9 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       notes:
         `YSM faculty directory: ${researchersEnriched} researchers with research content, ` +
         `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
-        `${subordinateRankSkipped} subordinate ranks skipped`,
+        `${subordinateRankSkipped} subordinate ranks skipped, ` +
+        `${supportStaffSkipped} research-support staff skipped, ` +
+        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass`,
     };
   }
 }

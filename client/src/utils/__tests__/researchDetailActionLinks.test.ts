@@ -8,6 +8,7 @@ const base = {
   profileNeedsOwnButton: false,
   preferOrgEngagementOutreach: false,
   officialSource: null as { url: string } | null,
+  hasApplyPage: false,
 };
 
 describe('resolveResearchDetailActionLinks (#3288)', () => {
@@ -41,7 +42,7 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(links.websiteCtaUrl).toBeUndefined();
   });
 
-  it('withholds the lead card profile link under org-engagement outreach', () => {
+  it('keeps the lead card profile link but not the website under org-engagement outreach', () => {
     const links = resolveResearchDetailActionLinks({
       ...base,
       preferOrgEngagementOutreach: true,
@@ -49,21 +50,70 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
       websiteUrl: WEBSITE,
       officialSource: { url: 'https://example.yale.edu/get-involved' },
     });
-    expect(links.leadCardProfileUrl).toBeUndefined();
-    expect(links.leadCardLinksProfile).toBe(false);
+    expect(links.leadCardProfileUrl).toBe(PROFILE);
+    expect(links.leadCardLinksProfile).toBe(true);
     expect(links.showsWebsiteCta).toBe(false);
     expect(links.offersBothLinks).toBe(false);
   });
 
-  it('suppresses the website slot for an email or an own-button profile', () => {
-    expect(
-      resolveResearchDetailActionLinks({
-        ...base,
-        profileUrl: PROFILE,
-        websiteUrl: WEBSITE,
-        piEmail: 'mailto:x@example.test',
-      }).showsWebsiteCta,
-    ).toBe(false);
+  it('gives the button to the homepage and links a place to apply beneath it', () => {
+    const beside = resolveResearchDetailActionLinks({
+      ...base,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+    });
+    expect(beside.showsWebsiteCta).toBe(true);
+    expect(beside.offersApplyPage).toBe(false);
+    expect(beside.offersJoinLinkBesideWebsite).toBe(true);
+
+    const withoutWebsite = resolveResearchDetailActionLinks({
+      ...base,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+    });
+    expect(withoutWebsite.showsWebsiteCta).toBe(false);
+    expect(withoutWebsite.offersApplyPage).toBe(true);
+    expect(withoutWebsite.offersJoinLinkBesideWebsite).toBe(false);
+
+    const orgEngagement = resolveResearchDetailActionLinks({
+      ...base,
+      hasApplyPage: true,
+      websiteUrl: WEBSITE,
+      preferOrgEngagementOutreach: true,
+      officialSource: { url: 'https://org.example.test/get-involved' },
+    });
+    expect(orgEngagement.offersJoinLinkBesideWebsite).toBe(false);
+  });
+
+  it('keeps an own-button profile below a place to apply when there is no homepage', () => {
+    const withoutLeadCard = resolveResearchDetailActionLinks({
+      ...base,
+      hasLeadCard: false,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+      profileNeedsOwnButton: true,
+    });
+    expect(withoutLeadCard.showsProfileButton).toBe(false);
+    expect(withoutLeadCard.profileOpenedAbove).toBe(false);
+  });
+
+  it('gives the only action to the homepage over a place to apply for an own-button profile', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      hasLeadCard: false,
+      hasApplyPage: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+      profileNeedsOwnButton: true,
+    });
+    expect(links.showsWebsiteCta).toBe(true);
+    expect(links.offersApplyPage).toBe(false);
+    expect(links.showsProfileButton).toBe(false);
+    expect(links.profileOpenedAbove).toBe(false);
+  });
+
+  it('suppresses the website slot for an own-button profile', () => {
     expect(
       resolveResearchDetailActionLinks({
         ...base,
@@ -80,5 +130,56 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
     expect(links.showsWebsiteCta).toBe(false);
     expect(links.offersBothLinks).toBe(false);
     expect(links.slotsShareOneDestination).toBe(false);
+  });
+});
+
+describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () => {
+  const JOIN = 'https://medicine.yale.edu/lab/fixture/join-us/';
+
+  it('closes every action slot and checks activity on the research website', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      wayInWithheld: true,
+      profileUrl: PROFILE,
+      websiteUrl: WEBSITE,
+      officialSource: { url: JOIN },
+      hasApplyPage: true,
+      preferOrgEngagementOutreach: true,
+    });
+    expect(links).toMatchObject({
+      showsWebsiteCta: false,
+      showsProfileButton: false,
+      offersOrgEngagementPage: false,
+      offersApplyPage: false,
+      offersJoinLinkBesideWebsite: false,
+      activityCheckUrl: WEBSITE,
+      leadCardLinksProfile: true,
+      slotsShareOneDestination: false,
+    });
+    expect(links.websiteCtaUrl).toBeUndefined();
+  });
+
+  it('never repeats the profile the lead card already links', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      wayInWithheld: true,
+      profileUrl: PROFILE,
+      websiteUrl: PROFILE,
+    });
+    expect(links.activityCheckUrl).toBeUndefined();
+    expect(links.slotsShareOneDestination).toBe(false);
+  });
+
+  it('uses the profile as the activity check when no lead card links it', () => {
+    const links = resolveResearchDetailActionLinks({
+      ...base,
+      wayInWithheld: true,
+      hasLeadCard: false,
+      profileNeedsOwnButton: true,
+      profileUrl: PROFILE,
+    });
+    expect(links.activityCheckUrl).toBe(PROFILE);
+    expect(links.showsProfileButton).toBe(false);
+    expect(links.profileOpenedAbove).toBe(true);
   });
 });

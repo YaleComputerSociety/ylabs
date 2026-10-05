@@ -11,14 +11,16 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   PI_ATTRIBUTION_FIELDS,
   classifyPiAttributedUserOutcome,
+  mintOnlyOutcomeWithoutApply,
   parseMaterializePiAttributedUsersArgs,
+  shouldApplyAfterMintOnlyProbe,
   summarizePiAttributedUserRows,
   type PiAttributedUserRow,
 } from './materializePiAttributedUsersCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:materialize-pi-attributed-users';
 
@@ -58,6 +60,20 @@ async function main(): Promise<void> {
   const rows: PiAttributedUserRow[] = [];
   for (const entityKey of visiting) {
     try {
+      if (args.apply && args.mintOnly) {
+        const probe: any = await materializeEntity('user', { entityKey }, { dryRun: true });
+        const probeOutcome = classifyPiAttributedUserOutcome(probe ?? {});
+        if (!shouldApplyAfterMintOnlyProbe(probeOutcome)) {
+          rows.push({
+            entityKey,
+            outcome: mintOnlyOutcomeWithoutApply(probeOutcome),
+            skippedReason: probe?.skipped,
+            fieldsWritten: 0,
+            researcherId: probe?.entityId,
+          });
+          continue;
+        }
+      }
       const result: any = await materializeEntity('user', { entityKey }, { dryRun: !args.apply });
       rows.push({
         entityKey,
@@ -80,6 +96,7 @@ async function main(): Promise<void> {
     generatedAt: new Date().toISOString(),
     environment: process.env.SCRAPER_ENV || 'development',
     mode: args.apply ? 'apply' : 'dry-run',
+    mintOnly: args.mintOnly,
     attributedKeys: attributedKeys.length,
     userObservationKeys: userKeys.size,
     candidates: candidates.length,

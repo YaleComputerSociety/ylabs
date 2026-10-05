@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   LEAD_SUBJECT_MARKER_PATTERN,
   isAcademicAppointmentDescription,
+  namesResearchTopics,
   isCredentialOrAwardLeadBiography,
   isCredentialOrTitleLeadBiography,
   isDeceasedOrEmeritusLeadBiography,
@@ -64,6 +65,56 @@ describe('isAcademicAppointmentDescription', () => {
     const description =
       'Anjelica L. Gonzalez is Associate Professor of Biomedical Engineering. Her appointment in Biomedical Engineering, in association with the Vascular Biology and Therapeutics Program, has provided a supportive and convenient platform for her research, focused on the development of biomaterials for use as investigational tools, particularly for the investigation of immunological responses to inflammatory signals from endogenous and exogenous sources. Gonzalez has a dedicated interest in training the next generation of scientists to think with an interdisciplinary approach to problems and to have a scientifically global perspective. The Gonzalez lab combines organic chemistry, molecular biology, mathematics, computational modeling and image analysis to develop human tissue-based biomimetic scaffolds to better understand healthy and diseased states.';
     expect(isAcademicAppointmentDescription(description)).toBe(false);
+  });
+
+  it('does not flag an appointment line that names the research topics (#4635)', () => {
+    for (const description of [
+      'Alex Rivera is a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+      'Alex Rivera is an Associate Professor of Physics who studies quantum materials.',
+      'Alex Rivera is an Assistant Professor of Chemistry working on catalytic polymer synthesis.',
+      "Alex Rivera is Professor of Law. Rivera's subject areas are antitrust and economic regulation.",
+    ]) {
+      expect(isAcademicAppointmentDescription(description)).toBe(false);
+      expect(publicResearchEntityDescriptionText(description)).toBe(description);
+    }
+  });
+
+  it('still flags an appointment line whose only clause is where the person studied (#4635)', () => {
+    for (const description of [
+      'Jane Doe is Associate Professor of History.',
+      'Jane Doe is an Associate Professor of History at Yale after studying at Harvard.',
+      'Jane Doe is an Assistant Professor of Music working on behalf of the department.',
+    ]) {
+      expect(isAcademicAppointmentDescription(description)).toBe(true);
+    }
+  });
+});
+
+describe('namesResearchTopics', () => {
+  it('recognizes a research-topic clause in each supported form (#4635)', () => {
+    for (const description of [
+      'I am a professor at Yale studying representation theory.',
+      'A historian who studies medieval trade networks.',
+      'Our group is working on battery chemistry.',
+      'A chemist whose research focuses on catalysis.',
+      'A sociologist with research in urban inequality.',
+      'This research is in mathematical optimization and statistical learning.',
+      "Alex Rivera's research is in mathematical optimization.",
+      'His subject areas are antitrust and economic regulation.',
+    ]) {
+      expect(namesResearchTopics(description)).toBe(true);
+    }
+  });
+
+  it('ignores a study or work clause that names a place, person, or purpose (#4635)', () => {
+    for (const description of [
+      'Associate Professor of History.',
+      'She is a lecturer after studying at Harvard.',
+      'He is a professor studying under a senior mentor.',
+      'She is working on behalf of the department.',
+    ]) {
+      expect(namesResearchTopics(description)).toBe(false);
+    }
   });
 });
 
@@ -266,6 +317,73 @@ describe('sanitizeFacultyResearchEntityText institution names', () => {
     expect(
       sanitizeFacultyResearchEntityText('Our laboratory studies neutrinos.', facultyResearch),
     ).not.toContain('laboratory');
+  });
+});
+
+describe("sanitizeFacultyResearchEntityText rewrites only the row's own laboratory (#4432)", () => {
+  const facultyResearch = {
+    name: 'Ada Fixture Faculty Research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+
+  it('fixes the two measured garbles: a laboratory study and a laboratory research heading', () => {
+    for (const copy of [
+      'She conducts both Phase 1 human laboratory studies and outpatient clinical trials.',
+      'Laboratory research: mechanism of treatment resistance in prostate cancer.',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    }
+  });
+
+  it("leaves laboratory as a modifier, a field name, or somebody else's group alone", () => {
+    for (const copy of [
+      'He completed his Ph.D. in the laboratory of Rowan Example.',
+      "Her work in Dr. Example's laboratory led to the discovery of a new pathway.",
+      'She is Professor of Laboratory Medicine.',
+      'Our laboratory research focuses on kidney tissue engineering.',
+      'Her laboratory work is mentored by a senior colleague.',
+      'She studies laboratory animal welfare.',
+      'Experiments are conducted in both field and laboratory.',
+      'The function of this clinical laboratory is to provide rapid hormone analysis.',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    }
+  });
+
+  it("leaves a named lab that is not the row's own alone", () => {
+    for (const copy of [
+      'He works in manifold learning with the Example Lab at Yale.',
+      'She is an alum of the Yale Landscape Lab.',
+      'He leads the Yale Omics & Longevity Lab, which develops biomarkers.',
+    ]) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(copy);
+    }
+  });
+
+  it("still rewrites the row's own laboratory and named lab", () => {
+    const cases: Array<[string, string]> = [
+      ['Our laboratory studies neutrinos.', 'Our research program studies neutrinos.'],
+      [
+        'The laboratory investigates how cells divide. In 2010 the Fixture Laboratory developed a new assay.',
+        'The research program investigates how cells divide. In 2010 the Fixture research program developed a new assay.',
+      ],
+      [
+        "Fixture's laboratory has developed new assays.",
+        "Fixture's research program has developed new assays.",
+      ],
+      [
+        'Her NIH R01-funded laboratory is focused on cell division.',
+        'Her NIH R01-funded research program is focused on cell division.',
+      ],
+      [
+        'In 2012 the Fixture Lab will also initiate partnerships.',
+        'In 2012 the Fixture research group will also initiate partnerships.',
+      ],
+    ];
+    for (const [copy, expected] of cases) {
+      expect(sanitizeFacultyResearchEntityText(copy, facultyResearch)).toBe(expected);
+    }
   });
 });
 
@@ -1507,6 +1625,22 @@ describe('isDeceasedOrEmeritusLeadBiography', () => {
 });
 
 describe('isCredentialOrTitleLeadBiography', () => {
+  it('does not flag a whole body that is one appointment sentence naming its topics (#4635)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'Alex Rivera is a professor in the mathematics department at Yale studying representation theory and algebraic geometry.',
+      ),
+    ).toBe(false);
+  });
+
+  it('still flags a topic-naming opener followed by CV sentences (#4635)', () => {
+    expect(
+      isCredentialOrTitleLeadBiography(
+        'Jane Doe is an Assistant Professor of Medicine who is studying B cells in kidney disease. Dr. Doe received her MD and PhD at an example university.',
+      ),
+    ).toBe(true);
+  });
+
   it('flags a name-lead opening with a lowercase "professor" title (#1638)', () => {
     expect(
       isCredentialOrTitleLeadBiography(
@@ -1610,6 +1744,78 @@ describe('isCredentialOrAwardLeadBiography (#1745)', () => {
 });
 
 describe('revoiceFirstPersonResearchLead', () => {
+  const namedLab = {
+    entityType: 'LAB',
+    kind: 'lab',
+    name: 'Fixture Lab',
+    displayName: 'Fixture Lab',
+  };
+  const namedPerson = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    name: 'Robin Roster Faculty Research',
+  };
+
+  it("never makes a named lab the speaker of its lead's singular first person (#4809)", () => {
+    const revoiced = revoiceFirstPersonResearchLead(
+      'I am an evolutionary ornithologist with broad interests in avian biology. I have done research on avian phylogenetics.',
+      namedLab,
+    );
+
+    expect(revoiced).toBe(
+      'This researcher is an evolutionary ornithologist with broad interests in avian biology. This researcher has done research on avian phylogenetics.',
+    );
+    expect(revoiced).not.toMatch(/Fixture Lab is an/);
+  });
+
+  it("still names the lab when the lab speaks as 'we' (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We study how cells divide. Our lab uses imaging in Type I diabetes models.',
+        namedLab,
+      ),
+    ).toBe(
+      'The Fixture Lab studies how cells divide. The lab uses imaging in Type I diabetes models.',
+    );
+  });
+
+  it("names the lab for 'we' beside a numbered category in lowercase prose (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We study type I interferon signaling, class I molecules, phase I trials and complex I.',
+        namedLab,
+      ),
+    ).toBe(
+      'The Fixture Lab studies type I interferon signaling, class I molecules, phase I trials and complex I.',
+    );
+  });
+
+  it("treats 'where I' and ', I' as the lead speaking on a lab row (#4809)", () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'We moved to the coast, where I went to study tides.',
+        namedLab,
+      ),
+    ).toBe('We moved to the coast, where I went to study tides.');
+    expect(revoiceFirstPersonResearchLead('In the lab, I study tides.', namedLab)).toBe(
+      'In the lab, this researcher studies tides.',
+    );
+  });
+
+  it('serves a life-story body as written rather than half converted (#4809)', () => {
+    const story =
+      'I was a city kid who left for a small rural college, where I went to study biology. Unfortunately, I was no good at field biology. An advisor told me to study neurobiology.';
+
+    expect(revoiceFirstPersonResearchLead(story, namedLab)).toBe(story);
+  });
+
+  it('abandons a named rewrite that leaves a first person behind (#4809)', () => {
+    const body =
+      'I am a clinical rheumatologist and educator. I did my training abroad and then I did internal medicine practice for many years.';
+
+    expect(revoiceFirstPersonResearchLead(body, namedPerson)).toBe(body);
+  });
+
   it('re-voices a bare first-person bio opener to third person', () => {
     expect(
       revoiceFirstPersonResearchLead('I am an immunologist studying tumor microenvironments.'),
@@ -1713,6 +1919,26 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it('drops a leading site-orientation opener the way it drops a greeting', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Here you will find information about our research, lab members, publications, any opportunities, and how to find us. The Example lab studies how plants admit beneficial soil microbes while keeping pathogens out.',
+      ),
+    ).toBe(
+      'The Example lab studies how plants admit beneficial soil microbes while keeping pathogens out.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead(
+        "On this site you'll find our publications and people. This research studies quantum materials at low temperature.",
+      ),
+    ).toBe('This research studies quantum materials at low temperature.');
+    expect(
+      revoiceFirstPersonResearchLead(
+        'This research studies quantum materials. Here you will find recent publications.',
+      ),
+    ).toBe('This research studies quantum materials. Here you will find recent publications.');
+  });
+
   it('leaves third-person research copy untouched', () => {
     expect(
       revoiceFirstPersonResearchLead('Studies immune checkpoints in cutaneous malignancies.'),
@@ -1749,6 +1975,232 @@ describe('revoiceFirstPersonResearchLead', () => {
     expect(
       revoiceFirstPersonResearchLead('Our science goal is to characterize exoplanet atmospheres.'),
     ).toBe("This research group's science goal is to characterize exoplanet atmospheres.");
+  });
+
+  it('converts a possessive in front of a noun that names the row, wherever it sits (#3481)', () => {
+    const lab = { name: 'Akar Lab', entityType: 'LAB', kind: 'lab' };
+    // `our` here is neither at a sentence start nor after a comma, which is the position
+    // every anchored possessive rule missed.
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Publications from our laboratory have been highlighted.',
+        lab,
+      ),
+    ).toBe('Publications from the Akar Lab have been highlighted.');
+    expect(
+      revoiceFirstPersonResearchLead('All our methods are concentrated on imaging.', lab),
+    ).toBe("All the Akar Lab's methods are concentrated on imaging.");
+  });
+
+  it('collapses a noun that IS the row rather than serving a doubled possessive (#3481)', () => {
+    const lab = { name: 'Foxman Lab', entityType: 'LAB', kind: 'lab' };
+    expect(revoiceFirstPersonResearchLead('Work in our lab continues.', lab)).toBe(
+      'Work in the Foxman Lab continues.',
+    );
+    // A department is not the row, so the possessive is kept.
+    expect(revoiceFirstPersonResearchLead('Our department supports this.', lab)).toBe(
+      "The Foxman Lab's department supports this.",
+    );
+  });
+
+  it("never keeps a noun that is the row after the row's own possessive name (#4044)", () => {
+    const lab = { name: 'Quill Lab', entityType: 'LAB', kind: 'lab' };
+    const doubledSelfNoun =
+      /\b(?:Lab|Laboratory|Group|Center|Institute|Program)['’]s (?:lab|laboratory|labs|group|team|center|program|institute)\b/;
+    const cases: Array<[string, string]> = [
+      ['Our lab is interested in cells.', 'The Quill Lab is interested in cells.'],
+      ['Our lab focuses on DNA repair.', 'The Quill Lab focuses on DNA repair.'],
+      [
+        'In addition, my laboratory is building tools.',
+        'In addition, the Quill Lab is building tools.',
+      ],
+      ['Our team is building tools.', 'The Quill Lab is building tools.'],
+      [
+        'Our lab members are drawn from many fields.',
+        'The Quill Lab members are drawn from many fields.',
+      ],
+      ['Our lab studies how cells sense force.', 'The Quill Lab studies how cells sense force.'],
+    ];
+    for (const [body, expected] of cases) {
+      const revoiced = revoiceFirstPersonResearchLead(body, lab);
+      expect(revoiced).toBe(expected);
+      expect(revoiced).not.toMatch(doubledSelfNoun);
+    }
+    expect(revoiceFirstPersonResearchLead('My research interests are broad.', lab)).toBe(
+      "The Quill Lab's research interests are broad.",
+    );
+  });
+
+  it("names a person row's group as the person's own rather than as the person (#4444)", () => {
+    const person = {
+      name: 'Avery Quill',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'faculty_research_area',
+    };
+    const cases: Array<[string, string]> = [
+      [
+        'In our group, we build tools for imaging.',
+        "In Avery Quill's group, we build tools for imaging.",
+      ],
+      [
+        'Work in my laboratory focuses on cells.',
+        "Work in Avery Quill's laboratory focuses on cells.",
+      ],
+      [
+        'Publications from our lab have been highlighted.',
+        "Publications from Avery Quill's lab have been highlighted.",
+      ],
+      [
+        'In addition, my laboratory is building tools.',
+        "In addition, Avery Quill's laboratory is building tools.",
+      ],
+    ];
+    for (const [body, expected] of cases) {
+      expect(revoiceFirstPersonResearchLead(body, person)).toBe(expected);
+    }
+    const subjects: Array<[string, string]> = [
+      ['Our lab studies how cells sense force.', 'Avery Quill studies how cells sense force.'],
+      [
+        'In particular, our lab studies cell polarity.',
+        'In particular, Avery Quill studies cell polarity.',
+      ],
+      ['Details are on our lab’s website.', 'Details are on Avery Quill’s website.'],
+    ];
+    for (const [body, expected] of subjects) {
+      expect(revoiceFirstPersonResearchLead(body, person)).toBe(expected);
+    }
+  });
+
+  it('keeps the possessive for a plural self noun on a lab row (#4044)', () => {
+    const lab = { name: 'Quill Lab', entityType: 'LAB', kind: 'lab' };
+    expect(
+      revoiceFirstPersonResearchLead('Our labs are located in the science building.', lab),
+    ).toBe("The Quill Lab's labs are located in the science building.");
+  });
+
+  it('keeps a self noun possessed by the person a faculty research profile names (#4044)', () => {
+    const faculty = {
+      name: 'Robin Quill Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    expect(revoiceFirstPersonResearchLead('Our lab is interested in cells.', faculty)).toBe(
+      "Robin Quill's lab is interested in cells.",
+    );
+    expect(revoiceFirstPersonResearchLead('Our lab studies how cells sense force.', faculty)).toBe(
+      'Robin Quill studies how cells sense force.',
+    );
+  });
+
+  it('leaves a center without a lead name on its demonstrative self noun (#4044)', () => {
+    const center = {
+      name: 'Quill Center for Synthetic Studies',
+      entityType: 'CENTER',
+      kind: 'center',
+    };
+    expect(revoiceFirstPersonResearchLead('Our center is a hub for research.', center)).toBe(
+      'This center is a hub for research.',
+    );
+  });
+
+  it('converts an object pronoun only where the verb names the row as acted upon (#3481)', () => {
+    const lab = { name: 'Akar Lab', entityType: 'LAB', kind: 'lab' };
+    expect(
+      revoiceFirstPersonResearchLead('Integrative tools allow us to undertake this.', lab),
+    ).toBe('Integrative tools allow the Akar Lab to undertake this.');
+    // An unscoped object pronoun is as often the reader, so a verb outside the set is
+    // left alone rather than guessed at.
+    expect(revoiceFirstPersonResearchLead('The data tells us that risk rises.', lab)).toBe(
+      'The data tells us that risk rises.',
+    );
+  });
+
+  it('leaves a collective first person about the field completely alone (#3481)', () => {
+    const faculty = {
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    // The closed noun list is the guard: no abstraction is in it, so a sentence about
+    // the field cannot become a sentence about the row. 52 served rows carry this shape.
+    for (const body of [
+      'This work advances our understanding of neurodegeneration.',
+      'This research expands our knowledge of the immune system.',
+      'To see how these processes break down we must understand the biology.',
+      'These findings improve our ability to predict outcomes.',
+    ]) {
+      expect(revoiceFirstPersonResearchLead(body, faculty)).toBe(body);
+    }
+  });
+
+  it('converts a regular past-tense verb the closed table never listed (#3481)', () => {
+    const lab = { name: 'Arnal Lab', entityType: 'LAB', kind: 'lab' };
+    // A hand read of 45 rows carrying unconverted first person found these nine verbs in
+    // 29 of them, and the 88-entry closed table listed none.
+    const pairs: Array<[string, string]> = [
+      ['We identified the molecular link.', 'The Arnal Lab identified the molecular link.'],
+      ['We performed an in vivo screen.', 'The Arnal Lab performed an in vivo screen.'],
+      [
+        'We validated Noggin as a key effector.',
+        'The Arnal Lab validated Noggin as a key effector.',
+      ],
+      [
+        'We assessed changes in serum biomarkers.',
+        'The Arnal Lab assessed changes in serum biomarkers.',
+      ],
+      [
+        'We characterized the protein products.',
+        'The Arnal Lab characterized the protein products.',
+      ],
+      [
+        'We hypothesized that the fusion promotes it.',
+        'The Arnal Lab hypothesized that the fusion promotes it.',
+      ],
+    ];
+    for (const [input, expected] of pairs) {
+      expect(revoiceFirstPersonResearchLead(input, lab)).toBe(expected);
+    }
+  });
+
+  it('converts a singular past subject and one with an adverb between (#3481)', () => {
+    const faculty = {
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    expect(revoiceFirstPersonResearchLead('I obtained extramural funding.', faculty)).toBe(
+      'Ada Lovelace obtained extramural funding.',
+    );
+    expect(revoiceFirstPersonResearchLead('We recently continued that research.', faculty)).toBe(
+      'Ada Lovelace recently continued that research.',
+    );
+  });
+
+  it('refuses a word that ends in ed without being past tense (#3481)', () => {
+    const faculty = {
+      name: 'Ada Lovelace Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    };
+    // Matching `[a-z]+ed` as morphology is only safe because these are refused. Without
+    // the denylist "We need to" would be read as a past form and left mangled.
+    for (const body of [
+      'We need to understand the fundamental biology.',
+      'We proceed with the second phase next year.',
+      'We succeed by combining methods.',
+      'We exceed the required sensitivity.',
+    ]) {
+      expect(revoiceFirstPersonResearchLead(body, faculty)).toBe(body);
+    }
+  });
+
+  it('leaves the closed present-tense table conjugating, not the morphology rule (#3481)', () => {
+    const lab = { name: 'Arnal Lab', entityType: 'LAB', kind: 'lab' };
+    // `study` is in the table, so it must still be inflected to `studies` rather than
+    // falling through to a rule that copies the token unchanged.
+    expect(revoiceFirstPersonResearchLead('We study lncRNA contribution.', lab)).toBe(
+      'The Arnal Lab studies lncRNA contribution.',
+    );
   });
 
   it('names the lead in full on first mention and by surname after it (#3368)', () => {
@@ -2259,14 +2711,38 @@ describe('isResearchEntitySourceChromeText breadcrumb / page-dump detection (#12
 });
 
 describe('sanitizeServedResearchEntityCopyFields "Studies <chips>" area echo (#1466)', () => {
-  it('blanks a served fullDescription/shortDescription that only echoes researchAreas', () => {
+  it('blanks a served fullDescription/shortDescription echo of researchAreas beside another body', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      profileSynthesisDescription:
+        'The faculty member builds models of how households save across business cycles.',
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+    });
+    expect(served.fullDescription).toBe('');
+    expect(served.shortDescription).toBe('');
+  });
+
+  it('keeps a fullDescription echo that is the only body, as thin but accurate, and still blanks the echo card', () => {
     const served = sanitizeServedResearchEntityCopyFields({
       fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
       shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
       researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
     });
-    expect(served.fullDescription).toBe('');
+    expect(served.fullDescription).toBe(
+      'Studies economic theory, financial economics, and macroeconomics.',
+    );
     expect(served.shortDescription).toBe('');
+  });
+
+  it('blanks an only-body echo that nests the other topics under the first', () => {
+    const served = sanitizeServedResearchEntityCopyFields({
+      fullDescription:
+        'Studies economic theory, including financial economics, and macroeconomics.',
+      shortDescription: '',
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+    });
+    expect(served.fullDescription).toBe('');
   });
 
   it('blanks a profileSynthesisDescription echo of profileResearchAreas', () => {
@@ -2695,5 +3171,70 @@ describe('the revoicer never emits a broken agreement (#3451)', () => {
     );
     expect(revoiced).toContain('This researcher studies airway reconstruction');
     expect(revoiced).toContain('"I want them to be safe,"');
+  });
+});
+
+describe('a card that is the title of a citation body (#4623)', () => {
+  const CITATION =
+    'Avery Quill, Blake Rowan, Casey Marrow, Devon Pellis. Mean-field inference for sparse linear models: Geometric and statistical properties.';
+  const TITLE =
+    'Mean-field inference for sparse linear models: Geometric and statistical properties.';
+
+  it('withholds the card alongside the citation body', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      fullDescription: CITATION,
+      shortDescription: TITLE,
+    });
+    expect(sanitized.shortDescription).toBe('');
+  });
+
+  it('keeps a card the citation does not contain', () => {
+    const card = 'Studies statistical inference for high-dimensional linear models.';
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields({
+      entityType: 'FACULTY_RESEARCH_AREA',
+      fullDescription: CITATION,
+      shortDescription: card,
+    });
+    expect(sanitized.shortDescription).toBe(card);
+  });
+});
+
+describe('possessive and next-source narration is not a research description (#4788)', () => {
+  it('rejects narration of a profile, a site or a next source', () => {
+    for (const value of [
+      "Dr. Example's Yale School of Medicine profile lists interests in sleep and memory.",
+      'Her Yale profile lists research on coastal sediment transport.',
+      "Dr. Example's profile lists interests in tidal hydrology.",
+      "Dr. Example's Yale School of Public Health profile lists interests in air quality.",
+      'Her Yale School of Public Health profile describes work on vaccine uptake.',
+      'The Yale School of Public Health profile lists projects on maternal health.',
+      'His faculty profile describes work on Byzantine manuscripts.',
+      'The profile lists clinical interests in pediatric cardiology.',
+      'The site presents projects on urban heat islands.',
+      'Studies coastal erosion. The lab website describes field sites along the Atlantic coast.',
+      'The official next source for students to review is the department page.',
+      'Students can use the program page for students to review current openings.',
+    ]) {
+      expect(isSourcePageNarrationDescription(value)).toBe(true);
+      expect(publicResearchEntityDescriptionText(value)).toBe('');
+    }
+  });
+
+  it('keeps research prose that uses the same nouns and verbs', () => {
+    for (const value of [
+      'Studies the profile of gene expression across developing mouse tissues.',
+      "The tumor's expression profile identifies subtypes that respond to immunotherapy.",
+      'Maps how the binding site presents a pocket for small-molecule inhibitors.',
+      'Identifies the next source of antibiotic resistance in hospital wastewater.',
+      'Develops web site accessibility tools for screen-reader users.',
+      'Her research profile spans genetics and chronic disease.',
+      "A patient's profile indicates risk of early-onset cardiomyopathy.",
+      "The receptor's site presents a pocket for allosteric modulators.",
+      "A tumor's profile links mutation burden to immunotherapy response.",
+      "The enzyme's site highlights a conserved pocket.",
+    ]) {
+      expect(isSourcePageNarrationDescription(value)).toBe(false);
+    }
   });
 });

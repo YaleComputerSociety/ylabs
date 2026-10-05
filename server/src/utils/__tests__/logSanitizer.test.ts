@@ -53,4 +53,24 @@ describe('sanitizeLogValue', () => {
     expect(logged).not.toContain('raw-access-token');
     expect(logged).not.toContain('raw-api-key');
   });
+
+  it('redacts a phone number glued to the label text around it', () => {
+    const logged = sanitizeLogValue('scraped Phone555.010.0030Fax555.010.0031Office');
+
+    expect(logged).toBe('scraped Phone[phone redacted]Fax[phone redacted]Office');
+  });
+
+  it('redacts the key values a duplicate-key error quotes, keeping the index name', () => {
+    const error = Object.assign(
+      new Error(
+        'E11000 duplicate key error collection: test.accounts index: netid_1 dup key: { netid: "zzdup01" }',
+      ),
+      { name: 'MongoServerError' },
+    );
+
+    const logged = sanitizeLogValue(error);
+
+    expect(logged).toContain('index: netid_1 dup key: [key-redacted]');
+    expect(logged).not.toContain('zzdup01');
+  });
 });

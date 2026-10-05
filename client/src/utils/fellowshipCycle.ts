@@ -1,7 +1,14 @@
 import { Fellowship } from '../types/types';
-import { getFellowshipApplicationStatus } from './fellowshipStatus';
+import {
+  STALE_DEADLINE_SHORT_LABEL,
+  STALE_DEADLINE_STATUS_LABEL,
+  getFellowshipApplicationStatus,
+} from './fellowshipStatus';
+import { formatShortProgramDate, programDeadlineClosingInstant } from './programDates';
 
 export const CLOSING_SOON_DAYS = 30;
+
+const NEUTRAL_CYCLE_BADGE_CLASS = 'bg-gray-100 text-gray-600 border border-gray-200';
 
 export type FellowshipCycleCategory =
   | 'closingSoon'
@@ -9,6 +16,7 @@ export type FellowshipCycleCategory =
   | 'openingSoon'
   | 'projectedNextCycle'
   | 'nextCycle'
+  | 'staleDeadline'
   | 'closed';
 
 export interface FellowshipCycleStatus {
@@ -57,16 +65,27 @@ export function getFellowshipCycleStatus(
   now: Date = new Date(),
 ): FellowshipCycleStatus {
   const applicationStatus = getFellowshipApplicationStatus(fellowship, now);
-  const deadline = fellowship.deadline ? new Date(fellowship.deadline) : null;
+  const deadline = programDeadlineClosingInstant(fellowship.deadline);
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const isOpen = applicationStatus.isApplicationWindowOpen;
   const sourceBacked = hasSourceUrl(fellowship);
-  const likelyRecurring = !isOpen && isLikelyRecurringFellowship(fellowship);
+  const likelyRecurring = !isOpen && deadlinePassed && isLikelyRecurringFellowship(fellowship);
+
+  if (applicationStatus.kind === 'staleDeadline') {
+    return {
+      category: 'staleDeadline',
+      label: STALE_DEADLINE_STATUS_LABEL,
+      className: NEUTRAL_CYCLE_BADGE_CLASS,
+      deadlinePassed: false,
+      sourceBacked,
+      likelyRecurring: false,
+    };
+  }
 
   if (applicationStatus.kind === 'notOpenYet') {
     return {
       category: 'openingSoon',
-      label: 'Opens Soon',
+      label: 'Opens soon',
       className: 'bg-blue-50 text-blue-700 border border-blue-100',
       deadlinePassed,
       sourceBacked,
@@ -77,7 +96,7 @@ export function getFellowshipCycleStatus(
   if (applicationStatus.kind === 'projectedNextCycle') {
     return {
       category: 'projectedNextCycle',
-      label: 'Next Cycle (Est.)',
+      label: 'Next cycle (est.)',
       className: 'bg-sky-50 text-sky-700 border border-sky-100',
       deadlinePassed: false,
       sourceBacked,
@@ -90,7 +109,7 @@ export function getFellowshipCycleStatus(
     if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) {
       return {
         category: 'closingSoon',
-        label: 'Closing Soon',
+        label: 'Closing soon',
         className: 'bg-amber-50 text-amber-700 border border-amber-100',
         deadlinePassed,
         sourceBacked,
@@ -113,7 +132,7 @@ export function getFellowshipCycleStatus(
   if (likelyRecurring) {
     return {
       category: 'nextCycle',
-      label: 'Next Cycle Signal',
+      label: 'Deadline passed',
       className: 'bg-sky-50 text-sky-700 border border-sky-100',
       deadlinePassed,
       sourceBacked,
@@ -123,8 +142,8 @@ export function getFellowshipCycleStatus(
 
   return {
     category: 'closed',
-    label: 'Closed',
-    className: 'bg-gray-100 text-gray-600 border border-gray-200',
+    label: deadline ? 'Closed' : 'No dates posted',
+    className: NEUTRAL_CYCLE_BADGE_CLASS,
     deadlinePassed,
     sourceBacked,
     likelyRecurring: false,
@@ -136,19 +155,16 @@ export function getFellowshipDeadlineSubtitle(
   now: Date = new Date(),
 ): string {
   const status = getFellowshipCycleStatus(fellowship, now);
+  if (status.category === 'staleDeadline') return STALE_DEADLINE_SHORT_LABEL;
   if (status.category === 'openingSoon') {
-    const openDate = new Date(String(fellowship.applicationOpenDate));
-    return `Opens ${openDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    return `Opens ${formatShortProgramDate(fellowship.applicationOpenDate)}`;
   }
   if (status.category === 'projectedNextCycle' && fellowship.deadline) {
-    const projected = new Date(fellowship.deadline);
-    return `Est. next cycle ~${projected.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (unconfirmed)`;
+    return `Est. next cycle ~${formatShortProgramDate(fellowship.deadline)} (unconfirmed)`;
   }
-  if (!fellowship.deadline) {
-    return status.category === 'nextCycle' ? 'Track for next cycle' : 'No deadline';
-  }
-  const deadline = new Date(fellowship.deadline);
+  const deadline = programDeadlineClosingInstant(fellowship.deadline);
+  if (!deadline) return 'No deadline';
   if (status.category === 'nextCycle') return 'Past cycle; track for reopening';
   if (deadline.getTime() < now.getTime()) return 'Deadline passed';
-  return `Due ${deadline.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  return `Due ${formatShortProgramDate(fellowship.deadline)}`;
 }

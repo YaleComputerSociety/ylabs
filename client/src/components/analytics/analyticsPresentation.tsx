@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useId } from 'react';
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin_grant.grant': 'Admin granted',
@@ -7,6 +7,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'department.create': 'Department created',
   'department.update': 'Department edited',
   'department.delete': 'Department deleted',
+  'research_area.create': 'Topic created',
   'research_area.update': 'Topic edited',
   'research_area.delete': 'Topic deleted',
   'fellowship.update': 'Fellowship edited',
@@ -15,6 +16,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'fellowship.delete': 'Fellowship deleted',
   'access_review.manual_locks': 'Visibility locks changed',
   'access_review.record_review': 'Access review recorded',
+  'correction_report.review': 'Correction report reviewed',
 };
 
 export const auditActionLabel = (action: string): string => AUDIT_ACTION_LABELS[action] || action;
@@ -38,6 +40,17 @@ export const formatDateTime = (value?: string | null): string => {
 
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+};
+
+export const formatUtcDay = (value?: string | null): string => {
+  if (!value) {
+    return 'Never';
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString(undefined, { timeZone: 'UTC' });
 };
 
 export const formatEventType = (eventType: string): string => {
@@ -163,15 +176,6 @@ export const formatSearchQueryLabel = (row: { query?: string; filterSummary?: st
 export const formatFullName = (fname?: string, lname?: string): string =>
   [fname, lname].filter(Boolean).join(' ');
 
-export const formatSearcherName = (searcher: {
-  fname?: string;
-  lname?: string;
-  netid: string;
-}): string => {
-  const name = formatFullName(searcher.fname, searcher.lname);
-  return name ? `${searcher.netid} (${name})` : searcher.netid;
-};
-
 export const actionPriorityClass = (priority?: string): string => {
   if (priority === 'high') {
     return 'border-red-200 bg-red-50 text-red-700';
@@ -181,7 +185,7 @@ export const actionPriorityClass = (priority?: string): string => {
     return 'border-amber-200 bg-amber-50 text-amber-700';
   }
 
-  return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-gray-700';
+  return 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-ink-soft';
 };
 
 export const StatCard = ({
@@ -195,9 +199,9 @@ export const StatCard = ({
 }) => (
   <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
     <div className="p-6">
-      <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
-      <p className="yr-num text-3xl font-bold text-gray-900">{value}</p>
-      {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+      <h3 className="text-sm font-medium text-muted mb-2">{title}</h3>
+      <p className="yr-num text-3xl font-bold text-ink">{value}</p>
+      {subtitle && <p className="text-sm text-muted mt-1">{subtitle}</p>}
     </div>
   </div>
 );
@@ -207,14 +211,16 @@ export const DashboardMetric = ({
   value,
   context,
   tone = 'blue',
-  tooltip,
+  definition,
 }: {
   title: string;
   value: number | string;
   context: string;
   tone?: 'blue' | 'green' | 'amber' | 'red';
-  tooltip?: string;
+  definition?: string;
 }) => {
+  const titleId = useId();
+  const definitionId = useId();
   const toneClass = {
     blue: 'border-blue-200 bg-[var(--yr-blue-soft)] text-blue-800',
     green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
@@ -223,21 +229,22 @@ export const DashboardMetric = ({
   }[tone];
 
   return (
-    <div className={`rounded-lg border p-4 ${toneClass}`}>
-      <h3 className="flex items-start justify-between gap-2 text-sm font-semibold">
-        <span>{title}</span>
-        {tooltip && (
-          <span
-            aria-hidden="true"
-            title={tooltip}
-            className="mt-0.5 flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-current text-[10px] font-semibold leading-none opacity-70"
-          >
-            i
-          </span>
-        )}
+    <div
+      role="group"
+      aria-labelledby={titleId}
+      aria-describedby={definition ? definitionId : undefined}
+      className={`rounded-lg border p-4 ${toneClass}`}
+    >
+      <h3 id={titleId} className="text-sm font-semibold">
+        {title}
       </h3>
-      <p className="yr-num mt-2 text-3xl font-bold text-gray-950">{value}</p>
+      <p className="yr-num mt-2 text-3xl font-bold text-ink">{value}</p>
       <p className="mt-2 text-sm leading-5 opacity-85">{context}</p>
+      {definition && (
+        <p id={definitionId} className="mt-2 text-xs leading-5 opacity-85">
+          {definition}
+        </p>
+      )}
     </div>
   );
 };
@@ -250,13 +257,13 @@ export const DetailSectionHeader = ({
   description?: string;
 }) => (
   <div className="mb-4 flex flex-col gap-1 border-b border-[var(--yr-line)] pb-3">
-    <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-    {description && <p className="text-sm text-gray-500">{description}</p>}
+    <h2 className="yr-display text-2xl font-semibold text-ink">{title}</h2>
+    {description && <p className="text-sm text-muted">{description}</p>}
   </div>
 );
 
 export const ScopeBadge = ({ label }: { label: string }): ReactNode => (
-  <span className="ml-3 inline-flex items-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2.5 py-0.5 align-middle text-xs font-medium text-gray-500">
+  <span className="ml-3 inline-flex items-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2.5 py-0.5 align-middle text-xs font-medium text-muted">
     {label}
   </span>
 );

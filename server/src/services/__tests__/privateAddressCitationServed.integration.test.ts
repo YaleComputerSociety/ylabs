@@ -52,11 +52,11 @@ describe('a private-address citation reaches the served detail payload (#2556)',
         { url: PUBLIC_URL, healthStatus: 'HEALTHY', httpStatusCode: 200 },
       ],
     });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   it('serves the routing fact on the flagged citation and keeps the citation listed', async () => {

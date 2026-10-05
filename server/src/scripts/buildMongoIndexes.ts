@@ -18,15 +18,16 @@ import mongoose from 'mongoose';
 import '../models';
 import {
   declaredIndexName,
-  mongoOptions,
   reportMissingMongoIndexes,
+  reportUndeclaredMongoIndexes,
   reportUnbuildableDeclaredIndexSpecs,
+  connectScriptMongo,
 } from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface BuildMongoIndexesArgs {
   apply: boolean;
@@ -78,12 +79,13 @@ async function main(): Promise<void> {
     mongoUrl,
   });
 
-  await mongoose.connect(mongoUrl, mongoOptions);
+  await connectScriptMongo(mongoUrl);
   try {
     const plans = planDeclaredIndexes(mongoose.connection);
     const declaredTotal = plans.reduce((sum, plan) => sum + plan.declaredIndexNames.length, 0);
     const unbuildable = reportUnbuildableDeclaredIndexSpecs();
     const missingBefore = await reportMissingMongoIndexes();
+    const undeclared = await reportUndeclaredMongoIndexes();
     const missingBeforeTotal = missingBefore.reduce(
       (sum, entry) => sum + entry.missingIndexNames.length,
       0,
@@ -99,6 +101,11 @@ async function main(): Promise<void> {
           unbuildableIndexSpecs: unbuildable,
           missingIndexesBefore: missingBeforeTotal,
           missingByCollection: missingBefore,
+          undeclaredIndexes: undeclared.reduce(
+            (sum, entry) => sum + entry.undeclaredIndexNames.length,
+            0,
+          ),
+          undeclaredByCollection: undeclared,
         },
         null,
         2,

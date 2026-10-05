@@ -137,11 +137,11 @@ describe('website-url identity dedupe lane end to end', () => {
         archived: false,
       },
     ]);
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   it('leaves the custom-domain duplicate pair unreachable for the path-keyed lane', async () => {

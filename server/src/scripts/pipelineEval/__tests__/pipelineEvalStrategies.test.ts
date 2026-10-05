@@ -71,6 +71,12 @@ describe('scoreDedupeStrategy', () => {
     expect(result.groundTruthMergedPairs).toBe(1);
     expect(result.groundTruthCaught).toBe(1);
     expect(result.recall).toBe(1);
+    expect(result.groundTruthByProvenance.unattributed).toEqual({
+      mergedPairs: 1,
+      caught: 1,
+      recall: 1,
+    });
+    expect(result.groundTruthByProvenance.automated.recall).toBeNull();
     expect(result.avoidedMints).toBe(1);
     expect(result.survivorEntityIds).toContain('canon');
     expect(result.survivorEntityIds).not.toContain('dupe');

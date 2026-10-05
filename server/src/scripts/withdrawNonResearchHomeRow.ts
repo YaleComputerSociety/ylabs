@@ -23,11 +23,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-import { archivedEntityUpdate } from '../models/entityArchival';
+import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -84,7 +84,11 @@ export function parseWithdrawalArgs(argv: readonly string[]): Options {
 
 async function main(): Promise<void> {
   const options = parseWithdrawalArgs(process.argv.slice(2));
-  const guard = assertScriptApplyAllowed({ scriptName: SCRIPT_NAME, apply: options.apply });
+  const guard = assertScriptApplyAllowed({
+    scriptName: SCRIPT_NAME,
+    apply: options.apply,
+    mongoUrl: process.env.MONGODBURL,
+  });
   if (options.apply && !options.confirmed) {
     throw new Error(`${SCRIPT_NAME} --apply requires ${CONFIRM_FLAG}`);
   }
@@ -92,7 +96,6 @@ async function main(): Promise<void> {
     `Environment: ${guard.environment}; mode: ${options.apply ? 'apply' : 'dry-run'}; kind: ${options.kind}`,
   );
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const doc = (await ResearchEntity.findOne({ slug: options.slug })
@@ -117,6 +120,7 @@ async function main(): Promise<void> {
     const { plan, refused } = planNonResearchHomeWithdrawal(doc as WithdrawalRow);
     let refusalsRecorded = 0;
     let archived = false;
+    let roleEdgesEnded = 0;
     let servedAfter = servedBefore;
     let observationsAfter = observationsBefore;
     let archivedAfterTwoPasses = false;
@@ -141,10 +145,12 @@ async function main(): Promise<void> {
       // refusals are what stops a later pass restoring it, and recording them on a row
       // that is already archived would be a write nothing re-reads.
       await ResearchEntity.updateOne({ slug: options.slug }, { $set: set });
-      await ResearchEntity.updateOne(
-        { slug: options.slug },
-        archivedEntityUpdate(`${WITHDRAWAL_ARCHIVE_REASON}:${options.kind}`),
-      );
+      roleEdgesEnded = (
+        await archiveResearchEntities({
+          ids: [doc._id],
+          archivedReason: `${WITHDRAWAL_ARCHIVE_REASON}:${options.kind}`,
+        })
+      ).roleEdges.ended;
       archived = true;
 
       await materializeEntity('researchEntity', { entityKey: options.slug }, {});
@@ -178,6 +184,7 @@ async function main(): Promise<void> {
           valuesToRefuse: plan?.refusals.map((entry) => entry.field) ?? [],
           refusalsRecorded,
           archived,
+          roleEdgesEnded,
           archivedAfterTwoPasses,
           servedBefore,
           servedAfter,

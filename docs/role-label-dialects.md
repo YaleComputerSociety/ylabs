@@ -67,11 +67,11 @@ The client cannot import the server constant, so the two vocabularies are pinned
 ## Two traps
 
 **`copi` is not `co-pi`.**
-The embedded grant record on `ResearchEntity` declares `role` with `enum: ['pi', 'copi']`, written by `server/src/scrapers/sources/federalAwardScraper.ts`.
+The embedded grant record on `ResearchEntity` declares `role` with `enum: ['pi', 'copi']`, which the NIH, NSF and NEH grant lanes type as `'pi' | 'copi'`.
 `canonicalRoleForLegacy('copi')` is undefined, so a value from that record silently matches nothing in either the canonical or the served dialect.
 Do not fold it into the role vocabularies without first deciding what a grant record's role means, which is a narrower claim than a membership role.
 
-Both traps are latent rather than live, measured on Development: rows with `grants.role: 'copi'` read **0**, and with the served spelling `'co-pi'` also **0**, so the third dialect is declared and never yet written. Rows carrying `leadVerification` at all read **0**. Neither costs anything today, and each first bites whoever adds the first writer or the first reader.
+Both traps are latent rather than live, measured on Development: rows with `grants.role: 'copi'` read **0**, and with the served spelling `'co-pi'` also **0**, so the third dialect is declared and never yet written. Rows carrying `leadVerification` are written by `lab-site-lead-verification` (1,533 live rows on Development on 2026-09-30, 55 of them `contradicted`), and nothing reads the field, by decision (`docs/decisions.md`, 2026-10-01). Neither costs anything today, and each first bites whoever adds the first reader.
 
 **`leadVerification[].role` stores canonical values on an enum-less path with no reader.**
 `labSiteLeadVerificationScraper` writes canonical values into it and nothing reads them back, so there is no wrong answer to observe today.

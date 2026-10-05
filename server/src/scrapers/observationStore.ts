@@ -27,6 +27,20 @@ import { offTopicResearchHomeDemotionScore } from '../utils/researchHomeDescript
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import type { ObservationInput } from './types';
+import {
+  createDescriptionCardJudge,
+  isCardLosingDescriptionRefresh,
+  type DescriptionCardJudge,
+} from './descriptionCardRefreshGuard';
+import {
+  DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS,
+  OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
+  OWNERSHIP_GUARDED_ENTITY_TYPE,
+  ownershipGuardedCitedUrls,
+  refusesDescriptionOnSharedPage,
+} from './descriptionSourceOwnership';
+import { resetDescriptionOwnershipCitersCache } from './descriptionOwnershipResolverScreen';
+import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -45,6 +59,37 @@ export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): b
 export function c4LosslessIngestDeclared(env: NodeJS.ProcessEnv = process.env): boolean {
   return String(env.C4_LOSSLESS_INGEST ?? '').trim() !== '';
 }
+
+const isObjectIdLike = (value: string): boolean => /^[a-f0-9]{24}$/i.test(value);
+
+/**
+ * Slug, name and displayName for the given entity keys, read from the raw collection.
+ *
+ * Deliberately not through the `ResearchEntity` model: importing it into this module
+ * registers the model, and registration creates its indexes, which made two scripts'
+ * "performs no writes and drops no index in dry-run mode" tests fail.
+ */
+async function researchEntityNameRows(
+  keys: readonly string[],
+): Promise<Array<{ slug?: unknown; _id?: unknown; name?: unknown; displayName?: unknown }>> {
+  const db = mongoose.connection?.db;
+  if (!db || keys.length === 0) return [];
+  const objectIds = keys.filter(isObjectIdLike).map((key) => new mongoose.Types.ObjectId(key));
+  return db
+    .collection('research_entities')
+    .find(
+      {
+        $or: [
+          { slug: { $in: [...keys] } },
+          ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+        ],
+      },
+      { projection: { slug: 1, name: 1, displayName: 1 } },
+    )
+    .toArray() as any;
+}
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function entityKeyForProse(obs: { entityId?: string; entityKey?: string }): string {
   return obs.entityId || obs.entityKey || '';
@@ -298,6 +343,7 @@ async function loadProseIncumbents(
     if (!QUALITY_GUARDED_PROSE_FIELDS.has(obs.field)) continue;
     requireIncumbent(obs, obs.field);
     if (obs.field === 'shortDescription') requireIncumbent(obs, 'fullDescription');
+    if (obs.field === 'fullDescription') requireIncumbent(obs, 'shortDescription');
   }
   const loaded = new Map<string, string | undefined>();
   await Promise.all(
@@ -352,10 +398,181 @@ interface AppendContext {
   dryRun: boolean;
 }
 
+/**
+ * An observation's entity identity as a string. A row read through `.lean()` carries
+ * `entityId` as an ObjectId, and an object used as a Map key equals only itself, so
+ * keying on it made every one of a row's own observations a separate nameless citer.
+ */
+const storedCiterKey = (row: { entityId?: unknown; entityKey?: unknown }): string =>
+  String(row.entityId ?? '') || String(row.entityKey ?? '');
+
+interface ForeignDescriptionCiters {
+  byUrl: Map<string, Map<string, string>>;
+  canonicalKey: (key: string) => string;
+  nameOf: (key: string) => string | undefined;
+}
+
+/**
+ * For each cited URL in the batch that the ownership bar could apply to, the set of
+ * entity keys that already hold a live description observation citing it.
+ *
+ * Keys rather than a count, so the caller can exclude the row being written without a
+ * second read: re-asserting a page this row already cites must never look like a
+ * foreign citer.
+ *
+ * Every key is canonicalized to the entity's id, because one row's observations carry
+ * either identity form (an id, or only a slug) and counting the two forms separately
+ * made a row a foreign citer of its own page.
+ */
+async function loadForeignDescriptionCiters(
+  inputs: readonly ObservationInput[],
+): Promise<ForeignDescriptionCiters> {
+  const urls = ownershipGuardedCitedUrls(inputs);
+  const byUrl = new Map<string, Map<string, string>>();
+  const unresolved: ForeignDescriptionCiters = {
+    byUrl,
+    canonicalKey: (key) => key,
+    nameOf: () => undefined,
+  };
+  if (urls.length === 0) return unresolved;
+
+  // Filtered by HOST and normalized in JS, never matched on the normalized string.
+  // `normalizeEvidenceUrl` drops a query string, a trailing slash and a `www.`, so a
+  // stored `.../directory-name/` never equals its own normalized form and an `$in` on
+  // normalized values reads zero citers for a page twenty rows cite.
+  const hosts = new Set<string>();
+  for (const url of urls) {
+    try {
+      hosts.add(new URL(url).hostname);
+    } catch {
+      continue;
+    }
+  }
+  if (hosts.size === 0) return unresolved;
+  const wanted = new Set(urls);
+  const rows = await Observation.find(
+    {
+      entityType: OWNERSHIP_GUARDED_ENTITY_TYPE,
+      field: { $in: [...OWNERSHIP_GUARDED_DESCRIPTION_FIELDS] },
+      superseded: { $ne: true },
+      $or: [...hosts].map((host) => ({
+        sourceUrl: { $regex: `^https?://(www\\.)?${escapeRegExp(host)}(/|$|\\?)`, $options: 'i' },
+      })),
+    },
+    { sourceUrl: 1, entityKey: 1, entityId: 1 },
+  ).lean();
+  const rawKeysByUrl = new Map<string, Set<string>>();
+  for (const row of rows as any[]) {
+    const url = normalizeEvidenceUrl(row.sourceUrl);
+    if (!wanted.has(url)) continue;
+    const key = storedCiterKey(row);
+    if (!key) continue;
+    rawKeysByUrl.set(url, (rawKeysByUrl.get(url) ?? new Set<string>()).add(key));
+  }
+  if (rawKeysByUrl.size === 0) return unresolved;
+
+  // Names, resolved once for the whole batch. Subject identity is decided from them, and
+  // `citersAreOneSubject` treats a nameless citer as unprovable and therefore as a
+  // different subject - so leaving these empty would refuse EVERY multi-citer
+  // description rather than only the ones a page cannot be about (#3481).
+  const ownKeys = inputs.map((input) => storedCiterKey(input)).filter(Boolean);
+  const lookupKeys = [
+    ...new Set([...[...rawKeysByUrl.values()].flatMap((keys) => [...keys]), ...ownKeys]),
+  ];
+  const nameByKey = new Map<string, string>();
+  const idByKey = new Map<string, string>();
+  for (const row of await researchEntityNameRows(lookupKeys)) {
+    const label = String((row as any).displayName || (row as any).name || '');
+    const id = String((row as any)._id);
+    for (const key of [String((row as any).slug), id]) {
+      nameByKey.set(key, label);
+      idByKey.set(key, id);
+    }
+  }
+  const canonicalKey = (key: string) => idByKey.get(key) ?? key;
+  for (const [url, keys] of rawKeysByUrl) {
+    const citers = new Map<string, string>();
+    for (const key of keys) citers.set(canonicalKey(key), nameByKey.get(key) ?? '');
+    byUrl.set(url, citers);
+  }
+  return { byUrl, canonicalKey, nameOf: (key) => nameByKey.get(key) };
+}
+
+const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field: string }) =>
+  doc.entityType === OWNERSHIP_GUARDED_ENTITY_TYPE &&
+  OWNERSHIP_GUARDED_DESCRIPTION_FIELDS.has(doc.field);
+
+const CARD_PAIR_FIELDS: ReadonlySet<string> = new Set(['fullDescription', 'shortDescription']);
+
+/**
+ * Removes, in place, a research row's incoming description pair when it would take away the
+ * card the source's current pair gives, and returns how many rows were held. Judged per row
+ * as a pair because the card is built from both fields together. The incoming card alone is
+ * kept when it still gives a card under the current body.
+ */
+async function dropCardLosingDescriptionRefreshes(
+  kept: ObservationInput[],
+  incumbents: ReadonlyMap<string, string | undefined>,
+  researchAreasByEntity: ReadonlyMap<string, unknown>,
+  judge: DescriptionCardJudge,
+): Promise<{ rows: number; observations: number }> {
+  const byEntity = new Map<string, ObservationInput[]>();
+  for (const obs of kept) {
+    if (obs.entityType !== 'researchEntity' || !CARD_PAIR_FIELDS.has(obs.field)) continue;
+    const key = entityKeyForProse(obs);
+    byEntity.set(key, [...(byEntity.get(key) ?? []), obs]);
+  }
+  const held = new Set<ObservationInput>();
+  for (const [entityKey, pairObs] of byEntity) {
+    const subject = pairObs[0];
+    const existing = {
+      fullDescription: incumbents.get(proseIncumbentKey(subject, 'fullDescription')),
+      shortDescription: incumbents.get(proseIncumbentKey(subject, 'shortDescription')),
+    };
+    const incomingFull = pairObs.find((obs) => obs.field === 'fullDescription');
+    const incomingShort = pairObs.find((obs) => obs.field === 'shortDescription');
+    const incoming = {
+      fullDescription: incomingFull ? incomingFull.value : existing.fullDescription,
+      shortDescription: incomingShort ? incomingShort.value : existing.shortDescription,
+    };
+    const researchAreas = researchAreasByEntity.get(entityKey);
+    if (
+      !(await isCardLosingDescriptionRefresh({ subject, existing, incoming, researchAreas, judge }))
+    ) {
+      continue;
+    }
+    // The incoming card can still be taken under the current body. That is the owner's
+    // choice for a biography whose only research statement is a topic list: keep the
+    // biography as the body and serve a research card rather than the bio's own (#4299).
+    const cardUnderCurrentBody =
+      incomingShort && incomingFull
+        ? !(await isCardLosingDescriptionRefresh({
+            subject,
+            existing,
+            incoming: {
+              fullDescription: existing.fullDescription,
+              shortDescription: incomingShort.value,
+            },
+            researchAreas,
+            judge,
+          }))
+        : false;
+    for (const obs of pairObs) {
+      if (cardUnderCurrentBody && obs === incomingShort) continue;
+      held.add(obs);
+    }
+  }
+  if (held.size === 0) return { rows: 0, observations: 0 };
+  const rows = new Set([...held].map((obs) => entityKeyForProse(obs))).size;
+  const remaining = kept.filter((obs) => !held.has(obs));
+  kept.splice(0, kept.length, ...remaining);
+  return { rows, observations: held.size };
+}
+
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
-  opts: { loadActiveProse?: ActiveProseLoader } = {},
+  opts: { loadActiveProse?: ActiveProseLoader; judgeDescriptionCard?: DescriptionCardJudge } = {},
 ): Promise<{ inserted: number; skipped: number; superseded: number }> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
@@ -376,9 +593,37 @@ export async function appendObservations(
     if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
     else candidateInputs.push(obs);
   }
+  // A page several rows already cite as their description cannot be the description
+  // of this one either. The judgement sits here for the same reason the uncitable-host
+  // refusal above does: it was written into one extractor (#3162) and the lanes it did
+  // not reach kept storing unowned descriptions afterwards (#3481).
+  //
+  // One aggregation per batch, over the distinct cited URLs the bar could apply to, so
+  // widening the guard costs a single read rather than one per observation.
+  const foreignCiters = await loadForeignDescriptionCiters(candidateInputs);
+  const ownershipRejected: ObservationInput[] = [];
+  const ownedInputs: ObservationInput[] = [];
+  for (const obs of candidateInputs) {
+    const url = normalizeEvidenceUrl(obs.sourceUrl);
+    const citers = foreignCiters.byUrl.get(url);
+    const own = foreignCiters.canonicalKey(storedCiterKey(obs));
+    const foreignNames = citers
+      ? [...citers.entries()].filter(([key]) => key !== own).map(([, name]) => name)
+      : [];
+    const ownName = citers?.get(own) ?? foreignCiters.nameOf(storedCiterKey(obs));
+    if (refusesDescriptionOnSharedPage({ ...obs, ownName }, foreignNames))
+      ownershipRejected.push(obs);
+    else ownedInputs.push(obs);
+  }
+  if (ownershipRejected.length > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} asserted ${ownershipRejected.length} description(s) citing a page at least ${DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS} other entities already cite; refused at ingest (#3481).`,
+    );
+  }
+
   const sanitizedInputs: ObservationInput[] = [];
   let rejectedFurniture = 0;
-  for (const obs of candidateInputs) {
+  for (const obs of ownedInputs) {
     const sanitized = sanitizeObservationField(obs.entityType, obs.field, obs.value);
     if (sanitized.rejected) {
       rejectedFurniture += 1;
@@ -497,6 +742,20 @@ export async function appendObservations(
     keptInputs.push(obs);
   }
 
+  const cardRegressionGuarded = losslessIngest
+    ? { rows: 0, observations: 0 }
+    : await dropCardLosingDescriptionRefreshes(
+        keptInputs,
+        proseIncumbents,
+        incomingResearchAreasByEntity,
+        opts.judgeDescriptionCard ?? createDescriptionCardJudge(),
+      );
+  if (cardRegressionGuarded.rows > 0) {
+    console.warn(
+      `[observation-store] ${ctx.sourceName} kept the current description for ${cardRegressionGuarded.rows} row(s) whose refresh would lose the card the current one gives.`,
+    );
+  }
+
   // Reported, never subtracted from the batch: a `kind` assertion is not invalid, it is
   // unread, so the lane that wrote it needs to know rather than the batch being shrunk.
   const kindOnlyKeys = kindOnlyTypeAssertionKeys(candidateInputs);
@@ -513,7 +772,8 @@ export async function appendObservations(
     rejectedInvalidEnum.length +
     regressiveProseGuarded +
     weakerProseGuarded +
-    selfDefeatingCardGuarded;
+    selfDefeatingCardGuarded +
+    cardRegressionGuarded.observations;
   if (keptInputs.length === 0) {
     return { inserted: 0, skipped: skippedCount, superseded: 0 };
   }
@@ -554,6 +814,7 @@ export async function appendObservations(
     return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0 };
   }
 
+  if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
   const result = await Observation.insertMany(docs, { ordered: false });
   const latestByFingerprint = new Map<string, { id: any; input: (typeof docs)[number] }>();
   for (const [index, doc] of (result as any[]).entries()) {
@@ -607,7 +868,9 @@ export async function retireObservations(
     { $set: { superseded: true, rollback: { rolledBackAt: new Date(), reason } } },
   );
   const modifiedCount = (result as { modifiedCount?: number }).modifiedCount;
-  return { retired: typeof modifiedCount === 'number' ? modifiedCount : 0 };
+  const retired = typeof modifiedCount === 'number' ? modifiedCount : 0;
+  if (retired > 0) resetDescriptionOwnershipCitersCache();
+  return { retired };
 }
 
 /**
@@ -634,11 +897,16 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'researchAreas',
   'methods',
   'recentGrants',
+  'recentGrantPeriods',
+  'leadHonors',
   'recentGrantCount',
   'fundingAgencies',
   'rosterEnrichment',
   'currentUndergradCount',
   'undergradEvidenceQuote',
+  'undergradRoleEvidenceQuote',
+  'contactInstructionsQuote',
+  'joinPageUrl',
   'applicationInformation',
   'applicationMaterials',
   'researchFocused',
@@ -660,10 +928,69 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   // 176 live snapshots spanned 113 departments because a changed roster took a new
   // fingerprint instead of superseding its predecessor (#3251).
   'departmentRosterHealth',
+  // One snapshot per center per run for the same reason; `centersInstitutesRosterSite.test.ts`
+  // holds every config to a distinct center entity key so two configs cannot share a row.
+  'centerRosterHealth',
+  // A member page's identity evidence changes whenever the page adds or reorders a
+  // Yale link, and two active readings conflict, which blinds identity resolution (#3802).
+  'profileIdentityEvidence',
 ]);
 
-export function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
-  return input.entityType === 'fellowship' || LATEST_WINS_FINGERPRINT_FIELDS.has(input.field);
+/**
+ * Latest-wins fields that are one value per run only on one entity type. A roster member's
+ * `profileUrl` is one link per listing per read, but a center site can serve the same person
+ * under a different program path on each read, so with `value` in the fingerprint every read
+ * left another live link, two live links conflict, and the member's edge is never re-stated or
+ * given provenance (#3799). Elsewhere `profileUrl` is not held to that rule.
+ *
+ * A listing's displayed name, title, section and dates are the same kind of statement: every
+ * roster lane emits one of each per member key per read, and a page that re-spells a name or
+ * re-dates itself is restating the listing rather than adding a second one. Kept value-keyed,
+ * a changed name left the old name live beside the new, the two conflicted, the plan refused
+ * the listing, and the member's edge was never refreshed again (#4758). `role` is deliberately
+ * absent: a role change is a different claim that a lane's retirement has to govern.
+ */
+export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  researchGroupMember: new Set([
+    'profileUrl',
+    'name',
+    'inferredUserName',
+    'title',
+    'sectionLabel',
+    'sourcePublishedAt',
+    'freshnessExpiresAt',
+  ]),
+};
+
+/**
+ * Latest-wins fields that are one value per run only for one source. The description lane
+ * asserts at most one self-declared name per row per read, so a re-read naming the row
+ * differently must replace its earlier name; other sources emit several `name` rows per
+ * run, which is why the global list cannot hold it. A read that names nothing inserts
+ * nothing, so it leaves the earlier name live (#2647, #3925).
+ */
+export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  'lab-microsite-description-llm': new Set(['name', 'displayName']),
+};
+
+export function usesLatestWinsFingerprint(input: {
+  entityType: string;
+  field: string;
+  sourceName?: string;
+}): boolean {
+  return (
+    input.entityType === 'fellowship' ||
+    LATEST_WINS_FINGERPRINT_FIELDS.has(input.field) ||
+    Boolean(LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE[input.entityType]?.has(input.field)) ||
+    Boolean(
+      input.sourceName &&
+      LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE[input.sourceName]?.has(input.field),
+    )
+  );
 }
 
 function latestWinsObservedTime(value: unknown): number {
@@ -691,8 +1018,12 @@ function latestWinsObservedTime(value: unknown): number {
  * drops a topic is usually a correction, and unioning them would hoard every topic a
  * source ever guessed. An accumulating field is one whose items are dated events, not
  * a description of the present.
+ *
+ * Given `memberOf`, the union stops at the row the freshest read was filed under: a merged-in
+ * key's older read is one the same lane has since re-read on the survivor, so it is superseded
+ * there exactly as write-time supersession would have retired it on one key (#4418).
  */
-const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants']);
+const ADDITIVE_LATEST_WINS_LIST_FIELDS = new Set(['recentGrants', 'recentGrantPeriods']);
 
 /**
  * Identity for unioning an accumulating list. A grant carries its own award id, which
@@ -730,10 +1061,17 @@ export function unionAdditiveListValues(
 
 export function collapseLatestWins<
   T extends { field: string; sourceName: string; observedAt?: unknown; value?: unknown },
->(observations: T[], entityType: string): T[] {
+>(observations: T[], entityType: string, memberOf?: (observation: T) => string | undefined): T[] {
   const indicesByKey = new Map<string, number[]>();
   observations.forEach((observation, index) => {
-    if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return;
+    if (
+      !usesLatestWinsFingerprint({
+        entityType,
+        field: observation.field,
+        sourceName: observation.sourceName,
+      })
+    )
+      return;
     const key = JSON.stringify([observation.sourceName, observation.field]);
     const group = indicesByKey.get(key);
     if (group) group.push(index);
@@ -794,7 +1132,14 @@ export function collapseLatestWins<
 
   return observations
     .filter((observation, index) => {
-      if (!usesLatestWinsFingerprint({ entityType, field: observation.field })) return true;
+      if (
+        !usesLatestWinsFingerprint({
+          entityType,
+          field: observation.field,
+          sourceName: observation.sourceName,
+        })
+      )
+        return true;
       const key = JSON.stringify([observation.sourceName, observation.field]);
       return winningIndexByKey.get(key) === index;
     })
@@ -802,7 +1147,10 @@ export function collapseLatestWins<
       void kept;
       if (!ADDITIVE_LATEST_WINS_LIST_FIELDS.has(observation.field)) return observation;
       const key = JSON.stringify([observation.sourceName, observation.field]);
-      const group = indicesByKey.get(key);
+      const winnerMember = memberOf?.(observation);
+      const group = indicesByKey
+        .get(key)
+        ?.filter((index) => !memberOf || memberOf(observations[index]) === winnerMember);
       if (!group || group.length < 2) return observation;
       const newestFirst = [...group].sort(
         (left, right) =>

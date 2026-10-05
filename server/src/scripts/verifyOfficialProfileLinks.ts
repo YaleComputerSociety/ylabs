@@ -27,10 +27,11 @@ import {
   type DepartmentLinkHealthSummary,
   type OfficialProfileLinkRow,
 } from './verifyOfficialProfileLinksCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const DEFAULT_HOST_CONCURRENCY = 4;
 const DEFAULT_PROBE_RETRIES = 2;
@@ -484,7 +485,7 @@ async function main(): Promise<void> {
     process.once(signal, () => flushAndExit(signal));
   }
 
-  await mongoose.connect(process.env.MONGODBURL as string);
+  await connectScriptMongo(process.env.MONGODBURL as string);
   try {
     latest = await runVerifyOfficialProfileLinks({
       apply: options.apply,

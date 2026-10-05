@@ -12,9 +12,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({
-  default: vi.fn(),
-}));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../components/admin/AdminPanel', () => ({
   default: () => <div data-testid="admin-panel" />,
@@ -109,7 +107,6 @@ const mockEndpoints = (funnelOverride?: unknown) => {
                 totalSearches: 3,
                 uniqueSearchers: 1,
                 zeroResultSearches: 0,
-                searchers: [{ netid: 'analyst01', userType: 'undergraduate', searchCount: 3 }],
               },
               {
                 query: '',
@@ -118,7 +115,6 @@ const mockEndpoints = (funnelOverride?: unknown) => {
                 totalSearches: 2,
                 uniqueSearchers: 1,
                 zeroResultSearches: 0,
-                searchers: [{ netid: 'analyst02', userType: 'undergraduate', searchCount: 2 }],
               },
             ],
             limit: 25,

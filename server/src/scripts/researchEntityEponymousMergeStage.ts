@@ -9,7 +9,14 @@ import type { ResearchEntityPiDedupeRow } from './researchEntityPiDedupeCore';
 import {
   applyResearchEntityDedupeMergeGroup,
   loadSamePiCandidateRows,
+  previewResearchPlanCarryForMergeGroups,
 } from './dedupeResearchEntitiesByPi';
+import {
+  addResearchPlanCarryReports,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+  type ResearchPlanCarryReport,
+} from '../services/researchPlanMergeCarry';
 import {
   applyResearchEntityMergeGroupsWithCanonicalResync,
   selectEponymousFraLabMergeGroups,
@@ -17,10 +24,11 @@ import {
 import { isCenterOrInstituteEntity } from '../utils/profileAreaDuplicateRisk';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV = 'SCRAPER_SWEEP_AUTO_MERGE_FRA';
 export const DEFAULT_EPONYMOUS_FRA_MERGE_MAX = 250;
@@ -58,6 +66,9 @@ export interface EponymousFraLabMergeDelta {
   mergedPairs: EponymousFraLabMergePair[];
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
+  researchPlanCarry: ResearchPlanCarryReport;
+  researchPlansThatWouldMove: number;
 }
 
 function scopeEntitiesById(rows: ResearchEntityPiDedupeRow[]): Map<string, ScopeEntity> {
@@ -168,7 +179,8 @@ export interface RunEponymousFraLabMergeStageOptions {
   }) => Promise<ResearchEntityPiDedupeRow[]>;
   applyMergeGroup?: (group: {
     canonicalEntityId: string;
-  }) => Promise<{ canonicalEntityId?: string }>;
+  }) => Promise<{ canonicalEntityId?: string; researchPlanCarry?: ResearchPlanCarryReport }>;
+  previewResearchPlanCarry?: typeof previewResearchPlanCarryForMergeGroups;
 }
 
 export async function runEponymousFraLabMergeStage(
@@ -181,6 +193,13 @@ export async function runEponymousFraLabMergeStage(
   let appliedMergeCount = 0;
   let visibilityRecomputed = 0;
   let canonicalEntitiesResynced = 0;
+  let canonicalIndexSyncFailures = 0;
+  let researchPlanCarry = emptyResearchPlanCarryReport();
+  if (!options.apply) {
+    const previewResearchPlanCarry =
+      options.previewResearchPlanCarry ?? previewResearchPlanCarryForMergeGroups;
+    researchPlanCarry = await previewResearchPlanCarry(cappedGroups);
+  }
   if (options.apply && cappedGroups.length > 0) {
     const applyMergeGroup =
       options.applyMergeGroup ??
@@ -196,6 +215,14 @@ export async function runEponymousFraLabMergeStage(
     appliedMergeCount = cappedGroups.length;
     visibilityRecomputed = result.visibilityRecomputed;
     canonicalEntitiesResynced = result.canonicalEntitiesResynced;
+    canonicalIndexSyncFailures = result.canonicalIndexSyncFailures;
+    researchPlanCarry = result.applied.reduce(
+      (total, applied) =>
+        applied.researchPlanCarry
+          ? addResearchPlanCarryReports(total, applied.researchPlanCarry)
+          : total,
+      researchPlanCarry,
+    );
   }
 
   return {
@@ -208,6 +235,9 @@ export async function runEponymousFraLabMergeStage(
     mergedPairs: buildEponymousFraLabMergePairs(cappedGroups, rows),
     visibilityRecomputed,
     canonicalEntitiesResynced,
+    canonicalIndexSyncFailures,
+    researchPlanCarry,
+    researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
   };
 }
 
@@ -295,7 +325,7 @@ async function main(): Promise<void> {
     scriptName: SCRIPT_NAME,
     mongoUrl: process.env.MONGODBURL,
   });
-  await mongoose.connect(process.env.MONGODBURL);
+  await connectScriptMongo(process.env.MONGODBURL);
   try {
     const mergeDelta = await runEponymousFraLabMergeStage({
       apply: args.apply,

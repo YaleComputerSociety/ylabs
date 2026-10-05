@@ -14,6 +14,49 @@ vi.mock('../../services/meiliSyncService', () => ({
   deleteFromIndex: meiliMocks.deleteFromIndex,
 }));
 
+const SCHOOL_CLAUSE = /schools = "((?:[^"\\]|\\.)*)"/g;
+
+const storedRowsMatching = async (filter: string): Promise<Array<Record<string, any>>> => {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('no database connection');
+  const schools = [...filter.matchAll(SCHOOL_CLAUSE)].map((match) => match[1]);
+  const rows = await db.collection('research_entities').find({ archived: false }).toArray();
+  return rows.filter(
+    (row) =>
+      schools.length === 0 ||
+      (Array.isArray(row.schools) && row.schools.some((value) => schools.includes(value))),
+  );
+};
+
+const facetDistributionOf = (rows: Array<Record<string, any>>, facets: string[] = []) =>
+  Object.fromEntries(
+    facets.map((field) => {
+      const counts: Record<string, number> = {};
+      for (const row of rows) {
+        const values = Array.isArray(row[field]) ? row[field] : [row[field]];
+        for (const value of new Set(values)) {
+          if (typeof value === 'string' && value) counts[value] = (counts[value] ?? 0) + 1;
+        }
+      }
+      return [field, counts];
+    }),
+  );
+
+vi.mock('../../utils/meiliClient', () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
+    getEmbedders: vi.fn(async () => ({})),
+    search: vi.fn(async (_query: string, params: { filter?: string; facets?: string[] } = {}) => {
+      const rows = await storedRowsMatching(params.filter ?? '');
+      return {
+        hits: rows.map((row) => ({ id: String(row._id) })),
+        estimatedTotalHits: rows.length,
+        totalHits: rows.length,
+        facetDistribution: facetDistributionOf(rows, params.facets),
+      };
+    }),
+  })),
+}));
+
 import { OrgUnit } from '../../models/orgUnit';
 import { ResearchEntity } from '../../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../../scrapers/orgUnitCanonicalization';
@@ -124,11 +167,11 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -195,6 +238,16 @@ describe('the browse school dropdown stops offering a campus or a center (#2277)
       { slug: 'facet-center-lab-one', school: PUBLIC_HEALTH },
     ]);
     expect(await servedBySchoolFilter(CAMPUS)).toEqual([]);
+  });
+
+  it('reports the rewritten rows the index refused as sync failures (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never);
+
+    const result = await runOrgUnitBackfill({ dryRun: false, batchSize: 200 });
+
+    expect(result.indexResynced).toBe(0);
+    expect(result.indexSyncFailures).toBe(result.summary.changed);
+    expect(result.indexSyncFailures).toBeGreaterThan(0);
   });
 
   it('keeps the cleared campus and center labels searchable as affiliation text', async () => {

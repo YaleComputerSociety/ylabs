@@ -4,6 +4,7 @@
  * covered but has gone stale".
  */
 import type { SourceCoverageTier } from '../models/sourceCoverageTypes';
+import { sourceIsExpectedToRecur } from '../scrapers/sourceYieldGuard';
 
 export interface SourceFreshnessInput {
   name: string;
@@ -52,14 +53,14 @@ function resolveCadenceDays(input: SourceFreshnessInput): number | null {
 
 /**
  * Classifies a single Source's re-crawl freshness, or returns null when the
- * source is disabled or exempt (MANUAL_OVERRIDE) and so has no re-crawl
- * expectation to measure.
+ * source is disabled, exempt (MANUAL_OVERRIDE), or manual-only in the sweep, and
+ * so has no re-crawl expectation to measure.
  */
 export function classifySourceFreshness(
   input: SourceFreshnessInput,
   now: Date,
 ): SourceFreshnessEntry | null {
-  if (input.enabled === false) return null;
+  if (!sourceIsExpectedToRecur(input)) return null;
   const cadenceDays = resolveCadenceDays(input);
   if (cadenceDays === null) return null;
 

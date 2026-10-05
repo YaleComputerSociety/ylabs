@@ -65,7 +65,7 @@ describe('accountService', () => {
       email: 'newuser1@yale.edu',
       status: 'ACTIVE',
     });
-    expect(options).toMatchObject({ upsert: true, new: true });
+    expect(options).toMatchObject({ upsert: true, returnDocument: 'after' });
   });
 
   it('keeps a caller-supplied valid email but falls back to a Yale placeholder otherwise', async () => {
@@ -103,9 +103,6 @@ describe('accountService', () => {
         firstName: 'Sam',
         lastName: 'Student',
         userType: 'undergraduate',
-        college: 'Berkeley',
-        year: '2027',
-        major: ['Physics'],
         title: '  ',
       },
     });
@@ -115,11 +112,41 @@ describe('accountService', () => {
       firstName: 'Sam',
       lastName: 'Student',
       userType: 'undergraduate',
-      college: 'Berkeley',
-      year: '2027',
-      major: ['Physics'],
     });
     expect(update.$set.profile).not.toHaveProperty('title');
+  });
+
+  it('replaces the whole profile, so a resolved login sheds a retired field it once stored', async () => {
+    accountModelMock.findOneAndUpdate.mockReturnValue(
+      leanResult({ _id: 'acc-4b', netid: 'stud2', email: 'stud2@yale.edu', status: 'ACTIVE' }),
+    );
+
+    await recordAccountLogin({
+      netid: 'stud2',
+      profile: { firstName: 'Sam', lastName: 'Student', userType: 'undergraduate' },
+    });
+
+    const update = accountModelMock.findOneAndUpdate.mock.calls[0][1];
+    expect(Object.keys(update.$set)).toEqual(['lastLoginAt', 'profile']);
+    for (const retired of ['college', 'year', 'major']) {
+      expect(update.$set.profile).not.toHaveProperty(retired);
+    }
+  });
+
+  it('unsets the retired profile paths when a login writes no profile', async () => {
+    accountModelMock.findOneAndUpdate.mockReturnValue(
+      leanResult({ _id: 'acc-5b', netid: 'noprofile1', email: 'noprofile1@yale.edu' }),
+    );
+
+    await recordAccountLogin({ netid: 'noprofile1' });
+
+    const [, update, options] = accountModelMock.findOneAndUpdate.mock.calls[0];
+    expect(update.$unset).toEqual({
+      'profile.college': '',
+      'profile.year': '',
+      'profile.major': '',
+    });
+    expect(options.strict).toBe(false);
   });
 
   it('omits profile from the update when no profile fields are present', async () => {
@@ -132,7 +159,7 @@ describe('accountService', () => {
       }),
     );
 
-    await recordAccountLogin({ netid: 'nofields1', profile: { firstName: '  ', major: [] } });
+    await recordAccountLogin({ netid: 'nofields1', profile: { firstName: '  ', title: '' } });
 
     const update = accountModelMock.findOneAndUpdate.mock.calls[0][1];
     expect(update.$set).not.toHaveProperty('profile');

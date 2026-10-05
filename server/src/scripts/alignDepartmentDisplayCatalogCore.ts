@@ -62,9 +62,7 @@ export interface DepartmentDisplayCreatePlan {
 }
 
 export type DepartmentDisplayPlanRow =
-  | DepartmentDisplayRenamePlan
-  | DepartmentDisplayAliasRepairPlan
-  | DepartmentDisplayCreatePlan;
+  DepartmentDisplayRenamePlan | DepartmentDisplayAliasRepairPlan | DepartmentDisplayCreatePlan;
 
 export interface DepartmentDisplayPlan {
   rows: DepartmentDisplayPlanRow[];

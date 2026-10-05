@@ -18,12 +18,13 @@ import {
   type ProvenanceRepairTally,
   type ResolvedProvenanceReference,
 } from './backfillFieldProvenanceObservationIdCore';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const REFERENCE_LOOKUP_CHUNK = 500;
 
@@ -89,7 +90,7 @@ async function main(args: BackfillProvenanceObservationIdArgs): Promise<void> {
   const dbLabel = summarizeMongoUrl(mongoUrl);
   assertBackfillProvenanceObservationIdApplyAllowed(args, dbLabel, environment);
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
 
   const rows = (await ResearchEntity.find({ fieldProvenance: { $exists: true, $ne: {} } })
     .select('_id fieldProvenance')

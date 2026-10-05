@@ -4,7 +4,7 @@ import {
   assembleSynthesisSourceText,
   buildSynthesisSources,
   evaluateSynthesisOutput,
-  isPersonResearchEntityType,
+  isNonLabPersonScopedEntityType,
   isSynthesisCandidate,
   projectSynthesisCost,
   synthesisGroundingScore,
@@ -44,12 +44,12 @@ describe('isSynthesisCandidate', () => {
 
 describe('synthesisSystemPromptFor', () => {
   it('classifies person and home entity types', () => {
-    expect(isPersonResearchEntityType('FACULTY_RESEARCH_AREA')).toBe(true);
-    expect(isPersonResearchEntityType('faculty_project')).toBe(true);
-    expect(isPersonResearchEntityType('INDIVIDUAL_RESEARCH')).toBe(true);
-    expect(isPersonResearchEntityType('LAB')).toBe(false);
-    expect(isPersonResearchEntityType('CENTER')).toBe(false);
-    expect(isPersonResearchEntityType(undefined)).toBe(false);
+    expect(isNonLabPersonScopedEntityType('FACULTY_RESEARCH_AREA')).toBe(true);
+    expect(isNonLabPersonScopedEntityType('faculty_project')).toBe(true);
+    expect(isNonLabPersonScopedEntityType('INDIVIDUAL_RESEARCH')).toBe(true);
+    expect(isNonLabPersonScopedEntityType('LAB')).toBe(false);
+    expect(isNonLabPersonScopedEntityType('CENTER')).toBe(false);
+    expect(isNonLabPersonScopedEntityType(undefined)).toBe(false);
   });
 
   it('directs person entities to describe the researcher, not the lab', () => {

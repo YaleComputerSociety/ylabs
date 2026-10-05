@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   givenNamesAgree,
+  givenNamesCouldNameOnePerson,
   givenNamesEquivalent,
   givenNameTokensAgree,
   givenNameVariants,
@@ -97,6 +98,34 @@ describe('surnameFetchRegex', () => {
   it('returns null when there is no usable surname token', () => {
     expect(surnameFetchRegex('')).toBeNull();
   });
+
+  it('matches the stored spelling of an accented surname, not only its folded form', () => {
+    const re = surnameFetchRegex('Varénkov')!;
+    expect(re.test('Lucía Varénkov')).toBe(true);
+    expect(re.test('Lucia Varenkov')).toBe(true);
+    expect(re.test('LUCÍA VARÉNKOV')).toBe(true);
+    expect(re.test('Lucía Ovarénkov')).toBe(false);
+  });
+
+  it('matches a surname a dotless i or cedilla spells', () => {
+    expect(surnameFetchRegex('Kıraçel')!.test('Pelin Kıraçel')).toBe(true);
+  });
+
+  it('matches every letter the surname fold strips, including extended blocks', () => {
+    for (const stored of ['Quoc Ngưyễnov', 'Mara Ștelțar', 'Lin Zhǎngrǔ', 'Ada Ḩalẓorn']) {
+      const surname = stored.split(' ')[1];
+      expect(surnameFetchRegex(surname)!.test(stored)).toBe(true);
+      expect(surnameFetchRegex(surname)!.test(stored.normalize('NFD'))).toBe(true);
+      expect(surnameFetchRegex(surname.normalize('NFKD'))!.test(stored)).toBe(true);
+    }
+  });
+
+  it('reads an apostrophe as a surname boundary on the stored name', () => {
+    const re = surnameFetchRegex("D'Arvellin")!;
+    expect(re.test("Tomas D'Arvellin")).toBe(true);
+    expect(re.test('Tomas D\u2019Arvellin')).toBe(true);
+    expect(re.test('Tomas Marvellin')).toBe(false);
+  });
 });
 
 describe('surnamesCompatible', () => {
@@ -191,5 +220,20 @@ describe('givenNamesAgree', () => {
   it('refuses two genuinely different given names in neither table', () => {
     expect(givenNamesAgree('haiqun', 'hung')).toBe(false);
     expect(givenNamesAgree('amy', 'amelia')).toBe(false);
+  });
+});
+
+describe('givenNamesCouldNameOnePerson (#4388)', () => {
+  it('keeps a pair possibly one person on an initial, a prefix, a nickname or a missing name', () => {
+    expect(givenNamesCouldNameOnePerson('Ada', 'A.')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Chris', 'Christopher')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Bob', 'Robert')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Ada', '')).toBe(true);
+    expect(givenNamesCouldNameOnePerson('Mary Ada', 'Ada')).toBe(true);
+  });
+
+  it('reads two unrelated given names as two people', () => {
+    expect(givenNamesCouldNameOnePerson('Ada', 'Byron')).toBe(false);
+    expect(givenNamesCouldNameOnePerson('Mara', 'Jonas')).toBe(false);
   });
 });

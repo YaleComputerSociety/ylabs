@@ -51,6 +51,8 @@ export interface DetailSourceLinkHealth {
   healthStatus?: string;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
+  httpsLandingUrl?: string;
 }
 
 export interface DetailSourceFieldContribution {
@@ -490,23 +492,31 @@ const isMoreCanonicalSourceUrl = (candidate: string, current: string): boolean =
 const ORG_ENGAGEMENT_PATH =
   /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|involvement|participate|membership|become[-_]a[-_]member|connect|contact(?:[-_]us)?|volunteer|opportunities)([-/]|$)/i;
 
-export const isOrgEngagementSourceUrl = (url?: string | null): boolean => {
+const APPLY_OR_JOIN_PATH =
+  /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member)([-/]|$)/i;
+
+const sourcePathMatches = (url: string | null | undefined, pattern: RegExp): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
   if (isProfileLikeSourceUrl(normalized)) return false;
 
   try {
     const path = new URL(normalized).pathname.toLowerCase().replace(/\/+$/, '');
-    return ORG_ENGAGEMENT_PATH.test(path);
+    return pattern.test(path);
   } catch {
     return false;
   }
 };
 
-// Mirrors `PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES` in
-// server/src/utils/researchHomeWebsiteUrl.ts, including the two retired types that
-// persist on rows `research-entity:consolidate-faculty-type` has not reached;
-// changing the arms there requires updating this copy.
+export const isOrgEngagementSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, ORG_ENGAGEMENT_PATH);
+
+const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, APPLY_OR_JOIN_PATH);
+
+// Mirrors `PERSON_SCOPED_RESEARCH_ENTITY_TYPES` in
+// server/src/models/storedVocabularies.ts, including the retired types a stored
+// row may still carry; changing the arms there requires updating this copy.
 const PERSON_SCOPED_CITING_ENTITY_TYPES = new Set([
   'LAB',
   'FACULTY_RESEARCH_AREA',
@@ -777,14 +787,14 @@ export const isMapOrPublicityPageSourceUrl = (url?: string | null): boolean => {
 
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
-export const resolveOutreachOfficialSource = (
+const eligibleOutreachSources = (
   sources: ResearchDetailSource[],
   claimedActionUrls: Array<string | undefined>,
   leadIdentityUnderReview: boolean,
   entityType?: string,
   rankingContext: PersonProfileRankingContext = {},
   leadPersonNames: readonly string[] = [],
-): ResearchDetailSource | undefined => {
+): ResearchDetailSource[] => {
   /**
    * `actionDedupeKey` rather than `normalizeActionDestination`: the latter compares
    * host plus path, so `/bbs/profile/<slug>` and `/profile/<slug>` on one host read
@@ -804,7 +814,7 @@ export const resolveOutreachOfficialSource = (
         isRosterNestedPersonPageUrl(url)),
   );
 
-  const eligible = sources.filter((source) => {
+  return sources.filter((source) => {
     /**
      * An attribution-only row is in the list because a contribution named it, not because
      * `sourceUrls` records it as a page this research offers. Promoting one here would turn
@@ -816,7 +826,7 @@ export const resolveOutreachOfficialSource = (
     if (source.isPrivateNetworkOnly) return false;
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
-    if (isNonContactableDocumentSourceUrl(source.url)) return false;
+    if (isSuppressedResearchWebsiteCtaUrl(source.url)) return false;
     if (leadIdentityUnderReview && isPersonPageSourceUrl(source.url, leadPersonNames)) return false;
     /**
      * The headline action makes the same claim the suppressed `websiteUrl` made: that
@@ -848,7 +858,61 @@ export const resolveOutreachOfficialSource = (
     const destination = actionDedupeKey(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);
   });
+};
 
+/**
+ * A page whose path says it is how to join or get involved, which the detail page
+ * offers as the place to apply. Screened exactly like the official-page slot, but
+ * chosen for its kind rather than its rank, so it never displaces that slot's pick.
+ */
+export const vettedJoinPageUrls = (
+  accessSignals: ReadonlyArray<{ signalType?: unknown; sourceUrl?: unknown }> = [],
+): string[] =>
+  accessSignals
+    .filter((signal) => signal?.signalType === 'APPLICATION_FORM_EXISTS')
+    .map((signal) => (typeof signal.sourceUrl === 'string' ? signal.sourceUrl : ''))
+    .filter(Boolean);
+
+export const resolveOutreachApplySource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
+  entityType?: string,
+  rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
+  joinPageUrls: readonly string[] = [],
+): ResearchDetailSource | undefined => {
+  const eligible = eligibleOutreachSources(
+    sources,
+    claimedActionUrls,
+    leadIdentityUnderReview,
+    entityType,
+    rankingContext,
+    leadPersonNames,
+  );
+  const vetted = new Set(joinPageUrls.map((url) => actionDedupeKey(url)).filter(Boolean));
+  return (
+    eligible.find((source) => vetted.has(actionDedupeKey(source.url))) ||
+    eligible.find((source) => isApplyOrJoinSourceUrl(source.url))
+  );
+};
+
+export const resolveOutreachOfficialSource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
+  entityType?: string,
+  rankingContext: PersonProfileRankingContext = {},
+  leadPersonNames: readonly string[] = [],
+): ResearchDetailSource | undefined => {
+  const eligible = eligibleOutreachSources(
+    sources,
+    claimedActionUrls,
+    leadIdentityUnderReview,
+    entityType,
+    rankingContext,
+    leadPersonNames,
+  );
   if (eligible.length === 0) return undefined;
 
   if (entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entityType)) {
@@ -1015,33 +1079,116 @@ export const isBoilerplatePlatformSourceUrl = (url?: string | null): boolean => 
   }
 };
 
+const DEPARTMENT_DEGREE_PROGRAM_PATH =
+  /^(?:\/academics)?\/(?:undergraduates?|undergraduate[-_](?:program|studies|major)s?|graduate[-_](?:program|studies)s?|graduates?)$/i;
+
+/**
+ * A department's degree-program landing page describes a curriculum, not any one
+ * research group, so it is never this research's website. Only the landing page
+ * matches: a page beneath it, such as an undergraduate research or assistantship
+ * page, can be a real way in and is left alone.
+ */
+export const isDepartmentDegreeProgramPageUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const path = new URL(normalized).pathname.replace(/\/+$/, '');
+    return DEPARTMENT_DEGREE_PROGRAM_PATH.test(path);
+  } catch {
+    return false;
+  }
+};
+
 export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean =>
   isFacetedOrSectionIndexSourceUrl(url) ||
+  isDepartmentDegreeProgramPageUrl(url) ||
   isBoilerplatePlatformSourceUrl(url) ||
   isDirectoryRosterRootUrl(url) ||
   isNonContactableDocumentSourceUrl(url) ||
   isFileShareSourceUrl(url);
 
+const VOUCHES_FOR_REACHABILITY = new Set<string>(['HEALTHY', 'REDIRECTED']);
+
+const urlScheme = (url?: string | null): string | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+  try {
+    return new URL(normalized).protocol;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The stored verdict for one URL. Mirrors `findSourceLinkHealth` on the server: a
+ * same-scheme verdict wins, and otherwise the other spelling's verdict stands in,
+ * except that a plain-HTTP verdict saying the link works never speaks for an `https:`
+ * URL, because HTTP answering says nothing about whether the certificate verifies
+ * (#4080). Changing the rule here requires changing the server copy.
+ */
+export const findSourceLinkHealthEntry = (
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+  url?: string | null,
+): DetailSourceLinkHealth | undefined => {
+  const key = sourceLedgerKey(url);
+  if (!key) return undefined;
+  const sameResource = sourceLinkHealth.filter((entry) => sourceLedgerKey(entry.url) === key);
+  const scheme = urlScheme(url);
+  return (
+    sameResource.find((entry) => urlScheme(entry.url) === scheme) ??
+    sameResource.find(
+      (entry) => scheme !== 'https:' || !VOUCHES_FOR_REACHABILITY.has(String(entry.healthStatus)),
+    )
+  );
+};
+
+/**
+ * The spelling of a research website a student should be sent to. When the `https:`
+ * spelling fails certificate verification and its plain-HTTP spelling is verified
+ * reachable, the working spelling is offered, so a click lands on the page instead of
+ * a browser security warning. When a plain-HTTP website is verified reachable and its
+ * own host redirected it to the same page over `https:`, that landing is offered
+ * (#4649). Otherwise the stored URL is returned unchanged.
+ */
+export const servedResearchWebsiteUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): string | undefined => {
+  if (!url) return undefined;
+  const normalized = normalizeSourceUrl(url);
+  if (normalized && urlScheme(normalized) === 'http:') {
+    const plainHealth = findSourceLinkHealthEntry(sourceLinkHealth, normalized);
+    const landing = plainHealth?.httpsLandingUrl;
+    return plainHealth?.healthStatus === 'HEALTHY' &&
+      urlScheme(plainHealth.url) === 'http:' &&
+      landing &&
+      urlScheme(landing) === 'https:'
+      ? landing
+      : url;
+  }
+  if (!normalized || urlScheme(normalized) !== 'https:') return url;
+  if (findSourceLinkHealthEntry(sourceLinkHealth, normalized)?.tlsVerificationFailed !== true)
+    return url;
+  const plain = new URL(normalized);
+  plain.protocol = 'http:';
+  const plainUrl = plain.toString();
+  const plainHealth = sourceLinkHealth.find(
+    (entry) =>
+      urlScheme(entry.url) === 'http:' && sourceLedgerKey(entry.url) === sourceLedgerKey(plainUrl),
+  );
+  return plainHealth?.healthStatus === 'HEALTHY' && plainHealth.url ? plainHealth.url : url;
+};
+
 export const isUnavailableResearchWebsiteCtaUrl = (
   url: string | null | undefined,
   sourceLinkHealth: DetailSourceLinkHealth[] = [],
-): boolean => {
-  const key = sourceLedgerKey(url);
-  if (!key) return false;
-  const health = sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key);
-  return isLikelyUnavailableSourceLink(health);
-};
+): boolean => isLikelyUnavailableSourceLink(findSourceLinkHealthEntry(sourceLinkHealth, url));
 
 export const isPrivateNetworkOnlyResearchWebsiteCtaUrl = (
   url: string | null | undefined,
   sourceLinkHealth: DetailSourceLinkHealth[] = [],
-): boolean => {
-  const key = sourceLedgerKey(url);
-  if (!key) return false;
-  return isPrivateNetworkOnlySourceLink(
-    sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key),
-  );
-};
+): boolean => isPrivateNetworkOnlySourceLink(findSourceLinkHealthEntry(sourceLinkHealth, url));
 
 /**
  * Whether the research-website CTA must not offer this URL as an ordinary link,
@@ -1165,18 +1312,6 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const healthByLedgerKey = new Map<string, DetailSourceLinkHealth>();
-
-  sourceLinkHealth.forEach((entry) => {
-    const key = sourceLedgerKey(entry.url);
-    if (!key) return;
-    healthByLedgerKey.set(key, {
-      healthStatus: entry.healthStatus,
-      httpStatusCode: entry.httpStatusCode,
-      privateAddressHost: entry.privateAddressHost,
-    });
-  });
-
   const contextsFor = (normalizedUrl: string, context: string): string[] => {
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
     const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
@@ -1262,7 +1397,7 @@ export const buildResearchDetailSources = ({
 
   const withHealth = Array.from(sources.values())
     .map((source) => {
-      const health = healthByLedgerKey.get(sourceLedgerKey(source.url) || '');
+      const health = findSourceLinkHealthEntry(sourceLinkHealth, source.url);
       return {
         ...source,
         ...(health?.healthStatus ? { healthStatus: health.healthStatus } : {}),

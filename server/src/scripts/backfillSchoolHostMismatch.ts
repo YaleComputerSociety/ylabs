@@ -10,7 +10,11 @@ import {
 } from './orgUnitSchoolAssertion';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -23,7 +27,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface SchoolHostMismatchCliOptions {
   dryRun: boolean;
@@ -75,6 +79,8 @@ export interface SchoolHostMismatchResult {
   mode: 'dry-run' | 'apply';
   summary: SchoolHostMismatchSummary;
   changes: SchoolHostMismatchPlanRow[];
+  indexResynced: number;
+  indexSyncFailures: number;
 }
 
 export async function runSchoolHostMismatchBackfill(options: {
@@ -96,14 +102,15 @@ export async function runSchoolHostMismatchBackfill(options: {
   if (options.limit) query.limit(options.limit);
   const entities = await query.lean();
 
-  const rows: SchoolHostMismatchPlanRow[] = [];
+  const plans: Array<SchoolHostMismatchPlanRow | null> = [];
   for (const entity of entities) {
-    const row = await planSchoolHostMismatchRow({ id: String(entity._id), ...entity });
-    if (row) rows.push(row);
+    plans.push(await planSchoolHostMismatchRow({ id: String(entity._id), ...entity }));
   }
+  const rows = plans.filter((row): row is SchoolHostMismatchPlanRow => row !== null);
 
   let schoolAssertionsRecorded = 0;
   const schoolAssertionsSkipped: Record<string, number> = {};
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (!options.dryRun && rows.length > 0) {
     // Evidence first, then the eager projection. The observation is what makes the value
     // survive a re-projection; the `$set` is what makes the row serve it this pass.
@@ -129,15 +136,18 @@ export async function runSchoolHostMismatchBackfill(options: {
     const updatedDocs = await ResearchEntity.find({
       _id: { $in: rows.map((row) => row.id) },
     }).lean();
-    await syncEntities('researchEntity', updatedDocs);
+    indexSync = await syncResearchEntitiesWithOutcome(updatedDocs);
   }
 
   return {
     schoolAssertionsRecorded,
     schoolAssertionsSkipped,
     mode: options.dryRun ? 'dry-run' : 'apply',
-    summary: summarizeSchoolHostMismatch(rows),
+    summary: summarizeSchoolHostMismatch(plans),
     changes: rows,
+
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
   };
 }
 

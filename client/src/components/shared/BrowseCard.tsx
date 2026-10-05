@@ -10,6 +10,7 @@ import {
   getItemSubtitleColor,
   getDaysUntilDeadline,
   getItemCardSummary,
+  getItemStatusBadge,
   FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
@@ -18,7 +19,14 @@ import FavoriteButton from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
-import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { programCardFacts } from '../../utils/programBoard';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  departmentResearchGuidanceHref,
+  isDepartmentResearchGuidance,
+} from '../../utils/programJourney';
+import { trackResearchEvent } from '../../utils/researchAnalytics';
+import { EditIcon, ExternalLinkIcon } from './icons';
 
 const ICON_BUTTON_SIZE = 44;
 const ICON_BUTTON_GAP = 4;
@@ -54,10 +62,13 @@ const BrowseCard = React.memo(
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
-    const fellowshipCycleStatus =
-      item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
+    const statusBadge = getItemStatusBadge(item);
+    const guidanceHref = isDepartmentResearchGuidance(item.data)
+      ? departmentResearchGuidanceHref(item.data)
+      : undefined;
     const fellowshipNextStep =
       item.type === 'fellowship' ? item.data.bestNextStep?.trim() || null : null;
+    const fellowshipFacts = item.type === 'fellowship' ? programCardFacts(item.data) : [];
 
     const isAudited = isAdmin && item.data.audited;
 
@@ -80,15 +91,17 @@ const BrowseCard = React.memo(
 
     return (
       <div
-        className={`yr-card-interactive group relative rounded-card ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col`}
-        onClick={item.type === 'fellowship' ? undefined : handleClick}
+        className={`yr-card-interactive group relative rounded-card ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} overflow-hidden h-full flex flex-col`}
       >
         {showUrgentBanner && daysUntil !== null && (
           <UrgentBadge daysUntil={daysUntil} variant="banner" />
         )}
 
-        <div className="p-5 flex-1 flex flex-col">
-          <div className="absolute top-2 right-2 flex items-center gap-1 z-10 flex-shrink-0">
+        {/* Zero-height anchor: the icon cluster must hang below the urgency banner
+            rather than straddle it, and the card root must stay the containing block
+            for the whole-card click overlay on "View details". */}
+        <div className="relative z-10">
+          <div className="absolute top-2 right-2 flex items-center gap-1 flex-shrink-0">
             {isAdmin && onAdminEdit && (
               <button
                 onClick={(e) => {
@@ -99,40 +112,26 @@ const BrowseCard = React.memo(
                 aria-label="Admin edit"
                 title={`Edit ${item.type} (Admin)`}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
+                <EditIcon size={14} />
               </button>
             )}
             {onToggleFavorite && (
               <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
             )}
           </div>
+        </div>
 
+        <div className="p-5 flex-1 flex flex-col">
           <>
             <div
               className="mb-2 flex flex-col items-start gap-1"
               style={{ paddingRight: iconClusterClearance }}
             >
-              {fellowshipCycleStatus && (
-                <span
-                  className={`whitespace-nowrap rounded-card px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
-                >
-                  {fellowshipCycleStatus.label}
-                </span>
-              )}
+              <span
+                className={`whitespace-nowrap rounded-card px-1.5 py-0.5 text-xs font-semibold ${statusBadge.className}`}
+              >
+                {statusBadge.label}
+              </span>
               {subtitle && (
                 <span className={`text-sm font-semibold leading-snug ${subtitleColor}`}>
                   {subtitle}
@@ -140,14 +139,14 @@ const BrowseCard = React.memo(
               )}
             </div>
 
-            <h3 className="mb-2 text-base font-bold leading-tight text-ink">
+            <h3 className="mb-2 text-base font-semibold leading-tight text-ink">
               <button
                 type="button"
                 onClick={handleClick}
-                className="yr-focus-ring line-clamp-2 text-left hover:text-brand focus-visible:rounded-control"
+                className="yr-focus-ring relative z-[1] -my-3 min-h-11 py-3 text-left hover:text-brand focus-visible:rounded-control"
                 aria-label={`View details for ${item.data.title}`}
               >
-                {item.data.title}
+                <span className="line-clamp-2">{item.data.title}</span>
               </button>
             </h3>
 
@@ -155,6 +154,14 @@ const BrowseCard = React.memo(
               <p className={`text-sm text-muted mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                 {getItemCardSummary(item)}
               </p>
+            )}
+
+            {fellowshipFacts.length > 0 && !isCompact && (
+              <ul className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-medium leading-snug text-ink-soft">
+                {fellowshipFacts.map((fact) => (
+                  <li key={fact}>{fact}</li>
+                ))}
+              </ul>
             )}
 
             {fellowshipNextStep && !isCompact && (
@@ -185,14 +192,35 @@ const BrowseCard = React.memo(
               ) : (
                 <span />
               )}
-              <button
-                type="button"
-                onClick={handleClick}
-                className="yr-focus-ring inline-flex flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-              >
-                View details
-                <ArrowRightIcon />
-              </button>
+              {guidanceHref ? (
+                <a
+                  href={guidanceHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    trackView();
+                    void trackResearchEvent({
+                      eventType: 'source_link_click',
+                      entityType: 'fellowship',
+                      entityId: item.data.id,
+                      payload: { sourceCategory: 'external', url: guidanceHref },
+                    });
+                  }}
+                  className="yr-focus-ring -my-3 ml-auto inline-flex min-h-11 min-w-0 items-center gap-1 rounded-control text-right text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
+                >
+                  {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                  <ExternalLinkIcon size={14} />
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="yr-focus-ring -my-3 inline-flex min-h-11 flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
+                >
+                  View details
+                  <ArrowRightIcon />
+                </button>
+              )}
             </div>
           </>
         </div>

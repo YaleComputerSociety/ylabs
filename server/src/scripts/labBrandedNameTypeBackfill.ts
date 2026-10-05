@@ -11,7 +11,12 @@ import {
   materializeEntity,
 } from '../scrapers/entityMaterializer';
 import { buildObservationFingerprint, retireObservations } from '../scrapers/observationStore';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  addIndexSyncOutcomes,
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isPersonProfileOrDirectoryUrl } from '../utils/researchHomeWebsiteUrl';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -27,7 +32,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:backfill-lab-branded-name-type';
 
@@ -186,8 +191,10 @@ async function retractUnevidencedBrands(
   brandAssertionsRetracted: number;
   brandRetractionsLocked: number;
   namesRematerialized: Array<{ slug: string; name: string }>;
+  indexSync: IndexSyncOutcome;
 }> {
   const namesRematerialized: Array<{ slug: string; name: string }> = [];
+  let indexSync = NO_INDEX_SYNC;
   let brandAssertionsRetracted = 0;
   let brandRetractionsLocked = 0;
   for (const row of retractable) {
@@ -204,7 +211,7 @@ async function retractUnevidencedBrands(
       field: { $in: [...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS] },
       value: row.brandedName,
       superseded: { $ne: true },
-      $or: [{ entityId: entity._id }, { entityKey: row.slug }],
+      $or: [{ entityId: entity._id as mongoose.Types.ObjectId }, { entityKey: row.slug }],
     })
       .select('_id sourceUrl')
       .lean<Array<{ _id: unknown; sourceUrl?: unknown }>>();
@@ -225,10 +232,10 @@ async function retractUnevidencedBrands(
     );
     const fresh = await ResearchEntity.findOne({ slug: row.slug }).lean<Record<string, unknown>>();
     if (!fresh) continue;
-    await syncEntities('researchEntity', [fresh] as never[]);
+    indexSync = addIndexSyncOutcomes(indexSync, await syncResearchEntitiesWithOutcome([fresh]));
     namesRematerialized.push({ slug: row.slug, name: String(fresh.name ?? '') });
   }
-  return { brandAssertionsRetracted, brandRetractionsLocked, namesRematerialized };
+  return { brandAssertionsRetracted, brandRetractionsLocked, namesRematerialized, indexSync };
 }
 
 export interface LabBrandedNameTypeResult {
@@ -242,6 +249,7 @@ export interface LabBrandedNameTypeResult {
   brandRetractionsLocked: number;
   namesRematerialized: Array<{ slug: string; name: string }>;
   synced: number;
+  indexSyncFailures: number;
   rows: LabBrandedNameTypePlanRow[];
 }
 
@@ -284,6 +292,7 @@ export async function runLabBrandedNameTypeBackfill(options: {
     brandRetractionsLocked: 0,
     namesRematerialized: [],
     synced: 0,
+    indexSyncFailures: 0,
     rows,
   };
   if (options.dryRun) return result;
@@ -292,6 +301,8 @@ export async function runLabBrandedNameTypeBackfill(options: {
   result.brandAssertionsRetracted = retracted.brandAssertionsRetracted;
   result.brandRetractionsLocked = retracted.brandRetractionsLocked;
   result.namesRematerialized = retracted.namesRematerialized;
+  result.synced = retracted.indexSync.resynced;
+  result.indexSyncFailures = retracted.indexSync.indexSyncFailures;
   if (planned.length === 0) return result;
 
   const docs = planned.flatMap((row) => {
@@ -346,8 +357,9 @@ export async function runLabBrandedNameTypeBackfill(options: {
   ).length;
 
   const fresh = await ResearchEntity.find({ slug: { $in: planned.map((row) => row.slug) } }).lean();
-  await syncEntities('researchEntity', fresh as never[]);
-  result.synced = fresh.length;
+  const indexSync = await syncResearchEntitiesWithOutcome(fresh);
+  result.synced += indexSync.resynced;
+  result.indexSyncFailures += indexSync.indexSyncFailures;
   return result;
 }
 

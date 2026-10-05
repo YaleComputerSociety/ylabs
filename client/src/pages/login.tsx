@@ -9,13 +9,14 @@ import UserContext from '../contexts/UserContext';
 import { Navigate, useLocation } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import Wordmark from '../components/Wordmark';
+import { normalizeReturnPath } from '../utils/returnPath';
 
 const Login = () => {
   const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
   useDocumentTitle('Sign in');
   const location = useLocation();
-  const locationState = location.state as { from?: string } | null;
-  const returnPath = locationState?.from || '';
+  const locationState = location.state as { from?: unknown } | null;
+  const returnPath = normalizeReturnPath(locationState?.from);
   const destination = (() => {
     if (returnPath.startsWith('/research') || returnPath.startsWith('/listings')) {
       return {
@@ -49,6 +50,9 @@ const Login = () => {
   })();
 
   const getRedirectPath = () => {
+    if (returnPath) {
+      return returnPath;
+    }
     if (user?.userType === 'professor') {
       return '/dashboard';
     }
@@ -57,7 +61,7 @@ const Login = () => {
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
-      <div className="mx-auto grid w-full max-w-6xl items-start gap-8 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[minmax(0,1fr)_390px] lg:pt-24">
+      <div className="mx-auto grid grid-cols-1 w-full max-w-6xl items-start gap-8 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[minmax(0,1fr)_390px] lg:pt-24">
         <section className="mx-auto max-w-2xl text-center lg:mx-0 lg:text-left">
           <div className="flex items-center justify-center gap-3 lg:justify-start">
             <img
@@ -68,14 +72,14 @@ const Login = () => {
             <Wordmark className="text-4xl text-[var(--yr-blue)] sm:text-5xl" />
           </div>
           <p className="yr-kicker mt-8">Source-backed discovery</p>
-          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-ink sm:text-5xl">
+          <h1 className="yr-display mt-3 text-3xl font-semibold leading-tight text-ink sm:text-5xl sm:leading-none">
             Find a credible path into research at Yale
           </h1>
-          <p className="mt-4 text-base leading-relaxed text-ink-soft sm:text-lg">
+          <p className="mt-4 text-base leading-relaxed text-ink-soft sm:text-lg sm:leading-7">
             Search by idea, method, professor, or pathway. y/labs maps undergraduate curiosity to
             research at Yale, and surfaces signals pointing you to more information.
           </p>
-          <div className="mt-6 grid gap-2 text-left sm:grid-cols-3">
+          <div className="mt-6 grid grid-cols-1 gap-2 text-left sm:grid-cols-3">
             {['Research directory', 'Signals', 'Official sources'].map((item) => (
               <div key={item} className="yr-card rounded-card px-3 py-3">
                 <p className="text-sm font-semibold text-ink">{item}</p>
@@ -113,7 +117,7 @@ const Login = () => {
           )}
           <div className="mt-5 flex min-h-[44px] items-center">
             {isLoading ? (
-              <PulseLoader color="#00356b" size={10} />
+              <PulseLoader color="var(--yr-blue)" size={10} />
             ) : isAuthenticated ? (
               <Navigate to={getRedirectPath()} replace />
             ) : (

@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { warmResearchSearchSpellingVocabulary } from '../../services/researchSearchSpellingVocabulary';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,25 +8,109 @@ import { initializeConnections } from '../../db/connections';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './journeyEvalCases';
-import { summarizeInvariants, type InvariantResult, type RateResult } from './journeyEvalMetrics';
+import { programJourneyCases } from './journeyEvalProgramCases';
+import { fellowshipJourneyCases } from './journeyEvalFellowshipCases';
+import { buildProgramJourneyContext } from './programJourneyContext';
+import {
+  parseTopicQueryJudgements,
+  parseUndergradEvidenceJudgements,
+  type TopicQueryJudgement,
+  type UndergradEvidenceJudgementSet,
+} from './journeyEvalJudgements';
+import {
+  summarizeInvariants,
+  type InvariantResult,
+  type RateResult,
+  type SurvivorWebsiteObservation,
+} from './journeyEvalMetrics';
+import { Observation } from '../../models/observation';
+import { readIndexedFieldByDocumentId } from '../../services/meiliSyncService';
+import {
+  materializationReadScopeFilter,
+  mergedSurvivorEvidence,
+} from '../../scrapers/entityMaterializer';
+import {
+  invalidatedScrapeRunIds,
+  partitionObservationsByInvalidatedRun,
+} from '../../scrapers/invalidatedScrapeRuns';
+import {
+  websiteIdentitiesStatedBy,
+  websiteIdentity,
+} from '../../scrapers/survivorOwnedWebsiteClear';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
 const RESEARCH_ENTITY_COLLECTION = 'research_entities';
+const SERVED_TIER = 'student_ready';
+const RESEARCH_SURFACE = 'research';
+const DEFAULT_JUDGEMENTS_PATH = path.resolve(__dirname, 'topicQueryJudgements.json');
+
+function loadTopicQueryJudgements(explicitPath?: string): TopicQueryJudgement[] | null {
+  const judgementsPath = explicitPath ?? DEFAULT_JUDGEMENTS_PATH;
+  if (!fs.existsSync(judgementsPath)) {
+    console.error(`No judgements file at ${judgementsPath}, so the relevance case is inconclusive`);
+    return null;
+  }
+  return parseTopicQueryJudgements(JSON.parse(fs.readFileSync(judgementsPath, 'utf8'))).queries;
+}
+
+function loadUndergradEvidenceJudgements(
+  explicitPath?: string,
+): UndergradEvidenceJudgementSet | null {
+  if (!explicitPath) return null;
+  if (!fs.existsSync(explicitPath)) {
+    console.error(`No judgements file at ${explicitPath}, so the precision case is inconclusive`);
+    return null;
+  }
+  return parseUndergradEvidenceJudgements(JSON.parse(fs.readFileSync(explicitPath, 'utf8')));
+}
+
+export function resolveUndergradSampleOutPath(value: string): string {
+  const samplePath = resolveSafeJsonReportOutputPath(value, '--undergrad-sample-out');
+  if (fs.existsSync(samplePath))
+    throw new Error(
+      `--undergrad-sample-out already exists at ${samplePath}, and a sample file may carry hand-entered verdicts, so choose a new path`,
+    );
+  return samplePath;
+}
+
+export function writeUndergradSampleTemplate(
+  samplePath: string,
+  sample: UndergradEvidenceJudgementSet,
+): string {
+  fs.writeFileSync(samplePath, JSON.stringify(sample, null, 2), { flag: 'wx' });
+  return samplePath;
+}
+
+const DEFAULT_UNDERGRAD_SAMPLE_SEED = '3569';
+const DEFAULT_UNDERGRAD_SAMPLE_SIZE = 50;
 
 interface JourneyEvalArgs {
   window: number;
   facetValues: number;
   pages: number;
   cases?: string[];
+  failOnInconclusive?: boolean;
+  judgements?: string;
+  undergradJudgements?: string;
+  undergradSampleOut?: string;
+  undergradSampleSeed: string;
+  undergradSampleSize: number;
   output?: string;
 }
 
 function parseArgs(argv: string[]): JourneyEvalArgs {
-  const args: JourneyEvalArgs = { window: 100, facetValues: 3, pages: 3 };
-  for (const token of argv) {
+  const args: JourneyEvalArgs = {
+    window: 100,
+    facetValues: 3,
+    pages: 3,
+    undergradSampleSeed: DEFAULT_UNDERGRAD_SAMPLE_SEED,
+    undergradSampleSize: DEFAULT_UNDERGRAD_SAMPLE_SIZE,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
     if (token.startsWith('--window=')) args.window = Number(token.slice('--window='.length));
     else if (token.startsWith('--facet-values='))
       args.facetValues = Number(token.slice('--facet-values='.length));
@@ -36,18 +121,81 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean);
+    else if (token.startsWith('--judgements='))
+      args.judgements = token.slice('--judgements='.length);
+    else if (token.startsWith('--judgments=')) args.judgements = token.slice('--judgments='.length);
+    else if (token.startsWith('--undergrad-judgements='))
+      args.undergradJudgements = token.slice('--undergrad-judgements='.length);
+    else if (token.startsWith('--undergrad-sample-out='))
+      args.undergradSampleOut = token.slice('--undergrad-sample-out='.length);
+    else if (token.startsWith('--undergrad-sample-seed='))
+      args.undergradSampleSeed = token.slice('--undergrad-sample-seed='.length);
+    else if (token.startsWith('--undergrad-sample-size='))
+      args.undergradSampleSize = Number(token.slice('--undergrad-sample-size='.length));
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
+    else if (token === '--output') args.output = argv[++index];
+    else if (token === '--fail-on-inconclusive') args.failOnInconclusive = true;
   }
   return args;
 }
 
+async function readOwnedSlotSurvivorWebsite(
+  survivor: Record<string, unknown>,
+  readServedWebsiteUrl: (slug: string) => Promise<unknown>,
+  invalidatedRunIds: string[],
+): Promise<SurvivorWebsiteObservation | null> {
+  const slug = String(survivor.slug);
+  const { kept: own } = partitionObservationsByInvalidatedRun(
+    await Observation.find({
+      entityType: 'researchEntity',
+      ...materializationReadScopeFilter(),
+      $or: [{ entityKey: slug }, { entityId: survivor._id as mongoose.Types.ObjectId }],
+    }).lean(),
+    invalidatedRunIds,
+  );
+  const merged = await mergedSurvivorEvidence('researchEntity', survivor, own);
+  if (!merged.survivorLaneOwnsWebsite) return null;
+  const lockedFields = Array.isArray(survivor.manuallyLockedFields)
+    ? (survivor.manuallyLockedFields as string[])
+    : [];
+  return {
+    servedWebsiteIdentity: websiteIdentity(await readServedWebsiteUrl(slug)),
+    websiteLocked: lockedFields.includes('websiteUrl'),
+    survivorStated: websiteIdentitiesStatedBy(own),
+    admittedStated: websiteIdentitiesStatedBy(merged.observations),
+    droppedLoser: new Set(merged.droppedLoserWebsiteValues.map(websiteIdentity).filter(Boolean)),
+  };
+}
+
 async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> {
-  const { searchResearchGroupsViaMeili } = await import('../../services/researchGroupService');
+  const { getResearchGroupDetail, optionalPublicLeadMemberNames, searchResearchGroupsViaMeili } =
+    await import('../../services/researchGroupService');
   const database = mongoose.connection.db;
   if (!database) throw new Error('MongoDB connection is not initialized');
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
 
+  const undergradSamplePath =
+    args.undergradSampleOut !== undefined
+      ? resolveUndergradSampleOutPath(args.undergradSampleOut)
+      : undefined;
+  if (undergradSamplePath !== undefined) {
+    if (!Number.isInteger(args.undergradSampleSize) || args.undergradSampleSize <= 0)
+      throw new Error('--undergrad-sample-size must be a positive integer');
+  }
+
   return {
+    topicQueryJudgements: loadTopicQueryJudgements(args.judgements),
+    undergradEvidenceJudgements: loadUndergradEvidenceJudgements(args.undergradJudgements),
+    ...(undergradSamplePath !== undefined
+      ? {
+          undergradEvidenceSampleRequest: {
+            seed: args.undergradSampleSeed,
+            sampleSize: args.undergradSampleSize,
+            write: async (sample: UndergradEvidenceJudgementSet) =>
+              writeUndergradSampleTemplate(undergradSamplePath, sample),
+          },
+        }
+      : {}),
     window: args.window,
     facetValuesChecked: args.facetValues,
     pagesChecked: args.pages,
@@ -63,6 +211,49 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
     readStoredRows: async (rowKeys: string[]) => {
       const rows = await collection.find({ slug: { $in: rowKeys } }).toArray();
       return new Map(rows.map((row) => [String(row.slug), row as Record<string, unknown>]));
+    },
+    readIndexedSortKeys: async (sortAttribute: string, rowKeys: string[]) => {
+      const [rows, indexedByDocumentId] = await Promise.all([
+        collection.find({ slug: { $in: rowKeys } }, { projection: { slug: 1 } }).toArray(),
+        readIndexedFieldByDocumentId('researchEntity', sortAttribute),
+      ]);
+      return new Map(
+        rows.flatMap((row) => {
+          const documentId = String(row._id);
+          return indexedByDocumentId.has(documentId)
+            ? [[String(row.slug), indexedByDocumentId.get(documentId)] as const]
+            : [];
+        }),
+      );
+    },
+    readLeadMemberNames: (storedRows) => optionalPublicLeadMemberNames(storedRows),
+    readOwnedSlotSurvivorWebsites: async () => {
+      const survivorIds = await collection.distinct('canonicalGroupId', {
+        archived: true,
+        canonicalGroupId: { $ne: null },
+      });
+      const survivors = await collection
+        .find({
+          _id: { $in: survivorIds },
+          archived: { $ne: true },
+          studentVisibilityTier: SERVED_TIER,
+          websiteUrl: { $nin: ['', null] },
+        })
+        .sort({ _id: 1 })
+        .toArray();
+      const readServedWebsiteUrl = async (slug: string) =>
+        (await getResearchGroupDetail(slug))?.researchEntity?.websiteUrl;
+      const invalidatedRunIds = await invalidatedScrapeRunIds();
+      const observations: SurvivorWebsiteObservation[] = [];
+      for (const survivor of survivors) {
+        const observation = await readOwnedSlotSurvivorWebsite(
+          survivor as Record<string, unknown>,
+          readServedWebsiteUrl,
+          invalidatedRunIds,
+        );
+        if (observation) observations.push(observation);
+      }
+      return { survivorsScanned: survivors.length, observations };
     },
     readCorpusFingerprint: async () => {
       const [rowCount, latest] = await Promise.all([
@@ -85,11 +276,28 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await initializeConnections();
+  await warmResearchSearchSpellingVocabulary();
   const context = await buildContext(args);
+  const programContext = await buildProgramJourneyContext({
+    window: args.window,
+    pagesChecked: args.pages,
+    facetValuesChecked: args.facetValues,
+  });
 
-  const selected = args.cases
-    ? journeyCases.filter((journeyCase) => args.cases?.includes(journeyCase.id))
-    : journeyCases;
+  const selected = [
+    ...journeyCases.map((journeyCase) => ({
+      id: journeyCase.id,
+      title: journeyCase.title,
+      surface: RESEARCH_SURFACE,
+      run: () => journeyCase.run(context),
+    })),
+    ...[...programJourneyCases, ...fellowshipJourneyCases].map((journeyCase) => ({
+      id: journeyCase.id,
+      title: journeyCase.title,
+      surface: journeyCase.surface as string,
+      run: () => journeyCase.run(programContext),
+    })),
+  ].filter((journeyCase) => !args.cases || args.cases.includes(journeyCase.id));
   if (selected.length === 0) throw new Error('No journey case matched the requested --case list');
 
   const invariants: InvariantResult[] = [];
@@ -98,12 +306,13 @@ async function main(): Promise<void> {
 
   for (const journeyCase of selected) {
     const startedAt = Date.now();
-    const outcome = await journeyCase.run(context);
+    const outcome = await journeyCase.run();
     invariants.push(...outcome.invariants);
     rates.push(...outcome.rates);
     caseReports.push({
       id: journeyCase.id,
       title: journeyCase.title,
+      surface: journeyCase.surface,
       elapsedMs: Date.now() - startedAt,
       invariants: outcome.invariants,
       rates: outcome.rates,
@@ -133,6 +342,7 @@ async function main(): Promise<void> {
     );
   }
   if (summary.invariantsFailed > 0) process.exitCode = 1;
+  if (args.failOnInconclusive && summary.invariantsInconclusive > 0) process.exitCode = 1;
 }
 
 const isDirectRun = process.argv[1]

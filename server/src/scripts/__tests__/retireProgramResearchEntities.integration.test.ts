@@ -110,14 +110,15 @@ describe('retireProgramResearchEntities with MongoDB', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri('retire_program_entities_test'));
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   let deleteDocuments: ReturnType<typeof vi.fn>;
+  let waitForTask: ReturnType<typeof vi.fn>;
   let getIndex: any;
 
   beforeEach(async () => {
@@ -126,8 +127,9 @@ describe('retireProgramResearchEntities with MongoDB', () => {
     for (const name of ['research_entities', 'fellowships', 'signals']) {
       await db.collection(name).deleteMany({});
     }
-    deleteDocuments = vi.fn().mockResolvedValue(undefined);
-    getIndex = vi.fn().mockResolvedValue({ deleteDocuments });
+    deleteDocuments = vi.fn().mockResolvedValue({ taskUid: 7 });
+    waitForTask = vi.fn().mockResolvedValue({ status: 'succeeded' });
+    getIndex = vi.fn().mockResolvedValue({ deleteDocuments, tasks: { waitForTask } });
   });
 
   const insertProgramEntity = async (overrides: Record<string, unknown>): Promise<void> => {
@@ -245,5 +247,19 @@ describe('retireProgramResearchEntities with MongoDB', () => {
     expect(result.search.requested).toBe(1);
     expect(result.search.deleted).toBe(false);
     expect(result.search.error).toContain('meili unreachable');
+  });
+
+  it('reports an accepted search deletion whose task failed as not deleted (#3720)', async () => {
+    await insertProgramEntity({ slug: 'program-residue-one', name: 'Program Residue One' });
+    waitForTask.mockResolvedValue({ status: 'failed', error: { code: 'internal' } });
+
+    const result = await retireProgramResearchEntities({
+      apply: true,
+      confirmProgramEntityRetirement: true,
+      getIndex,
+    });
+
+    expect(result.search.deleted).toBe(false);
+    expect(result.search.error).toContain('deleteDocuments task 7 did not succeed');
   });
 });

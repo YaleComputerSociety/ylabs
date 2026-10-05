@@ -15,8 +15,15 @@ import {
   parseFraProfileSynthesisArgs,
   profileResearchSentences,
   profileResearchSnippets,
+  profileStatesCareerInsteadOfResearch,
+  readProfileResearchEvidence,
   repairPronounLead,
+  isCareerHistorySentence,
+  isCitationMetadataSentence,
+  isTitleCaseHeading,
+  splitSentences,
 } from '../fraProfileSynthesisCore';
+import { fraProfileSynthesisWithdrawalFreezeReason } from '../fraProfileSynthesisLane';
 import { isCareerFactSentence } from '../../utils/careerBiographyDescription';
 
 const RESEARCH =
@@ -356,7 +363,7 @@ describe('assertFraProfileSynthesisApplyAllowed', () => {
         parseFraProfileSynthesisArgs(['--apply', '--confirm-fra-profile-synthesis']),
         { ...DEVELOPMENT, mongoUrl: 'mongodb://cluster0.example.net/Production' },
       ),
-    ).toThrow(/requires Mongo database "Development"/);
+    ).toThrow(/does not match Mongo database "Production"/);
   });
 
   it('allows a confirmed apply on a renamed development database', () => {
@@ -826,5 +833,151 @@ describe('isCareerFactSentence', () => {
   it('is empty-safe', () => {
     expect(isCareerFactSentence('')).toBe(false);
     expect(isCareerFactSentence(undefined)).toBe(false);
+  });
+});
+
+const CITATION_ONLY =
+  'Comparative transcriptome analysis of stem cell derived lentoid bodies. Example Journal Of Vision Science 2018, 59: 2437-2444.';
+const AUTHOR_LIST =
+  'Monotherapy in acute mania: a randomised placebo-controlled study Quill A, Vale D, Moss A, Reyes R, Marsh R, Carver W. Monotherapy in acute mania: a randomised placebo-controlled study.';
+const PUBLICATION_HEADING =
+  'Effect of a Multifactorial Fall Injury Prevention Intervention on Patient Well-Being: The Example Study.';
+const CAREER_HISTORY_PAGE = [
+  'Jordan Vale was the director of public policy for an example health alliance, where the organization’s advocacy efforts focused on expanding federal support for global vaccine programs.',
+  'Prior to the alliance, Vale was a senior policy officer at an example pediatric foundation, where the work focused on global funding for child health programs.',
+].join(' ');
+
+describe('publication records and career history are not research prose (#4561)', () => {
+  it('refuses a journal citation, an author run and a title-case publication heading', () => {
+    expect(isCitationMetadataSentence(CITATION_ONLY)).toBe(true);
+    expect(isCitationMetadataSentence(AUTHOR_LIST)).toBe(true);
+    expect(isTitleCaseHeading(PUBLICATION_HEADING)).toBe(true);
+    expect(
+      profileResearchSentences(`${CITATION_ONLY} ${AUTHOR_LIST} ${PUBLICATION_HEADING}`),
+    ).toEqual([]);
+  });
+
+  it('keeps a research sentence that names proper nouns among lower-case prose', () => {
+    expect(isTitleCaseHeading(RESEARCH)).toBe(false);
+    expect(isCitationMetadataSentence(RESEARCH)).toBe(false);
+    expect(profileResearchSentences(`${RESEARCH} ${CITATION_ONLY}`)).toEqual([RESEARCH]);
+  });
+
+  it('refuses sentences narrating the posts a person held', () => {
+    const [first, second] = splitSentences(CAREER_HISTORY_PAGE);
+    expect(isCareerHistorySentence(first)).toBe(true);
+    expect(isCareerHistorySentence(second)).toBe(true);
+    expect(profileResearchSentences(CAREER_HISTORY_PAGE)).toEqual([]);
+  });
+
+  it('keeps a career sentence that states research of its own', () => {
+    const sentence =
+      'Before joining the faculty, she was a postdoctoral associate whose research examined how intestinal immune cells restrain inflammation.';
+    expect(isCareerHistorySentence(sentence)).toBe(false);
+  });
+
+  it('does not read a research job title or a quoted course name as a research claim', () => {
+    expect(
+      isCareerHistorySentence(
+        'Vale comes to Yale from an example university, where she was a Senior Research Specialist and developed training programs on workplace safety.',
+      ),
+    ).toBe(true);
+    expect(
+      isCareerHistorySentence(
+        'He previously taught “Legal Research and Writing” at two example law schools and focused on appellate practice.',
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a sentence that names a post held before', () => {
+    for (const sentence of [
+      'Prior to joining Yale, she directed a community clinic serving families across the region.',
+      'Before coming to the school, he spent a decade managing a regional housing nonprofit.',
+      'She was previously at an example foundation, where she led advocacy for child health programs.',
+      'He served as chair of the example department of medicine from 2004 to 2015.',
+      'She served as dean of the example school of nursing for a decade.',
+      'He spent six years working as a special education teacher in an example district.',
+      'She worked for an example health foundation, where she directed its advocacy for child health programs.',
+    ]) {
+      expect(isCareerHistorySentence(sentence), sentence).toBe(true);
+    }
+  });
+
+  it('keeps research findings told with a career adverb or a served-as phrase', () => {
+    for (const sentence of [
+      'Most recently, her group identified a signaling pathway that controls how neurons regenerate after injury.',
+      'She previously showed that loss of the gene disrupts synaptic pruning in the developing cortex.',
+      'The fruit fly served as a model system for tracing how circadian clocks shape behavior.',
+      'Before CRISPR, editing a genome took months of painstaking work in mouse embryos.',
+      'Neurons prune excess synapses before their final connections stabilize in adolescence.',
+      'He has worked for two decades on the genetics of hearing loss in children born preterm.',
+      'She spent several years mapping how gut bacteria shape immune development in preterm infants.',
+      'He is an associate professor of medicine focusing on heart failure outcomes in rural populations.',
+    ]) {
+      expect(isCareerHistorySentence(sentence), sentence).toBe(false);
+    }
+  });
+
+  it('counts the refusals a withdrawal reads', () => {
+    const reading = readProfileResearchEvidence(`${CAREER_HISTORY_PAGE} ${CITATION_ONLY}`);
+    expect(reading.researchSentences).toEqual([]);
+    expect(reading.careerHistorySentences).toBe(2);
+    expect(reading.publicationRecords).toBe(2);
+  });
+});
+
+describe('profileStatesCareerInsteadOfResearch (#4561)', () => {
+  const career = readProfileResearchEvidence(CAREER_HISTORY_PAGE);
+
+  it('holds only when every page carries career prose and no research or publication', () => {
+    expect(profileStatesCareerInsteadOfResearch([career])).toBe(true);
+    expect(profileStatesCareerInsteadOfResearch([career, readProfileResearchEvidence(NAV)])).toBe(
+      true,
+    );
+  });
+
+  it('is not an absence: a page with no prose at all states nothing', () => {
+    expect(profileStatesCareerInsteadOfResearch([readProfileResearchEvidence(NAV)])).toBe(false);
+    expect(profileStatesCareerInsteadOfResearch([])).toBe(false);
+  });
+
+  it('keeps a body any page still supports with research prose', () => {
+    expect(
+      profileStatesCareerInsteadOfResearch([career, readProfileResearchEvidence(RESEARCH)]),
+    ).toBe(false);
+  });
+
+  it('keeps a body a publication feed may support, because the feed cannot name its author', () => {
+    expect(
+      profileStatesCareerInsteadOfResearch([
+        readProfileResearchEvidence(`${CAREER_HISTORY_PAGE} ${CITATION_ONLY}`),
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe('fraProfileSynthesisWithdrawalFreezeReason (#4561)', () => {
+  it('freezes a pass that would withdraw more than half of a large cohort', () => {
+    expect(fraProfileSynthesisWithdrawalFreezeReason(11, 20)).toMatch(/drop guard/);
+    expect(fraProfileSynthesisWithdrawalFreezeReason(10, 20)).toBeUndefined();
+  });
+
+  it('leaves a small cohort to the operator ceiling', () => {
+    expect(fraProfileSynthesisWithdrawalFreezeReason(5, 6)).toBeUndefined();
+    expect(fraProfileSynthesisWithdrawalFreezeReason(5, 6, 4)).toMatch(/--max-withdraw 4/);
+  });
+});
+
+describe('parseFraProfileSynthesisArgs withdrawal flags (#4561)', () => {
+  it('parses --revalidate-only and --max-withdraw', () => {
+    const args = parseFraProfileSynthesisArgs(['--revalidate-only', '--max-withdraw', '3']);
+    expect(args.revalidateOnly).toBe(true);
+    expect(args.maxWithdraw).toBe(3);
+  });
+
+  it('rejects a non-numeric --max-withdraw', () => {
+    expect(() => parseFraProfileSynthesisArgs(['--max-withdraw', 'all'])).toThrow(
+      /non-negative integer/,
+    );
   });
 });

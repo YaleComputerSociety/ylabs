@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
 import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
+import { type HostSlotLimiter, withHostSlot } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { classifyOffCampusAddressing } from '../utils/publicDnsResolution';
 import {
   isDepartmentRosterProvenanceUrl,
   isSharedPeopleRosterUrl,
@@ -10,6 +12,7 @@ import {
   sourceLinkHealthStatuses,
   type SourceLinkHealthStatus,
 } from '../models/storedVocabularies';
+import { TLS_VERIFICATION_ERROR_CODES } from '../utils/tlsVerificationErrors';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -24,6 +27,29 @@ export interface SourceLinkHealth {
    * student cannot open read as a verified way in (#2556).
    */
   privateAddressHost?: boolean;
+  /**
+   * Public DNS maps the host to public address space even though our own resolver
+   * refused it, so students can reach it. Positive evidence that releases a stored
+   * `privateAddressHost`; it is never itself stored (#3903).
+   */
+  publicAddressHost?: boolean;
+  /**
+   * The server answered but its certificate failed verification, so a browser
+   * stops a student at a security warning. A THIRD axis, independent of
+   * `healthStatus` for the reason #2751 gives: a failing certificate says how the
+   * host presents itself on port 443, never whether the page exists, so the status
+   * stays `UNKNOWN` and the link is never retired on this alone.
+   */
+  tlsVerificationFailed?: boolean;
+  /**
+   * A plain-HTTP request that the host itself redirected to the same page over
+   * `https:`, recorded so serve time can send a student to the spelling the server
+   * answers on. Set only on a `HEALTHY` verdict, and only when the landing keeps the
+   * host and path apart from scheme, `www.`, letter case and a trailing slash: the
+   * landing negotiated TLS to answer at all, so it carries its own certificate check
+   * (#4649).
+   */
+  httpsLandingUrl?: string;
 }
 
 export interface SourceLinkProbeResult {
@@ -34,6 +60,7 @@ export interface SourceLinkProbeResult {
   /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
   retryAfterMs?: number;
   privateAddressHost?: boolean;
+  publicAddressHost?: boolean;
 }
 
 /**
@@ -223,9 +250,34 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   return { healthStatus: 'UNKNOWN' };
 }
 
+export function httpsLandingOf(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): string | undefined {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  if (!requested || !final) return undefined;
+  if (requested.protocol !== 'http:' || final.protocol !== 'https:') return undefined;
+  if (comparableHost(requested) !== comparableHost(final)) return undefined;
+  if (comparablePath(requested) !== comparablePath(final)) return undefined;
+  if (requested.search !== final.search) return undefined;
+  return final.toString();
+}
+
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const outcome = classifyProbeOutcome(probe);
-  return probe.privateAddressHost ? { ...outcome, privateAddressHost: true } : outcome;
+  const verdict = classifyProbeOutcome(probe);
+  const httpsLandingUrl =
+    verdict.healthStatus === 'HEALTHY'
+      ? httpsLandingOf(probe.requestedUrl, probe.finalUrl)
+      : undefined;
+  const classified = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
+  const outcome =
+    probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
+      ? { ...classified, tlsVerificationFailed: true }
+      : classified;
+  if (probe.privateAddressHost) return { ...outcome, privateAddressHost: true };
+  if (probe.publicAddressHost) return { ...outcome, publicAddressHost: true };
+  return outcome;
 }
 
 export function isLikelyUnavailableSourceLink(health: SourceLinkHealth | undefined): boolean {
@@ -242,11 +294,13 @@ export interface DatedSourceLinkHealth extends SourceLinkHealth {
 }
 
 /**
- * The key a stored verdict is looked up by. Scheme, `www.`, host case, and a
- * trailing slash are cosmetic; path and query are not. Mirrors
- * `sourceLinkCandidateKey` in the backfill lane so a verdict written under one
- * spelling is found under the other, which is the whole reason a shared key
- * exists rather than a per-caller comparison.
+ * The key that groups a stored verdict with the resource it describes. `www.`, host
+ * case, and a trailing slash are cosmetic; path and query are not. Scheme is left out
+ * of the key and ranked by `findSourceLinkHealth` instead, because it is cosmetic
+ * only while both schemes behave alike (#4080). Mirrors `sourceLinkCandidateKey`
+ * in the backfill lane minus its scheme, so a verdict written under one cosmetic
+ * spelling is found under the other, which is the whole reason a shared key exists
+ * rather than a per-caller comparison.
  */
 export function sourceLinkHealthKey(url: unknown): string | null {
   if (typeof url !== 'string' || !url.trim()) return null;
@@ -260,21 +314,47 @@ export function sourceLinkHealthKey(url: unknown): string | null {
   }
 }
 
-/** The stored verdict for one URL, or undefined when the URL was never probed. */
+const VOUCHES_FOR_REACHABILITY = new Set<string>(['HEALTHY', 'REDIRECTED']);
+
+export function sourceLinkScheme(url: unknown): string | null {
+  if (typeof url !== 'string' || !url.trim()) return null;
+  try {
+    return new URL(url.trim()).protocol;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The stored verdict for one URL, or undefined when the URL was never probed.
+ *
+ * A verdict of the same scheme wins. Otherwise the other spelling's verdict stands
+ * in, except that a plain-HTTP verdict saying the link works never speaks for an
+ * `https:` URL: HTTP answering says nothing about whether the certificate on port 443
+ * verifies, which is exactly how an `https:` website on a host with an expired
+ * certificate read as HEALTHY (#4080). A plain-HTTP 404 still says the page is gone.
+ */
 export function findSourceLinkHealth(
   storedHealth: unknown,
   url: unknown,
 ): DatedSourceLinkHealth | undefined {
   const key = sourceLinkHealthKey(url);
   if (!key || !Array.isArray(storedHealth)) return undefined;
-  const match = storedHealth.find(
+  const sameResource = storedHealth.filter(
     (entry) => sourceLinkHealthKey((entry as { url?: unknown })?.url) === key,
-  ) as Record<string, unknown> | undefined;
+  ) as Record<string, unknown>[];
+  const scheme = sourceLinkScheme(url);
+  const match =
+    sameResource.find((entry) => sourceLinkScheme(entry.url) === scheme) ??
+    sameResource.find(
+      (entry) => scheme !== 'https:' || !VOUCHES_FOR_REACHABILITY.has(String(entry.healthStatus)),
+    );
   if (!match || typeof match.healthStatus !== 'string') return undefined;
   return {
     healthStatus: match.healthStatus as SourceLinkHealthStatus,
     ...(typeof match.httpStatusCode === 'number' ? { httpStatusCode: match.httpStatusCode } : {}),
     ...(match.privateAddressHost === true ? { privateAddressHost: true } : {}),
+    ...(match.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(match.checkedAt
       ? { checkedAt: match.checkedAt as DatedSourceLinkHealth['checkedAt'] }
       : {}),
@@ -383,38 +463,54 @@ const delay = (milliseconds: number): Promise<void> =>
  * host only Yale's network can route to counted as a way in for a student off
  * campus (#2556). It is reported alongside the code rather than instead of it, so
  * the security answer is unchanged.
+ *
+ * Our resolver's private answer is only a fact about where the probe runs, so it
+ * is confirmed against public DNS before it becomes a fact about the URL (#3903).
  */
-function probeResultForBlockedUrl(error: unknown): SourceLinkProbeResult {
+async function probeResultForBlockedUrl(
+  error: unknown,
+  url: string,
+): Promise<SourceLinkProbeResult> {
   const errorCode =
     error instanceof SsrfBlockedError && error.reason === 'unresolvable'
       ? 'ENOTFOUND'
       : 'ERR_SSRF_BLOCKED';
-  const privateAddressHost =
-    error instanceof SsrfBlockedError && error.reason === 'private-address';
-  return { errorCode, ...(privateAddressHost ? { privateAddressHost: true } : {}) };
+  if (!(error instanceof SsrfBlockedError && error.reason === 'private-address')) {
+    return { errorCode };
+  }
+  const offCampus = await classifyOffCampusAddressing(new URL(url.trim()).hostname);
+  return offCampus === 'public'
+    ? { errorCode, publicAddressHost: true }
+    : { errorCode, privateAddressHost: true };
 }
 
-export async function probeSourceLink(url: string): Promise<SourceLinkProbeResult> {
+export async function probeSourceLink(
+  url: string,
+  requestGate?: HostSlotLimiter,
+): Promise<SourceLinkProbeResult> {
   let safeUrl: URL;
   try {
     safeUrl = await assertPublicHttpUrl(url);
   } catch (error) {
-    return probeResultForBlockedUrl(error);
+    return probeResultForBlockedUrl(error, url);
   }
 
   const requestedUrl = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const request = (method: 'HEAD' | 'GET') =>
-    axios.request({
-      url: requestedUrl,
-      method,
-      maxRedirects: 5,
-      timeout: PROBE_TIMEOUT_MS,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      responseType: method === 'GET' ? 'stream' : 'json',
-      validateStatus: () => true,
-    });
+  const request = (method: 'HEAD' | 'GET') => {
+    const send = () =>
+      axios.request({
+        url: requestedUrl,
+        method,
+        maxRedirects: 5,
+        timeout: PROBE_TIMEOUT_MS,
+        httpAgent: agents.httpAgent,
+        httpsAgent: agents.httpsAgent,
+        responseType: method === 'GET' ? 'stream' : 'json',
+        validateStatus: () => true,
+      });
+    return requestGate ? withHostSlot(requestedUrl, send, requestGate) : send();
+  };
 
   // `responseUrl`, lower-case `u`, is what `follow-redirects` sets on the Node
   // IncomingMessage. `responseURL` is the browser XHR spelling and is ALWAYS
@@ -485,8 +581,11 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
   return result;
 }
 
-export async function checkSourceLinkHealth(url: string): Promise<SourceLinkHealth> {
-  return classifySourceLinkHealth(await probeSourceLink(url));
+export async function checkSourceLinkHealth(
+  url: string,
+  requestGate?: HostSlotLimiter,
+): Promise<SourceLinkHealth> {
+  return classifySourceLinkHealth(await probeSourceLink(url, requestGate));
 }
 
 /**

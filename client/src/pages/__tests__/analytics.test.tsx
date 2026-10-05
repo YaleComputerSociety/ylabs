@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import Analytics from '../analytics';
 import axios from '../../utils/axios';
 import { AnalyticsData } from '../../reducers/analyticsReducer';
-import swal from 'sweetalert';
+import { confirmAction } from '../../utils/appDialogs';
 import UserContext from '../../contexts/UserContext';
 
 vi.mock('../../utils/axios', () => ({
@@ -15,9 +15,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({
-  default: vi.fn(),
-}));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../components/admin/AdminPanel', () => ({
   default: () => <div data-testid="admin-panel" />,
@@ -27,7 +25,7 @@ const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
 };
-const mockedSwal = vi.mocked(swal);
+const mockedConfirmAction = vi.mocked(confirmAction);
 
 const analyticsData: AnalyticsData = {
   visitors: {
@@ -87,6 +85,24 @@ const analyticsData: AnalyticsData = {
   timestamp: '2026-05-17T00:00:00.000Z',
 };
 
+const dashboardEndpoints =
+  (overrides: Record<string, unknown> = {}) =>
+  (url: string) => {
+    const responses: Record<string, unknown> = {
+      '/analytics': analyticsData,
+      '/analytics/users': { users: [], total: 0, limit: 25 },
+      '/admin/admin-grants': { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+      '/analytics/search-quality': { totalSearches: 0, zeroResultSearches: 0 },
+      '/analytics/search-queries': { queries: [], limit: 25 },
+      '/analytics/funnel': { stages: [] },
+      '/analytics/actions': { cards: [], items: [] },
+      ...overrides,
+    };
+    return url in responses
+      ? Promise.resolve({ data: responses[url] })
+      : Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -139,18 +155,16 @@ describe('Analytics page', () => {
               {
                 query: 'machine learning',
                 totalSearches: 3,
-                uniqueSearchers: 2,
-                searchers: [
-                  {
-                    netid: 'fixture_searcher',
-                    userType: 'undergraduate',
-                    fname: 'Fixture',
-                    lname: 'Searcher',
-                    searchCount: 2,
-                  },
-                ],
+                uniqueSearchers: 3,
               },
             ],
+            minDistinctSearchersToShowQuery: 3,
+            suppressedQueries: {
+              queryGroups: 4,
+              searches: 5,
+              zeroResultQueryGroups: 2,
+              zeroResultSearches: 2,
+            },
           },
         });
       }
@@ -184,7 +198,10 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(screen.getByText('machine learning')).toBeTruthy();
     });
-    expect(screen.getByText(/fixture_searcher/)).toBeTruthy();
+    expect(screen.queryByText('Who Searched')).toBeNull();
+    expect(screen.getByTestId('suppressed-search-queries').textContent).toContain(
+      'searched by fewer than 3 students',
+    );
     expect(screen.queryByText(/Listings/i)).toBeNull();
     expect(screen.queryByText(/Favorites/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Refresh Data' }).className).toContain(
@@ -224,6 +241,7 @@ describe('Analytics page', () => {
             zeroResultRate: 0.2,
             engagedSearches: 6,
             returnedButIgnoredSearches: 10,
+            degradedSearches: 3,
             engagementRate: 0.3,
             attributionWindowMinutes: 30,
             avgResults: 7.5,
@@ -250,7 +268,7 @@ describe('Analytics page', () => {
               { key: 'profile_opens', label: 'Opened a profile', count: 30, conversionRate: 0.75 },
               {
                 key: 'research_saves',
-                label: 'Saved a research home',
+                label: 'Saved research',
                 count: 20,
                 conversionRate: 0.67,
               },
@@ -314,7 +332,7 @@ describe('Analytics page', () => {
       expect(screen.getAllByText('quantum materials').length).toBeGreaterThan(0);
       expect(
         screen.getByText(
-          /6 of 20 site searches \(legacy\) led to a view or save within 30 minutes/,
+          /6 of 17 site searches \(legacy\) led to a view or save within 30 minutes/,
         ),
       ).toBeTruthy();
     });
@@ -322,6 +340,8 @@ describe('Analytics page', () => {
     expect(screen.getAllByText('quantum materials')).toHaveLength(1);
     expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
     expect(screen.getByText('Returned but ignored')).toBeTruthy();
+    const degradedRow = screen.getByText('Degraded, not counted as zero-result').parentElement;
+    expect(degradedRow?.textContent).toContain('3');
     expect(screen.getByRole('link', { name: 'High-Impact Diagnostics' }).getAttribute('href')).toBe(
       '#high-impact-diagnostics',
     );
@@ -382,6 +402,64 @@ describe('Analytics page', () => {
     expect(tile.className).toContain('bg-red-50');
     expect(tile.textContent).toContain('5 zero-result queries, 1 low-result query to review.');
     expect(tile.textContent).not.toContain('No urgent admin action returned');
+  });
+
+  it('keeps degraded searches out of the Search success denominator', async () => {
+    mockedAxios.get.mockImplementation(
+      dashboardEndpoints({
+        '/analytics/search-quality': {
+          totalSearches: 6,
+          degradedSearches: 4,
+          engagedSearches: 2,
+          attributionWindowMinutes: 30,
+        },
+      }),
+    );
+
+    render(<Analytics />);
+
+    const tile = await waitFor(() => {
+      const container = screen.getByText('Search success').closest('div') as HTMLElement;
+      expect(container.querySelector('.text-3xl')?.textContent).toBe('100.0%');
+      return container;
+    });
+    expect(tile.textContent).toContain('2 of 2 site searches (legacy)');
+    expect(tile.textContent).toContain('4 degraded searches left out.');
+  });
+
+  it('counts a query once in Items to review when it is both an action card and a zero-result query', async () => {
+    mockedAxios.get.mockImplementation(
+      dashboardEndpoints({
+        '/analytics/search-quality': {
+          totalSearches: 10,
+          engagedSearches: 9,
+          zeroResultQueries: [{ query: 'orbital mechanics', entityType: 'research_entity' }],
+          lowResultQueries: [],
+        },
+        '/analytics/actions': {
+          cards: [
+            {
+              id: 'search-research_entity-orbital mechanics',
+              query: 'orbital mechanics',
+              entityType: 'research_entity',
+              title: 'orbital mechanics',
+              type: 'Search gap',
+              priority: 'high',
+            },
+          ],
+        },
+      }),
+    );
+
+    render(<Analytics />);
+
+    const tile = await waitFor(() => {
+      const container = screen.getByText('Items to review').closest('div') as HTMLElement;
+      expect(container.querySelector('.text-3xl')?.textContent).toBe('1');
+      return container;
+    });
+    expect(tile.className).toContain('bg-amber-50');
+    expect(tile.textContent).toContain('1 zero-result query to review');
   });
 
   it('shows the no-action caption only when nothing drives the Items to review count', async () => {
@@ -586,7 +664,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
     mockedAxios.post.mockResolvedValue({ data: { grant: { netid: 'fixture-admin' } } });
-    mockedSwal.mockResolvedValue(true);
+    mockedConfirmAction.mockResolvedValue(true);
 
     render(
       <UserContext.Provider
@@ -626,32 +704,7 @@ describe('Analytics page', () => {
   });
 
   const mockDashboardEndpoints = () => {
-    mockedAxios.get.mockImplementation((url: string) => {
-      if (url === '/analytics') {
-        return Promise.resolve({ data: analyticsData });
-      }
-      if (url === '/analytics/users') {
-        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
-      }
-      if (url === '/admin/admin-grants') {
-        return Promise.resolve({
-          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
-        });
-      }
-      if (url === '/analytics/search-quality') {
-        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
-      }
-      if (url === '/analytics/search-queries') {
-        return Promise.resolve({ data: { queries: [], limit: 25 } });
-      }
-      if (url === '/analytics/funnel') {
-        return Promise.resolve({ data: { stages: [] } });
-      }
-      if (url === '/analytics/actions') {
-        return Promise.resolve({ data: { cards: [], items: [] } });
-      }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
-    });
+    mockedAxios.get.mockImplementation(dashboardEndpoints());
   };
 
   it('labels usage metrics with the selected range and threads the range to the server', async () => {
@@ -691,6 +744,26 @@ describe('Analytics page', () => {
     expect(screen.queryByText('Signed-in visitors today')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Last 7 Days by Type' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Today by Type' })).toBeNull();
+  });
+
+  it('names the zone the server anchors the today and semester ranges to', async () => {
+    mockDashboardEndpoints();
+    const serveOtherEndpoints = mockedAxios.get.getMockImplementation() as (
+      url: string,
+    ) => Promise<unknown>;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === '/analytics'
+        ? Promise.resolve({ data: { ...analyticsData, timeZone: 'America/New_York' } })
+        : serveOtherEndpoints(url),
+    );
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Today and Semester start at midnight America\/New_York time\./),
+      ).toBeTruthy();
+    });
   });
 
   it('marks corpus and account sections as current snapshots regardless of range', async () => {
@@ -801,8 +874,10 @@ describe('Analytics page', () => {
     expect(screen.queryByText('undefined')).toBeNull();
 
     expect(screen.queryByText(/Listing Views/)).toBeNull();
-    expect(screen.getAllByText(/Research Views/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('button', { name: /Research Views/ })).toBeTruthy();
+    expect(screen.getAllByText(/Profile Opens/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: /Profile Opens/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Site searches/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'Site searches' })).toBeNull();
   });
 
   it('renders resolved names, entity links, and singular counts in Top Research Entities', async () => {

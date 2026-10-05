@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { accessSignalTypes } from '../../models/researchAccessTypes';
 
 const mocks = vi.hoisted(() => ({
   queueFind: vi.fn(),
@@ -20,17 +21,15 @@ import {
   isBlockingVisibilityReason,
   isStudentVisibilityGatePlanMateriallyChanged,
   normalizeStudentVisibilityGateObjectId,
-  reachOutPlausibleSignalCreditsActionEvidence,
   researchEntityGateProjection,
   RESEARCH_HOME_URL_INDEX_AUTHORITY_SOURCE_NAMES,
   runStudentVisibilityGateForPlans,
   selectDuplicateGroupSurvivorEntityIds,
+  exactDuplicateUrlGroups,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
-import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
-import { ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY } from '../accessAcceptanceLevel';
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -408,6 +407,98 @@ describe('studentVisibilityGateService', () => {
 
       expect([...ids].sort()).toEqual(['b-shell', 'c-shell', 'd-shell', 'e-shell']);
     });
+
+    const scholarCitingRow = (id: string, scholarUrl: string) => ({
+      _id: id,
+      slug: `${id}-slug`,
+      name: `${id} Faculty Research`,
+      entityType: 'FACULTY_RESEARCH_AREA',
+      sourceUrls: [scholarUrl],
+    });
+
+    it('does not group rows citing different Google Scholar profiles (#3624)', () => {
+      const ids = selectExactUrlDuplicateRiskEntityIds([
+        scholarCitingRow('first', 'https://scholar.google.com/citations?user=AAAA1111&hl=en'),
+        scholarCitingRow('second', 'https://scholar.google.com/citations?user=BBBB2222'),
+        scholarCitingRow(
+          'third',
+          'https://scholar.google.com/citations?hl=en&user=CCCC3333&view_op=list_works',
+        ),
+      ]);
+
+      expect([...ids]).toEqual([]);
+    });
+
+    it('still groups rows citing the same Google Scholar profile under different tracking params', () => {
+      const groups = exactDuplicateUrlGroups([
+        scholarCitingRow('first', 'https://scholar.google.com/citations?user=AAAA1111&hl=en'),
+        scholarCitingRow(
+          'second',
+          'http://scholar.google.com/citations?view_op=list_works&user=AAAA1111#top',
+        ),
+      ]);
+
+      expect(groups.map((group) => group.url)).toEqual([
+        'https://scholar.google.com/citations?user=AAAA1111',
+      ]);
+    });
+
+    it('does not group rows citing different profiles on a regional Scholar host', () => {
+      const ids = selectExactUrlDuplicateRiskEntityIds([
+        scholarCitingRow('first', 'https://scholar.google.co.uk/citations?user=AAAA1111'),
+        scholarCitingRow('second', 'https://scholar.google.co.uk/citations?user=BBBB2222'),
+        scholarCitingRow('third', 'https://scholar.google.de/citations?hl=de&user=CCCC3333'),
+        scholarCitingRow('fourth', 'https://scholar.google.de/citations?user=DDDD4444'),
+      ]);
+
+      expect([...ids]).toEqual([]);
+    });
+
+    it('groups one Scholar profile cited on a regional and the global host', () => {
+      const groups = exactDuplicateUrlGroups([
+        scholarCitingRow('first', 'https://scholar.google.co.uk/citations?user=AAAA1111&hl=en'),
+        scholarCitingRow('second', 'https://scholar.google.com/citations?user=AAAA1111'),
+      ]);
+
+      expect(groups.map((group) => group.url)).toEqual([
+        'https://scholar.google.com/citations?user=AAAA1111',
+      ]);
+    });
+
+    it('never groups on a Scholar citations page that names no profile', () => {
+      const groups = exactDuplicateUrlGroups([
+        scholarCitingRow('first', 'https://scholar.google.com/citations?hl=en'),
+        scholarCitingRow('second', 'https://scholar.google.com/citations'),
+        scholarCitingRow('third', 'https://scholar.google.co.uk/citations?hl=en'),
+      ]);
+
+      expect(groups).toEqual([]);
+    });
+
+    it('does not group unrelated rows on a school-level research or opportunities landing page', () => {
+      const citing = (id: string, url: string) => ({
+        _id: id,
+        slug: `${id}-slug`,
+        name: `${id} Lab`,
+        entityType: 'LAB',
+        sourceUrls: [url],
+      });
+      const groups = exactDuplicateUrlGroups([
+        citing('art-a', 'https://www.art.yale.edu/opportunities'),
+        citing('art-b', 'https://art.yale.edu/opportunities/'),
+        citing('ysm-a', 'https://medicine.yale.edu/research'),
+        citing('ysm-b', 'https://medicine.yale.edu/research/'),
+        citing('lab-a', 'https://medicine.yale.edu/lab/example/research'),
+        citing('lab-b', 'https://medicine.yale.edu/lab/example/research/'),
+        citing('own-a', 'https://examplelab.yale.edu/research'),
+        citing('own-b', 'https://examplelab.yale.edu/research'),
+      ]);
+
+      expect(groups.map((group) => group.url).sort()).toEqual([
+        'https://examplelab.yale.edu/research',
+        'https://medicine.yale.edu/lab/example/research',
+      ]);
+    });
   });
 
   it('marks exact own-site duplicate shells while preserving the stronger canonical profile', () => {
@@ -662,8 +753,8 @@ describe('studentVisibilityGateService', () => {
       fullDescription:
         'Radiation dosimetry, treatment planning optimization, and artificial intelligence applied to radiotherapy.',
       shortDescription: 'Studies radiation dosimetry and treatment planning.',
-      websiteUrl: 'https://medicine.yale.edu/lab/owner/index.aspx',
-      sourceUrls: ['https://medicine.yale.edu/profile/an-owner/'],
+      websiteUrl: 'https://medicine.yale.edu/profile/an-owner/',
+      sourceUrls: ['https://medicine.yale.edu/lab/owner/index.aspx'],
       fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
     };
     const leadRows = [
@@ -689,6 +780,137 @@ describe('studentVisibilityGateService', () => {
         duplicateRiskEntityIds,
       }),
     ]).toEqual(['atoz-owner']);
+  });
+
+  describe('a same-lead pair colliding only on a profile page neither publishes', () => {
+    const sharedProfileUrl = 'https://medicine.yale.edu/profile/a-shared-lead/';
+    const indexPublishedLab = (studentVisibilityTier: string) => ({
+      _id: 'atoz-shared-lead',
+      slug: 'ysm-shared-lead',
+      name: 'Shared Lead Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier,
+      fullDescription:
+        'Epigenetic regulation of anti-tumor immunity studied with mouse models and single-cell sequencing.',
+      shortDescription: 'Studies epigenetic regulation of anti-tumor immunity.',
+      websiteUrl: 'https://medicine.yale.edu/lab/shared-lead/',
+      sourceUrls: ['https://medicine.yale.edu/lab/shared-lead/', sharedProfileUrl],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+    });
+    const directoryTwin = (studentVisibilityTier: string) => ({
+      _id: 'directory-shared-lead',
+      slug: 'ysm-faculty-a-shared-lead',
+      name: 'A Shared Lead Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      studentVisibilityTier,
+      fullDescription:
+        'Epigenetic regulation of anti-tumor immunity studied with mouse models and single-cell sequencing.',
+      shortDescription: 'Studies epigenetic regulation of anti-tumor immunity.',
+      websiteUrl: 'https://shared-lead-lab.example.io/home/',
+      sourceUrls: [sharedProfileUrl, 'https://shared-lead-lab.example.io/home/'],
+      fieldProvenance: { websiteUrl: { sourceName: 'ysm-faculty-directory' } },
+    });
+    const leadRows = [
+      { researchEntityId: 'atoz-shared-lead', userId: 'user-shared-lead' },
+      { researchEntityId: 'directory-shared-lead', userId: 'user-shared-lead' },
+    ];
+
+    it('keeps the index-published row canonical whichever twin was public before', () => {
+      for (const [indexTier, twinTier] of [
+        ['student_ready', 'suppressed'],
+        ['suppressed', 'student_ready'],
+        ['suppressed', 'suppressed'],
+      ]) {
+        expect([
+          ...selectExactUrlDuplicateRiskEntityIds(
+            [indexPublishedLab(indexTier), directoryTwin(twinTier)],
+            leadRows,
+          ),
+        ]).toEqual(['directory-shared-lead']);
+      }
+    });
+
+    it('serves the owner of a shared address when both rows are index-published', () => {
+      const ownerOfSecondHome = (studentVisibilityTier: string) => ({
+        ...directoryTwin(studentVisibilityTier),
+        websiteUrl: 'https://medicine.yale.edu/lab/shared-lead-second/',
+        sourceUrls: [sharedProfileUrl],
+        fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+      });
+      const citerOfSecondHome = (studentVisibilityTier: string) => ({
+        ...indexPublishedLab(studentVisibilityTier),
+        sourceUrls: [
+          'https://medicine.yale.edu/lab/shared-lead/',
+          sharedProfileUrl,
+          'https://medicine.yale.edu/lab/shared-lead-second/',
+        ],
+      });
+      for (const [citerTier, ownerTier] of [
+        ['student_ready', 'suppressed'],
+        ['suppressed', 'student_ready'],
+        ['suppressed', 'suppressed'],
+      ]) {
+        const entities = [citerOfSecondHome(citerTier), ownerOfSecondHome(ownerTier)];
+        const duplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(entities, leadRows);
+        const survivorIds = selectDuplicateGroupSurvivorEntityIds({
+          entities,
+          leadRows,
+          duplicateRiskEntityIds,
+        });
+        const servedIds = ['atoz-shared-lead', 'directory-shared-lead'].filter(
+          (id) => !duplicateRiskEntityIds.has(id) || survivorIds.has(id),
+        );
+        expect(servedIds).toEqual(['directory-shared-lead']);
+      }
+    });
+
+    it('releases the index-published row when the same-lead relation names the twin canonical', () => {
+      for (const [indexTier, twinTier] of [
+        ['student_ready', 'suppressed'],
+        ['suppressed', 'student_ready'],
+        ['suppressed', 'suppressed'],
+      ]) {
+        expect([
+          ...selectDuplicateGroupSurvivorEntityIds({
+            entities: [indexPublishedLab(indexTier), directoryTwin(twinTier)],
+            leadRows,
+            duplicateRelationGroups: [['directory-shared-lead', 'atoz-shared-lead']],
+            duplicateRiskEntityIds: new Set(['atoz-shared-lead', 'directory-shared-lead']),
+          }),
+        ]).toEqual(['atoz-shared-lead']);
+      }
+    });
+
+    it('still calls one of the pair a duplicate when neither home is index-published', () => {
+      const unindexedLab = {
+        ...indexPublishedLab('suppressed'),
+        fieldProvenance: { websiteUrl: { sourceName: 'dept-faculty-roster' } },
+      };
+      expect([
+        ...selectExactUrlDuplicateRiskEntityIds(
+          [unindexedLab, directoryTwin('student_ready')],
+          leadRows,
+        ),
+      ]).toEqual(['atoz-shared-lead']);
+    });
+
+    it('still calls one of two index-published rows a duplicate over the shared profile', () => {
+      const secondIndexedLab = {
+        ...directoryTwin('student_ready'),
+        websiteUrl: 'https://medicine.yale.edu/lab/shared-lead-second/',
+        fieldProvenance: { websiteUrl: { sourceName: 'ysm-atoz-index' } },
+      };
+      expect(
+        [
+          ...selectExactUrlDuplicateRiskEntityIds(
+            [indexPublishedLab('suppressed'), secondIndexedLab],
+            leadRows,
+          ),
+        ].length,
+      ).toBe(1);
+    });
   });
 
   it('calls an address-authority row a duplicate in a group formed by a url it does not own', () => {
@@ -1038,7 +1260,6 @@ describe('studentVisibilityGateService', () => {
   it('classifies missing-data reasons as blockers and evidence reasons as signals', () => {
     expect(isBlockingVisibilityReason('missing_description')).toBe(true);
     expect(isBlockingVisibilityReason('thin_description')).toBe(true);
-    expect(isBlockingVisibilityReason('content_page_risk')).toBe(true);
     expect(isBlockingVisibilityReason('exact_url_duplicate_risk')).toBe(true);
     expect(isBlockingVisibilityReason('generic_directory_shell')).toBe(true);
     expect(isBlockingVisibilityReason('profile_biography_shell')).toBe(true);
@@ -1558,124 +1779,16 @@ describe('evaluateStudentVisibilityGateLeadResolution', () => {
   });
 });
 
-describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
-  const officialPageEntity = {
-    websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
-    sourceUrls: [],
-  };
-  const validReachOutSignal = {
-    type: 'REACH_OUT_PLAUSIBLE',
-    archived: false,
-    source: { url: '', evidenceIds: ['64f000000000000000000abc'], name: 'dept-faculty-roster' },
-  };
-
-  it('counts a validly-persisted REACH_OUT_PLAUSIBLE that has no http source.url', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: validReachOutSignal,
-        entity: officialPageEntity,
-      }),
-    ).toBe(true);
-  });
-
-  it('credits action evidence via a REACH_OUT_PLAUSIBLE signal, recorded as a soft signal that never gates student_ready (issue #1802)', () => {
-    const entity = {
-      entityType: 'LAB',
-      name: 'Doe Lab',
-      websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
-      fullDescription:
-        'The Doe Lab studies catalytic reaction mechanisms with an official source-backed research description that is long enough to pass the source-backed description quality bar for this gate.',
-      shortDescription: 'Catalysis research in the Doe Lab at Yale.',
-      descriptionSource: 'official-scrape',
-    };
-    const leadMembers = [
-      { role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } },
-    ];
-
-    const withoutSignal = computeResearchEntityStudentVisibility({
-      entity,
-      leadMembers,
-      accessSignalCount: 0,
-    });
-    expect(withoutSignal.reasons).toContain('missing_action_evidence');
-
-    const credited = reachOutPlausibleSignalCreditsActionEvidence({
-      signal: validReachOutSignal,
-      entity,
-    })
-      ? 1
-      : 0;
-    const withSignal = computeResearchEntityStudentVisibility({
-      entity,
-      leadMembers,
-      accessSignalCount: credited,
-    });
-    expect(credited).toBe(1);
-    expect(withSignal.reasons).not.toContain('missing_action_evidence');
-    expect(withSignal.reasons).toContain('concrete_next_step');
-    // Crediting evidence never changes the tier by itself (issue #1802):
-    // both computations land on the same tier here regardless of the signal.
-    expect(withSignal.tier).toBe(withoutSignal.tier);
-  });
-
-  it('keeps weaker or unbacked signals blocked (fail-safe)', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: { ...validReachOutSignal, type: 'NOT_CURRENTLY_AVAILABLE' },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: { ...validReachOutSignal, source: { url: '', evidenceIds: [], name: '' } },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: { ...validReachOutSignal, archived: true },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: validReachOutSignal,
-        entity: { websiteUrl: 'https://reporter.nih.gov/project-details/1', sourceUrls: [] },
-      }),
-    ).toBe(false);
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: validReachOutSignal,
-        entity: { websiteUrl: '', sourceUrls: [] },
-      }),
-    ).toBe(false);
-  });
-
-  it('does not double-count a REACH_OUT_PLAUSIBLE that already carries an http source.url', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: {
-          ...validReachOutSignal,
-          source: {
-            ...validReachOutSignal.source,
-            url: 'https://chemistry.yale.edu/profile/ab123',
-          },
-        },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
-  });
-
-  it('does not credit an identified-lead-fallback derivation as action evidence (#1359)', () => {
-    expect(
-      reachOutPlausibleSignalCreditsActionEvidence({
-        signal: {
-          ...validReachOutSignal,
-          derivationKey: ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
-        },
-        entity: officialPageEntity,
-      }),
-    ).toBe(false);
+describe('the access types the gate counts (#4637)', () => {
+  it('counts only the kept access types, never a retired plausibility type', () => {
+    expect([...accessSignalTypes].sort()).toEqual([
+      'APPLICATION_FORM_EXISTS',
+      'CREDIT_FORMALIZATION_POSSIBLE',
+      'CURRENT_UNDERGRADS',
+      'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+      'PAST_UNDERGRADS',
+      'POSTED_OPENING',
+    ]);
   });
 });
 
@@ -1739,5 +1852,90 @@ describe('a trailing default document is the same destination (#2708)', () => {
     ]);
 
     expect([...ids]).toEqual([]);
+  });
+});
+
+describe('the gate-derived program window (#4382)', () => {
+  const window = {
+    deadline: new Date('2027-01-05T04:59:59.999Z'),
+    isAcceptingApplications: true,
+    sourceProgramId: 'program-hidden-copy',
+  };
+  const programPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}) =>
+    safePlan({
+      collection: 'programs',
+      recordId: 'program-kept-copy',
+      currentTier: 'student_ready',
+      currentComputedTier: 'student_ready',
+      currentReasons: ['source_backed_description', 'concrete_next_step'],
+      currentUpcomingDuplicateWindow: null,
+      upcomingDuplicateWindow: null,
+      ...overrides,
+    });
+
+  it('writes a newly derived window with updatedAt even when the verdict is unchanged', async () => {
+    const deps = {
+      updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
+      upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
+      resolveQueueItem: vi.fn().mockResolvedValue(undefined),
+    };
+    const report = await runStudentVisibilityGateForPlans(
+      [programPlan({ upcomingDuplicateWindow: window })],
+      { mode: 'apply', deps },
+    );
+    expect(report.counts).toMatchObject({ changed: 0, upcomingDuplicateWindowsChanged: 1 });
+    const [, , patch, options] = deps.updateRecordVisibility.mock.calls[0];
+    expect(patch.upcomingDuplicateWindow).toEqual(window);
+    expect(patch).not.toHaveProperty('studentVisibilityTier');
+    expect(options).toEqual({ timestamps: true });
+  });
+
+  it('clears a stored window the run no longer derives', async () => {
+    const deps = {
+      updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
+      upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
+      resolveQueueItem: vi.fn().mockResolvedValue(undefined),
+    };
+    await runStudentVisibilityGateForPlans(
+      [programPlan({ currentUpcomingDuplicateWindow: window })],
+      {
+        mode: 'apply',
+        deps,
+      },
+    );
+    const [, , patch, options] = deps.updateRecordVisibility.mock.calls[0];
+    expect(patch).not.toHaveProperty('upcomingDuplicateWindow');
+    expect(options).toEqual({ timestamps: true, unset: ['upcomingDuplicateWindow'] });
+
+    const { programOps, programEvaluationOps } = buildStudentVisibilityGateApplyOps(
+      [programPlan({ currentUpcomingDuplicateWindow: window })],
+      new Set(),
+      new Date('2026-10-02T12:00:00.000Z'),
+    );
+    expect(programEvaluationOps).toEqual([]);
+    expect(programOps[0].updateOne.update.$unset).toEqual({ upcomingDuplicateWindow: '' });
+  });
+
+  it('writes nothing about the window when it is unchanged or the plan is not a program', () => {
+    const { programOps, programEvaluationOps, researchEvaluationOps } =
+      buildStudentVisibilityGateApplyOps(
+        [
+          programPlan({
+            currentUpcomingDuplicateWindow: window,
+            upcomingDuplicateWindow: { ...window },
+          }),
+          safePlan({ currentTier: 'student_ready', currentComputedTier: 'student_ready' }),
+        ],
+        new Set(),
+        new Date('2026-10-02T12:00:00.000Z'),
+      );
+    expect(programOps).toEqual([]);
+    expect(programEvaluationOps[0].updateOne.update).not.toHaveProperty('$unset');
+    expect(programEvaluationOps[0].updateOne.update.$set).not.toHaveProperty(
+      'upcomingDuplicateWindow',
+    );
+    expect(researchEvaluationOps[0].updateOne.update.$set).not.toHaveProperty(
+      'upcomingDuplicateWindow',
+    );
   });
 });

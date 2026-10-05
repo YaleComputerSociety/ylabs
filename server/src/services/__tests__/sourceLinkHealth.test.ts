@@ -6,6 +6,14 @@ vi.mock('axios', () => ({
   default: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
+const { classifyOffCampusAddressingMock } = vi.hoisted(() => ({
+  classifyOffCampusAddressingMock: vi.fn(async (_hostname: string) => 'private-address'),
+}));
+
+vi.mock('../../utils/publicDnsResolution', () => ({
+  classifyOffCampusAddressing: (hostname: string) => classifyOffCampusAddressingMock(hostname),
+}));
+
 const { MockSsrfBlockedError, assertPublicHttpUrlMock } = vi.hoisted(() => {
   class HoistedSsrfBlockedError extends Error {
     readonly reason: string;
@@ -44,6 +52,7 @@ import {
   probeSourceLink,
   probeStatusBackoffMs,
   hasLiveSourceCitation,
+  httpsLandingOf,
 } from '../sourceLinkHealth';
 
 const daysAgo = (days: number, now = new Date('2026-09-10T00:00:00.000Z')): Date =>
@@ -112,6 +121,8 @@ describe('probeSourceLink', () => {
     requestMock.mockReset();
     assertPublicHttpUrlMock.mockReset();
     assertPublicHttpUrlMock.mockImplementation(async (url: string) => new URL(url));
+    classifyOffCampusAddressingMock.mockReset();
+    classifyOffCampusAddressingMock.mockResolvedValue('private-address');
   });
 
   const blockedWith = (reason: string) => {
@@ -135,11 +146,31 @@ describe('probeSourceLink', () => {
   it('keeps a private-address refusal inconclusive while recording the routing fact', async () => {
     blockedWith('private-address');
     const probe = await probeSourceLink('https://internal.example.edu/profile');
+    expect(classifyOffCampusAddressingMock).toHaveBeenCalledWith('internal.example.edu');
     expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED', privateAddressHost: true });
     expect(classifySourceLinkHealth(probe)).toEqual({
       healthStatus: 'UNKNOWN',
       privateAddressHost: true,
     });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a split-horizon host as publicly addressed rather than private-only (#3903)', async () => {
+    blockedWith('private-address');
+    classifyOffCampusAddressingMock.mockResolvedValueOnce('public');
+    const probe = await probeSourceLink('https://split.example.edu/profile');
+    expect(probe).toEqual({ errorCode: 'ERR_SSRF_BLOCKED', publicAddressHost: true });
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNKNOWN',
+      publicAddressHost: true,
+    });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
+  it('never asks public DNS about a refusal that is not a private address', async () => {
+    blockedWith('resolver-failure');
+    await probeSourceLink('https://slow-dns.example.edu/profile');
+    expect(classifyOffCampusAddressingMock).not.toHaveBeenCalled();
   });
 
   it('keeps a resolver failure inconclusive, so a DNS blip never retires a live citation', async () => {
@@ -227,14 +258,26 @@ describe('probeSourceLink', () => {
     expect(probeStatusBackoffMs(9, undefined, noJitter)).toBe(8_000);
   });
 
-  it('keeps a certificate name mismatch inconclusive', async () => {
-    const error = new Error('altname') as NodeJS.ErrnoException;
-    error.code = 'ERR_TLS_CERT_ALTNAME_INVALID';
-    requestMock.mockRejectedValueOnce(error);
-    const probe = await probeSourceLink('https://vanity.example.edu/');
-    expect(probe).toMatchObject({ errorCode: 'ERR_TLS_CERT_ALTNAME_INVALID' });
-    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
-    expect(requestMock).toHaveBeenCalledTimes(1);
+  it.each(['ERR_TLS_CERT_ALTNAME_INVALID', 'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT'])(
+    'keeps a %s failure inconclusive but records that the certificate failed',
+    async (code) => {
+      const error = new Error(code) as NodeJS.ErrnoException;
+      error.code = code;
+      requestMock.mockRejectedValueOnce(error);
+      const probe = await probeSourceLink('https://vanity.example.edu/');
+      expect(probe).toMatchObject({ errorCode: code });
+      expect(classifySourceLinkHealth(probe)).toEqual({
+        healthStatus: 'UNKNOWN',
+        tlsVerificationFailed: true,
+      });
+      expect(requestMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('flags no certificate failure on a transport error that is not about TLS', () => {
+    expect(classifySourceLinkHealth({ errorCode: 'ETIMEDOUT' })).toEqual({
+      healthStatus: 'UNKNOWN',
+    });
   });
 
   it.each(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'])(
@@ -675,6 +718,48 @@ describe('findSourceLinkHealth', () => {
       findSourceLinkHealth([{ url: 'https://a.yale.edu/lab' }], 'https://a.yale.edu/lab'),
     ).toBeUndefined();
   });
+
+  it('never lets a plain-HTTP verdict speak for the https spelling', () => {
+    expect(
+      findSourceLinkHealth(
+        [{ url: 'http://a.yale.edu/~x/', healthStatus: 'HEALTHY', httpStatusCode: 200 }],
+        'https://a.yale.edu/~x/',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('prefers the same-scheme verdict when both spellings were probed', () => {
+    const storedHealth = [
+      { url: 'http://a.yale.edu/~x/', healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      { url: 'https://a.yale.edu/~x/', healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+    ];
+    expect(findSourceLinkHealth(storedHealth, 'https://a.yale.edu/~x/')).toEqual({
+      healthStatus: 'UNKNOWN',
+      tlsVerificationFailed: true,
+    });
+    expect(findSourceLinkHealth(storedHealth, 'http://a.yale.edu/~x/')).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    });
+  });
+
+  it('still lets a plain-HTTP 404 say the https spelling is gone', () => {
+    expect(
+      findSourceLinkHealth(
+        [{ url: 'http://a.yale.edu/lab', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }],
+        'https://a.yale.edu/lab',
+      ),
+    ).toEqual({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+  });
+
+  it('still lets an https verdict speak for the plain-HTTP spelling', () => {
+    expect(
+      findSourceLinkHealth(
+        [{ url: 'https://a.yale.edu/lab', healthStatus: 'HEALTHY' }],
+        'http://a.yale.edu/lab',
+      ),
+    ).toEqual({ healthStatus: 'HEALTHY' });
+  });
 });
 
 describe('hasLiveSourceCitation', () => {
@@ -840,5 +925,44 @@ describe('isPubliclyUnreachableSourceUrl', () => {
         PRIVATE_ONLY,
       ),
     ).toBe(true);
+  });
+});
+
+describe('https landing (#4649)', () => {
+  const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
+  const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
+
+  it('records the https page a reachable http link was redirected to on its own host', () => {
+    expect(
+      classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: LANDING }),
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING });
+  });
+
+  it('records no landing for a link that was not redirected to https', () => {
+    expect(classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: HTTP })).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    });
+  });
+
+  it('records no landing on a verdict that is not HEALTHY', () => {
+    expect(
+      classifySourceLinkHealth({ status: 404, requestedUrl: HTTP, finalUrl: LANDING }),
+    ).toEqual({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+  });
+
+  it('refuses a landing on another host or another page', () => {
+    expect(httpsLandingOf(HTTP, 'https://elsewhere.example.edu/fixtureperson/')).toBeUndefined();
+    expect(httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/other-page/')).toBeUndefined();
+    expect(
+      httpsLandingOf(HTTP, 'https://faculty.example.yale.edu/fixtureperson/?tab=2'),
+    ).toBeUndefined();
+  });
+
+  it('accepts only an http request landing on https', () => {
+    expect(httpsLandingOf(LANDING, LANDING)).toBeUndefined();
+    expect(httpsLandingOf(HTTP, 'https://www.faculty.example.yale.edu/fixtureperson')).toBe(
+      'https://www.faculty.example.yale.edu/fixtureperson',
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { warmResearchSearchSpellingVocabulary } from '../services/researchSearchSpellingVocabulary';
 import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
@@ -38,7 +39,7 @@ const UNKNOWN_SOURCE_COMMIT = 'unknown';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 }
 
 export interface ResearchSearchRelevanceCliOptions {
@@ -142,7 +143,7 @@ export function assertResearchSearchRelevanceTarget(input: {
   mongoUrl?: string;
   meiliHost?: string;
 }): void {
-  let database = '';
+  let database: string;
   try {
     database = new URL(input.mongoUrl || '').pathname.replace(/^\//, '');
   } catch {
@@ -420,6 +421,7 @@ async function main(): Promise<void> {
   });
 
   await initializeConnections();
+  await warmResearchSearchSpellingVocabulary();
   const databaseName = mongoose.connection.db?.databaseName || mongoose.connection.name || '';
   const index = await getMeiliIndex('researchentities');
   const [stats, settings] = await Promise.all([index.getStats(), index.getSettings()]);

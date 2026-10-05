@@ -53,7 +53,14 @@ Writing a field directly is the illegitimate third option, because the next reso
 ## Day 1: get it running
 
 Follow [DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md#local-development-setup).
-You are done when all four of these hold:
+Start and seed the local search index first, because without it search falls back to a degraded path:
+
+```bash
+yarn meili:up
+yarn meili:seed
+```
+
+You are done when all four of these hold, the last of them checked in a browser:
 
 ```bash
 yarn meili:health          # {"status":"available"}
@@ -63,8 +70,12 @@ yarn dev:client            # http://localhost:3000 renders the directory
 
 Then log in at `http://localhost:4000/api/dev-login` and confirm `/research` returns cards with real text.
 
-You need Development MongoDB credentials from a maintainer.
-There is no local-only data path, so an empty app is not a setup you can debug your way out of.
+Install the `gh` identifier guard with `scripts/install-gh-identifier-guard.sh` and confirm `command -v gh` prints `~/.local/bin/gh`.
+The installer exits non-zero when another `gh` is earlier on `PATH`, because then nothing scans what you post.
+
+Without Development MongoDB credentials, start on the local data path instead: `yarn local:setup`, then `yarn dev:server:local` and `yarn dev:client`.
+It runs against a local MongoDB seeded with synthetic rows, so `/research` shows synthetic cards rather than real ones, which is enough for a first serve-time change.
+Ask a maintainer for Development credentials when you need the real corpus.
 
 ## Day 2: read the product before the code
 
@@ -81,8 +92,10 @@ The definition of `student_ready` reads like bureaucracy until you have seen a p
 Finish by taking a measurement, so you learn the instrument before you need it:
 
 ```bash
-yarn --cwd server research-entity:served-scoreboard
+yarn --cwd server research-entity:served-scoreboard --baseline <path.json>
 ```
+
+The baseline is the slug-set file a maintainer keeps outside the repository; ask for it, and read `docs/served-corpus-scoreboard.md` for the full form.
 
 It renders a fixed set of rows through the real serve path and prints the served text.
 Whenever you want to know what a student sees, this rather than a database query is the answer.
@@ -122,7 +135,7 @@ Measured churn over the 90 days to 2026-09-25, which is a decent proxy for where
 ## Day 4: your first change
 
 1. Find or file an issue. Substantive work needs one; a typo does not.
-2. `scripts/new-agent-worktree.sh fix/short-name`. Never work in the primary checkout, because two people sharing it will switch branches under each other.
+2. `scripts/new-agent-worktree.sh fix/short-name`. Never work in the primary checkout, because two people sharing it will switch branches under each other. The helper copies your `server/.env` and `client/.env` into the worktree with its own API and client ports, and prints the start commands and the dev-login URL to use there.
 3. Make the smallest change that fixes the cause rather than the symptom.
 4. `yarn verify:fast`, then `yarn test:client` or `yarn test:server` for what you touched.
 5. Open the PR against `beta` with a Conventional Commit title and `Closes #<n>`.
@@ -139,7 +152,7 @@ You should know the real state of the guardrails rather than discovering it.
 Expect the tree to move under you, and rebase often.
 
 **The test suite is the real safety net, and it is good.**
-The suites execute 779 files and about 12,052 tests: 675 files and 10,911 tests on the server, 104 files and 1,141 tests on the client.
+The suites run about a thousand test files; `git ls-files 'server/*.test.ts' 'client/*.test.ts' 'client/*.test.tsx' | wc -l` prints the current count.
 Two reverts and three hotfixes in 90 days across all that traffic.
 Trust it, extend it, and do not merge around it.
 
@@ -148,8 +161,9 @@ Protection here is implemented as GitHub **rulesets**, not as classic branch pro
 That distinction matters the moment you go looking: `GET /repos/.../branches/beta/protection` returns `404 Branch not protected` even though `beta` is protected, because that endpoint only reports the classic kind.
 Read `gh api repos/YaleComputerSociety/ylabs/rulesets` instead.
 
-`require CI on beta` governs `beta`.
-It requires `test-and-build` and `student-journey-smoke` to pass, requires a pull request with **one approving review**, and blocks force pushes.
+Two rulesets govern `beta`.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke` to pass in a squash merge queue, blocks force pushes, and has no bypass actors, so nothing lands on `beta` without passing both on the exact commit that lands.
+`require review on beta` requires a pull request with **one approving review**.
 
 `protect main (production)` governs `main`, and is stricter.
 It requires `test-and-build`, `student-journey-smoke`, and `release-hold`, allows only merge commits rather than squashes, and demands an extra approval for unattributed changes.
@@ -158,14 +172,13 @@ So as a new contributor you cannot merge your own work, by design.
 Someone has to review it.
 Plan for that rather than being surprised by it at the end.
 
-The Admin repository role bypasses both rulesets unconditionally, which is why every pull request merged to date shows no approving review and why the protocol reaches for `gh pr merge --admin`.
-That is not sloppiness: a sole maintainer cannot approve their own pull request, so the bypass is what makes a one-person team able to ship at all.
-It also keeps the release watchdog's bot flow working.
-If you have admin, the restraint is yours to supply: the flag really will override a failing `test-and-build`, so use it for the review requirement and not to get past a red check.
+A pull request authored by someone with the Admin repository role is approved automatically by the `Admin Author Approval` workflow, and nothing else on `beta` is relaxed for them.
+That is not sloppiness: a sole maintainer cannot approve their own pull request, and the merge queue ignores ruleset bypasses, so the automatic approval is what makes a one-person team able to ship at all.
+It cannot get a pull request past a failing check, because the merge queue and its required checks have no bypass actors (#4512).
+On `main` the Admin role still bypasses `protect main (production)`, so the restraint there is yours to supply.
 
-Two checks are deliberately **not** required on `beta`.
-`Person identifier scan` is advisory because its prose rule is fuzzy on purpose, so a red run means read the finding rather than wait for green.
-`release-hold` is the promotion hold and only runs on pull requests into `main`.
+`release-hold` is deliberately **not** required on `beta`: it is the promotion hold and only runs on pull requests into `main`.
+Person identifiers in issue and pull request bodies are refused before posting by the `gh` identifier guard that `scripts/new-agent-worktree.sh` installs, not by a check.
 
 **A local test failure is usually your laptop.**
 The suites are large and on a loaded machine they produce timeouts that are not real: in-memory MongoDB failing to start, or vitest workers timing out.
@@ -182,7 +195,7 @@ They are worth reading once now and again the first time a number surprises you.
 - **Stored is not served.** Stored topics outnumber served topics, and a repaired field can still be served from a stale index. Take a number from the route, not from the model.
 - **An exit code is not verification.** Neither is a script's own counter. Re-read the served surface.
 - **A dry run applies no patch.** A promotion count from a dry run is `null`, not `0`.
-- **Two full suites in parallel fabricate failures.** They contend for the same Development data. `yarn test` runs them sequentially for this reason.
+- **Two full suites in parallel fabricate failures.** Neither touches a real database, but together they starve each other's in-memory MongoDB instances and Vitest workers into timeouts. `yarn test` runs them sequentially for this reason.
 - **A consistency audit cannot find a consistently wrong row.** If every source agrees on the wrong value, agreement is not evidence.
 - **Re-scraping does not retract a dead URL.** Removing an assertion needs a revocation, not another scrape.
 - **A 404 from an API can mean "wrong endpoint", not "absent".** `GET /branches/beta/protection` returns `404 Branch not protected` on this repository, which reads as "there is no protection" and is false: protection is configured as rulesets, which that endpoint does not report. The negative answer was authoritative-looking and wrong. When an absence surprises you, confirm you are asking the instrument that would know.
@@ -203,11 +216,11 @@ They are worth reading once now and again the first time a number surprises you.
 
 Do these before their first day, because each one blocks them entirely.
 
-- [ ] GitHub write access to the repository.
+- [ ] GitHub write access to the repository, which is optional: a newcomer can start from a fork (see `CONTRIBUTING.md`), and write access is granted after a first merged change.
 - [ ] Development MongoDB credentials. Do not hand out Beta or Production.
 - [ ] `OPENAI_API_KEY` if they will touch search or any LLM extraction lane.
 - [ ] Confirm whether they need Yale network access. Scraper and data work reaches Yale sources, which is what the `fleet:data` label marks; serve-time work does not.
 - [ ] Pick their first task yourself, and pick a serve-time one. Every currently open issue is deep data-quality work written in internal vocabulary, so an unlabelled tracker is not a starting point.
-- [ ] Decide whether they get the Admin repository role, and default to no. Admin bypasses both rulesets unconditionally, so it hands a newcomer the power to merge past a failing `test-and-build`. Without it the `require CI on beta` ruleset does its job.
-- [ ] Commit to reviewing their pull requests. `require CI on beta` needs one approving review, and a contributor without admin genuinely cannot merge without you. This is the rule that turns "I will look at it eventually" into a blocked newcomer.
+- [ ] Decide whether they get the Admin repository role, and default to no. Admin gets a newcomer's own pull requests approved automatically and bypasses `protect main (production)`, so it hands them the power to merge their own unreviewed work and to promote past a failing check on `main`.
+- [ ] Commit to reviewing their pull requests. `require review on beta` needs one approving review, and a contributor without admin genuinely cannot merge without you. This is the rule that turns "I will look at it eventually" into a blocked newcomer.
 - [ ] Decide the review rule for their first changes. Zero-review works for a maintainer holding the model in their head; it does not work for a newcomer's first stored-data change, which can merge green and deliver nothing at all.

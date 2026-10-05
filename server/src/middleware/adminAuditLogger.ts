@@ -10,6 +10,7 @@ import {
   MAX_AUDIT_SUMMARY_FIELDS,
   recordAdminAuditEvent,
 } from '../services/adminAuditService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 interface AdminAuditRouteDescriptor {
   action: string;
@@ -36,11 +37,6 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'adminGrant',
     targetId: paramId('netid'),
   },
-  'PUT /profiles/:netid': {
-    action: 'profile.update',
-    targetType: 'profile',
-    targetId: paramId('netid'),
-  },
   'POST /departments': {
     action: 'department.create',
     targetType: 'department',
@@ -55,6 +51,11 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     action: 'department.delete',
     targetType: 'department',
     targetId: paramId('id'),
+  },
+  'POST /research-areas': {
+    action: 'research_area.create',
+    targetType: 'researchArea',
+    targetId: (_req, body) => responseObject(body).researchArea?._id,
   },
   'PUT /research-areas/:id': {
     action: 'research_area.update',
@@ -86,15 +87,10 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'fellowship',
     targetId: paramId('id'),
   },
-  'PUT /access-review/:id/manual-locks': {
-    action: 'access_review.manual_locks',
-    targetType: 'researchEntity',
+  'PUT /correction-reports/:id': {
+    action: 'correction_report.review',
+    targetType: 'correctionReport',
     targetId: paramId('id'),
-  },
-  'PUT /access-review/records/:type/:recordId/review': {
-    action: 'access_review.record_review',
-    targetType: 'accessReviewRecord',
-    targetId: paramId('recordId'),
   },
 };
 
@@ -136,6 +132,14 @@ const buildAuditSummary = (req: Request): AdminAuditSummary => {
   return summary;
 };
 
+const warnUnauditedMutation = (req: Request): void => {
+  const routePath = (req.route as { path?: string } | undefined)?.path ?? req.path;
+  console.warn(
+    'Admin audit: no ADMIN_AUDIT_ROUTES entry, mutation left unaudited:',
+    sanitizeLogValue(`${req.method} ${routePath}`),
+  );
+};
+
 export const adminAuditMutationLogger = (req: Request, res: Response, next: NextFunction): void => {
   if (!AUDIT_METHODS.has(req.method)) {
     next();
@@ -153,7 +157,10 @@ export const adminAuditMutationLogger = (req: Request, res: Response, next: Next
     if (res.statusCode < 200 || res.statusCode >= 300) return;
 
     const context = resolveAdminAuditContext(req);
-    if (!context) return;
+    if (!context) {
+      warnUnauditedMutation(req);
+      return;
+    }
 
     void recordAdminAuditEvent({
       actorNetid: actorNetid(req),

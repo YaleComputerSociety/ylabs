@@ -6,6 +6,7 @@
  */
 import type { ScraperOptions } from './types';
 import { c4LosslessIngestDeclared } from './observationStore';
+import { operatorEnvironmentForDatabaseName } from '../scripts/operatorDatabaseEnvironment';
 
 export type ScraperEnvironment = 'development' | 'beta' | 'production' | 'test';
 
@@ -60,20 +61,18 @@ export function resolveMongoDatabaseName(mongoUrl: string | undefined): string |
   }
 }
 
-function expectedDatabaseName(
+function declaredDatabaseNameOverride(
   environment: ScraperEnvironment,
   env: NodeJS.ProcessEnv,
 ): string | undefined {
-  if (environment === 'development') {
-    return env.SCRAPER_DEVELOPMENT_DB_NAME || 'Development';
-  }
-  if (environment === 'beta') {
-    return env.SCRAPER_BETA_DB_NAME || 'Beta';
-  }
-  if (environment === 'production') {
-    return env.SCRAPER_PRODUCTION_DB_NAME || 'Production';
-  }
+  if (environment === 'development') return env.SCRAPER_DEVELOPMENT_DB_NAME || undefined;
+  if (environment === 'beta') return env.SCRAPER_BETA_DB_NAME || undefined;
+  if (environment === 'production') return env.SCRAPER_PRODUCTION_DB_NAME || undefined;
   return undefined;
+}
+
+function guardedEnvironments(environment: ScraperEnvironment): boolean {
+  return environment === 'development' || environment === 'beta' || environment === 'production';
 }
 
 export function assertScraperEnvironmentMatchesMongoTarget(args: {
@@ -81,27 +80,49 @@ export function assertScraperEnvironmentMatchesMongoTarget(args: {
   mongoUrl?: string;
   env?: NodeJS.ProcessEnv;
 }): void {
-  if (!args.mongoUrl) return;
-
   const env = args.env || process.env;
-  const expected = expectedDatabaseName(args.environment, env);
-  if (!expected) return;
+  const mongoUrl = args.mongoUrl ?? env.MONGODBURL;
+  if (!mongoUrl) return;
+  if (!guardedEnvironments(args.environment)) return;
 
-  const actual = resolveMongoDatabaseName(args.mongoUrl);
+  const declared = declaredDatabaseNameOverride(args.environment, env);
+  const actual = resolveMongoDatabaseName(mongoUrl);
+
   if (!actual) {
     throw new Error(
-      `SCRAPER_ENV=${args.environment} requires MONGODBURL to include the explicit database name "${expected}".`,
+      `SCRAPER_ENV=${args.environment} requires MONGODBURL to include an explicit database name.`,
     );
   }
-  if (actual !== expected) {
-    throw new Error(
-      `SCRAPER_ENV=${args.environment} requires Mongo database "${expected}", but MONGODBURL resolves to "${actual}".`,
-    );
+
+  if (declared) {
+    if (actual !== declared) {
+      throw new Error(
+        `SCRAPER_ENV=${args.environment} requires Mongo database "${declared}", but MONGODBURL resolves to "${actual}".`,
+      );
+    }
+    return;
+  }
+
+  if (operatorEnvironmentForDatabaseName(actual) !== args.environment) {
+    throw new Error(`SCRAPER_ENV=${args.environment} does not match Mongo database "${actual}".`);
   }
 }
 
+export function isPromotionOnlyEnvironment(environment: ScraperEnvironment): boolean {
+  return environment === 'beta' || environment === 'production';
+}
+
+export function promotionOnlyScraperWriteRefusal(environment: ScraperEnvironment): string {
+  return (
+    `SCRAPER_ENV=${environment} refuses scraper writes: sweeps and scrapes write only to Development, ` +
+    'and Beta and Production receive data only through promotion. ' +
+    'Run the scrape against Development, then promote with yarn beta:refresh-from-development:plan and :apply, ' +
+    'and yarn --cwd server production:promote-beta-copy (docs/data-refresh-runbook.md).'
+  );
+}
+
 export function applyScraperEnvironmentGuards(args: {
-  command: 'run' | 'cron' | 'materialize' | 'report';
+  command: 'run' | 'materialize' | 'report';
   options: ScraperOptions;
   autoMaterialize: boolean;
   mongoUrl?: string;
@@ -120,11 +141,7 @@ export function applyScraperEnvironmentGuards(args: {
   const allowNonProdWrites = env.ALLOW_NON_PROD_SCRAPER_WRITES === 'true';
 
   if (environment !== 'production') {
-    if (
-      (args.command === 'run' || args.command === 'cron') &&
-      !options.dryRun &&
-      !allowNonProdWrites
-    ) {
+    if (args.command === 'run' && !options.dryRun && !allowNonProdWrites) {
       options.dryRun = true;
       warnings.push(
         `SCRAPER_ENV=${environment}; forcing --dry-run. Set ALLOW_NON_PROD_SCRAPER_WRITES=true to write to this non-production DB.`,
@@ -146,27 +163,14 @@ export function applyScraperEnvironmentGuards(args: {
     }
   }
 
-  if (environment === 'production') {
-    const confirmed = env.CONFIRM_PROD_SCRAPE === 'true';
-    const writes =
-      args.command === 'run' || args.command === 'cron'
-        ? !options.dryRun
-        : args.command === 'materialize' && !options.dryRun;
+  const writes = (args.command === 'run' || args.command === 'materialize') && !options.dryRun;
+  if (writes && isPromotionOnlyEnvironment(environment)) {
+    throw new Error(promotionOnlyScraperWriteRefusal(environment));
+  }
 
-    if (writes && !options.release) {
-      throw new Error('Production scraper writes require --release.');
-    }
-
-    if (writes && !confirmed) {
-      throw new Error(
-        'Production scraper writes require CONFIRM_PROD_SCRAPE=true in the environment.',
-      );
-    }
-
-    if (options.useCache) {
-      options.useCache = false;
-      warnings.push('SCRAPER_ENV=production; disabling --use-cache.');
-    }
+  if (environment === 'production' && options.useCache) {
+    options.useCache = false;
+    warnings.push('SCRAPER_ENV=production; disabling --use-cache.');
   }
 
   return {
@@ -174,7 +178,7 @@ export function applyScraperEnvironmentGuards(args: {
     options,
     autoMaterialize,
     warnings,
-    dbLabel: summarizeMongoUrl(args.mongoUrl),
+    dbLabel: summarizeMongoUrl(args.mongoUrl ?? env.MONGODBURL),
   };
 }
 
@@ -216,6 +220,6 @@ export function applyObservationPruneEnvironmentGuards(args: {
     environment,
     apply,
     warnings,
-    dbLabel: summarizeMongoUrl(args.mongoUrl),
+    dbLabel: summarizeMongoUrl(args.mongoUrl ?? env.MONGODBURL),
   };
 }

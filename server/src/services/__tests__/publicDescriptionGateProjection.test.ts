@@ -82,6 +82,7 @@ describe('public description gate projection completeness', () => {
     expect(missingPublicDescriptionGateFields(HISTORICAL_AUDIT_PROJECTION)).toEqual([
       'researchAreas',
       'fieldProvenance',
+      'siteDeclaredOwnNames',
     ]);
   });
 
@@ -90,11 +91,13 @@ describe('public description gate projection completeness', () => {
       'descriptionSource',
       'researchAreas',
       'fieldProvenance',
+      'siteDeclaredOwnNames',
     ]);
     expect(missingPublicDescriptionGateFields(HISTORICAL_RELATED_PROJECTION)).toEqual([
       'profileSynthesisDescription',
       'researchAreas',
       'fieldProvenance',
+      'siteDeclaredOwnNames',
     ]);
   });
 

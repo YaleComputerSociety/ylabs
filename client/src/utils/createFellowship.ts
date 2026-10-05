@@ -1,19 +1,25 @@
 /**
  * Fellowship creation API helper.
  */
-import { Fellowship } from '../types/types';
+import { Fellowship, PROGRAM_AUDIENCES, type ProgramAudience } from '../types/types';
+
+const programAudienceOf = (value: unknown): ProgramAudience | null =>
+  (PROGRAM_AUDIENCES as readonly unknown[]).includes(value) ? (value as ProgramAudience) : null;
 
 export function createFellowship(data: any): Fellowship {
   return {
     id: data._id || data.id,
     programCategory: data.programCategory || 'FELLOWSHIP',
     programKind: data.programKind || 'OTHER',
+    programRole: data.programRole || undefined,
+    departmentResearchGuidance: data.departmentResearchGuidance === true,
     entryMode: data.entryMode || 'UNKNOWN',
     studentFacingCategory: data.studentFacingCategory || '',
     requiresMentorBeforeApply: data.requiresMentorBeforeApply || false,
     mentorMatching: data.mentorMatching || false,
     undergraduateOnly: typeof data.undergraduateOnly === 'boolean' ? data.undergraduateOnly : null,
     yaleCollegeOnly: typeof data.yaleCollegeOnly === 'boolean' ? data.yaleCollegeOnly : null,
+    audience: programAudienceOf(data.audience),
     compensationSummary: data.compensationSummary || '',
     hoursPerWeek: typeof data.hoursPerWeek === 'number' ? data.hoursPerWeek : null,
     programDates: data.programDates || '',
@@ -22,6 +28,7 @@ export function createFellowship(data: any): Fellowship {
     title: data.title || '',
     competitionType: data.competitionType || '',
     summary: data.summary || '',
+    cardSummary: typeof data.cardSummary === 'string' ? data.cardSummary : undefined,
     description: data.description || '',
     applicationInformation: data.applicationInformation || '',
     eligibility: data.eligibility || '',
@@ -33,6 +40,12 @@ export function createFellowship(data: any): Fellowship {
     isAcceptingApplications: data.isAcceptingApplications || false,
     applicationOpenDate: data.applicationOpenDate || null,
     deadline: data.deadline || null,
+    // The server projects a recurring deadline forward and flags it (#1368). Dropping the
+    // flag here made every consumer read a projected date as a live window, so a browse card
+    // showed a green "Open" pill for next year's estimate and the detail modal suppressed its
+    // own "unconfirmed, verify at source" warning (#3904).
+    deadlineProjectedNextCycle: data.deadlineProjectedNextCycle === true,
+    deadlineStale: data.deadlineStale === true,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',

@@ -11,6 +11,7 @@ import {
   evergreenizeStaleCycleDatePhrase,
   hasContactBlockResidue,
   isBareLabelOrTopicEnumerationText,
+  isResearchInterestsSentence,
   isCitationAuthorListDumpText,
   stripHtmlTagMarkupForDetection,
   isCtaNewsTickerDumpText,
@@ -40,6 +41,7 @@ import {
   MAX_CARD_SHORT_DESCRIPTION_WORDS,
   MAX_SHORT_DESCRIPTION_LENGTH,
   MID_SENTENCE_TRUNCATION_MIN_LENGTH,
+  partitionSentencesForFiltering,
   partitionSentencesLossless,
   repairMidSentenceTruncation,
   repairMissingSpaceAfterSentence,
@@ -2032,6 +2034,48 @@ describe('isCitationAuthorListDumpText citation-list fail-closed (#1481)', () =>
     ).toBe('');
   });
 
+  it('detects a bibliography entry whose authors are in APA surname-comma-initials order', () => {
+    const APA_ENTRY =
+      'Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N. and Ferro, J., 2003. Laboratory studies of thermally driven flows with partial mixing and multiple flow states.';
+    expect(isCitationAuthorListDumpText(APA_ENTRY)).toBe(true);
+    expect(sanitizeResearchEntityDescription(APA_ENTRY)).toBe('');
+  });
+
+  it('refuses an HTML-wrapped APA-order bibliography entry with a trailing journal sentence', () => {
+    const HTML_APA_ENTRY =
+      '<p> Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N., 2019. Thermal plumes in stratified basins. Journal of Fluid Studies 12, 1-20.</p>';
+    expect(sanitizeResearchEntityDescription(HTML_APA_ENTRY)).toBe('');
+  });
+
+  it('keeps research prose that lists APA-order publications after it', () => {
+    const PROSE_THEN_PUBLICATIONS =
+      'The group studies how sleep health responds to psychosocial stress in underserved communities, using actigraphy and interviews. Recent work: Okafor, J. A., Lindqvist, M.-L., Brennan, W.G., Castell, S. N., 2021. Sleep and stress.';
+    expect(isCitationAuthorListDumpText(PROSE_THEN_PUBLICATIONS)).toBe(false);
+  });
+
+  it('detects a bibliography entry whose authors are full given names (#4623)', () => {
+    const FULL_NAME_ENTRY =
+      'Avery Quill, Blake Rowan, Casey Marrow, Devon Pellis. Mean-field inference for sparse linear models: Geometric and statistical properties.';
+    const OXFORD_AND_ENTRY =
+      'Avery Quill, Blake Rowan, Casey J. Marrow, and Devon Pellis-Hart. Identifying cellular niches in spatial transcriptomic data.';
+    expect(isCitationAuthorListDumpText(FULL_NAME_ENTRY)).toBe(true);
+    expect(isCitationAuthorListDumpText(OXFORD_AND_ENTRY)).toBe(true);
+    expect(sanitizeResearchEntityDescription(FULL_NAME_ENTRY)).toBe('');
+  });
+
+  it('keeps a staff title list and prose that names collaborators (#4623)', () => {
+    expect(
+      isCitationAuthorListDumpText(
+        'Assistant Director, Financial Aid. Deputy Coordinator, Student Affairs. Avery joined the school in 2024.',
+      ),
+    ).toBe(false);
+    expect(
+      isCitationAuthorListDumpText(
+        'Avery Quill, Blake Rowan, and Casey Marrow lead the group, which studies sparse linear models.',
+      ),
+    ).toBe(false);
+  });
+
   it('detects an author list whose run is broken by interposed element tags (#2416)', () => {
     expect(
       isCitationAuthorListDumpText(
@@ -3292,6 +3336,73 @@ describe('short description whole-sentence cap (#2184)', () => {
     }
   });
 
+  it('never cuts an over-long short inside a parenthetical e.g. or i.e. (#3866)', () => {
+    const EXAMPLE_PARENTHETICAL =
+      'Clinical research in solid tumors, focusing on early-phase trials and the development of novel therapies (e.g., enzyme inhibitors, immunotherapy) and the tumor DNA dynamics measured in patients during treatment.';
+    const RESTATING_PARENTHETICAL =
+      'The group builds reduced models of cortical circuits (i.e. networks small enough to simulate exhaustively) to test which wiring rules reproduce the population activity recorded in behaving animals over weeks.';
+
+    for (const oneLongSentence of [EXAMPLE_PARENTHETICAL, RESTATING_PARENTHETICAL]) {
+      expect(oneLongSentence.length).toBeGreaterThan(MAX_SHORT_DESCRIPTION_LENGTH);
+      expect(clampShortDescriptionToWholeSentences(oneLongSentence)).toBe(oneLongSentence);
+    }
+  });
+
+  it('keeps a middle initial inside its sentence (#3988)', () => {
+    expect(
+      partitionSentencesForFiltering(
+        'The Jordan Q. Fixture Fund supports research. It is open to juniors.',
+      ),
+    ).toEqual(['The Jordan Q. Fixture Fund supports research. ', 'It is open to juniors.']);
+  });
+
+  it('drops a repeated sentence whole when it holds a middle initial and a degree (#3988)', () => {
+    const named =
+      'The Jordan Q. Fixture Fellowship is named for the first graduate of the program to earn a Ph.D.';
+    expect(
+      collapseRepeatedSentences(
+        `${named} ${named} The fellowship funds summer research. Apply to the Jordan Q. Fixture Fellowship online.`,
+      ),
+    ).toBe(
+      `${named} The fellowship funds summer research. Apply to the Jordan Q. Fixture Fellowship online.`,
+    );
+  });
+
+  it('keeps every sentence without a contact placeholder whole when one sentence has it (#3988)', () => {
+    const lead =
+      'The Jordan Q. Fixture Fellowship is named for the first graduate of the program to earn a Ph.D.';
+    expect(
+      sanitizeStoredCatalogDescription(
+        `${lead} The fellowship funds summer research. For questions, please contact fixture.office@example.edu about eligibility.`,
+      ),
+    ).toBe(`${lead} The fellowship funds summer research.`);
+  });
+
+  it('still ends a sentence at a disease or vitamin name that ends in a capital letter (#3988)', () => {
+    expect(
+      partitionSentencesForFiltering(
+        'The lab studies Hepatitis B. To read more, see the Research page.',
+      ),
+    ).toEqual(['The lab studies Hepatitis B. ', 'To read more, see the Research page.']);
+    expect(
+      stripSelfReferentialResearchCtaSentences(
+        'The lab studies Hepatitis B. To read more about our research, please see the Research page.',
+      ),
+    ).toBe('The lab studies Hepatitis B.');
+    expect(
+      sanitizeEvidenceExcerpt(
+        'The lab studies Vitamin D. Contact fixture.office@example.edu for details.',
+      ),
+    ).toBe('The lab studies Vitamin D.');
+  });
+
+  it('still ends a sentence at a capital letter initial followed by a space (#3866)', () => {
+    expect(partitionSentencesForFiltering('Works on vitamin E. Next sentence here.')).toEqual([
+      'Works on vitamin E. ',
+      'Next sentence here.',
+    ]);
+  });
+
   it('drops a trailing sentence that passes the word ceiling rather than the whole card line (#1878)', () => {
     const LEAD =
       'Investigates how city residents use buses and trains to reach work and school, and how the cost of a single ride and the time it takes shape the travel choice each rider makes on an ordinary weekday morning.';
@@ -3307,8 +3418,17 @@ describe('short description whole-sentence cap (#2184)', () => {
     expect(sanitizeResearchEntityShortDescription(source)).toBe(LEAD);
   });
 
-  it('refuses rather than cutting at an abbreviation when the sentence passes the card ceiling (#2184/#1878)', () => {
+  it('cuts a sentence past the card ceiling at a clause, never at an abbreviation (#2184/#1878)', () => {
     const pastCeiling = `Dr. Kwan integrates population genomics and field ecology ${'to understand how marine invertebrate populations adapt to warming coastal waters, '.repeat(3)}across seasons.`;
+    expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+    const card = clampShortDescriptionToWholeSentences(pastCeiling);
+    expect(card.startsWith('Dr. Kwan integrates population genomics and field ecology')).toBe(true);
+    expect(card.endsWith('coastal waters.')).toBe(true);
+    expect(card.length).toBeLessThanOrEqual(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
+  });
+
+  it('refuses a sentence past the card ceiling that has no clause to cut at (#2184)', () => {
+    const pastCeiling = `Dr. Kwan integrates ${'population genomics field ecology marine invertebrate adaptation '.repeat(6)}across seasons.`;
     expect(pastCeiling.length).toBeGreaterThan(MAX_CARD_SHORT_DESCRIPTION_LENGTH);
     expect(clampShortDescriptionToWholeSentences(pastCeiling)).toBe('');
   });
@@ -3425,5 +3545,44 @@ describe('stripLeadingAppointmentTitleBlock', () => {
     const once = stripLeadingAppointmentTitleBlock(glued);
     expect(stripLeadingAppointmentTitleBlock(once)).toBe(once);
     expect(stripLeadingAppointmentTitleBlock('')).toBe('');
+  });
+});
+
+describe('isResearchInterestsSentence', () => {
+  it('accepts a single sentence that states research interests and lists them', () => {
+    expect(
+      isResearchInterestsSentence(
+        'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(true);
+    expect(
+      isResearchInterestsSentence(
+        'Her research interests are Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a labelled topic list', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Research interests: Learning Theory, Optimization, Game Theory, Mechanism Design.',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects a body of more than one sentence that opens with research interests', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Her research interests include Learning Theory, Optimization, and Game Theory. The lab also studies learning theory and optimization.',
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects interests that are not stated as research', () => {
+    expect(
+      isResearchInterestsSentence(
+        'Outside the lab, my interests include Hiking, Cooking, Chess, and Travel.',
+      ),
+    ).toBe(false);
   });
 });

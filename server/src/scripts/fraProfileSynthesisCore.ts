@@ -354,6 +354,102 @@ const NAV_CHROME_RUN =
 const PROFILE_FURNITURE_RUN =
   /\b(?:Publications Timeline|A big-picture view of|Research topics .{1,80} is interested in exploring|View this doctor's clinical profile|View Doctor Profile|Peer-Reviewed Original Research|MeSH Keywords|Altmetric|Your browser is antiquated|Back to Top|Get In Touch|Copy Link|Voluntary rank details)\b/i;
 
+/**
+ * A bibliographic record rather than prose: a journal, year, volume and article
+ * number ("Investigative Ophthalmology & Visual Science 2018, 59: 2437-2444"), an
+ * identifier label, a run of "Surname I," author tokens, or a dated venue
+ * ("Review of Economic Studies (Jul 2019)").
+ *
+ * A profile's publication feed is not evidence of what its person studies, because
+ * the feed is where a namesake's papers are attributed to the person (#4561): a
+ * psychiatry lecturer's page listing a vascular biologist's papers produced a body
+ * about blood vessel assembly. A title carries research vocabulary, so it cleared
+ * `RESEARCH_SENTENCE` and reached the model as the page's only research prose.
+ */
+const CITATION_METADATA_MARKERS: readonly RegExp[] = [
+  /\b(?:19|20)\d{2}\s*[,;]\s*\d+\s*(?:\(\s*[\w-]+\s*\))?\s*:\s*e?\d/,
+  /\b(?:PMID|PMCID|DOI)\s*:/i,
+  /\bdoi\.org\//i,
+  /(?:\b\p{Lu}[\p{L}'’-]+\s\p{Lu}{1,3},\s+){3,}/u,
+  /\((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+(?:19|20)\d{2}\)/,
+];
+
+export function isCitationMetadataSentence(sentence: string): boolean {
+  return CITATION_METADATA_MARKERS.some((marker) => marker.test(sentence));
+}
+
+/**
+ * A publication or section title, which a profile prints in title case. Prose of
+ * sixty characters or more always carries a lower-case content word after its
+ * first, so a sentence with none, and with several capitalised ones, is a heading.
+ */
+export function isTitleCaseHeading(sentence: string): boolean {
+  const words = sentence
+    .split(/\s+/)
+    .slice(1)
+    .map((word) => word.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ''))
+    .filter((word) => word.length >= 4);
+  const capitalised = words.filter((word) => /^\p{Lu}/u.test(word)).length;
+  return capitalised >= 4 && capitalised === words.length;
+}
+
+/**
+ * A sentence about the posts a person has held rather than the work they study:
+ * "was the director of public policy for ...", "Prior to Friends, he was a senior
+ * public policy officer at ...", "spent 6 years working as a special education
+ * teacher". Each also names the programs of the organization the person worked for
+ * ("advocacy efforts focused on ..."), which `RESEARCH_SENTENCE` reads as a research
+ * focus, and the model then wrote that the person studies them (#4561).
+ *
+ * A sentence that states research of its own keeps its place, because a career
+ * sentence that says "where her research examined ..." is the research evidence.
+ */
+const HELD_POST =
+  '(?:the\\s+|an?\\s+)?(?:former\\s+|founding\\s+)?(?:[\\p{L}-]+\\s+){0,4}(?:director|manager|officer|coordinator|administrator|consultant|adviser|advisor|teacher|analyst|editor|founder|president|specialist|associate|attorney|prosecutor|counsel|chair|dean)\\b';
+
+const EMPLOYER =
+  '(?:an?\\s+|the\\s+)(?:[\\p{L}-]+\\s+){0,4}(?:company|firm|foundation|organi[sz]ation|agency|department|office|nonprofit|non-profit|hospital|clinic|university|college|school|bank|council|alliance|cent(?:er|re)|institute|association|corporation|government|ministry|commission|bureau|network)\\b';
+
+const CAREER_HISTORY_MARKERS: readonly RegExp[] = [
+  new RegExp(`\\b(?:was|has\\s+been|had\\s+been)\\s+${HELD_POST}`, 'iu'),
+  /\b(?:prior\s+to|before)\s+(?:joining|coming)\b/i,
+  /\bcomes\s+to\s+(?:Yale|the)\b/i,
+  /\b(?:his|her|their)\s+(?:work|role|job|responsibilities)\s+(?:was|were|included)\b/i,
+  /\b(?:previously|most\s+recently),?\s+(?:[\p{L}-]+\s+)?(?:served|worked|taught|held|directed|managed|practiced)\b/iu,
+  /\bpreviously\s+(?:at|with)\b/i,
+  new RegExp(
+    `\\bspent\\s+(?:\\w+\\s+){1,2}years?\\s+(?:as\\s+${HELD_POST}|(?:at|with)\\s+${EMPLOYER}|(?:working|teaching|practicing)\\b)`,
+    'iu',
+  ),
+  new RegExp(
+    `\\b(?:worked|working)\\s+(?:full[-\\s]time\\s+)?(?:as\\s+${HELD_POST}|(?:at|for)\\s+${EMPLOYER})`,
+    'iu',
+  ),
+  /\b(?:worked|working|spent\s+(?:\w+\s+){1,2}years?)\s+(?:full[-\s]time\s+)?(?:at|for|with)\s+\p{Lu}/u,
+  /\bbegan\s+(?:his|her|their)\s+career\b/i,
+  /\bbrings\s+(?:over\s+|more\s+than\s+|nearly\s+|almost\s+)?(?:a|\w+)\s+(?:decades?|years?)\b/i,
+  /\byears\s+of\s+(?:\w+\s+)?experience\b/i,
+  new RegExp(`\\bserved\\s+as\\s+${HELD_POST}`, 'iu'),
+];
+
+const STATES_RESEARCH =
+  /\b(?:research\w*|stud(?:y|ies|ied|ying)|investigat\w*|scholar\w*|interest(?:s|ed)?|explor\w*|examin\w*|analy[sz]\w*|mechanisms?|discover\w*|experiment\w*|laborator(?:y|ies)|lab)\b/i;
+
+/**
+ * A job title or a course name is not a research claim: "where she was a Senior
+ * Research Specialist and developed training programs" names a post, and "has taught
+ * “Legal Research and Writing”" names a class.
+ */
+const RESEARCH_JOB_TITLE =
+  /\b(?:Senior\s+|Associate\s+|Assistant\s+|Postdoctoral\s+)?Research\s+(?:Specialist|Associate|Assistant|Scientist|Coordinator|Fellow|Analyst|Manager|Director|Officer|Technician)s?\b/g;
+const QUOTED_TITLE = /[“"][^”"]{1,120}[”"]/g;
+
+export function isCareerHistorySentence(sentence: string): boolean {
+  const claims = sentence.replace(RESEARCH_JOB_TITLE, ' ').replace(QUOTED_TITLE, ' ');
+  if (STATES_RESEARCH.test(claims)) return false;
+  return CAREER_HISTORY_MARKERS.some((marker) => marker.test(sentence));
+}
+
 const MIN_SENTENCE_CHARS = 60;
 const MAX_SENTENCE_CHARS = 600;
 
@@ -390,26 +486,124 @@ export { isCareerBiographyDescription, splitSentences };
  */
 const withoutUrls = (sentence: string): string => sentence.replace(/https?:\/\/\S+/gi, ' ');
 
+export type ProfileSentenceRefusal =
+  'career-fact' | 'chrome' | 'citation-metadata' | 'title-case-heading' | 'career-history';
+
+function profileSentenceRefusal(sentence: string): ProfileSentenceRefusal | null {
+  const prose = withoutUrls(sentence);
+  // Both career predicates, URL-stripped like the two vocabularies above. A degree
+  // token is short enough to fall inside a link (`/faculty/ba-program/` yields a
+  // bare "ba"), which is the trap `explor` inside `internet-explorer` and
+  // `Altmetric` inside `altmetric.com` already sprang twice.
+  if (CAREER_SENTENCE.test(prose) || isCareerFactSentence(prose)) return 'career-fact';
+  // URL-stripped, like the research vocabulary above and for the same reason: a
+  // marker that is also a host label matches inside a link, so a real sentence
+  // citing `altmetric.com` would be read as the page's own publication furniture.
+  if (NAV_CHROME_RUN.test(sentence) || PROFILE_FURNITURE_RUN.test(prose)) return 'chrome';
+  if (isCitationMetadataSentence(sentence)) return 'citation-metadata';
+  if (isTitleCaseHeading(prose)) return 'title-case-heading';
+  if (isCareerHistorySentence(prose)) return 'career-history';
+  return null;
+}
+
+/**
+ * What one profile page offers this lane as research evidence, and what it refused.
+ *
+ * `careerHistorySentences` counts the sentences in the research vocabulary refused
+ * only for narrating posts the person held, and `publicationRecords` counts every
+ * bibliographic record on the page at any length, because the withdrawal rule in
+ * `profileStatesCareerInsteadOfResearch` reads both.
+ */
+export interface ProfileResearchReading {
+  researchSentences: string[];
+  careerHistorySentences: number;
+  publicationRecords: number;
+}
+
+const JOURNAL_LINE = /^\p{Lu}[\p{L}&.,'’ -]{3,120}\s(?:19|20)\d{2}\s*[,;]\s*\d+/u;
+const MAX_JOURNAL_LINE_CHARS = 200;
+
+const comparableTitle = (sentence: string): string =>
+  sentence
+    .replace(/[.!?]+$/, '')
+    .trim()
+    .toLowerCase();
+
+/**
+ * A publication title printed as its own sentence, which a feed does in two ways: the
+ * title repeated after the "Title Authors." record that already holds it, and a title
+ * followed directly by its journal line ("Example Reports 2019, 9: 18552."). The title
+ * is the sentence-case half of a record, so `isCitationMetadataSentence` cannot see it.
+ */
+function isPublicationTitleSentence(
+  sentence: string,
+  previous: string | undefined,
+  next: string | undefined,
+): boolean {
+  const title = comparableTitle(sentence);
+  if (title.length < 20) return false;
+  if (previous && isCitationMetadataSentence(previous) && previous.toLowerCase().includes(title)) {
+    return true;
+  }
+  return Boolean(
+    next &&
+    next.length <= MAX_JOURNAL_LINE_CHARS &&
+    JOURNAL_LINE.test(next) &&
+    isCitationMetadataSentence(next),
+  );
+}
+
+export function readProfileResearchEvidence(pageText: string): ProfileResearchReading {
+  const reading: ProfileResearchReading = {
+    researchSentences: [],
+    careerHistorySentences: 0,
+    publicationRecords: 0,
+  };
+  const sentences = splitSentences(textValue(pageText))
+    .map((raw) => textValue(raw))
+    .filter(Boolean);
+  for (const [index, sentence] of sentences.entries()) {
+    if (isCitationMetadataSentence(sentence)) reading.publicationRecords += 1;
+    if (isPublicationTitleSentence(sentence, sentences[index - 1], sentences[index + 1])) {
+      reading.publicationRecords += 1;
+      continue;
+    }
+    if (sentence.length < MIN_SENTENCE_CHARS || sentence.length > MAX_SENTENCE_CHARS) continue;
+    if (!RESEARCH_SENTENCE.test(withoutUrls(sentence))) continue;
+    const refusal = profileSentenceRefusal(sentence);
+    if (refusal === null) reading.researchSentences.push(sentence);
+    else if (refusal === 'career-history') reading.careerHistorySentences += 1;
+  }
+  return reading;
+}
+
 export function profileResearchSentences(pageText: string): string[] {
-  return splitSentences(textValue(pageText))
-    .map((sentence) => textValue(sentence))
-    .filter(
-      (sentence) =>
-        sentence.length >= MIN_SENTENCE_CHARS &&
-        sentence.length <= MAX_SENTENCE_CHARS &&
-        RESEARCH_SENTENCE.test(withoutUrls(sentence)) &&
-        // Both career predicates, URL-stripped like the two vocabularies above. A degree
-        // token is short enough to fall inside a link (`/faculty/ba-program/` yields a
-        // bare "ba"), which is the trap `explor` inside `internet-explorer` and
-        // `Altmetric` inside `altmetric.com` already sprang twice.
-        !CAREER_SENTENCE.test(withoutUrls(sentence)) &&
-        !isCareerFactSentence(withoutUrls(sentence)) &&
-        !NAV_CHROME_RUN.test(sentence) &&
-        // URL-stripped, like the research vocabulary above and for the same reason: a
-        // marker that is also a host label matches inside a link, so a real sentence
-        // citing `altmetric.com` would be read as the page's own publication furniture.
-        !PROFILE_FURNITURE_RUN.test(withoutUrls(sentence)),
-    );
+  return readProfileResearchEvidence(pageText).researchSentences;
+}
+
+/**
+ * Whether complete reads of every candidate page positively say the person's pages
+ * describe a career rather than research: no page carries admissible research prose
+ * or lists a publication, and at least one narrates posts the person held in the
+ * research vocabulary.
+ *
+ * This is the one refusal the lane may act on to withdraw a body it wrote, because
+ * it is a statement the pages make rather than an absence. A page with no research
+ * prose at all, or one whose only research evidence is a publication feed, is not
+ * enough: on Development, most rows whose pages reach that state hold a correct body
+ * built from the person's own publications, and the feed alone cannot tell those
+ * from a namesake's papers (#4561).
+ */
+export function profileStatesCareerInsteadOfResearch(
+  readings: readonly ProfileResearchReading[],
+): boolean {
+  return (
+    readings.length > 0 &&
+    readings.every(
+      (reading) => reading.researchSentences.length === 0 && reading.publicationRecords === 0,
+    ) &&
+    readings.some((reading) => reading.careerHistorySentences > 0)
+  );
 }
 
 /**
@@ -536,15 +730,31 @@ export interface FraProfileSynthesisArgs {
   limit: number;
   slugs: string[];
   output?: string;
+  revalidateOnly: boolean;
+  maxWithdraw?: number;
 }
 
 export function parseFraProfileSynthesisArgs(argv: string[]): FraProfileSynthesisArgs {
-  const args: FraProfileSynthesisArgs = { apply: false, confirm: false, limit: 0, slugs: [] };
+  const args: FraProfileSynthesisArgs = {
+    apply: false,
+    confirm: false,
+    limit: 0,
+    slugs: [],
+    revalidateOnly: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--apply') args.apply = true;
     else if (arg === '--confirm-fra-profile-synthesis') args.confirm = true;
-    else if (arg === '--limit') {
+    else if (arg === '--revalidate-only') args.revalidateOnly = true;
+    else if (arg === '--max-withdraw') {
+      const raw = argv[index + 1];
+      index += 1;
+      if (!raw || !/^\d+$/.test(raw)) {
+        throw new Error('--max-withdraw must be a non-negative integer');
+      }
+      args.maxWithdraw = Number(raw);
+    } else if (arg === '--limit') {
       const raw = argv[index + 1];
       index += 1;
       if (!raw || !/^\d+$/.test(raw)) throw new Error('--limit must be a non-negative integer');

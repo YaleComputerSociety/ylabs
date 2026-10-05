@@ -1,6 +1,6 @@
 # y/labs - Client
 
-The y/labs web client: a React 19 + TypeScript single-page app built with Vite and styled with Tailwind CSS.
+The y/labs web client: a React 19 + TypeScript single-page app built with Vite and styled with Tailwind CSS 4, configured CSS-first in `src/index.css` (see `DESIGN.md`).
 It is the student-facing surface for research discovery, program and fellowship browsing, and the account dashboard.
 
 See `PRODUCT.md` for the product model and `../AGENTS.md` for repository-wide conventions.
@@ -8,10 +8,10 @@ When changing UI, read `DESIGN.md` (the design-token system) and `../skills/fron
 
 ## Prerequisites
 
-- Node 20 (see the repo toolchain notes; newer majors can break the jsdom test environment).
+- Node at the major pinned in `../.node-version`, which `engines` in `package.json` also enforces.
 - Yarn (managed via Corepack).
 
-Install dependencies from the repository root with `yarn install:all`, or from this directory with `yarn`.
+Install dependencies from the repository root with `bash scripts/install-all.sh`, or from this directory with `yarn`.
 
 ## Scripts
 

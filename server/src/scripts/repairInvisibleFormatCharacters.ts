@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { Fellowship } from '../models/fellowship';
 import { syncEntities } from '../services/meiliSyncService';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -18,7 +19,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'data:repair-invisible-format-characters';
 const CONFIRM_FLAG = '--confirm-invisible-format-characters';
@@ -67,6 +68,7 @@ export interface InvisibleFormatCharacterResult {
   documentsUpdated: number;
   entitiesResynced: number;
   entitiesAwaitingResync: number;
+  entitiesResyncDeferred: number;
   rows: Array<Omit<InvisibleFormatCharacterRepairRow, 'set'>>;
 }
 
@@ -98,6 +100,7 @@ export async function runInvisibleFormatCharacterRepair(options: {
     documentsUpdated: 0,
     entitiesResynced: 0,
     entitiesAwaitingResync: 0,
+    entitiesResyncDeferred: 0,
     rows: rows.map(({ collection, documentId, fields }) => ({ collection, documentId, fields })),
   };
   if (options.dryRun || rows.length === 0) return result;
@@ -125,6 +128,10 @@ export async function runInvisibleFormatCharacterRepair(options: {
     .collection(RESEARCH_ENTITIES)
     .find({ _id: { $in: entityRows.map((row) => new mongoose.Types.ObjectId(row.documentId)) } })
     .toArray();
+  if (searchIndexWritesDeferred()) {
+    result.entitiesResyncDeferred = resynced.length;
+    return result;
+  }
   result.entitiesResynced = await syncEntities('researchEntity', resynced as never[]);
   result.entitiesAwaitingResync = resynced.length - result.entitiesResynced;
   return result;
@@ -158,6 +165,11 @@ async function main(): Promise<void> {
       console.log(`Saved invisible-format-character repair report to ${safeOutput}`);
     }
     console.log(JSON.stringify({ ...result, rows: undefined }, null, 2));
+    if (result.entitiesResyncDeferred > 0) {
+      console.log(
+        `${result.entitiesResyncDeferred} search document(s) were not resynced: index writes are deferred by SEARCH_INDEX_WRITES=deferred; re-sync the index from a checkout that reaches it (docs/data-refresh-runbook.md)`,
+      );
+    }
     if (result.entitiesAwaitingResync > 0) {
       throw new Error(
         `${SCRIPT_NAME} repaired the corpus but ${result.entitiesAwaitingResync} search document(s) were not resynced; the index still serves the old text.`,

@@ -32,11 +32,11 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -301,6 +301,95 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     const enriched = await enrichedResearcher(enrichTarget._id);
     expect(enriched?.identifiers?.orcid).toBe(nextOrcid);
     expect(orcidLinkUrls(enriched?.profileLinks)).toEqual([`https://orcid.org/${nextOrcid}`]);
+  });
+
+  describe('plans an ORCID link the stored identifier backs, whatever the stored row held (#4501)', () => {
+    const insertWithoutValidation = async (doc: Record<string, unknown>) => {
+      const _id = new mongoose.Types.ObjectId();
+      await Researcher.collection.insertOne({ _id, archived: false, status: 'UNKNOWN', ...doc });
+      return _id;
+    };
+
+    it('drops an orphaned ORCID link when the observed ORCID collides and no identifier stays', async () => {
+      await Researcher.init();
+      const claimedOrcid = '9999-9999-9999-9994';
+      await Researcher.create({
+        displayName: 'Canonical Holder',
+        identifiers: { orcid: claimedOrcid },
+        profileLinks: [orcidProfileLink(claimedOrcid)],
+      });
+      const account = await Account.create({
+        netid: 'orphan1',
+        email: 'orphan1@yale.edu',
+        status: 'ACTIVE',
+      });
+      const shellId = await insertWithoutValidation({
+        displayName: 'Orphan Shell',
+        accountId: account._id,
+        profileLinks: [orcidProfileLink(claimedOrcid)],
+      });
+
+      await seedDirectoryIdentity('orphan1', 'Orphan', 'Shell');
+      await seedDirectoryOrcid('orphan1', claimedOrcid);
+
+      const result = await materializeEntity('user', { entityKey: 'orphan1' }, {});
+
+      expect(result.conflicts).toBe(2);
+      const enriched = await enrichedResearcher(shellId);
+      expect(enriched?.identifiers?.orcid).toBeUndefined();
+      expect(orcidLinkUrls(enriched?.profileLinks)).toEqual([]);
+      expect(enriched?.profile?.title).toBe('Professor of Physics');
+      expect(await Researcher.countDocuments({ 'identifiers.orcid': claimedOrcid })).toBe(1);
+    });
+
+    it('derives the ORCID link from the stored identifier when the stored link names another ORCID', async () => {
+      await Researcher.init();
+      const ownOrcid = '9999-9000-9999-9005';
+      const strayOrcid = '9999-9001-9999-9010';
+      const account = await Account.create({
+        netid: 'stray1',
+        email: 'stray1@yale.edu',
+        status: 'ACTIVE',
+      });
+      const researcherId = await insertWithoutValidation({
+        displayName: 'Stray Linker',
+        accountId: account._id,
+        identifiers: { orcid: ownOrcid },
+        profileLinks: [orcidProfileLink(strayOrcid)],
+      });
+
+      await seedDirectoryIdentity('stray1', 'Stray', 'Linker');
+
+      const result = await materializeEntity('user', { entityKey: 'stray1' }, {});
+
+      expect(result.conflicts).toBe(1);
+      const enriched = await enrichedResearcher(researcherId);
+      expect(enriched?.identifiers?.orcid).toBe(ownOrcid);
+      expect(orcidLinkUrls(enriched?.profileLinks)).toEqual([`https://orcid.org/${ownOrcid}`]);
+    });
+
+    it('plans the reconciled link on a dry run without writing it', async () => {
+      await Researcher.init();
+      const strayOrcid = '9999-9001-9999-9010';
+      const account = await Account.create({
+        netid: 'dryorphan1',
+        email: 'dryorphan1@yale.edu',
+        status: 'ACTIVE',
+      });
+      const researcherId = await insertWithoutValidation({
+        displayName: 'Dry Orphan',
+        accountId: account._id,
+        profileLinks: [orcidProfileLink(strayOrcid)],
+      });
+
+      await seedDirectoryIdentity('dryorphan1', 'Dry', 'Orphan');
+
+      const result = await materializeEntity('user', { entityKey: 'dryorphan1' }, { dryRun: true });
+
+      expect(result.conflicts).toBe(1);
+      const stored = await enrichedResearcher(researcherId);
+      expect(orcidLinkUrls(stored?.profileLinks)).toEqual([`https://orcid.org/${strayOrcid}`]);
+    });
   });
 
   it('replaces a stale official link when its own department moved the person onto /profile/', async () => {
@@ -675,6 +764,22 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(minted).not.toBeNull();
     });
 
+    it('mints the researcher under a clean name when the given name was split from a headshot caption', async () => {
+      await seedNamingResearchEntity();
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Photo of Dean Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.created).toBe(true);
+      const minted = await Researcher.find({}).lean();
+      expect(minted.map((researcher) => researcher.displayName)).toEqual(['Ada Lovelace']);
+    });
+
     it('mints once, so a repeated pass enriches the minted record instead of duplicating it', async () => {
       await seedNamingResearchEntity();
       await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
@@ -762,6 +867,41 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
       expect(result.skipped).toBe('directory-identity-without-research-signal');
       expect(await Researcher.countDocuments({ displayName: 'Jian Wang' })).toBe(2);
+    });
+
+    it('mints when every same-surname researcher has another given name (#4388)', async () => {
+      await seedNamingResearchEntity();
+      await Researcher.create({ displayName: 'Byron Lovelace' });
+      await Researcher.create({ displayName: 'Charles Lovelace' });
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(1);
+    });
+
+    it('refuses when a same-surname researcher could be the same person (#4388)', async () => {
+      await seedNamingResearchEntity();
+      await Researcher.create({ displayName: 'Byron Lovelace' });
+      await Researcher.create({ displayName: 'A. Lovelace' });
+      await seedRosterIdentity('dept:physics:ada-lovelace', 'Ada', 'Lovelace');
+      await seedPiAttribution('dept:physics:ada-lovelace');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:ada-lovelace' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(0);
     });
 
     it('refuses a netid-shaped key, which the lead materializer cannot resolve back', async () => {

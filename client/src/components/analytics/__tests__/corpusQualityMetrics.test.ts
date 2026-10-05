@@ -28,6 +28,9 @@ const snapshot = (overrides: {
     shortDescriptionUseful: { n: 50, of: 50 },
     leadSentenceStatesResearch: { n: 24, of: 50 },
     shortDescriptionIsAreaEchoOnly: { n: 2, of: 50 },
+    browseCardCutMidSentence: { n: 12, of: 50 },
+    browseCardSixWordsOrFewer: { n: 2, of: 50 },
+    fullDescriptionIsBiography: { n: 1, of: 50 },
     nameIsGenericFacultyResearchTitle: { n: 20, of: 50 },
   },
   integrity: {
@@ -51,15 +54,24 @@ const liveMetrics = (
   },
   richness: {
     hasResearchWebsite: overrides.hasResearchWebsite || { n: 25, of: 50 },
-    hasTopic: { n: 48, of: 50 },
     hasSourceUrl: { n: 50, of: 50 },
-    topicTotal: { n: 150, of: 50 },
-    noResearchWebsiteAndNoTopics: { n: 1, of: 50 },
   },
   description: {
     nameIsGenericFacultyResearchTitle: overrides.genericName || { n: 20, of: 50 },
   },
 });
+
+const SNAPSHOT_ONLY_METRICS = [
+  'leadSentenceStatesResearch',
+  'shortDescriptionIsAreaEchoOnly',
+  'browseCardCutMidSentence',
+  'browseCardSixWordsOrFewer',
+  'fullDescriptionIsBiography',
+  'publicDescriptionInvariantFails',
+  'hasTopic',
+  'topicTotal',
+  'noResearchWebsiteAndNoTopics',
+];
 
 describe('formatRatio', () => {
   it('always shows the denominator so a count cannot be read alone', () => {
@@ -165,7 +177,7 @@ describe('trendPointsLabel', () => {
 
 describe('corpusQualityMetricRows', () => {
   it('returns nothing without live metrics', () => {
-    expect(corpusQualityMetricRows(null, null, null)).toEqual([]);
+    expect(corpusQualityMetricRows(null, null, null, SNAPSHOT_ONLY_METRICS)).toEqual([]);
   });
 
   it('takes an aggregatable metric from the live read, not from the measurement', () => {
@@ -173,6 +185,7 @@ describe('corpusQualityMetricRows', () => {
       liveMetrics({ hasResearchWebsite: { n: 30, of: 50 } }),
       snapshot({ hasResearchWebsite: { n: 11, of: 50 } }),
       snapshot({ hasResearchWebsite: { n: 25, of: 50 }, measuredAt: '2026-09-07T00:00:00.000Z' }),
+      SNAPSHOT_ONLY_METRICS,
     );
     const website = rows.find((row) => row.label === 'Has a research website');
 
@@ -183,26 +196,59 @@ describe('corpusQualityMetricRows', () => {
   });
 
   it('renders the aggregatable rows even when no measurement exists yet', () => {
-    const rows = corpusQualityMetricRows(liveMetrics(), null, null);
+    const rows = corpusQualityMetricRows(liveMetrics(), null, null, SNAPSHOT_ONLY_METRICS);
 
     expect(rows.map((row) => row.label)).toEqual([
       'Has a research website',
-      'Has topics',
-      'No website and no topics',
       'Generic \u201cFaculty Research\u201d title',
     ]);
     expect(rows.every((row) => row.live)).toBe(true);
   });
 
   it('marks the representation-derived rows as measured rather than live', () => {
-    const rows = corpusQualityMetricRows(liveMetrics(), snapshot({}), null);
+    const rows = corpusQualityMetricRows(liveMetrics(), snapshot({}), null, SNAPSHOT_ONLY_METRICS);
     const measured = rows.filter((row) => !row.live).map((row) => row.label);
 
     expect(measured).toEqual([
+      'Has topics',
+      'No website and no topics',
       'Opens by stating the research',
       'Card summary only echoes the topics',
+      'Browse card cut mid-sentence',
+      'Browse card of six words or fewer',
+      'Serves a biography as its description',
       'Public description invariant fails',
     ]);
+  });
+
+  it('reads the topic rows from the served measurement, never from the live read', () => {
+    const latest = snapshot({});
+    latest.richness.hasTopic = { n: 44, of: 50 };
+    latest.richness.noResearchWebsiteAndNoTopics = { n: 4, of: 50 };
+    const rows = corpusQualityMetricRows(liveMetrics(), latest, null, SNAPSHOT_ONLY_METRICS);
+
+    expect(rows.find((row) => row.label === 'Has topics')).toMatchObject({
+      current: { n: 44, of: 50 },
+      live: false,
+    });
+    expect(rows.find((row) => row.label === 'No website and no topics')).toMatchObject({
+      current: { n: 4, of: 50 },
+      live: false,
+    });
+  });
+
+  it('moves an aggregatable row to the measurement when the server declares it snapshot-only', () => {
+    const rows = corpusQualityMetricRows(
+      liveMetrics({ hasResearchWebsite: { n: 30, of: 50 } }),
+      snapshot({ hasResearchWebsite: { n: 11, of: 50 } }),
+      null,
+      [...SNAPSHOT_ONLY_METRICS, 'hasResearchWebsite'],
+    );
+
+    expect(rows.find((row) => row.label === 'Has a research website')).toMatchObject({
+      current: { n: 11, of: 50 },
+      live: false,
+    });
   });
 
   it('directs invariant failures so that a rise reads as worse', () => {
@@ -210,6 +256,7 @@ describe('corpusQualityMetricRows', () => {
       liveMetrics(),
       snapshot({ invariantFails: { n: 5, of: 50 } }),
       snapshot({ invariantFails: { n: 0, of: 50 } }),
+      SNAPSHOT_ONLY_METRICS,
     );
     const invariant = rows.find((row) => row.label === 'Public description invariant fails');
 

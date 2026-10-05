@@ -6,6 +6,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
+import { CheckIcon, ChevronDownIcon, CloseIcon, TagIcon } from './icons';
 
 export type FilterMode = 'intersection' | 'union';
 
@@ -124,37 +125,28 @@ const CombinedFilterDropdown = ({
         aria-haspopup={mobileSheet ? 'dialog' : undefined}
         onClick={() => (isOpen ? closeFilters(mobileSheet) : setIsOpen(true))}
         className="flex min-h-[44px] items-center rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring whitespace-nowrap"
-        style={{ color: '#374151' }}
+        style={{ color: 'var(--yr-ink-soft)' }}
       >
-        <svg
-          className="h-4 w-4 text-muted mr-2"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
-          />
-        </svg>
+        <TagIcon className="h-4 w-4 text-muted mr-2" />
         <span>Filters</span>
         {totalFilters > 0 && (
           <span className="ml-2 bg-brand text-white text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
             {totalFilters}
           </span>
         )}
-        <svg
+        <ChevronDownIcon
           className={`ml-2 h-4 w-4 text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-        </svg>
+        />
       </button>
 
+      {isOpen && mobileSheet && (
+        <div
+          data-testid="filter-sheet-backdrop"
+          aria-hidden="true"
+          onMouseDown={() => closeFilters()}
+          className="fixed inset-0 z-40 bg-scrim sm:hidden"
+        />
+      )}
       {isOpen && (
         <div
           ref={dialogRef}
@@ -178,7 +170,7 @@ const CombinedFilterDropdown = ({
           }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
               : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
           }
         >
@@ -190,13 +182,13 @@ const CombinedFilterDropdown = ({
                 aria-label="Close filters"
                 data-mobile-only="true"
                 onClick={() => closeFilters()}
-                className="flex h-11 w-11 items-center justify-center rounded-control text-2xl text-muted yr-focus-ring"
+                className="flex h-11 w-11 items-center justify-center rounded-control text-muted hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
               >
-                <span aria-hidden="true">×</span>
+                <CloseIcon size={20} />
               </button>
             </div>
           )}
-          <div className="flex border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)] overflow-x-auto">
+          <div className="flex flex-wrap border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -244,7 +236,7 @@ const CombinedFilterDropdown = ({
                 value={getSearch(activeTab.key)}
                 onChange={(e) => setSearch(activeTab.key, e.target.value)}
                 placeholder={`Search ${activeTab.label.toLowerCase()}...`}
-                className="w-full px-3 py-2 border border-[var(--yr-line)] rounded-control text-base mb-3 yr-focus-ring focus:border-transparent"
+                className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-control text-base mb-3 yr-focus-ring focus:border-transparent"
               />
             )}
 
@@ -258,7 +250,7 @@ const CombinedFilterDropdown = ({
               </button>
             )}
 
-            <fieldset className="space-y-1 max-h-[220px] overflow-y-auto">
+            <fieldset className="space-y-1 pt-1 max-h-[220px] overflow-y-auto">
               <legend className="sr-only">{activeTab.label} filters</legend>
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);
@@ -285,26 +277,12 @@ const CombinedFilterDropdown = ({
                       className="peer sr-only"
                     />
                     <span
-                      className={`w-4 h-4 rounded-control border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected ? 'bg-brand border-brand' : 'border-[var(--yr-line-strong)]'
-                      } yr-focus-ring-peer`}
+                      className={`yr-check-proxy yr-focus-ring-peer transition-colors ${
+                        isSelected ? 'border-brand bg-brand' : ''
+                      }`}
                       aria-hidden="true"
                     >
-                      {isSelected && (
-                        <svg
-                          className="w-3 h-3 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="3"
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      )}
+                      {isSelected && <CheckIcon className="w-3 h-3 text-white" />}
                     </span>
                     {colors ? (
                       <span

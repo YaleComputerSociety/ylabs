@@ -28,6 +28,7 @@
  * untouched so nothing this layer does can corrupt a field that legitimately
  * carries a value it would otherwise redact.
  */
+import { withoutGluedLeadingHeading } from '../utils/gluedLeadingHeading';
 import type { ObservedEntityType } from '../models/observation';
 import {
   sanitizePersonTitle,
@@ -47,7 +48,10 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { withProseSentenceBoundariesRestored } from '../utils/proseSentenceBoundary';
-import { sanitizeResearchAreaLabelList } from '../utils/researchAreaLabelHygiene';
+import {
+  sanitizeMethodChipLabel,
+  sanitizeResearchAreaLabelList,
+} from '../utils/researchAreaLabelHygiene';
 import { isResearchAreaLabelLeakage } from './researchAreaCanonicalization';
 import {
   isNonIdentifyingLinkLabelName,
@@ -59,8 +63,13 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isResearchSectionLabel } from './researchAreaLabels';
 import {
+  boundedObservedFellowshipProse,
+  OBSERVED_FELLOWSHIP_PROSE_FIELDS,
+} from './fellowshipProse';
+import {
   normalizeResearchEntityNameDashes,
   normalizeResearchEntityNameSmartQuotes,
+  recaseAllCapsResearchEntityName,
   stripTrailingResearchHomeDescription,
   collapseDuplicateResearchHomeSuffix,
 } from '../utils/researchEntityNameNormalization';
@@ -74,6 +83,22 @@ export interface SanitizedObservationField {
 const ENTITY_NAME_FIELDS = new Set(['name', 'displayName']);
 const PERSON_NAME_FIELDS = new Set(['displayName', 'fname', 'lname']);
 const RESEARCH_AREA_LIST_FIELDS = new Set(['researchAreas', 'topics', 'researchInterests']);
+/**
+ * `methods` is a chip list on the same terms as the three above, but it carries its own
+ * label rule: `sanitizeMethodChipLabel` applies the chip sentence-shape rules WITHOUT the
+ * research-area leakage and section-label filters, which are about topic vocabulary and
+ * say nothing about a method.
+ *
+ * It is listed separately rather than left out, which is how it was. Before this, the only
+ * two places that cleaned a method chip were `researchEntityDto` at serve time and
+ * `methodGrounding` inside one lane, so a chip from any other lane was hidden on the way
+ * out and stored dirty - the shape #3428 records, where a serve-time guard without a
+ * storage one leaves a repair script holding the line. #3612 counted 4 live `methods`
+ * observations carrying a sentence-shaped chip, but that count filtered on a nonexistent
+ * `supersededAt` field; filtered on `superseded`, 0 of 2,442 live `methods` and 0 of
+ * 7,759 live `researchAreas` observations carry one (#3757).
+ */
+const METHOD_LIST_FIELDS = new Set(['methods']);
 const PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
 /**
@@ -87,6 +112,7 @@ const PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 export const INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS: ReadonlySet<string> = new Set([
   ...ENTITY_NAME_FIELDS,
   ...RESEARCH_AREA_LIST_FIELDS,
+  ...METHOD_LIST_FIELDS,
   ...PROSE_FIELDS,
 ]);
 /**
@@ -190,11 +216,13 @@ function sanitizeRosterMemberNameField(value: string): SanitizedObservationField
 }
 
 function normalizeEntityName(value: string): string {
-  return normalizeResearchEntityNameSmartQuotes(
-    normalizeResearchEntityNameDashes(
-      collapseDuplicateResearchHomeSuffix(
-        stripTrailingResearchHomeDescription(
-          stripResearchHomeNameLinkChrome(stripResearchHomeNameLinkWrapper(value)),
+  return recaseAllCapsResearchEntityName(
+    normalizeResearchEntityNameSmartQuotes(
+      normalizeResearchEntityNameDashes(
+        collapseDuplicateResearchHomeSuffix(
+          stripTrailingResearchHomeDescription(
+            stripResearchHomeNameLinkChrome(stripResearchHomeNameLinkWrapper(value)),
+          ),
         ),
       ),
     ),
@@ -236,8 +264,22 @@ function sanitizeResearchAreaListField(value: unknown): SanitizedObservationFiel
   return cleaned.length > 0 ? accepted(cleaned) : rejected('research-area-label-leakage');
 }
 
+/**
+ * Cleaned in place and rejected only when nothing survives, matching the research-area
+ * arm: a list whose every chip is a whole sentence, an activity or a publication heading
+ * asserted nothing usable, and a rejection is what stops it reading as a retraction of
+ * the values already stored.
+ */
+function sanitizeMethodListField(value: unknown): SanitizedObservationField {
+  if (!Array.isArray(value)) return accepted(value);
+  const cleaned = value.map((chip) => sanitizeMethodChipLabel(chip)).filter(Boolean);
+  return cleaned.length > 0 ? accepted(cleaned) : rejected('method-chip-not-a-method');
+}
+
 function sanitizeProseField(value: string): SanitizedObservationField {
-  const cleaned = normalizeHygieneWhitespace(stripCatalogChrome(redactDirectContactInfo(value)));
+  const cleaned = withoutGluedLeadingHeading(
+    normalizeHygieneWhitespace(stripCatalogChrome(redactDirectContactInfo(value))),
+  );
   if (!cleaned) return rejected('prose-chrome-only');
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) {
     return rejected('contentless-research-projects-boilerplate');
@@ -263,7 +305,13 @@ export function sanitizeObservationField(
   if (isResearchEntity && RESEARCH_AREA_LIST_FIELDS.has(field)) {
     return sanitizeResearchAreaListField(value);
   }
+  if (isResearchEntity && METHOD_LIST_FIELDS.has(field)) {
+    return sanitizeMethodListField(value);
+  }
   if (typeof value !== 'string') return accepted(value);
+  if (entityType === 'fellowship' && OBSERVED_FELLOWSHIP_PROSE_FIELDS.has(field)) {
+    return accepted(boundedObservedFellowshipProse(value));
+  }
   if (entityType === 'user' && field === 'title') return sanitizePersonTitleField(value);
   if (entityType === 'user' && PERSON_NAME_FIELDS.has(field)) return sanitizePersonNameField(value);
   if (entityType === 'researchGroupMember' && field === 'name') {

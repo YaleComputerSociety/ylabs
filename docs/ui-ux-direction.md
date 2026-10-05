@@ -10,6 +10,8 @@ Confirm UX claims against source files, tests, and durable docs before editing p
 
 y/labs is a research navigation product, not a simple lab-opening board. The UX should help a student move from curiosity to a credible, evidence-backed next step.
 
+Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the Planning Context, "Evidence" and "Best Next Step" framing below is retired, and the code that served it is removed (#4581); signals are factual, sourced badges and reaching out is the universal action.
+
 The student-facing grammar is:
 
 - **Research**: what exists.
@@ -60,7 +62,7 @@ Research filter behavior:
 - Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
 - Missing, loading, or failed facet metadata must not disable base search, invent counts from total results, or expose hidden focusable controls.
 
-Current gap: the shared verdict adapter now prefers access-summary/pathway evidence, but filters and older labels still contain some "acceptance" and "accepting undergrads" language. Move progressively toward "Planning Context," "Evidence," and "Best Next Step."
+Current gap: filters and older labels still contain some "acceptance" and "accepting undergrads" language. Replace it with plain directory language and factual, sourced badges rather than a plausibility framing.
 
 Research page language rule: `/research` should lead with research, profiles, evidence, source context, and best next steps. Avoid exposing cluster, version, ways-in counts, or metadata implementation labels in primary student-facing UI. Borrow Listings-style scanning only for hierarchy and action clarity; do not make `/research` feel like a job board.
 
@@ -109,8 +111,8 @@ The sidebar surfaces evidence as a flat additive signal list and a constant prom
 
 ## Near-Term UX Moves
 
-1. Rename remaining student-facing "acceptance" language toward "access," "evidence," "planning context," or "best next step."
-2. Keep ways-in evidence projected as planning context inside research cards and detail pages instead of reviving a separate route.
+1. Rename remaining student-facing "acceptance" language toward plain directory language and factual, sourced badges.
+2. Do not revive a ways-in or planning-context projection on research cards or detail pages, or a separate route for it.
 3. Keep a Ways to approach section on research detail pages before treating active opportunities as the whole story.
 4. Keep `/research` cards discovery-oriented, but show compact pathway/evidence hints when available.
 5. Keep source visibility centralized on detail pages: evidence cards should explain what was observed, while the Sources section should carry deduped official links.

@@ -10,6 +10,8 @@ import dns from 'dns/promises';
 import http from 'http';
 import https from 'https';
 import type { LookupFunction } from 'net';
+import type { Duplex } from 'stream';
+import { isBenchmarkReplayActive } from '../scrapers/snapshotBenchmarkMode';
 import { containsAsciiControl } from './asciiControl';
 
 const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
@@ -203,15 +205,26 @@ export const classifyHostnameResolution = async (
 export const isPublicHostname = async (hostname: string): Promise<boolean> =>
   (await classifyHostnameResolution(hostname)).kind === 'public';
 
+const BLOCKED_ADDRESS_MESSAGE = 'Blocked private or non-public address';
+
+const blockedAddressError = (): NodeJS.ErrnoException => {
+  const err = new Error(BLOCKED_ADDRESS_MESSAGE) as NodeJS.ErrnoException;
+  err.code = 'EHOSTUNREACH';
+  return err;
+};
+
+export const isPrivateIpLiteralHost = (host: string | null | undefined): boolean => {
+  const clean = stripIpv6Brackets(String(host ?? ''));
+  return net.isIP(clean) !== 0 && isPrivateAddress(clean);
+};
+
 export const ssrfSafeLookup: LookupFunction = (hostname, options, callback) => {
   dns
     .lookup(stripIpv6Brackets(hostname), options)
     .then((result) => {
       const records = Array.isArray(result) ? result : [result];
       if (records.length === 0 || records.some((record) => isPrivateAddress(record.address))) {
-        const err = new Error('Blocked private or non-public address') as NodeJS.ErrnoException;
-        err.code = 'EHOSTUNREACH';
-        callback(err, '', 0);
+        callback(blockedAddressError(), '', 0);
         return;
       }
 
@@ -243,6 +256,12 @@ export class SsrfBlockedError extends Error {
     Object.setPrototypeOf(this, SsrfBlockedError.prototype);
   }
 }
+
+export const isSsrfGuardRefusal = (error: unknown): boolean => {
+  if (error instanceof SsrfBlockedError) return true;
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  return candidate?.code === 'EHOSTUNREACH' && candidate?.message === BLOCKED_ADDRESS_MESSAGE;
+};
 
 const isAllowedPublicHttpPort = (url: URL): boolean =>
   !url.port ||
@@ -282,6 +301,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   if (!isAllowedPublicHttpPort(parsed)) {
     throw new SsrfBlockedError('URL port is not allowed', 'port');
   }
+  if (isBenchmarkReplayActive() && !net.isIP(stripIpv6Brackets(parsed.hostname))) return parsed;
   const resolution = await classifyHostnameResolution(parsed.hostname);
   if (resolution.kind !== 'public') {
     throw new SsrfBlockedError('URL resolves to a private or non-public address', resolution.kind);
@@ -289,11 +309,37 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   return parsed;
 };
 
-/** axios/http agents whose DNS resolution blocks private addresses on every (redirect) hop. */
+type AgentConnectionCallback = (err: Error | null, stream: Duplex) => void;
+
+class SsrfSafeHttpAgent extends http.Agent {
+  createConnection(options: http.ClientRequestArgs, callback?: AgentConnectionCallback) {
+    if (isPrivateIpLiteralHost(options.host)) {
+      callback?.(blockedAddressError(), undefined as unknown as Duplex);
+      return undefined;
+    }
+    return super.createConnection(options, callback);
+  }
+}
+
+class SsrfSafeHttpsAgent extends https.Agent {
+  createConnection(options: https.RequestOptions, callback?: AgentConnectionCallback) {
+    if (isPrivateIpLiteralHost(options.host)) {
+      callback?.(blockedAddressError(), undefined as unknown as Duplex);
+      return undefined;
+    }
+    return super.createConnection(options, callback);
+  }
+}
+
+/**
+ * axios/http agents that refuse a private address on every (redirect) hop: a hostname is
+ * checked by the connect-time lookup, and an IP-literal host, which Node connects to without
+ * any lookup, is checked before the socket is opened.
+ */
 export const ssrfSafeAgents = (): {
   httpAgent: http.Agent;
   httpsAgent: https.Agent;
 } => ({
-  httpAgent: new http.Agent({ lookup: ssrfSafeLookup }),
-  httpsAgent: new https.Agent({ lookup: ssrfSafeLookup }),
+  httpAgent: new SsrfSafeHttpAgent({ lookup: ssrfSafeLookup }),
+  httpsAgent: new SsrfSafeHttpsAgent({ lookup: ssrfSafeLookup }),
 });

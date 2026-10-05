@@ -7,6 +7,8 @@ import {
   buildSecurityHeaderChecks,
   containsInternalLabels,
   createSmokeReport,
+  discoverResearchSlug,
+  evaluateResearchSearchResponse,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
   smokeBrowserOrigin,
@@ -41,7 +43,7 @@ const request = async (route, options = {}) => {
     },
   });
   const text = await response.text();
-  let json = null;
+  let json;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
@@ -60,24 +62,23 @@ const warnOnInternalLabels = (name, value, options = {}) => {
   addCheck(name, labels.length === 0 ? 'pass' : 'warn', { labels });
 };
 
-const discoverResearch = async () => {
+const searchResearch = async () => {
   const body = { q: '', page: 1, pageSize: 5, filters: {} };
   const { response, json } = await request('/research/search', {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  addCheck('api.research.search.200', response.status === 200 ? 'pass' : 'fail', {
-    statusCode: response.status,
-  });
+  return { json, evaluation: evaluateResearchSearchResponse(response.status, json) };
+};
+
+const discoverResearch = async () => {
+  const { json, evaluation } = await searchResearch();
+  addCheck('api.research.search.200', evaluation.status, evaluation.details);
   warnOnInternalLabels('api.research.search.internalVisibilityLabels', json);
 
-  const entities = [
-    ...(Array.isArray(json?.researchEntities) ? json.researchEntities : []),
-    ...(Array.isArray(json?.hits) ? json.hits : []),
-  ];
-  const slug = entities.map((entity) => entity?.slug || entity?.data?.slug).find(Boolean);
+  const slug = discoverResearchSlug(json);
   if (slug) report.discovered.researchSlug = slug;
-  addCheck('api.research.detail.discoverSlug', slug ? 'pass' : 'warn');
+  addCheck('api.research.detail.discoverSlug', slug ? 'pass' : 'fail');
 
   if (slug) {
     const detail = await request(`/research/${encodeURIComponent(slug)}`);

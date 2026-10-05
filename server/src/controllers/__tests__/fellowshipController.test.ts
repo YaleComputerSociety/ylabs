@@ -83,7 +83,11 @@ describe('fellowshipController', () => {
     const res = response();
     mocks.addView.mockResolvedValue(privateFellowship);
 
-    await addViewToFellowship({ params: { id: '64a000000000000000000010' } } as any, res as any);
+    await addViewToFellowship(
+      { params: { id: '64a000000000000000000010' } } as any,
+      res as any,
+      vi.fn(),
+    );
 
     expectPublicFellowship(res.json.mock.calls[0][0].fellowship);
   });

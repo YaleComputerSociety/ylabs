@@ -4,9 +4,9 @@ import { RoleAssignment } from '../models/roleAssignment';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 
-const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe)-pi-/i;
+const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe|neh)-pi-/i;
 const GRANT_SOURCE_URL =
-  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|usaspending\.gov|osti\.gov)/i;
+  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|osti\.gov|(?:awardsearch|apps|securegrants)\.neh\.gov)/i;
 const CANONICAL_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 
 export interface ResearchHomeCandidate {
@@ -82,6 +82,29 @@ export function resolveCanonicalResearchHome(
   return { status: 'ineligible' };
 }
 
+export interface LeadEdgeOnResearchHome {
+  archived?: unknown;
+  isCurrentMember?: unknown;
+  target: ResearchHomeCandidate | null;
+}
+
+function targetsLiveRow(edge: LeadEdgeOnResearchHome): boolean {
+  return Boolean(edge.target) && edge.target?.archived !== true;
+}
+
+export function resolveCanonicalResearchHomeFromLeadEdges(
+  edges: LeadEdgeOnResearchHome[],
+): CanonicalResearchHomeResolution {
+  if (edges.length === 0) return { status: 'safe-shell' };
+  const edgesOnLiveRows = edges.filter(targetsLiveRow);
+  if (edgesOnLiveRows.length === 0 || hasIneligibleLeadMembership(edgesOnLiveRows)) {
+    return { status: 'ineligible' };
+  }
+  return resolveCanonicalResearchHome(
+    edgesOnLiveRows.map((edge) => edge.target as ResearchHomeCandidate),
+  );
+}
+
 export async function resolveCanonicalResearchHomeForResearcher(
   researcherId: string,
 ): Promise<CanonicalResearchHomeResolution> {
@@ -93,40 +116,38 @@ export async function resolveCanonicalResearchHomeForResearcher(
     .select('_id')
     .lean();
   if (!researcher?._id) return { status: 'safe-shell' };
-  const personId = researcher._id;
-  const assignments = await RoleAssignment.find({
-    personId,
+  const assignments = (await RoleAssignment.find({
+    personId: researcher._id,
     'target.kind': 'RESEARCH_ENTITY',
     role: { $in: CANONICAL_LEAD_ROLES },
   })
     .select('target state archived')
-    .lean();
-  const memberships = (assignments as any[]).map((assignment) => ({
-    researchEntityId: assignment.target?.id,
-    isCurrentMember: assignment.state !== 'HISTORICAL',
-    archived: assignment.archived,
-  }));
-  if (hasIneligibleLeadMembership(memberships)) {
-    return { status: 'ineligible' };
-  }
-  const entityIds = Array.from(
-    new Set(
-      memberships.map((membership) => String(membership.researchEntityId || '')).filter(Boolean),
-    ),
+    .lean()) as any[];
+  const targetIds = Array.from(
+    new Set(assignments.map((assignment) => String(assignment.target?.id || '')).filter(Boolean)),
   );
-  if (entityIds.length === 0) return { status: 'safe-shell' };
-
-  const entities = await ResearchEntity.find({ _id: { $in: entityIds } })
-    .select('slug website websiteUrl sourceUrls archived')
-    .lean();
-  if (entities.length === 0) return { status: 'ineligible' };
-  return resolveCanonicalResearchHome(
-    entities.map((entity) => ({
-      slug: entity.slug,
-      website: entity.website,
-      websiteUrl: entity.websiteUrl,
-      sourceUrls: entity.sourceUrls,
-      archived: entity.archived,
-    })),
+  const entities = targetIds.length
+    ? await ResearchEntity.find({ _id: { $in: targetIds } })
+        .select('slug website websiteUrl sourceUrls archived')
+        .lean()
+    : [];
+  const entityById = new Map(entities.map((entity: any) => [String(entity._id), entity]));
+  return resolveCanonicalResearchHomeFromLeadEdges(
+    assignments.map((assignment) => {
+      const entity: any = entityById.get(String(assignment.target?.id || ''));
+      return {
+        archived: assignment.archived,
+        isCurrentMember: assignment.state !== 'HISTORICAL',
+        target: entity
+          ? {
+              slug: entity.slug,
+              website: entity.website,
+              websiteUrl: entity.websiteUrl,
+              sourceUrls: entity.sourceUrls,
+              archived: entity.archived,
+            }
+          : null,
+      };
+    }),
   );
 }

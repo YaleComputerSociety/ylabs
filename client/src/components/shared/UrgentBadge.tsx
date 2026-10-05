@@ -9,7 +9,7 @@ interface UrgentBadgeProps {
 }
 
 const UrgentBadge = ({ daysUntil, variant }: UrgentBadgeProps) => {
-  const text = daysUntil === 1 ? 'Due tomorrow' : `${daysUntil} days left`;
+  const text = daysUntil === 1 ? 'Due tomorrow' : `${daysUntil}\u00a0days left`;
 
   if (variant === 'banner') {
     return (

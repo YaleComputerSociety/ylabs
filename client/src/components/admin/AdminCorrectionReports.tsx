@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import useModalDialog from '../../hooks/useModalDialog';
 import axios from '../../utils/axios';
 import { safeRouteSegment } from '../../utils/url';
+import useLatestRequest from '../../hooks/useLatestRequest';
+import useLoadEffect from '../../hooks/useLoadEffect';
 
 type ReportStatus = 'unreviewed' | 'accepted' | 'dismissed';
 
@@ -35,58 +38,96 @@ const CATEGORY_LABELS: Record<ReportCategory, string> = {
   other: 'Other',
 };
 
+const LOAD_ERROR = 'Could not load correction reports.';
+const RELOAD_AFTER_REVIEW_ERROR =
+  'The review was saved, but the list could not refresh. Try again to see the current queue.';
+
 export default function AdminCorrectionReports() {
   const [status, setStatus] = useState<ReportStatus>('unreviewed');
   const [reports, setReports] = useState<CorrectionReport[]>([]);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<CorrectionReport | null>(null);
   const [reviewerNote, setReviewerNote] = useState('');
-  const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const listRequest = useLatestRequest();
 
   const load = useCallback(
-    () =>
-      axios.get(`/admin/correction-reports?status=${status}&pageSize=100`).then(({ data }) => {
+    async (failureMessage: string = LOAD_ERROR) => {
+      const request = listRequest.begin();
+      setListError('');
+      try {
+        const { data } = await axios.get(
+          `/admin/correction-reports?status=${status}&pageSize=100`,
+          { signal: request.signal },
+        );
+        if (!request.isCurrent()) return;
         setReports(data.reports || []);
         setTotal(data.total || 0);
-      }),
-    [status],
+      } catch {
+        if (!request.isCurrent()) return;
+        setListError(failureMessage);
+      }
+    },
+    [listRequest, status],
   );
 
-  useEffect(() => {
-    load().catch(() => setError('Could not load correction reports.'));
-  }, [load]);
+  useLoadEffect(load);
+
+  const openReview = (report: CorrectionReport) => {
+    setSelected(report);
+    setReviewerNote(report.reviewerNote || '');
+    setReviewError('');
+  };
+
+  const closeReview = () => {
+    if (isSaving) return;
+    setSelected(null);
+    setReviewError('');
+  };
+  const {
+    overlayRef,
+    dialogRef,
+    initialFocusRef: reviewTitleRef,
+    handleDialogKeyDown,
+  } = useModalDialog<HTMLHeadingElement>(selected !== null, closeReview);
 
   const review = async (nextStatus: Exclude<ReportStatus, 'unreviewed'>) => {
-    if (!selected) return;
+    if (!selected || isSaving) return;
+    setIsSaving(true);
+    setReviewError('');
     try {
       await axios.put(`/admin/correction-reports/${selected._id}`, {
         status: nextStatus,
         reviewerNote: reviewerNote.trim(),
       });
-      setSelected(null);
-      setReviewerNote('');
-      setError('');
-      await load();
-    } catch (reviewError: any) {
-      setError(reviewError?.response?.data?.error || 'Review could not be saved.');
+    } catch (saveError: any) {
+      setReviewError(saveError?.response?.data?.error || 'Review could not be saved.');
+      setIsSaving(false);
+      return;
     }
+    setIsSaving(false);
+    setSelected(null);
+    setReviewerNote('');
+    await load(RELOAD_AFTER_REVIEW_ERROR);
   };
 
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="text-xl font-semibold text-gray-900">Page correction reports</h3>
-          <p className="text-sm text-gray-600">
+          <h3 className="text-xl font-semibold text-ink">Page correction reports</h3>
+          <p className="text-sm text-muted">
             {total} {status} reports
           </p>
         </div>
-        <label className="text-sm font-medium text-gray-800">
+        <label className="text-sm font-medium text-ink">
           Status
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as ReportStatus)}
-            className="ml-2 min-h-11 rounded-md border border-gray-400 px-3"
+            className="ml-2 min-h-11 rounded-md border border-line-control px-3"
           >
             <option value="unreviewed">Unreviewed</option>
             <option value="accepted">Accepted</option>
@@ -94,29 +135,33 @@ export default function AdminCorrectionReports() {
           </select>
         </label>
       </div>
-      {error && (
-        <p role="alert" className="mt-3 text-sm text-red-700">
-          {error}
-        </p>
+      {listError && (
+        <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 text-sm text-red-700">
+          <p>{listError}</p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="min-h-11 rounded-md border border-line-strong px-3 font-semibold text-ink-soft yr-focus-ring"
+          >
+            Try again
+          </button>
+        </div>
       )}
-      <ul className="mt-4 divide-y divide-gray-200 border-y border-gray-200">
+      <ul className="mt-4 divide-y divide-line border-y border-line">
         {reports.map((report) => (
           <li key={report._id}>
             <button
               type="button"
-              onClick={() => {
-                setSelected(report);
-                setReviewerNote(report.reviewerNote || '');
-              }}
+              onClick={() => openReview(report)}
               className="min-h-14 w-full px-2 py-3 text-left yr-focus-ring"
             >
-              <span className="font-semibold text-gray-900">
+              <span className="font-semibold text-ink">
                 {report.entitySnapshot.name || report.entitySlug}
               </span>
-              <span className="ml-2 text-sm text-gray-600">{CATEGORY_LABELS[report.category]}</span>
-              <span className="ml-2 text-xs text-gray-500">({report.reporter.role})</span>
+              <span className="ml-2 text-sm text-muted">{CATEGORY_LABELS[report.category]}</span>
+              <span className="ml-2 text-xs text-muted">({report.reporter.role})</span>
               {report.note && (
-                <p className="mt-1 line-clamp-2 text-sm text-gray-700">{report.note}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-ink-soft">{report.note}</p>
               )}
             </button>
           </li>
@@ -124,19 +169,26 @@ export default function AdminCorrectionReports() {
       </ul>
       {selected && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="report-review-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setSelected(null);
-          }}
+          ref={overlayRef}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
         >
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-md bg-white p-6">
-            <h2 id="report-review-title" className="text-lg font-semibold">
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-review-title"
+            onKeyDown={handleDialogKeyDown}
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-md bg-white p-6"
+          >
+            <h2
+              ref={reviewTitleRef}
+              id="report-review-title"
+              tabIndex={-1}
+              className="text-lg font-semibold focus:outline-hidden"
+            >
               {selected.entitySnapshot.name || selected.entitySlug}
             </h2>
-            <p className="mt-2 text-sm text-gray-700">
+            <p className="mt-2 text-sm text-ink-soft">
               {CATEGORY_LABELS[selected.category]} reported by{' '}
               {selected.reporter.name || selected.reporter.netId} ({selected.reporter.role})
             </p>
@@ -149,7 +201,7 @@ export default function AdminCorrectionReports() {
               Open page
             </a>
             {selected.note && (
-              <p className="mt-4 whitespace-pre-wrap text-sm text-gray-800">{selected.note}</p>
+              <p className="mt-4 whitespace-pre-wrap text-sm text-ink">{selected.note}</p>
             )}
             <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
               Recording a decision does not change any page content or visibility. It only logs the
@@ -164,27 +216,35 @@ export default function AdminCorrectionReports() {
               maxLength={2000}
               value={reviewerNote}
               onChange={(event) => setReviewerNote(event.target.value)}
-              className="mt-1 w-full rounded-md border border-gray-400 p-3"
+              className="mt-1 w-full rounded-md border border-line-control p-3"
             />
+            {reviewError && (
+              <p role="alert" className="mt-4 text-sm text-red-700">
+                {reviewError}
+              </p>
+            )}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setSelected(null)}
-                className="min-h-11 px-4 yr-focus-ring"
+                onClick={closeReview}
+                disabled={isSaving}
+                className="min-h-11 px-4 disabled:cursor-not-allowed disabled:opacity-50 yr-focus-ring"
               >
                 Close
               </button>
               <button
                 type="button"
                 onClick={() => void review('dismissed')}
-                className="min-h-11 rounded-md border border-gray-600 px-4 font-semibold text-gray-700 yr-focus-ring"
+                disabled={isSaving}
+                className="min-h-11 rounded-md border border-muted px-4 font-semibold text-ink-soft disabled:cursor-not-allowed disabled:opacity-50 yr-focus-ring"
               >
                 Dismiss
               </button>
               <button
                 type="button"
                 onClick={() => void review('accepted')}
-                className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white yr-focus-ring"
+                disabled={isSaving}
+                className="min-h-11 rounded-md bg-green-700 px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 yr-focus-ring"
               >
                 Accept
               </button>

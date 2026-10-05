@@ -13,6 +13,7 @@ import {
 } from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isPrimaryProductionDatabaseName } from '../../../scripts/databaseNames.mjs';
 import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
@@ -209,18 +210,22 @@ export function assertPhase0IdentityCollisionAuditTargetAllowed(
   }
 }
 
+function targetsPrimaryProductionDatabase(env: NodeJS.ProcessEnv): boolean {
+  return isPrimaryProductionDatabaseName(databaseNameFromMongoUrl(env.MONGODBURL || ''));
+}
+
 export function assertHardenedIdentityCollisionProfile(
   environment: Phase0IdentityCollisionAuditArgs['environment'],
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (environment === 'development') {
-    if (databaseNameFromMongoUrl(env.MONGODBURL || '').toLowerCase() === 'production') {
+    if (targetsPrimaryProductionDatabase(env)) {
       throw new Error('Development identity-collision audits must never target Production.');
     }
     return;
   }
   if (env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET === 'true') {
-    if (databaseNameFromMongoUrl(env.MONGODBURL || '').toLowerCase() === 'production') {
+    if (targetsPrimaryProductionDatabase(env)) {
       throw new Error('Identity-collision audits must never target Production.');
     }
     return;

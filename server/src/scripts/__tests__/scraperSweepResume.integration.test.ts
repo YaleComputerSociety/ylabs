@@ -16,6 +16,8 @@ const SWEEP_ENV_KEYS = [
 interface RecordedChild {
   args: string[];
   logPath?: string;
+  hostSlotBroker?: string;
+  pageReuse?: string;
 }
 
 function outputPathFromArgs(args: string[]): string | undefined {
@@ -39,6 +41,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
   let mongod: MongoMemoryServer;
   let mongoUrl: string;
   let runScraperSweep: typeof import('../runScraperSweep').runScraperSweep;
+  let researchSweepSources: typeof import('../runScraperSweep').RESEARCH_SWEEP_SOURCES;
   let checkpointPathForMode: typeof import('../scraperSweepCheckpoint').checkpointPathForMode;
   let readSweepCheckpoint: typeof import('../scraperSweepCheckpoint').readSweepCheckpoint;
   const previousEnv = new Map<string, string | undefined>();
@@ -58,6 +61,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     const sweep = await import('../runScraperSweep');
     const checkpointModule = await import('../scraperSweepCheckpoint');
     runScraperSweep = sweep.runScraperSweep;
+    researchSweepSources = sweep.RESEARCH_SWEEP_SOURCES;
     checkpointPathForMode = checkpointModule.checkpointPathForMode;
     readSweepCheckpoint = checkpointModule.readSweepCheckpoint;
 
@@ -75,11 +79,11 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       })),
     );
     await mongoose.disconnect();
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
     for (const key of SWEEP_ENV_KEYS) {
       const value = previousEnv.get(key);
       if (value === undefined) delete process.env[key];
@@ -95,15 +99,32 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     checkpointPaths.clear();
   });
 
-  const makeChildRunner = (failingSources: Set<string>) => {
+  type StageStub = (stub: { outputPath?: string; logPath?: string }) => { status: number | null };
+
+  const makeChildRunner = (
+    failingSources: Set<string>,
+    stageStubs: Record<string, StageStub> = {},
+  ) => {
     const calls: RecordedChild[] = [];
     const runner = async (
       _command: string,
       args: string[],
-      options: { logPath?: string },
+      options: { logPath?: string; env?: NodeJS.ProcessEnv },
     ): Promise<{ status: number | null }> => {
-      calls.push({ args, ...(options.logPath ? { logPath: options.logPath } : {}) });
+      const hostSlotBroker = options.env?.SCRAPER_HOST_SLOT_BROKER;
+      const pageReuse = options.env?.SCRAPER_SWEEP_PAGE_REUSE;
+      calls.push({
+        args,
+        ...(options.logPath ? { logPath: options.logPath } : {}),
+        ...(hostSlotBroker ? { hostSlotBroker } : {}),
+        ...(pageReuse ? { pageReuse } : {}),
+      });
       const sourceName = sourceNameFromArgs(args);
+      const stageStub = stageStubs[commandFromArgs(args) ?? ''];
+      if (stageStub) {
+        if (options.logPath) fs.mkdirSync(path.dirname(options.logPath), { recursive: true });
+        return stageStub({ outputPath: outputPathFromArgs(args), logPath: options.logPath });
+      }
       const failing = Boolean(sourceName && failingSources.has(sourceName));
       if (options.logPath) {
         fs.mkdirSync(path.dirname(options.logPath), { recursive: true });
@@ -125,6 +146,9 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             observations: { total: 2, entitiesObserved: 1 },
             materialization: { created: 1, errors: 0 },
             mergeDelta: {},
+            // The grant-shell port stage refuses a report that is not an apply, so the
+            // stub answers its contract too (#3909).
+            portDelta: {},
             byReason: {},
             urlIdentityDedupeDelta: {
               plannedGroups: 0,
@@ -152,6 +176,25 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             // fail loud without these keys is the contract working (#2050, #3309).
             plannedClears: 0,
             completed: true,
+            // The stale-run reap stage refuses a report that is not a scoped apply run, so
+            // the stub answers its contract too (#3841).
+            mode: 'apply',
+            heartbeatStaleOnly: true,
+            startedBefore: '2026-01-01T00:00:00.000Z',
+            running: 0,
+            planned: 0,
+            closed: 0,
+            changedSinceRead: 0,
+            scope: 'all',
+            scanned: 0,
+            lagging: 0,
+            tally: { 'materialized-lead': 0, 'still-unresolved': 0 },
+            // The counting stages are judged from their artifact, so the stub answers
+            // integrity-gate, trust-contract and lane-scorecard too (#4852).
+            counts: { publicVisibilityViolations: 0 },
+            repairLanes: [],
+            unscored: [],
+            results: [],
           })}\n`,
         );
       }
@@ -178,11 +221,23 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
       confirmations: new Set(['--confirm-development-full-sweep']),
       forceLlm: true,
       pruneBetweenPhases: true,
+      skipPreflight: true,
     };
 
     const failed = makeChildRunner(new Set(['nih-reporter']));
     const firstSummary = await runScraperSweep(options, { childRunner: failed.runner });
     trackRun(mode, firstSummary.outputDirectory);
+
+    const brokerPaths = [
+      ...new Set(
+        failed.calls
+          .filter((call) => sourceNameFromArgs(call.args))
+          .map((call) => call.hostSlotBroker),
+      ),
+    ];
+    expect(brokerPaths).toHaveLength(1);
+    expect(brokerPaths[0]).toMatch(/ylabs-host-slots-\d+\.sock$/);
+    expect(fs.existsSync(brokerPaths[0]!)).toBe(false);
 
     expect(firstSummary.failed).toBe(1);
     expect(firstSummary.rows.find((row) => row.sourceName === 'nih-reporter')?.status).toBe(
@@ -192,6 +247,12 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     const sourceCalls = failed.calls.filter((call) => sourceNameFromArgs(call.args));
     expect(sourceCalls.length).toBe(firstSummary.sourceCount);
     for (const call of sourceCalls) expect(call.args).toContain('--force-llm');
+    for (const call of sourceCalls) expect(call.pageReuse).toBe('1');
+    expect(firstSummary.pageReuse).toMatchObject({
+      hosts: ['medicine.yale.edu', 'ysph.yale.edu'],
+      lookups: 0,
+      maxBytes: 1024 * 1024 * 1024,
+    });
 
     const pruneCalls = failed.calls.filter(
       (call) => commandFromArgs(call.args) === 'observations:prune-dead',
@@ -262,6 +323,171 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     );
   }, 180_000);
 
+  it('resumes after a source is removed from the list without re-running any done source (#3570)', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      skipPreflight: true,
+    };
+    const lastSource = researchSweepSources[researchSweepSources.length - 1].name;
+    const removedSource = researchSweepSources[0].name;
+
+    const failed = makeChildRunner(new Set([lastSource]));
+    const firstSummary = await runScraperSweep(options, {
+      childRunner: failed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, firstSummary.outputDirectory);
+    expect(firstSummary.failed).toBe(1);
+
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode));
+    const secondSource = researchSweepSources[1].name;
+    const recordedPath = checkpoint?.steps[`source:${secondSource}`]?.artifactPath;
+    expect(recordedPath).toBe(path.join(firstSummary.outputDirectory, `02-${secondSource}.json`));
+
+    const resumed = makeChildRunner(new Set());
+    const secondSummary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources.filter((source) => source.name !== removedSource),
+    });
+    trackRun(mode, secondSummary.outputDirectory);
+
+    expect(
+      resumed.calls
+        .filter((call) => sourceNameFromArgs(call.args))
+        .map((call) => sourceNameFromArgs(call.args)),
+    ).toEqual([lastSource]);
+    expect(secondSummary.failed).toBe(0);
+    expect(secondSummary.rows.find((row) => row.sourceName === secondSource)?.artifactPath).toBe(
+      recordedPath,
+    );
+    expect(fs.existsSync(path.join(firstSummary.outputDirectory, `01-${secondSource}.json`))).toBe(
+      false,
+    );
+  }, 180_000);
+
+  const runSweepFailingLastSource = async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      skipPreflight: true,
+    };
+    const lastSource = researchSweepSources[researchSweepSources.length - 1].name;
+    const failed = makeChildRunner(new Set([lastSource]));
+    const summary = await runScraperSweep(options, {
+      childRunner: failed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, summary.outputDirectory);
+    expect(summary.failed).toBe(1);
+    return { mode, options, lastSource };
+  };
+
+  const resumedSourceNames = (calls: RecordedChild[]): string[] =>
+    calls.map((call) => sourceNameFromArgs(call.args)).filter((name): name is string => !!name);
+
+  it('resumes a checkpoint that recorded no artifact paths by the derived artifact name (#3570)', async () => {
+    const { mode, options, lastSource } = await runSweepFailingLastSource();
+    const raw = JSON.parse(fs.readFileSync(checkpointFor(mode), 'utf8'));
+    for (const step of Object.values(raw.steps) as Array<Record<string, unknown>>) {
+      delete step.artifactPath;
+    }
+    fs.writeFileSync(checkpointFor(mode), JSON.stringify(raw));
+
+    const resumed = makeChildRunner(new Set());
+    const summary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(resumedSourceNames(resumed.calls)).toEqual([lastSource]);
+    expect(summary.failed).toBe(0);
+  }, 180_000);
+
+  it('re-runs a done source whose recorded artifact is missing instead of trusting it (#3570)', async () => {
+    const { mode, options, lastSource } = await runSweepFailingLastSource();
+    const missingSource = researchSweepSources[1].name;
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode));
+    fs.rmSync(checkpoint!.steps[`source:${missingSource}`].artifactPath!, { force: true });
+
+    const resumed = makeChildRunner(new Set());
+    const summary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources.filter(
+        (source) => source.name !== researchSweepSources[0].name,
+      ),
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(new Set(resumedSourceNames(resumed.calls))).toEqual(
+      new Set([missingSource, lastSource]),
+    );
+    expect(summary.failed).toBe(0);
+  }, 180_000);
+
+  it('stops a development-full sweep before any source runs when its preflight canary fails', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const canaried: string[] = [];
+    const scraped: string[] = [];
+    const canaryBrokers = new Set<string | undefined>();
+    const runner = async (
+      _command: string,
+      args: string[],
+      options: { env?: NodeJS.ProcessEnv },
+    ): Promise<{ status: number | null }> => {
+      const sourceName = sourceNameFromArgs(args) ?? '';
+      if (commandFromArgs(args) === 'scrape:canary') {
+        canaried.push(sourceName);
+        canaryBrokers.add(options.env?.SCRAPER_HOST_SLOT_BROKER);
+        const verdict = sourceName === 'nih-reporter' ? 'failed' : 'passed';
+        fs.writeFileSync(
+          outputPathFromArgs(args)!,
+          JSON.stringify({
+            sourceName,
+            verdict,
+            reason: verdict === 'failed' ? 'the lane threw: fixture outage' : 'emitted 3',
+            observationCount: verdict === 'failed' ? 0 : 3,
+          }),
+        );
+        return { status: verdict === 'failed' ? 1 : 0 };
+      }
+      scraped.push(sourceName);
+      return { status: 0 };
+    };
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+    };
+
+    await expect(runScraperSweep(options, { childRunner: runner })).rejects.toThrow(
+      /sweep preflight failed before any source ran/,
+    );
+
+    expect(canaried.length).toBeGreaterThan(10);
+    expect(canaried).toContain('nih-reporter');
+    expect(scraped).toEqual([]);
+    const [canaryBroker] = [...canaryBrokers];
+    expect(canaryBrokers.size).toBe(1);
+    expect(canaryBroker).toMatch(/ylabs-host-slots-\d+\.sock$/);
+    expect(fs.existsSync(canaryBroker!)).toBe(false);
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode));
+    expect(checkpoint).toBeDefined();
+    const outputDirectory = checkpoint!.outputDirectory;
+    trackRun(mode, outputDirectory);
+    const preflight = JSON.parse(
+      fs.readFileSync(path.join(outputDirectory, 'preflight.json'), 'utf8'),
+    );
+    expect(preflight.status).toBe('failed');
+    expect(preflight.storage.ok).toBe(true);
+    expect(preflight.failures).toEqual(['canary nih-reporter: the lane threw: fixture outage']);
+  }, 180_000);
+
   it('resumes the fellowship sweep from its own checkpoint and runs the gated fellowship prune stage', async () => {
     const mode = 'fellowship-development-full' as const;
     fs.rmSync(checkpointFor(mode), { force: true });
@@ -272,8 +498,14 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     };
 
     const failed = makeChildRunner(new Set(['yale-reu-programs']));
-    const firstSummary = await runScraperSweep(options, { childRunner: failed.runner });
+    const firstSummary = await runScraperSweep(
+      { ...options, noPageReuse: true },
+      { childRunner: failed.runner },
+    );
     trackRun(mode, firstSummary.outputDirectory);
+    const fellowshipSourceCalls = failed.calls.filter((call) => sourceNameFromArgs(call.args));
+    for (const call of fellowshipSourceCalls) expect(call.pageReuse).toBe('0');
+    expect(firstSummary.pageReuse).toBeUndefined();
 
     expect(firstSummary.failed).toBe(1);
     expect((firstSummary.postRun?.stages || []).map((stage) => stage.name)).toContain(
@@ -297,4 +529,293 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(secondSummary.postRun?.status).toBe('succeeded');
     expect(fs.existsSync(checkpointFor(mode))).toBe(false);
   }, 180_000);
+  // A sweep runs the code in its checkout, and nothing used to pin it. On the Development full
+  // sweep of 2026-09-28 the checkout fast-forwarded six times mid-run and the 24 source stages
+  // split across two different commits, while `summary.json` recorded no commit at all, so the
+  // artifacts could not have revealed either fact. Stage results were therefore unattributable,
+  // and a stage could apply a defect the checkout predated (#3476 follow-up).
+  it('records the commit its stages ran and refuses a stage once the checkout moves', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      pruneBetweenPhases: false,
+      skipPreflight: true,
+    };
+
+    const started = 'a'.repeat(7) + '1'.repeat(33);
+    const moved = 'b'.repeat(7) + '2'.repeat(33);
+    const spawned = makeChildRunner(new Set());
+    let spawns = 0;
+    const summary = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        spawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      // Moves the checkout after the first stage has been spawned, which is what a peer's `git
+      // pull` does to a running sweep.
+      readHeadSha: () => (spawns === 0 ? started : moved),
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(summary.codeSha).toBe(started);
+    expect(summary.codeDrift?.length ?? 0).toBeGreaterThan(0);
+    expect(summary.codeDrift?.[0]?.startedSha).toBe(started);
+    expect(summary.codeDrift?.[0]?.currentSha).toBe(moved);
+    // Fails closed: exactly one stage ran, and every later one was refused without doing work.
+    expect(spawns).toBe(1);
+    expect(summary.failed).toBeGreaterThan(0);
+    // Recoverable rather than lost: the checkpoint survives so a resume re-runs the refused
+    // stages once the checkout is back on the commit the run started.
+    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    const onStartedCheckout = await runScraperSweep(options, {
+      childRunner: spawned.runner,
+      readHeadSha: () => started,
+    });
+
+    expect(onStartedCheckout.codeSha).toBe(started);
+    expect(onStartedCheckout.failed).toBe(0);
+    expect(onStartedCheckout.codeDrift).toEqual(summary.codeDrift);
+    expect(fs.existsSync(checkpointFor(mode))).toBe(false);
+  }, 180_000);
+
+  it('starts a new sweep instead of resuming a checkpoint recorded at another commit (#3989)', async () => {
+    const mode = 'development-full' as const;
+    fs.rmSync(checkpointFor(mode), { force: true });
+    const options = {
+      mode,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      pruneBetweenPhases: false,
+      skipPreflight: true,
+    };
+
+    const started = 'c'.repeat(7) + '3'.repeat(33);
+    const moved = 'd'.repeat(7) + '4'.repeat(33);
+    const spawned = makeChildRunner(new Set());
+    let spawns = 0;
+    const interrupted = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        spawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      readHeadSha: () => (spawns === 0 ? started : moved),
+    });
+    trackRun(mode, interrupted.outputDirectory);
+    expect(interrupted.codeSha).toBe(started);
+    expect(fs.existsSync(checkpointFor(mode))).toBe(true);
+
+    let newSweepSpawns = 0;
+    const onMovedCheckout = await runScraperSweep(options, {
+      childRunner: async (command, args, childOptions) => {
+        newSweepSpawns++;
+        return spawned.runner(command, args, childOptions);
+      },
+      readHeadSha: () => moved,
+    });
+    trackRun(mode, onMovedCheckout.outputDirectory);
+
+    expect(onMovedCheckout.codeSha).toBe(moved);
+    expect(newSweepSpawns).toBeGreaterThan(spawns);
+    expect(onMovedCheckout.codeDrift ?? []).toEqual([]);
+    expect(onMovedCheckout.failed).toBe(0);
+  }, 180_000);
+
+  describe('counting stages are judged against the last recorded counts (#4852)', () => {
+    const writeJson = (filePath: string | undefined, value: unknown) => {
+      if (!filePath) throw new Error('stage stub was given no --output');
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`);
+    };
+    const integrityGate =
+      (counts: Record<string, number>): StageStub =>
+      ({ outputPath }) => {
+        writeJson(outputPath, { status: 'failure', counts, samples: {} });
+        return { status: 1 };
+      };
+    const trustContract =
+      (lanes: Array<{ stage: string; count: number }>, publicVisibilityViolations = 0): StageStub =>
+      ({ outputPath }) => {
+        writeJson(outputPath, {
+          pass: false,
+          counts: { scanned: 40, publicVisibilityViolations },
+          repairLanes: lanes.map((lane) => ({ ...lane, samples: [] })),
+        });
+        return { status: 1 };
+      };
+    const laneScorecardNeedingRecapture: StageStub = ({ outputPath }) => {
+      writeJson(outputPath, {
+        unscored: [
+          {
+            benchmarkId: 'synthetic-lane-benchmark',
+            reason:
+              'replay requested a page or render the capture never froze, so the lane aborted',
+          },
+        ],
+        regressions: [],
+        results: [],
+      });
+      return { status: 1 };
+    };
+    const crashedLinkHealth: StageStub = ({ logPath }) => {
+      fs.appendFileSync(
+        logPath!,
+        [
+          'probing 12 links',
+          'probe failed for https://synthetic.example.edu/profile/zz-synthetic-person/ (contact zz99@example.edu, netid: zz99)',
+          'ResolverUnhealthyError: Resolver looks unhealthy: 5 distinct hosts failed to resolve within 60s',
+          '',
+        ].join('\n'),
+      );
+      return { status: 1 };
+    };
+    const options = {
+      mode: 'development-full' as const,
+      confirmations: new Set(['--confirm-development-full-sweep']),
+      skipPreflight: true,
+      restart: true,
+    };
+    const stageNamed = (summary: Awaited<ReturnType<typeof runScraperSweep>>, name: string) =>
+      summary.postRun?.stages.find((stage) => stage.name === name);
+
+    afterEach(async () => {
+      await mongoose.connect(mongoUrl);
+      await mongoose.connection.db!.collection('weekly_sweep_runs').deleteMany({});
+      await mongoose.disconnect();
+    });
+
+    it('passes standing counts on a first run, lists unscored benchmarks, and fails only a crashed stage', async () => {
+      const { runner } = makeChildRunner(new Set(), {
+        'scraper:integrity-gate': integrityGate({ duplicatePeople: 4, duplicateAccessSignals: 0 }),
+        'launch:trust-contract': trustContract([{ stage: 'pi_identity', count: 6 }]),
+        'lane:scorecard': laneScorecardNeedingRecapture,
+      });
+      const summary = await runScraperSweep(options, { childRunner: runner });
+      trackRun(options.mode, summary.outputDirectory);
+
+      expect(summary.failed).toBe(0);
+      expect(summary.postRun?.status).toBe('succeeded');
+      expect(stageNamed(summary, 'integrity-gate')).toMatchObject({
+        status: 'succeeded',
+        exitCode: 1,
+        counts: { duplicatePeople: 4, duplicateAccessSignals: 0 },
+      });
+      expect(stageNamed(summary, 'trust-contract')).toMatchObject({
+        status: 'succeeded',
+        counts: { violations: 6, 'repairLane:pi_identity': 6, 'repairLane:suppression': 0 },
+      });
+      expect(stageNamed(summary, 'lane-scorecard')).toMatchObject({
+        status: 'succeeded',
+        unscored: [{ benchmarkId: 'synthetic-lane-benchmark' }],
+      });
+      expect(stageNamed(summary, 'lane-scorecard')?.regressions).toBeUndefined();
+      const written = JSON.parse(
+        fs.readFileSync(path.join(summary.outputDirectory, 'summary.json'), 'utf8'),
+      );
+      expect(written.postRun.status).toBe('succeeded');
+    }, 180_000);
+
+    it('fails a stage whose count rose over the last run that recorded it, and records why a crashed stage failed', async () => {
+      await mongoose.connect(mongoUrl);
+      await mongoose.connection.db!.collection('weekly_sweep_runs').insertMany([
+        {
+          startedAt: new Date('2026-09-27T07:00:00Z'),
+          status: 'succeeded',
+          stages: [
+            {
+              mode: 'development-full',
+              name: 'trust-contract',
+              status: 'succeeded',
+              counts: { publicVisibilityViolations: 0, violations: 9, 'repairLane:pi_identity': 9 },
+            },
+          ],
+        },
+        {
+          startedAt: new Date('2026-10-01T07:00:00Z'),
+          status: 'failed',
+          stages: [
+            {
+              mode: 'development-full',
+              name: 'integrity-gate',
+              status: 'succeeded',
+              counts: { duplicatePeople: 4, duplicateAccessSignals: 2 },
+            },
+            {
+              mode: 'development-full',
+              name: 'trust-contract',
+              status: 'failed',
+              counts: {
+                publicVisibilityViolations: 0,
+                violations: 12,
+                'repairLane:pi_identity': 12,
+              },
+            },
+          ],
+        },
+      ]);
+      await mongoose.disconnect();
+
+      const { runner } = makeChildRunner(new Set(['nih-reporter']), {
+        'scraper:integrity-gate': integrityGate({ duplicatePeople: 4, duplicateAccessSignals: 1 }),
+        'launch:trust-contract': trustContract([{ stage: 'pi_identity', count: 10 }]),
+        'lane:scorecard': laneScorecardNeedingRecapture,
+        'research-homes:backfill-source-link-health': crashedLinkHealth,
+      });
+      const summary = await runScraperSweep(options, { childRunner: runner });
+      trackRun(options.mode, summary.outputDirectory);
+
+      expect(summary.postRun?.status).toBe('failed');
+      expect(stageNamed(summary, 'integrity-gate')).toMatchObject({
+        status: 'succeeded',
+        counts: { duplicatePeople: 4, duplicateAccessSignals: 1 },
+      });
+      const trust = stageNamed(summary, 'trust-contract');
+      expect(trust).toMatchObject({ status: 'failed', failureKind: 'regression' });
+      expect(trust?.regressions).toEqual([
+        { name: 'violations', previous: 9, current: 10 },
+        { name: 'repairLane:pi_identity', previous: 9, current: 10 },
+      ]);
+      expect(trust?.error).toBe(
+        'trust-contract regressed: violations 9 -> 10, repairLane:pi_identity 9 -> 10',
+      );
+      expect(trust?.failureTail).toBeUndefined();
+
+      const linkHealth = stageNamed(summary, 'source-link-health');
+      expect(linkHealth).toMatchObject({ status: 'failed', failureKind: 'crashed', exitCode: 1 });
+      expect(linkHealth?.failureTail).toContain('ResolverUnhealthyError');
+      expect(linkHealth?.failureTail).toContain('https://synthetic.example.edu/[path redacted]');
+      expect(linkHealth?.failureTail).not.toContain('zz-synthetic-person');
+      expect(linkHealth?.failureTail).not.toContain('zz99@example.edu');
+      expect(linkHealth?.failureTail).toContain('netid: [netid redacted]');
+
+      const failedSource = summary.rows.find((row) => row.sourceName === 'nih-reporter');
+      expect(failedSource?.failureTail).toContain('ECONNRESET while fetching nih-reporter');
+    }, 180_000);
+
+    it('fails a counting stage that exited without its result as crashed, and any public visibility violation outright', async () => {
+      const { runner } = makeChildRunner(new Set(), {
+        'scraper:integrity-gate': ({ logPath }) => {
+          fs.appendFileSync(logPath!, 'MongoServerSelectionError: connection timed out\n');
+          return { status: 1 };
+        },
+        'launch:trust-contract': trustContract([], 2),
+        'lane:scorecard': laneScorecardNeedingRecapture,
+      });
+      const summary = await runScraperSweep(options, { childRunner: runner });
+      trackRun(options.mode, summary.outputDirectory);
+
+      expect(stageNamed(summary, 'trust-contract')).toMatchObject({
+        status: 'failed',
+        failureKind: 'violation',
+        error: 'trust-contract found 2 publicly visible row(s) that are not launch-eligible',
+        counts: { publicVisibilityViolations: 2, violations: 0 },
+      });
+      const gate = stageNamed(summary, 'integrity-gate');
+      expect(gate).toMatchObject({ status: 'failed', failureKind: 'crashed' });
+      expect(gate?.error).toMatch(/exited with status 1 and its result could not be judged/);
+      expect(gate?.failureTail).toContain('MongoServerSelectionError');
+      expect(summary.postRun?.status).toBe('failed');
+    }, 180_000);
+  });
 });

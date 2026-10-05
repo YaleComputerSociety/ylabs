@@ -1,9 +1,5 @@
 export type OperatorDatabaseEnvironment =
-  | 'development'
-  | 'beta'
-  | 'production-copy'
-  | 'production'
-  | 'test';
+  'development' | 'beta' | 'production-copy' | 'production' | 'test';
 
 const OPERATOR_DATABASE_NAMES: Record<
   Exclude<OperatorDatabaseEnvironment, 'test'>,

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import AdminOperatorBoard from '../AdminOperatorBoard';
@@ -58,7 +58,7 @@ describe('AdminOperatorBoard', () => {
               recordId: 'entity-held',
               label: 'Queued Lab',
               blockerReasons: ['missing_description'],
-              evidenceSignals: ['concrete_next_step'],
+              evidenceSignals: ['official_source'],
               sourceNames: ['ysm-atoz-index'],
               nextRepairAction: 'Backfill a source-backed research description.',
             },
@@ -111,22 +111,22 @@ describe('AdminOperatorBoard', () => {
                 id: 'sample-evidence',
                 label: 'Source Backed Lab',
                 tier: 'limited_but_safe',
-                reasons: ['source_backed_description', 'missing_action_evidence'],
+                reasons: ['source_backed_description', 'missing_card_description'],
               },
             ],
           },
           {
             collection: 'research',
-            reason: 'missing_action_evidence',
+            reason: 'missing_card_description',
             kind: 'blocking',
             count: 5,
-            nextAction: 'Add source-backed action evidence.',
+            nextAction: 'Backfill a student-facing short description.',
             samples: [
               {
                 id: 'sample-blocker',
                 label: 'Repair Candidate Lab',
                 tier: 'operator_review',
-                reasons: ['missing_action_evidence', 'source_backed_description'],
+                reasons: ['missing_card_description', 'source_backed_description'],
               },
             ],
           },
@@ -156,7 +156,7 @@ describe('AdminOperatorBoard', () => {
             patchedCount: 0,
             blockedCount: 500,
             blockedReasonCounts: [
-              { reason: 'missing_action_evidence', count: 320 },
+              { reason: 'missing_card_description', count: 320 },
               { reason: 'missing_lead', count: 190 },
             ],
           },
@@ -298,22 +298,18 @@ describe('AdminOperatorBoard', () => {
             status: 'blocked',
             command:
               'SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10 --output /tmp/ylabs-launch-acquisition-report.json',
-            note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+            note: 'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
             scanned: 75,
             piBlockers: 65,
-            actionBlockers: 10,
             exactPiMatches: 0,
-            sourceBackedRouteCandidates: 0,
             missingOfficialProfileUrl: 61,
             ambiguousOrMismatchedUserMatch: 21,
-            sourceObservationsWithoutUndergradAccess: 4,
-            untrustedExternalRouteEvidence: 5,
           },
           productionCopy: {
             status: 'review_required',
             command:
               'yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json',
-            note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+            note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
             excludedSyntheticUsers: 2,
             collectionCategoryCount: 3,
           },
@@ -480,14 +476,17 @@ describe('AdminOperatorBoard', () => {
     const repairLane = screen.getByText('Must Fix Before Promotion');
     const evidenceLane = screen.getByText('Promotion Evidence');
     expect(repairLane.compareDocumentPosition(evidenceLane)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(screen.getByText('Can this record show a source-backed next step?')).toBeTruthy();
+    expect(
+      screen.getAllByText('Can official source prose support student-facing copy?')[0],
+    ).toBeTruthy();
+    expect(screen.queryByText('Can this record show a source-backed next step?')).toBeNull();
     expect(
       screen.getByText('Should this stay capped, or is there evidence of a real entry route?'),
     ).toBeTruthy();
     expect(
       screen.getByText('Is this ready to promote from evidence to student-facing copy?'),
     ).toBeTruthy();
-    expect(screen.getAllByText('missing_action_evidence').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('missing_card_description').length).toBeGreaterThan(0);
     expect(screen.getAllByText('formalization_only').length).toBeGreaterThan(0);
     expect(screen.getAllByText('source_backed_description').length).toBeGreaterThan(0);
     expect(screen.getByText('Likely blockers')).toBeTruthy();
@@ -518,7 +517,7 @@ describe('AdminOperatorBoard', () => {
     expect(screen.queryByText(/Promoted by the gate/)).toBeNull();
     expect(screen.getByText('Blocked: 500')).toBeTruthy();
     expect(
-      screen.getByText('Blocked reasons: missing_action_evidence 320 · missing_lead 190'),
+      screen.getByText('Blocked reasons: missing_card_description 320 · missing_lead 190'),
     ).toBeTruthy();
     expect(
       screen.getByText('Data-quality gate has 1 hard error and 3 must-fix promotion blockers.'),
@@ -701,20 +700,20 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Launch acquisition status: blocked')).toBeTruthy();
     expect(
       screen.getByText(
-        'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+        'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('Scanned blockers: 75')).toBeTruthy();
     expect(screen.getByText('PI blockers: 65')).toBeTruthy();
-    expect(screen.getByText('Action blockers: 10')).toBeTruthy();
     expect(screen.getByText('Exact PI matches: 0')).toBeTruthy();
-    expect(screen.getByText('Route candidates: 0')).toBeTruthy();
+    expect(screen.queryByText(/Action blockers/)).toBeNull();
+    expect(screen.queryByText(/Route candidates/)).toBeNull();
     expect(screen.getByText('Missing official profile URLs: 61')).toBeTruthy();
     expect(screen.getByText('Ambiguous/mismatched user cases: 21')).toBeTruthy();
     expect(screen.getByText('Production copy status: review_required')).toBeTruthy();
     expect(
       screen.getByText(
-        'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+        'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
       ),
     ).toBeTruthy();
     expect(screen.getByText('Excluded synthetic users: 2')).toBeTruthy();
@@ -730,23 +729,23 @@ describe('AdminOperatorBoard', () => {
         queues: [
           {
             collection: 'research',
-            reason: 'missing_action_evidence',
+            reason: 'missing_card_description',
             kind: 'blocking',
             count: 3,
-            nextAction: 'Add source-backed action evidence.',
+            nextAction: 'Backfill a student-facing short description.',
             samples: [
               {
                 id: 'sample-research-linked',
                 label: 'Linked Research Home',
                 slug: 'linked-research-home',
                 tier: 'operator_review',
-                reasons: ['missing_action_evidence'],
+                reasons: ['missing_card_description'],
               },
               {
                 id: 'sample-research-plain',
                 label: 'Unlinked Research Home',
                 tier: 'operator_review',
-                reasons: ['missing_action_evidence'],
+                reasons: ['missing_card_description'],
               },
             ],
           },
@@ -844,5 +843,46 @@ describe('AdminOperatorBoard', () => {
       screen.getByText('Saved data-quality artifact is stale; rerun the gate before promotion.'),
     ).toBeTruthy();
     expect(screen.getByText('Artifact age: 216 hours')).toBeTruthy();
+  });
+  it('keeps the board and offers a retry when a refresh fails', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        trustTiers: { research: [], programs: [] },
+        reasonCounts: { research: [], programs: [] },
+        queues: [],
+        gates: {
+          dataQuality: {
+            status: 'manual',
+            command: 'yarn --cwd server beta:data-quality --include-samples',
+            note: 'Saved data-quality artifact is stale; rerun the gate before promotion.',
+          },
+          scraperIntegrity: {
+            status: 'unknown',
+            command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+            latestRuns: [],
+          },
+        },
+        sourceFreshness: { windowDays: 30, riskCounts: { ok: 0, warn: 0, error: 0 }, rows: [] },
+      },
+    });
+    render(<AdminOperatorBoard />);
+
+    const refresh = await screen.findByRole('button', { name: 'Refresh' });
+    mockedAxios.get.mockRejectedValueOnce(new Error('network'));
+    fireEvent.click(refresh);
+
+    expect(await screen.findByText(/Failed to refresh operator board/)).toBeTruthy();
+    expect(screen.getByText('Data Quality Operator Board')).toBeTruthy();
+    expect(screen.getByText('Data quality status: manual')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
+  });
+
+  it('offers a retry when the first load fails', async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error('network'));
+    render(<AdminOperatorBoard />);
+
+    expect(await screen.findByText('Failed to load operator board')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
   });
 });

@@ -1,6 +1,12 @@
 import axios from 'axios';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL } from './researchEntitySearchIndexService';
+import {
+  recordResearchSearchQueryEmbeddingFailure,
+  recordResearchSearchQueryEmbeddingSuccess,
+  reserveResearchSearchQueryEmbedding,
+} from './researchSearchQueryEmbeddingBudget';
 
 // Meilisearch 1.13 has no query-embedding cache, so every hybrid search it runs
 // is one synchronous OpenAI round trip. A single student search issues two to
@@ -14,13 +20,15 @@ import { RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL } from './researchEntitySearchInd
 // Development index: identical totalHits on 6 of 6 sampled queries and identical
 // top-24 sets, with the only order divergence past rank 60. See #3149.
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
-const EMBEDDING_REQUEST_TIMEOUT_MS = 10_000;
+// Healthy calls measured 175 ms at p50 and 1.1 s at worst over 30 queries, and a
+// stalled upstream costs every waiting search the whole bound (#4192).
+export const EMBEDDING_REQUEST_TIMEOUT_MS = 2_000;
 // A 1536-float vector is ~12KB in V8, so this bounds the cache near 6MB while
 // covering far more distinct queries than a single browsing session produces.
 const MAX_CACHED_QUERY_VECTORS = 500;
 
 const cachedQueryVectors = new Map<string, number[]>();
-const inFlightQueryVectors = new Map<string, Promise<number[] | null>>();
+const inFlightQueryVectors = new Map<string, Promise<ResearchSearchQueryVectorOutcome>>();
 
 export const researchSearchQueryEmbeddingCacheSize = (): number => cachedQueryVectors.size;
 
@@ -42,6 +50,11 @@ const rememberQueryVector = (key: string, vector: number[]): void => {
 const isVector = (value: unknown): value is number[] =>
   Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'number');
 
+const isUpstreamRejection = (error: unknown): boolean => {
+  const status = (error as { response?: { status?: unknown } } | undefined)?.response?.status;
+  return status === 429;
+};
+
 const requestQueryVector = async (queryText: string, apiKey: string): Promise<number[] | null> => {
   const response = await axios.post(
     OPENAI_EMBEDDINGS_URL,
@@ -55,36 +68,80 @@ const requestQueryVector = async (queryText: string, apiKey: string): Promise<nu
   return isVector(vector) ? vector : null;
 };
 
+export interface ResearchSearchQueryVectorOutcome {
+  /** The vector to hand Meilisearch, or `null` when one could not be produced. */
+  vector: number[] | null;
+  /**
+   * False when the budget or the breaker refused this call, or when the call this
+   * request made or joined failed, which obliges the caller to drop `hybrid` as
+   * well as `vector`. A `hybrid` block with no vector makes Meilisearch embed the
+   * query through the same paid account, so omitting only the vector would move
+   * the call rather than decline it, and after a failure would retry the failing
+   * upstream inside Meilisearch for seconds before it answers.
+   */
+  semanticLegAffordable: boolean;
+}
+
+const affordable = (vector: number[] | null): ResearchSearchQueryVectorOutcome => ({
+  vector,
+  semanticLegAffordable: true,
+});
+
+const declined: ResearchSearchQueryVectorOutcome = { vector: null, semanticLegAffordable: false };
+
 /**
- * Returns the query vector to hand Meilisearch for a hybrid search, or `null`
- * when one cannot be produced. `null` is not an error path: the caller omits
- * `vector`, Meilisearch embeds the query itself, and behaviour is unchanged
- * apart from the latency this exists to remove.
+ * Returns the query vector to hand Meilisearch for a hybrid search.
+ *
+ * A `null` vector with `semanticLegAffordable: true` means no key is configured:
+ * the caller omits `vector`, Meilisearch embeds the query itself, and behaviour
+ * is unchanged apart from the latency this exists to remove. A failed call is
+ * declined instead, so the search serves its keyword leg.
+ *
+ * `clientKey` is the client bucket the route derives, used only to meter spend.
+ *
+ * The cache is keyed on the exact text sent upstream, because that is also the text
+ * the search sends Meilisearch as `q` and rank equivalence with Meilisearch's own
+ * embedder holds only for that text.
  */
-export const getResearchSearchQueryVector = async (queryText: string): Promise<number[] | null> => {
+export const getResearchSearchQueryVector = async (
+  queryText: string,
+  clientKey?: string,
+): Promise<ResearchSearchQueryVectorOutcome> => {
   const key = queryText;
-  if (!key) return null;
+  if (key.trim() === '') return affordable(null);
 
   const cached = cachedQueryVectors.get(key);
   if (cached) {
     rememberQueryVector(key, cached);
-    return cached;
+    return affordable(cached);
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-
+  // Joining a call already in flight costs nothing upstream, so it is not metered.
   const inFlight = inFlightQueryVectors.get(key);
   if (inFlight) return inFlight;
 
-  const pending = (async () => {
+  const decision = reserveResearchSearchQueryEmbedding(clientKey);
+  if (decision !== 'allowed') return declined;
+
+  const apiKey = usableOpenAiApiKey();
+  if (!apiKey) return affordable(null);
+
+  const pending = (async (): Promise<ResearchSearchQueryVectorOutcome> => {
     try {
-      const vector = await requestQueryVector(key, apiKey);
-      if (vector) rememberQueryVector(key, vector);
-      return vector;
+      const vector = await requestQueryVector(queryText, apiKey);
+      if (!vector) {
+        recordResearchSearchQueryEmbeddingFailure('error');
+        return declined;
+      }
+      rememberQueryVector(key, vector);
+      recordResearchSearchQueryEmbeddingSuccess();
+      return affordable(vector);
     } catch (error) {
+      recordResearchSearchQueryEmbeddingFailure(
+        isUpstreamRejection(error) ? 'upstream-rejected' : 'error',
+      );
       console.error('Research search query embedding failed:', sanitizeLogValue(error));
-      return null;
+      return declined;
     } finally {
       inFlightQueryVectors.delete(key);
     }

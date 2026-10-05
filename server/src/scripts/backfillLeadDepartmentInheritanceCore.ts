@@ -9,6 +9,7 @@ export interface LeadDepartmentInheritanceOutcome {
 export interface LeadDepartmentInheritanceSummary {
   scanned: number;
   inherited: number;
+  indexSyncFailures: number;
   skipped: Record<string, number>;
   departmentsWritten: Array<[string, number]>;
   schoolsWritten: Array<[string, number]>;
@@ -29,10 +30,12 @@ export function summarizeLeadDepartmentInheritance(
   const departments = new Map<string, number>();
   const schools = new Map<string, number>();
   let inherited = 0;
+  let indexSyncFailures = 0;
 
   for (const outcome of outcomes) {
     if (outcome.result.inherited) {
       inherited += 1;
+      if (outcome.result.indexSyncFailed) indexSyncFailures += 1;
       for (const department of outcome.result.departments ?? []) {
         departments.set(department, (departments.get(department) || 0) + 1);
       }
@@ -51,6 +54,7 @@ export function summarizeLeadDepartmentInheritance(
   return {
     scanned: outcomes.length,
     inherited,
+    indexSyncFailures,
     skipped,
     departmentsWritten: [...departments.entries()].sort(byCountDescending),
     schoolsWritten: [...schools.entries()].sort(byCountDescending),
@@ -58,10 +62,7 @@ export function summarizeLeadDepartmentInheritance(
 }
 
 export type LeadPiProvenanceRebackVerdict =
-  | 'reproduced'
-  | 'not-reproducible'
-  | 'value-diverged'
-  | 'already-observed';
+  'reproduced' | 'not-reproducible' | 'value-diverged' | 'already-observed';
 
 export interface LeadPiProvenanceRebackPlan {
   field: 'school' | 'departments';

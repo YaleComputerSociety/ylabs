@@ -5,6 +5,7 @@
  * tracks counts and errors, and supports rollback ("invalidate this run's observations").
  */
 import mongoose from 'mongoose';
+import { scrapeRunInterruptionReasons, scrapeRunStatuses } from './storedVocabularies';
 
 const scrapeRunSchema = new mongoose.Schema(
   {
@@ -33,8 +34,39 @@ const scrapeRunSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['running', 'success', 'failure', 'partial'],
+      enum: scrapeRunStatuses,
       default: 'running',
+    },
+    heartbeatAt: {
+      type: Date,
+      required: false,
+    },
+    codeSha: {
+      type: String,
+      required: false,
+    },
+    owner: {
+      type: new mongoose.Schema(
+        {
+          host: String,
+          pid: Number,
+          lockOwnerId: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    interruption: {
+      type: new mongoose.Schema(
+        {
+          reason: { type: String, enum: scrapeRunInterruptionReasons },
+          signal: String,
+          detectedAt: Date,
+          detectedBy: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
     },
     observationCount: {
       type: Number,
@@ -68,6 +100,10 @@ const scrapeRunSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    materializationIndexSyncFailures: {
+      type: Number,
+      default: 0,
+    },
     postMaterializationMetrics: {
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
@@ -79,6 +115,10 @@ const scrapeRunSchema = new mongoose.Schema(
     metrics: {
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
+    },
+    notes: {
+      type: String,
+      required: false,
     },
     errors: {
       type: [

@@ -16,18 +16,14 @@ interface BarChartProps {
 
 const CHART_STYLES = `
 .yr-chart {
-  --chart-fill: #2a78d6;
-  --chart-track: #e1e0d9;
-  --chart-value-ink: var(--yr-ink, #0b0b0b);
-  --chart-label-ink: var(--yr-muted, #52514e);
+  --chart-fill: var(--yr-blue);
+  --chart-track: var(--yr-line);
+  --chart-value-ink: var(--yr-ink);
+  --chart-label-ink: var(--yr-muted);
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
   margin: 0;
-}
-[data-theme='dark'] .yr-chart {
-  --chart-fill: #3987e5;
-  --chart-track: #2c2c2a;
 }
 .yr-chart-row {
   display: grid;
@@ -55,7 +51,7 @@ const CHART_STYLES = `
   height: 100%;
   border-radius: 9999px;
   background: var(--chart-fill);
-  transition: width 200ms ease-out;
+  transition: width var(--yr-motion-slow) ease-out;
 }
 .yr-chart-value {
   font-size: 0.8125rem;
@@ -83,7 +79,7 @@ const BarChart = ({
   const format = valueFormatter ?? defaultFormatter;
 
   if (data.length === 0) {
-    return <p className="text-sm text-gray-500">{emptyMessage ?? 'No data to chart.'}</p>;
+    return <p className="text-sm text-muted">{emptyMessage ?? 'No data to chart.'}</p>;
   }
 
   const maxValue = data.reduce((max, datum) => Math.max(max, datum.value), 0);

@@ -1,23 +1,23 @@
 /**
  * Controller handlers for canonical program routes.
  */
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import {
   readProgram,
   searchPrograms,
   getProgramFilterOptions as readProgramFilterOptions,
 } from '../services/programService';
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
-import { publicProgramForReader } from './programPayload';
-import { sanitizeLogValue } from '../utils/logSanitizer';
+import { publicProgramForReader, withProgramAudience } from './programPayload';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
+import { isNotFoundError } from '../utils/errors';
 
-const sendProgramError = (response: Response, error: any, fallbackMessage: string) => {
-  if (error?.name === 'NotFoundError') {
+const answerProgramError = (error: unknown, response: Response, next: NextFunction) => {
+  if (isNotFoundError(error)) {
     return response.status(404).json({ error: 'Program not found' });
   }
 
-  return response.status(500).json({ error: fallbackMessage });
+  return next(error);
 };
 
 const MAX_PROGRAM_SEARCH_QUERY_LENGTH = 512;
@@ -101,93 +101,87 @@ const publicProgramPageSize = (value: unknown): number =>
   Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(1, Math.floor(numericSearchParam(value) || 20)));
 
 export const searchProgramsController = async (request: Request, response: Response) => {
-  try {
-    const {
-      query,
-      page = '1',
-      pageSize = '20',
-      sortBy = DEFAULT_PUBLIC_PROGRAM_SORT_FIELD,
-      sortOrder = '1',
-      yearOfStudy,
-      termOfAward,
-      purpose,
-      globalRegions,
-      citizenshipStatus,
-      programCategory,
-      programKind,
-      entryMode,
-      studentFacingCategory,
-      subjects,
-      studentVisibilityTier,
-      includeOperatorReview,
-      includeSuppressed,
-    } = request.query;
-    const currentUser = request.user as
-      | { netId?: string; netid?: string; userType?: string }
-      | undefined;
-    const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
+  const {
+    query,
+    page = '1',
+    pageSize = '20',
+    sortBy = DEFAULT_PUBLIC_PROGRAM_SORT_FIELD,
+    sortOrder = '1',
+    yearOfStudy,
+    termOfAward,
+    purpose,
+    globalRegions,
+    citizenshipStatus,
+    programCategory,
+    programKind,
+    entryMode,
+    studentFacingCategory,
+    subjects,
+    studentVisibilityTier,
+    includeOperatorReview,
+    includeSuppressed,
+    correctSpelling,
+  } = request.query;
+  const currentUser = request.user as
+    { netId?: string; netid?: string; userType?: string } | undefined;
+  const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
 
-    const result = await searchPrograms({
-      query: boundedSearchQuery(query),
-      page: publicProgramPage(page),
-      pageSize: publicProgramPageSize(pageSize),
-      sortBy: publicProgramSortField(sortBy, hasAdminAuthority),
-      sortOrder: publicProgramSortOrder(sortOrder),
-      yearOfStudy: parseFilter(yearOfStudy),
-      termOfAward: parseFilter(termOfAward),
-      purpose: parseFilter(purpose),
-      globalRegions: parseFilter(globalRegions),
-      citizenshipStatus: parseFilter(citizenshipStatus),
-      programCategory: parseFilter(programCategory),
-      programKind: parseFilter(programKind),
-      entryMode: parseFilter(entryMode),
-      studentFacingCategory: parseFilter(studentFacingCategory),
-      subjects: parseFilter(subjects),
-      includeNonPublic: hasAdminAuthority,
-      studentVisibilityTier: hasAdminAuthority
-        ? parseStudentVisibilityFilter(studentVisibilityTier)
-        : [],
-      includeOperatorReview: hasAdminAuthority && includeOperatorReview === 'true',
-      includeSuppressed: hasAdminAuthority && includeSuppressed === 'true',
-    });
-    const programs = hasAdminAuthority
-      ? result.programs
-      : result.programs.map(publicProgramForReader);
+  const result = await searchPrograms({
+    query: boundedSearchQuery(query),
+    page: publicProgramPage(page),
+    pageSize: publicProgramPageSize(pageSize),
+    sortBy: publicProgramSortField(sortBy, hasAdminAuthority),
+    sortOrder: publicProgramSortOrder(sortOrder),
+    yearOfStudy: parseFilter(yearOfStudy),
+    termOfAward: parseFilter(termOfAward),
+    purpose: parseFilter(purpose),
+    globalRegions: parseFilter(globalRegions),
+    citizenshipStatus: parseFilter(citizenshipStatus),
+    programCategory: parseFilter(programCategory),
+    programKind: parseFilter(programKind),
+    entryMode: parseFilter(entryMode),
+    studentFacingCategory: parseFilter(studentFacingCategory),
+    subjects: parseFilter(subjects),
+    includeNonPublic: hasAdminAuthority,
+    studentVisibilityTier: hasAdminAuthority
+      ? parseStudentVisibilityFilter(studentVisibilityTier)
+      : [],
+    includeOperatorReview: hasAdminAuthority && includeOperatorReview === 'true',
+    includeSuppressed: hasAdminAuthority && includeSuppressed === 'true',
+    correctSpelling: correctSpelling !== 'false',
+  });
+  const programs = hasAdminAuthority
+    ? result.programs.map(withProgramAudience)
+    : result.programs.map(publicProgramForReader);
 
-    response.json({
-      results: programs,
-      total: result.total,
-      page: result.page,
-      pageSize: result.pageSize,
-      totalPages: result.totalPages,
-    });
-  } catch (error) {
-    console.error('Program search failed:', sanitizeLogValue(error));
-    response.status(500).json({ error: 'Search failed' });
-  }
+  response.json({
+    results: programs,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalPages: result.totalPages,
+    ...(result.queryCorrection ? { queryCorrection: result.queryCorrection } : {}),
+  });
 };
 
-export const getProgramById = async (request: Request, response: Response) => {
+export const getProgramById = async (request: Request, response: Response, next: NextFunction) => {
   try {
     const currentUser = request.user as
-      | { netId?: string; netid?: string; userType?: string }
-      | undefined;
+      { netId?: string; netid?: string; userType?: string } | undefined;
     const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
     const program = await readProgram(request.params.id, {
       includeNonPublic: hasAdminAuthority,
     });
-    const publicProgram = hasAdminAuthority ? program : publicProgramForReader(program);
+    const publicProgram = hasAdminAuthority
+      ? withProgramAudience(program)
+      : publicProgramForReader(program);
     response.status(200).json({ program: publicProgram, fellowship: publicProgram });
   } catch (error: any) {
-    sendProgramError(response, error, 'Failed to fetch program');
+    answerProgramError(error, response, next);
   }
 };
 
 export const getProgramFilterOptions = async (_request: Request, response: Response) => {
-  try {
-    const options = await readProgramFilterOptions();
-    response.status(200).json(options);
-  } catch {
-    response.status(500).json({ error: 'Failed to fetch program filters' });
-  }
+  const options = await readProgramFilterOptions();
+  response.status(200).json(options);
 };

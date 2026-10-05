@@ -8,7 +8,6 @@ export interface CoverageAuditCounts {
 export interface CoverageObservationFlags {
   hasMicrositeObservation: boolean;
   hasInferredPiObservation: boolean;
-  suspiciousConstraintQuotes: string[];
 }
 
 export interface CoverageAuditFacts {
@@ -51,24 +50,12 @@ const ISSUE_SCORES: Record<string, number> = {
   MISSING_DESCRIPTION: 2,
   NO_MEMBERS: 2,
   NO_ACCESS_SIGNALS: 2,
-  SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED: 2,
   NO_RESEARCH_AREAS: 1,
   MISSING_WEBSITE_URL: 1,
 };
 
-const SUSPICIOUS_CONSTRAINT_RE =
-  /\b(no bandwidth|don't have bandwidth|do not have bandwidth|not accepting|not currently accepting|do not take undergraduates|don't take undergraduates|cannot respond|can't respond|unable to respond|please do not email)\b/i;
-
 export function textLength(value: string | undefined | null): number {
   return typeof value === 'string' ? value.trim().length : 0;
-}
-
-export function extractSuspiciousConstraintQuotes(
-  quotes: Array<string | undefined | null>,
-): string[] {
-  return quotes
-    .map((quote) => (typeof quote === 'string' ? quote.trim() : ''))
-    .filter((quote) => quote.length > 0 && SUSPICIOUS_CONSTRAINT_RE.test(quote));
 }
 
 export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
@@ -98,19 +85,12 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
     issues.push('NO_ACTIONABLE_ACCESS');
   }
 
-  const signals = new Set(facts.signalTypes || []);
   const observationFlags = facts.observationFlags;
   if (observationFlags?.hasMicrositeObservation && noActionableAccess) {
     issues.push('MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS');
   }
   if (observationFlags?.hasInferredPiObservation && members === 0) {
     issues.push('INFERRED_PI_WITHOUT_MEMBERSHIP');
-  }
-  if (
-    (observationFlags?.suspiciousConstraintQuotes.length || 0) > 0 &&
-    !signals.has('NOT_CURRENTLY_AVAILABLE')
-  ) {
-    issues.push('SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED');
   }
   if (
     shortDescriptionChars === 0 &&

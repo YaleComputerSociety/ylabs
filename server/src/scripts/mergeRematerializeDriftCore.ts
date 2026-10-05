@@ -1,9 +1,15 @@
+import fs from 'fs';
+import path from 'path';
 import {
   REMATERIALIZE_TRACKED_FIELDS,
+  isWithheldChange,
+  rematerializeReportedChanges,
+  rematerializeStateAfterPlan,
   researchEntityFieldIsStranded,
-  type RematerializeFieldChange,
+  type RematerializeReportedChange,
 } from './rematerializeResearchEntitiesCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { isResearchEntityContactField } from '../scrapers/rowKeyedContactEvidence';
 
 /**
  * A merge copies a fixed field list onto the survivor, so every field outside that
@@ -20,15 +26,11 @@ export const MERGE_REMATERIALIZE_AUDITED_FIELDS = Array.from(
     'school',
     'schools',
     'entityType',
-    'location',
     'contactEmail',
     'contactName',
     'contactRole',
     'undergradEvidenceQuote',
     'typicalUndergradRoles',
-    'prerequisiteCourses',
-    'creditOptions',
-    'fundingPrograms',
     'offersIndependentStudy',
     'fundingAgencies',
     'recentGrantCount',
@@ -37,9 +39,16 @@ export const MERGE_REMATERIALIZE_AUDITED_FIELDS = Array.from(
 
 export type MergeRematerializeDriftKind = 'recovered' | 'emptied' | 'replaced';
 
+const WITHHELD_DRIFT_KIND = {
+  set: 'recovered',
+  cleared: 'emptied',
+  replaced: 'replaced',
+} as const satisfies Record<string, MergeRematerializeDriftKind>;
+
 export function classifyMergeRematerializeChange(
-  change: RematerializeFieldChange,
+  change: RematerializeReportedChange,
 ): MergeRematerializeDriftKind {
+  if (isWithheldChange(change)) return WITHHELD_DRIFT_KIND[change.withheld];
   const beforeIsEmpty = researchEntityFieldIsStranded(change.before);
   const afterIsEmpty = researchEntityFieldIsStranded(change.after);
   if (beforeIsEmpty && !afterIsEmpty) return 'recovered';
@@ -53,7 +62,7 @@ export interface MergeRematerializeEntityReport {
   archivedTwinCount: number;
   skipped?: string;
   filledFields?: string[];
-  changes: Array<RematerializeFieldChange & { kind: MergeRematerializeDriftKind }>;
+  changes: Array<RematerializeReportedChange & { kind: MergeRematerializeDriftKind }>;
 }
 
 export interface MergeRematerializeDriftSummary {
@@ -67,9 +76,42 @@ export interface MergeRematerializeDriftSummary {
 }
 
 export function classifyMergeRematerializeChanges(
-  changes: RematerializeFieldChange[],
+  changes: RematerializeReportedChange[],
 ): MergeRematerializeEntityReport['changes'] {
   return changes.map((change) => ({ ...change, kind: classifyMergeRematerializeChange(change) }));
+}
+
+export function mergeRematerializeDryRunChanges(
+  survivor: Record<string, unknown>,
+  plannedSet: Record<string, unknown>,
+  plannedUnset: Record<string, unknown>,
+): MergeRematerializeEntityReport['changes'] {
+  const planned = rematerializeStateAfterPlan(
+    survivor,
+    plannedSet,
+    plannedUnset,
+    MERGE_REMATERIALIZE_AUDITED_FIELDS,
+  );
+  return classifyMergeRematerializeChanges(
+    rematerializeReportedChanges(survivor, planned, MERGE_REMATERIALIZE_AUDITED_FIELDS),
+  );
+}
+
+export function mergeRematerializeFilledChanges(
+  survivor: Record<string, unknown>,
+  filledFields: readonly string[],
+): MergeRematerializeEntityReport['changes'] {
+  return filledFields.map((field) => ({
+    ...(isResearchEntityContactField(field)
+      ? { field, withheld: 'set' as const }
+      : { field, before: survivor[field], after: undefined }),
+    kind: 'recovered' as const,
+  }));
+}
+
+export function writeMergeRematerializeDriftReport(output: string, report: object): void {
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export function summarizeMergeRematerializeDrift(

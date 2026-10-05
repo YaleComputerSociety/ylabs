@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MANUAL_ONLY_SWEEP_SOURCES } from '../../scrapers/manualOnlySweepSources';
 import { buildSourceHealthRows } from '../sourceHealthService';
 
 describe('sourceHealthService', () => {
@@ -187,7 +188,68 @@ describe('sourceHealthService', () => {
     );
 
     expect(rows[0].risk).toBe('ok');
-    expect(rows[0].action).toMatch(/Event-driven source/i);
+    expect(rows[0].action).toMatch(/Event-driven or manual-only source/i);
+  });
+
+  it('does not raise a manual-only source to error risk for a failed run (#3582)', () => {
+    const manualOnlySource = MANUAL_ONLY_SWEEP_SOURCES[0];
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: manualOnlySource,
+          enabled: true,
+          cadence: 'weekly',
+          coverage: { priority: 10, tier: 'THIRD_PARTY_ENRICHMENT' },
+        },
+        {
+          name: 'swept-source',
+          enabled: true,
+          cadence: 'weekly',
+          coverage: { priority: 20, tier: 'THIRD_PARTY_ENRICHMENT' },
+        },
+      ],
+      [
+        {
+          _id: 'manual-run',
+          sourceName: manualOnlySource,
+          status: 'failure',
+          startedAt: '2026-09-26T12:00:00.000Z',
+          observationCount: 0,
+        },
+        {
+          _id: 'swept-run',
+          sourceName: 'swept-source',
+          status: 'failure',
+          startedAt: '2026-09-26T12:00:00.000Z',
+          observationCount: 0,
+        },
+      ],
+    );
+
+    const bySource = new Map(rows.map((row) => [row.sourceName, row]));
+    expect(bySource.get(manualOnlySource)).toMatchObject({
+      risk: 'ok',
+      action: expect.stringMatching(/manual-only/i),
+      nextCommand: expect.stringContaining('scrape report --run manual-run'),
+    });
+    expect(bySource.get('swept-source')?.risk).toBe('error');
+  });
+
+  it('expects no scheduled run from a manual-only source that has never run', () => {
+    const rows = buildSourceHealthRows(
+      [
+        {
+          name: MANUAL_ONLY_SWEEP_SOURCES[0],
+          enabled: true,
+          cadence: 'monthly',
+          coverage: { priority: 10, tier: 'DERIVED_OFFICIAL' },
+        },
+      ],
+      [],
+    );
+
+    expect(rows[0].risk).toBe('ok');
+    expect(rows[0].nextCommand).toBeUndefined();
   });
 
   it('does not stringify arbitrary run ids while building operator commands', () => {
@@ -243,5 +305,66 @@ describe('sourceHealthService', () => {
     expect(rows[0].nextCommand).toBe(
       "SCRAPER_ENV=beta yarn --cwd server scrape run --source 'unsafe-source; touch /tmp/pwned #' --dry-run --limit 25",
     );
+  });
+  describe('a run marked running (#3595)', () => {
+    const NOW = new Date('2026-09-27T12:00:00.000Z');
+    const source = {
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      enabled: true,
+      coverage: { priority: 10, artifactTypes: ['Observation'] },
+    };
+    const rowFor = (run: Record<string, unknown>) =>
+      buildSourceHealthRows(
+        [source],
+        [{ _id: 'run-1', sourceName: 'fixture-source', observationCount: 0, ...run } as never],
+        NOW,
+      )[0];
+
+    it('reads a heartbeating run as in progress', () => {
+      const row = rowFor({
+        status: 'running',
+        startedAt: '2026-09-27T11:00:00.000Z',
+        heartbeatAt: '2026-09-27T11:59:00.000Z',
+      });
+      expect(row.action).toContain('in progress');
+      expect(row.recentRuns).toMatchObject({ running: 1, unverifiable: 0, abandoned: 0 });
+    });
+
+    it('reads a run whose heartbeat stopped as abandoned, not running', () => {
+      const row = rowFor({
+        status: 'running',
+        startedAt: '2026-09-27T09:00:00.000Z',
+        heartbeatAt: '2026-09-27T10:00:00.000Z',
+      });
+      expect(row.action).toContain('abandoned');
+      expect(row.nextCommand).toContain('scrape-runs:reconcile-stale');
+      expect(row.recentRuns).toMatchObject({ running: 0, abandoned: 1 });
+    });
+
+    it('reads a run that predates heartbeats by more than 72 hours as abandoned', () => {
+      const row = rowFor({ status: 'running', startedAt: '2026-05-17T19:13:21.000Z' });
+      expect(row.nextCommand).toContain('scrape-runs:reconcile-stale');
+      expect(row.recentRuns).toMatchObject({ running: 0, unverifiable: 0, abandoned: 1 });
+    });
+
+    it('reads a recent run that predates heartbeats as unverifiable, not abandoned', () => {
+      const row = rowFor({ status: 'running', startedAt: '2026-09-27T09:00:00.000Z' });
+      expect(row.action).toContain('predates run heartbeats');
+      expect(row.action).not.toContain('abandoned');
+      expect(row.nextCommand).toBeUndefined();
+      expect(row.recentRuns).toMatchObject({ running: 0, unverifiable: 1, abandoned: 0 });
+    });
+
+    it('reads an interrupted run as needing a rerun', () => {
+      const row = rowFor({
+        status: 'interrupted',
+        startedAt: '2026-09-27T09:00:00.000Z',
+        finishedAt: '2026-09-27T10:00:00.000Z',
+      });
+      expect(row.risk).toBe('warn');
+      expect(row.action).toContain('interrupted');
+      expect(row.recentRuns).toMatchObject({ interrupted: 1, running: 0 });
+    });
   });
 });

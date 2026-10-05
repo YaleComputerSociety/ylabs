@@ -33,6 +33,7 @@ import {
   parseBetaDataQualityArgs,
   selectLiveLinkCandidates,
   shouldStrictModeFail,
+  SIGNAL_TARGET_REFERENCE_EDGES,
   writeScorecardOutput,
   type BetaDataQualityOptions,
   type BetaDataQualityScorecard,
@@ -49,10 +50,11 @@ import {
   isSuspiciousUserEmail,
 } from './userEmailHygieneCore';
 import { auditStudentReadyPublicDescriptions } from '../services/researchEntityPublicDescriptionAuditService';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
 const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
@@ -91,13 +93,7 @@ const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
     targetCollectionName: 'accounts',
     required: false,
   },
-  {
-    name: 'signals.researchEntityId',
-    collectionName: 'signals',
-    localField: 'researchEntityId',
-    targetCollectionName: 'research_entities',
-    required: true,
-  },
+  ...SIGNAL_TARGET_REFERENCE_EDGES,
   {
     name: 'signals.source.evidenceIds',
     collectionName: 'signals',
@@ -190,8 +186,6 @@ interface DuplicateEntityCluster {
     website?: string;
     websiteUrl?: string;
     sourceUrls?: string[];
-    contactName?: string;
-    contactEmail?: string;
   }>;
 }
 
@@ -222,7 +216,7 @@ async function main(): Promise<void> {
     mongoUrl,
   });
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const scorecard = await buildBetaDataQualityScorecard(options, mongoUrl);
   const output = buildBetaDataQualityOutput(scorecard, {
     environment: guard.environment,
@@ -589,7 +583,7 @@ async function buildSourceHealthSummary(
     startedAt: { $gte: since },
   })
     .select(
-      'sourceName status startedAt finishedAt observationCount materializationErrors materializationConflicts invalidated',
+      'sourceName status startedAt finishedAt heartbeatAt observationCount materializationErrors materializationConflicts invalidated',
     )
     .sort({ sourceName: 1, startedAt: -1 })
     .lean();
@@ -793,8 +787,6 @@ async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
           website: 1,
           websiteUrl: 1,
           sourceUrls: 1,
-          contactName: 1,
-          contactEmail: 1,
         },
       },
       { $match: { normalizedName: { $ne: '' } } },
@@ -827,8 +819,6 @@ async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
         website: optionalString(entity.website),
         websiteUrl: optionalString(entity.websiteUrl),
         sourceUrls: asStringArray(entity.sourceUrls),
-        contactName: optionalString(entity.contactName),
-        contactEmail: optionalString(entity.contactEmail),
       })),
     };
     return {

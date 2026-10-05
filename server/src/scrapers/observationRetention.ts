@@ -87,7 +87,6 @@ export function buildSupersededObservationPruneFilter(input: {
   cutoff: Date;
   sourceName?: string;
   keepRunIds?: unknown[];
-  protectedObservationIds?: unknown[];
 }): Record<string, unknown> {
   const filter: Record<string, unknown> = {
     superseded: true,
@@ -96,9 +95,6 @@ export function buildSupersededObservationPruneFilter(input: {
   if (input.sourceName) filter.sourceName = input.sourceName;
   if (input.keepRunIds && input.keepRunIds.length > 0) {
     filter.scrapeRunId = { $nin: input.keepRunIds };
-  }
-  if (input.protectedObservationIds && input.protectedObservationIds.length > 0) {
-    filter._id = { $nin: input.protectedObservationIds };
   }
   return filter;
 }
@@ -151,17 +147,12 @@ export async function pruneSupersededObservations(
     sourceName: options.sourceName,
     keepRunIds: keptRunIds,
   });
-  const eligibleCandidates = await Observation.countDocuments(eligibleFilter);
   const referenceScan = await scanReferencedObservations();
-  const protectedObservationIds = referenceScan.ids;
-  const filter = buildSupersededObservationPruneFilter({
-    cutoff,
-    sourceName: options.sourceName,
-    keepRunIds: keptRunIds,
-    protectedObservationIds,
+  const { eligibleCandidates, candidates, deleted } = await pruneUnreferencedEligibleObservations({
+    eligibleFilter,
+    referencedObservationIds: referenceScan.ids,
+    apply: Boolean(options.apply),
   });
-  const candidates = await Observation.countDocuments(filter);
-  const deleted = options.apply ? (await Observation.deleteMany(filter)).deletedCount || 0 : 0;
 
   return {
     apply: Boolean(options.apply),
@@ -218,17 +209,12 @@ export async function pruneDeadObservations(
     sourceName: options.sourceName,
     keepRunIds: keptRunIds,
   });
-  const eligibleCandidates = await Observation.countDocuments(eligibleFilter);
   const referenceScan = await scanReferencedObservations();
-  const protectedObservationIds = referenceScan.ids;
-  const filter = buildSupersededObservationPruneFilter({
-    cutoff: now,
-    sourceName: options.sourceName,
-    keepRunIds: keptRunIds,
-    protectedObservationIds,
+  const { eligibleCandidates, candidates, deleted } = await pruneUnreferencedEligibleObservations({
+    eligibleFilter,
+    referencedObservationIds: referenceScan.ids,
+    apply: Boolean(options.apply),
   });
-  const candidates = await Observation.countDocuments(filter);
-  const deleted = options.apply ? (await Observation.deleteMany(filter)).deletedCount || 0 : 0;
 
   return {
     apply: Boolean(options.apply),
@@ -246,18 +232,61 @@ export async function pruneDeadObservations(
   };
 }
 
+export const OBSERVATION_PRUNE_DELETE_BATCH_SIZE = 5000;
+
+/**
+ * Referenced ids are excluded in memory rather than sent as an `_id: { $nin }` filter,
+ * because the referenced set grows with the corpus and passed the 16 MB BSON command
+ * limit on Development at about one million ids (#3733).
+ */
+async function pruneUnreferencedEligibleObservations(input: {
+  eligibleFilter: Record<string, unknown>;
+  referencedObservationIds: unknown[];
+  apply: boolean;
+}): Promise<{ eligibleCandidates: number; candidates: number; deleted: number }> {
+  const referencedKeys = new Set(input.referencedObservationIds.map((id) => String(id)));
+  let eligibleCandidates = 0;
+  const unreferencedIds: unknown[] = [];
+  const cursor = Observation.find(input.eligibleFilter).select('_id').lean().cursor();
+  for await (const row of cursor) {
+    eligibleCandidates += 1;
+    if (!referencedKeys.has(String(row._id))) unreferencedIds.push(row._id);
+  }
+  let deleted = 0;
+  if (input.apply) {
+    for (
+      let start = 0;
+      start < unreferencedIds.length;
+      start += OBSERVATION_PRUNE_DELETE_BATCH_SIZE
+    ) {
+      const batch = unreferencedIds.slice(start, start + OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
+      const result = await Observation.deleteMany({ ...input.eligibleFilter, _id: { $in: batch } });
+      deleted += result.deletedCount || 0;
+    }
+  }
+  return { eligibleCandidates, candidates: unreferencedIds.length, deleted };
+}
+
 export interface ReferencedObservationScan {
   ids: unknown[];
   specs: ObservationReferenceSpecCoverage[];
 }
 
-export async function scanReferencedObservations(): Promise<ReferencedObservationScan> {
+/**
+ * `specs` is an argument so a caller retiring a whole field can leave out
+ * `observations.supersededBy`: when every observation of that field is deleted in one
+ * pass, a pointer from one doomed row to another is bookkeeping rather than a reader, and
+ * counting it as protection would keep the entire supersession chain (#4161).
+ */
+export async function scanReferencedObservations(
+  specs: readonly ObservationReferenceSpec[] = OBSERVATION_REFERENCE_SPECS,
+): Promise<ReferencedObservationScan> {
   const referencedIds = new Map<string, unknown>();
-  const specs: ObservationReferenceSpecCoverage[] = [];
+  const coverage: ObservationReferenceSpecCoverage[] = [];
   const presentCollections = new Set(
     (await Observation.db.listCollections()).map((info) => info.name),
   );
-  for (const spec of OBSERVATION_REFERENCE_SPECS) {
+  for (const spec of specs) {
     const collectionPresent = presentCollections.has(spec.collection);
     const rows = await Observation.db
       .collection(spec.collection)
@@ -269,14 +298,14 @@ export async function scanReferencedObservations(): Promise<ReferencedObservatio
       specIds.add(String(row._id));
       referencedIds.set(String(row._id), row._id);
     }
-    specs.push({
+    coverage.push({
       collection: spec.collection,
       field: spec.field,
       collectionPresent,
       referencedObservations: specIds.size,
     });
   }
-  return { ids: Array.from(referencedIds.values()), specs };
+  return { ids: Array.from(referencedIds.values()), specs: coverage };
 }
 
 export async function findReferencedObservationIds(): Promise<unknown[]> {

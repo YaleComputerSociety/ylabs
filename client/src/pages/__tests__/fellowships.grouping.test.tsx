@@ -8,6 +8,7 @@ import FellowshipSearchContext, {
 } from '../../contexts/FellowshipSearchContext';
 import UserContext from '../../contexts/UserContext';
 import { Fellowship } from '../../types/types';
+import type { FellowshipQuickFilter } from '../../reducers/fellowshipSearchReducer';
 import Fellowships from '../fellowships';
 
 vi.stubGlobal(
@@ -66,6 +67,7 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: false,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -115,7 +117,7 @@ const renderFellowships = ({
   quickFilter = null,
 }: {
   fellowships: Fellowship[];
-  quickFilter?: 'open' | 'closingSoon' | 'recent' | null;
+  quickFilter?: FellowshipQuickFilter;
 }) =>
   render(
     <MemoryRouter>
@@ -147,48 +149,120 @@ describe('Fellowships grouping', () => {
     cleanup();
   });
 
-  it('places open, opening-soon, and closed fellowships in distinct sections', () => {
+  it('groups by application status, soonest action first', () => {
     renderFellowships({
       fellowships: [
-        makeFellowship({ id: 'open', title: 'Open Fellowship' }),
+        makeFellowship({
+          id: 'closed',
+          title: 'Closed Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
+          deadline: pastDate(7),
+          applicationLink: 'https://example.org/apply',
+        }),
         makeFellowship({
           id: 'future',
           title: 'Future Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
           isAcceptingApplications: false,
           applicationOpenDate: futureDate(14),
           deadline: futureDate(90),
         }),
         makeFellowship({
-          id: 'closed',
-          title: 'Closed Fellowship',
-          deadline: pastDate(7),
+          id: 'open-late',
+          title: 'Later Open Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
+          deadline: futureDate(120),
+        }),
+        makeFellowship({
+          id: 'open-early',
+          title: 'Earlier Open Fellowship',
+          programKind: 'MENTOR_MATCHING',
+          deadline: futureDate(45),
+        }),
+        makeFellowship({
+          id: 'closing',
+          title: 'Closing Fellowship',
+          programKind: 'FELLOWSHIP_FUNDING',
+          deadline: futureDate(5),
         }),
       ],
     });
 
-    const openHeader = screen.getByRole('heading', { name: 'Apply Now' });
-    const openingSoonHeader = screen.getByRole('heading', { name: 'Opening Soon' });
-    const closedHeader = screen.getByRole('heading', { name: 'Archive / Review' });
-    const openItem = screen.getByText('Open Fellowship');
-    const futureItem = screen.getByText('Future Fellowship');
-    const closedItem = screen.getByText('Closed Fellowship');
+    const regions = [
+      'Due in the next 30 days',
+      'Accepting applications',
+      'Opening soon',
+      'Plan for the next cycle',
+    ].map((name) => screen.getByRole('region', { name }));
+    for (let index = 1; index < regions.length; index += 1) {
+      expect(regions[index - 1].compareDocumentPosition(regions[index])).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }
+    expect(
+      within(regions[1])
+        .getAllByRole('article')
+        .map((card) => card.textContent),
+    ).toEqual(['Earlier Open Fellowship', 'Later Open Fellowship']);
+    expect(within(regions[0]).getByText('Closing Fellowship')).toBeInTheDocument();
+    expect(within(regions[2]).getByText('Future Fellowship')).toBeInTheDocument();
+    expect(within(regions[3]).getByText('Closed Fellowship')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Get Started in Research' })).toBeNull();
+  });
 
-    expect(openHeader.compareDocumentPosition(openItem)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(openItem.compareDocumentPosition(openingSoonHeader)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(openingSoonHeader.compareDocumentPosition(futureItem)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(futureItem.compareDocumentPosition(closedHeader)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(closedHeader.compareDocumentPosition(closedItem)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  it('narrows to programs open to first-years', () => {
+    renderFellowships({
+      quickFilter: 'firstYear',
+      fellowships: [
+        makeFellowship({
+          id: 'first-year',
+          title: 'First-Year Fellowship',
+          yearOfStudy: ['First-Year Student', 'Sophomore'],
+          deadline: futureDate(60),
+        }),
+        makeFellowship({
+          id: 'upper',
+          title: 'Upper-Level Fellowship',
+          yearOfStudy: ['Junior', 'Senior'],
+          deadline: futureDate(60),
+        }),
+      ],
+    });
+
+    expect(screen.getByText('First-Year Fellowship')).toBeInTheDocument();
+    expect(screen.queryByText('Upper-Level Fellowship')).not.toBeInTheDocument();
+  });
+
+  it('narrows to programs that do not need a mentor lined up first', () => {
+    renderFellowships({
+      quickFilter: 'noMentorFirst',
+      fellowships: [
+        makeFellowship({
+          id: 'mentor-first',
+          title: 'Mentor First Fellowship',
+          requiresMentorBeforeApply: true,
+          deadline: futureDate(60),
+        }),
+        makeFellowship({
+          id: 'matching',
+          title: 'Matching Program',
+          programKind: 'MENTOR_MATCHING',
+          requiresMentorBeforeApply: false,
+          mentorMatching: true,
+          deadline: futureDate(60),
+        }),
+      ],
+    });
+
+    expect(screen.getByText('Matching Program')).toBeInTheDocument();
+    expect(screen.queryByText('Mentor First Fellowship')).not.toBeInTheDocument();
   });
 
   it('keeps opening-soon fellowships out of the open quick filter', () => {
     renderFellowships({
       quickFilter: 'open',
       fellowships: [
-        makeFellowship({ id: 'open', title: 'Open Fellowship' }),
+        makeFellowship({ id: 'open', title: 'Open Fellowship', programKind: 'FELLOWSHIP_FUNDING' }),
         makeFellowship({
           id: 'future',
           title: 'Future Fellowship',
@@ -207,9 +281,117 @@ describe('Fellowships grouping', () => {
     expect(
       within(screen.getByTestId('browse-grid')).getByText('Open Fellowship'),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Opening Soon' })).not.toBeInTheDocument();
     expect(screen.queryByText('Future Fellowship')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Archive / Review' })).not.toBeInTheDocument();
     expect(screen.queryByText('Closed Fellowship')).not.toBeInTheDocument();
+  });
+
+  describe('department research guidance (#4285)', () => {
+    const board = () => [
+      makeFellowship({ id: 'open', title: 'Open Fellowship', programKind: 'FELLOWSHIP_FUNDING' }),
+      makeFellowship({
+        id: 'undated',
+        title: 'Undated Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        isAcceptingApplications: false,
+        deadline: null,
+      }),
+      makeFellowship({
+        id: 'guidance',
+        title: 'Fixture Guidance Page',
+        programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+        departmentResearchGuidance: true,
+        isAcceptingApplications: false,
+        deadline: null,
+        yearOfStudy: [],
+      }),
+    ];
+
+    it('shows guidance by default in its own section, apart from undated programs', () => {
+      renderFellowships({ fellowships: board() });
+
+      const guidanceSection = screen.getByRole('region', { name: 'Department research guidance' });
+      expect(within(guidanceSection).getByText('Fixture Guidance Page')).toBeInTheDocument();
+      expect(within(guidanceSection).queryByText('Undated Fellowship')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('region', { name: 'No dates posted' })).queryByText(
+          'Fixture Guidance Page',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    it('filters to guidance only', () => {
+      renderFellowships({ fellowships: board(), quickFilter: 'guidance' });
+
+      expect(screen.getByText('Fixture Guidance Page')).toBeInTheDocument();
+      expect(screen.queryByText('Open Fellowship')).not.toBeInTheDocument();
+      expect(screen.queryByText('Undated Fellowship')).not.toBeInTheDocument();
+    });
+
+    it('excludes guidance from applications only and from every application filter', () => {
+      for (const quickFilter of ['applicationsOnly', 'noMentorFirst'] as const) {
+        renderFellowships({ fellowships: board(), quickFilter });
+
+        expect(screen.getByText('Open Fellowship')).toBeInTheDocument();
+        expect(screen.queryByText('Fixture Guidance Page')).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+  });
+
+  describe('a program whose served deadline is stale (#4363)', () => {
+    const staleBoard = () => [
+      makeFellowship({
+        id: 'stale',
+        title: 'Stale Dated Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        deadline: null,
+        deadlineStale: true,
+        isAcceptingApplications: false,
+        applicationLink: 'https://example.org/apply',
+      }),
+      makeFellowship({
+        id: 'open',
+        title: 'Open Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        deadline: futureDate(60),
+      }),
+      makeFellowship({
+        id: 'passed',
+        title: 'Recently Passed Fellowship',
+        programKind: 'FELLOWSHIP_FUNDING',
+        deadline: pastDate(7),
+        applicationLink: 'https://example.org/apply',
+      }),
+    ];
+
+    it('lists it under no dates posted, not under the next cycle', () => {
+      renderFellowships({ fellowships: staleBoard() });
+
+      expect(
+        within(screen.getByRole('region', { name: 'No dates posted' })).getByText(
+          'Stale Dated Fellowship',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('region', { name: 'Plan for the next cycle' })).queryByText(
+          'Stale Dated Fellowship',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    it('counts it as neither open nor closing soon nor next cycle', () => {
+      for (const quickFilter of ['open', 'closingSoon', 'nextCycle'] as const) {
+        renderFellowships({ fellowships: staleBoard(), quickFilter });
+
+        expect(screen.queryByText('Stale Dated Fellowship')).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+
+    it('keeps it under the filters that do not depend on timing', () => {
+      renderFellowships({ fellowships: staleBoard(), quickFilter: 'applicationsOnly' });
+
+      expect(screen.getByText('Stale Dated Fellowship')).toBeInTheDocument();
+    });
   });
 });

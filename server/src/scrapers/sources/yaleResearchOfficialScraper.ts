@@ -12,6 +12,8 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { slugify } from '../utils/scraperHelpers';
 import type { ResearchEntityType } from '../../models/researchAccessTypes';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 
 const SOURCE_NAME = 'yale-research-official';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -21,13 +23,7 @@ const MAX_PAGES_PER_DIRECTORY = 20;
 export type YaleResearchDirectoryParser = 'centers-institutes' | 'core-facilities';
 export type YaleResearchSourceCategory = 'centers-institutes' | 'core-facility';
 export type YaleResearchKind =
-  | 'center'
-  | 'institute'
-  | 'lab'
-  | 'program'
-  | 'initiative'
-  | 'group'
-  | 'core_facility';
+  'center' | 'institute' | 'lab' | 'program' | 'initiative' | 'group' | 'core_facility';
 
 export interface YaleResearchOfficialEntity {
   name: string;
@@ -78,11 +74,33 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.map(cleanText).filter(Boolean)));
 }
 
+const RESEARCH_YALE_HOST = 'research.yale.edu';
+
+function decodeUnreservedPercentEscapes(pathname: string): string {
+  return pathname.replace(/%(2[DdEe]|5[Ff]|7[Ee]|3\d|[46][1-9A-Fa-f]|[57][0-9Aa])/g, (escape) =>
+    String.fromCharCode(parseInt(escape.slice(1), 16)),
+  );
+}
+
+/**
+ * The directory publishes some entries as `/index%2ephp/cores/<slug>`, which serves the same
+ * page as `/cores/<slug>` but gives the row a second spelling of its own site (#4533).
+ */
+export function canonicalResearchYaleUrl(url: URL): URL {
+  if (url.hostname.toLowerCase() !== RESEARCH_YALE_HOST) return url;
+  const canonical = new URL(url.toString());
+  canonical.pathname = decodeUnreservedPercentEscapes(canonical.pathname).replace(
+    /^\/index\.php(?=\/)/i,
+    '',
+  );
+  return canonical;
+}
+
 function absoluteUrl(href: string | undefined, baseUrl: string): string {
   const raw = cleanText(href);
   if (!raw) return '';
   try {
-    return new URL(raw, baseUrl).toString();
+    return canonicalResearchYaleUrl(new URL(raw, baseUrl)).toString();
   } catch {
     return raw;
   }
@@ -244,6 +262,7 @@ export function parseResearchYaleCoreFacilities(
 export function entityToObservations(
   entity: YaleResearchOfficialEntity,
   sourceUrl: string,
+  descriptionSourceUrl: string = sourceUrl,
 ): ObservationInput[] {
   const base = {
     entityType: 'researchEntity' as const,
@@ -263,7 +282,12 @@ export function entityToObservations(
   ];
 
   if (entity.description) {
-    observations.push({ ...base, field: 'fullDescription', value: entity.description });
+    observations.push({
+      ...base,
+      sourceUrl: descriptionSourceUrl,
+      field: 'fullDescription',
+      value: entity.description,
+    });
   }
   if (entity.researchAreas && entity.researchAreas.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: entity.researchAreas });
@@ -285,16 +309,102 @@ export async function fetchResearchYaleHtml(
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = res.data as string;
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;
+}
+
+const comparableText = (value: string): string =>
+  value
+    .normalize('NFKC')
+    .replace(/[\u2018\u2019\u201b\u2032]/g, "'")
+    .replace(/[\u201c\u201d\u201f\u2033]/g, '"')
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+export function pageHoldsText(html: string, text: string): boolean {
+  const wanted = comparableText(text);
+  if (!wanted) return false;
+  const $ = cheerio.load(html);
+  $('script, style, noscript, template').remove();
+  return comparableText($('body').text() || $.root().text()).includes(wanted);
+}
+
+const RECORD_ABOUT_HEADING =
+  /^about\s+(?:the|this|our)\s+(?:core|facility|center|centre|institute|program|resource)$/i;
+
+const MIN_RECORD_ABOUT_PARAGRAPH_CHARS = 60;
+
+/** The record page's own "About the core" prose, which is what that page says about itself. */
+export function recordAboutProse(html: string): string {
+  const $ = cheerio.load(html);
+  const heading = $('h2, h3')
+    .filter((_i, el) => RECORD_ABOUT_HEADING.test(cleanText($(el).text())))
+    .first();
+  if (heading.length === 0) return '';
+  const body = heading.nextAll('.wysiwyg').first();
+  const paragraphs = (body.length > 0 ? body : heading.parent())
+    .find('p')
+    .map((_i, el) => cleanText($(el).text()))
+    .get()
+    .filter((text) => text.length >= MIN_RECORD_ABOUT_PARAGRAPH_CHARS);
+  return paragraphs.join(' ').trim();
+}
+
+const isResearchYaleRecordUrl = (value: string): boolean => {
+  try {
+    return new URL(value).hostname.toLowerCase() === RESEARCH_YALE_HOST;
+  } catch {
+    return false;
+  }
+};
+
+interface CitedDescription {
+  description?: string;
+  sourceUrl: string;
+}
+
+/**
+ * Every card on a directory page cites that page, so a card's paragraph failed the
+ * ingest ownership bar for page-level prose, which a page many rows cite cannot be
+ * (#3500). The record page the card links is that entity's own page: its about prose,
+ * or the card paragraph when the page carries it, is cited to it. Otherwise the
+ * directory page the card was read from stays the citation and the bar judges it
+ * (#4031).
+ */
+async function citedRecordDescription(
+  entity: YaleResearchOfficialEntity,
+  directoryPageUrl: string,
+  fetchHtml: YaleResearchHtmlFetcher,
+  ctx: ScraperContext,
+): Promise<CitedDescription> {
+  const fromDirectory = { description: entity.description, sourceUrl: directoryPageUrl };
+  if (!isResearchYaleRecordUrl(entity.url) && !entity.description) return fromDirectory;
+  try {
+    const recordHtml = await fetchHtml(entity.url, ctx.options.useCache, SOURCE_NAME);
+    const about = isResearchYaleRecordUrl(entity.url) ? recordAboutProse(recordHtml) : '';
+    if (about) return { description: about, sourceUrl: entity.url };
+    if (entity.description && pageHoldsText(recordHtml, entity.description)) {
+      return { description: entity.description, sourceUrl: entity.url };
+    }
+    return fromDirectory;
+  } catch (error) {
+    ctx.log(
+      `[${entity.slug}] record page unavailable, citing the directory: ${sanitizeLogValue(error)}`,
+    );
+    return fromDirectory;
+  }
 }
 
 function pageUrlForIndex(baseUrl: string, index: number): string {
@@ -357,7 +467,12 @@ export class YaleResearchOfficialScraper implements IScraper {
         const remaining = limit - totalEntities;
         const selected = remaining < entities.length ? entities.slice(0, remaining) : entities;
         for (const entity of selected) {
-          const observations = entityToObservations(entity, config.url);
+          const cited = await citedRecordDescription(entity, pageUrl, this.htmlFetcher, ctx);
+          const observations = entityToObservations(
+            { ...entity, description: cited.description },
+            pageUrl,
+            cited.sourceUrl,
+          );
           await ctx.emit(observations);
           totalObservations += observations.length;
           totalEntities += 1;

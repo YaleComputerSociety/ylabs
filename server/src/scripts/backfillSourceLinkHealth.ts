@@ -8,16 +8,30 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
+import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   ResolverCircuitBreaker,
   ResolverUnhealthyError,
+  type ResolverBreakerStats,
+  type ResolverControlProbe,
 } from '../scrapers/utils/resolverCircuitBreaker';
+import { probeResolverControl } from '../scrapers/utils/resolverControlProbe';
 import {
+  HOST_THROTTLE_OVERRIDES,
+  HostConcurrencyLimiter,
+  type HostSlotLimiter,
+  type HostThrottle,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  carryForwardSourceLinkHealthEntry,
   collectSourceLinkHealthCandidates,
+  planSourceLinkReprobe,
   resolveSourceLinkHealthEntry,
+  tlsFallbackCandidates,
   storedSourceLinkHealthByUrl,
+  isStoredUnresolvableVerdict,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
@@ -25,7 +39,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface SourceLinkHealthBackfillOptions {
   dryRun: boolean;
@@ -33,6 +47,8 @@ export interface SourceLinkHealthBackfillOptions {
   explicitLimit: boolean;
   confirm: boolean;
   staleOnly: boolean;
+  httpWebsitesOnly: boolean;
+  reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   output?: string;
 }
@@ -44,6 +60,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     explicitLimit: false,
     confirm: false,
     staleOnly: false,
+    httpWebsitesOnly: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -52,16 +69,22 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-source-link-health') options.confirm = true;
     else if (arg === '--stale-only') options.staleOnly = true;
-    else if (arg.startsWith('--checked-before=')) {
+    else if (arg === '--http-websites-only') options.httpWebsitesOnly = true;
+    else if (arg.startsWith('--reprobe-healthy-after-days=')) {
+      options.reprobeHealthyAfterDays = parsePositiveInt(
+        arg.slice('--reprobe-healthy-after-days='.length),
+        '--reprobe-healthy-after-days',
+      );
+    } else if (arg.startsWith('--checked-before=')) {
       options.checkedBefore = parseCheckedBefore(arg.slice('--checked-before='.length));
     } else if (arg === '--checked-before') {
       options.checkedBefore = parseCheckedBefore(argv[i + 1]);
       i += 1;
     } else if (arg.startsWith('--limit=')) {
-      options.limit = parsePositiveInt(arg.slice('--limit='.length));
+      options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
       options.explicitLimit = true;
     } else if (arg === '--limit') {
-      options.limit = parsePositiveInt(argv[i + 1]);
+      options.limit = parsePositiveInt(argv[i + 1], '--limit');
       options.explicitLimit = true;
       i += 1;
     } else if (arg === '--output') {
@@ -72,6 +95,11 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     } else {
       throw new Error(`Unknown source-link-health backfill argument: ${arg}`);
     }
+  }
+  if (options.staleOnly && options.reprobeHealthyAfterDays !== undefined) {
+    throw new Error(
+      '--stale-only and --reprobe-healthy-after-days are alternative scopes; pass one.',
+    );
   }
   return options;
 }
@@ -87,12 +115,12 @@ function parseCheckedBefore(value: string | undefined): Date {
   return parsed;
 }
 
-function parsePositiveInt(value: string | undefined): number {
+function parsePositiveInt(value: string | undefined, flag: string): number {
   if (!value || value.startsWith('--') || !/^[1-9]\d*$/.test(value)) {
-    throw new Error('--limit must be a positive integer');
+    throw new Error(`${flag} must be a positive integer`);
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be a positive integer');
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${flag} must be a positive integer`);
   return parsed;
 }
 
@@ -112,6 +140,8 @@ export interface SourceLinkHealthRunOptions {
   dryRun: boolean;
   limit?: number;
   staleOnly: boolean;
+  httpWebsitesOnly?: boolean;
+  reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
 }
 
@@ -126,6 +156,10 @@ export function sourceLinkHealthRunOptions(
     dryRun: options.dryRun,
     ...(options.explicitLimit ? { limit: options.limit } : {}),
     staleOnly: options.staleOnly,
+    ...(options.httpWebsitesOnly ? { httpWebsitesOnly: true } : {}),
+    ...(options.reprobeHealthyAfterDays !== undefined
+      ? { reprobeHealthyAfterDays: options.reprobeHealthyAfterDays }
+      : {}),
     ...(options.checkedBefore ? { checkedBefore: options.checkedBefore } : {}),
   };
 }
@@ -135,6 +169,13 @@ export interface SourceLinkHealthBackfillResult {
   scanned: number;
   skippedFresh: number;
   skippedAlreadyRechecked: number;
+  /**
+   * Row citations whose `HEALTHY` verdict was inside `--reprobe-healthy-after-days`
+   * and so were carried forward unprobed.
+   */
+  carriedFreshHealthy: number;
+  /** Rows every one of whose citations was carried forward, so nothing was written. */
+  unchangedRows: number;
   checked: number;
   updated: number;
   errors: number;
@@ -144,6 +185,10 @@ export interface SourceLinkHealthBackfillResult {
    * implies, usually because a host throttled it (#2762).
    */
   preservedDecisiveVerdicts: number;
+  indexSyncFailures: number;
+  indexSyncDeferred: number;
+  /** What the resolver breaker did: control checks run, trips it avoided, trips. */
+  resolver: ResolverBreakerStats;
   byStatus: Record<string, number>;
   samples: Array<{
     slug: string;
@@ -155,6 +200,12 @@ export interface SourceLinkHealthBackfillResult {
 
 export const DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY = 4;
 export const DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS = 250;
+
+export function measuredHostBudget(host: string): HostThrottle | undefined {
+  if (!Object.hasOwn(HOST_THROTTLE_OVERRIDES, host)) return undefined;
+  const { concurrency, minIntervalMs } = HOST_THROTTLE_OVERRIDES[host];
+  return { concurrency, minIntervalMs };
+}
 
 const hostOf = (url: string): string => {
   try {
@@ -179,12 +230,19 @@ const hostOf = (url: string): string => {
  *
  * Pacing counts REQUESTS, not candidates: an already-cached URL costs nothing and
  * must not consume a host's delay.
+ *
+ * A host with a measured budget (`hostThrottleFor`) is the one exception to serial:
+ * it gets that budget's requests in flight, and every request, a probe's GET fallback
+ * and retries included, takes a slot spaced by the larger of the pace and the budget's
+ * interval. `medicine.yale.edu` holds 3,529 of the 9,052 URLs a
+ * Development pass probes, at about 2 s a probe, so one-at-a-time on that host alone
+ * was most of the 110-minute stage (#3568).
  */
 export async function probeUncachedUrlsByHost(
   urls: readonly string[],
   healthCache: Map<string, SourceLinkHealth>,
   deps: {
-    checkLink: (url: string) => Promise<SourceLinkHealth>;
+    checkLink: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
     hostConcurrency: number;
     paceDelayMs: number;
     sleep: (ms: number) => Promise<void>;
@@ -194,6 +252,7 @@ export async function probeUncachedUrlsByHost(
      * failing. Omit only in tests that are not exercising that path (#2782).
      */
     resolverBreaker?: ResolverCircuitBreaker;
+    hostThrottleFor?: (host: string) => HostThrottle | undefined;
   },
 ): Promise<void> {
   const byHost = new Map<string, string[]>();
@@ -208,34 +267,64 @@ export async function probeUncachedUrlsByHost(
   }
   if (byHost.size === 0) return;
 
-  const buckets = [...byHost.values()];
+  const probe = async (url: string, requestGate?: HostSlotLimiter): Promise<void> => {
+    try {
+      const health = await deps.checkLink(url, requestGate);
+      healthCache.set(url, health);
+      deps.result.checked += 1;
+      // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
+      // resolution failure takes, and it is the only shape #2775 mis-recorded.
+      if (health.healthStatus === 'UNAVAILABLE' && health.httpStatusCode === undefined) {
+        deps.resolverBreaker?.recordFailure(hostOf(url));
+      } else {
+        deps.resolverBreaker?.recordSuccess(hostOf(url));
+      }
+      await deps.resolverBreaker?.settle();
+    } catch (error) {
+      if (error instanceof ResolverUnhealthyError) throw error;
+      deps.result.errors += 1;
+      console.error('source-link-health probe failed:', sanitizeLogValue(error));
+    }
+  };
+
+  const probeSerially = async (bucket: string[]): Promise<void> => {
+    for (const [index, url] of bucket.entries()) {
+      // Stop before the next probe rather than after it, so a tripped breaker
+      // cannot record one more death on its way out.
+      await deps.resolverBreaker?.settle();
+      if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
+      await probe(url);
+    }
+  };
+
+  const probeWithinBudget = async (bucket: string[], budget: HostThrottle): Promise<void> => {
+    const requestGate = new HostConcurrencyLimiter(budget.concurrency, {
+      minIntervalMs: Math.max(deps.paceDelayMs, budget.minIntervalMs),
+      sleep: deps.sleep,
+    });
+    let next = 0;
+    const lane = async (): Promise<void> => {
+      while (next < bucket.length) {
+        const url = bucket[next];
+        next += 1;
+        await deps.resolverBreaker?.settle();
+        await probe(url, requestGate);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(Math.floor(budget.concurrency), bucket.length) }, lane),
+    );
+  };
+
+  const buckets = [...byHost.entries()];
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < buckets.length) {
-      const bucket = buckets[cursor];
+      const [host, bucket] = buckets[cursor];
       cursor += 1;
-      for (const [index, url] of bucket.entries()) {
-        // Stop before the next probe rather than after it, so a tripped breaker
-        // cannot record one more death on its way out.
-        deps.resolverBreaker?.assertHealthy();
-        if (index > 0 && deps.paceDelayMs > 0) await deps.sleep(deps.paceDelayMs);
-        try {
-          const health = await deps.checkLink(url);
-          healthCache.set(url, health);
-          deps.result.checked += 1;
-          // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
-          // resolution failure takes, and it is the only shape #2775 mis-recorded.
-          if (health.healthStatus === 'UNAVAILABLE' && health.httpStatusCode === undefined) {
-            deps.resolverBreaker?.recordFailure(hostOf(url));
-          } else {
-            deps.resolverBreaker?.recordSuccess(hostOf(url));
-          }
-        } catch (error) {
-          if (error instanceof ResolverUnhealthyError) throw error;
-          deps.result.errors += 1;
-          console.error('source-link-health probe failed:', sanitizeLogValue(error));
-        }
-      }
+      const budget = deps.hostThrottleFor?.(host);
+      if (budget && budget.concurrency > 1) await probeWithinBudget(bucket, budget);
+      else await probeSerially(bucket);
     }
   };
   await Promise.all(
@@ -243,12 +332,18 @@ export async function probeUncachedUrlsByHost(
   );
 }
 
+const HTTP_WEBSITE_FILTER = {
+  $or: [{ websiteUrl: /^http:\/\//i }, { website: /^http:\/\//i }],
+};
+
 export async function runSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
   staleOnly?: boolean;
+  httpWebsitesOnly?: boolean;
+  reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
-  checkLink?: (url: string) => Promise<SourceLinkHealth>;
+  checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
   /**
    * Page size, overridable only so a test can cross a page boundary without seeding
    * a full page of rows. Not a CLI flag: an operator has no reason to tune it.
@@ -258,23 +353,35 @@ export async function runSourceLinkHealthBackfill(options: {
   paceDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
   resolverBreaker?: ResolverCircuitBreaker;
+  resolverControlProbe?: ResolverControlProbe;
+  hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<SourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
-  const resolverBreaker = options.resolverBreaker ?? new ResolverCircuitBreaker();
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
     options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const resolverBreaker =
+    options.resolverBreaker ??
+    new ResolverCircuitBreaker({
+      controlProbe: options.resolverControlProbe ?? (() => probeResolverControl()),
+      sleep,
+    });
 
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: 0,
     skippedFresh: 0,
     skippedAlreadyRechecked: 0,
+    carriedFreshHealthy: 0,
+    unchangedRows: 0,
     checked: 0,
     updated: 0,
     errors: 0,
     preservedDecisiveVerdicts: 0,
+    indexSyncFailures: 0,
+    indexSyncDeferred: 0,
+    resolver: resolverBreaker.stats,
     byStatus: {},
     samples: [],
   };
@@ -317,6 +424,7 @@ export async function runSourceLinkHealthBackfill(options: {
     const page = (await ResearchEntity.find(
       {
         archived: { $ne: true },
+        ...(options.httpWebsitesOnly ? HTTP_WEBSITE_FILTER : {}),
         ...(lastSeenId ? { _id: { $gt: lastSeenId } } : {}),
       },
       {
@@ -328,6 +436,7 @@ export async function runSourceLinkHealthBackfill(options: {
         // Projected because it carries citations the gate judges (#2666); omitting it
         // would leave the widened candidate set silently inert.
         fieldProvenance: 1,
+        fieldValueRefusals: 1,
         sourceLinkHealth: 1,
       },
     )
@@ -339,7 +448,14 @@ export async function runSourceLinkHealthBackfill(options: {
 
     // Phase 1, no network: decide which entities are in scope and what each one
     // needs probed.
-    const plans: Array<{ entity: Record<string, unknown>; candidates: string[] }> = [];
+    const plans: Array<{
+      entity: Record<string, unknown>;
+      candidates: string[];
+      toProbe: string[];
+      carried: Map<string, StoredSourceLinkHealthEntry>;
+      tlsFallbacks: string[];
+    }> = [];
+    const planNow = new Date();
     for (const entity of page) {
       if (options.limit && result.scanned >= options.limit) break;
       if (
@@ -356,7 +472,7 @@ export async function runSourceLinkHealthBackfill(options: {
       result.scanned += 1;
       try {
         const signalRows = await Signal.find({
-          researchEntityId: entity._id,
+          researchEntityId: entity._id as mongoose.Types.ObjectId,
           type: { $in: accessSignalTypes },
           archived: false,
         })
@@ -367,7 +483,19 @@ export async function runSourceLinkHealthBackfill(options: {
         );
         const candidates = collectSourceLinkHealthCandidates(entity, signalSourceUrls);
         if (candidates.length === 0) continue;
-        plans.push({ entity, candidates });
+        const { toProbe, carried } =
+          options.reprobeHealthyAfterDays === undefined
+            ? { toProbe: candidates, carried: new Map<string, StoredSourceLinkHealthEntry>() }
+            : planSourceLinkReprobe(
+                candidates,
+                entity.sourceLinkHealth,
+                options.reprobeHealthyAfterDays,
+                planNow,
+              );
+        for (const [url, stored] of storedSourceLinkHealthByUrl(entity.sourceLinkHealth)) {
+          resolverBreaker.noteStoredHostVerdict(hostOf(url), isStoredUnresolvableVerdict(stored));
+        }
+        plans.push({ entity, candidates, toProbe, carried, tlsFallbacks: [] });
       } catch (error) {
         result.errors += 1;
         console.error(
@@ -378,21 +506,57 @@ export async function runSourceLinkHealthBackfill(options: {
     }
 
     await probeUncachedUrlsByHost(
-      plans.flatMap((plan) => plan.candidates),
+      plans.flatMap((plan) => plan.toProbe),
       healthCache,
-      { checkLink, hostConcurrency, paceDelayMs, sleep, result, resolverBreaker },
+      {
+        checkLink,
+        hostConcurrency,
+        paceDelayMs,
+        sleep,
+        result,
+        resolverBreaker,
+        hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+      },
+    );
+
+    for (const plan of plans) {
+      plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates, healthCache);
+    }
+    await probeUncachedUrlsByHost(
+      [...new Set(plans.flatMap((plan) => plan.tlsFallbacks))],
+      healthCache,
+      {
+        checkLink,
+        hostConcurrency,
+        paceDelayMs,
+        sleep,
+        result,
+        resolverBreaker,
+        hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+      },
     );
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a
     // row cannot pace anything.
-    for (const { entity, candidates } of plans) {
+    for (const { entity, candidates: planned, carried, tlsFallbacks } of plans) {
+      const candidates = [...planned, ...tlsFallbacks];
       try {
         const now = new Date();
         const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);
         const sourceLinkHealth: StoredSourceLinkHealthEntry[] = [];
+        let probedEntries = 0;
         for (const url of candidates) {
           const health = healthCache.get(url);
+          const carriedEntry = carried.get(url);
+          if (!health && carriedEntry) {
+            result.carriedFreshHealthy += 1;
+            result.byStatus[carriedEntry.healthStatus] =
+              (result.byStatus[carriedEntry.healthStatus] ?? 0) + 1;
+            sourceLinkHealth.push(carryForwardSourceLinkHealthEntry(url, carriedEntry));
+            continue;
+          }
           if (!health) continue;
+          probedEntries += 1;
           const resolved = resolveSourceLinkHealthEntry(url, health, storedByUrl.get(url), now);
           if (resolved.preservedDecisiveVerdict) result.preservedDecisiveVerdicts += 1;
           // Tally what is STORED, not what the probe returned, or the report claims
@@ -412,9 +576,19 @@ export async function runSourceLinkHealthBackfill(options: {
           }
         }
         if (sourceLinkHealth.length === 0) continue;
+        const storedCount = Array.isArray(entity.sourceLinkHealth)
+          ? entity.sourceLinkHealth.length
+          : 0;
+        if (probedEntries === 0 && sourceLinkHealth.length === storedCount) {
+          result.unchangedRows += 1;
+          continue;
+        }
 
         if (!options.dryRun) {
           await ResearchEntity.updateOne({ _id: entity._id }, { $set: { sourceLinkHealth } });
+          const browseRank = await recomputeBrowseRankForEntities([entity._id]);
+          result.indexSyncFailures += browseRank.indexSyncFailures;
+          result.indexSyncDeferred += browseRank.indexSyncDeferred ?? 0;
         }
         result.updated += 1;
       } catch (error) {
@@ -428,6 +602,7 @@ export async function runSourceLinkHealthBackfill(options: {
     if (options.limit && result.scanned >= options.limit) break;
     if (page.length < PAGE_SIZE) break;
   }
+  result.resolver = resolverBreaker.stats;
   return result;
 }
 
@@ -463,6 +638,20 @@ async function main(): Promise<void> {
       console.log(`Saved source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
+    console.log(
+      `Resolver breaker: ${result.resolver.controlChecks} control check(s), ${result.resolver.tripsAvoided} trip(s) avoided, ${result.resolver.trips} trip(s), ${result.resolver.knownUnresolvableFailuresIgnored} failure(s) on hosts already stored as unresolvable not counted.`,
+    );
+    if (result.indexSyncDeferred > 0) {
+      console.log(
+        `${result.indexSyncDeferred} updated row(s) were not resynced: index writes are deferred by SEARCH_INDEX_WRITES=deferred; re-sync the index from a checkout that reaches it (docs/data-refresh-runbook.md)`,
+      );
+    }
+    if (result.indexSyncFailures > 0) {
+      console.error(
+        `${result.indexSyncFailures} updated row(s) were not resynced to Meilisearch, so browse still serves their old order; rebuild the index or rerun.`,
+      );
+      process.exitCode = 1;
+    }
   } finally {
     await mongoose.disconnect();
   }

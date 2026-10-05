@@ -191,6 +191,41 @@ describe('app security runtime classification', () => {
     },
   );
 
+  it.each(['0.0.0.0/0', '::/0', '10.0.0.0/4', '::ffff:0:0/96'])(
+    'refuses to start a deployed runtime that trusts the over-broad range %s',
+    async (trustedProxyCidrs) => {
+      process.env = {
+        ...ORIGINAL_ENV,
+        NODE_ENV: 'production',
+        SERVER_BASE_URL: 'https://yalelabs.io',
+        SSOBASEURL: 'https://secure.its.yale.edu/cas',
+        SESSION_SECRET: STRONG_SESSION_SECRET,
+        TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
+      };
+
+      await expect(import('../app')).rejects.toThrow(
+        /TRUSTED_PROXY_CIDRS contains an over-broad range/,
+      );
+    },
+  );
+
+  it('keeps local development booting with no trusted proxy and with a bounded one', async () => {
+    for (const trustedProxyCidrs of ['', '10.0.0.0/8']) {
+      vi.resetModules();
+      mongoose.deleteModel(/.+/);
+      process.env = {
+        ...ORIGINAL_ENV,
+        NODE_ENV: 'development',
+        SERVER_BASE_URL: 'http://localhost:4000',
+        SSOBASEURL: 'https://secure.its.yale.edu/cas',
+        SESSION_SECRET: '',
+        TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
+      };
+
+      await expect(import('../app')).resolves.toBeTruthy();
+    }
+  });
+
   it('requires a trusted proxy boundary in deployed runtimes', async () => {
     process.env = {
       ...ORIGINAL_ENV,
@@ -220,6 +255,55 @@ describe('app security runtime classification', () => {
     const { default: app } = await import('../app');
 
     expect(app.get('query parser')).toBe('simple');
+  });
+
+  it('refuses a Mongo-shaped query string through the mounted app', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      const requestPath = async (path: string) => {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          headers: { 'x-forwarded-proto': 'https' },
+        });
+        return { status: response.status, body: await response.json() };
+      };
+
+      for (const path of [
+        '/api/missing?$where=1',
+        '/api/missing?filters[$ne]=x',
+        '/api/missing?sort.field=createdAt',
+        '/api/missing?__proto__=x',
+      ]) {
+        expect(await requestPath(path)).toEqual({
+          status: 400,
+          body: { error: 'Invalid request payload' },
+        });
+      }
+      expect(await requestPath('/api/missing?page=1&tags=a&tags=b')).toEqual({
+        status: 404,
+        body: { error: 'Not found' },
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it('initializes anonymous rate-limit sessions only for API requests', async () => {
@@ -560,9 +644,9 @@ describe('app security runtime classification', () => {
             body: JSON.stringify({
               events: [
                 {
-                  eventType: 'research_entity_impression',
+                  eventType: 'research_results_view',
                   entityType: 'research_entity',
-                  entityId: '64a000000000000000000030',
+                  entityIds: ['64a000000000000000000030'],
                 },
               ],
             }),
@@ -586,7 +670,12 @@ describe('app security runtime classification', () => {
     }
   });
 
-  it('applies a per-IP auth limiter to the CAS login callback', async () => {
+  // Driven through the mounted app rather than the limiter alone, because the
+  // property is about the route: everyone behind one campus address shares this
+  // per-IP bucket, and starting login must not draw on it. The metering of a
+  // rejected validation is measured on the limiter itself in
+  // `middleware/__tests__/authLimiterScope.test.ts`, which needs no CAS at all.
+  it('does not spend the shared per-IP login budget on starting a login', async () => {
     vi.doUnmock('cookie-session');
     process.env = {
       ...ORIGINAL_ENV,
@@ -597,6 +686,7 @@ describe('app security runtime classification', () => {
       TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
     };
 
+    const { AUTH_VALIDATION_FAILURE_MAX } = await import('../middleware/rateLimiters');
     const { default: app } = await import('../app');
     const server = http.createServer(app);
 
@@ -606,19 +696,26 @@ describe('app security runtime classification', () => {
 
     try {
       const address = server.address() as AddressInfo;
-      let lastStatus = 0;
+      const statuses = new Set<number>();
+      const metered: string[] = [];
 
-      for (let attempt = 0; attempt < 21; attempt += 1) {
+      for (let attempt = 0; attempt < AUTH_VALIDATION_FAILURE_MAX + 5; attempt += 1) {
         const response = await fetch(`http://127.0.0.1:${address.port}/api/cas`, {
           method: 'GET',
           headers: { 'x-forwarded-proto': 'https' },
           redirect: 'manual',
         });
-        lastStatus = response.status;
+        statuses.add(response.status);
+        const remaining = response.headers.get('ratelimit-remaining');
+        if (remaining !== null) metered.push(remaining);
         await response.text();
       }
 
-      expect(lastStatus).toBe(429);
+      expect([...statuses]).toEqual([302]);
+      // Every request is a redirect to CAS and none of them was counted, which is
+      // the stronger of the two claims: a counted start still redirects until the
+      // budget runs out.
+      expect(metered).toEqual([]);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));

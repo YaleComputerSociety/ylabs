@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { ResearchEntity, ResearchPlan } from '../models/index';
 import { readPrograms } from './programService';
 import {
@@ -6,8 +7,10 @@ import {
   MAX_RESEARCH_PLAN_DEADLINES,
   MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH,
   MAX_RESEARCH_PLAN_NOTES_LENGTH,
+  RESEARCH_PLAN_RESTORE_WINDOW_MS,
   researchPlanStages,
   type ResearchPlanStage,
+  type ResearchPlanTargetKind,
 } from '../models/researchPlan';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import {
@@ -15,7 +18,8 @@ import {
   withPublicDescriptionGateFields,
 } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
-import { optionalPublicLeadMemberNames } from './researchGroupService';
+import { leadGuardedServingInput, optionalPublicLeadMemberNames } from './researchGroupService';
+import { servedResearchEntityCardForRow } from './researchEntityDto';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
@@ -144,7 +148,7 @@ export const boundSavedResearchEntitySummaryText = (
 // official-roster lead and make the saved card strip a name its own detail page
 // keeps (#2240).
 export const savedResearchEntityProjection = withPublicDescriptionGateFields(
-  '_id slug departments school hasUndergradHostingEvidence rosterEnrichment',
+  '_id slug departments school pastUndergradAdvisees currentUndergradCount rosterEnrichment',
 );
 
 const asBoolean = (value: unknown): boolean => value === true;
@@ -269,6 +273,46 @@ const clearedResearchPlanFields = (): Record<string, unknown> => ({
   },
 });
 
+const archiveResearchPlans = async (
+  accountId: mongoose.Types.ObjectId,
+  kind: ResearchPlanTargetKind,
+  targetIds: mongoose.Types.ObjectId[],
+): Promise<void> => {
+  if (!targetIds.length) return;
+  await ResearchPlan.updateMany(
+    { accountId, 'target.kind': kind, 'target.id': { $in: targetIds }, archived: { $ne: true } },
+    {
+      $set: {
+        archived: true,
+        restorableUntil: new Date(Date.now() + RESEARCH_PLAN_RESTORE_WINDOW_MS),
+      },
+    },
+    { runValidators: true },
+  );
+};
+
+const activateResearchPlan = async (
+  accountId: mongoose.Types.ObjectId,
+  kind: ResearchPlanTargetKind,
+  targetId: mongoose.Types.ObjectId,
+): Promise<void> => {
+  const target = { accountId, 'target.kind': kind, 'target.id': targetId };
+  await ResearchPlan.updateOne(
+    { ...target, archived: true, restorableUntil: { $not: { $gt: new Date() } } },
+    { $set: clearedResearchPlanFields() },
+    { runValidators: true },
+  );
+  await ResearchPlan.updateOne(
+    target,
+    {
+      $set: { archived: false },
+      $unset: { restorableUntil: '' },
+      $setOnInsert: { accountId, target: { kind, id: targetId }, stage: 'SAVED' },
+    },
+    { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+  );
+};
+
 export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
     typeof doc.stage === 'string' && researchPlanStageSet.has(doc.stage as ResearchPlanStage)
@@ -322,7 +366,7 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
 const servedUndergraduateAccessFields = (
   entity: any,
 ): Pick<SavedResearchEntitySummary, 'hasUndergradHostingEvidence'> =>
-  entity.hasUndergradHostingEvidence === true ? { hasUndergradHostingEvidence: true } : {};
+  entityHasHostedUndergraduates(entity) ? { hasUndergradHostingEvidence: true } : {};
 
 /**
  * A saved-list card, built through the same lead-name-aware sanitizer the browse card
@@ -337,7 +381,7 @@ export const savedResearchEntitySummary = (
 ): SavedResearchEntitySummary => {
   const served = sanitizeServedResearchEntityCopyFields(entity, leadMemberNames);
   const shortDescription = boundSavedResearchEntitySummaryText(
-    served.shortDescription,
+    servedResearchEntityCardForRow(entity, leadMemberNames),
     MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   );
   return {
@@ -361,9 +405,14 @@ const servesSavedResearchEntity = (entity: Record<string, any>): boolean =>
   publicStudentVisibilityTiers.includes(entity.studentVisibilityTier) &&
   researchEntityServesPublicDetail(entity);
 
+interface PartitionedSavedResearchEntities {
+  servableEntities: Array<Record<string, any>>;
+  unavailableSavedResearchEntities: UnavailableSavedResearchEntity[];
+}
+
 /**
- * The saved-list cards for these target ids, alongside the ids that resolve to no
- * servable record and why.
+ * The servable records for these target ids, in id order, alongside the ids that
+ * resolve to no servable record and why.
  *
  * The visibility rules are applied in memory rather than in the query, because a
  * query that filters them out cannot tell a target whose record is gone from one
@@ -371,42 +420,66 @@ const servesSavedResearchEntity = (entity: Record<string, any>): boolean =>
  * rules themselves are unchanged: not archived, at a public tier, and clearing
  * `researchEntityServesPublicDetail`.
  */
-const resolveSavedResearchEntities = async (
+const partitionSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
-): Promise<SavedResearchEntityList> => {
-  if (!ids.length) return { savedResearchEntities: [], unavailableSavedResearchEntities: [] };
+): Promise<PartitionedSavedResearchEntities> => {
+  if (!ids.length) return { servableEntities: [], unavailableSavedResearchEntities: [] };
   const normalizedIds = ids.map((id) => normalizeObjectIdString(id, 'savedResearchEntities'));
   const entities = await ResearchEntity.find({
     _id: { $in: normalizedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
     .select(`${savedResearchEntityProjection} archived studentVisibilityTier`)
     .lean();
-  const entityById = new Map(
-    entities.map((entity: any) => [(serializedDocumentId(entity._id) || '').toLowerCase(), entity]),
+  const verdictById = new Map(
+    entities.map((entity: any) => [
+      (serializedDocumentId(entity._id) || '').toLowerCase(),
+      { entity, serves: servesSavedResearchEntity(entity) },
+    ]),
   );
-  const servableEntities = entities.filter(servesSavedResearchEntity);
-  const leadMemberNamesByEntityId = await optionalPublicLeadMemberNames(servableEntities);
 
-  const savedResearchEntities: SavedResearchEntitySummary[] = [];
+  const servableEntities: Array<Record<string, any>> = [];
   const unavailableSavedResearchEntities: UnavailableSavedResearchEntity[] = [];
   for (const id of normalizedIds) {
-    const entity = entityById.get(id);
-    if (!entity) {
+    const verdict = verdictById.get(id);
+    if (!verdict) {
       unavailableSavedResearchEntities.push({ _id: id, reason: 'REMOVED' });
-      continue;
-    }
-    if (!servesSavedResearchEntity(entity)) {
+    } else if (!verdict.serves) {
       unavailableSavedResearchEntities.push({ _id: id, reason: 'UNAVAILABLE' });
-      continue;
+    } else {
+      servableEntities.push(verdict.entity);
     }
-    savedResearchEntities.push(
-      savedResearchEntitySummary(
-        entity,
-        leadMemberNamesByEntityId.get(serializedDocumentId(entity._id) || '') || [],
-      ),
-    );
   }
-  return { savedResearchEntities, unavailableSavedResearchEntities };
+  return { servableEntities, unavailableSavedResearchEntities };
+};
+
+/**
+ * The saved-list cards for already-partitioned servable records, in the order given.
+ *
+ * The roster read lives here rather than beside the partition because it exists only
+ * to feed the mismatched-person-name strip inside the card sanitizer: a caller that
+ * serves no card needs no names, and #4077 measured that read costing two
+ * `role_assignments` finds and a `researchers` find on a response that discarded
+ * every name it resolved.
+ */
+const savedResearchEntityCards = async (
+  servableEntities: Array<Record<string, any>>,
+): Promise<SavedResearchEntitySummary[]> => {
+  const leadMemberNameRead = await optionalPublicLeadMemberNames(servableEntities);
+  return servableEntities.map((entity) => {
+    const guarded = leadGuardedServingInput(entity, leadMemberNameRead);
+    return savedResearchEntitySummary(guarded.entity, guarded.leadMemberNames);
+  });
+};
+
+const resolveSavedResearchEntities = async (
+  ids: Array<string | mongoose.Types.ObjectId>,
+): Promise<SavedResearchEntityList> => {
+  const { servableEntities, unavailableSavedResearchEntities } =
+    await partitionSavedResearchEntities(ids);
+  return {
+    savedResearchEntities: await savedResearchEntityCards(servableEntities),
+    unavailableSavedResearchEntities,
+  };
 };
 
 const visibleSavedResearchEntities = async (
@@ -475,18 +548,10 @@ const resolveSavedResearchEntityTargetId = async (
   return targetId;
 };
 
-interface LoadedPlans {
-  accountId: mongoose.Types.ObjectId;
-  entities: SavedResearchEntitySummary[];
-  unavailable: UnavailableSavedResearchEntity[];
-  plansByEntityId: Map<string, Record<string, unknown>>;
-}
-
-const loadVisibleAccountPlans = async (
-  netid: any,
+const activeResearchEntityPlansByTargetId = async (
+  accountId: mongoose.Types.ObjectId,
   { withDetail }: { withDetail: boolean },
-): Promise<LoadedPlans> => {
-  const accountId = await resolveAccountIdByNetid(netid);
+): Promise<Map<string, Record<string, unknown>>> => {
   const query = ResearchPlan.find({
     accountId,
     'target.kind': RESEARCH_ENTITY_TARGET_KIND,
@@ -502,29 +567,28 @@ const loadVisibleAccountPlans = async (
       planByEntity.set(entityId, plan);
     }
   }
+  return planByEntity;
+};
 
-  const orderedIds = Array.from(planByEntity.keys());
-  const { savedResearchEntities, unavailableSavedResearchEntities } =
-    await resolveSavedResearchEntities(orderedIds);
-  const visibleById = new Map(
-    savedResearchEntities.map((entity) => [entity._id.toLowerCase(), entity]),
-  );
-  const orderedVisible = orderedIds
-    .map((id) => visibleById.get(id))
-    .filter((entity): entity is SavedResearchEntitySummary => Boolean(entity));
+interface AccountSavedResearchEntities extends PartitionedSavedResearchEntities {
+  planByEntity: Map<string, Record<string, unknown>>;
+}
 
-  const plansByEntityId = new Map<string, Record<string, unknown>>();
-  for (const entity of orderedVisible) {
-    const plan = planByEntity.get(entity._id.toLowerCase());
-    if (plan) plansByEntityId.set(entity._id, plan);
-  }
-
-  return {
-    accountId,
-    entities: orderedVisible,
-    unavailable: unavailableSavedResearchEntities,
-    plansByEntityId,
-  };
+/**
+ * The account's active research-entity plans and the servable record behind each one,
+ * both in plan order: newest-updated first, one plan per target.
+ *
+ * This stops short of building cards so that a caller needing only plans or slugs pays
+ * for neither the card sanitizer nor the roster read behind it (#3954, #4077).
+ */
+const loadAccountSavedResearchEntities = async (
+  netid: any,
+  { withDetail }: { withDetail: boolean },
+): Promise<AccountSavedResearchEntities> => {
+  const accountId = await resolveAccountIdByNetid(netid);
+  const planByEntity = await activeResearchEntityPlansByTargetId(accountId, { withDetail });
+  const partitioned = await partitionSavedResearchEntities(Array.from(planByEntity.keys()));
+  return { planByEntity, ...partitioned };
 };
 
 /**
@@ -535,22 +599,35 @@ const loadVisibleAccountPlans = async (
  * from the dashboard AND from its count with no trace (#2174).
  */
 export const getSavedResearchEntityList = async (netid: any): Promise<SavedResearchEntityList> => {
-  const { entities, unavailable } = await loadVisibleAccountPlans(netid, { withDetail: false });
-  return { savedResearchEntities: entities, unavailableSavedResearchEntities: unavailable };
+  const { servableEntities, unavailableSavedResearchEntities } =
+    await loadAccountSavedResearchEntities(netid, { withDetail: false });
+  return {
+    savedResearchEntities: await savedResearchEntityCards(servableEntities),
+    unavailableSavedResearchEntities,
+  };
 };
 
 export const getSavedResearchEntitySlugs = async (netid: any): Promise<string[]> => {
-  const { entities } = await loadVisibleAccountPlans(netid, { withDetail: false });
-  return entities.flatMap((entity) => (entity.slug ? [entity.slug] : []));
+  const { servableEntities } = await loadAccountSavedResearchEntities(netid, {
+    withDetail: false,
+  });
+  return servableEntities.flatMap((entity) => {
+    const slug = String(entity.slug || '');
+    return slug ? [slug] : [];
+  });
 };
 
 export const getSavedResearchEntityPlans = async (
   netid: any,
 ): Promise<Record<string, ResearchPlanView>> => {
-  const { plansByEntityId } = await loadVisibleAccountPlans(netid, { withDetail: true });
+  const { planByEntity, servableEntities } = await loadAccountSavedResearchEntities(netid, {
+    withDetail: true,
+  });
   const result: Record<string, ResearchPlanView> = {};
-  for (const [entityId, plan] of plansByEntityId) {
-    result[entityId] = researchPlanViewFromDoc(plan);
+  for (const entity of servableEntities) {
+    const entityId = String(entity._id);
+    const plan = planByEntity.get(entityId.toLowerCase());
+    if (plan) result[entityId] = researchPlanViewFromDoc(plan);
   }
   return result;
 };
@@ -563,18 +640,10 @@ export const addSavedResearchEntities = async (
   const ids = await resolveSavedResearchEntityObjectIds(values);
   const visible = await visibleSavedResearchEntities(ids);
   for (const entity of visible) {
-    const targetId = new mongoose.Types.ObjectId(entity._id);
-    await ResearchPlan.updateOne(
-      { accountId, 'target.kind': RESEARCH_ENTITY_TARGET_KIND, 'target.id': targetId },
-      {
-        $set: { archived: false },
-        $setOnInsert: {
-          accountId,
-          target: { kind: RESEARCH_ENTITY_TARGET_KIND, id: targetId },
-          stage: 'SAVED',
-        },
-      },
-      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    await activateResearchPlan(
+      accountId,
+      RESEARCH_ENTITY_TARGET_KIND,
+      new mongoose.Types.ObjectId(entity._id),
     );
   }
   return getSavedResearchEntitySlugs(netid);
@@ -586,17 +655,7 @@ export const removeSavedResearchEntities = async (
 ): Promise<string[]> => {
   const accountId = await resolveAccountIdByNetid(netid);
   const ids = await resolveSavedResearchEntityObjectIds(values);
-  if (ids.length) {
-    await ResearchPlan.updateMany(
-      {
-        accountId,
-        'target.kind': RESEARCH_ENTITY_TARGET_KIND,
-        'target.id': { $in: ids },
-      },
-      { $set: { archived: true, ...clearedResearchPlanFields() } },
-      { runValidators: true },
-    );
-  }
+  await archiveResearchPlans(accountId, RESEARCH_ENTITY_TARGET_KIND, ids);
   return getSavedResearchEntitySlugs(netid);
 };
 
@@ -723,18 +782,10 @@ export const addWatchedPrograms = async (netid: any, values: unknown[]): Promise
   const ids = await resolveWatchedProgramObjectIds(values);
   const visiblePrograms = await readPrograms(ids);
   for (const program of visiblePrograms as Array<Record<string, any>>) {
-    const targetId = new mongoose.Types.ObjectId(String(program._id));
-    await ResearchPlan.updateOne(
-      { accountId, 'target.kind': PROGRAM_TARGET_KIND, 'target.id': targetId },
-      {
-        $set: { archived: false },
-        $setOnInsert: {
-          accountId,
-          target: { kind: PROGRAM_TARGET_KIND, id: targetId },
-          stage: 'SAVED',
-        },
-      },
-      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    await activateResearchPlan(
+      accountId,
+      PROGRAM_TARGET_KIND,
+      new mongoose.Types.ObjectId(String(program._id)),
     );
   }
   return getWatchedProgramIds(netid);
@@ -743,17 +794,7 @@ export const addWatchedPrograms = async (netid: any, values: unknown[]): Promise
 export const removeWatchedPrograms = async (netid: any, values: unknown[]): Promise<string[]> => {
   const accountId = await resolveAccountIdByNetid(netid);
   const ids = await resolveWatchedProgramObjectIds(values);
-  if (ids.length) {
-    await ResearchPlan.updateMany(
-      {
-        accountId,
-        'target.kind': PROGRAM_TARGET_KIND,
-        'target.id': { $in: ids },
-      },
-      { $set: { archived: true, ...clearedResearchPlanFields() } },
-      { runValidators: true },
-    );
-  }
+  await archiveResearchPlans(accountId, PROGRAM_TARGET_KIND, ids);
   return getWatchedProgramIds(netid);
 };
 

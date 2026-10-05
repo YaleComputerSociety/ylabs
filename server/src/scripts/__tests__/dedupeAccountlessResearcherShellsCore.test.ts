@@ -10,6 +10,9 @@ import {
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
   roleAssignmentEdgeKey,
+  shellProfileLinkKindsReleasedWith,
+  buildVerifiedPrimaryProfileIndex,
+  planAccountlessClusterFolds,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -256,6 +259,50 @@ describe('planResearcherAttributeUnion', () => {
   });
 });
 
+describe('planResearcherAttributeUnion keeps the ORCID link with its identifier (#4501)', () => {
+  const canonicalOrcid = '9999-9000-9999-9005';
+  const shellOrcid = '9999-9001-9999-9010';
+  const orcidLink = (orcid: string) => ({ kind: 'ORCID', url: `https://orcid.org/${orcid}` });
+
+  it('never appends a shell ORCID link that names another ORCID than the canonical holds', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [], identifiers: { orcid: canonicalOrcid } },
+      { profileLinks: [orcidLink(shellOrcid)], identifiers: {} },
+    );
+
+    expect(plan.profileLinksToAppend).toEqual([]);
+  });
+
+  it('never appends a shell ORCID link when no ORCID will back it on the canonical', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [], identifiers: {} },
+      { profileLinks: [orcidLink(shellOrcid)], identifiers: {} },
+    );
+
+    expect(plan.profileLinksToAppend).toEqual([]);
+  });
+
+  it('moves the shell ORCID link together with the shell ORCID it gap-fills', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [], identifiers: {} },
+      { profileLinks: [orcidLink(shellOrcid)], identifiers: { orcid: shellOrcid } },
+    );
+
+    expect(plan.identifierGapFills).toEqual({ orcid: shellOrcid });
+    expect(plan.profileLinksToAppend).toEqual([orcidLink(shellOrcid)]);
+    expect(shellProfileLinkKindsReleasedWith(plan)).toEqual(['ORCID']);
+  });
+
+  it('releases no shell link when the shell keeps its ORCID', () => {
+    const plan = planResearcherAttributeUnion(
+      { profileLinks: [orcidLink(canonicalOrcid)], identifiers: { orcid: canonicalOrcid } },
+      { profileLinks: [orcidLink(canonicalOrcid)], identifiers: { orcid: canonicalOrcid } },
+    );
+
+    expect(shellProfileLinkKindsReleasedWith(plan)).toEqual([]);
+  });
+});
+
 describe('bareNetid', () => {
   it('accepts a bare netid and rejects anything a lookup would not join on', () => {
     expect(bareNetid('AB12')).toBe('ab12');
@@ -335,5 +382,258 @@ describe('decideShellMerge netid arm (#3166)', () => {
     expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
     ).toEqual({ merge: true, canonicalId: 'canonical', reason: 'MERGEABLE', matchedOn: 'name' });
+  });
+});
+
+describe('decideShellMerge verified-profile arm', () => {
+  const page = 'https://dept.example.edu/p/1001/';
+  const verified = (url: string) => [
+    {
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url,
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    },
+  ];
+  const account = (over: Record<string, unknown> = {}) => ({
+    id: 'c'.repeat(24),
+    accountId: 'd'.repeat(24),
+    displayName: 'Sample Fixture',
+    title: 'Associate Professor of Medicine',
+    profileLinks: verified('https://www.dept.example.edu/p/1001'),
+    ...over,
+  });
+  const shell = (over: Record<string, unknown> = {}) => ({
+    id: 's'.repeat(24),
+    displayName: 'Sam Fixture',
+    title: 'Associate Professor',
+    profileLinks: verified(page),
+    ...over,
+  });
+  const decide = (s: Record<string, unknown>, accounts: Record<string, unknown>[]) =>
+    decideShellMerge(
+      s,
+      new Map(),
+      new Map(),
+      [],
+      buildVerifiedPrimaryProfileIndex(accounts as any),
+    );
+
+  it('folds a shell into the one account that holds the same verified profile', () => {
+    expect(decide(shell(), [account()])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])('ignores a link whose health is %s', (status) => {
+    const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
+    expect(decide(shell({ profileLinks: unhealthy }), [account()]).reason).toBe('NO_CANONICAL');
+    expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('ignores a non-primary link', () => {
+    const secondary = verified(page).map((link) => ({ ...link, purpose: 'SECONDARY' }));
+    expect(decide(shell(), [account({ profileLinks: secondary })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('resolves to nobody when two accounts hold the page', () => {
+    const second = account({ id: 'e'.repeat(24), accountId: 'f'.repeat(24) });
+    expect(decide(shell(), [account(), second]).reason).toBe('AMBIGUOUS_MULTIPLE_CANONICAL');
+  });
+
+  it('does not let a vetoed second holder of the page block the fold', () => {
+    const wrongPerson = account({
+      id: 'e'.repeat(24),
+      accountId: 'f'.repeat(24),
+      displayName: 'Sample Otherfamily',
+    });
+    expect(decide(shell(), [account(), wrongPerson])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it('lets the surname veto the page', () => {
+    expect(decide(shell({ displayName: 'Sam Otherfamily' }), [account()]).merge).toBe(false);
+  });
+
+  it('reads the surname past a trailing period, a credential and a generational suffix', () => {
+    for (const displayName of ['Dean Sam Fixture.', 'Sam Fixture, ScM', 'Sam Fixture Jr.']) {
+      expect(decide(shell({ displayName }), [account()]).merge).toBe(true);
+    }
+  });
+
+  it('never folds a trainee rank into a faculty appointment on a page alone', () => {
+    expect(decide(shell({ title: 'Postdoctoral Associate' }), [account()]).merge).toBe(false);
+  });
+});
+
+describe('planAccountlessClusterFolds', () => {
+  const page = (n: number) => [
+    {
+      kind: 'YALE_OFFICIAL',
+      purpose: 'PRIMARY_IDENTITY',
+      url: `https://dept.example.edu/p/${n}`,
+      verifiedAt: new Date(),
+      healthStatus: 'HEALTHY',
+    },
+  ];
+  const member = (id: string, over: Record<string, unknown> = {}) => ({
+    id: id.padStart(24, '0'),
+    displayName: 'Sam Fixture',
+    liveRoleEdges: 0,
+    ...over,
+  });
+
+  it('folds copies sharing a verified page into the copy with the most live edges', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('1', { profileLinks: page(1) }),
+        member('2', { profileLinks: page(1), liveRoleEdges: 2 }),
+        member('3', { profileLinks: page(1) }),
+      ],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect([...plan.foldTargetById]).toEqual([
+      ['1'.padStart(24, '0'), '2'.padStart(24, '0')],
+      ['3'.padStart(24, '0'), '2'.padStart(24, '0')],
+    ]);
+  });
+
+  it('breaks an edge tie on the oldest record', () => {
+    const older = '00000001' + '0'.repeat(16);
+    const newer = '00000002' + '0'.repeat(16);
+    const plan = planAccountlessClusterFolds(
+      [member(newer, { profileLinks: page(2) }), member(older, { profileLinks: page(2) })],
+      [],
+    );
+    expect(plan.foldTargetById.get(newer)).toBe(older);
+  });
+
+  it('groups an exact name only together with the same stated department', () => {
+    const together = planAccountlessClusterFolds(
+      [
+        member('4', { primaryDepartment: 'Fixture Studies' }),
+        member('5', { primaryDepartment: 'fixture studies' }),
+      ],
+      [],
+    );
+    expect(together.foldTargetById.size).toBe(1);
+    const apart = planAccountlessClusterFolds(
+      [
+        member('6', { primaryDepartment: 'Fixture Studies' }),
+        member('7', { primaryDepartment: 'Other Studies' }),
+        member('8'),
+      ],
+      [],
+    );
+    expect(apart.groups).toBe(0);
+  });
+
+  it('reads past a credential, a generational suffix and a trailing period', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('9', { profileLinks: page(3), displayName: 'Sam Fixture Jr.' }),
+        member('10', { profileLinks: page(3), displayName: 'Sam Fixture, ScM' }),
+        member('11', { profileLinks: page(3), displayName: 'Sam Fixture.' }),
+      ],
+      [],
+    );
+    expect(plan.foldTargetById.size).toBe(2);
+  });
+
+  it('reads a detached Mc prefix as part of the surname and keeps the ORCID record (#4879)', () => {
+    const splitCopy = '00000001' + '0'.repeat(16);
+    const orcidCopy = '00000002' + '0'.repeat(16);
+    const plan = planAccountlessClusterFolds(
+      [
+        member(splitCopy, { profileLinks: page(11), displayName: 'Mc Fixture' }),
+        member(orcidCopy, {
+          profileLinks: page(11),
+          displayName: 'Sam McFixture',
+          orcid: '0000-0000-0000-0003',
+        }),
+      ],
+      [],
+    );
+    expect(plan.refusedGroups.SURNAME_CONFLICT).toBe(0);
+    expect(plan.foldTargetById.get(splitCopy)).toBe(orcidCopy);
+  });
+
+  it('still refuses a detached Mc prefix in front of a different surname', () => {
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('27', { profileLinks: page(12), displayName: 'Mc Fixture' }),
+          member('28', { profileLinks: page(12), displayName: 'Sam McOther' }),
+        ],
+        [],
+      ).refusedGroups.SURNAME_CONFLICT,
+    ).toBe(1);
+  });
+
+  it('refuses a whole group on any identifier, rank or surname disagreement', () => {
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('14', { profileLinks: page(5), orcid: '0000-0000-0000-0001' }),
+          member('15', { profileLinks: page(5), orcid: '0000-0000-0000-0002' }),
+        ],
+        [],
+      ).refusedGroups.ORCID_CONFLICT,
+    ).toBe(1);
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('16', { profileLinks: page(6), title: 'Professor of Fixtures' }),
+          member('17', { profileLinks: page(6), title: 'Postdoctoral Associate' }),
+        ],
+        [],
+      ).refusedGroups.TITLE_CONFLICT,
+    ).toBe(1);
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('20', { profileLinks: page(8), displayName: 'Sam Fixture' }),
+          member('21', { profileLinks: page(8), displayName: 'Sam Alpha-Fixture' }),
+          member('22', { profileLinks: page(8), displayName: 'Sam Beta-Fixture' }),
+        ],
+        [],
+      ).refusedGroups.SURNAME_CONFLICT,
+    ).toBe(1);
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('18', { profileLinks: page(7) }),
+          member('19', { profileLinks: page(7), displayName: 'Sam Otherfamily' }),
+        ],
+        [],
+      ).refusedGroups.SURNAME_CONFLICT,
+    ).toBe(1);
+  });
+
+  it('joins nobody on a page or name a record outside the group also holds', () => {
+    expect(
+      planAccountlessClusterFolds(
+        [member('23', { profileLinks: page(9) }), member('24', { profileLinks: page(9) })],
+        [{ profileLinks: page(9) }],
+      ).groups,
+    ).toBe(0);
+    expect(
+      planAccountlessClusterFolds(
+        [
+          member('25', { primaryDepartment: 'Fixture Studies' }),
+          member('26', { primaryDepartment: 'Fixture Studies' }),
+        ],
+        [{ displayName: 'Sam Fixture' }],
+      ).groups,
+    ).toBe(0);
   });
 });

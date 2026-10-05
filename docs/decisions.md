@@ -5,6 +5,807 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-04: A Written Description Is Grounded In Fetched Page Text, And Grants Help Only When They Must (#4867)
+
+A 120-row graded sample after #4788 found 7 of 100 written bodies wrong, above the goal of fewer than 5% wrong.
+Two of the seven re-asserted details an earlier model-written observation had invented, and three attributed another unit's content, a co-founder's personal agenda or a featured item to the row.
+Decision: the writer is grounded only in text that is on a fetched page.
+A value a language-model lane wrote (`producesModelText` in `sourceCoverageRegistry.ts`, plus three retired lanes) is evidence only when it is found near-verbatim in a durable stored copy of the page it cites, and never without one; no durable page store exists yet, because `scrape_snapshots` is a 24-hour fetch cache, so today model text is never writer evidence.
+Evidence is read in this order: the row's own research site, its official profile, other pages, and grant records last.
+Grant rule (owner direction, 2026-10-04): grants are read only when the row's own research prose is absent or thin, only grants the row's lead holds as principal investigator that are active or ended within five years, never a single grant as the whole evidence, so one eligible grant is not read at all, and the prompt states only the theme several grants share.
+The prompt forbids attributing navigation, carousel, related-unit or featured-item content, presenting training or past positions as current work, and turning a listed interest into a method or a study subject; a sentence naming a featured item, a related unit or training as current work is dropped deterministically.
+The writer contract version is bumped, so every row is judged again on the next run.
+Measured read-only on Development before the change, the strict rule leaves 2,074 of the 3,908 rows that carry evidence with no page evidence at all, 1,515 of them with no evidence even counting grants, because almost no stored page copies exist and most description evidence is model-extracted.
+The fallback for those rows is an open decision, recorded on #4867, and the all-rows writer run waits for it.
+
+## 2026-10-04: A Page's Own Research Paragraph In The Progressive Is Research (#4809)
+
+`describesResearchFocus` reads research from a closed list of phrasings, and it had the simple present ("we develop") without the progressive ("we are developing").
+A lab page whose only research paragraph read "In the Yale Faboratory, we are developing intelligent, multifunctional materials" therefore failed the floor, and its meta blurb won on a phrase listed for that blurb alone.
+The progressive with a research verb after a first-person or unit subject now counts, as does "focuses research, teaching, and outreach on".
+
+Measured before landing on Development on 2026-10-04: over 4,193 stored rows the change flips the focus verdict on 4 bodies, all research prose, and no body or card quality verdict.
+Over 668 fetched org pages it changes 10 deterministic picks: 7 pages that yielded nothing now yield their own paragraph, 1 replaces a question opener with the lab's statement, 1 lengthens the same text, and 1 now opens on two sentences of background before "We are currently investigating".
+
+## 2026-10-04: A Card Line Is Produced To Fit The Browse Card (#4809)
+
+The 2026-09-22 entry below stopped the serve path from deleting a card line past 200 characters, and kept it whole instead.
+Kept whole, a one-sentence line still reaches the browse card, which ends at the last whole sentence within 200 characters and otherwise cuts mid-sentence with "…".
+Measured on Development on 2026-10-04, after #4788's written bodies landed, 1,649 of 3,367 served browse cards were cut that way, almost all of them fluent "Studies ... using ..." sentences of 230 to 270 characters written to the card prompt's "under 30 words".
+
+Resolution: every card producer prefers a line that shows whole, and a long line is the last resort rather than the first answer.
+`resolveGroundedCardDescription` returns a derived line only when it fits, then a synthesized line that fits, and only then the long derived or synthesized line, which still outranks the topic summary.
+Card synthesis asks for at most 20 words and 170 characters, naming only the main subject and method, and retries once with its own answer when that answer runs long or the serve chain would surrender it as an ungrounded synthesized card, asking for the description's own terms.
+It prefers a retried line the serving bar keeps, and otherwise keeps the first grounded line, so a card accepted only on the stem-aware grader is still stored when nothing better comes back (#4834).
+A character limit alone did not hold: the model returned the same 206-character line on both attempts, and the word budget with what to leave out fit 12 of 12 cut cards.
+`resolveMaterializedShortDescription` reconsiders a stored card the browse card cuts, or one the serve chain would surrender for a longer line from the body, and replaces it only with a line that fits and the serve chain keeps, so one unshown line is never traded for another.
+
+The limit lives in the per-call instruction, not in `prompts/cardSynthesis.md`.
+`lab-microsite-description-llm` keys its content hash on that file's hash, so editing it would have invalidated every stored hash for the lane and re-run its LLM extraction over every row on the next sweep, about 2,500 calls, to change only the card.
+The stored cards change through a targeted rematerialize of the cut rows instead.
+
+Three resynthesis passes still left 611 of 3,613 cards cut: the model kept returning a long line, or a fitting one the serve chain's stricter grader surrenders.
+The served card is therefore also ended at its last clause boundary that fits (`shortenCardLineToFitBrowseCard`): before ", including", ", such as", "; ", ", which", ", plus", a second coordinated clause such as ", and how" or " and develops ", or a method clause such as " using ".
+The head of a grounded sentence is grounded, so this adds no claim; a cut at a bare comma, a parenthesis, or an "and" not followed by a clause-opening verb or wh-word lands inside a list, so a card with no clause boundary inside the card stays long.
+A word that also reads as a plural noun ("uses", "studies", "tests") does not open a coordinated clause, because "structure, function and uses of" continues a noun list.
+" through " and " via " are not boundaries, because they are not reliable method markers: "from adolescence through early adulthood" cut before " through " changes what the card says.
+Measured on Development, cut cards went from 611 of 3,613 before this change to 326 of 3,609 after it (the served population moved by 4 rows between the two measurements), with no change to the four public-description invariant failures.
+A routine materialize reconsiders a cut card with the deterministic derivation only, because a synthesis that yields no fitting line writes nothing and would repeat its LLM calls on every later materialize of the row.
+Card synthesis for a cut card is opt-in through `--resynthesize-cut-cards`: `yarn --cwd server research-entity:rematerialize --slugs=<rows whose browse card is cut> --resynthesize-cut-cards --apply --confirm-rematerialize`.
+`--card-model=<model>` synthesizes those cards with another model for that run only, because the description lane keys its content hash on its own card model, which must not change for a repair pass.
+
+## 2026-10-04: Evidence Is Input To The Description, And One Writer Writes Every Description (#4788)
+
+A served description answers one question for a student: what does this lab or researcher study.
+Most served bodies were page text copied verbatim from a source, and a 45-row random sample of `student_ready` Development rows found about 13 that do not answer that question: career biographies, publication and grant listings, source narration, and page chrome or promotional copy.
+The live `manual-admin-edit` `fullDescription` observations were worse than copying, because several narrate their sources in agent voice and every one outranked every scraper lane through the non-decaying curated precedence.
+Decision (owner, 2026-10-04): evidence is input to the description, not the description.
+One writer, the `coverage-synthesis-llm` lane run by `research-entity:coverage-synthesis`, synthesizes every live research row's `fullDescription` from that row's live evidence as 1 to 3 sentences answering what it studies.
+The writer is checked against its evidence by the existing `coverageSynthesisDecision` gates, plus three deterministic arms: a past-career sentence is stripped and a body that is nothing else is refused, a body that narrates its sources is refused, and a body over 90 words is refused.
+The resolver serves a servable written body over every copied value, and the copied values stay ranked behind it as the fallback for a row the writer refused or has not reached.
+A PI's own edit is not copied page text, so it is the one source the written body does not outrank.
+`manual-admin-edit` loses its curated precedence on description fields only: it decays and is reordered there like any other source, and it keeps the curated precedence on every other field.
+An admin description is ordinary evidence the writer reads, unless it narrates its sources.
+The card line is derived from the written body through the existing card derivation, so there is no second card writer.
+This keeps the evidence contract: the written body is itself an observation, re-derived when its evidence or its prompt changes and retired when its evidence no longer supports it, so no field is written directly and nothing needs a lock.
+A thin but accurate body still serves (#4766), and every accuracy gate still applies.
+A read-only pilot of the prompt passed every gate on 31 of 31 rows, and a 10-row dry run of the lane passed on 10 of 10 with no body over 72 words.
+This is a stored-data change: it reaches students only after the lane has run over every live Development row and the rows are materialized, regated and reindexed.
+
+## 2026-10-04: Google Analytics Is Removed, And First-Party `analytics_events` Remain (#4754)
+
+The Google Analytics 4 tag is removed from every page and every environment (owner decision, part of the privacy notice in #4157).
+Nothing in this repository read the data it collected.
+It loaded on the initial document before any consent existed, and so sent every visitor's IP address, user agent and a persistent tracking cookie to Google.
+The CSP drops the Google tag and measurement origins with it, so `script-src` is `'self'` alone.
+First-party `analytics_events` remain, under the constraints in `docs/research-journey-analytics.md`, and they still record signed-in students only.
+Google Fonts is a separate decision and is unchanged here.
+`client/src/__tests__/noGoogleAnalyticsGuard.test.ts` and `server/src/middleware/__tests__/securityHeaders.test.ts` fail if the tag or its origins reappear.
+
+## 2026-10-04: The Program Card Bar Refuses An Administrative Note And Cuts An Over-Long Lead At A Clause (#4747)
+
+A program card line states what the program is or funds, so a sentence that is an administrative note fails the program card bar as `administrative-chrome` in any phrasing: a note or please-note opener, an application-process heading, a deadline, due-by, nomination or endorsement sentence, a program-dates or info-session fragment, application routing through a portal or common application, an opening or rolling-review window, a click-through instruction, a donor-provenance sentence, and a line led by a third-person pronoun with no antecedent on the card.
+The derivation then falls to the next sentence of the same evidence-backed text that clears the bar, and a stored line that opens on such a note falls to its own next usable sentence, or to no card when it has none.
+When no sentence fits whole, the lead sentence of the body, if the bar refuses it for length alone, is cut at a clause boundary (a semicolon, a non-restrictive or restrictive relative clause, an including or such-as tail, a trailing participial phrase, a time phrase or a parenthesis) into a complete line under the cap.
+A cut is refused when it would end on a function word or a short comma tail, fall under ten words, or lack a finite verb outside its comma-set clauses and parentheses, and a sentence refused for anything besides its length, such as first person, an incomplete sentence or administrative text, is never cut.
+Only the lead is cut, because a cut later sentence measured as eligibility rather than an offer.
+A dedication sentence ("is named in honor of") stays admissible, because refusing it promoted a biography sentence about the honoree to the card.
+Calibrated through `searchProgramsController` over all 170 served programs on Development, 137 of them fellowships: 15 served cards changed and each was read against its source page.
+Eight administrative-note cards were replaced by the program's own offer sentence, six programs that served no card gained a cut lead sentence, and one administrative-note card was withdrawn with nothing usable behind it.
+None misleads; the weakest is a dedication sentence that names the program as undergraduate research assistantships.
+Programs serving a card summary went from 152 to 157 of 170, and fellowships from 122 to 127 of 137.
+The 13 that still serve none have no admissible sentence: a lead with no clause boundary under the cap, a bare application announcement, first-person copy, or a glued unterminated lead.
+
+## 2026-10-04: Login Counts Personalization Signal Coverage In Aggregate Only, Until The Personalization Decision (#4744)
+
+Personalizing default `/research` browse from the Yalies major, or a graduate curriculum, is only worth building if enough signed-in students carry that signal, and that share is unknown.
+A Yale College major is declared late, a major hidden in the source directory is absent from Yalies, and a record marked leave or visitor carries nothing usable.
+Development cannot answer it, because a Development login skips CAS and never calls Yalies.
+Decision: each CAS login classifies its Yalies lookup into exactly one bucket and increments a per-UTC-day counter in `login_signal_tallies`.
+A login Yalies has no record of is counted apart from a known faculty or staff login, because it may be a student hidden from the directory, so the report can show how large that unknown share is.
+The row holds the date and integer counts only, with no netid, account id, major, curriculum or time finer than the day, so the #4162 rule that login stores no major is unchanged: the major is read inside `yaliesService.ts` and only its bucket label leaves.
+A tally write never blocks or fails a login.
+The collection is environment-local and is read with `yarn --cwd server auth:login-signal-tally --environment=production --from <date> --to <date>`.
+It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
+Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
+
+## 2026-10-04: A Thin Description That Is Accurate Serves Whatever Wrote It (#4766)
+
+This supersedes the #4763 entry below: the thin-but-accurate relaxation no longer depends on who wrote the body (maintainer decision, confirmed in two sessions).
+In the maintainer's words, "it is unfair to block thin description when it is accurate and has a lot of the information we have", and "the reason for thin description is that truly we don't have more information".
+So a true but thin line serves at the gate and on the served page whatever its source, including a language-model line, a body with no recorded source, and the pipeline's own "Studies <topics>." sentence when it is the row's only body.
+The bar is accuracy rather than authorship.
+A line that is wrong, misattributed or not about the row still holds it, through the blockers that already judge accuracy: another person's profile (`profile_identity_risk`), a body about another organization, a name that names something else, a line that states no research, page fragments, chrome and label lists.
+The relaxation lifts only the thinness flags (`too-short`, `area-echo-fallback`, and `topic-label-list` on a sentence that leads with a research statement), and write paths keep the strict verdict, so lanes still prefer richer prose.
+
+One shape is inaccurate as a class and stays held: the "Studies <A>, including <B>, and <C>." sentence, which asserts that the other topics are part of the first (`isStudiesSentenceNestingTopicsUnderTheFirst`).
+Measured on Development on 2026-10-04 with same-moment dry-run gate plans over all 4,234 research rows, against `beta` after #4768: this decision serves 47 rows that `beta` holds only because of the #4763 source check, demotes no served row, and keeps held 9 nesting sentences that `beta` would release.
+All 47 carry a language-model body (33 and 12 from the two microsite lanes, 2 from the faculty profile synthesis lane), and all 47 were read by hand against their cited pages: 47 accurate and about the row, 0 inaccurate, 0 fragments.
+An earlier read of the rows the #4768 shapes plus this decision release found the nesting sentence false on 7 of the 9 rows that carry it, all from the faculty roster lane, which is why that shape stays held; the other 2 were accurate and return when the roster lane writes a flat list.
+The hand-reads also found released rows whose subject holds a current appointment at another university; that is a presence question for the activity lanes, not a description one, and this decision does not change it.
+
+## 2026-10-04: The Echo Rule Holds A Language-Model Body And Not An Official One (#4756, #4763)
+
+Superseded on 2026-10-04 by "A Thin Description That Is Accurate Serves Whatever Wrote It (#4766)" above: the provenance condition is removed and accuracy is the bar.
+
+The #1664 echo rule holds a research body that adds fewer than about 4 words beyond the row's own topics.
+#4481 closed on keeping it as it was, #4704 then relaxed it at the gate and the served page for every thin but accurate body, and this decision narrows that relaxation to a body an official or human source wrote (maintainer decision, landed in #4763).
+An official or human body is one whose `fieldProvenance.fullDescription.sourceName` is present and is not a language-model lane, such as a faculty directory profile, a lab's own page with no model in between, or an operator edit.
+A body a language model wrote keeps the echo rule whatever its grounding grade, because a GROUNDED grade does not tell the "Research focuses on topics including A, B, C" template apart from a body that says something.
+A body with no provenance also keeps the strict verdict, so an unattributed body cannot earn the exemption by its absence.
+The language-model set is `isLlmAuthoredSourceName`, which a test pins to every seed source whose display name says LLM, so a new model lane is held without an edit here.
+Write paths already read the strict verdict and are unchanged.
+
+The maintainer's read-only measurement on Development found 50 rows held by the echo rule alone: 2 official or human bodies, both accurate; 18 model bodies graded GROUNDED or REWORDED, mostly the template, of which only 6 add anything beyond the chips; and 30 model bodies ungraded or UNSUPPORTED.
+Re-measured with same-moment dry-run gate plans over all 4,233 research rows on 2026-10-04, 44 rows were served only because of the #4704 relaxation: 42 carried a body from a language-model lane and 2 a faculty directory body.
+Under this rule served rows are +2 against the strict rule, against +44 under #4704, and no other row moves.
+The cost is the handful of model bodies that do add a little beyond their chips; they return when a description lane writes a fuller body, through the normal gate.
+
+## 2026-10-04: A Multi-Purpose Fund Is Served When Its Own Page Names Research As An Eligible Use (#4675)
+
+A fund that pays for research among other uses, such as study, language, internships or travel, is research-relevant when its own page text (description, eligibility or summary) names research as an eligible use (owner decision).
+It stays withheld when research appears only in the purpose tags, when its text disclaims research ("non-research projects", "may not be used for research"), or when another hold applies: a duplicate copy, a prize for completed work, a stale cycle, a suspension or a listing page.
+The statement has to name research as a use: research expenses, costs, travel or trips, a fund, grant or award used for research, or conducting research.
+A bare "for research" with no usage word before it does not count.
+Research named as an outcome ("language study that can support research"), as an applicant interest ("students whose work or research involves") or as prior experience does not count, which keeps the #4291 language-study rule intact.
+The rule lifts the non-research title and language-study facet holds and the purpose-facet hold of #3904, and nothing else.
+Measured on Development on 2026-10-04 over all 534 live programs: 238 were held as non-research, 9 of them with a research value in `purpose`.
+The rule as merged changes the tier of 1 program, read on its live page: a summer research and language study grant open to undergraduates, with an upcoming deadline, becomes `student_ready`.
+The draft rule also matched a bare "for research", which moved a travel fund to `limited_but_safe` and removed the non-research reason from a postgraduate fellowship that a stale cycle holds anyway, and requiring a usage word dropped both.
+The other 8 stay withheld: their text names no research use, it disclaims research, they are a duplicate or a prize for completed work, or, in one case, the stored blurb was copied from a sibling grant and names research only as an applicant interest.
+Applied on Development the same day, served programs went from 170 to 171 and served fellowships from 137 to 138, the added row being that grant.
+
+## 2026-10-04: The Site Stays Out Of Search Engines, And Link-Preview Fetchers May Read It (#4241)
+
+Search engines stay out of y/labs for now, so `client/public/robots.txt` keeps `User-agent: *` / `Disallow: /` and `client/index.html` keeps `<meta name="robots" content="noindex, nofollow">`.
+Indexing waits for two things a public index would need first: a way for a researcher to be removed from the directory (#4160), and a per-page title, description and canonical URL in the served HTML (#4240).
+Students mostly reach research through links posted in group chats and on social sites, so the link-preview fetchers are allowed: `facebookexternalhit`, `Twitterbot`, `LinkedInBot`, `Discordbot` and `Slackbot-LinkExpanding` each have their own `Allow: /` group.
+Under RFC 9309 a crawler obeys the most specific group that names it and ignores `*`, so the named groups open nothing to a search engine.
+A preview fetcher builds a card rather than an index, and the `noindex` tag keeps any page it reads out of one regardless.
+Slack documents that `Slackbot-LinkExpanding` does not honour robots.txt at all, so its group records intent rather than changing its behaviour.
+`client/src/__tests__/crawlerPolicy.test.ts` pins both halves, so an edit cannot silently open the site to search engines or close it to previews.
+A future change that indexes part of the site must lift the `Disallow` on any path it keeps `noindex`, because a crawler refused by robots.txt never fetches the page and so never reads its `noindex` tag, and a refused URL can still be listed from outside links.
+
+## 2026-10-04: A Lead Who Moved Institution Is Operator-Reported, Because ORCID Asserts No Relocation (#4614)
+
+The departure class students meet most is a lead who moved to another institution, and every Yale-derived signal reports that row as present, so the departure lane's ceiling for it is 0.
+ORCID was the candidate off-Yale source, and its bar was fixed before measuring: build a lane only if, over a seeded sample of 50 served leads that carry an ORCID id plus every served lead with an ORCID id and no probeable Yale profile link, it returns an employment record for at least half, and every relocation it asserts is confirmed by hand on the new institution's own page.
+Measured read-only on Development and the public ORCID API on 2026-10-04: 3,455 served leads, 1,815 with an ORCID link, and none of those without a probeable Yale profile link, so the sample was the 50 seeded leads.
+31 of 50 returned any employment record, which clears the first half of the bar.
+11 of 50 carried either a current non-Yale employer or an ended Yale employment, and 0 of those 11 is a relocation: 9 still list a current Yale employment in ORCID itself, and the other 2 list no Yale employment at all while their Yale profile still answers 200 and names a current appointment, one of them an adjunct.
+No record combined an ended Yale employment with no current one and a current non-Yale employer, so ORCID asserted no relocation for hand confirmation, and a lane reading the broader shape would have suppressed 11 present people.
+So no ORCID relocation lane is built.
+A relocated lead is recorded by an operator with `yarn --cwd server research-entity:record-departure` (#3477), and an off-Yale source is reconsidered only with a measurement that finds asserted relocations it can confirm.
+
+## 2026-10-04: Five Access Signal Types Are Retired; A Lab's "No" Is Never Served (#4637)
+
+Owner decision: `REACH_OUT_PLAUSIBLE`, `CONTACT_INSTRUCTIONS_EXIST`, `NOT_CURRENTLY_AVAILABLE`, `FELLOWSHIP_COMPATIBLE` and `COURSE_CREDIT_PATHWAY` are retired.
+Reaching out is the universal action, so a signal that only says contact is plausible, or that a contact is listed, tells a student nothing they would not do anyway.
+In a hand-labelled sample of 60 non-boilerplate lab-microsite `REACH_OUT_PLAUSIBLE` and contact excerpts, about 14 were real undergraduate invitations.
+A lab's own "not taking undergraduates" is never served, because it can deter an email that may still succeed.
+It survives only as the lane's verdict observation, and a join-page claim is minted only beside a "yes" verdict, so such a lab is never offered a "See how to get involved" button.
+`FELLOWSHIP_COMPATIBLE` restated `PAST_UNDERGRADS` from the same field.
+Course credit is retired with the rest; the department lane still records its observations, so it can return as a sourced department fact if a lane collects it at real coverage.
+The kept types are `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS` and `APPLICATION_FORM_EXISTS`, plus the dormant independent-study and posted-opening producers.
+Stored rows of the retired types are archived by `archive:legacy-access-signals`, and the type list no longer admits them, so no reader counts or serves one in the meantime.
+
+## 2026-10-04: The Absence Of A Signal No Lane Collects Is Never A Reason (#4574)
+
+A gate reason, a repair task, or an operator-board blocker may record only the absence of something a lane collects.
+`missing_action_evidence` and its inverse `concrete_next_step` failed that test: no lane collects a way in as a fact, so the pair measured only whether some access signal happened to exist.
+Both are removed, which carries out the access-plausibility retirement in the 2026-08-25 "Simple Directory First" decision.
+The harm was not on the served surface, because the reason was soft, but in the work it generated: the repair queue's `action_evidence` stage minted boilerplate `REACH_OUT_PLAUSIBLE` signals to clear it, and the operator board listed it as a blocker.
+That stage is removed, and the queue no longer writes access signals; stored queue items keep the `action_evidence` stage value as history.
+Measured on Development on 2026-10-04, the reasons sat on 2,940 and 1,468 non-archived research rows, and every `action_evidence` queue item was already resolved or suppressed, with none open.
+`missing_alternate_access_path`, `missing_facet_signal`, `missing_application_route` and `missing_source_route` stay, because each measures something a lane collects.
+`hasActionEvidence` still feeds the shell-suppression predicates, so suppression is unchanged.
+An extra signal remains welcome as a badge or a citation.
+
+## 2026-10-03: A Profile Synthesis Body Is Withdrawn Only When Its Pages State A Career (#4561)
+
+`fra-profile-research-synthesis` now re-reads every row whose stored body it wrote and withdraws that body when complete reads of all candidate pages carry no admissible research prose, list no publication, and narrate the posts the person held.
+Its snippet selector also refuses publication records and career-history sentences, so a new body can no longer be built from either.
+Before this, a row whose synthesized body read as research left selection for good, so no fix to what the lane admits ever reached a body an earlier run had written.
+
+The withdrawal is deliberately narrower than "the current lane would not write this body".
+Measured on Development on 2026-10-03, 715 non-archived rows store a body with this lane's provenance and 643 of them serve.
+A stratified random sample of 66 served bodies, each read against its live profile page, found 60 correct, 4 thin but accurate, and 2 wrong, about 3 percent (95 percent interval 1 to 10 percent): both wrong bodies read a practitioner's or an administrator's past posts as research.
+With the new guards, 85 of the 715 rows have pages that yield no research snippet at all, and reading them, most hold a correct body built from the person's own publication feed.
+The feed cannot tell those from a namesake's papers, which is the other shape #4561 found, so withdrawing on absence would hide real people to remove a handful of wrong bodies.
+A namesake's feed is therefore an operator judgement on one row (`research-entity:refuse-field-value --rule=not_this_rows_research`), not a predicate.
+
+The career rule plans 3 withdrawals over the 715, and all 3 were read and are wrong: two policy or program staff whose career biographies became research claims, and one administrator whose former job became a research program.
+Residue recorded rather than chased: a practitioner's page whose duties read as investigations ("investigations of claims of factual innocence") keeps its body, because `investigat` is research vocabulary, and bodies that narrate the page itself ("as evidenced by the publication", "documents frequent co-authorship patterns") are a description-quality shape rather than a lane withdrawal.
+
+## 2026-10-03: A Program That Is Not A Current Program Is Not Served (#4587)
+
+A hand-read sample of served programs on Development found 12 rows that are not a current program a student can apply to, and the gate had no input for any of their shapes.
+Each class is now a predicate in `server/src/services/programApplicability.ts` that the gate reads on every run, so it writes no field and needs no lock, and a row returns on its own once its evidence changes.
+All four suppress, recorded with their own reason.
+
+- **An outside program whose office record skipped its only stated cycle: `external_award_cycle_stale`.**
+  The fellowships office lists outside programs under `funding.yale.edu/external-award/`, a section it no longer keeps current, and outside programs are out of scope except as Yale points students to them (2026-08-23).
+  A record there whose deadline is stale by #4363's rule, closed more than a cycle ago with no upcoming window from another copy, no longer shows Yale pointing students to a current cycle.
+  Measured on Development on 2026-10-03: 115 live programs carry a stale deadline, 113 of them external-award records; 9 were served, every one an outside program (a federal summer research fellowship, a federal undergraduate scholarship, the federal REU listing, a federal postbaccalaureate training award, three terms of a federal laboratory internship, a children's hospital summer program, an overseas PhD scholarship), and their last stated cycles closed 2.7 to 6.7 years ago.
+  No second threshold is needed: every number from one cycle to 2.7 years drops the same 9 rows, so the existing one-cycle rule is the threshold.
+  A Yale-administered fund whose own page skipped a cycle is not held, because its stale date is already withheld at serve time and the fund itself still recurs; the only 2 such rows (two Yale College fellowships last stated 1.6 years ago) were already suppressed for other reasons.
+  Several of the 9 programs still run on their own sites; they leave because the office record is the only reason they were on `/programs`, not because the program ended.
+- **A record stating that its award is suspended: `award_suspended`.**
+  A sentence naming the award and saying it is suspended, discontinued or no longer offered, read conservatively: a conditional clause in the award's terms ("payments will be suspended if") and a statement that the award resumed do not count.
+  Calibrated over the prose of all 597 program rows and 2,520 live program observations on Development, it matches exactly 1 row, a global scholarship for Oxford study whose page says its trustees suspended the award with immediate effect, which was served with a projected next-cycle deadline; a looser phrase list's only other hits were rules inside award terms and "endorsement is no longer required".
+- **A prize for completed work: `prize_for_completed_work`.**
+  A record titled a prize whose prose states no support for work still to be done (no support, funding, travel, stipend, expenses or project), because a prize for an essay or a book is recognition rather than something a student joins.
+  A record with no prose is not read either way.
+  Over the 12 live rows titled a prize it matches 5: the served one, an essay prize competition for graduating Yale College students, and 4 already suppressed (its graduate twin, two essay prizes and a leadership prize).
+  The three travel prize rows and the three prize rows with no prose do not match, and neither does a faculty book prize whose prose names what it funds, which is already suppressed as non-research.
+- **A catalog page listing programs: `program_listing_page`.**
+  A title made only of generic funding words ("Grants to Students") that routes to two or more pages on its own site.
+  Either half alone is not enough: 5 live rows have an all-generic title, 2 of them real programs with generic names, and 28 non-suppressed rows route to two pages, nearly all a fund page beside an application form.
+  Together they match 1 row, a council's grants page whose two listed programs are each served as their own row and stay served.
+
+Program duplicates (#3988) gain two narrow joins.
+
+- **A narrower title over the same description.** One lane titles a fund "<name> Travel Fellowship" and another "<name> Fellowship" over the same paragraph and the same catalog page, which the one-lane guard of #4279 rightly refuses to join on.
+  Two rows now join when their descriptions are one fund's by the existing test and every word of one title is in the other, unless the narrower title sits inside two titles that do not name one fund, so a generic title never chains residential college copies together.
+- **The terms of one program.** A trailing term qualifier ("- Fall Term", "(Summer Term)") is set aside when titles are compared, so sibling records for one program's terms join, and a hidden copy for another term never supplies the kept copy's upcoming window, because the kept copy's title names its own term.
+  Over all 532 live programs the two joins add exactly 4 redundant copies and remove none: the travel fellowship served once from each lane, two of the laboratory internship's three terms, and an unserved postgraduate fellowships page joined to its unserved common application.
+
+Measured through the gate and the reader payload on Development on 2026-10-03, served programs go from 181 to 168: the 9 stale external records, the suspended scholarship, the essay prize, the listing page and the second copy of the travel fellowship, each hand-read from its stored text, and no row is added.
+The two programs the listing page names, the kept copy of the travel fellowship and the two served external-award records with a current cycle stay served.
+Six unserved external-award rows move to `suppressed`, and 102 already-suppressed rows gain a reason only.
+Both program lane benchmarks are unchanged, because no lane output changed.
+
+This is a stored-data change: rows move only when the program gate is applied on Development.
+
+## 2026-10-03: A Survivor's Complete Read Re-Reads Evidence Filed Under Its Merged-In Keys (#4568)
+
+This reverses one bullet of the 2026-09-28 #3609 entry below, which held that a survivor-key read never retires loser-keyed evidence.
+A source that now reads the survivor never reads the merged-in key again, so matching reads by the exact key an observation was filed under judged that observation `source-has-not-reread` forever, and no evidence could ever retire it.
+A merged-in key's state is already the survivor's (#3560), so a complete read of the survivor by the same source is that source's current statement about what the observation backs.
+The #2647 concern that silence is not absence one key over still holds, and it is met by the guards rather than by the key: a retraction still needs the read to assert absence of the field, so a survivor read that is merely silent stays `absence-not-witnessed`, and the drop guard and the liveness screen are unchanged.
+The sharing runs one way only: a merged-in key's read is never given to the survivor or to a sibling merged-in key, so a duplicate's absence claim never judges the survivor's own evidence.
+Measured as a dry run on Development with this one-way rule, `dept-faculty-roster` observations judged not re-read fell from 1,368 to 1,336 and retractions before the liveness screen rose from 38 to 41, with none newly retained after it; sharing reads between sibling merged-in keys as well would have moved 145 and retracted 29 more, which is the cross-page risk the one-way rule refuses.
+Most of the 873 `dept-faculty-roster` website observations on archived keys are re-read only under another archived key, because the lane still files new reads under stale slugs, so the remaining population belongs to the lane's key choice rather than to retraction.
+The field-retraction section of [`research-data-pipeline.md`](research-data-pipeline.md) owns the mechanism.
+
+## 2026-10-03: A Merged-In Row's Type Backs A Survivor's Matching Type, And Never Restates It (#3381)
+
+A merged survivor's `entityType` stays survivor-owned, but a survivor with no `entityType` observation of its own now resolves its stored type from a merged-in row's observation of the same type, read through `mergedRowEvidenceIdentity`, so the served type rests on evidence and records it in `fieldProvenance`.
+A merged-in type that contradicts the survivor's is still dropped, because the merge itself decided who the survivor is: an eponymous faculty research profile merged into a lab is evidence the lab exists.
+Measured on Development on 2026-10-03, 627 of 3,464 served rows had no live `entityType` observation on their own key or id.
+For 448 a merged-in row carries one; on the commit before, none of the 448 resolved a type, and with this rule 445 resolve the type they already serve, so no served type changes.
+The other 3 are labs whose only type evidence is a merged-in profile's contradicting type.
+Those 3 and the 179 served rows with no live type observation on any key and none ever filed on their own (162 `FACULTY_RESEARCH_AREA`, 16 `LAB`, 1 `CENTER`) are not fixable by derivation: no lane observes their type, and stamping the stored value as an observation would manufacture evidence.
+
+## 2026-10-03: Design And Instrument Practice Are Creative Practice, And A Practice Biography Is Not A Description (#4551)
+
+Three of the rows #4388 would newly serve were wrong for reasons the lead mint does not cause, and each is a serve-time predicate gap.
+
+- **Design practice and an instrument's practice are creative practice evidence.**
+  `creativePracticeDescription.ts` gains a `design` kind (typefaces, type design, typography, lettering, graphic design, book design, brand and visual identities) and an `instrument` kind (a named instrument, brass, woodwinds), and its practitioner arm reads founding or directing a named studio, foundry, collective, ensemble, press, gallery or company.
+  A practitioner presenting "his story and research at design conferences" is giving a talk about the practice, so that phrase is no longer a research statement.
+  The two-kinds rule and every research exemption are unchanged, so a design historian, an acoustics study of the organ and a single design mention stay research.
+  The `role-biography` escape does not count either new kind, because organ, brass and brand identity have ordinary meanings outside the arts, so an administrative biography that mentions an organ transplant program is still refused.
+- **A practice biography with no research is not a description.**
+  `isPracticeBiographyWithoutResearch` in `descriptionNonResearchBodyShape.ts` reads a body that says where a clinician or a lawyer practises and what they treat or whom they represent, and states no research, publication or teaching, and the quality bar flags it `practice-biography`.
+  Clinical practice is neither research nor creative practice, so a row whose only body is this names nothing a student could join.
+  It is read on the body only, because a clinical card beside a research body is a card defect rather than a row without research, and its research test is case-insensitive so a capitalised "Research Fellowship" or a named grant keeps the body.
+- **A practice card never opens on a glued profile header.**
+  The labelled row's replacement card skips a sentence carrying header chrome the extractor glued onto it ("Graphic DesignUndergraduate Senior Critic Instagram").
+
+**Measured on Development, 2026-10-03.**
+Over every non-archived row's stored body and card, the predicates changed 4 rows: 2 bodies flagged `practice-biography` (both clinical practice biographies stating no research) and 2 rows newly labelled creative practice (both graphic or type designers).
+Through `getResearchGroupDetail` over all 3,464 `student_ready` rows with the old and new code, 2 rows changed and both were read: one clinical practice biography stops serving, and one graphic designer is labelled creative practice with its research-voice chip card replaced by a practice sentence.
+Served rows went from 3,459 to 3,458 and labelled rows from 30 to 31; no other served body, card, name or type changed.
+Of the rows #4388 would newly serve, the performer and the type designer are now labelled creative practice and the clinical practice biography is refused.
+
+The predicates err toward keeping research.
+A clinical biography that also names a centre, a fellowship or any study keeps its body, so a clinician whose body states only "cares for patients" once still serves; that is recorded rather than chased.
+
+This is a serve-time change for the label and a serve-time and stored-data change for the refusal: browse and detail recompute both on deploy, and the stored tier follows when the gate re-runs on Development.
+
+## 2026-10-03: Role Biographies, Another Organization's Page Text And Education Programs Are Not A Description (#4528)
+
+Three body shapes passed the description quality bar and served as a row's description although none describes the row's research or practice.
+`nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names them, and the quality bar reads each as its own flag for both the body and the card, so the serve path, the materializer's candidate ranking and the gate all refuse the same text.
+
+- **`role-biography`**: a teaching-only or administrative biography that states no research, no creative practice and no clinical work, such as a career office director, a language lector or a diversity office lead.
+  Any research or care word, a faculty rank, or one kind of creative practice evidence keeps the body, because refusing a real research biography costs the row.
+  The one exception is a career narrative whose every sentence is a past post or a degree and that names no current research, expertise or professorship: it is refused even when a research or care word sits inside one of those posts, because that word describes the old job (#4722).
+  The research test is lower case on purpose, so a department name ("Africana Studies") is not read as a statement that the person studies something.
+- **`third-party-page`**: another organization's page text, meaning a call for submissions with its usage terms, an event's own page, or a site's section blurbs ("Highlights of ...", "Lists of ...").
+- **`instruction-offering`**: an education program's description, whose subject is the instruction it offers ("classes focus on", "hands-on lessons"), so a row carrying it as a lab names a course rather than a group a student could join.
+  A research statement (a research, investigation, experiment, laboratory, scientist or publication word) keeps the body, so a research core that also trains its users is not read as a course.
+  The wider research-or-care test is not used here, because an education program's own prose says "classes focus on".
+  Only a `LAB` row is refused for it: a core facility's or a center's training and workshops are its own service, so those rows keep the body.
+
+The research test reads every sentence with only its first letter lowered, so a research claim that opens a later sentence ("Research in the group ...") keeps the body as well.
+`third-party-page` takes no research exemption, because its shapes are structural and the calibrated cases carry research words of their own (a funding agency's section text names research, and a call for artists says "interested in collaborating").
+
+Measured on Development on 2026-10-03 by walking all 3,470 served rows through `getResearchGroupDetail` and the browse route with the old and new code: 5 rows stop serving, because the serve path recomputes the bar and their only body is refused.
+All 5 were read and are wrong for the row: a language lector's teaching biography, a career office administrator's biography, an exhibition's event page, and one call for artists on two rows.
+No other served body or card changed.
+Of the 32 rows #4388 would newly serve, 3 are refused and all 3 are wrong: an education program filed as a lab, a funding agency's site section text, and a diversity office director's biography.
+
+The predicates err toward keeping a body, and the residue is recorded rather than chased.
+Four administrative biographies in an arts school stay served as research because each names a theatre or performance context or a research word; one person-scoped row serves an education center's mission statement, which the organization-subject rule (#2911) does not read as another organization's subject; and one design educator's biography mentions research at conferences.
+
+This is a stored-data change as well as a serve-time one: browse and detail stop serving the refused bodies on deploy, and the stored tier follows once the gate re-runs on Development.
+
+## 2026-10-03: Arts-Practice Faculty Rows Are Served And Labelled Creative Practice (#4519)
+
+Owner decision: a faculty row whose own evidence describes creative practice rather than research is served, not withheld, and it is labelled "Creative practice" instead of research.
+Students interested in art need a way in to the people who make it, and a directory that drops every performer, composer, playwright and studio artist leaves them none.
+The defect #4388 measured was never the field itself: it was a performance or exhibition biography presented under "Research summary", a "Faculty Research" pill and a "Principal Investigator" heading, which tells a student there is a research group to join when the page describes a career in practice.
+So the fix is an honest label, not a withhold.
+
+It is a serve-time derivation in `server/src/utils/creativePracticeDescription.ts`, computed once in the public DTO from the row's served body, so the detail page, browse, search and related cards read the same answer, and no field is written or locked.
+
+**The predicate.**
+A row is creative practice when four things hold.
+It is person-scoped by `isPersonScopedResearchEntityShape` in `server/src/models/storedVocabularies.ts` (a `LAB`, `FACULTY_RESEARCH_AREA` or `FACULTY_PROJECT` row, a legacy person type, or a typeless row whose `kind` is a person kind), because a lab in an arts school named after one artist is that artist's practice, while a `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` is an organization and is never labelled.
+Its department (Music, Art, Architecture, Film and Media Studies, Theater, Dance, and Performance Studies, English Language and Literature) or its school (the music, art, drama and architecture schools, the Institute of Sacred Music) places it in an arts context.
+Its served body, or its card when no body serves, states at least two kinds of practice evidence among exhibitions, performances, compositions, productions, creative writing and a practitioner noun ("is a violinist", "as a playwright").
+And that text states no research: a research, scholarship, musicology, theory, cognition, history-of, analysis, dissertation, journal or university-press statement keeps the row research, and so does a synthesized body that opens in the research voice ("Studies ...", "Examines ...").
+An artwork in subject position ("work that examines memory") is an artist statement rather than a research claim, and the revoicer's "This researcher" placeholder is the pipeline's own wording, so neither counts.
+Arts research that states a research question, such as music cognition, digital humanities, musicology or film history, therefore stays research.
+
+**What a labelled row serves.**
+The kind pill and the browse card read "Creative practice", the summary is headed "Practice summary" and "What this creative practice covers", the website action reads "Visit website", and a principal-investigator lead (`pi`, `co-pi`) is "Faculty" rather than "Principal Investigator", while a director lead stays "Director" and the lead section heading follows the same rule.
+Nothing on the row claims a lab, a research group or an opening the page does not state.
+An emeritus-led labelled row's current-activity notice reads "Emeritus faculty" and "this practice" rather than "Emeritus lab" and "this research".
+A card in the research voice ("Studies chamber music.", or a sentence claiming the person studies something) contradicts the label beside it and is usually a chip summary the practice body never states, so `decideCreativePracticeCard` in `server/src/services/creativePracticeCard.ts` replaces it with the body's own first practice sentence, and withholds it when the body offers none, on the #2911 reasoning that a blank card line costs less than a false one.
+
+**Measured on Development, 2026-10-03, through `getResearchGroupDetail` and the browse route over all 3,470 served rows.**
+33 rows are labelled, and browse and detail agree on all 3,470.
+Every labelled row was read: none states research, 30 are practice biographies of the row's own person (performers, composers, conductors, directors, stage managers, playwrights, poets, filmmakers and studio artists), and 3 serve another organization's page text (an architecture exhibition's event page, and one call for artists on two rows), which is a body defect the next change withholds rather than a mislabel.
+Of the 32 rows #4388 would newly serve, 8 are labelled and all 8 are practice biographies.
+On the 33 served rows, 18 cards are unchanged, 14 research-voice cards are replaced by a practice sentence from the row's own body (among them three chip summaries naming topics no practice body states, and one card describing a different person's medical research), and 1 is withheld.
+The predicate errs toward research: a performer who also wrote a university-press book, a one-sentence body with a single kind of evidence, and an artist statement that calls itself research all stay research, because a practice label on a research row is the costlier error.
+
+## 2026-10-02: A Merged Survivor's Evidence Reads Go Through One Identity, And A Lane's Newest Read Wins Across Its Keys (#4418)
+
+The materializer evidence reads that reach the keys and ids of rows merged into the one being resolved now share one identity, `scrapers/mergedRowEvidenceIdentity.ts`: the merged survivor read and its award union, the topic evidence read, and the never-backed provenance check and relink.
+The entry read and its two complement reads, the row-keyed contact filter, the lead school inheritance read, and the access signal read stay row-only by design and do not go through it.
+An integration test drives the materializer over evidence filed only under a merged-in key.
+Two reads did not: the never-backed provenance check and the provenance relink asked only the row's own key and id, so a lane that observed a field only under a merged-in key read as never having observed it.
+Two field rules inside the merged read were also wrong, measured on Development after #4413 and #4425.
+
+- **A fallback-only lane does not hold a field against a merged-in row.** A merged-in row may fill only a field the survivor does not hold (#3581), and a survivor whose only own `researchAreas` came from the graduate-track roster lane held the field, so the merged-in row's profile list never reached the resolver that #4413 taught to rank it first.
+- **An award list unions across lanes, not across one lane's reads on different keys.** Every other latest-wins field already took the newest same-lane read whichever key it was filed under; the grant lists unioned instead (#3221), so a pre-#4425 NIH read on a merged-in key re-added each award once per fiscal year beside the survivor's corrected read.
+  The union now stops at the row the newest read was filed under.
+  This is a resolution rule, not a retirement: the merged-in key's observation stays live and is history, and a survivor-key read still never retires it.
+
+A whole-corpus dry run on Development on 2026-10-02, against the same projection on the commit before, planned changes on 20 rows' `researchAreas`, every one from the graduate-track list to the row's own list, and on 83 rows' `recentGrants`.
+76 of the 83 drop a fiscal-year repeat of an award, 70 of them `student_ready`, and 7 drop National Science Foundation awards that had already ended, which the served list withholds anyway (#4009).
+One of those 7 keeps a repeat because its newest NIH read itself predates #4425, which a re-run of that lane fixes.
+The never-backed provenance and relink change planned no change on any row.
+
+## 2026-10-02: The Tailwind 4 Upgrade Renders Exactly What Tailwind 3 Rendered (#4386)
+
+The client moved from `tailwindcss` 3 to 4 (part of #4038), and the upgrade was held to no visual change, measured by before and after Playwright screenshots and computed-style diffs of the student and operator surfaces.
+A deliberate visual change belongs in its own reviewed PR, not inside a dependency bump.
+
+Decided:
+
+- **Tailwind runs as the `@tailwindcss/vite` plugin, and the theme lives in CSS.**
+`tailwind.config.js`, `postcss.config.js`, and `autoprefixer` are gone; the `--yr-*` aliases are an `@theme inline` block in `client/src/index.css`, so a utility compiles to the token variable itself.
+- **Tailwind 3's generic palette and line heights are restated rather than adopted.**
+`client/src/tailwindPalette.css` pins every generic hue to its Tailwind 3 hex value, and `index.css` pins the `text-*` line heights to Tailwind 3's absolute values.
+Tailwind 4's oklch palette and ratio line heights each shifted rendered pixels on the categorical scales and on any element pairing a `text-*` step with an arbitrary size.
+A `leading-*` class also now outranks a responsive `text-*` step, so the headings and intros that rendered with the step's own line height state it with a matching responsive `leading-*`.
+- **The Tailwind 3 preflight defaults that Tailwind 4 changed are kept in `@layer base`**: the default border and ring colours, the placeholder colour, the button cursor, the form-control font and background, and the search-field appearance.
+The navigation's `!border-b-2` underline never rendered under Tailwind 3, because MUI's `border: 0` reset its style, and Tailwind 4 would have drawn it, so those classes were removed rather than shipped as an unreviewed design change.
+- **Two Tailwind 4 behaviours were kept, because neither changes a desktop render.**
+`hover:` applies only under `(hover: hover)`, so a tap on a touch screen no longer leaves a sticky hover state.
+`space-*` and `divide-*` now space every child but the last with a trailing margin or border, which renders the same on every captured surface; the one filter list whose first child is a visually hidden legend takes an explicit `pt-1` to keep the leading gap it had.
+- **The class scanner does not split a class from an interpolation that touches it**, so `` `row-start-1${...}` `` generates no rule; keep a space before `${`.
+`client/src/__tests__/classScannerGuard.test.ts` fails on any such class.
+- **The browser floor is Tailwind 4's**: Safari 16.4, Chrome 111, and Firefox 128.
+`index.css` already required `color-mix`, so the floor moved by about one Safari minor release.
+
+Reverting any pin is a visual change and is reviewed as one.
+
+## 2026-10-02: Research Led By Emeritus Faculty Is Labelled And Claims No Way In Without Current Activity (#4431)
+
+Owner decision: a research row led by emeritus faculty stays served and its tier is unchanged.
+Its lead is labelled Emeritus on the browse card and the detail page, and the row claims no way in unless evidence keyed to the row shows current activity.
+This refines the 2026-09-22 refusal below rather than reversing it: emeritus is still not a visibility signal, and it now decides what a served row may offer.
+
+It is a serve-time derivation in `server/src/services/emeritusLeadWayIn.ts`, and no field is written.
+
+**Emeritus-led.**
+A person's own served title holds only emeritus appointments when it names a faculty appointment as emeritus (professor, lecturer, lector, scholar, scientist, faculty) and names no active faculty or research appointment beside it.
+"Professor Emeritus and Senior Research Scientist" and "Professor Emeritus of Law and Professorial Lecturer in Law" are therefore not emeritus, because the title states current employment in the person's own words, and "President Emeritus and Sterling Professor" is not either, because only an office is emeritus.
+A trailing "Emeritus" set off from the appointment ("Professor of History, Emeritus") qualifies every appointment in its clause; an affiliation ("Affiliated Faculty, ...") is neither.
+"Emergency" never matches, and the word naming an institution ("Emeriti Association") is ignored; no named chair or prize in the corpus uses the word in another sense, measured over all 437 researcher titles containing `emer`.
+A row is emeritus-led only when it has a lead and every lead passes, so a row co-led by an active lead, or by a lead with no title, is not.
+The person-level label still appears beside an emeritus co-lead on the detail page, because it is a fact about that person.
+
+**Current activity.**
+Two arms, both already stored and keyed to the row.
+A running research award: a served award (`servedCurrentFunding`) whose end date has not passed, excluding NIH conference awards (activity code R13 or U13), which fund a meeting rather than research.
+A current team: a non-lead member (postdoc, graduate student, undergraduate, staff) on a fresh verified official roster row, the roster the detail page already serves as current.
+Undergraduate evidence is deliberately not an arm.
+Every emeritus-led row carrying a `CURRENT_UNDERGRADS` signal or a stored current-undergraduate count was hand-read against its page, and four of six were wrong or stale: an alumni list, a department committee roster, a retired lead's homepage, and a members page last updated two years ago, with one more uncertain.
+Re-admit it only after the undergraduate lanes are re-measured (#4430).
+Observation recency is not an arm either, because the sweep re-reads every row, so it dates the crawler rather than the research.
+
+**What is withheld.**
+On a withheld row the detail payload drops the `CONTACT_INSTRUCTIONS_EXIST`, `REACH_OUT_PLAUSIBLE` and `APPLICATION_FORM_EXISTS` signals, the lead email, and `planningContext` and `waysIn`.
+The client replaces the "How to get involved" block with "Current activity" copy and one link to the official page, and offers no apply, get-involved, directory, or email action.
+`hasUndergradHostingEvidence` and its badge stay, because "Has hosted undergraduate researchers" is a historical fact rather than a way in; no browse filter offers a way in, and `hostsUndergrads` reads that same historical predicate.
+The browse and search DTOs carry `emeritusLed` and `wayInWithheld` from the same derivation as the detail page, computed in the batched lead read.
+
+**Measured on Development, 2026-10-02, through `getResearchGroupDetail` over all 3,459 served rows.**
+235 rows are emeritus-led (216 faculty research profiles, 19 labs), 233 withhold their way in and 2 keep it.
+On the 233, 250 way-in signals on 155 rows and the lead email on 205 rows are no longer served; no row outside the 233 changed its signals or email.
+263 rows have a lead whose title contains the word; 28 of them are not emeritus-led under the rules above.
+Browse over all 3,459 rows, eight search queries (764 rows), and the `hostsUndergrads` filter (136 rows) served the same two flags as the detail page on every row.
+Both kept rows hold a running NIH R01: one lab page lists a current research team, and the other row's awards were confirmed running in NIH RePORTER.
+Of 10 sampled withheld rows, 8 show no current group a student could join, 1 is a false withhold whose profile lists active appointments the stored title omits, and 1 holds an external directorship.
+The gate dry run promoted 3,459 rows before and 3,460 after; the one difference is a row a concurrent writer updated between the two runs, and the gate reads none of this code.
+
+## 2026-10-02: `dotenv` Loads Quietly, And Prettier Stays On 3.8 For Now (#4367)
+
+`dotenv` 17 and later print `injected env (N) from .env` on every `config()` call unless `quiet` is set, including in deployed runtimes where no `.env` file exists, and 18 sends that line to stderr.
+The server calls `config()` from about 230 modules, so every `dotenv.config(...)` call passes `quiet: true` to keep the silent behaviour 16 had; a new call should do the same.
+`import 'dotenv/config'` is already quiet by default from 18.0.4.
+
+Prettier is held at its exact `3.8.3` pin.
+Prettier 3.9 rewrites the layout of multi-line union types, which reformats about 80 files that no dependency change touches.
+Land that as a formatting-only change of its own once the other #4038 upgrades are in, so the churn does not collide with them.
+That landed on 2026-10-03 as its own formatting-only change; `docs/dependency-decisions.md` records it.
+
+## 2026-10-02: A Fund's Upcoming Deadline Is Served Even When Its Database Record Lists A Passed One (#4382)
+
+When a program is served from its Yale fellowship database record (#4289) and another lane's hidden copy of the same fund states a still-upcoming deadline while the record's own deadline has passed or is absent, students see the upcoming deadline (owner decision).
+The database record stays the served copy and the source for everything else.
+
+Decided: the visibility gate, which already groups the copies of one fund, derives the earliest still-upcoming window among the kept copy's hidden copies on every run and stores it as `upcomingDuplicateWindow`, clearing it when it no longer applies.
+It is not written over `deadline`, because the materializer rewrites `deadline` from the fund page on every run and the two would flip between stages.
+Only a copy the gate would serve on its own can supply the window, and the window carries that copy's opening date only when that copy states one, because the opening date and the deadline are one statement of one cycle.
+Serve time re-checks the window against the current time, so a window that passes before the next gate run falls back to the row's own deadline.
+
+Measured on Development on 2026-10-02 before the change: one served program changes, STARS II, from a projected July 30, 2027 deadline reading closed to the January 4, 2027 spring deadline the fellowships-office page states, reading accepting; no tier changes.
+
+This is a stored-data change: a served deadline moves only after the gate applies on Development.
+
+## 2026-10-01: The Yale Fellowship Database Copy Of A Program Is The One Served (#4289)
+
+When a program has a copy in the Yale fellowship database and another lane's copy, the database record is the one served (#4289, owner decision).
+
+## 2026-10-01: The Yale Fellowship Database Is An Official Source (#4284)
+
+The owner decided that the Yale Student Grants and Fellowships database (`yale.communityforce.com`) is an official source, so a fund's own FundDetails page is Yale's official record of that fund.
+
+This reverses part of #3984, which read a database page as an application portal and never as an official source.
+Under that rule a fund the database alone describes could not be served, and after #4214 enumerated all 286 funds the ones no other Yale page describes were held as `missing_official_source`.
+
+Decided: the visibility gate no longer caps a row whose `sourceUrl` is a FundDetails page, the `student-grants-database` lane asserts its fund page as `sourceUrl`, and the materializer no longer ignores that observation.
+
+One part of #3984 stays, because it is about stability rather than officialness.
+On a row another lane owns, the database lane writes no identity field, and a fund page never replaces a program's own web page as `sourceUrl`, because the page that describes the program is the richer citation.
+The first sweep without that guard moved 93 rows to new keys and demoted 111 served rows.
+
+The decision makes the database official; it does not make every fund research-related.
+The research-relevance, audience, application-route and description checks are unchanged, so a non-research fund in the database stays suppressed.
+Measured on Development before the change, diffing the gate before and after on the same rows: 33 programs become `student_ready`, 20 of which already cited their fund page and were capped at `limited_but_safe`, and 13 of which had no source at all.
+Four of the 33 are common applications rather than single programs, which is the non-program shape #4110 tracks.
+
+This is a stored-data change: rows move only after the lane re-scrapes and the gate re-evaluates on Development.
+
+## 2026-10-01: A Biography Description Is A Fallback Only (#4288)
+
+The fixes for #3437 (#4262, #4281, #4283) newly served 26 Development rows, and most of them served a career biography ("received a PhD from ... joined Yale in ...") rather than research prose.
+The serving check admits a biography, and it should: #4262 at first refused a row's only servable body because it was a biography, which took the row off the surface, and #4283 reverted that refusal (#4280).
+
+Decided:
+
+- **A biography is served only when no research prose exists for the row, and the row stays visible either way.**
+  The `fullDescription` choice ranks research prose above a biography as derivation inside `projectFromLog`, so it runs on every resolve and writes no locked field.
+  `adoptServableFullDescription` now also runs when the incumbent serves a biography: it adopts the first ranked candidate that passes the serving check, is not a biography, opens by stating research, and leaves the row's description pair passing the public-description invariant, and otherwise keeps the biography.
+  The pair condition was added after delivery, when one Development row adopted a one-sentence research body identical to its own card, lost its card, and dropped out of `student_ready`; a body that costs the row its card is not admissible, so that row keeps its biography.
+  It never trades one biography for another and never trades a biography for a body that states no research, because a publication list or an organization's chrome that happens to serve is not the research prose the preference is for.
+  An incumbent that serves nothing keeps the #4281 fallback order: a servable non-biography, then a servable biography.
+  A second resolve re-derives the same body from the same ranked list, so the choice converges.
+- **The biography test is calibrated, not assumed.**
+  `isBiographyRatherThanResearch` in `server/src/utils/biographyRatherThanResearch.ts` reads a body as a biography when its opening states career facts and its opening two sentences state no research.
+  Hand-read on 169 served Development bodies in three stratified samples (49 biographies), the test #4262 introduced (`isHighConfidencePersonBio || isCareerBiographyDescription`) scored precision 28 of 63 and recall 28 of 49, and the narrower one #4283 ranked on scored 23 of 38 and 23 of 49.
+  Every false positive was research prose that opens on an orienting role ("is a cardiologist whose research focuses on"), which is why a research statement in the opening withdraws the verdict.
+  On the third sample, read before the last calibration pass, the new test scored precision 9 of 11 and recall 9 of 17, and after that pass 38 of 39 and 38 of 49 across all three; the misses are biographies whose opening names a research activity or that never state a career fact, so the residual errs toward keeping a biography rather than displacing research prose.
+- **A row serving a biography is flagged, not held.**
+  The gate records the soft reason `biography_description_fallback` when the served body is a biography, so it never blocks and is the cohort a research-prose lane should select on.
+  The Corpus Quality panel counts it as "Serves a biography as its description", measured by `corpus:snapshot` over the same representation the gate reads.
+- **The card follows the same preference.**
+  The shared card resolver serves a research card derived from the body in place of a stored biography card when that derived card clears the gate's card bar, and keeps the biography card otherwise, so browse, detail and the gate read one line (#4100, #4127).
+
+This is a stored-data effect, delivered by rematerializing the affected rows on Development and re-gating them; promotion carries it to Beta and Production.
+The rows that keep a biography after delivery are not fixable by ranking, because no research prose exists in their evidence; they are counted by the flag rather than patched.
+
+## 2026-10-01: Three Undergraduate-Access Fields No Lane Fills Are No Longer Served (#3579)
+
+Five undergraduate-access fields were served on every research entity, and three of them were empty on every served row.
+Measured through `POST /api/research/search` on Development, all 3,426 served rows: `undergradEvidenceQuote` non-empty on 260, `pastUndergradAdvisees` on 5, and `offersIndependentStudy`, `independentStudyCourses` and `typicalUndergradRoles` on 0 of the 3,417 rows that carried the key.
+
+The question was whether a lane had the evidence and dropped it, because that would be a lane bug to fix rather than a field to stop serving.
+It does not.
+Across the whole observation log, superseded rows included and both identity forms counted, `typicalUndergradRoles` and `independentStudyCourses` have 0 observations.
+`offersIndependentStudy` has 13, all from `course-based-research-pathways`, all keyed by `entityKey`, and all on archived `COURSE_SEQUENCE` rows whose stored value is already `true`, so the materializer wrote what the lane said and the rows are simply not served.
+`undergradRoleEvidenceQuote` is the nearest live evidence, and it is a free-text quote rather than a role list, so turning it into role labels would be a new extraction lane, not a wiring fix.
+
+Decided: the public projection (`OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS` in `server/src/services/researchEntityDto.ts`) no longer serves the three fields, and the client type no longer declares them.
+The browse card's entity fallback no longer derives "Student project evidence" from the independent-study pair, because it was reading two fields that never held a value; the pathway arm that derives that badge from `FACULTY_SUPERVISES_STUDENT_PROJECTS` is unchanged.
+The client rendered nothing for an empty field before this change, measured headlessly on a served detail page, so a student sees no difference; the change removes a payload that asserted three empty facts on every row.
+
+`undergradEvidenceQuote` and `pastUndergradAdvisees` are served exactly as before: a simultaneous pre-fix and post-fix read of all 3,426 rows found 0 differences in either field or in `hasUndergradHostingEvidence`.
+
+The stored fields and the `offersIndependentStudy` index stay, deliberately.
+The access materializer still derives `CREDIT_FORMALIZATION_POSSIBLE` from `offersIndependentStudy` and `independentStudyCourses` observations, and `course-based-research-pathways` still writes the flag, so this is not a vertical with no producer the way the logistics enums were.
+A lane that later fills one of these fields with evidence restores it by adding it back to the projection, with a measured served count, rather than by the projection waiting for it.
+
+This is a serve-time change and reaches students on deploy; no data operation is required.
+
+## 2026-10-01: A Contradicted Lab-Site Lead Keeps Serving, Because The Shipped Verdict Was Mostly Wrong (#3750)
+
+`lab-site-lead-verification` records per lead whether the row's own website confirms or contradicts that lead, and nothing reads it.
+#2714 left acting on a contradiction to a follow-up that needed a precision measurement first, so this is that measurement and the decision it supports.
+
+Measured on Development on 2026-09-30 by hand-reading the cited site against the lead for every `CONTRADICTED` judgement on a live row, which was 59 judgements on 55 rows, 38 of them on `student_ready` rows with no confirmed lead.
+Each was labelled right (the site names somebody else as the lead), wrong (the attached lead is correct), or undecidable (the site does not say who leads it).
+
+- **All 59: 15 right, 32 wrong, 12 undecidable, so 32% precision over the 47 decidable.**
+- **The 38 served rows with no confirmed lead, the population any serve-time behaviour would act on: 4 right, 24 wrong, 10 undecidable, so 14%.**
+- By type: 6 right of 21 decidable on `LAB`, 1 of 18 on `FACULTY_RESEARCH_AREA`, and every decidable `CENTER` and `INITIATIVE` judgement (8 of 8) right.
+
+Decided: a contradicted lead is not suppressed, not held by the gate, and not demoted, and it keeps serving.
+At 14% on the served population, suppression would have removed 24 correct leads to remove 4 wrong ones.
+The verifier is fixed instead, and `leadVerification` stays unread by every serving path until a later measurement on a fresh lane run supports a reader.
+
+The 32 wrong verdicts fell into classes, and each is now a rule in `scrapers/utils/labSiteLeadVerification.ts`:
+
+- **17: the row's website is not its own page.** A faculty research profile, or an eponymous lab, whose website is a department, center or admissions page that names other people.
+  The website is the defect, not the lead, and for a faculty research profile the lead is the subject by construction, so that type is never `CONTRADICTED` (`leadIsTheRecordSubjectFor`).
+- **8: a two-letter surname.** `siteNamesPerson` refused any surname under three letters, so a site naming its PI in full could never confirm one.
+  A two-letter surname now confirms when the given name sits next to it, with at most two initials between.
+- **1: an initial-only given name**, now matched as the initial, with its period, next to the surname.
+- **6: another person linked without being a lead.** The shipped rule contradicted on ANY person-shaped link other than the lead's, which included a members page, a section word (`collaborators`) and a social handle.
+  A contradiction now needs a person-shaped slug that is either a namesake with a different given name and a surname of three or more letters, which is the collision the lane was built to find, or a person the page names next to a lead-role phrase (`slugNamesAnotherLead`).
+  A bare `director` is not a lead-role phrase, because department pages name directors of undergraduate studies and of cores.
+
+Replayed over the same pages, re-fetched on 2026-09-30, the fixed verifier contradicts 7 judgements, all 7 hand-labelled right, and none of the 32 wrong ones; 11 of those now confirm and 21 are unstated.
+That is an in-sample result on the sample the rules were drawn from, so it is not yet the precision that would license a reader.
+Recall falls: 8 of the 15 right contradictions are lost, mostly centers whose pages name their directors in prose without a person-shaped link, and one two-letter-surname namesake the three-letter floor now refuses.
+That is the intended trade for a verdict that must never accuse a correct lead.
+
+Undecidable is recorded, not chased: 12 judgements sit on pages that name no lead at all, and no lane can settle them from the site.
+Before a reader lands, re-measure on a fresh lane run, and freeze that sample as a lane-scorecard benchmark so the next change is measured on the same input.
+
+## 2026-10-01: Department Research Guidance Is Served On `/programs` As A Labelled Non-Application (#4285)
+
+#4237 (#3746) stopped minting department undergraduate research pages as research entities, and the #4113 rule held their program records off `/programs` because a page whose only link is its own page and that states no application cycle is not an application.
+Together they left a department's own guidance on finding a research mentor on neither student surface, and that guidance is the bridge from a vague interest to a lab a student could join.
+
+Decided:
+
+- **Keep #3746.** There is still no research row for these pages and no cross-surface duplicate.
+- **Serve them on `/programs` as department research guidance**, `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, rather than as something to apply to.
+  The #4113 rule still holds every other own-page record with no application cycle; guidance is the one admitted exception, recorded with the `department_research_guidance` gate reason.
+- **The type is earned by the page, not by the lane's title.** The department undergraduate research lane observes the page's own document title as `sourcePageTitle`, and `server/src/services/departmentResearchGuidance.ts` admits a page only when that title names undergraduate research or research opportunities, names no senior essay, capstone, application, internship, scholars, funding, summer, news, flyer or graduate audience, and the record states no deadline, opening date or accepting-applications evidence.
+  The lane-authored record title reads "<Department> Undergraduate Research" for every configured page, so it is not evidence: it named general undergraduate-program overviews, a labs list and senior-essay registration pages alike, which is why the classifier no longer derives the kind from it.
+- **A guidance item carries no application affordance anywhere.** The card, the list row (and so the watched-program view), and the detail modal show a "Department guidance" label and "Not an application" in place of a cycle status, no deadline, no urgency banner, no apply action, and the served payload omits `applicationLink`.
+  The one action is "Read the department's guidance", linking to the page.
+- **Shown by default, in its own section.** `/programs` files guidance under "Department Research Guidance", after the application sections and apart from "No Dates Posted", and offers "Department Guidance" and "Applications Only" quick filters; every other quick filter is about an application and so excludes guidance.
+  It is shown by default because it serves the student who does not yet know what to apply to, and a separate section costs an applicant nothing to skip.
+
+Measured on Development on 2026-10-01 through `searchProgramsController` as a signed-out student: of the 31 pages the lane reads, 11 carry a page title the predicate admits and 20 do not (9 senior-essay or senior-requirement pages, 1 capstone page, 5 general undergraduate-program or undergraduate-study pages, 1 labs list, 1 senior-project page, and 3 application pages).
+Of the 19 program records twinned with the #3746 archived rows that #4113 held, 11 are admitted and 8 stay held: 7 because their configured page is a program overview, a labs list or a senior-project page, so the lane should be pointed at those departments' own research pages rather than the predicate widened, and 1 because it is an application page with no stated cycle.
+Applied through a re-scrape and materialize of the lane, served guidance went from 0 to 11; a dry run of the programs gate with the pre-fix and the fixed code over the same 533 live programs differs on exactly those 11 rows, so no application program's verdict changed.
+
+## 2026-09-29: A Stored Topic List No Evidence States Is Extended By Derivation, Never Replaced (#3836)
+
+#3836 traced every served chip that no live observation backs to one mechanism: `researchAreas` is not clear-on-empty, and the description fallback returned early on any non-empty stored list, so a list whose evidence was retired, rolled back, or never existed had no owner and no pass could replace it.
+
+Decided, as derivation rather than repair:
+
+- **Scope is the shared predicate.** A row is in scope when `researchAreas` is not in `manuallyLockedFields` and no live `researchAreas` observation on the row or on any merged-in key states an area the row admits, decided by `scrapers/researchAreaEvidence.ts` (#3842) with the #3856 admission rule, so an observation whose every value the row rejects is no evidence.
+  The materializer evaluates it over the observations the pass already read, including merged-in candidates the #3560 carry rule keeps out of resolution, so a list only a merged-in row states stays out of scope.
+  A pass entered through another key, and an archived row, are never judged, because neither has read all of the row's own evidence.
+  An observation the resolver used this pass still outranks a derivation even when the predicate does not credit it (an `entityKey` match carrying another row's `entityId`).
+- **The action is the existing derivation, and it only adds.** On every resolve the row's topics are derived from its own name and description with `applyDescriptionResearchAreaDerivation` and its `LAB`/`FACULTY_RESEARCH_AREA` gate and admitted through `partitionResearchAreas`.
+  The resolved list is the stored list followed by every derived chip it does not already hold (compared case-insensitively), so a derivation never removes a stored chip, and it fills an empty stored list outright.
+  No lock is written.
+- **The derived attribution vouches for the whole list or is absent.** `description-derived-research-area` is recorded only when every resolved chip is one the derivation produces, which covers an empty stored list, a stored list the derivation reproduces, and one it extends.
+  A list that keeps a stored chip the derivation does not produce carries no derived entry, and a derived entry already stored on such a list is unset, including by a pass scoped to `researchAreas`.
+  The entry is whole-field: it exempts every chip from `dropDomainIncoherentUnsourcedResearchAreas` and is on the #3790 allowlist only because it is recomputed from the row's own description on every resolve, which a stored-only chip is not.
+  Recording which chips were derived would need a per-chip provenance shape that every reader of the entry would have to learn, so the list is attributed only when the claim is true of all of it.
+  A lane entry already on the field (history of a retired observation) is left as it is; retiring it is #3790's never-backed rule, not this one.
+- **The guard stays: a derivation never empties a stored list.** When the derivation yields no admissible chip, or the row's type is not derived, the stored list stays as it is and the row is counted, per row as `unbackedResearchAreas` on the materialize result and summed in the `research-entity:rematerialize` report and the `[unbacked-research-areas]` line of a run's materialization log.
+  The outcomes are `rederived` (the list or its attribution is written and is wholly derived), `already-derived`, `added-derived` (derived chips appended to a list that keeps stored-only chips), `kept-stored-covers-derived` (the stored list already holds every derived chip), `kept-stored-derived-empty`, `kept-stored-type-not-derived`, and `nothing-derived`.
+  The rematerialize report also sums `researchAreaChips` `{ added, removed }` over every `researchAreas` change, and under this rule `removed` is 0 by construction.
+- **It converges.** A second resolve derives the same answer, finds nothing to add and the attribution already right, and plans nothing.
+
+Superseded, same day: the rule first landed (#3868) as a replacement, where the derived list overwrote the stored one.
+Applied on Development on 2026-09-29 between 04:29 and 04:45 UTC it changed 79 rows, 54 of which lost at least one stored chip, 138 chips lost against 77 gained, and a re-read of the 9 served rows found 3 worse, each losing a topic its own description supports.
+That matched the #3836 hand-read, where unbacked stored chips were supported 29 of 39 times: no live evidence means a value has no owner, not that it is wrong, and the description derivation is a coarser instrument than whatever wrote the stored chips.
+So a derivation over an unowned list may add what the row's own text supports but may not take anything away.
+That replacement run was then undone as a one-time rollback of the operation itself, not as an operator judgement about any row, so it needed no lock.
+The 79 rows' `researchAreas` were restored at 05:27 UTC from a pre-apply capture kept outside the repository, cross-checked against the apply report's per-row before-values (79 of 79 matched), with each write conditioned on the row still holding that apply's after-value.
+Provenance could not be restored, because the capture recorded values only; the rows kept the replacement run's derived attribution until the next resolve under this rule rewrote it.
+That resolve, over the same predicate, changed 53 of the 79, added 77 chips and removed none, and a hand-read of 15 of the added chips against full descriptions found 14 supported.
+The rollback holds because this rule keeps every stored chip on every later resolve.
+
+- **Rows with live evidence behave exactly as before.**
+
+Measured read-only on Development on 2026-09-29 between 03:37 and 03:40 UTC with the real materializer in dry run, peers writing: 711 unarchived rows are in scope, 110 of them `student_ready`.
+Of the 110 served: 9 change to a different admissible set (4 different, 4 a subset, 1 a superset), 17 keep their list and gain the derived attribution, 10 are already derived, 19 keep their list because the derivation yields nothing, 1 keeps its list because its type is not derived, 53 store no topics and derive none (the 12 rows #3856 recorded among them), and 1 keeps an observation the resolver reads.
+Of the 601 unserved: 70 change their list, 107 gain the attribution, 14 are already derived, 66 are kept by the guard, 339 store and derive nothing, 4 have no live observation of any field so no resolve reaches them, and 1 is skipped for invalidated-run evidence.
+2,873 archived rows match the predicate and are not reached.
+
+The rule reaches the stored corpus only when a row is next resolved, so the delivery is `yarn --cwd server research-entity:rematerialize --unbacked-research-areas`, which selects this scope by the same predicate and is scoped to `researchAreas`; dry run first, then `--apply --confirm-rematerialize` on Development.
+What stays is recorded rather than patched: the rows the guard keeps hold a list no lane states, and they are fixed only by a lane that reads a page with real topics for them.
+
+## 2026-09-28: A Merged-In Loser's Evidence Is Carried, Owned By Field Class, And Retired On Its Own Key (#3609)
+
+#3609 asked for the opposite of what the log supports, so this entry diverges from its title on purpose.
+The issue proposed retiring a loser's evidence when the survivor's own complete reads stop emitting the loser's key, on the premise that a loser key is never read again.
+Measured on Development on 2026-09-28 between 04:10 and 05:05 UTC, read only, with a peer sweep writing, the premise does not hold.
+3,195 tombstones reach a live survivor, 1,704 survivors resolve over them, and of the 2,492 slots on `student_ready` survivors whose provenance cites a live loser observation, 948 come from a source that has written that loser key again since the loser was last updated.
+For those sources the loser key is still the live key for the page, so retiring by key would retire current evidence.
+Retirement already reaches loser keys: 51 loser-keyed `websiteUrl` observations had been retired by field retraction reading the loser key itself, and the issue's proposal, survivor-key reads retiring loser-keyed evidence, reached 4 observations and 0 stored values.
+
+What a survivor may take from a loser, by field class:
+
+1. **Identity is the survivor's own** (`name`, `entityType`, `kind`, `school`, the lead fields; #3567).
+   A loser never restates who the survivor is.
+2. **Contact is row-keyed only** (#3609, the entry below).
+   A loser's contact never fills a survivor, because contact is fail-closed.
+3. **A website a survivor's own lab-identity lane typed is the survivor's** (#3585).
+4. **Every other field is carried, not re-keyed** (#3560).
+   A loser's live observation may fill a field the survivor holds no evidence for, and it keeps the loser's key and trust, so history stays where it was written.
+
+How that carried evidence stops backing the survivor:
+
+- **It retires on the loser key, through the ordinary field-retraction path**, which is where the source that wrote it keeps reading.
+  The gap was the step after: the stored-value clear read the row whose slug is the loser key, the archived loser, so a retraction cleared a value nobody is served and left the survivor serving it, and it read the loser's locks instead of the survivor's.
+  Now a loser key's state is the survivor its tombstone chain reaches: the survivor's stored value and locks decide, the clear lands on the survivor, and rival evidence is counted across every key and id merged into that survivor, because any of them refills the field on the next resolve.
+  Two keys of one survivor retracting the same field in one pass are decided together, so the survivor clears once instead of each key deferring to the other.
+- **A survivor-key read never retires loser-keyed evidence.** It is a read of a different key, and often a different page (of the 779 slots whose source now reads the survivor instead, 116 are the same page), so it says nothing about what the loser's page states; that is the #2647 lesson that silence is not absence, one key over.
+  Superseded by the 2026-10-03 #4568 entry above: a survivor's complete read now counts as a re-read for evidence filed under its merged-in keys.
+- **Nothing is pruned.** A retired observation is superseded with a reason, and provenance that cites it is history.
+
+A dry run on Development on 2026-09-28 at 05:04 UTC, with the change, planned for `ysm-faculty-directory` 14 retirements and 8 stored clears, and for `dept-faculty-roster` 39 retirements and 5 clears, every clear on a live row.
+22 of the retirements are on loser keys, 2 of the clears land on a survivor through one, and 10 clears are deferred to the resolver because another merged-in row still states the field.
+The same dry run on the code before the change planned 3 of its clears onto archived losers.
+
+What stays, recorded by predicate rather than patched:
+
+- 765 slots on `student_ready` survivors cite a live loser observation whose source has read neither key since, so no evidence exists either way and no lane can decide them until it reads again.
+- 449 survivors cite a superseded loser `entityType` observation and hold no live `entityType` observation of their own; a loser never restates identity, so no resolve plans the field, and the value stands on history rather than on evidence.
+
+## 2026-09-28: A Contact Stands On A Row Only While Evidence Keyed To That Row States It (#3609)
+
+Contact is fail-closed, and #3609 found two ways a contact reached a row from a page that was not about it.
+A merge resolves the survivor over its tombstoned losers' observations (#3560), so a loser's `contactEmail`, `contactName` and `contactRole` filled a survivor that had none of its own.
+And a lane whose own key resolved onto an existing row wrote its contact into that row under a key the row's own resolve never reads.
+Measured on Development on 2026-09-28 at 04:35 UTC, with a peer sweep writing: 29 live rows store a contact field that only such foreign evidence states, 28 of them `student_ready`, 25 through a merge and 4 through another key; 176 of the 205 rows storing any contact field are backed by their own evidence.
+The contact-field access signal is what students saw: the detail route serves its excerpt, which names the contact person and role, and 30 such signals cite foreign evidence, 28 of them on `student_ready` rows.
+
+Decided:
+
+- **An observation is keyed to a row when its `entityId` is the row's id, or when it has none and its `entityKey` is the row's slug.** That is the one predicate (`scrapers/rowKeyedContactEvidence.ts`), and it is deliberately narrower than "the row's resolve set", because the resolve set is exactly where the foreign evidence came from.
+- **The projection refuses foreign contact evidence.** `materializeEntity` drops foreign contact observations before resolving, from every entry point, so a survivor-key pass and a loser-key pass agree.
+  A pass that read the row under its own key or id also clears a stored contact field no row-keyed live observation states; a pass entered through another key does not, because it has not seen the row's own evidence.
+  Contact is the one field class that clears on empty this way, because a contact nobody can show was read from a page about the row is worse than no contact.
+- **The serve path withholds what the store still holds.** The access materializer upserts and never archives, so the detail route withholds a contact-field signal whose excerpt the row's own live contact observations do not re-derive, and the visibility gate does not count it as a way in.
+  The excerpt is re-derived rather than the stored evidence id checked, because that id names only the single best contact observation while the excerpt combines the best of each contact field.
+  The stored signal and the loser's observations stay: they are history, and nothing here prunes either.
+- **Every other field class is unchanged here.** Each keeps the #3560 rule, under which a loser may fill what the survivor has no evidence for; how that evidence is retired is a separate decision.
+
+The serve half reaches students on deploy.
+The stored half is a data operation: `yarn --cwd server research-entity:rematerialize --foreign-contact`, dry run then `--apply --confirm-rematerialize`, which a dry run on the date above planned as 87 contact fields cleared on 29 rows and 0 tier changes on re-gate.
+
+## 2026-09-28: One Hosted-Undergraduates Predicate, Past Undergraduates Only For Now (#3593)
+
+"Has hosted undergraduate researchers" had four definitions.
+The browse card read `pastUndergradAdvisees` and `typicalUndergradRoles`, the pathway badge read `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS` and a `FACULTY_SUPERVISION` signal nothing mints, and the `hostsUndergrads` filter and saved plans read a stored flag that also counted `CURRENT_UNDERGRADS` and `FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+On Development that flag was set on 290 unarchived rows while the card showed the badge on 5.
+
+There is now one predicate, `entityHasHostedUndergraduates` in `server/src/services/accessAcceptanceLevel.ts`, over one input, `pastUndergradAdvisees`, the field that mints `PAST_UNDERGRADS`.
+Every surface reads it: the API serves `hasUndergradHostingEvidence` on each research entity, the card reads that flag instead of re-deriving it, saved plans use the same test, and `researchEntityBrowseRankService` writes the stored flag the filter reads from it too.
+The stored flag is no longer derived from `AccessSignal` rows, because the access materializer never archives a signal it stops deriving, so a lingering `PAST_UNDERGRADS` signal would keep a row in the filter after its card lost the badge.
+Supervising student projects is a separate claim with its own badge.
+
+`CURRENT_UNDERGRADS` is held out because its stored input is not yet trustworthy.
+A hand-read of 20 stored `lab-microsite-undergrad-llm` counts against their cited pages found 13 backed, while the lane's current page-grounded code scored 6 of 6 on `undergrad-llm-gold-v2`, so the gap is counts written by older runs.
+Re-admitting it needs those counts re-derived and re-measured, not a code change here, which #3789 tracks.
+It was re-admitted on 2026-09-28 after the #3789 re-run re-derived those counts from grounded roster lines: 28 of 30 stored positive counts then sampled on Development were backed by the cited page, against 13 of 20 before, and a count held only by the retired cache backfill still does not count.
+
+The served flag is derived at request time, so the card, the pathway badge and saved plans are right on deploy.
+The stored `hasUndergradHostingEvidence` that the `hostsUndergrads` filter reads is stored data, so this half is done only after `yarn --cwd server research-homes:backfill-browse-rank` has run against Development and the filtered browse output has been re-read.
+
+## 2026-09-27: A Provenance Entry Names Its Observation, And An Attribution Nothing Backs Is Retired, Not The Value (#3769)
+
+A `fieldProvenance` entry says a lane stands behind a value, and the only thing a lane can stand behind is an observation.
+#3769 found 18 entries citing a repair lane that wrote 0 observations, and measuring the class found 467 such entries across 33 source names on Development (2026-09-28), 102 of them on `student_ready` rows, with one writer still producing the shape: `inheritSchoolFromLeadPi` appended observations after #3375 but still stamped provenance with neither id, and still wrote the value when the append was skipped.
+
+Decided, in the order the issue asked:
+
+1. **The 2 live rows' values are right, and the attribution on them is wrong twice.**
+   The repair wrote `LAB`; both rows now hold `FACULTY_RESEARCH_AREA`, which is exactly what the grant lanes' current code emits for a grant shell, so a later writer changed the value and left the attribution behind.
+   The provenance is stale as well as unbacked.
+2. **Clear the attribution, never the field.**
+   Clearing the field is worse on every row the measurement reached: an `entityType` falls back to the schema default `LAB`, which is the value these rows were correctly moved off, and a cleared description can drop a row's tier.
+   Whether a value is right is a lane question (a re-scrape) or an operator one (a refusal), and it is answered on evidence; the attribution is the one thing already known to be false.
+   An absent entry reads as "no recorded source", which is true, and it makes the row visible to instruments that key on a missing entry, such as `isUnbackedLabNameShell`, which a false entry was exempting.
+   `websiteUrl` stays the exception #3586 already made, because an unbacked `websiteUrl` is itself a served citation and `sourceUrls` can refill the slot on the same pass.
+3. **Served exposure is zero for #3769 and not zero for the class.**
+   `entityType` is not in `servedFieldContributionLabels` and the 4 `fullDescription` entries are on archived rows, so no student sees the #3769 attribution.
+   Across the class, 57 entries on served rows attach a `sourceUrl` to a labelled field, so `buildSourceFieldContributions` told a student a page supplied a Research summary, Topics, Name or Department when no lane read it for that field.
+
+What makes it a class fix rather than 467 row fixes:
+
+- **The write path refuses the shape.** The `ResearchEntity` model throws on any Mongoose write of an entry with no `observationId`, unless its source is a listed non-observation authority (`models/fieldProvenanceBacking.ts`).
+  The list holds one name, `description-derived-research-area`, because it is recomputed from the row's own description on every resolve; a one-shot repair never qualifies, since the whole point is that it cannot re-derive itself.
+- **The one live writer is converted rather than exempted.** Lead-PI inheritance writes a value only once its own observation of that value exists, and records that observation in the entry.
+- **The residue retires on resolve.** `planNeverBackedFieldProvenanceRetirement` unsets an entry whose lane has no observation of that field on the row, live or superseded, and writes no field and needs no lock, so a second pass plans nothing.
+- **A real assertion whose id was never recorded is relinked on resolve, by derivation (#3788).** `planUnrecordedProvenanceObservationRelink` rewrites such an entry citing the one live observation of its lane that states the value the row holds, and leaves it alone when two do.
+  Measured on Development on 2026-09-28 at 02:48 UTC, with a peer sweep writing: 141 entries, all `lead-pi-school-inheritance` on `departments`, of which 139 match exactly one live observation and 2 match two identical live observations and stay as they are.
+  The re-back pass `rebackLeadPiInheritanceProvenance` appends the lane's observations without rewriting the entry beside them, which is how a real observation comes to sit next to an entry that does not name it; the newest of the 141 was stamped on 2026-09-27, before #3790 merged, and the model now refuses the shape, so no live writer can add to them.
+- **A raw handle is a reviewed exception, not a way around the guard (#3788).** Mongoose hooks never see a `collection` write, so `rawResearchEntityWriteGuard.test.ts` finds raw writes by call shape and resolves which collection each names.
+  On 2026-09-27 it found 50 raw write sites in server code, the same 49 driver calls a type-aware pass over the whole program found plus one `$merge` stage, and 31 of them could reach `research_entities`: whole-collection copies and swaps, migrations and unsets of fields the schema no longer declares, and multi-collection relinks and text repairs, none of which authors an entry.
+  One of the 31 wrote a `fieldProvenance` subpath and was an unregistered duplicate of `research-entity:collapse-citation-mirrors`, so it was deleted rather than listed.
+  The other 30 are listed per file with their exact count and reason, an unresolvable collection counts as reaching the table, and no raw site may author a whole entry or its `sourceName`.
+  The guard follows written keys through local and imported builders, and a key it cannot resolve fails closed: the 3 sites whose key comes from a caller are counted per file as reviewed exceptions.
+
+Never-backed is kept distinct from history, because the repository forbids pruning history and the two share a shape.
+An `observationId` that resolves to a superseded observation or to nothing, a bare `sourceId` (the #2897 residue), and an entry whose lane did observe the field are all kept: 34,901 history entries, 527 attributed to a real `Source`, and 142 real-but-unrecorded ones.
+What the stage retires is an attribution to a claim that was never made.
+The instrument that separates them is sound only while superseded observations are retained, and on Development the oldest superseded observation is as old as the log itself (2026-05-14), so no claim has been pruned out from under one of these entries; if pruning ever runs, an entry with no id cannot be protected by it, which is a further reason the write path now refuses to create one.
+
+Measured predictions for the Development operation, 2026-09-28: 414 entries on 284 rows retire (58 live, 43 entries on `student_ready` rows); 47 on locked fields are left to the lock release path, 142 are kept as real assertions, and 6 sit on rows with no live observation, which no projection can reach and which are recorded here rather than patched.
+
+## 2026-09-27: Person Identifiers Are Refused Before Posting, Not Reported After (#3682)
+
+The `Person identifier scan` workflow commented on an issue or pull request body after GitHub had already stored it.
+GitHub serves every prior revision of a body to anyone without an account, so a comment after publication could only report the exposure, never undo it.
+It was removed together with its workflow test.
+
+Enforcement now sits in front of publication instead.
+`scripts/gh-identifier-guard.mjs` is installed as a `gh` shim ahead of the real binary on PATH by `scripts/install-gh-identifier-guard.sh`, which `scripts/new-agent-worktree.sh` runs.
+For a `YaleComputerSociety` repository it runs `check-no-person-identifiers.mjs` on the title and body of every `gh` issue, pull request, comment, review, merge, and API text field, and refuses to call GitHub when the scan flags it or the scanner is missing.
+That covers text an agent writes and the pull request body the gate writes, because the gate publishes through the same `gh`.
+
+The guard makes the scanner's false positives blocking rather than advisory, so a false positive is fixed in the detector (#3681), never by calling the real `gh` directly or adding an `identifier-exempt:` line.
+
+Two gaps remain and are accepted rather than hidden.
+A host where the guard is not installed has no protection at all, since there is no longer a bot to report after the fact.
+Commit messages are not guarded, because another tool owns `core.hooksPath` on the maintainer machine, so they are scanned by hand before a push.
+The blocking file arm, `yarn security:identifiers` inside `security:preflight`, is unchanged.
+
+## 2026-09-27: Scraper Sweeps Run Only Against Development (#3670)
+
+Scrapers write only to Development.
+Beta receives the accepted Development dataset through `beta:refresh-from-development`, Production receives accepted Beta through `production:promote-beta-copy`, and each target then re-gates and reindexes from its Render shell.
+No sweep, scrape, or standalone materialize writes to Beta or Production, and the scrape CLI refuses one with a message naming the promotion commands.
+
+Until this decision the repository documented two models for one job.
+The primary one fetched the release candidate from the local machine straight into Atlas Beta (`scrape:beta:all:fetch`, the `beta-fetch` sweep mode) and materialized each recorded run from the Beta Render shell; the alternative swept Development and mirrored the result.
+The two overwrite each other, because the mirror replaces the same whole collections a Beta fetch writes, so an operator had to choose correctly every time and the runbook had to keep both paths true.
+
+Three facts made the Development model the only sensible one.
+Development is where every instrument points: the served scoreboard, the corpus snapshot, the lane scorecard, and `journey:eval` all measure Development, so evidence written straight into Beta was evidence nothing had measured.
+The definition of done in `AGENTS.md` already said a stored-data fix is done when Development is fixed and verified, which only holds if Beta can never diverge by being scraped on its own.
+And the mirror no longer costs a second copy of the evidence log: it leaves `observations` behind, so it moves about 23,000 documents rather than 436,026, which removed the storage argument the Beta-fetch model was built on.
+
+What was removed: the `beta-plan` and `beta-fetch` sweep modes with their stop-on-first-failure and per-run Render-command branches, the `scrape:beta*` and `profile:beta:write` scripts, the fellowship `catalog-refresh` sweep stage and the `fellowships:refresh` command it called, which wrote the catalog straight into Beta or Production, and the `--source` option of `beta:seed-environment`, which ran scrapers against Beta.
+The former guarded production delta lane goes with them, and `scrape cron`, which only ever targeted Production, now refuses to write.
+What was kept: the mirror, the promotion, the Beta and Production reindex, `release-hold`, every read-only audit that can target Beta or Production, and dry runs against either, which write no observations.
+
+A future need to refresh Beta or Production without a full sweep is answered by a bounded Development run and the same promotion, never by a second write path.
+The rest of `beta:seed-environment`, with its `beta:seed` and `beta:seed-meili` aliases, was retired later (#3723): its readiness preflight could not block, it recorded a backup confirmation nobody gave, and it cleared the Beta index through a rebuild with none of `reindex:meili`'s preconditions.
+Each step it ran has a guarded owner: the Development-to-Beta refresh copies the `sources` collection, `node scripts/reindex-search-index.mjs beta` rebuilds the index through `reindex:meili`, which refuses an empty Mongo target before clearing anything, and `beta:readiness` now exits non-zero on any blocked gate without needing a flag.
+
 ## 2026-09-25: `beta` Requires Its Smoke Test Too, And Protection Here Is Rulesets (#3425)
 
 `beta` already required `test-and-build` and one approving review, through the `require CI on beta` ruleset created 2026-08-22.
@@ -25,10 +826,10 @@ Two properties of the real configuration are worth stating because they read as 
 This is also why every pull request merged to date shows no approving review, and why that fact is not evidence of review being skipped in a team that had one.
 
 The bypass is unconditional, so it overrides a failing suite as readily as the review rule.
-That makes restraint the contract rather than the configuration: the flag is for the review requirement, the watchdog's bot flow, and a read-and-answered `Person identifier scan`, and never for a red `test-and-build`.
+That makes restraint the contract rather than the configuration: the flag is for the review requirement and the watchdog's bot flow, and never for a red `test-and-build`.
 `AGENTS.md` owns that rule.
 
-`Person identifier scan` stays advisory deliberately, because its prose-name rule is fuzzy by design and it cannot unpublish text GitHub already serves, so gating on it would buy nothing.
+`Person identifier scan` was never required, because it could not unpublish text GitHub already serves; it was removed on 2026-09-27 in favour of a guard that refuses the text before posting (#3682).
 
 ## 2026-09-24: Evidence Sets A Field, A Lane Owns A Class Of Wrongness, An Operator Decides One Row (#3359)
 
@@ -36,11 +837,11 @@ Three layers have governed this repository since the observation engine landed, 
 Ratified here and stated as a rule in `AGENTS.md`, which is the single owner of the rule; this entry is the only other place it is written down, and it holds the reasoning so the reasoning survives a later edit to the rule.
 
 1. The scraper asserts evidence, and it is first class.
-Evidence is the only thing that may set a field.
+   Evidence is the only thing that may set a field.
 2. Wrong output means fix the lane, not the row, because a bug affects a class and so should the fix.
-At that layer the operator's job is to notice and to measure rather than to patch rows.
+   At that layer the operator's job is to notice and to measure rather than to patch rows.
 3. The operator acts only where evidence cannot decide: a refusal that a specific value is inadmissible, an archive, or a review verdict on one row.
-That is a judgement about that row, which is why `role-assignments:lead-edge-retirement-review-queue` was deliberately built read-only, throwing on `--apply` and on any `--confirm` flag, with no bulk-apply path (#3260).
+   That is a judgement about that row, which is why `role-assignments:lead-edge-retirement-review-queue` was deliberately built read-only, throwing on `--apply` and on any `--confirm` flag, with no bulk-apply path (#3260).
 
 ### One claim in the ratification does not hold, and is stated here in its verified form
 
@@ -72,7 +873,7 @@ If it cannot, it is layer 3 however mechanical the derivation.
 
 ### Two boundaries the census found, without which the next one over-reports
 
-**A mint is not a field write.** `ensureResearchEntityForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.
+**A mint is not a field write.** `findOrCreateForOwner` in `services/researchGroupService.ts` inserts a row that does not exist yet, via `$setOnInsert`.
 There is no field to back, because there is no row until the insert, so "convert the write to an observation" is the wrong question about it.
 The assertion belongs to whichever lane caused the mint, and the insert is the row coming into existence rather than a claim about it.
 This is a fourth category beside evidence-shaped, operator-shaped and derived-bookkeeping, and without it a census flags every insert in the tree.
@@ -80,7 +881,7 @@ This is a fourth category beside evidence-shaped, operator-shaped and derived-bo
 **A normalizer that runs at ingest and again in the projection is hygiene, not evidence.**
 `materializedFieldValue` composes the five name normalizers, and `observationFieldSanitizer` composes them again at ingest, so a name is cleaned on the way in and on every projection.
 The corollary settles a whole class: mapping a retired vocabulary spelling onto the canonical one is derived-bookkeeping, because no source can assert "this spelling is the current vocabulary".
-`consolidateFacultyResearchEntityType` is that shape, and so is `orgAffiliationLabels`, which `canonicalizeDepartments` computes from `departments` - which is why 1,135 of 1,135 served rows carrying it with no observation is correct behaviour rather than a defect.
+`consolidateFacultyResearchEntityType` was that shape before #3675 deleted it, and so is `orgAffiliationLabels`, which `canonicalizeDepartments` computes from `departments` - which is why 1,135 of 1,135 served rows carrying it with no observation is correct behaviour rather than a defect.
 
 One note on how the census read, because it is the same lesson as the rest of it: the name cohort looked outstanding because what had been recorded was a reading of the scripts rather than of the materializer.
 The hygiene was already in both places before the census started.
@@ -112,9 +913,9 @@ Choosing among these is most of the skill.
 
 1. In the lane, fixing the parse or the extraction, which stops the wrong value existing at all.
 2. In the derivation path, as a cleaning, grounding or trust filter that runs every time the value is computed.
-Deterministic and idempotent, and it writes no field.
-`trustedAreaShellEntities` in `scripts/researchEntityPiDedupeCore.ts` is one: it excluded 301 topics carried by low-trust shell losers across the 134 applied merge groups, which is about 92% of an apparent topic loss being a guard working rather than failing (#3326, #3330).
-The residual 28 topics across 11 groups in that same measurement are not yet shown to be correctly filtered, so cite the 301 as a refusal and not as a clean bill of health.
+   Deterministic and idempotent, and it writes no field.
+   `trustedAreaShellEntities` in `scripts/researchEntityPiDedupeCore.ts` is one: it excluded 301 topics carried by low-trust shell losers across the 134 applied merge groups, which is about 92% of an apparent topic loss being a guard working rather than failing (#3326, #3330).
+   The residual 28 topics across 11 groups in that same measurement are not yet shown to be correctly filtered, so cite the 301 as a refusal and not as a clean bill of health.
 
 "Every time the value is computed" is the trap in form 2, because some values are never computed again.
 The projection writes only the fields it resolves, so a stored field no live observation asserts gets no planned value and a derivation wired into the resolve path cannot reach it, no matter how idempotent it is.
@@ -134,12 +935,10 @@ The rule the docblock actually stated is "never leave a row citing nothing unles
 The magnitude of what it protects was measured rather than reasoned about (#2630): 333 of the cohort's rows cite a roster and nothing else, and the roster arm alone would strand 318 corpus-wide, so retracting a row's only citation trades a duplicate-URL block for a missing-evidence block.
 A CMS loader endpoint stays unprotected, because it was never a page at all, so correctly unsourced beats wrongly sourced.
 The rule lives in one place for the same reason the person-scope predicate does: both the projection stage and `scripts/retireGraftedDirectoryUrlsCore.ts` write this stored field, so each consumes `retractionWouldStrandAReadablePage` rather than restating it, and the two instruments cannot disagree about which rows they strand (#2579).
-Serve-time is the wrong layer for this one and that is a measurement too: the visibility gate groups rows on STORED `sourceUrls`, so the N people who cite the one page listing them all read as N duplicates of each other whatever the DTO hides.
-3. At serve time, as a withholding guard.
+Serve-time is the wrong layer for this one and that is a measurement too: the visibility gate groups rows on STORED `sourceUrls`, so the N people who cite the one page listing them all read as N duplicates of each other whatever the DTO hides. 3. At serve time, as a withholding guard.
 Cheapest to change and it reaches students on deploy, and the repository already records a preference for landing serve-time fixes before repair passes.
 `dropDomainIncoherentUnsourcedResearchAreas` in `utils/researchAreaDomainCoherence.ts` is one: a pure function with no database access, wired into both chokepoints, `sanitizeServedResearchEntityCopyFields` for the detail path and `sanitizeResearchEntityIndexDocument` for the Meilisearch document, so live data was corrected with no Mongo backfill (#1640).
-Note where the guard sits before copying the pattern: it is serve-time only, no materialization lane calls it, and the index arm does write a search document even though it writes no entity field.
-4. A durable refusal, for "this specific value is inadmissible".
+Note where the guard sits before copying the pattern: it is serve-time only, no materialization lane calls it, and the index arm does write a search document even though it writes no entity field. 4. A durable refusal, for "this specific value is inadmissible".
 This is the legitimate form of a one-shot correction.
 It is stored on the row as `fieldValueRefusals`, screened out of the observation set before `resolveAllFields` runs on every materialization pass, keyed on the value so it survives re-observation, idempotent on a repeat, and withdrawable through `withdrawnAt` with a recorded reason, which a lock is not.
 
@@ -161,11 +960,11 @@ And the served rows whose name the person-identity refusal condemns while no sub
 ### Measured evidence: a layer-2 fix reaches a whole class from one change
 
 - A bare substring test matched `explor` inside `internet-explorer` in a browser-upgrade banner's URL, so the banner cleared the research-sentence vocabulary.
-88 of the 100 `empty-description` rows had been handed that single snippet, spending a fetch and an LLM call each to learn their page has no research prose (#1878, narrowed in #3190).
+  88 of the 100 `empty-description` rows had been handed that single snippet, spending a fetch and an LLM call each to learn their page has no research prose (#1878, narrowed in #3190).
 - An empty array satisfies `Array.isArray`, so a roster read that discovered nobody was admitted as an authoritative snapshot rather than classified as unrecorded.
-It governed 25 rows, and 3 of those already carried a first-absence marker, so they were one repeat run away from `suppress_departed` (#3310, #3317).
+  It governed 25 rows, and 3 of those already carried a first-absence marker, so they were one repeat run away from `suppress_departed` (#3310, #3317).
 - The grant lanes minted a lab from a record that asserts a PI name and an abstract and never asserts an organization.
-Grant shells typed `LAB` went 364 to 122 on Development, with durability 15 of 15 and no locked fields (#3145, #3289).
+  Grant shells typed `LAB` went 364 to 122 on Development, with durability 15 of 15 and no locked fields (#3145, #3289).
 - A lead-role set written out thirteen times across two vocabularies meant only one of its four labels could ever match, penalizing 59 rows that hold a live `CO_PI`, `DIRECTOR` or `CO_DIRECTOR` edge and no `PI` edge (#3210, #3226).
 
 ### Measured evidence: repair-as-bugfix has a failure signature here
@@ -233,8 +1032,8 @@ No issue records a type-based hold for either kind.
 The two issues that do discuss cores point the other way: #1401 records `CORE_FACILITY` being dead-ended out of organizational ways-in, and #1925 records the research-scope gate over-suppressing instrumentation cores.
 The tracker's recorded direction is that cores are wrongly suppressed rather than legitimately held, which is where reachability lands too.
 
-The route-in test reads the gate's own `concrete_next_step` reason, which `studentVisibilityTier` pushes when the row has a posted opportunity, an access signal, or an actionable pathway.
-It is read positively, never as the absence of `missing_action_evidence`, so a row whose reasons were never computed keeps its override instead of being released on a silent array.
+The route-in test is the row's official, non-grant source URL that is not known to be dead, the same proof the gate uses that a student can reach the research.
+It replaced a read of the gate's `concrete_next_step` reason when #4574 removed that reason.
 
 A row held this way is not a backlog item waiting on taste.
 It is a row with nothing for a student to act on, and the thing that releases it is evidence of a way in, which is scraper and pathway work rather than a policy call.
@@ -257,8 +1056,8 @@ No surface may label a signed-in count "Visitors", and the panel holding those c
 A client guard asserts both halves: the section names the signed-in population it counts, and no analytics surface renders the bare word "Visitors".
 
 This decision governs the first-party instrument only, and it is not a claim that the product collects nothing from a logged-out visitor.
-A third-party GA4 tag runs on every page load under none of these constraints, documented in the Third-Party Measurement section of `docs/research-journey-analytics.md`, and whether it belongs here at all is still open (#3102).
-Recording the first-party decision does not settle that one, and the two must not be read as one posture.
+A third-party GA4 tag then ran on every page load under none of these constraints, and whether it belonged here at all was left open (#3102).
+The 2026-10-04 entry settles that one: the tag is removed (#4754).
 
 The one thing that would change this decision is a product commitment to a consented, disclosed measurement, meaning a published statement of what is collected and a real opt-in, at which point the schema change follows the commitment rather than preceding it.
 Until then the correct read of a missing anonymous number is "not collected", not "zero".
@@ -382,14 +1181,14 @@ Four of those paths were then decided separately, and two ended up opposite on a
 Decision: the four rules below are settled together and live in one owner, `servedCitationPolicy`, which every surface asks.
 
 1. A dead **citation** stays, qualified. `sourceUrls`, `sourceFieldContributions`, and the `websiteUrl` entry as a citation remain in the Sources list marked unavailable.
-They are the record of what a page cited, and #2556 already stated it: "the citation itself survives in the Sources list, qualified, because it is real provenance".
-`researchDetailSources` sets `isLikelyUnavailable` per source from the health record and groups the unavailable ones last on purpose, so withholding the url starves the pathway built to qualify it: a source the payload never carries cannot be marked.
-Never silently dropped.
+   They are the record of what a page cited, and #2556 already stated it: "the citation itself survives in the Sources list, qualified, because it is real provenance".
+   `researchDetailSources` sets `isLikelyUnavailable` per source from the health record and groups the unavailable ones last on purpose, so withholding the url starves the pathway built to qualify it: a source the payload never carries cannot be marked.
+   Never silently dropped.
 2. A dead **access-signal** url is withheld, and the `excerpt` is kept.
-An access signal is an instruction telling a student how to get involved rather than provenance a reader may audit, so a student following it gets nowhere while the excerpt preserves what it said.
-The signal itself is not retired, because a 404 is not evidence a programme ended: a removed url is equally a renamed one, which is why `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate (#3144).
+   An access signal is an instruction telling a student how to get involved rather than provenance a reader may audit, so a student following it gets nowhere while the excerpt preserves what it said.
+   The signal itself is not retired, because a 404 is not evidence a programme ended: a removed url is equally a renamed one, which is why `classifyYaleProfilePersonPresence` treats every non-2xx as indeterminate (#3144).
 3. The `websiteUrl` **call-to-action** is suppressed separately, which `isUnreachableResearchWebsiteCtaUrl` already does at render, while the same url still appears in Sources under rule 1.
-A broken button and a historical citation are different things about one url, and only the button is an offer.
+   A broken button and a historical citation are different things about one url, and only the button is an offer.
 4. One owner. Every surface passes the KIND of citation it is serving rather than re-spelling the verdict test, and the provenance surfaces make the call even though the answer is currently always "keep", so a change to the policy reaches them instead of leaving them to agree by coincidence.
 
 The distinction that decides all four is provenance versus instruction, not per-field precedent.
@@ -471,6 +1270,7 @@ The lab bar is not a substitute: it fails 87 of the same 154, and 57 of those ar
 A fellowship conflates two roles in one field, card line on browse and body on detail when no separate `description` exists, so the card line is served as its own `cardSummary` and `summary` stays as stored.
 A failing line is replaced by the first sentence of the program's own body that clears the bar and kept whole when none does, per the #1878 finding that dropping a card line lost more than keeping it.
 After the change 16 of 154 still fail, and that residual is the honest one: 12 have no body at all, so the bar's grounding flag is asking a question that does not apply to a source-asserted summary, and 4 have no sentence that fits the card.
+
 ## 2026-09-22: The Description-Blocked Cohort Has No Code-Shaped Slice Left Above Six Rows (#1878)
 
 The card-length entry below resolved the largest slice of this cohort and named four leads for whoever picked it up next.
@@ -554,7 +1354,7 @@ Removing an index stays a reviewed migration, never a side effect of an operator
 When a build fails, the command reports the failure, leaves the existing index alone, and exits non-zero.
 
 Scope is the shared `mongoOptions`, which covers the server boot and every script that goes through `initializeConnections`, and that is the path all three incidents took.
-Roughly fifteen scripts call `mongoose.connect` directly with their own options and still default `autoIndex` on; routing those through the shared options is a separate change.
+Roughly fifteen scripts called `mongoose.connect` directly with their own options and still defaulted `autoIndex` on; #3932 later routed every entry point through `connectScriptMongo` or `createScriptMongoConnection`, and `db/__tests__/everyEntryPointConnectsWithMongoOptions.test.ts` fails on any new direct connect.
 Tests are untouched on purpose: they connect with their own options and several depend on a unique index existing, so a global `mongoose.set` would have broken them.
 The change is a connection default, so it is inert until a process next connects; the two Development drifts it reports were not repaired here because a unique index blocked by a duplicate and a text index needing a drop are both reviewed migrations.
 
@@ -612,6 +1412,7 @@ Resolution: 200 stays, as a rendering preference, and the 280 and 44 bounds move
 `clampShortDescriptionToWholeSentences` still prefers a run of whole sentences inside 200, and when none fits it keeps the run that fits the card ceiling instead of deleting the line.
 Both ceilings bound that run rather than judging it afterwards: rejecting a whole run for the word count of its last sentence deletes a card line whose leading sentence fit both ceilings, which is the same failure in a new place.
 Only a leading sentence that is itself past the ceiling, in characters or in words, is still refused.
+Superseded on 2026-10-04 (#4833): such a sentence is now cut at a clause boundary that fits, as `docs/student-ready-definition.md` records.
 A kept line past the preference is quality-checked because the fallbacks below are what it displaced, and without that check four Development rows that had been serving a passing chip summary were newly held on their own failing sentence.
 A line inside the preference is untouched, so this cannot drop the fluent stored card lines #1680 and #2184 intentionally keep.
 
@@ -630,7 +1431,7 @@ Measured effect on Development, one fixed row set read through the real gate pla
 588 rows moved from a chip summary or a blank card to their own prose, and none moved the other way.
 61 rows moved from `operator_review` to `student_ready`, and the single row that moved the other way did so on a `duplicate_risk` reason a concurrent writer added.
 Held rows carrying a description-family reason fell from 925 to 824.
-Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard`.
+Reproduce the tier counts with `yarn --cwd server student-visibility:gate --collection=research --mode=dry-run` and read the served copy with `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`.
 
 ## 2026-09-22: Browse Separates Research Types On `entityType`, Not On A New Org Taxonomy (#2195)
 
@@ -809,7 +1610,7 @@ The remedy is the per-host pacing in `hostConcurrencyLimiter`, which already car
 Consequences.
 An operator needs no Yale identity, VPN session, or campus wifi to run a fetch, so the requirement for two Yale-affiliated operators is retired.
 Network access no longer argues against a hosted scraping runner.
-The remaining obstacles to one are toolchain, input-file, Atlas access-list, and target-environment questions rather than network ones, and `docs/data-refresh-runbook.md` enumerates them.
+The remaining obstacles to one are toolchain, input-file, Atlas access-list, and target-environment questions rather than network ones, and `docs/data-refresh-runbook.md`, "Weekly Development Sweep Runner", records how the runner answers them (#4507).
 
 ## 2026-09-15: Retire The Three Undergraduate Logistics Enums Entirely
 
@@ -824,7 +1625,7 @@ The schema fields and their indexes, the Signal re-derivations in the browse-ran
 Removing the schema declaration does not remove what is already stored.
 Mongoose ignores an undeclared field on read but never strips the value, and the public search hit spreads the raw Mongo row, so each environment keeps serving the frozen `"OPEN"`, `"UNKNOWN"` and `[]` values plus three physical indexes maintained on every write and used by nothing.
 `retire:undergraduate-logistics-fields` completes the retirement: it unsets all three fields, asserts that zero documents still carry one, and only then drops the three stale indexes, refusing each drop while a field is still populated so that a resurrected writer surfaces as a failure instead of being quietly erased.
-Until it has run against Development, `RETIRED_ACCESS_INDEX_FIELDS` keeps the stored values out of the Meilisearch documents.
+Until it has run against Development, the index document allowlist `RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS` keeps the stored values out of the Meilisearch documents; it replaced the original `RETIRED_ACCESS_INDEX_FIELDS` denylist in #3944.
 Removing the three `filterableAttributes` entries likewise leaves them advertised in each already-built index; `docs/meilisearch-reindex-runbook.md` owns clearing that residue, as it does for `#2527`.
 
 ## 2026-09-12: Retire The Identified-Lead Ways-In Signal Producer (#2578)
@@ -836,6 +1637,7 @@ It has no reachable reader, measured at `2275702f`.
 Beta and Production each hold 4183 live rows from it, all `confidence=LOW` with `confidenceScore` capped at 0.4 by `Math.min(0.4, ...)` in the derivation itself, so the confidence is structural rather than incidental.
 `signalCountsTowardAcceptance`, `accessSignalCount` in the gate, `reachOutPlausibleSignalCreditsActionEvidence`, and `countResearchEntityAlternateAccessPaths` all exclude the two keys by denylist.
 `researchEntityBrowseRankService` over-fetches every access signal but feeds only `hasUndergradHostingEvidenceFromSignals`, whose set is `PAST_UNDERGRADS`/`CURRENT_UNDERGRADS`/`FACULTY_SUPERVISES_STUDENT_PROJECTS`.
+Since #3593 it reads no signals at all, recorded in its own entry above.
 `researchEntitySearchIndexService` reads no signals.
 On the client, `accessSignals` reach only `buildResearchDetailSources`, which drops anything `LOW` via `isCitableAccessSignal`, so 0 of 4183 contribute even a citation, and no code path renders a signal excerpt at all.
 The one reader that does see them is `researchEntityEvidenceCoverage`, where `hasAccess = accessSignals.length > 0` has no derivation-key filter; that feeds a scrape-run diagnostic report, is not served and gates nothing, and losing these rows makes `missing_access_evidence` correct rather than wrong.
@@ -849,6 +1651,7 @@ The ordering matters and is not optional.
 Every one of the 4183 stored rows carries a synthesized excerpt, and the #1343 rule admits any `REACH_OUT_PLAUSIBLE` that has one, so `IDENTIFIED_LEAD_FALLBACK_DERIVATION_KEYS` in `accessAcceptanceLevel.ts` is the only thing stopping those rows from lifting acceptance on 4174 entities.
 Deleting the denylist in the same change as the producer would therefore have promoted every retired row instead of retiring it.
 So the denylist stays, annotated, until `retire:identified-lead-ways-in` has archived the data in every environment; `assertAcceptanceDenylistStillGuards` fails the run from the data side if that order is ever reversed.
+#4585 removed the denylist, the guard and the spent script once Development held zero live rows with either key; Beta and Production receive `signals` as a whole-collection copy before code deploys, so they never run the denylist-free code against the old rows.
 
 The retirement archives rather than deletes, which is how every other signal withdrawal in this repo works and keeps readable what the corpus used to assert.
 The two derivation-key constants stay exported from `accessAcceptanceLevel.ts` alongside the denylist, so `REPOINTABLE_SIGNAL_DERIVATION_KEYS` in the superseded-citation repair lane keeps working and the open #2525 repair run stays whole in environments that still carry the rows; that pass goes vacuous once retirement completes there, and the constants go with the denylist in the follow-up.
@@ -1121,12 +1924,13 @@ Producers and consumers are retired as a hard cutover with no rollback opt-in: t
 ## 2026-07-25: Development Uses Atlas MongoDB And Local Meilisearch
 
 Its Yale VPN requirement is superseded by the 2026-09-18 entry "Scraper Fetches Do Not Require Yale VPN" above, and the paragraph below is kept only as the record of what was believed at the time.
+Its local Beta operator fetch and Beta Render materialization are superseded by the 2026-09-27 entry "Scraper Sweeps Run Only Against Development" above.
 
 Development uses the Atlas `Development` database and local Docker Meilisearch so operators share a disposable integration dataset while keeping search iteration local.
 Development can be refreshed one way from accepted Beta through an allowlist-only, Atlas-Beta-to-Atlas-Development copy.
 The refresh never reads Beta operational or student-workflow collections, clears Atlas Development non-mirror collections, sanitizes copied account state, and rebuilds local Meilisearch separately.
 Unclassified Beta collections block apply until their mirror policy is reviewed.
-See [`data-refresh-runbook.md`](./data-refresh-runbook.md) for the current copy set, the account sanitization rule, and the observation policy.
+See [`data-refresh-runbook.md`](./data-refresh-runbook.md) for the current copy set, the account sanitization rule, the observation policy, and which non-mirror collections the clear actually touches, since the environment-local measurement history is preserved by name rather than cleared (#4034).
 The VPN-connected local Beta operator fetches observations into the Atlas `Beta` database but does not materialize them locally.
 The Beta Render service materializes accepted run IDs and updates its private Beta Meilisearch indexes.
 Production receives data only through the guarded accepted-Beta promotion, followed by the Production search and smoke gates.

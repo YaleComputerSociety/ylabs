@@ -12,6 +12,7 @@
  * own visibility re-gate (issue #2714).
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
@@ -19,6 +20,11 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import {
   LAB_SITE_LEAD_VERIFICATION_SOURCE,
   MAX_PEOPLE_SUBPAGES,
@@ -39,6 +45,7 @@ export interface LabSiteVerificationCandidate {
   entityId: string;
   slug: string;
   website: string;
+  entityType?: string;
   leads: LabSiteLeadCandidate[];
 }
 
@@ -63,8 +70,14 @@ export async function readLabSiteVerificationCandidates(options: {
       $or: [{ website: /^https?:\/\//i }, { websiteUrl: /^https?:\/\//i }],
       ...(only.length ? { slug: { $in: only } } : {}),
     },
-    { _id: 1, slug: 1, website: 1, websiteUrl: 1 },
-  ).lean()) as Array<{ _id: unknown; slug?: string; website?: string; websiteUrl?: string }>;
+    { _id: 1, slug: 1, website: 1, websiteUrl: 1, entityType: 1 },
+  ).lean()) as Array<{
+    _id: unknown;
+    slug?: string;
+    website?: string;
+    websiteUrl?: string;
+    entityType?: string;
+  }>;
   if (!entities.length) return [];
 
   const entityIds = entities.map((entity) => entity._id);
@@ -73,6 +86,7 @@ export async function readLabSiteVerificationCandidates(options: {
       'target.kind': 'RESEARCH_ENTITY',
       'target.id': { $in: entityIds },
       archived: { $ne: true },
+      state: { $ne: 'HISTORICAL' },
       role: { $in: [...VERIFIED_LEAD_ROLES] },
     },
     { personId: 1, role: 1, 'target.id': 1 },
@@ -117,9 +131,10 @@ export async function readLabSiteVerificationCandidates(options: {
     const entityId = String(entity._id);
     const leads = leadsByEntityId.get(entityId);
     const slug = textValue(entity.slug);
-    const website = firstHttpUrl(entity.website, entity.websiteUrl);
+    const website = firstHttpUrl(entity.websiteUrl, entity.website);
     if (!leads?.length || !slug || !website) continue;
-    candidates.push({ entityId, slug, website, leads });
+    const entityType = textValue(entity.entityType);
+    candidates.push({ entityId, slug, website, ...(entityType ? { entityType } : {}), leads });
   }
   candidates.sort((a, b) => a.slug.localeCompare(b.slug));
   return typeof options.limit === 'number' && options.limit > 0
@@ -131,6 +146,12 @@ interface FetchedPage {
   html: string;
   finalUrl: string;
   httpStatusCode?: number;
+  fromCache?: boolean;
+}
+
+function redirectedUrl(response: { request?: { res?: { responseUrl?: unknown } } }): string {
+  const value = response.request?.res?.responseUrl;
+  return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : '';
 }
 
 async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
@@ -138,24 +159,33 @@ async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
   const cacheKey = safeUrl.toString();
   if (useCache) {
     const cached = await getCached<FetchedPage>(LAB_SITE_LEAD_VERIFICATION_SOURCE, cacheKey);
-    if (cached?.html) return cached;
+    if (cached?.html) return { ...cached, fromCache: true };
   }
   const agents = ssrfSafeAgents();
-  const response = await axios.get(cacheKey, {
-    timeout: FETCH_TIMEOUT_MS,
-    maxRedirects: 5,
-    responseType: 'text',
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const response = await retryOnRetryableStatus(() =>
+    axios.get(cacheKey, {
+      timeout: FETCH_TIMEOUT_MS,
+      maxRedirects: 5,
+      responseType: 'text',
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const page: FetchedPage = {
     html: String(response.data || ''),
-    finalUrl: cacheKey,
+    finalUrl: redirectedUrl(response) || cacheKey,
     httpStatusCode: response.status,
   };
   if (useCache) await setCached(LAB_SITE_LEAD_VERIFICATION_SOURCE, cacheKey, page);
   return page;
+}
+
+interface LabSiteReading {
+  html: string;
+  visitedUrls: string[];
+  httpStatusCode?: number;
+  fromCache?: boolean;
 }
 
 /**
@@ -167,7 +197,7 @@ export async function readLabSite(
   website: string,
   useCache: boolean,
   fetcher: (url: string, useCache: boolean) => Promise<FetchedPage> = fetchPage,
-): Promise<{ html: string; visitedUrls: string[]; httpStatusCode?: number } | null> {
+): Promise<LabSiteReading | null> {
   let landing: FetchedPage;
   try {
     landing = await fetcher(website, useCache);
@@ -190,6 +220,7 @@ export async function readLabSite(
     html: pages.map((page) => page.html).join('\n'),
     visitedUrls: pages.map((page) => page.finalUrl),
     httpStatusCode: landing.httpStatusCode,
+    ...(landing.fromCache ? { fromCache: true } : {}),
   };
 }
 
@@ -220,10 +251,8 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     private readonly readSite: (
       website: string,
       useCache: boolean,
-    ) => Promise<{ html: string; visitedUrls: string[]; httpStatusCode?: number } | null> = (
-      website,
-      useCache,
-    ) => readLabSite(website, useCache),
+    ) => Promise<LabSiteReading | null> = (website, useCache) => readLabSite(website, useCache),
+    private readonly probePage?: LanePageProbe,
   ) {}
 
   async run(context: ScraperContext): Promise<ScraperResult> {
@@ -234,10 +263,15 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     const tally = { verified: 0, partial: 0, contradicted: 0, unstated: 0, unreachable: 0 };
     let observationCount = 0;
     let contradictedLeads = 0;
+    const pageReads = new LanePageReads();
 
     for (const candidate of candidates) {
-      const observedAt = new Date();
+      const observedAt = context.options.referenceDate ?? new Date();
       const reading = await this.readSite(candidate.website, context.options.useCache);
+      if (reading?.html) {
+        if (!reading.fromCache) pageReads.recordRead(candidate.website, reading.visitedUrls[0]);
+      } else if (reading)
+        pageReads.recordFailure(candidate.website, { status: reading.httpStatusCode });
       const verification =
         reading && reading.html
           ? buildLabSiteLeadVerification(
@@ -249,6 +283,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
                 httpStatusCode: reading.httpStatusCode,
               },
               observedAt,
+              candidate.entityType,
             )
           : unreachableLabSiteVerification(candidate.website, observedAt, reading?.httpStatusCode);
       tally[verification.state] += 1;
@@ -261,6 +296,18 @@ export class LabSiteLeadVerificationScraper implements IScraper {
         `${candidate.slug}: ${verification.state} (${verification.confirmedCount} confirmed, ${verification.contradictedCount} contradicted, ${verification.unstatedCount} unstated across ${verification.pagesRead} pages)`,
       );
     }
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      context,
+      pageReads,
+      this.probePage,
+      context.options.only?.length
+        ? {
+            entityKeys: [...context.options.only, ...candidates.map((candidate) => candidate.slug)],
+          }
+        : undefined,
+    );
+    observationCount += pageHealth.gone + pageHealth.restored;
 
     return {
       observationCount,

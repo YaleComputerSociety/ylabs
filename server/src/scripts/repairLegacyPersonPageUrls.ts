@@ -13,10 +13,11 @@ import {
   type LegacyPersonPageCandidate,
 } from './repairLegacyPersonPageUrlsCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'data:repair-legacy-person-page-urls';
 const FETCH_TIMEOUT_MS = 20000;
@@ -55,14 +56,14 @@ function parsePositiveInteger(value: string | undefined): number {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function probe(url: string): Promise<{ status: number; title: string }> {
+export async function probe(url: string): Promise<{ status: number; title: string }> {
   try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    const response = await fetchPublicHttpUrl(url, {
+      timeoutMs: FETCH_TIMEOUT_MS,
       headers: { 'User-Agent': 'ylabs-link-repair/1.0 (+internal link verification)' },
     });
-    const body = response.ok ? (await response.text()).slice(0, 4000) : '';
+    const ok = response.status >= 200 && response.status < 300;
+    const body = ok ? response.body.slice(0, 4000) : '';
     const match = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     return { status: response.status, title: (match?.[1] || '').replace(/\s+/g, ' ').trim() };
   } catch {

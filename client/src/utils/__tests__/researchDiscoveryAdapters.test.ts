@@ -5,7 +5,6 @@ import {
   buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
   formatSourceLabel,
-  getPathwayActionLabel,
   getPathwayTypeLabel,
   parseQueryInterpretationChips,
 } from '../researchDiscoveryAdapters';
@@ -19,14 +18,9 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   kind: overrides.kind || 'lab',
   fullDescription: overrides.fullDescription || 'Studies a focused research area.',
   websiteUrl: overrides.websiteUrl || '',
-  location: overrides.location || '',
   departments: overrides.departments || [],
   researchAreas: overrides.researchAreas || [],
   school: overrides.school || '',
-  typicalUndergradRoles: overrides.typicalUndergradRoles || [],
-  prerequisiteCourses: overrides.prerequisiteCourses || [],
-  creditOptions: overrides.creditOptions || [],
-  fundingPrograms: overrides.fundingPrograms || [],
   contactEmail: overrides.contactEmail || '',
   contactName: overrides.contactName || '',
   contactRole: overrides.contactRole || '',
@@ -35,19 +29,6 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
 });
 
 describe('pathway display helpers', () => {
-  it('maps best-next-step categories to student-facing actions', () => {
-    expect(getPathwayActionLabel('apply')).toBe('Apply');
-    expect(getPathwayActionLabel('contact-program')).toBe('Contact program');
-    expect(getPathwayActionLabel('plan-outreach')).toBe('Plan targeted outreach');
-    expect(getPathwayActionLabel('find-funding')).toBe('Find funding');
-    expect(getPathwayActionLabel('register-for-credit')).toBe(
-      'Ask about credit after finding a mentor',
-    );
-    expect(getPathwayActionLabel('save-for-thesis')).toBe('Save for thesis planning');
-    expect(getPathwayActionLabel('check-back-later')).toBe('Save for later');
-    expect(getPathwayActionLabel('save-for-later')).toBe('Save for later');
-  });
-
   it('normalizes pathway type labels without raw enums', () => {
     expect(getPathwayTypeLabel('POSTED_ROLE')).toBe('Posted opening');
     expect(getPathwayTypeLabel('EXPLORATORY_CONTACT')).toBe('Exploratory outreach');

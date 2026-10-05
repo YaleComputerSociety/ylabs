@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # Action pins are commit SHAs, which is correct and also means nothing ever
+  # proposes an update to them. The `# vX.Y.Z` comment beside each SHA is the
+  # format Dependabot reads and rewrites, so it updates the SHA and the comment
+  # together and the pinning is preserved (#3914).
+  - package-ecosystem: github-actions
+    directory: /
+    # Pull requests are based on beta here, not on the repository's production
+    # branch, so an updater left on the default target would open against main.
+    target-branch: beta
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: chore

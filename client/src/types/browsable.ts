@@ -8,8 +8,16 @@ import {
   getUniqueDepartmentLabels,
 } from '../utils/departmentNames';
 import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
+import { programDeadlineClosingInstant } from '../utils/programDates';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
-import { entryModeLabel, programKindLabel } from '../utils/programJourney';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
+  DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
+  DEPARTMENT_RESEARCH_GUIDANCE_STATUS,
+  entryModeLabel,
+  isDepartmentResearchGuidance,
+  programKindLabel,
+} from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
@@ -71,7 +79,19 @@ export function getItemId(item: BrowsableItem): string {
 }
 
 export function isItemOpen(item: BrowsableItem): boolean {
+  if (isDepartmentResearchGuidance(item.data)) return false;
   return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
+}
+
+export function getItemStatusBadge(item: BrowsableItem): { label: string; className: string } {
+  if (isDepartmentResearchGuidance(item.data)) {
+    return {
+      label: DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
+      className: DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
+    };
+  }
+  const status = getFellowshipCycleStatus(item.data);
+  return { label: status.label, className: status.className };
 }
 
 interface TagInfo {
@@ -94,14 +114,16 @@ function dedupeTags(tags: TagInfo[]): TagInfo[] {
 }
 
 export function getItemTags(item: BrowsableItem): TagInfo[] {
-  const categoryLabel = item.data.studentFacingCategory;
+  const guidance = isDepartmentResearchGuidance(item.data);
+  const categoryLabel = guidance ? '' : item.data.studentFacingCategory;
   const categoryNorm = categoryLabel ? normalizeTagLabel(categoryLabel) : '';
-  const entryModeChipLabel = item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
+  const entryModeChipLabel =
+    !guidance && item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
   const entryModeNorm = normalizeTagLabel(entryModeChipLabel);
   const entryModeImpliedByCategory =
     !!entryModeNorm && !!categoryNorm && categoryNorm.includes(entryModeNorm);
   return dedupeTags([
-    ...(item.data.undergraduateOnly === false
+    ...(item.data.audience === 'GRADUATE'
       ? [
           {
             label: 'Graduate',
@@ -142,28 +164,32 @@ export function getItemTags(item: BrowsableItem): TagInfo[] {
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
+  if (isDepartmentResearchGuidance(item.data)) return DEPARTMENT_RESEARCH_GUIDANCE_STATUS;
   return getFellowshipDeadlineSubtitle(item.data);
 }
 
 export function getItemSubtitleColor(item: BrowsableItem): string {
+  if (isDepartmentResearchGuidance(item.data)) return 'text-muted';
   const status = getFellowshipCycleStatus(item.data);
-  if (status.category === 'nextCycle') return 'text-sky-700 font-medium';
-  const { deadline } = item.data;
-  if (!deadline) return 'text-gray-500';
-  const d = new Date(deadline);
+  if (status.category === 'nextCycle' || status.category === 'projectedNextCycle')
+    return 'text-sky-700 font-medium';
+  if (status.category === 'staleDeadline') return 'text-muted';
+  const d = programDeadlineClosingInstant(item.data.deadline);
+  if (!d) return 'text-muted';
   if (d < new Date()) return 'text-red-700';
   const daysUntil = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   if (daysUntil <= 14) return 'text-amber-700 font-medium';
-  return 'text-gray-500';
+  return 'text-muted';
 }
 
 /**
  * The clamped line a browse row shows. `cardSummary` is the server's card-bar
  * answer and `summary` is the stored brief, which on the browse surface is often
- * the whole body and so reads as a sentence cut off mid-word (#2215).
+ * the whole body and so reads as a sentence cut off mid-word (#2215). An empty
+ * `cardSummary` is the server failing closed, so it is not replaced (#3904).
  */
 export function getItemCardSummary(item: BrowsableItem): string {
-  return item.data.cardSummary || item.data.summary;
+  return item.data.cardSummary ?? item.data.summary;
 }
 
 export function getFellowshipJourneySummary(fellowship: Fellowship): string | null {
@@ -178,7 +204,11 @@ export function getFellowshipJourneySummary(fellowship: Fellowship): string | nu
 }
 
 export function getDaysUntilDeadline(item: BrowsableItem): number | null {
-  if (!item.data.deadline) return null;
-  const d = new Date(item.data.deadline);
+  if (isDepartmentResearchGuidance(item.data)) return null;
+  // A projected next-cycle date is the server's estimate, so counting down to it would tell a
+  // student a window is closing that nobody has confirmed is open (#3904).
+  if (item.data.deadlineProjectedNextCycle || item.data.deadlineStale) return null;
+  const d = programDeadlineClosingInstant(item.data.deadline);
+  if (!d) return null;
   return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }

@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
-import { extractElementTextWithBlockSeparators, flattenHtmlToText } from '../htmlText';
+import {
+  extractElementTextWithBlockSeparators,
+  flattenHtmlToText,
+  plainTextContent,
+} from '../htmlText';
 
 describe('flattenHtmlToText', () => {
   it('inserts a space between adjacent block paragraphs instead of gluing them', () => {
@@ -105,5 +109,56 @@ describe('extractElementTextWithBlockSeparators', () => {
   it('returns empty string for a missing element', () => {
     expect(extractElementTextWithBlockSeparators(undefined)).toBe('');
     expect(extractElementTextWithBlockSeparators(null)).toBe('');
+  });
+});
+
+describe('deeply nested documents (#3558)', () => {
+  const depth = 20_000;
+  const deeplyNestedHtml =
+    '<html><body>' +
+    '<div>'.repeat(depth) +
+    '<p>We welcome undergraduate researchers.</p>' +
+    '</div>'.repeat(depth) +
+    '</body></html>';
+
+  it('overflows the stack through cheerio .text(), which is why the walkers are iterative', () => {
+    const $ = cheerio.load(deeplyNestedHtml);
+    expect(() => $('body').text()).toThrow(RangeError);
+  });
+
+  it('flattens the same document with plainTextContent', () => {
+    const $ = cheerio.load(deeplyNestedHtml);
+    expect(plainTextContent($('body').toArray())).toBe('We welcome undergraduate researchers.');
+  });
+
+  it('flattens the same document with block separators', () => {
+    expect(flattenHtmlToText(deeplyNestedHtml)).toBe('We welcome undergraduate researchers.');
+  });
+});
+
+describe('plainTextContent', () => {
+  const mixedHtml =
+    '<html><head><title>Lab</title><style>p{color:red}</style></head><body>' +
+    '<!-- hidden --><h1>The <em>Example</em> Lab</h1>' +
+    '<p>First<br>line</p><ul><li>one</li><li>two</li></ul>' +
+    '<script>var x = 1;</script><svg><text>svg label</text></svg>' +
+    '<table><tr><td>cell</td><td>next</td></tr></table>' +
+    '</body></html>';
+
+  it('returns byte-identical output to cheerio .text() so stored content hashes do not move', () => {
+    const $ = cheerio.load(mixedHtml);
+    expect(plainTextContent($('body').toArray())).toBe($('body').text());
+    expect(plainTextContent($.root().toArray())).toBe($.root().text());
+    expect(plainTextContent($('li').toArray())).toBe($('li').text());
+  });
+
+  it('matches cheerio .text() on a parsed fragment with a CDATA section', () => {
+    const $ = cheerio.load('<root>a<![CDATA[b]]>c<!-- d --></root>', { xml: true });
+    expect(plainTextContent($.root().toArray())).toBe($.root().text());
+  });
+
+  it('returns an empty string for a missing node', () => {
+    expect(plainTextContent(null)).toBe('');
+    expect(plainTextContent([])).toBe('');
   });
 });

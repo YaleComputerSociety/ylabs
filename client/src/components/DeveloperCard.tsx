@@ -14,7 +14,7 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
   }
 
   const iconLinkClass =
-    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card transition hover:bg-[var(--yr-panel-muted)] yr-focus-ring';
+    'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card transition-colors hover:bg-[var(--yr-panel-muted)] yr-focus-ring';
   const websiteHref = safeHttpUrl(developer.website);
   const linkedinHref = safeHttpUrl(developer.linkedin);
   const githubHref = safeHttpUrl(developer.github);
@@ -30,10 +30,12 @@ const DeveloperCard = ({ developer }: DeveloperCardProps) => {
         className="aspect-square object-cover w-full rounded-lg mb-2"
         width={500}
         height={500}
+        loading="lazy"
+        decoding="async"
       />
       <h3 className="text-xl font-semibold">{developer.name}</h3>
-      <p className="text-gray-700">{developer.position}</p>
-      <p className="text-gray-700 mb-1">{developer.location}</p>
+      <p className="text-ink-soft">{developer.position}</p>
+      <p className="text-ink-soft mb-1">{developer.location}</p>
       {hasProfileLinks && (
         <div className="mt-2 flex flex-wrap justify-center gap-1">
           {websiteHref && (

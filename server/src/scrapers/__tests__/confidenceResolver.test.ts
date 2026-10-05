@@ -32,6 +32,84 @@ describe('resolveField', () => {
     expect(r?.hasConflict).toBe(false);
   });
 
+  it('resolves a website observed over http and https to its https form (#3577)', () => {
+    const r = resolveField(
+      'websiteUrl',
+      [
+        {
+          field: 'websiteUrl',
+          value: 'http://example-lab.yale.edu/research',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.6,
+          observedAt: D('2026-09-26'),
+        },
+        {
+          field: 'websiteUrl',
+          value: 'https://example-lab.yale.edu/research',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.3,
+          observedAt: D('2026-06-01'),
+        },
+        {
+          field: 'websiteUrl',
+          value: 'https://other-lab.yale.edu/',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.5,
+          observedAt: D('2026-09-26'),
+        },
+      ],
+      { now: D('2026-09-27') },
+    );
+    expect(r?.value).toBe('https://example-lab.yale.edu/research');
+    expect(r?.contributingSources.sort()).toEqual([
+      'department-undergrad-research',
+      'dept-faculty-roster',
+    ]);
+  });
+
+  it('keeps an http-only website as observed and leaves other fields scheme-sensitive', () => {
+    const now = { now: D('2026-09-27') };
+    const httpOnly = resolveField(
+      'websiteUrl',
+      [
+        {
+          field: 'websiteUrl',
+          value: 'http://example-lab.yale.edu/',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.6,
+          observedAt: D('2026-09-26'),
+        },
+      ],
+      now,
+    );
+    expect(httpOnly?.value).toBe('http://example-lab.yale.edu/');
+
+    const ranked = resolveFieldRanked(
+      'joinUrl',
+      [
+        {
+          field: 'joinUrl',
+          value: 'http://example-lab.yale.edu/join',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.6,
+          observedAt: D('2026-09-26'),
+        },
+        {
+          field: 'joinUrl',
+          value: 'https://example-lab.yale.edu/join',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.3,
+          observedAt: D('2026-09-26'),
+        },
+      ],
+      now,
+    );
+    expect(ranked.map((candidate) => candidate.value)).toEqual([
+      'http://example-lab.yale.edu/join',
+      'https://example-lab.yale.edu/join',
+    ]);
+  });
+
   it('picks the higher-weight value when sources disagree', () => {
     const r = resolveField(
       'title',
@@ -135,56 +213,44 @@ describe('resolveField', () => {
   });
 
   it('applies an agreement bonus when multiple sources agree on a value', () => {
-    const single = resolveField(
-      'title',
-      [
-        {
-          field: 'title',
-          value: 'X',
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: D('2026-04-01'),
-        },
-        {
-          field: 'title',
-          value: 'Y',
-          sourceName: 'lab-microsite-llm',
-          confidence: 0.95,
-          observedAt: D('2026-04-01'),
-        },
-      ],
-      { now: D('2026-04-10') },
-    );
-    expect(single?.value).toBe('Y');
+    const observedAt = D('2026-04-10');
+    const agreeingPairAgainstOneStrongerSource = [
+      {
+        field: 'title',
+        value: 'X',
+        sourceName: 'openalex',
+        confidence: 0.45,
+        observedAt,
+      },
+      {
+        field: 'title',
+        value: 'X',
+        sourceName: 'semantic-scholar',
+        confidence: 0.45,
+        observedAt,
+      },
+      {
+        field: 'title',
+        value: 'Y',
+        sourceName: 'lab-microsite-llm',
+        confidence: 0.95,
+        observedAt,
+      },
+    ];
 
-    const agreed = resolveField(
-      'title',
-      [
-        {
-          field: 'title',
-          value: 'X',
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: D('2026-04-01'),
-        },
-        {
-          field: 'title',
-          value: 'X',
-          sourceName: 'semantic-scholar',
-          confidence: 0.85,
-          observedAt: D('2026-04-01'),
-        },
-        {
-          field: 'title',
-          value: 'Y',
-          sourceName: 'lab-microsite-llm',
-          confidence: 0.95,
-          observedAt: D('2026-04-01'),
-        },
-      ],
-      { now: D('2026-04-10'), agreementBonusPerExtraSource: 0.5 },
-    );
+    const withoutBonus = resolveField('title', agreeingPairAgainstOneStrongerSource, {
+      now: observedAt,
+      agreementBonusPerExtraSource: 0,
+    });
+    expect(withoutBonus?.value).toBe('Y');
+    expect(withoutBonus?.confidence).toBeCloseTo(0.95 / 1.85, 5);
+
+    const agreed = resolveField('title', agreeingPairAgainstOneStrongerSource, {
+      now: observedAt,
+      agreementBonusPerExtraSource: 0.5,
+    });
     expect(agreed?.value).toBe('X');
+    expect(agreed?.confidence).toBeCloseTo(1.35 / 2.3, 5);
     expect(agreed?.contributingSources).toEqual(
       expect.arrayContaining(['openalex', 'semantic-scholar']),
     );
@@ -843,6 +909,29 @@ describe('person-bio demotion for fullDescription', () => {
     expect(resolved?.contributingSources).toEqual(['fra-profile-research-synthesis']);
   });
 
+  it('keeps titled-name research prose above a career biography re-read more recently (#4660)', () => {
+    const TITLED_NAME_RESEARCH =
+      'Dr. Halvard’s research integrates perspectives from developmental biology, behavioural neuroscience and clinical psychiatry to understand how early adversity shapes the regulation of stress in children and their parents.';
+    const CAREER_BIOGRAPHY =
+      'Dr. Rowan Halvard is the Example Endowed Professor of Child Psychiatry, Pediatrics, and Psychology in the Example Study Center at the university. Trained as a pediatrician, she has served as director of the center since 2010 and chairs its developmental science program. Her work examines how early adversity shapes stress regulation in young children and their parents, combining developmental assessment with behavioural neuroscience.';
+    const ranked = resolveFieldRanked(
+      'fullDescription',
+      [
+        {
+          ...obs(TITLED_NAME_RESEARCH, 'ysm-faculty-directory', 0.55),
+          observedAt: D('2026-02-01'),
+        },
+        {
+          ...obs(CAREER_BIOGRAPHY, 'lab-microsite-description-llm', 0.55),
+          observedAt: D('2026-02-07'),
+        },
+      ],
+      { now: D('2026-02-08'), descriptionEntityKind: 'person' },
+    );
+    expect(isHighConfidencePersonBio(TITLED_NAME_RESEARCH)).toBe(true);
+    expect(ranked.map((entry) => entry.value)).toEqual([TITLED_NAME_RESEARCH, CAREER_BIOGRAPHY]);
+  });
+
   it('demotes a career biography that is not person-voiced enough for the bio check', () => {
     // The bio-replacing lane selects its cohort on career facts, so a demotion
     // keyed only on person-voice shape left that cohort undemotable: the endowed
@@ -1008,7 +1097,7 @@ describe('person-bio demotion for fullDescription', () => {
     const resolved = resolveField(
       'fullDescription',
       [
-        obs(CURATED_BIO, 'manual-admin-edit', 0.43),
+        obs(CURATED_BIO, 'manual-pi-edit', 0.43),
         obs(RESEARCH_PROSE, 'lab-microsite-undergrad-llm', 0.41),
       ],
       { now: D('2026-02-08') },
@@ -1141,7 +1230,7 @@ describe('undergrad-access lane demotion for fullDescription', () => {
       'fullDescription',
       [
         obs(ACCESS_SUMMARY, 'lab-microsite-undergrad-llm', 0.55, D('2026-02-20')),
-        obs(ACCESS_SUMMARY, 'manual-admin-edit', 0.55, D('2025-06-01')),
+        obs(ACCESS_SUMMARY, 'manual-pi-edit', 0.55, D('2025-06-01')),
         obs(MICROSITE_RESEARCH, 'lab-microsite-description-llm', 0.55, D('2025-11-01')),
       ],
       { now: D('2026-02-25') },
@@ -1342,7 +1431,7 @@ describe('quality demotion for served prose a lane-specific rule does not descri
     const resolved = resolveField(
       'fullDescription',
       [
-        obs('fullDescription', CURATED_APPOINTMENT, 'manual-admin-edit', 1),
+        obs('fullDescription', CURATED_APPOINTMENT, 'manual-pi-edit', 1),
         obs(
           'fullDescription',
           'The Guan Lab develops statistical and machine learning methods for high-dimensional scientific applications and genomics.',
@@ -1404,5 +1493,123 @@ describe('a faculty research profile that also publishes a teaching statement', 
       descriptionEntityKind: 'person',
     });
     expect(ranked[0].value).toBe(TEACHING_STATEMENT);
+  });
+});
+
+describe('researchAreas from a graduate-track roster rank below a row-own list', () => {
+  const now = new Date('2026-09-30T00:00:00Z');
+  const trackAreas = ['Immunology', 'Microbiology'];
+  const profileAreas = ['Neoplasms', 'Lymphoma'];
+  const trackObservation = {
+    field: 'researchAreas',
+    value: trackAreas,
+    sourceName: 'bbs-research-track',
+    confidence: 0.7,
+    observedAt: new Date('2026-09-29T00:00:00Z'),
+  };
+  const profileObservation = {
+    field: 'researchAreas',
+    value: profileAreas,
+    sourceName: 'ysm-mesh-keyword',
+    confidence: 0.7,
+    observedAt: new Date('2026-09-28T00:00:00Z'),
+  };
+
+  it('serves the older profile list over a newer track list at the same confidence', () => {
+    const resolved = resolveField('researchAreas', [trackObservation, profileObservation], { now });
+    expect(resolved?.value).toEqual(profileAreas);
+    expect(resolved?.contributingSources).toEqual(['ysm-mesh-keyword']);
+    expect(resolved?.hasConflict).toBe(false);
+  });
+
+  it('keeps serving the profile list when the track list is far newer and more confident', () => {
+    const resolved = resolveField(
+      'researchAreas',
+      [
+        { ...trackObservation, confidence: 0.95, observedAt: now },
+        { ...profileObservation, confidence: 0.4, observedAt: new Date('2025-09-30T00:00:00Z') },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(profileAreas);
+  });
+
+  it('still serves the track list when it is the only list the row has', () => {
+    const resolved = resolveField('researchAreas', [trackObservation], { now });
+    expect(resolved?.value).toEqual(trackAreas);
+    expect(resolved?.contributingSources).toEqual(['bbs-research-track']);
+  });
+
+  it('counts a track list that a profile lane also states as the profile list', () => {
+    const resolved = resolveField(
+      'researchAreas',
+      [
+        trackObservation,
+        { ...profileObservation, value: trackAreas },
+        {
+          field: 'researchAreas',
+          value: ['Genetics'],
+          sourceName: 'research-area-source-extractor',
+          confidence: 0.7,
+          observedAt: new Date('2026-09-01T00:00:00Z'),
+        },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(trackAreas);
+    expect(resolved?.contributingSources.sort()).toEqual([
+      'bbs-research-track',
+      'ysm-mesh-keyword',
+    ]);
+  });
+
+  it('keeps the track list as the last resort in the ranked walk', () => {
+    const ranked = resolveFieldRanked('researchAreas', [trackObservation, profileObservation], {
+      now,
+    });
+    expect(ranked.map((entry) => entry.value)).toEqual([profileAreas, trackAreas]);
+  });
+
+  it('leaves other fields from the track lane to recency', () => {
+    const resolved = resolveField(
+      'methods',
+      [
+        { ...trackObservation, field: 'methods' },
+        { ...profileObservation, field: 'methods' },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(trackAreas);
+  });
+});
+
+describe('pastUndergradAdvisees from lab roster alumni rank below a fellowship history (#4430)', () => {
+  const now = new Date('2026-10-03T00:00:00Z');
+  const rosterAlumni = {
+    field: 'pastUndergradAdvisees',
+    value: [{ programName: 'Lab roster alumni', count: 4 }],
+    sourceName: 'lab-microsite-undergrad-llm',
+    confidence: 0.9,
+    observedAt: now,
+  };
+  const fellowshipHistory = {
+    field: 'pastUndergradAdvisees',
+    value: [{ year: 2024, programName: 'STARS', count: 1 }],
+    sourceName: 'undergrad-fellowships-recipients',
+    confidence: 0.5,
+    observedAt: new Date('2025-06-01T00:00:00Z'),
+  };
+
+  it('keeps the dated fellowship history over a newer, more confident roster count', () => {
+    const resolved = resolveField('pastUndergradAdvisees', [rosterAlumni, fellowshipHistory], {
+      now,
+    });
+    expect(resolved?.value).toEqual(fellowshipHistory.value);
+  });
+
+  it('serves the roster count when it is the only history the row has', () => {
+    expect(resolveField('pastUndergradAdvisees', [rosterAlumni], { now })?.value).toEqual(
+      rosterAlumni.value,
+    );
   });
 });

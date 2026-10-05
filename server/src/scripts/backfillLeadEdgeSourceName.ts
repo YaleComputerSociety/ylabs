@@ -18,7 +18,7 @@ import {
 } from './backfillLeadEdgeSourceNameCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'role-assignments:backfill-lead-edge-source-name';
 export const CONFIRM_FLAG = '--confirm-backfill-lead-edge-source-name';

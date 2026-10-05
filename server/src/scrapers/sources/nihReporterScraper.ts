@@ -13,13 +13,17 @@
  *
  * Strategy:
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
- *   - Group grants by contact PI name.
+ *   - Group grants by every Yale principal investigator: the contact PI, plus each
+ *     multi-PI co-PI whose most recent contact-PI project in RePORTER is at Yale.
+ *     RePORTER's PI entries carry no organization, so a co-PI with no such evidence
+ *     is never credited, because a same-name match would give a Yale researcher
+ *     another institution's PI's grant (#4629).
  *   - For each PI:
  *       - Resolve an unambiguous canonical Researcher by exact or conservative prefix name matching.
- *       - Enrich the PI's one eligible official research home when present, fail closed
- *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
- *         only when no research-home membership exists.
- *       - Emit grant evidence without replacing identity fields on an official home.
+ *       - Resolve the one existing research row the canonical resolver names for them.
+ *         A grant proves that a person is funded, never that a row should exist, so
+ *         every other outcome is counted by reason and mints nothing (#3145, #3561).
+ *       - Emit grant evidence without replacing identity fields on the existing row.
  *
  * Honors:
  *   - ctx.options.useCache — caches each (offset/limit/fiscal_year) page payload.
@@ -32,33 +36,32 @@ import {
   resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
-import { slugify, splitName } from '../utils/scraperHelpers';
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import {
-  GRANT_SHELL_ENTITY_TYPE,
-  GRANT_SHELL_KIND,
-  grantShellResearchRecordName,
-} from '../utils/grantShellIdentity';
+  resolveResearcherIdByCorroboratedName,
+  type StructuredPersonName,
+} from '../../services/corroboratedPersonNameResolver';
+import {
+  countGrantAttach,
+  emptyGrantAttachTally,
+  grantAttachSummary,
+  resolveGrantEnrichmentTarget,
+} from '../utils/grantEnrichmentTarget';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
-// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
-// any real-name source (microsite, official profile) so those always win (issue #456).
-const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
-// A funded-project abstract describes the lead's actual research, but it is grant
-// prose, not an authored lab page. Keep it below the 0.5 default so any real
-// lab-page/microsite description wins on confidence resolution (issue #1418).
-const GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE = 0.35;
 const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
-const DEFAULT_FISCAL_YEARS = [
-  new Date().getFullYear() - 2,
-  new Date().getFullYear() - 1,
-  new Date().getFullYear(),
+export const fiscalYearsEndingAt = (date: Date): number[] => [
+  date.getFullYear() - 2,
+  date.getFullYear() - 1,
+  date.getFullYear(),
 ];
 const YALE_ORG_NAMES = ['YALE UNIVERSITY'];
 // Cap how many pages we'll ever request defensively. 30 pages * 500 = 15k records,
@@ -67,9 +70,10 @@ const MAX_PAGES = 30;
 
 // NIH individual trainee-fellowship activity codes (F30/F31/F32/F33): the
 // contact PI on these awards is the trainee (grad student / postdoc), not a
-// faculty lab lead, so they must not mint a standalone research-home entity
-// (#739).
+// faculty lab lead, so their awards are never attributed to a row as its
+// lead's funding (#739).
 const TRAINEE_FELLOWSHIP_ACTIVITY_CODES = new Set(['F30', 'F31', 'F32', 'F33']);
+const AFFILIATION_PROFILE_BATCH = 50;
 
 // ---------------------------------------------------------------------------
 // API response shapes (only the fields we use)
@@ -98,10 +102,20 @@ export interface NihOrganization {
   org_state?: string;
 }
 
+export interface NihProjectNumSplit {
+  appl_type_code?: string;
+  activity_code?: string;
+  ic_code?: string;
+  serial_num?: string;
+  support_year?: string;
+  suffix_code?: string;
+}
+
 export interface NihGrant {
   project_num?: string;
   appl_id?: number;
   core_project_num?: string;
+  project_num_split?: NihProjectNumSplit;
   project_title?: string;
   abstract_text?: string;
   contact_pi_name?: string;
@@ -176,26 +190,11 @@ function titleCaseToken(token: string): string {
 }
 
 /**
- * Stable, deterministic key for a PI when we can't (yet) match them to a User.
- * Used as both the emitted ResearchGroup slug seed and the User observation
- * entityKey. Idempotent across runs.
- */
-export function piEntityKey(canonicalName: string): string {
-  const slug = slugify(canonicalName);
-  return slug ? `nih-pi:${slug}` : '';
-}
-
-export function piSlugForResearchGroup(canonicalName: string): string {
-  const slug = slugify(canonicalName);
-  return slug ? `nih-pi-${slug}` : '';
-}
-
-/**
  * True when a grant is an NIH individual trainee-fellowship award (F30/F31/F32/
  * F33), whose contact PI is the trainee rather than a faculty lab lead. These
- * awards fail closed at ingestion: dropping them before grouping means no
- * "<Fellow> Lab" entity is ever minted, while a faculty PI's normal awards
- * (R01, R35, ...) still group and mint unaffected (#739).
+ * awards fail closed at ingestion: dropping them before grouping means a
+ * trainee's award never reaches a row, while a faculty PI's normal awards
+ * (R01, R35, ...) still group unaffected (#739).
  */
 export function isTraineeFellowshipGrant(grant: NihGrant): boolean {
   const code = (grant.activity_code || '').trim().toUpperCase();
@@ -222,6 +221,122 @@ export function groupGrantsByPi(grants: NihGrant[]): Map<string, NihGrant[]> {
   return groups;
 }
 
+export interface ContactPiAffiliation {
+  fiscalYear: number;
+  atYale: boolean;
+}
+
+export type ContactPiAffiliationLookup = (
+  profileIds: number[],
+) => Promise<Map<number, ContactPiAffiliation>>;
+
+export function principalInvestigatorName(pi: NihPrincipalInvestigator): string {
+  const first = (pi.first_name || '').trim();
+  const last = (pi.last_name || '').trim();
+  if (first || last) return canonicalPiName(`${last}, ${first}`.trim());
+  return pi.full_name ? canonicalPiName(pi.full_name) : '';
+}
+
+const isProfileId = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value);
+
+export function contactPiProfileIds(grants: readonly NihGrant[]): Set<number> {
+  const ids = new Set<number>();
+  for (const grant of grants) {
+    for (const pi of grant.principal_investigators || []) {
+      if (pi.is_contact_pi && isProfileId(pi.profile_id)) ids.add(pi.profile_id);
+    }
+  }
+  return ids;
+}
+
+export function nonContactPiProfileIds(grants: readonly NihGrant[]): number[] {
+  const contact = contactPiProfileIds(grants);
+  const ids = new Set<number>();
+  for (const grant of grants) {
+    for (const pi of grant.principal_investigators || []) {
+      if (!pi.is_contact_pi && isProfileId(pi.profile_id) && !contact.has(pi.profile_id)) {
+        ids.add(pi.profile_id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+export function isYaleOrganization(orgName: string | undefined): boolean {
+  const normalized = (orgName || '').trim().toUpperCase();
+  return YALE_ORG_NAMES.includes(normalized);
+}
+
+/**
+ * The latest fiscal year in which each profile is a contact PI, and whether every
+ * contact-PI project that year is at Yale. A tie with another institution reads as
+ * not at Yale, so a split year fails closed.
+ */
+export function latestContactPiAffiliations(
+  projects: readonly NihGrant[],
+  profileIds: ReadonlySet<number>,
+): Map<number, ContactPiAffiliation> {
+  const latest = new Map<number, ContactPiAffiliation>();
+  for (const project of projects) {
+    const fiscalYear = typeof project.fiscal_year === 'number' ? project.fiscal_year : 0;
+    const atYale = isYaleOrganization(project.organization?.org_name);
+    for (const pi of project.principal_investigators || []) {
+      if (!pi.is_contact_pi || !isProfileId(pi.profile_id) || !profileIds.has(pi.profile_id)) {
+        continue;
+      }
+      const held = latest.get(pi.profile_id);
+      if (!held || fiscalYear > held.fiscalYear) {
+        latest.set(pi.profile_id, { fiscalYear, atYale });
+      } else if (fiscalYear === held.fiscalYear && !atYale) {
+        latest.set(pi.profile_id, { fiscalYear, atYale: false });
+      }
+    }
+  }
+  return latest;
+}
+
+export function structuredNameFor(
+  piName: string,
+  grants: readonly NihGrant[],
+): StructuredPersonName | undefined {
+  for (const grant of grants) {
+    for (const pi of grant.principal_investigators || []) {
+      const matchesName = pi.is_contact_pi
+        ? pickContactPiName(grant) === piName
+        : principalInvestigatorName(pi) === piName;
+      if (matchesName && (pi.last_name || '').trim()) {
+        return { first: pi.first_name, middle: pi.middle_name, last: pi.last_name };
+      }
+    }
+  }
+  return undefined;
+}
+
+export function groupGrantsByCreditedPi(
+  grants: readonly NihGrant[],
+  creditedProfileIds: ReadonlySet<number>,
+): Map<string, NihGrant[]> {
+  const groups = new Map<string, NihGrant[]>();
+  for (const grant of grants) {
+    const names = new Set<string>();
+    const contactName = pickContactPiName(grant);
+    if (contactName) names.add(contactName);
+    for (const pi of grant.principal_investigators || []) {
+      if (pi.is_contact_pi || !isProfileId(pi.profile_id)) continue;
+      if (!creditedProfileIds.has(pi.profile_id)) continue;
+      const name = principalInvestigatorName(pi);
+      if (name) names.add(name);
+    }
+    for (const name of names) {
+      const list = groups.get(name) || [];
+      list.push(grant);
+      groups.set(name, list);
+    }
+  }
+  return groups;
+}
+
 /** Prefer the structured `is_contact_pi: true` entry over the unstructured string. */
 export function pickContactPiName(grant: NihGrant): string {
   const contactStruct = (grant.principal_investigators || []).find((p) => p.is_contact_pi);
@@ -235,6 +350,75 @@ export function pickContactPiName(grant: NihGrant): string {
   }
   if (grant.contact_pi_name) return canonicalPiName(grant.contact_pi_name);
   return '';
+}
+
+// RePORTER returns one record per project per fiscal year, and only the core project
+// number is stable across them, so it is the award identity (#3930).
+export function nihCoreProjectNumber(grant: NihGrant): string | undefined {
+  const core = (grant.core_project_num || '').trim().toUpperCase();
+  if (core) return core;
+  const split = grant.project_num_split;
+  const parts = [split?.activity_code, split?.ic_code, split?.serial_num].map((part) =>
+    (part || '').trim().toUpperCase(),
+  );
+  return parts.every(Boolean) ? parts.join('') : undefined;
+}
+
+function nihAwardKey(grant: NihGrant): string {
+  return (
+    nihCoreProjectNumber(grant) ||
+    (grant.project_num || '').trim().toUpperCase() ||
+    (grant.appl_id ? `appl-${grant.appl_id}` : 'unknown')
+  );
+}
+
+function fiscalYearRecency(grant: NihGrant): number {
+  return typeof grant.fiscal_year === 'number' ? grant.fiscal_year : -Infinity;
+}
+
+function newestFiscalYearRecord(records: readonly NihGrant[]): NihGrant {
+  return records.reduce((newest, record) => {
+    const yearOrder = fiscalYearRecency(record) - fiscalYearRecency(newest);
+    if (yearOrder !== 0) return yearOrder > 0 ? record : newest;
+    return (record.appl_id ?? 0) > (newest.appl_id ?? 0) ? record : newest;
+  });
+}
+
+function earliestDate(dates: readonly (Date | undefined)[]): Date | undefined {
+  return dates.reduce<Date | undefined>(
+    (earliest, date) => (date && (!earliest || date < earliest) ? date : earliest),
+    undefined,
+  );
+}
+
+function projectEndDate(records: readonly NihGrant[]): Date | undefined {
+  const endDates = records.map((record) => parseDate(record.project_end_date));
+  if (endDates.some((date) => !date)) return undefined;
+  return endDates.reduce<Date | undefined>(
+    (latest, date) => (date && (!latest || date > latest) ? date : latest),
+    undefined,
+  );
+}
+
+export function groupGrantsByProject(grants: readonly NihGrant[]): NihGrant[][] {
+  const projects = new Map<string, NihGrant[]>();
+  for (const grant of grants) {
+    const key = nihAwardKey(grant);
+    const records = projects.get(key);
+    if (records) records.push(grant);
+    else projects.set(key, [grant]);
+  }
+  return [...projects.values()];
+}
+
+export function projectToRecord(records: readonly NihGrant[]): RecentGrantRecord {
+  const newest = newestFiscalYearRecord(records);
+  return {
+    ...grantToRecord(newest),
+    id: nihAwardKey(newest),
+    startDate: earliestDate(records.map((record) => parseDate(record.project_start_date))),
+    endDate: projectEndDate(records),
+  };
 }
 
 /** Map a single API record into the schema-shaped record stored in `recentGrants`. */
@@ -436,12 +620,16 @@ export async function findUserForPi(
 }
 
 export type NihPiUserResolution =
-  | { status: 'matched'; user: { _id: string; netid?: string; researchHomeEligible?: boolean } }
+  | {
+      status: 'matched';
+      user: { _id: string; netid?: string; researchHomeEligible?: boolean; corroborated?: boolean };
+    }
   | { status: 'absent' }
   | { status: 'ambiguous' };
 
 export interface NihPiResolverDeps {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  resolveCorroborated?: typeof resolveResearcherIdByCorroboratedName;
   loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
 }
 
@@ -456,12 +644,22 @@ async function defaultLoadResearcherProfileTitle(
 export async function resolveUserForPi(
   canonicalName: string,
   deps: NihPiResolverDeps = {},
+  structuredName?: StructuredPersonName,
 ): Promise<NihPiUserResolution> {
   if (!canonicalName) return { status: 'absent' };
   const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
   const loadResearcherProfileTitle =
     deps.loadResearcherProfileTitle ?? defaultLoadResearcherProfileTitle;
-  const resolution = await resolveResearcherId(canonicalName);
+  let resolution = await resolveResearcherId(canonicalName);
+  let corroborated = false;
+  if (resolution.status !== 'matched' && structuredName) {
+    const resolveCorroborated = deps.resolveCorroborated ?? resolveResearcherIdByCorroboratedName;
+    const settled = await resolveCorroborated(structuredName);
+    if (settled.status === 'matched') {
+      resolution = settled;
+      corroborated = true;
+    }
+  }
   if (resolution.status === 'ambiguous') return { status: 'ambiguous' };
   if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
   const researcherId = resolution.researcherId.toString();
@@ -471,6 +669,7 @@ export async function resolveUserForPi(
     user: {
       _id: researcherId,
       researchHomeEligible: researchHomeEligibleUserTitle(title),
+      ...(corroborated ? { corroborated: true } : {}),
     },
   };
 }
@@ -484,134 +683,40 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
   return true;
 }
 
-/**
- * Build the observation list for one PI's grants.
- *
- * Emits:
- *   - `user` observation keyed by `nih-pi:<slug>` when no researcher matched, so
- *     downstream materialization can create a stub.
- *   - ResearchGroup observations keyed by either the matched researcher's PI slug
- *     (legible `nih-pi-<slug>`) or the same slug used by the researcher stub.
- *   - All recentGrants observations are emitted as a single full array — the
- *     resolver picks the highest-confidence value per field rather than trying
- *     to merge multiple partial arrays.
- */
 export function piGrantsToObservations(
-  canonicalName: string,
   grants: NihGrant[],
-  matchedUser: { _id: string; netid?: string; researchHomeEligible?: boolean } | null,
-  canonicalResearchHomeSlug?: string | null,
+  researcherId: string | undefined,
+  existingRowSlug: string,
 ): ObservationInput[] {
-  const out: ObservationInput[] = [];
-  if (!canonicalName || grants.length === 0) return out;
-  if (matchedUser?.researchHomeEligible === false) return out;
+  if (grants.length === 0 || !existingRowSlug) return [];
 
-  const slug = canonicalResearchHomeSlug || piSlugForResearchGroup(canonicalName);
-  if (!slug) return out;
-
-  // Sort grants by start date (desc), keep top N for the recentGrants array.
-  const sorted = [...grants].sort((a, b) => {
-    const ad = parseDate(a.project_start_date)?.getTime() ?? 0;
-    const bd = parseDate(b.project_start_date)?.getTime() ?? 0;
-    return bd - ad;
-  });
-  const recentRecords = sorted.slice(0, RECENT_GRANTS_PER_PI).map(grantToRecord);
+  const awards = groupGrantsByProject(grants)
+    .map(projectToRecord)
+    .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0));
+  const recentRecords = awards.slice(0, RECENT_GRANTS_PER_PI);
   const lastObservedAt = recentRecords
     .map((g) => g.startDate?.getTime())
     .filter((t): t is number => typeof t === 'number')
     .reduce((max, t) => (t > max ? t : max), 0);
 
-  const sourceUrls = sorted.map((g) => g.project_detail_url).filter((u): u is string => !!u);
-
-  // Determine school/department hint from organization.dept_type when present.
-  // We only use it as a soft signal; the resolver will dedupe against other sources.
-  const deptTypes = new Set<string>();
-  for (const g of sorted) {
-    const dt = g.organization?.dept_type;
-    if (dt) deptTypes.add(dt);
-  }
-
-  // 1. `user` observation — only emit when no existing researcher was matched.
-  //    The materializer treats `nih-pi:<slug>` as a synthetic key and creates a
-  //    stub Researcher from the surname and first name.
-  const piEntityKeyValue = piEntityKey(canonicalName);
-  if (!matchedUser && piEntityKeyValue) {
-    const { first, last } = splitName(canonicalName);
-    const userBase = {
-      entityType: 'user' as const,
-      entityKey: piEntityKeyValue,
-      sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
-    };
-    if (first) out.push({ ...userBase, field: 'fname', value: first });
-    if (last) out.push({ ...userBase, field: 'lname', value: last });
-    out.push({ ...userBase, field: 'dataSources', value: ['nih-reporter'] });
-  }
-
-  // 2. ResearchGroup observations.
-  const groupBase = {
+  const base = {
     entityType: 'researchEntity' as const,
-    entityKey: slug,
-    sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
+    entityKey: existingRowSlug,
+    sourceUrl: recentRecords[0]?.url || REPORTER_ENDPOINT,
   };
-  const piDisplayName = canonicalName;
-  if (!canonicalResearchHomeSlug) {
-    out.push({ ...groupBase, field: 'slug', value: slug });
-    out.push({
-      ...groupBase,
-      field: 'name',
-      value: grantShellResearchRecordName(piDisplayName, `NIH PI ${slug}`),
-      confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
-    });
-    out.push({ ...groupBase, field: 'kind', value: GRANT_SHELL_KIND });
-    out.push({ ...groupBase, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE });
-    const grantDescription = labDescriptionFromRecentGrants(recentRecords);
-    if (grantDescription) {
-      out.push({
-        ...groupBase,
-        field: 'fullDescription',
-        value: grantDescription,
-        confidenceOverride: GRANT_ABSTRACT_DESCRIPTION_CONFIDENCE,
-      });
-    }
-  }
-  out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
-  out.push({ ...groupBase, field: 'recentGrantCount', value: sorted.length });
-  out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
+  const periods = recentGrantPeriodsOf(awards);
+  const out: ObservationInput[] = [
+    { ...base, field: 'recentGrants', value: recentRecords },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
+    { ...base, field: 'fundingAgencies', value: ['NIH'] },
+  ];
   if (lastObservedAt > 0) {
-    out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
+    out.push({ ...base, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
-  if (sourceUrls.length > 0 && !canonicalResearchHomeSlug) {
-    out.push({
-      ...groupBase,
-      field: 'sourceUrls',
-      value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI),
-    });
+  if (researcherId) {
+    out.push({ ...base, field: 'inferredPiUserId', value: researcherId, confidenceOverride: 0.9 });
   }
-  if (matchedUser) {
-    out.push({
-      ...groupBase,
-      field: 'inferredPiUserId',
-      value: matchedUser._id,
-      confidenceOverride: 0.9, // RePORTER + name match is high-confidence
-    });
-  } else {
-    // Soft link via the synthetic User key the materializer will resolve.
-    out.push({
-      ...groupBase,
-      field: 'inferredPiUserKey',
-      value: piEntityKeyValue,
-      confidenceOverride: 0.6,
-    });
-  }
-  if (deptTypes.size > 0 && !canonicalResearchHomeSlug) {
-    out.push({
-      ...groupBase,
-      field: 'departments',
-      value: Array.from(deptTypes),
-      confidenceOverride: 0.4, // dept_type is RePORTER's free-text, not authoritative
-    });
-  }
-
   return out;
 }
 
@@ -650,14 +755,16 @@ async function fetchPage({
     sort_field: 'project_start_date',
     sort_order: 'desc',
   };
-  const res = await axios.post(REPORTER_ENDPOINT, body, {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(REPORTER_ENDPOINT, body, {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    }),
+  );
   const payload: NihPage = {
     meta: res.data?.meta || { total: 0, offset, limit },
     results: (res.data?.results as NihGrant[]) || [],
@@ -665,6 +772,68 @@ async function fetchPage({
   if (useCache) await setCached('nih-reporter', cacheKey, payload);
   ctx.log(`fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`);
   return payload;
+}
+
+async function fetchAffiliationPage(
+  batch: number[],
+  offset: number,
+  useCache: boolean,
+): Promise<NihPage> {
+  const cacheKey = `copi-affiliations:profiles=${batch.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
+  if (useCache) {
+    const cached = await getCached<NihPage>('nih-reporter', cacheKey);
+    if (cached) return cached;
+  }
+  const res = await retryOnRetryableStatus(() =>
+    axios.post(
+      REPORTER_ENDPOINT,
+      {
+        criteria: { pi_profile_ids: batch, exclude_subprojects: true },
+        include_fields: ['PrincipalInvestigators', 'Organization', 'FiscalYear'],
+        offset,
+        limit: PAGE_SIZE,
+      },
+      {
+        timeout: FETCH_TIMEOUT_MS,
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      },
+    ),
+  );
+  const results = (res.data?.results as NihGrant[]) || [];
+  const payload: NihPage = {
+    meta: { total: res.data?.meta?.total ?? results.length, offset, limit: PAGE_SIZE },
+    results,
+  };
+  if (useCache) await setCached('nih-reporter', cacheKey, payload);
+  return payload;
+}
+
+async function fetchContactPiAffiliations(
+  profileIds: number[],
+  ctx: ScraperContext,
+): Promise<Map<number, ContactPiAffiliation>> {
+  const projects: NihGrant[] = [];
+  for (let start = 0; start < profileIds.length; start += AFFILIATION_PROFILE_BATCH) {
+    const batch = profileIds.slice(start, start + AFFILIATION_PROFILE_BATCH);
+    let offset = 0;
+    let total = Infinity;
+    for (let page = 0; offset < total && page < MAX_PAGES; page++) {
+      const { meta, results } = await fetchAffiliationPage(batch, offset, ctx.options.useCache);
+      total = meta.total;
+      projects.push(...results);
+      if (results.length === 0) break;
+      offset += results.length;
+    }
+    if (offset < total) {
+      throw new Error(`co-PI affiliation read cut at ${offset} of ${total} projects`);
+    }
+  }
+  ctx.log(`read ${projects.length} project(s) for ${profileIds.length} co-PI profile(s)`);
+  return latestContactPiAffiliations(projects, new Set(profileIds));
 }
 
 // ---------------------------------------------------------------------------
@@ -675,8 +844,10 @@ export interface NihReporterScraperOptions {
   /** Override fiscal years (defaults to current FY plus the two prior FYs). */
   fiscalYears?: number[];
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  resolveCorroborated?: typeof resolveResearcherIdByCorroboratedName;
   loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
+  lookupContactPiAffiliations?: ContactPiAffiliationLookup;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -686,7 +857,8 @@ export class NihReporterScraper implements IScraper {
   constructor(private readonly opts: NihReporterScraperOptions = {}) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
+    const fiscalYears =
+      this.opts.fiscalYears || fiscalYearsEndingAt(ctx.options.referenceDate ?? new Date());
     const researchHomeResolver =
       this.opts.researchHomeResolver || resolveCanonicalResearchHomeForResearcher;
     const limitOption = ctx.options.limit;
@@ -700,6 +872,7 @@ export class NihReporterScraper implements IScraper {
     let offset = 0;
     let total = Infinity;
     let pages = 0;
+    const partialFailures: string[] = [];
     while (offset < total && pages < MAX_PAGES) {
       let page: NihPage;
       try {
@@ -711,7 +884,12 @@ export class NihReporterScraper implements IScraper {
           ctx,
         });
       } catch (err: any) {
-        ctx.log(`fetch error at offset=${offset}: ${sanitizeLogValue(err)}`);
+        const failure = `NIH RePORTER fetch failed at offset=${offset}: ${sanitizeLogValue(
+          err instanceof Error ? err.message : err,
+        )}; pagination aborted`;
+        if (pages === 0) throw new Error(failure, { cause: err });
+        ctx.log(`${failure}; the grant window is incomplete.`);
+        partialFailures.push(failure);
         break;
       }
       pages++;
@@ -723,7 +901,7 @@ export class NihReporterScraper implements IScraper {
     ctx.log(`fetched ${allGrants.length}/${total} grants across ${pages} page(s)`);
 
     // 2. Drop individual trainee-fellowship awards (F30/F31/F32/F33) so a
-    //    trainee is never minted as a "<Fellow> Lab" research home (#739).
+    //    trainee's award is never attributed to a row (#739).
     const fundableGrants = allGrants.filter((grant) => !isTraineeFellowshipGrant(grant));
     const excludedTraineeFellowships = allGrants.length - fundableGrants.length;
     if (excludedTraineeFellowships > 0) {
@@ -732,67 +910,109 @@ export class NihReporterScraper implements IScraper {
       );
     }
 
-    // 3. Group by PI.
-    const groups = groupGrantsByPi(fundableGrants);
-    ctx.log(`grouped into ${groups.size} unique contact PIs`);
+    // 3. Credit every Yale principal investigator: contact PIs, plus each co-PI whose
+    //    latest contact-PI project is at Yale (#4629).
+    const coPiCandidates = nonContactPiProfileIds(fundableGrants);
+    const lookupAffiliations: ContactPiAffiliationLookup =
+      this.opts.lookupContactPiAffiliations ??
+      ((profileIds) => fetchContactPiAffiliations(profileIds, ctx));
+    let affiliations = new Map<number, ContactPiAffiliation>();
+    let affiliationLookupFailed = false;
+    if (coPiCandidates.length > 0) {
+      try {
+        affiliations = await lookupAffiliations(coPiCandidates);
+      } catch (err: unknown) {
+        affiliationLookupFailed = true;
+        ctx.log(
+          `co-PI affiliation lookup failed; crediting contact PIs only: ${sanitizeLogValue(
+            err instanceof Error ? err.message : err,
+          )}`,
+        );
+      }
+    }
+    const creditedProfileIds = contactPiProfileIds(fundableGrants);
+    const coPi = { credited: 0, elsewhere: 0, noEvidence: 0 };
+    for (const profileId of coPiCandidates) {
+      const affiliation = affiliations.get(profileId);
+      if (!affiliation) coPi.noEvidence++;
+      else if (!affiliation.atYale) coPi.elsewhere++;
+      else {
+        coPi.credited++;
+        creditedProfileIds.add(profileId);
+      }
+    }
+    const groups = groupGrantsByCreditedPi(fundableGrants, creditedProfileIds);
+    ctx.log(`grouped into ${groups.size} credited PIs (${coPi.credited} multi-PI co-PIs)`);
 
     // 4. Honor --limit (caps PIs processed, NOT raw grants).
     const piLimit = limitOption ?? Infinity;
     const piEntries = Array.from(groups.entries()).slice(0, piLimit);
 
-    // 5. Resolve each PI to a User (or stub) and emit observations.
+    const attach = emptyGrantAttachTally();
+    let ineligibleLeadTitle = 0;
+    let corroboratedPis = 0;
     let totalObs = 0;
-    let matched = 0;
-    let unmatched = 0;
     let processed = 0;
+    const rows = new Map<string, { researcherIds: Set<string>; grants: NihGrant[] }>();
     for (const [piName, grants] of piEntries) {
-      let userResolution: NihPiUserResolution = { status: 'ambiguous' };
-      try {
-        userResolution = await resolveUserForPi(piName, {
+      processed++;
+      const person = await resolveUserForPi(
+        piName,
+        {
           resolveResearcherId: this.opts.resolveResearcherId,
+          resolveCorroborated: this.opts.resolveCorroborated,
           loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
-        });
-      } catch (err: any) {
-        ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
-      }
-      const matchedUser = userResolution.status === 'matched' ? userResolution.user : null;
-      if (userResolution.status === 'matched') matched++;
-      else if (userResolution.status === 'absent') unmatched++;
-      else continue;
-
-      const researchHomeResolution = matchedUser
-        ? await researchHomeResolver(matchedUser._id)
-        : { status: 'safe-shell' as const };
-      if (
-        researchHomeResolution.status === 'ambiguous' ||
-        researchHomeResolution.status === 'ineligible'
-      ) {
+        },
+        structuredNameFor(piName, grants),
+      );
+      if (person.status === 'matched' && person.user.corroborated) corroboratedPis++;
+      if (person.status === 'matched' && person.user.researchHomeEligible === false) {
+        ineligibleLeadTitle++;
         continue;
       }
-      const canonicalResearchHomeSlug =
-        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
-      const observations = piGrantsToObservations(
-        piName,
-        grants,
-        matchedUser,
-        canonicalResearchHomeSlug,
+      const target = await resolveGrantEnrichmentTarget(
+        person.status === 'matched' ? { status: 'matched', userId: person.user._id } : person,
+        researchHomeResolver,
       );
-      if (observations.length > 0) {
-        await ctx.emit(observations);
-        totalObs += observations.length;
+      countGrantAttach(attach, target);
+      if (target.status === 'enrich') {
+        const row = rows.get(target.slug) ?? { researcherIds: new Set<string>(), grants: [] };
+        row.researcherIds.add(target.researcherId);
+        row.grants.push(...grants);
+        rows.set(target.slug, row);
       }
-      processed++;
       if (processed % 100 === 0 || processed === piEntries.length) {
-        ctx.log(
-          `progress: ${processed}/${piEntries.length} PIs (${matched} matched, ${unmatched} unmatched), ${totalObs} obs`,
-        );
+        ctx.log(`progress: ${processed}/${piEntries.length} PIs (${attach.enriched} enriched)`);
       }
     }
 
+    for (const [slug, row] of rows) {
+      const soleResearcher = row.researcherIds.size === 1 ? [...row.researcherIds][0] : undefined;
+      const observations = piGrantsToObservations(row.grants, soleResearcher, slug);
+      await ctx.emit(observations);
+      totalObs += observations.length;
+    }
+
+    const notes =
+      `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants; ` +
+      `credited PIs: ${groups.size} (${piEntries.length} processed); ` +
+      `multi-PI co-PIs: ${coPiCandidates.length} not a Yale contact PI in the window, ${coPi.credited} credited ` +
+      `(latest contact-PI project at Yale), ${coPi.elsewhere} refused (latest contact-PI project elsewhere), ` +
+      `${coPi.noEvidence} refused (${
+        affiliationLookupFailed
+          ? 'affiliation lookup failed, so none credited'
+          : 'never a contact PI, so no affiliation evidence'
+      }); ` +
+      `${rows.size} distinct row(s) enriched; ${grantAttachSummary(attach)}; ` +
+      `${ineligibleLeadTitle} held for a non-lead title; ` +
+      `${corroboratedPis} PI(s) settled by a corroborating profile URL`;
+    ctx.log(`Emitted ${totalObs} observations. ${notes}`);
+
     return {
       observationCount: totalObs,
-      entitiesObserved: piEntries.length,
-      notes: `Yale NIH grants FY ${fiscalYears.join('-')}: ${allGrants.length} grants → ${groups.size} PIs (matched ${matched}, stubbed ${unmatched})`,
+      entitiesObserved: rows.size,
+      notes,
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }
 }

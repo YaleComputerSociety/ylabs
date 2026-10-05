@@ -11,13 +11,17 @@ import {
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
   isRosterNestedPersonPageUrl,
+  findSourceLinkHealthEntry,
+  isDepartmentDegreeProgramPageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnavailableResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   officialProfileMirrorKey,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
+  resolveOutreachApplySource,
   resolveOutreachOfficialSource,
+  servedResearchWebsiteUrl,
   ResearchDetailSource,
 } from '../researchDetailSources';
 
@@ -47,7 +51,7 @@ describe('buildResearchDetailSources', () => {
       accessSignals: [
         {
           _id: 'signal-1',
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: evidenceUrl,
         },
       ],
@@ -57,7 +61,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources[1].label).toBe('program.example.test source');
     expect(sources[1].contexts).toHaveLength(2);
     expect(sources[1].contexts).toEqual(
-      expect.arrayContaining(['Profile source', 'Reach Out Plausible evidence']),
+      expect.arrayContaining(['Profile source', 'Current Undergrads evidence']),
     );
   });
 
@@ -76,7 +80,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: facultyProfileUrl,
         },
       ],
@@ -171,7 +175,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: namedProfileUrl,
         },
       ],
@@ -297,7 +301,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: apiEndpoint,
         },
       ],
@@ -338,7 +342,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           sourceUrl: 'https://www.lab.example.yale.edu/research',
         },
       ],
@@ -347,7 +351,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe('https://lab.example.yale.edu/research');
     expect(sources[0].contexts).toEqual(
-      expect.arrayContaining(['Profile website', 'Profile source', 'Reach Out Plausible evidence']),
+      expect.arrayContaining(['Profile website', 'Profile source', 'Current Undergrads evidence']),
     );
   });
 
@@ -381,7 +385,7 @@ describe('buildResearchDetailSources', () => {
           sourceUrl: canonicalProfile,
         },
         {
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          signalType: 'PAST_UNDERGRADS',
           confidence: 'HIGH',
           confidenceScore: 0.86,
           sourceUrl: canonicalProfile,
@@ -396,7 +400,7 @@ describe('buildResearchDetailSources', () => {
       expect.arrayContaining([
         'Profile source',
         'Current Undergrads evidence',
-        'Contact Instructions Exist evidence',
+        'Past Undergrads evidence',
       ]),
     );
   });
@@ -532,7 +536,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'LOW',
           confidenceScore: 0.35,
           sourceUrl: unrelatedPersonUrl,
@@ -552,7 +556,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
           confidenceScore: 0.3,
           sourceUrl: 'https://unrelated.example.test/person',
@@ -573,7 +577,7 @@ describe('buildResearchDetailSources', () => {
       },
       accessSignals: [
         {
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          signalType: 'CURRENT_UNDERGRADS',
           confidence: 'HIGH',
           confidenceScore: 0.9,
           sourceUrl: evidenceUrl,
@@ -592,7 +596,7 @@ describe('isCitableAccessSignal', () => {
     expect(isCitableAccessSignal({ confidence: 'MEDIUM', confidenceScore: 0.49 })).toBe(false);
     expect(isCitableAccessSignal({ confidence: 'MEDIUM', confidenceScore: 0.5 })).toBe(true);
     expect(isCitableAccessSignal({ confidence: 'HIGH' })).toBe(true);
-    expect(isCitableAccessSignal({ signalType: 'REACH_OUT_PLAUSIBLE' })).toBe(true);
+    expect(isCitableAccessSignal({ signalType: 'CURRENT_UNDERGRADS' })).toBe(true);
   });
 });
 
@@ -771,6 +775,27 @@ describe('isOrgEngagementSourceUrl', () => {
   });
 });
 
+describe('isDepartmentDegreeProgramPageUrl', () => {
+  it.each([
+    'https://statistics.yale.edu/undergraduates',
+    'https://earth.yale.edu/undergraduate-program/',
+    'https://history.yale.edu/academics/undergraduate-program',
+    'https://department.example.yale.edu/graduate-studies',
+  ])('refuses a degree-program landing page as a research website: %s', (url) => {
+    expect(isDepartmentDegreeProgramPageUrl(url)).toBe(true);
+    expect(isSuppressedResearchWebsiteCtaUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'https://math.yale.edu/undergraduates/undergraduate-research',
+    'https://sociology.yale.edu/undergraduate-program/senior-project',
+    'https://psychology.yale.edu/what-undergraduate-research-opportunities-are-available',
+    'https://lab.example.yale.edu/undergraduate-research',
+  ])('keeps a page beneath or beside a program page: %s', (url) => {
+    expect(isDepartmentDegreeProgramPageUrl(url)).toBe(false);
+  });
+});
+
 describe('resolveOutreachOfficialSource', () => {
   it('never offers a cross-school mirror as the official page beside a claimed department profile (#2835)', () => {
     const source = resolveOutreachOfficialSource(
@@ -824,6 +849,17 @@ describe('resolveOutreachOfficialSource', () => {
     );
 
     expect(source?.url).toBe('https://medicine.yale.edu/profile/fixture-scholar');
+  });
+
+  it('refuses every page the website slot already refuses, such as a file share', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://drive.google.com/open?id=fixture-paper&usp=drive_copy')],
+      ['https://earth.yale.edu/profile/fixture-scholar'],
+      false,
+      'FACULTY_RESEARCH_AREA',
+    );
+
+    expect(source).toBeUndefined();
   });
 
   it('never promotes an ORCID-only home as the primary outreach CTA', () => {
@@ -1043,6 +1079,43 @@ describe('resolveOutreachOfficialSource', () => {
     );
 
     expect(source?.url).toBe('https://institute.example.yale.edu/people/director');
+  });
+
+  it('picks a get-involved page as the apply source without displacing the official-page pick', () => {
+    const sources = [
+      makeSource('https://lab.example.yale.edu/people/pi'),
+      makeSource('https://lab.example.yale.edu/get-involved'),
+    ];
+
+    expect(resolveOutreachApplySource(sources, [], false, 'LAB')?.url).toBe(
+      'https://lab.example.yale.edu/get-involved',
+    );
+    expect(resolveOutreachOfficialSource(sources, [], false, 'LAB')?.url).toBe(
+      'https://lab.example.yale.edu/people/pi',
+    );
+  });
+
+  it('finds no apply source when no page is a get-involved page', () => {
+    expect(
+      resolveOutreachApplySource(
+        [makeSource('https://lab.example.yale.edu/research')],
+        [],
+        false,
+        'LAB',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not offer a contact or opportunities listing as the apply source', () => {
+    const sources = [
+      makeSource('https://dept.example.yale.edu/about/contact-us'),
+      makeSource('https://dept.example.yale.edu/research/opportunities'),
+      makeSource('https://dept.example.yale.edu/connect'),
+      makeSource('https://dept.example.yale.edu/membership'),
+    ];
+
+    expect(resolveOutreachApplySource(sources, [], false, 'LAB')).toBeUndefined();
+    expect(resolveOutreachApplySource(sources, [], false, 'CENTER')).toBeUndefined();
   });
 
   it('does not reorder sources for a non-umbrella entity type', () => {
@@ -1939,5 +2012,111 @@ describe('a contribution naming a mirror of a cited page (#3341)', () => {
       'https://medicine.yale.edu/lab/fixture-lab',
     ]);
     expect(sources[1].isAttributionOnly).toBe(true);
+  });
+});
+
+describe('servedResearchWebsiteUrl (#4080)', () => {
+  const HTTPS = 'https://dept.example.yale.edu/~fixture/';
+  const HTTP = 'http://dept.example.yale.edu/~fixture/';
+
+  it('offers the working plain-HTTP spelling when the https certificate fails', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+        { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('keeps the https url when the plain-HTTP spelling is not verified reachable', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+        { url: HTTP, healthStatus: 'UNKNOWN' },
+      ]),
+    ).toBe(HTTPS);
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      ]),
+    ).toBe(HTTPS);
+  });
+
+  it('keeps the https url when its certificate verified', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTPS, [
+        { url: HTTPS, healthStatus: 'HEALTHY' },
+        { url: HTTP, healthStatus: 'HEALTHY' },
+      ]),
+    ).toBe(HTTPS);
+  });
+
+  it('marks the https citation by its own verdict when both spellings are stored', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: HTTPS },
+      sourceLinkHealth: [
+        {
+          url: HTTPS,
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+          tlsVerificationFailed: true,
+        },
+        { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ],
+    });
+    expect(sources[0]).toMatchObject({
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 404,
+      isLikelyUnavailable: true,
+    });
+  });
+
+  it('never downgrades on the strength of a plain-HTTP verdict alone', () => {
+    expect(servedResearchWebsiteUrl(HTTPS, [{ url: HTTP, healthStatus: 'HEALTHY' }])).toBe(HTTPS);
+    expect(
+      findSourceLinkHealthEntry([{ url: HTTP, healthStatus: 'HEALTHY' }], HTTPS),
+    ).toBeUndefined();
+  });
+});
+
+describe('servedResearchWebsiteUrl https landing (#4649)', () => {
+  const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
+  const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
+
+  it('offers the https page the host redirected a reachable http website to', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING },
+      ]),
+    ).toBe(LANDING);
+  });
+
+  it('keeps the http url when its verdict is not HEALTHY', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        { url: HTTP, healthStatus: 'UNKNOWN', httpsLandingUrl: LANDING },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('keeps the http url when the host never redirected it to https', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        { url: HTTP, healthStatus: 'HEALTHY' },
+        { url: 'https://faculty.example.yale.edu/FixturePerson/', healthStatus: 'HEALTHY' },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('never reads a landing recorded on another spelling of the link', () => {
+    expect(
+      servedResearchWebsiteUrl(HTTP, [
+        {
+          url: 'https://faculty.example.yale.edu/FixturePerson/',
+          healthStatus: 'HEALTHY',
+          httpsLandingUrl: LANDING,
+        },
+      ]),
+    ).toBe(HTTP);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Controller for user operations: favorites, listings, and profile updates.
  */
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import {
   getSavedResearchEntityList as getSavedResearchEntityListService,
   getSavedResearchEntitySlugs as getSavedResearchEntitySlugsService,
@@ -17,7 +17,7 @@ import {
   updateWatchedProgramPlan as updateWatchedProgramPlanService,
 } from '../services/researchPlanService';
 import { publicProgramForReader } from './programPayload';
-import { sanitizeLogValue } from '../utils/logSanitizer';
+import { routeParam } from '../utils/routeParams';
 
 const setPrivateAccountResponseHeaders = (response: Response) => {
   response.setHeader('Cache-Control', 'no-store, private, max-age=0');
@@ -27,40 +27,18 @@ const setPrivateAccountResponseHeaders = (response: Response) => {
   response.setHeader('X-Content-Type-Options', 'nosniff');
 };
 
-const publicAccountClientErrorMessage = (status: number): string => {
-  if (status === 400) return 'Bad request';
-  if (status === 401) return 'Unauthorized';
-  if (status === 403) return 'Forbidden';
-  if (status === 404) return 'Not found';
-  if (status === 409) return 'Conflict';
-  return 'Request failed';
-};
-
-const sendAccountMutationError = (response: Response, error: any, fallbackMessage: string) => {
-  const status = error?.status ?? error?.statusCode;
-  if (Number.isInteger(status) && status >= 400 && status < 500) {
-    return response.status(status).json({ error: publicAccountClientErrorMessage(status) });
-  }
-  if (error?.name === 'ValidationError') {
-    return response.status(400).json({ error: 'Validation error' });
-  }
-  return response.status(500).json({ error: fallbackMessage });
-};
-
-const sendPrivateAccountError = (response: Response, error: any, fallbackMessage: string) => {
-  setPrivateAccountResponseHeaders(response);
-  return sendAccountMutationError(response, error, fallbackMessage);
-};
-
-export const getSavedResearchEntityIds = async (request: Request, response: Response) => {
+export const getSavedResearchEntityIds = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     response.status(200).json({
       savedResearchEntityIds: await getSavedResearchEntitySlugsService(currentUser.netId),
     });
   } catch (error) {
-    console.error('Saved research entity id fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch saved research entity ids');
+    next(error);
   }
 };
 
@@ -70,18 +48,25 @@ export const getSavedResearchEntityIds = async (request: Request, response: Resp
  * are the reader's own saved plans, so the response is per-account and must not be
  * cached by a shared hop the way the entity summaries alone could be (#2174).
  */
-export const getSavedResearchEntities = async (request: Request, response: Response) => {
+export const getSavedResearchEntities = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     setPrivateAccountResponseHeaders(response);
     response.status(200).json(await getSavedResearchEntityListService(currentUser.netId));
   } catch (error) {
-    console.error('Saved research entity fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch saved research entities');
+    next(error);
   }
 };
 
-export const addSavedResearchEntities = async (request: Request, response: Response) => {
+export const addSavedResearchEntities = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const values = request.body?.data?.savedResearchEntities;
@@ -96,12 +81,15 @@ export const addSavedResearchEntities = async (request: Request, response: Respo
     );
     response.status(200).json({ savedResearchEntityIds: ids });
   } catch (error) {
-    console.error('Saved research entity mutation failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to save research entities');
+    next(error);
   }
 };
 
-export const removeSavedResearchEntities = async (request: Request, response: Response) => {
+export const removeSavedResearchEntities = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const values = request.body?.savedResearchEntities;
@@ -116,12 +104,15 @@ export const removeSavedResearchEntities = async (request: Request, response: Re
     );
     response.status(200).json({ savedResearchEntityIds: ids });
   } catch (error) {
-    console.error('Saved research entity removal failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to remove saved research entities');
+    next(error);
   }
 };
 
-export const getSavedResearchEntityPlans = async (request: Request, response: Response) => {
+export const getSavedResearchEntityPlans = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     setPrivateAccountResponseHeaders(response);
@@ -129,51 +120,65 @@ export const getSavedResearchEntityPlans = async (request: Request, response: Re
       savedResearchEntityPlans: await getSavedResearchEntityPlansService(currentUser.netId),
     });
   } catch (error) {
-    console.error('Saved research entity plan fetch failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to fetch saved research entity plans');
+    setPrivateAccountResponseHeaders(response);
+    next(error);
   }
 };
 
-export const updateSavedResearchEntityPlan = async (request: Request, response: Response) => {
+export const updateSavedResearchEntityPlan = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const plans = await updateSavedResearchEntityPlanService(
       currentUser.netId,
-      request.params.entityId,
+      routeParam(request, 'entityId'),
       request.body?.data?.plan || request.body?.plan || {},
     );
     setPrivateAccountResponseHeaders(response);
     response.status(200).json({ savedResearchEntityPlans: plans });
   } catch (error) {
-    console.error('Saved research entity plan update failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to update saved research entity plan');
+    setPrivateAccountResponseHeaders(response);
+    next(error);
   }
 };
 
-export const getWatchedProgramIds = async (request: Request, response: Response) => {
+export const getWatchedProgramIds = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     response.status(200).json({
       watchedProgramIds: await getWatchedProgramIdsService(currentUser.netId),
     });
   } catch (error) {
-    console.error('Watched program id fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch watched program ids');
+    next(error);
   }
 };
 
-export const getWatchedPrograms = async (request: Request, response: Response) => {
+export const getWatchedPrograms = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const programs = await getWatchedProgramsService(currentUser.netId);
     response.status(200).json({ watchedPrograms: programs.map(publicProgramForReader) });
   } catch (error) {
-    console.error('Watched program fetch failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to fetch watched programs');
+    next(error);
   }
 };
 
-export const addWatchedPrograms = async (request: Request, response: Response) => {
+export const addWatchedPrograms = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const values = request.body?.data?.watchedPrograms;
@@ -188,12 +193,15 @@ export const addWatchedPrograms = async (request: Request, response: Response) =
     );
     response.status(200).json({ watchedProgramIds: ids });
   } catch (error) {
-    console.error('Watched program mutation failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to watch programs');
+    next(error);
   }
 };
 
-export const removeWatchedPrograms = async (request: Request, response: Response) => {
+export const removeWatchedPrograms = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const values = request.body?.watchedPrograms;
@@ -208,12 +216,15 @@ export const removeWatchedPrograms = async (request: Request, response: Response
     );
     response.status(200).json({ watchedProgramIds: ids });
   } catch (error) {
-    console.error('Watched program removal failed:', sanitizeLogValue(error));
-    sendAccountMutationError(response, error, 'Failed to unwatch programs');
+    next(error);
   }
 };
 
-export const getWatchedProgramPlans = async (request: Request, response: Response) => {
+export const getWatchedProgramPlans = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     setPrivateAccountResponseHeaders(response);
@@ -221,23 +232,27 @@ export const getWatchedProgramPlans = async (request: Request, response: Respons
       watchedProgramPlans: await getWatchedProgramPlansService(currentUser.netId),
     });
   } catch (error) {
-    console.error('Watched program plan fetch failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to fetch watched program plans');
+    setPrivateAccountResponseHeaders(response);
+    next(error);
   }
 };
 
-export const updateWatchedProgramPlan = async (request: Request, response: Response) => {
+export const updateWatchedProgramPlan = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
   try {
     const currentUser = request.user as { netId?: string };
     const plans = await updateWatchedProgramPlanService(
       currentUser.netId,
-      request.params.programId,
+      routeParam(request, 'programId'),
       request.body?.data?.plan || request.body?.plan || {},
     );
     setPrivateAccountResponseHeaders(response);
     response.status(200).json({ watchedProgramPlans: plans });
   } catch (error) {
-    console.error('Watched program plan update failed:', sanitizeLogValue(error));
-    sendPrivateAccountError(response, error, 'Failed to update watched program plan');
+    setPrivateAccountResponseHeaders(response);
+    next(error);
   }
 };

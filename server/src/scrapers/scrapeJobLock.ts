@@ -3,6 +3,7 @@ import { hostname } from 'os';
 
 import { ScrapeJobLock } from '../models/scrapeJobLock';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { onInterrupt } from './interruptCleanup';
 import type { ScraperEnvironment } from './scraperEnvironment';
 
 export const DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS = 30 * 60 * 1000;
@@ -58,7 +59,9 @@ export async function acquireScrapeJobLock(
     },
   };
 
-  const existing = await ScrapeJobLock.findOneAndUpdate(filter, update, { new: true });
+  const existing = await ScrapeJobLock.findOneAndUpdate(filter, update, {
+    returnDocument: 'after',
+  });
   if (existing) {
     return {
       acquired: true,
@@ -257,8 +260,6 @@ export interface WithScrapeJobLockInput<T> extends ScrapeJobLockHeartbeatInput {
   describeRelease?: (value: T) => ScrapeJobLockReleaseMetadata;
 }
 
-const SCRAPE_JOB_LOCK_INTERRUPT_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
-
 export function createWithScrapeJobLockDependencies(): WithScrapeJobLockDependencies {
   return {
     acquireScrapeJobLock,
@@ -329,34 +330,18 @@ export async function withScrapeJobLock<T>(
 
   // Without this, Ctrl-C or a `kill` leaves the row locked for the rest of the
   // lease and the operator's immediate retry is refused for up to 30 minutes.
-  // The signal is re-raised after the release so the exit status still reads as
-  // a signal death rather than a normal exit.
-  function attachInterruptRelease(): () => void {
-    const attached: { signal: NodeJS.Signals; handler: () => void }[] = [];
-    const detach = (): void => {
-      while (attached.length) {
-        const entry = attached.pop();
-        if (entry) process.removeListener(entry.signal, entry.handler);
-      }
-    };
-    for (const signal of SCRAPE_JOB_LOCK_INTERRUPT_SIGNALS) {
-      const handler = (): void => {
-        console.error(
-          `Interrupted by ${signal} while holding the ${input.label ?? 'scrape'} job lock for ${input.sourceName}; releasing it so the next writer is not blocked for the rest of the lease.`,
-        );
-        void releaseOnce({ releaseReason: 'manual' }).finally(() => {
-          heartbeat.stop();
-          detach();
-          process.kill(process.pid, signal);
-        });
-      };
-      attached.push({ signal, handler });
-      process.once(signal, handler);
+  // `onInterrupt` re-raises the signal after the release so the exit status
+  // still reads as a signal death rather than a normal exit.
+  const detachInterruptRelease = onInterrupt(async (signal) => {
+    console.error(
+      `Interrupted by ${signal} while holding the ${input.label ?? 'scrape'} job lock for ${input.sourceName}; releasing it so the next writer is not blocked for the rest of the lease.`,
+    );
+    try {
+      await releaseOnce({ releaseReason: 'manual' });
+    } finally {
+      heartbeat.stop();
     }
-    return detach;
-  }
-
-  const detachInterruptRelease = attachInterruptRelease();
+  });
   try {
     const value = await run();
     await releaseOnce(input.describeRelease?.(value) ?? { releaseReason: 'success' });

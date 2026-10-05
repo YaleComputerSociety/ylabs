@@ -2,13 +2,13 @@
  * Idempotent seed for the Source registry. Run with:
  *   npx tsx server/src/scrapers/seedSources.ts
  *
- * Adds new sources, updates existing ones in place (preserves enabled/cadence overrides
- * unless you pass --reset, in which case rows are fully replaced).
+ * Adds new sources and updates existing ones in place, or fully replaces them with --reset.
+ * `enabled` means "not retired" and is re-derived on every apply, so it never acts as a
+ * run switch: the sweep manifests and MANUAL_ONLY_SWEEP_SOURCES decide what runs (#4025).
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
 import {
@@ -16,13 +16,14 @@ import {
   resolveSafeJsonReportOutputPath,
 } from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
+import { isDirectScriptInvocation } from '../scripts/directScriptInvocation';
 import { getSourceCoverage } from './sourceCoverageRegistry';
-import { RETIRED_SOURCE_NAMES } from './sourceDispatch';
+import { RETIRED_SOURCE_NAMES, isRetiredSourceName } from './sourceDispatch';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
+import { connectScriptMongo } from '../db/connections';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
 interface SourceSeed {
   name: string;
@@ -32,7 +33,6 @@ interface SourceSeed {
   defaultWeight: number;
   isManualLock?: boolean;
   cadence: string;
-  enabled?: boolean;
   coverage?: SourceCoverageMetadata;
 }
 
@@ -46,6 +46,7 @@ export interface SeedSourcesCliOptions {
 interface SeedSourceRow {
   name: string;
   action: 'created' | 'updated' | 'reset' | 'would_create' | 'would_update' | 'would_reset';
+  changedFields?: string[];
 }
 
 interface RetiredSourceSummary {
@@ -193,11 +194,10 @@ const SOURCES: SourceSeed[] = [
     name: 'undergrad-research-posting',
     displayName: 'Undergraduate research postings',
     description:
-      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting (title, resolvable hiring research home, apply route, and future-dated deadline), carrying the deadline as an expiry so the top-tier "Apply" state degrades once the window closes. Disabled by default until an operator confirms each page is reliably public on Development.',
-    baseUrl: 'https://science.yalecollege.yale.edu/research-opportunities',
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting (title, resolvable hiring research home, apply route, and future-dated deadline), carrying the deadline as an expiry, and the detail page stops serving the signal once that expiry passes (#4628). Manual-only and out of the sweep while no page is configured. No page is configured today: the one page configured at launch never existed, and no official public Yale page publishes postings in this shape (#3550).',
+    baseUrl: '',
     defaultWeight: 0.9,
     cadence: 'weekly',
-    enabled: false,
   },
   {
     name: 'yale-directory',
@@ -290,7 +290,7 @@ const SOURCES: SourceSeed[] = [
     name: 'department-research-areas',
     displayName: 'Department research-overview pages',
     description:
-      "Yale FAS science and quantitative department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
+      "Yale FAS science department research-overview pages as curated topical evidence for their faculty, the FAS analogue of bbs-research-track. Each curated theme heading maps to a research-area label grafted onto the existing home of every faculty member listed under it, either inline or on the same-host theme page the heading links to, cited to that faculty member's own profile URL. Grafts topics only onto homes that uniquely resolve; never mints an entity and never emits contact.",
     baseUrl: '',
     defaultWeight: 0.8,
     cadence: 'weekly',
@@ -335,10 +335,19 @@ const SOURCES: SourceSeed[] = [
     name: 'grant-corpus-synthesis-llm',
     displayName: 'Grant-corpus research synthesis LLM',
     description:
-      'Synthesizes a grounded, PI-level research description for a grant-backed entity from its whole recentGrants corpus (aggregated NIH/NSF/NEH/USASpending/DOE titles and abstracts) via the grounded coverage synthesizer. Fails closed unless the output is grounded in the grant text and clears the description-quality bar. Weighted above the single-abstract grant fallback but below official-profile sources so a real profile still wins.',
+      'Synthesizes a grounded, PI-level research description for a grant-backed entity from its whole recentGrants corpus (aggregated NIH/NSF/NEH/DOE titles and abstracts) via the grounded coverage synthesizer. Fails closed unless the output is grounded in the grant text and clears the description-quality bar. Weighted above the single-abstract grant fallback but below official-profile sources so a real profile still wins.',
     baseUrl: '',
     defaultWeight: 0.45,
     cadence: 'weekly',
+  },
+  {
+    name: 'official-profile-honors',
+    displayName: 'Official profile honors',
+    description:
+      "Reads major fellowships, prizes and academy memberships from the lead's own official Yale profile page against a fixed catalog, deterministically. An honor counts only from a sentence stating the person received, won, held or was elected to it, or from an item under an honors heading; advising, judging, nomination and journal-title mentions are refused. A year is kept only when it sits beside the honor.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
   },
   {
     name: 'fra-profile-research-synthesis',
@@ -379,11 +388,10 @@ const SOURCES: SourceSeed[] = [
     name: 'student-grants-database',
     displayName: 'Yale Student Grants Database (CommunityForce)',
     description:
-      "Yale's comprehensive officially-curated student funding catalog. Enumerates each fund from the rendered CommunityForce fund search and cites the fund's own FundDetails page. Disabled by default until an operator confirms the rendered catalog is reliably public on Development; contact and unresolved funds fail closed.",
+      "Yale's comprehensive officially-curated student funding catalog. Enumerates each fund from the rendered CommunityForce fund search and cites the fund's own FundDetails page. Runs in the fellowship sweep as an official Yale source; contact and unresolved funds fail closed.",
     baseUrl: 'https://yale.communityforce.com/Funds/Search.aspx',
     defaultWeight: 0.95,
     cadence: 'daily-during-cycle',
-    enabled: false,
   },
   {
     name: 'nih-reporter',
@@ -405,17 +413,17 @@ const SOURCES: SourceSeed[] = [
     name: 'neh-funded-projects',
     displayName: 'NEH funded projects',
     description:
-      'Pulls Yale-awardee NEH funded projects from open-data bulk files; humanities/social-science analogue of the NIH/NSF grant lanes.',
-    baseUrl: 'https://apps.neh.gov/open/data',
+      'Pulls Yale-awardee NEH funded projects from NEH Award Search and enriches an existing research row for a resolved Project Director; humanities/social-science analogue of the NIH/NSF grant lanes. Never mints a row.',
+    baseUrl: 'https://awardsearch.neh.gov/',
     defaultWeight: 0.9,
     cadence: 'weekly',
   },
   {
-    name: 'federal-award-usaspending',
-    displayName: 'USAspending federal awards (DOE/NASA/DoD)',
+    name: 'crossref-grants',
+    displayName: 'Crossref grant records',
     description:
-      'Pulls DOE, NASA, and DoD Yale awards from USAspending.gov to enrich physical-science and mission-agency research homes the NSF/NIH fallbacks miss. USAspending carries no structured PI field, so a PI is harvested only when the award description embeds one inline and resolves to a single existing Yale User; otherwise the award is skipped (fail-closed). Emits additive grant activity only.',
-    baseUrl: 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
+      'Reads the grant records funders register with Crossref for Yale-affiliated lead investigators (American Cancer Society, American Heart Association, HFSP, Wellcome, McDonnell, Moore and others) and enriches the existing research row of the investigator, resolved by ORCID first. Refuses facility-time records, attaches fellowships only through an ORCID match, and never mints a row.',
+    baseUrl: 'https://api.crossref.org/types/grant/works',
     defaultWeight: 0.9,
     cadence: 'weekly',
   },
@@ -432,11 +440,10 @@ const SOURCES: SourceSeed[] = [
     name: 'official-research-home-roster',
     displayName: 'Official research-home current rosters',
     description:
-      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded.',
+      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded. Manual-only and out of the sweep until a sampled roster precision review is recorded.',
     baseUrl: 'https://medicine.yale.edu/lab/',
     defaultWeight: 0.95,
     cadence: 'weekly',
-    enabled: false,
   },
   {
     name: 'lab-site-lead-verification',
@@ -523,18 +530,9 @@ const SOURCES: SourceSeed[] = [
     name: 'coverage-synthesis-llm',
     displayName: 'Coverage synthesis (LLM)',
     description:
-      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
+      "The one writer of every live research row's description: a grounded LLM synthesis of 1 to 3 sentences from the row's already-harvested evidence, which outranks copied page text when it serves (#4788). Emits fullDescription only, never access, route or opportunity evidence.",
     baseUrl: '',
     defaultWeight: 0.5,
-    cadence: 'monthly',
-  },
-  {
-    name: 'nih-nsf-pi-center-lab-conflation-repair',
-    displayName: 'NIH/NSF PI-centre-lab conflation repair',
-    description:
-      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
-    baseUrl: '',
-    defaultWeight: 0.6,
     cadence: 'monthly',
   },
   {
@@ -595,7 +593,52 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
 
 export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
 
+/**
+ * The sources whose values a language model wrote, read off each seed's display name.
+ * `utils/unbackedLabSelfDescription.ts` cannot import this module, so it names the same
+ * set by rule and a test pins the two together.
+ */
+export const LLM_AUTHORED_SOURCE_NAMES: readonly string[] = SOURCES.filter((seed) =>
+  /\bLLM\b/.test(seed.displayName),
+).map((seed) => seed.name);
+
 export { RETIRED_SOURCE_NAMES };
+
+export function seededSourceEnabled(name: string): boolean {
+  return !isRetiredSourceName(name);
+}
+
+function plannedSourceSeedFields(seed: SourceSeed) {
+  return {
+    displayName: seed.displayName,
+    description: seed.description,
+    baseUrl: seed.baseUrl,
+    defaultWeight: seed.defaultWeight,
+    isManualLock: !!seed.isManualLock,
+    cadence: seed.cadence,
+    coverage: seed.coverage,
+    enabled: seededSourceEnabled(seed.name),
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner && typeof inner === 'object' && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.entries(inner as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : inner,
+  );
+}
+
+export function changedSourceSeedFields(
+  existing: Record<string, unknown>,
+  planned: Record<string, unknown>,
+): string[] {
+  return Object.keys(planned)
+    .filter((field) => canonicalJson(existing[field]) !== canonicalJson(planned[field]))
+    .sort();
+}
 
 export async function seedSources(options: SeedSourcesCliOptions) {
   const sources: SeedSourceRow[] = [];
@@ -603,7 +646,11 @@ export async function seedSources(options: SeedSourcesCliOptions) {
   for (const seed of SOURCES_WITH_COVERAGE) {
     if (options.reset) {
       if (options.apply) {
-        await Source.replaceOne({ name: seed.name }, seed, { upsert: true });
+        await Source.replaceOne(
+          { name: seed.name },
+          { ...seed, ...plannedSourceSeedFields(seed) },
+          { upsert: true },
+        );
       }
       sources.push({
         name: seed.name,
@@ -613,30 +660,19 @@ export async function seedSources(options: SeedSourcesCliOptions) {
     }
 
     const existing = await Source.findOne({ name: seed.name }).lean();
+    const planned = plannedSourceSeedFields(seed);
     if (existing) {
       if (options.apply) {
-        await Source.updateOne(
-          { name: seed.name },
-          {
-            $set: {
-              displayName: seed.displayName,
-              description: seed.description,
-              baseUrl: seed.baseUrl,
-              defaultWeight: seed.defaultWeight,
-              isManualLock: !!seed.isManualLock,
-              cadence: seed.cadence,
-              coverage: seed.coverage,
-            },
-          },
-        );
+        await Source.updateOne({ name: seed.name }, { $set: planned });
       }
       sources.push({
         name: seed.name,
         action: options.apply ? 'updated' : 'would_update',
+        changedFields: changedSourceSeedFields(existing as Record<string, unknown>, planned),
       });
     } else {
       if (options.apply) {
-        await Source.create({ ...seed, enabled: seed.enabled ?? true });
+        await Source.create({ ...seed, ...planned });
       }
       sources.push({
         name: seed.name,
@@ -684,7 +720,7 @@ async function main(): Promise<void> {
     throw new Error('MONGODBURL not set');
   }
   const guard = assertSeedSourcesWriteAllowed(options);
-  await mongoose.connect(url);
+  await connectScriptMongo(url);
   try {
     const report = await seedSources(options);
     const output = buildSeedSourcesOutput(report, {
@@ -699,7 +735,7 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+if (isDirectScriptInvocation(import.meta.url, 'seedSources')) {
   main().catch(async (err) => {
     console.error(sanitizeLogValue(err));
     await mongoose.disconnect().catch(() => {});

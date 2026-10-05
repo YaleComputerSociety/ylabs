@@ -1,8 +1,4 @@
 import { personPageNameTokensFromUrl } from '../scrapers/utils/personProfileEntityMatch';
-import {
-  IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
-  ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
-} from '../services/accessAcceptanceLevel';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
 import {
   officialProfileLinkCandidates,
@@ -19,8 +15,8 @@ import {
  * fetched, so they are left alone even when their citation is dead.
  */
 export const REPOINTABLE_SIGNAL_DERIVATION_KEYS: readonly string[] = [
-  IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
-  ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
+  'signal:REACH_OUT_PLAUSIBLE:IDENTIFIED_FACULTY_LEAD',
+  'signal:REACH_OUT_PLAUSIBLE:ORGANIZATIONAL_HOME',
 ];
 
 export function isRepointableSignalCitation(derivationKey: unknown): boolean {

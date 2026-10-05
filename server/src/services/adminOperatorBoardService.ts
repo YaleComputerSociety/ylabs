@@ -16,6 +16,12 @@ import {
 } from './visibilityRepairQueueService';
 import { resolveSafeJsonReportOutputPath } from '../scripts/scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  AWARD_SUSPENDED_REASON,
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+  PRIZE_FOR_COMPLETED_WORK_REASON,
+  PROGRAM_LISTING_PAGE_REASON,
+} from './programApplicability';
 
 export type QueueKind = 'blocking' | 'evidence' | 'review';
 import { gateScorecardArtifactPath, type GateScorecardName } from './gateScorecardArtifacts';
@@ -312,13 +318,9 @@ export type LaunchAcquisitionGateArtifact =
       scanned: number;
       observationStorePopulated: boolean;
       piBlockers: number;
-      actionBlockers: number;
       exactPiMatches: number;
-      sourceBackedRouteCandidates: number;
       missingOfficialProfileUrl: number;
       ambiguousOrMismatchedUserMatch: number;
-      sourceObservationsWithoutUndergradAccess: number;
-      untrustedExternalRouteEvidence: number;
     }
   | {
       artifactStatus: 'missing' | 'invalid';
@@ -383,7 +385,6 @@ export type PromotionCopyDryRunArtifact =
 
 const evidenceReasons = new Set([
   'application_route',
-  'concrete_next_step',
   'graduate_relevant',
   'official_source',
   'source_backed_description',
@@ -393,7 +394,6 @@ const evidenceReasons = new Set([
 const reviewDecisionReasons = new Set([
   'application_source_only',
   'archive_review',
-  'duplicate_name_risk',
   'duplicate_risk',
   'exact_url_duplicate_risk',
   'formalization_only',
@@ -406,7 +406,6 @@ export function classifyOperatorQueueReason(reason: string): QueueKind {
   if (
     reason.startsWith('missing_') ||
     [
-      'content_page_risk',
       'inactive_at_yale',
       'missing_card_description',
       'profile_fallback_only',
@@ -731,7 +730,7 @@ export function derivePromotionCopyGate(input?: PromotionCopyDryRunArtifact) {
   return {
     status: 'review_required' as const,
     command,
-    note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+    note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
     applyBlockerCount: input.applyBlockerCount,
     excludedSyntheticUsers: input.excludedSyntheticUsers,
     collectionCategoryCount: input.collectionCategoryCount,
@@ -1757,31 +1756,27 @@ export function deriveLaunchAcquisitionGate(input?: LaunchAcquisitionGateArtifac
     };
   }
 
-  const deterministicCandidates = input.exactPiMatches + input.sourceBackedRouteCandidates;
+  const deterministicCandidates = input.exactPiMatches;
   const base = {
     command,
     scanned: input.scanned,
     piBlockers: input.piBlockers,
-    actionBlockers: input.actionBlockers,
     exactPiMatches: input.exactPiMatches,
-    sourceBackedRouteCandidates: input.sourceBackedRouteCandidates,
     missingOfficialProfileUrl: input.missingOfficialProfileUrl,
     ambiguousOrMismatchedUserMatch: input.ambiguousOrMismatchedUserMatch,
-    sourceObservationsWithoutUndergradAccess: input.sourceObservationsWithoutUndergradAccess,
-    untrustedExternalRouteEvidence: input.untrustedExternalRouteEvidence,
   };
 
   if (deterministicCandidates > 0) {
     return {
       status: 'active' as const,
-      note: `Launch acquisition report has ${deterministicCandidates} deterministic PI/action repair candidates; run the matching bounded repair dry-run before any apply.`,
+      note: `Launch acquisition report has ${deterministicCandidates} deterministic PI repair candidates; run the matching bounded repair dry-run before any apply.`,
       ...base,
     };
   }
 
   return {
     status: 'blocked' as const,
-    note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+    note: 'Launch acquisition report has no deterministic PI repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
     ...base,
   };
 }
@@ -1828,7 +1823,6 @@ export function readLaunchAcquisitionGateArtifact(
     }
 
     const piGroups = parsed.piIdentity?.groups || {};
-    const actionGroups = parsed.actionEvidence?.groups || {};
     return {
       artifactStatus: 'loaded',
       artifactPath: safeArtifactPath,
@@ -1836,19 +1830,9 @@ export function readLaunchAcquisitionGateArtifact(
       scanned: Number(parsed.scanned || 0),
       observationStorePopulated: parsed.observationStorePopulated !== false,
       piBlockers: Number(parsed.piIdentity?.total || 0),
-      actionBlockers: Number(parsed.actionEvidence?.total || 0),
       exactPiMatches: groupCount(piGroups, 'exactSingleUserMatch'),
-      sourceBackedRouteCandidates: groupCount(
-        actionGroups,
-        'sourceBackedRouteNotLaunchMaterialized',
-      ),
       missingOfficialProfileUrl: groupCount(piGroups, 'missingOfficialProfileUrl'),
       ambiguousOrMismatchedUserMatch: groupCount(piGroups, 'ambiguousOrMismatchedUserMatch'),
-      sourceObservationsWithoutUndergradAccess: groupCount(
-        actionGroups,
-        'sourceObservationsWithoutUndergradAccess',
-      ),
-      untrustedExternalRouteEvidence: groupCount(actionGroups, 'untrustedExternalRouteEvidence'),
     };
   } catch {
     return {
@@ -1904,8 +1888,6 @@ async function reasonCounts(model: any, match: Record<string, unknown>, limit = 
 }
 
 const researchReasonActions: Record<string, string> = {
-  missing_action_evidence:
-    'Add source-backed access signals, entry pathways, contact routes, or posted opportunities before promotion.',
   missing_description: 'Repair with official source-backed description text.',
   missing_card_description:
     'Derive or backfill a student-facing short description from the source-backed full description.',
@@ -1924,6 +1906,17 @@ const programReasonActions: Record<string, string> = {
   archive_review: 'Keep hidden or rewrite as a real recurring planning record.',
   not_undergraduate_relevant:
     'Catalog or administrative page, not a real program; keep suppressed.',
+  duplicate_program: 'Redundant copy of a fund already served by another row; keep suppressed.',
+  common_application_container:
+    'A common application admits to funds served as their own programs; keep suppressed.',
+  [EXTERNAL_AWARD_CYCLE_STALE_REASON]:
+    'Outside program whose office record skipped its only stated cycle; returns when the record states a current one.',
+  [AWARD_SUSPENDED_REASON]:
+    'The record states the award is suspended or discontinued; returns when the page no longer says so.',
+  [PRIZE_FOR_COMPLETED_WORK_REASON]:
+    'A prize for completed work funds nothing a student could apply to do; keep suppressed.',
+  [PROGRAM_LISTING_PAGE_REASON]:
+    'A catalog page listing programs served as their own rows; keep suppressed.',
   graduate_relevant:
     'Graduate-audience research program; surface with a Graduate label, not suppressed.',
   official_source: 'Review for possible promotion if audience and route are student-safe.',
@@ -2183,7 +2176,7 @@ async function buildSourceFreshness() {
     Source.find({}).select('name displayName enabled cadence coverage').lean(),
     ScrapeRun.find({ startedAt: { $gte: since } })
       .select(
-        'sourceName status startedAt finishedAt observationCount entitiesObserved materializationErrors materializationConflicts invalidated options',
+        'sourceName status startedAt finishedAt heartbeatAt observationCount entitiesObserved materializationErrors materializationConflicts invalidated options',
       )
       .sort({ startedAt: -1 })
       .lean(),

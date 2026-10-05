@@ -4,7 +4,12 @@ const mocks = {
   created: [] as Array<Record<string, unknown>>,
   newest: null as { measuredAt: Date } | null,
   reportCalls: 0,
+  findFails: false,
 };
+
+const captureServerWarning = vi.hoisted(() => vi.fn());
+
+vi.mock('../../utils/errorTracking', () => ({ captureServerWarning }));
 
 vi.mock('../../models/corpusQualitySnapshot', () => ({
   CORPUS_QUALITY_SNAPSHOT_COLLECTION: 'corpus_quality_snapshots',
@@ -12,7 +17,10 @@ vi.mock('../../models/corpusQualitySnapshot', () => ({
     findOne: () => ({
       sort: () => ({
         select: () => ({
-          lean: async () => mocks.newest,
+          lean: async () => {
+            if (mocks.findFails) throw new Error('synthetic measurement failure');
+            return mocks.newest;
+          },
         }),
       }),
     }),
@@ -42,6 +50,7 @@ const {
   corpusSnapshotSchedulerEnabled,
   connectedOperatorEnvironment,
   recordCorpusQualitySnapshotIfStale,
+  runCorpusQualitySnapshotCycle,
 } = await import('../corpusQualitySnapshotScheduler');
 
 const NOW = new Date('2026-09-15T12:00:00.000Z');
@@ -51,6 +60,8 @@ beforeEach(() => {
   mocks.created = [];
   mocks.newest = null;
   mocks.reportCalls = 0;
+  mocks.findFails = false;
+  captureServerWarning.mockClear();
 });
 
 describe('corpusSnapshotSchedulerEnabled', () => {
@@ -140,5 +151,31 @@ describe('recordCorpusQualitySnapshotIfStale', () => {
 
     expect(await call()).toBe('fresh');
     expect(mocks.created).toHaveLength(1);
+  });
+});
+
+describe('runCorpusQualitySnapshotCycle', () => {
+  it('reports a failed measurement once as a degraded-service warning and keeps the console line', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.findFails = true;
+
+    await runCorpusQualitySnapshotCycle('Development');
+
+    expect(captureServerWarning).toHaveBeenCalledTimes(1);
+    expect(captureServerWarning).toHaveBeenCalledWith('corpus_snapshot_failed');
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+
+  it('reports nothing for a cycle that records or finds a fresh measurement', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await runCorpusQualitySnapshotCycle('Development');
+    mocks.newest = { measuredAt: new Date() };
+    await runCorpusQualitySnapshotCycle('Development');
+
+    expect(mocks.created).toHaveLength(1);
+    expect(captureServerWarning).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

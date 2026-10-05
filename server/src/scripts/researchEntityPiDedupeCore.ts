@@ -1,7 +1,13 @@
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import {
+  isAreaShellSlug,
+  isFundingShellSlug,
+  isLowTrustAreaShellSlug,
+} from '../utils/researchEntityShellSlug';
+import {
   concreteLabWebsiteForEntity,
   entityCarriesConcreteWebsite,
+  entityNameWordsWithoutKindNouns,
   isCenterOrInstituteEntity,
   isConcreteResearchHomeEntity,
   isProfileAreaShellEntity,
@@ -37,6 +43,7 @@ export interface ResearchEntityPiDedupeRow {
     fundingAgencies?: string[];
     piRoleCorroborated?: boolean;
     identitySourceUrl?: string;
+    leadPersonIds?: string[];
   }>;
 }
 
@@ -69,6 +76,18 @@ export interface MultiPersonEntityQuarantine {
   id: string;
   slug?: string;
   personIds: string[];
+}
+
+export type UrlIdentityLaneName = 'official-lab-url' | 'profile-lab-url' | 'website-url';
+
+export interface UrlIdentityLaneVerdict {
+  lane: UrlIdentityLaneName;
+  candidateRows: number;
+  rowLimit: number;
+  plannedGroups: number;
+  quarantinedGroups: number;
+  plannedSlugs: string[];
+  quarantinedSlugs: string[];
 }
 
 export interface ConflatedPersonProfileQuarantine {
@@ -154,6 +173,7 @@ export function mergedGrantEvidenceFromEntities(entities: ResearchEntityPiDedupe
  */
 export const MERGE_RELINKABLE_OBSERVATION_FIELDS = [
   'recentGrants',
+  'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
 ] as const;
@@ -210,24 +230,6 @@ function timeValue(value: Date | string | null | undefined): number {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
-}
-
-function isAreaShellSlug(slug: string | undefined): boolean {
-  return (slug || '').toLowerCase().startsWith('faculty-research-area-');
-}
-
-function isFundingShellSlug(slug: string | undefined): boolean {
-  const value = (slug || '').toLowerCase();
-  return (
-    value.startsWith('nih-pi-') ||
-    value.startsWith('nsf-pi-') ||
-    value.startsWith('federal-pi-') ||
-    value.startsWith('doe-pi-')
-  );
-}
-
-export function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
-  return isAreaShellSlug(slug) || isFundingShellSlug(slug);
 }
 
 function rosterHost(value: string | undefined): string {
@@ -309,8 +311,6 @@ function isFundingSourceUrl(value: string | undefined): boolean {
       host.endsWith('.nih.gov') ||
       host === 'nsf.gov' ||
       host.endsWith('.nsf.gov') ||
-      host === 'usaspending.gov' ||
-      host.endsWith('.usaspending.gov') ||
       host === 'osti.gov' ||
       host.endsWith('.osti.gov')
     );
@@ -906,16 +906,68 @@ function multiPersonEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
   return ids;
 }
 
+function sharedPersonEligibleEntities(
+  row: ResearchEntityPiDedupeRow,
+  sharedEntityIds: ReadonlySet<string>,
+): ResearchEntityPiDedupeRow['entities'] {
+  return row.entities.filter(
+    (entity) =>
+      entity.id &&
+      !sharedEntityIds.has(entity.id) &&
+      !isSharedOrganizationEntityType(entity.entityType),
+  );
+}
+
+function sharedPersonGroup(
+  row: ResearchEntityPiDedupeRow,
+  entities: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeGroup[] {
+  const group = buildGroupFromCluster(row, entities);
+  return group ? [{ ...group, dedupeCategory: 'shared_person_id' as const }] : [];
+}
+
 export function buildSharedPersonIdResearchEntityDedupePlan(
   rows: ResearchEntityPiDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
   const sharedEntityIds = multiPersonEntityIds(rows);
+  return rows.flatMap((row) =>
+    sharedPersonGroup(row, sharedPersonEligibleEntities(row, sharedEntityIds)),
+  );
+}
+
+/**
+ * The comparable form of a research row's name for the name-agreement lane. Diacritics
+ * fold because one roster spells a name with them and another without, a lone initial
+ * drops because one roster prints a middle initial another omits, and the kind
+ * nouns drop because "Avery Lab" and "Avery Faculty Research" are not what disagrees when the
+ * type already agrees.
+ */
+export function nameAgreementKey(value: string | undefined): string {
+  return entityNameWordsWithoutKindNouns(value)
+    .filter((word) => word.length > 1)
+    .join(' ');
+}
+
+/**
+ * The unattended form of the shared-person lane: one group per lead, entity type and
+ * name. One person can lead a lab and run an unrelated project under another name, and
+ * #3279 measured that a shared lead alone does not make two rows one entity, so rows only
+ * group with the rows that are the same kind of thing under the same name.
+ */
+export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
+  rows: ResearchEntityPiDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const sharedEntityIds = multiPersonEntityIds(rows);
   return rows.flatMap((row) => {
-    const entities = row.entities.filter((entity) => entity.id && !sharedEntityIds.has(entity.id));
-    if (entities.length <= 1) return [];
-    const group = buildGroupFromCluster(row, entities);
-    if (!group) return [];
-    return [{ ...group, dedupeCategory: 'shared_person_id' as const }];
+    const clusters = new Map<string, ResearchEntityPiDedupeRow['entities']>();
+    for (const entity of sharedPersonEligibleEntities(row, sharedEntityIds)) {
+      const name = nameAgreementKey(entity.name);
+      const entityType = (entity.entityType || '').toUpperCase();
+      if (!name || !entityType) continue;
+      const key = `${entityType}::${name}`;
+      clusters.set(key, [...(clusters.get(key) || []), entity]);
+    }
+    return [...clusters.values()].flatMap((entities) => sharedPersonGroup(row, entities));
   });
 }
 
@@ -1049,6 +1101,7 @@ const PERSON_LEAD_NAME_STOPWORDS = new Set([
   'institute',
   'program',
   'faculty',
+  'yale',
 ]);
 
 /**
@@ -1396,25 +1449,39 @@ export function clusterHasConflictingLeadFirstNames(
  * reverse. Funding shells and non {LAB, FACULTY_RESEARCH_AREA} types (a CENTER
  * or CORE_FACILITY the person merely belongs to) are excluded from this lane.
  */
-export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
-  rows: OfficialLabUrlDedupeRow[],
-): ResearchEntityPiDedupeGroup[] {
-  const groups: ResearchEntityPiDedupeGroup[] = [];
-  for (const row of rows) {
-    const key = specificProfileLabUrlIdentityKey(row.url);
-    if (!key) continue;
-    const entities = row.entities.filter((entity) => entity.id);
-    if (entities.length <= 1) continue;
-    if (entities.some((entity) => isFundingShellSlug(entity.slug))) continue;
-    if (
-      !entities.every((entity) =>
-        SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES.has(entity.entityType || ''),
-      )
-    ) {
-      continue;
-    }
-    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
-      const group = buildGroupFromCluster(
+export type ProfileLabUrlCandidateRefusal =
+  | 'no_identity_key'
+  | 'single_entity'
+  | 'funding_shell'
+  | 'entity_type_outside_lane'
+  | 'duplicate_adds_lead'
+  | LeadPersonClusterRefusal;
+
+export interface ProfileLabUrlCandidateRefusalRow {
+  url: string;
+  reason: ProfileLabUrlCandidateRefusal;
+}
+
+function planSpecificProfileLabUrlRow(row: OfficialLabUrlDedupeRow): {
+  groups: ResearchEntityPiDedupeGroup[];
+  refusal?: ProfileLabUrlCandidateRefusal;
+} {
+  const key = specificProfileLabUrlIdentityKey(row.url);
+  if (!key) return { groups: [], refusal: 'no_identity_key' };
+  const entities = row.entities.filter((entity) => entity.id);
+  if (entities.length <= 1) return { groups: [], refusal: 'single_entity' };
+  if (entities.some((entity) => isFundingShellSlug(entity.slug))) {
+    return { groups: [], refusal: 'funding_shell' };
+  }
+  if (
+    !entities.every((entity) => SPECIFIC_PROFILE_LAB_URL_ENTITY_TYPES.has(entity.entityType || ''))
+  ) {
+    return { groups: [], refusal: 'entity_type_outside_lane' };
+  }
+  const { clusters, refusal } = clusterEntitiesBySharedLeadPersonIdentityWithRefusal(entities);
+  const built = clusters
+    .map((cluster) =>
+      buildGroupFromCluster(
         {
           userId: `profile-lab-url:${key}`,
           normalizedName: `profile-lab-url:${key}`,
@@ -1422,21 +1489,110 @@ export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
         },
         cluster,
         specificProfileLabUrlCanonicalScore,
-      );
-      if (group) groups.push(group);
-    }
-  }
-  return dedupePlanGroupsByEntitySet(groups);
+      ),
+    )
+    .filter((group): group is ResearchEntityPiDedupeGroup => !!group);
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  const groups = built.filter((group) => !mergeHandsSurvivorAnotherLead(group, byId));
+  if (refusal) return { groups, refusal };
+  return built.length > 0 && groups.length === 0
+    ? { groups, refusal: 'duplicate_adds_lead' }
+    : { groups };
 }
 
-function personLeadNameTokens(name: string | undefined): string[] {
+// The lane runs unattended, and a loser's lead the survivor does not hold is moved onto
+// the survivor by the merge, so an accountless shell of the survivor's own lead would be
+// served as a second lead. A survivor with no lead edge yet takes the loser's leads.
+function mergeHandsSurvivorAnotherLead(
+  group: ResearchEntityPiDedupeGroup,
+  byId: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
+): boolean {
+  const survivorLeads = new Set(byId.get(group.canonicalEntityId)?.leadPersonIds || []);
+  if (survivorLeads.size === 0) return false;
+  return group.duplicateEntityIds.some((id) =>
+    (byId.get(id)?.leadPersonIds || []).some((lead) => !survivorLeads.has(lead)),
+  );
+}
+
+export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
+  rows: OfficialLabUrlDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  return dedupePlanGroupsByEntitySet(
+    rows.flatMap((row) => planSpecificProfileLabUrlRow(row).groups),
+  );
+}
+
+/**
+ * Every candidate URL the lane planned nothing for, with the one rule that refused it,
+ * so a dry run says why a shared lab page stays two rows rather than reporting only the
+ * groups it would merge (#4791).
+ */
+export function explainSpecificProfileLabUrlRefusals(
+  rows: OfficialLabUrlDedupeRow[],
+): ProfileLabUrlCandidateRefusalRow[] {
+  return rows.flatMap((row) => {
+    const { groups, refusal } = planSpecificProfileLabUrlRow(row);
+    return groups.length === 0 && refusal ? [{ url: row.url, reason: refusal }] : [];
+  });
+}
+
+const NAME_CREDENTIAL_AFTER_COMMA =
+  /,\s*(?:ph\.?\s?d|m\.?\s?d|m\.?p\.?h|b\.?s|b\.?a|m\.?sc?|m\.?b\.?a|m\.?a|d\.?v\.?m|r\.?n|d\.?o|d\.?d\.?s|sc\.?d|ed\.?d|j\.?d|jr|sr|ii|iii|iv)\.?(?=[\s,]|$)/gi;
+
+const PARENTHETICAL = /\(([^)]*)\)/g;
+
+const MIN_ALIAS_SURNAME_LENGTH = 3;
+
+function foldedPersonName(name: string | undefined): string {
   return (name || '')
-    .toLowerCase()
-    .replace(/\([^)]*\)/g, ' ')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(NAME_CREDENTIAL_AFTER_COMMA, ' ')
+    .toLowerCase();
+}
+
+function nameTokens(text: string): string[] {
+  return text
     .replace(/[^a-z0-9]+/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
     .filter((token) => !PERSON_LEAD_NAME_STOPWORDS.has(token));
+}
+
+function personLeadNameTokens(name: string | undefined): string[] {
+  return nameTokens(foldedPersonName(name).replace(PARENTHETICAL, ' '));
+}
+
+// "Quantitative Imaging Data Lab (QUID Lab)" is also listed as "QUID Lab".
+function personLeadNameAliasTokens(name: string | undefined): string[][] {
+  return Array.from(foldedPersonName(name).matchAll(PARENTHETICAL))
+    .map((match) => nameTokens(match[1]))
+    .filter(
+      (tokens) => tokens.length > 0 && tokens[tokens.length - 1].length >= MIN_ALIAS_SURNAME_LENGTH,
+    );
+}
+
+function firstNameTokenCompatible(token: string, others: ReadonlySet<string>): boolean {
+  if (others.has(token)) return true;
+  for (const other of others) {
+    if (token.length === 1 && other.startsWith(token)) return true;
+    if (other.length === 1 && token.startsWith(other)) return true;
+  }
+  return false;
+}
+
+function leadNameTokensAgree(tokensA: string[], tokensB: string[]): boolean {
+  if (tokensA.length === 0 || tokensB.length === 0) return false;
+  if (tokensA[tokensA.length - 1] !== tokensB[tokensB.length - 1]) return false;
+  const firstNamesA = new Set(tokensA.slice(0, -1));
+  const firstNamesB = new Set(tokensB.slice(0, -1));
+  if (firstNamesA.size === 0 || firstNamesB.size === 0) return true;
+  const [smaller, larger] =
+    firstNamesA.size <= firstNamesB.size ? [firstNamesA, firstNamesB] : [firstNamesB, firstNamesA];
+  for (const token of smaller) {
+    if (!firstNameTokenCompatible(token, larger)) return false;
+  }
+  return true;
 }
 
 /**
@@ -1451,31 +1607,39 @@ export function entitiesShareLeadPersonName(
   a: ResearchEntityPiDedupeRow['entities'][number],
   b: ResearchEntityPiDedupeRow['entities'][number],
 ): boolean {
-  const tokensA = personLeadNameTokens(a.name);
-  const tokensB = personLeadNameTokens(b.name);
-  if (tokensA.length === 0 || tokensB.length === 0) return false;
-  if (tokensA[tokensA.length - 1] !== tokensB[tokensB.length - 1]) return false;
-
-  const firstNamesA = new Set(tokensA.slice(0, -1));
-  const firstNamesB = new Set(tokensB.slice(0, -1));
-  if (firstNamesA.size === 0 || firstNamesB.size === 0) return true;
-  const [smaller, larger] =
-    firstNamesA.size <= firstNamesB.size ? [firstNamesA, firstNamesB] : [firstNamesB, firstNamesA];
-  for (const token of smaller) {
-    if (!larger.has(token)) return false;
-  }
-  return true;
+  const variantsA = [personLeadNameTokens(a.name), ...personLeadNameAliasTokens(a.name)];
+  const variantsB = [personLeadNameTokens(b.name), ...personLeadNameAliasTokens(b.name)];
+  return variantsA.some((tokensA) =>
+    variantsB.some((tokensB) => leadNameTokensAgree(tokensA, tokensB)),
+  );
 }
 
+const leadPersonSetKey = (entity: ResearchEntityPiDedupeRow['entities'][number]): string =>
+  Array.from(new Set(entity.leadPersonIds || []))
+    .sort()
+    .join(',');
+
+// A topical lab name ("BEACON Lab") yields no surname to compare a person slug
+// against, so the slug check alone refused every such pair. Holding exactly the same
+// leads as another row is the identity the slug check stands in for, and it still
+// refuses a member's row that adds its own lead beside the lab's (#4791).
 function dropClusterMembersWhoseSlugNamesAnotherPerson(
   cluster: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'] {
   const identitySurname = sharedNameSurname(cluster);
   return cluster.filter((entity) => {
     const personSurname = slugPersonSurname(entity.slug);
-    return !personSurname || personSurname === identitySurname;
+    if (!personSurname || personSurname === identitySurname) return true;
+    const leads = leadPersonSetKey(entity);
+    return (
+      leads !== '' &&
+      cluster.some((other) => other.id !== entity.id && leadPersonSetKey(other) === leads)
+    );
   });
 }
+
+export type LeadPersonClusterRefusal =
+  'lead_names_disagree' | 'conflicting_lead_first_names' | 'slug_names_another_person';
 
 /**
  * Every URL-keyed lane merges on the same claim - these rows are one person's
@@ -1488,6 +1652,15 @@ function dropClusterMembersWhoseSlugNamesAnotherPerson(
 function clusterEntitiesBySharedLeadPersonIdentity(
   entities: ResearchEntityPiDedupeRow['entities'],
 ): ResearchEntityPiDedupeRow['entities'][] {
+  return clusterEntitiesBySharedLeadPersonIdentityWithRefusal(entities).clusters;
+}
+
+function clusterEntitiesBySharedLeadPersonIdentityWithRefusal(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): {
+  clusters: ResearchEntityPiDedupeRow['entities'][];
+  refusal?: LeadPersonClusterRefusal;
+} {
   const parent = new Map<string, string>();
   const byId = new Map(entities.map((entity) => [entity.id, entity]));
   for (const entity of entities) parent.set(entity.id, entity.id);
@@ -1517,11 +1690,16 @@ function clusterEntitiesBySharedLeadPersonIdentity(
     const root = find(id);
     components.set(root, [...(components.get(root) || []), byId.get(id)!]);
   }
-  return Array.from(components.values())
-    .filter((cluster) => cluster.length > 1)
-    .filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster))
+  const unioned = Array.from(components.values()).filter((cluster) => cluster.length > 1);
+  if (unioned.length === 0) return { clusters: [], refusal: 'lead_names_disagree' };
+  const unconflicted = unioned.filter((cluster) => !clusterHasConflictingLeadFirstNames(cluster));
+  if (unconflicted.length === 0) {
+    return { clusters: [], refusal: 'conflicting_lead_first_names' };
+  }
+  const clusters = unconflicted
     .map(dropClusterMembersWhoseSlugNamesAnotherPerson)
     .filter((cluster) => cluster.length > 1);
+  return clusters.length > 0 ? { clusters } : { clusters, refusal: 'slug_names_another_person' };
 }
 
 /**

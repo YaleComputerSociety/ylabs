@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
 import {
   candidateToObservations,
   extractProgramUrlsFromDirectory,
   isExcludedAlreadyCoveredUrl,
   isHealthSciencesSummerProgramUrl,
-  parseDeadlineToUtcEndOfDay,
   parseHealthSciencesProgramPage,
   YaleHealthSciencesSummerProgramsScraper,
   YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE,
@@ -73,9 +73,7 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate?.title).toBe('Yale Biomedical Summer Undergraduate Research Fellowship');
     expect(candidate?.sourceUrl).toBe(surfUrl);
     expect(candidate?.description).toMatch(/ten-week summer research program/);
-    expect(candidate?.deadline?.toISOString()).toBe(
-      parseDeadlineToUtcEndOfDay('February 3, 2026', referenceDate)?.toISOString(),
-    );
+    expect(candidate?.deadline?.toISOString()).toBe('2026-02-04T04:59:59.999Z');
     expect(candidate?.applicationLink).toBe('https://apply.example.org/biomedsurf-2026');
     expect(candidate?.termOfAward).toContain('Summer');
   });
@@ -116,6 +114,63 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate).toBeUndefined();
   });
 
+  it('does not read the program start date after a passed-deadline notice as a deadline', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <p>A summer research internship that places undergraduate students in Yale research groups.</p>
+        <h2>How to Apply</h2>
+        <p>The deadline has passed for the 2026 summer internship, which will take place from June 1 to July 24, 2026.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate).toBeDefined();
+    expect(candidate?.deadline).toBeUndefined();
+    expect(candidate?.isAcceptingApplications).toBe(false);
+  });
+
+  it('skips a deadline label whose own sentence says it has passed, even when words sit between them', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <p>A summer research internship that places undergraduate students in Yale research groups.</p>
+        <p>The application deadline for the 2026 program has passed. The program runs June 1 to July 24.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate).toBeDefined();
+    expect(candidate?.deadline).toBeUndefined();
+  });
+
+  it('still reads a later deadline after a passed-deadline notice', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <p>A summer research internship that places undergraduate students in Yale research groups.</p>
+        <p>The deadline has passed for this cycle. Next application deadline: January 31, 2027.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate?.deadline?.toISOString()).toBe('2027-02-01T04:59:59.999Z');
+  });
+
+  it('leaves a photo caption out of the description read from prose paragraphs', () => {
+    const html = `
+      <main>
+        <h1>Fixture Developmental Science Summer Internship</h1>
+        <figure>
+          <img src="/fixture-group-photo.jpg" alt="" />
+          <figcaption class="photo__details"><p>Top (l-r): Fixture Person One, Fixture Person Two, Fixture Person Three.</p></figcaption>
+        </figure>
+        <p>A summer research internship that places undergraduate students in Yale research groups, where each intern joins a lab and works on an ongoing developmental science project.</p>
+        <p>Interns attend weekly seminars, present their work at a closing symposium, and receive mentoring from faculty and graduate students throughout the summer.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate?.description).toMatch(/^A summer research internship/);
+    expect(candidate?.description).not.toContain('Fixture Person');
+  });
+
   it('returns undefined for a page with no undergraduate summer-research signal', () => {
     const candidate = parseHealthSciencesProgramPage(
       '<main><h1>Department Directory</h1><p>Faculty office hours and contact list.</p></main>',
@@ -127,7 +182,41 @@ describe('parseHealthSciencesProgramPage', () => {
   });
 });
 
-describe('candidateToObservations classification', () => {
+describe('an eligibility section past the old emission cap (#4572)', () => {
+  const requirement = 'Applicants must identify a Yale faculty mentor before applying.';
+  const conditions = Array.from(
+    { length: 24 },
+    (_, index) =>
+      `<p>Eligibility condition ${index + 1} describes a synthetic requirement every applicant to the summer program meets.</p>`,
+  ).join('');
+  const html = `
+    <main>
+      <h1>Fixture Summer Undergraduate Research Program</h1>
+      <p>This is a ten-week summer research program for undergraduates from any institution.</p>
+      <h2>Eligibility</h2>
+      ${conditions}
+      <p>${requirement}</p>
+    </main>
+  `;
+
+  it('emits the whole section and lets the classifier read its last requirement', () => {
+    const candidate = parseHealthSciencesProgramPage(
+      html,
+      surfUrl,
+      'Yale School of Medicine',
+      referenceDate,
+    )!;
+
+    expect(candidate.eligibility?.length).toBeGreaterThan(2000);
+    expect(candidate.eligibility).toContain(requirement);
+    expect(classificationFromObservedFacts(candidateToObservations(candidate))).toMatchObject({
+      requiresMentorBeforeApply: true,
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    });
+  });
+});
+
+describe('classification derived from the observed facts', () => {
   it('classifies a matched-mentor summer program as SUMMER_RESEARCH_PROGRAM / DIRECT_FACULTY_MATCHING', () => {
     const candidate = parseHealthSciencesProgramPage(
       surfHtml,
@@ -138,9 +227,12 @@ describe('candidateToObservations classification', () => {
     const observations = candidateToObservations(candidate);
     const byField = (field: string) => observations.find((o) => o.field === field)?.value;
     expect(byField('sourceName')).toBe(YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE);
-    expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');
-    expect(byField('entryMode')).toBe('DIRECT_FACULTY_MATCHING');
-    expect(byField('mentorMatching')).toBe(true);
+    expect(byField('programCategory')).toBeUndefined();
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
   });
 });
 

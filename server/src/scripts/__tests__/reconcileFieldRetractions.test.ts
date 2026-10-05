@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs, totalPlannedRetractions } from '../reconcileFieldRetractions';
+import {
+  parseArgs,
+  summarizePreFixAbsenceClaimExclusions,
+  totalPlannedRetractions,
+} from '../reconcileFieldRetractions';
 import { fieldRetractionContracts } from '../../scrapers/fieldRetraction';
 
 describe('observations:reconcile-field-retractions arguments', () => {
@@ -11,9 +15,10 @@ describe('observations:reconcile-field-retractions arguments', () => {
   });
 
   it('refuses a source that declares no retraction contract', () => {
-    // `dept-faculty-roster` used to stand here and now declares one (#3135), so both
-    // names are checked against the registry rather than assumed to stay undeclared.
-    for (const source of ['ysm-atoz-index', 'official-profile-pi-backfill']) {
+    // `dept-faculty-roster` (#3135) and `official-profile-pi-backfill` (#4544) used to stand
+    // here and now declare one, so the name is checked against the registry rather than
+    // assumed to stay undeclared.
+    for (const source of ['ysm-atoz-index']) {
       expect(fieldRetractionContracts).not.toHaveProperty(source);
       expect(() => parseArgs([`--source=${source}`])).toThrow(
         /declares no field-retraction contract/,
@@ -25,6 +30,9 @@ describe('observations:reconcile-field-retractions arguments', () => {
     expect(parseArgs(['--source=dept-faculty-roster']).sources).toEqual(['dept-faculty-roster']);
     expect(parseArgs(['--source=ysm-faculty-directory']).sources).toEqual([
       'ysm-faculty-directory',
+    ]);
+    expect(parseArgs(['--source=official-profile-pi-backfill']).sources).toEqual([
+      'official-profile-pi-backfill',
     ]);
   });
 
@@ -66,5 +74,42 @@ describe('observations:reconcile-field-retractions arguments', () => {
         },
       ]),
     ).toBe(2);
+  });
+
+  it('reports the pre-fix claims each source and field excluded', () => {
+    expect(
+      summarizePreFixAbsenceClaimExclusions([
+        {
+          outcome: 'planned',
+          sourceName: 'fixture-source-a',
+          dryRun: true,
+          counts: {
+            preFixAbsenceClaims: {
+              websiteUrl: { excludedClaims: 7, heldObservations: 3, heldEntities: 2 },
+            },
+          } as any,
+          frozenFields: [],
+          regatedEntities: 0,
+          retractions: [],
+        },
+        {
+          outcome: 'planned',
+          sourceName: 'fixture-source-b',
+          dryRun: true,
+          counts: { preFixAbsenceClaims: {} } as any,
+          frozenFields: [],
+          regatedEntities: 0,
+          retractions: [],
+        },
+      ]),
+    ).toEqual([
+      {
+        sourceName: 'fixture-source-a',
+        field: 'websiteUrl',
+        excludedClaims: 7,
+        heldObservations: 3,
+        heldEntities: 2,
+      },
+    ]);
   });
 });

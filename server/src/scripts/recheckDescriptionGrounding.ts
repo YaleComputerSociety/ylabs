@@ -60,7 +60,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 // A browser user agent, because a WAF answering our scraper string with 403 is the
 // mechanism that produced this issue's retracted measurement.
@@ -222,9 +222,9 @@ async function main(): Promise<void> {
   assertScriptApplyAllowed({
     apply: !options.dryRun,
     scriptName: 'research-entity:recheck-description-grounding',
+    mongoUrl: process.env.MONGODBURL,
   });
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   const now = new Date();
 

@@ -1,30 +1,46 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { researchEntityBrowseTiebreakKey } from '../utils/researchEntityBrowseTiebreakKey';
 import {
   isFacultyResearchEntity,
+  researchEntitySortTitle,
+  researchEntitySortTitleQualifier,
   servedResearchEntityTitle,
 } from '../utils/servedResearchEntityTitle';
-import { getMeiliIndex } from '../utils/meiliClient';
+import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
+import {
+  assertMeiliTaskSucceeded,
+  MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+  MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  type MeiliTaskWaitingIndex,
+} from '../utils/meiliTask';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { usableOpenAiApiKey } from '../utils/openAiApiKey';
+import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
-import { dropDomainIncoherentUnsourcedResearchAreas } from '../utils/researchAreaDomainCoherence';
+import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
+import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
 } from '../utils/researchEntityDescriptionText';
-import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
   isPlaceholderEntityName,
   personScopedResearchEntityNameFromPersonName,
+  servedResearchEntityNameWithoutPageFurniture,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   isExternalScholarlyPlatformLinkLabelName,
+  namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -57,10 +73,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'shortDescription',
     'fullDescription',
     'school',
-    'kind',
-    'entityType',
-    'websiteUrl',
-    'sourceUrls',
+    'entityTypeSearchTerms',
   ],
   filterableAttributes: [
     'archived',
@@ -73,7 +86,16 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'hasUndergradHostingEvidence',
     'studentVisibilityTier',
   ],
-  sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
+  sortableAttributes: [
+    'browseRankScore',
+    'browseTiebreakKey',
+    'lastObservedAt',
+    'name',
+    'sortTitle',
+    'sortTitleQualifier',
+    'createdAt',
+    'updatedAt',
+  ],
   displayedAttributes: ['*'],
   // `exactness` and `typo` precede `attribute` (Meili's default puts `attribute`
   // first) so an exact, typo-free topical match in a lower-priority field beats a
@@ -96,12 +118,41 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   },
 };
 
+export const MESH_DESCRIPTOR_ONLY_TERMS_FIELD = 'meshDescriptorOnlyTerms';
+
+export const RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS: readonly string[] = Array.from(
+  new Set([
+    RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+    'slug',
+    MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+    ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.searchableAttributes,
+    ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes,
+    ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes,
+  ]),
+);
+
+const projectToIndexedFields = (doc: Record<string, any>): Record<string, any> =>
+  Object.fromEntries(
+    RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS.filter((field) => doc[field] !== undefined).map(
+      (field) => [field, doc[field]],
+    ),
+  );
+
 export interface ResearchEntitySearchIndexRebuildOptions {
   pageSize?: number;
   clearExisting?: boolean;
   getIndex?: typeof getMeiliIndex;
+  getClient?: () => Promise<ResearchEntitySearchIndexAdminClient>;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
-  fetchMemberNames?: (entityIds: unknown[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchChangedSince?: (since: Date) => Promise<any[]>;
+  /**
+   * Injectable for the same reason the index and the page fetch are: a rebuild test has no
+   * database, and a warm that reached for one would make every rebuild assertion wait for a
+   * connection timeout instead of asserting.
+   */
+  warmVocabulary?: () => Promise<unknown>;
+  swapConfirmation?: MeiliSwapConfirmationOptions;
 }
 
 export interface ResearchEntitySearchIndexRebuildResult {
@@ -111,6 +162,10 @@ export interface ResearchEntitySearchIndexRebuildResult {
   indexedDocumentCount: number;
   pageCount: number;
   clearedExisting: boolean;
+  swap?: ResearchEntitySearchIndexSwapResult;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
 }
 
 export interface ResearchEntitySearchMemberNameFields {
@@ -154,6 +209,7 @@ const SEARCH_INDEX_TEXT_FIELDS = [
   'summary',
   'shortDescription',
   'fullDescription',
+  'description',
   'undergradEvidenceQuote',
   'undergradAccessEvidence',
 ] as const;
@@ -168,20 +224,6 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
 ] as const;
 
 const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
-
-const RETIRED_ACCESS_INDEX_FIELDS = [
-  'openness',
-  'acceptingUndergrads',
-  'acceptanceConfidence',
-  'opennessSignals',
-  'opennessStatusCache',
-  'opennessExplanationCache',
-  'opennessComputedAt',
-  'opennessLastSignalAt',
-  'undergraduateCurrentAvailability',
-  'undergraduateCompensationModel',
-  'undergraduateEligibleStudentLevels',
-] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'pi',
@@ -204,20 +246,6 @@ const MONGO_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const researchEntitySearchDocumentId = (doc: any): string =>
   serializedDocumentId(doc?._id) || serializedDocumentId(doc?.id) || '';
-
-const uniqueObjectIdValues = (values: unknown[]): unknown[] => {
-  const seen = new Set<string>();
-  const out: unknown[] = [];
-
-  for (const value of values) {
-    const id = serializedDocumentId(value);
-    if (!id || !MONGO_OBJECT_ID_RE.test(id) || seen.has(id)) continue;
-    seen.add(id);
-    out.push(value);
-  }
-
-  return out;
-};
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -277,6 +305,18 @@ const CV_ADMIN_CONTEXT_PATTERNS: RegExp[] = [
 
 const CV_CITATION_INITIALS_PATTERN = /\b[A-Z][a-zA-Z'-]{1,30}\s+CV[,.]/g;
 
+// A bare "cv" in prose is almost always a curriculum vitae link ("Download CV",
+// "a short CV is available", "his CV lists over 100 publications"), phrasings the
+// strip patterns above cannot enumerate. So a bare abbreviation only counts when
+// the same field also carries vision vocabulary: over the Development index, all 9
+// rows tagged from a bare "CV" had none, while a lab that abbreviates its field
+// ("Our CV group builds algorithms for object detection") does. The field must be
+// the one holding the "cv", and lone generic words ("imaging", "visual",
+// "detection") do not count, because a department such as "Radiology and
+// Biomedical Imaging" or cardiovascular prose would otherwise corroborate. See #3853.
+const CV_CORROBORATING_CONTEXT_PATTERN =
+  /\b(?:vision|cameras?|pixels?|segmentation|scenes?|point\s+clouds?|convolutional|(?:object|image|face|pattern)\s+(?:detection|recognition|tracking|segmentation|classification)|image\s+(?:analysis|processing|understanding)|visual\s+recognition|video\s+(?:analysis|understanding))\b/;
+
 const stripCvFalsePositiveContext = (text: string): string => {
   let cleaned = /\bcurriculum\b/i.test(text) ? text.replace(/\bcv\b/gi, ' ') : text;
   cleaned = cleaned.replace(CV_CITATION_INITIALS_PATTERN, ' ');
@@ -301,6 +341,20 @@ const stripEndowedChairTitles = (text: string): string =>
     .replace(/[ \t]+/g, ' ')
     .trim();
 
+const RESEARCH_ENTITY_TYPE_SEARCH_TERMS: Partial<Record<ResearchEntityType, string>> = {
+  LAB: 'lab',
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  INITIATIVE: 'initiative',
+  CORE_FACILITY: 'core facility',
+};
+
+export const researchEntityTypeSearchTerms = (entityType: unknown): string[] => {
+  const type = asResearchEntityType(entityType);
+  const term = type ? RESEARCH_ENTITY_TYPE_SEARCH_TERMS[type] : undefined;
+  return term ? [term] : [];
+};
+
 export function buildStudentSearchTerms(doc: any): string[] {
   const textFields = [
     doc?.name,
@@ -319,9 +373,14 @@ export function buildStudentSearchTerms(doc: any): string[] {
   if (!haystack) return [];
 
   const cvGuardedHaystack = normalizedAliasHaystack(
-    textFields.map((value) =>
-      typeof value === 'string' ? stripCvFalsePositiveContext(value) : value,
-    ),
+    textFields.map((value) => {
+      const strippedField = normalizedAliasHaystack(
+        (Array.isArray(value) ? value : [value]).map((item) =>
+          typeof item === 'string' ? stripCvFalsePositiveContext(item) : item,
+        ),
+      );
+      return CV_CORROBORATING_CONTEXT_PATTERN.test(strippedField) ? strippedField : '';
+    }),
   );
 
   const terms: string[] = [];
@@ -346,21 +405,28 @@ const emptyMemberNameFields = (): ResearchEntitySearchMemberNameFields => ({
 });
 
 export async function fetchResearchEntitySearchMemberNames(
-  entityIds: unknown[],
+  entities: any[],
 ): Promise<ResearchEntitySearchMemberNameMap> {
-  const ids = uniqueObjectIdValues(entityIds);
-  if (ids.length === 0) return new Map();
+  const entityById = new Map<string, any>();
+  for (const entity of entities) {
+    const id = researchEntitySearchDocumentId(entity);
+    if (MONGO_OBJECT_ID_RE.test(id) && !entityById.has(id)) entityById.set(id, entity);
+  }
+  if (entityById.size === 0) return new Map();
 
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(ids);
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(Array.from(entityById.keys()));
+  const { publicResearchEntityDetailMemberNames } = await import('./researchGroupService');
+  const now = new Date();
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
 
   for (const [entityId, roster] of rosterByEntityId) {
-    for (const member of roster) {
-      if (!member.isCurrentMember) continue;
+    const entity = entityById.get(entityId);
+    if (!entity) continue;
+    for (const member of publicResearchEntityDetailMemberNames(entity, roster, now)) {
       if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
 
       const name = cleanPersonName(member.name);
-      if (!name) continue;
+      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
 
       const fields = byEntityId.get(entityId) || emptyMemberNameFields();
       fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
@@ -373,21 +439,6 @@ export async function fetchResearchEntitySearchMemberNames(
 
   return byEntityId;
 }
-
-const publicHttpUrl = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-
-  try {
-    return isPublicHttpUrl(trimmed) ? trimmed : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const publicHttpUrls = (value: unknown): string[] =>
-  Array.isArray(value) ? value.flatMap((item) => publicHttpUrl(item) ?? []) : [];
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
@@ -411,6 +462,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
       slug: out.slug,
       websiteUrl: out.fieldProvenance?.displayName?.sourceUrl || out.websiteUrl || out.website,
       recordCitedUrls: [out.websiteUrl, out.website, out.sourceUrls],
+      siteDeclaredOwnNames: out.siteDeclaredOwnNames,
     })
   ) {
     delete out.displayName;
@@ -420,10 +472,15 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   // indexed title cannot drift from the served one on a row whose stored name the
   // repair has not reached yet (#2373/#2507).
   for (const field of ['name', 'displayName'] as const) {
-    const derived = personScopedResearchEntityNameFromPersonName({
+    const entity = { entityType: out.entityType, kind: out.kind };
+    const withoutFurniture = servedResearchEntityNameWithoutPageFurniture({
+      ...entity,
       candidateName: out[field],
-      entityType: out.entityType,
-      kind: out.kind,
+    });
+    if (withoutFurniture) out[field] = withoutFurniture;
+    const derived = personScopedResearchEntityNameFromPersonName({
+      ...entity,
+      candidateName: out[field],
     });
     if (derived) out[field] = derived;
   }
@@ -457,7 +514,13 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     let cleaned = sanitizeResearchEntityDescription(
       revoiceFirstPersonResearchLead(out.fullDescription, revoiceSubject),
     );
-    if (isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) cleaned = '';
+    const hasOtherBody =
+      typeof out.profileSynthesisDescription === 'string' &&
+      out.profileSynthesisDescription.trim().length > 0;
+    const blanksEcho = hasOtherBody || isStudiesSentenceNestingTopicsUnderTheFirst(cleaned);
+    if (blanksEcho && isStudiesResearchAreaEchoDescription(cleaned, out.researchAreas)) {
+      cleaned = '';
+    }
     if (isSyntheticResearchHomeMetadataDescription(cleaned)) cleaned = '';
     out.fullDescription = stripEndowedChairTitles(cleaned);
   }
@@ -476,33 +539,18 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     else delete out[field];
   }
 
-  const websiteUrl = publicHttpUrl(out.websiteUrl);
-  const website = publicHttpUrl(out.website);
-  if (websiteUrl || website) out.websiteUrl = websiteUrl || website;
-  else delete out.websiteUrl;
-
-  if (website) out.website = website;
-  else delete out.website;
-
-  if ('sourceUrls' in out) {
-    const sourceUrls = publicHttpUrls(out.sourceUrls);
-    if (sourceUrls.length > 0) out.sourceUrls = sourceUrls;
-    else delete out.sourceUrls;
-  }
-
   if (Array.isArray(out.researchAreas)) {
-    const coherentAreas = dropDomainIncoherentUnsourcedResearchAreas(
-      out.researchAreas,
-      out.fieldProvenance,
-      {
+    const researchAreas = decideServedResearchAreas(out.researchAreas, {
+      surface: 'searchIndex',
+      fieldProvenance: out.fieldProvenance,
+      coherenceContext: {
         name: out.name,
         displayName: out.displayName,
         departments: out.departments,
         shortDescription: out.shortDescription,
         fullDescription: out.fullDescription,
       },
-    );
-    const researchAreas = normalizeResearchAreaList(coherentAreas);
+    }).served;
     if (researchAreas.length > 0) out.researchAreas = researchAreas;
     else delete out.researchAreas;
   }
@@ -532,12 +580,6 @@ export function buildResearchEntitySearchIndexDocument(
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
   }
-  delete out._id;
-  delete out.__v;
-  delete out.embedding;
-  for (const field of RETIRED_ACCESS_INDEX_FIELDS) {
-    delete out[field];
-  }
   sanitizeResearchEntityIndexDocument(out);
 
   /**
@@ -558,17 +600,36 @@ export function buildResearchEntitySearchIndexDocument(
       if (out.displayName) out.displayName = servedTitle;
     }
   }
+  out.sortTitle = researchEntitySortTitle(out);
+  out.sortTitleQualifier = researchEntitySortTitleQualifier(out);
+  out.browseTiebreakKey = researchEntityBrowseTiebreakKey(id);
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so
   // an alias derived from copy the sanitizer removes (a chip-echo or synthetic
   // metadata description, an endowed-chair title, a domain-incoherent research
   // area) makes the entity match a term no surface ever serves (#2396).
+  const entityTypeSearchTerms = researchEntityTypeSearchTerms(out.entityType);
+  if (entityTypeSearchTerms.length > 0) out.entityTypeSearchTerms = entityTypeSearchTerms;
   const studentSearchTerms = buildStudentSearchTerms(out);
   if (studentSearchTerms.length > 0) {
     out.studentSearchTerms = studentSearchTerms;
   }
-  return out;
+  const descriptorOnlyTerms = meshDescriptorOnlyTerms(
+    Array.isArray(out.researchAreas) ? out.researchAreas : [],
+    out.fieldProvenance,
+    [
+      out.name,
+      out.displayName,
+      out.shortDescription,
+      out.fullDescription,
+      out.departments,
+      out.orgAffiliationLabels,
+      out.methods,
+    ],
+  );
+  if (descriptorOnlyTerms.length > 0) out[MESH_DESCRIPTOR_ONLY_TERMS_FIELD] = descriptorOnlyTerms;
+  return projectToIndexedFields(out);
 }
 
 export function buildResearchEntitySearchIndexDocuments(
@@ -588,10 +649,10 @@ export function buildResearchEntitySearchIndexDocuments(
 export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
   docs: any[],
   fetchMemberNames: (
-    entityIds: unknown[],
+    entities: any[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(docs.map((doc) => doc?._id ?? doc?.id));
+  const memberNamesByEntityId = await fetchMemberNames(docs);
   return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
 }
 
@@ -600,6 +661,12 @@ async function fetchResearchEntityPage(page: number, pageSize: number): Promise<
     .sort({ _id: 1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
+    .lean();
+}
+
+async function fetchResearchEntitiesChangedSince(since: Date): Promise<any[]> {
+  return ResearchEntity.find({ updatedAt: { $gte: since } })
+    .sort({ _id: 1 })
     .lean();
 }
 
@@ -632,103 +699,273 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
 
 const RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS = 5 * 60 * 1000;
 
-let embedderConfiguredCache: boolean | null = null;
-let embedderConfiguredCacheAt = 0;
+export const RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS = 30 * 1000;
+
+export type ResearchEntitySearchEmbedderState = 'configured' | 'absent' | 'unknown';
+
+let embedderStateCache: ResearchEntitySearchEmbedderState | null = null;
+let embedderStateCacheAt = 0;
+
+const embedderStateCacheTtlMs = (state: ResearchEntitySearchEmbedderState): number =>
+  state === 'unknown'
+    ? RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS
+    : RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
 
 export const invalidateResearchEntitySearchEmbedderCache = (): void => {
-  embedderConfiguredCache = null;
-  embedderConfiguredCacheAt = 0;
+  embedderStateCache = null;
+  embedderStateCacheAt = 0;
 };
 
 interface ResearchEntitySearchIndexLike {
   getEmbedders?: () => Promise<Record<string, unknown> | null | undefined>;
 }
 
+export async function readResearchEntitySearchEmbedderState(
+  index: ResearchEntitySearchIndexLike,
+): Promise<ResearchEntitySearchEmbedderState> {
+  const now = Date.now();
+  if (
+    embedderStateCache !== null &&
+    now - embedderStateCacheAt < embedderStateCacheTtlMs(embedderStateCache)
+  ) {
+    return embedderStateCache;
+  }
+
+  let embedders: Record<string, unknown> | null | undefined;
+  try {
+    embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+  } catch (error) {
+    console.error(
+      'ResearchEntity Meilisearch embedder check failed; searching keyword-only:',
+      sanitizeLogValue(error),
+    );
+    embedderStateCache = 'unknown';
+    embedderStateCacheAt = Date.now();
+    return 'unknown';
+  }
+
+  const state =
+    embedders && typeof embedders === 'object' && RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders
+      ? 'configured'
+      : 'absent';
+  embedderStateCache = state;
+  embedderStateCacheAt = now;
+  return state;
+}
+
 export async function isResearchEntitySearchEmbedderConfigured(
   index: ResearchEntitySearchIndexLike,
 ): Promise<boolean> {
-  const now = Date.now();
-  if (
-    embedderConfiguredCache !== null &&
-    now - embedderConfiguredCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
-  ) {
-    return embedderConfiguredCache;
-  }
-
-  let configured = false;
-  try {
-    const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
-    configured = Boolean(
-      embedders &&
-      typeof embedders === 'object' &&
-      RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
-    );
-  } catch {
-    configured = false;
-  }
-
-  embedderConfiguredCache = configured;
-  embedderConfiguredCacheAt = now;
-  return configured;
+  return (await readResearchEntitySearchEmbedderState(index)) === 'configured';
 }
 
-const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
-
-interface MeiliTaskWaiter {
-  waitForTask: (
-    taskUid: number,
-    options?: { timeout?: number },
-  ) => Promise<{
-    status: string;
-    error?: unknown;
-  }>;
+interface ResearchEntitySearchEmbedderWritableIndex {
+  updateEmbedders?: (
+    embedders: ReturnType<typeof buildResearchEntitySearchEmbedderConfig>,
+  ) => unknown;
+  resetEmbedders?: () => unknown;
 }
 
-interface MeiliTaskAwareIndex {
-  tasks?: MeiliTaskWaiter;
-}
-
-async function assertMeiliSettingsTaskSucceeded(
-  index: MeiliTaskAwareIndex,
-  enqueued: unknown,
-  label: string,
+async function applyResearchEntitySearchEmbedderSetting(
+  index: Parameters<typeof assertMeiliTaskSucceeded>[0] & ResearchEntitySearchEmbedderWritableIndex,
+  openAiApiKey: string | null,
+  targetsPrefixedIndex: boolean,
 ): Promise<void> {
-  const taskUid = (enqueued as { taskUid?: number })?.taskUid;
-  if (typeof index.tasks?.waitForTask !== 'function' || typeof taskUid !== 'number') return;
+  if (openAiApiKey && typeof index.updateEmbedders === 'function') {
+    await assertMeiliTaskSucceeded(
+      index,
+      await index.updateEmbedders(buildResearchEntitySearchEmbedderConfig(openAiApiKey)),
+      'updateEmbedders',
+      MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+    );
+    invalidateResearchEntitySearchEmbedderCache();
+    return;
+  }
+  if (!openAiApiKey && targetsPrefixedIndex) {
+    console.warn(
+      'OPENAI_API_KEY is unset or a placeholder; leaving the stored embedder of the prefixed ResearchEntity index unchanged.',
+    );
+    return;
+  }
+  if (!openAiApiKey && typeof index.resetEmbedders === 'function') {
+    console.log(
+      'OPENAI_API_KEY is unset or a placeholder; removing the ResearchEntity embedder, so search is keyword-only.',
+    );
+    await assertMeiliTaskSucceeded(
+      index,
+      await index.resetEmbedders(),
+      'resetEmbedders',
+      MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+    );
+    invalidateResearchEntitySearchEmbedderCache();
+  }
+}
 
-  const task = await index.tasks.waitForTask(taskUid, {
-    timeout: MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
-  });
-  if (task.status !== 'succeeded') {
+export const RESEARCH_ENTITY_SEARCH_STAGING_INDEX_SUFFIX = '_next';
+
+export const researchEntitySearchStagingIndexUid = (liveIndexUid: string): string =>
+  `${liveIndexUid}${RESEARCH_ENTITY_SEARCH_STAGING_INDEX_SUFFIX}`;
+
+export interface ResearchEntitySearchIndexAdminClient {
+  index: (uid: string) => any;
+  getRawIndex: (uid: string) => Promise<unknown>;
+  createIndex: (uid: string, options?: { primaryKey?: string }) => unknown;
+  swapIndexes: (swaps: Array<{ indexes: [string, string] }>) => unknown;
+  deleteIndex: (uid: string) => unknown;
+  tasks?: MeiliTaskWaitingIndex['tasks'];
+}
+
+interface ResearchEntitySearchIndexSwapResult extends ResearchEntitySearchIndexCatchUpResult {
+  liveIndexUid: string;
+  stagingIndexUid: string;
+  createdLiveIndex: boolean;
+  previousIndexDeleted: boolean;
+}
+
+interface ResearchEntitySearchIndexCatchUpResult {
+  catchUpReindexedCount: number;
+  catchUpDeletedCount: number;
+}
+
+interface ResearchEntitySearchIndexPopulateResult {
+  fetchedDocumentCount: number;
+  indexedDocumentCount: number;
+  pageCount: number;
+}
+
+const isMeiliIndexNotFoundError = (error: unknown): boolean => {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null | undefined;
+  return candidate?.cause?.code === 'index_not_found' || candidate?.code === 'index_not_found';
+};
+
+async function meiliIndexExists(
+  client: ResearchEntitySearchIndexAdminClient,
+  uid: string,
+): Promise<boolean> {
+  try {
+    await client.getRawIndex(uid);
+    return true;
+  } catch (error) {
+    if (isMeiliIndexNotFoundError(error)) return false;
+    throw error;
+  }
+}
+
+async function deleteMeiliIndexAndConfirm(
+  client: ResearchEntitySearchIndexAdminClient,
+  uid: string,
+): Promise<void> {
+  await assertMeiliTaskSucceeded(
+    client,
+    await client.deleteIndex(uid),
+    `deleteIndex ${uid}`,
+    MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  );
+}
+
+export interface MeiliSwapConfirmationOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const MEILI_SWAP_CONFIRM_POLL_INTERVAL_MS = 500;
+
+const isMeiliTaskNotFoundError = (error: unknown): boolean => {
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null | undefined;
+  return candidate?.cause?.code === 'task_not_found' || candidate?.code === 'task_not_found';
+};
+
+async function meiliIndexCreatedAt(
+  client: ResearchEntitySearchIndexAdminClient,
+  uid: string,
+): Promise<string | null> {
+  const raw = (await client.getRawIndex(uid)) as { createdAt?: unknown } | null | undefined;
+  const createdAt = raw?.createdAt;
+  if (createdAt instanceof Date) return createdAt.toISOString();
+  return typeof createdAt === 'string' && createdAt ? createdAt : null;
+}
+
+async function readSwapTaskIfVisible(
+  client: ResearchEntitySearchIndexAdminClient,
+  taskUid: number,
+  timeoutMs: number,
+): Promise<{ status?: string; error?: unknown } | null> {
+  if (typeof client.tasks?.waitForTask !== 'function') return null;
+  try {
+    return await client.tasks.waitForTask(taskUid, { timeout: timeoutMs });
+  } catch (error) {
+    if (isMeiliTaskNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+async function swapMeiliIndexesAndConfirm(
+  client: ResearchEntitySearchIndexAdminClient,
+  liveUid: string,
+  stagingUid: string,
+  options: MeiliSwapConfirmationOptions = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS;
+  const pollIntervalMs = options.pollIntervalMs ?? MEILI_SWAP_CONFIRM_POLL_INTERVAL_MS;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const label = `swapIndexes ${liveUid} ${stagingUid}`;
+
+  const stagingCreatedAt = await meiliIndexCreatedAt(client, stagingUid);
+  const enqueued = await client.swapIndexes([{ indexes: [liveUid, stagingUid] }]);
+  const taskUid = (enqueued as { taskUid?: unknown } | null | undefined)?.taskUid;
+  if (typeof taskUid !== 'number') {
+    throw new Error(`Meilisearch ${label} returned no task, so its outcome cannot be confirmed.`);
+  }
+
+  const task = await readSwapTaskIfVisible(client, taskUid, timeoutMs);
+  if (task) {
+    if (task.status === 'succeeded') return;
     throw new Error(
       `Meilisearch ${label} task ${taskUid} did not succeed (status: ${task.status}): ${JSON.stringify(task.error)}`,
     );
   }
+
+  if (!stagingCreatedAt) {
+    throw new Error(
+      `Meilisearch ${label} task ${taskUid} is not visible to this key and ${stagingUid} reports no createdAt, so the swap cannot be confirmed.`,
+    );
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    if ((await meiliIndexCreatedAt(client, liveUid)) === stagingCreatedAt) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Meilisearch ${label} task ${taskUid} was not confirmed within ${timeoutMs} ms: ${liveUid} does not yet hold the index created as ${stagingUid}.`,
+      );
+    }
+    await sleep(pollIntervalMs);
+  }
 }
 
-export async function rebuildResearchEntitySearchIndex(
-  options: ResearchEntitySearchIndexRebuildOptions = {},
-): Promise<ResearchEntitySearchIndexRebuildResult> {
-  const pageSize = normalizeRebuildPageSize(options.pageSize);
-  const clearExisting = options.clearExisting ?? false;
-  const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-  const fetchPage = options.fetchPage || fetchResearchEntityPage;
-  const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+async function indexHasStoredEmbedder(index: ResearchEntitySearchIndexLike): Promise<boolean> {
+  const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+  return Boolean(
+    embedders && typeof embedders === 'object' && RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
+  );
+}
 
-  const settingsTask = await index.updateSettings(getResearchEntitySearchIndexSettings());
-  await assertMeiliSettingsTaskSucceeded(index, settingsTask, 'updateSettings');
-  const openAiApiKey = process.env.OPENAI_API_KEY;
-  if (openAiApiKey && typeof (index as any).updateEmbedders === 'function') {
-    const embedderTask = await (index as any).updateEmbedders(
-      buildResearchEntitySearchEmbedderConfig(openAiApiKey),
-    );
-    await assertMeiliSettingsTaskSucceeded(index, embedderTask, 'updateEmbedders');
-    invalidateResearchEntitySearchEmbedderCache();
-  }
-  if (clearExisting) {
-    await index.deleteAllDocuments();
-  }
+async function applyResearchEntitySearchIndexSettings(index: any): Promise<void> {
+  await assertMeiliTaskSucceeded(
+    index,
+    await index.updateSettings(getResearchEntitySearchIndexSettings()),
+    'updateSettings',
+    MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  );
+}
 
+async function addEveryResearchEntityDocument(
+  index: any,
+  pageSize: number,
+  fetchPage: (page: number, pageSize: number) => Promise<any[]>,
+  fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+): Promise<ResearchEntitySearchIndexPopulateResult> {
   let page = 1;
   let fetchedDocumentCount = 0;
   let indexedDocumentCount = 0;
@@ -744,23 +981,237 @@ export async function rebuildResearchEntitySearchIndex(
       docs,
       fetchMemberNames,
     );
-    indexedDocumentCount += indexDocs.length;
     if (indexDocs.length > 0) {
-      await index.addDocuments(indexDocs, {
+      const addTask = await index.addDocuments(indexDocs, {
         primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
       });
+      await assertMeiliTaskSucceeded(
+        index,
+        addTask,
+        'addDocuments',
+        MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+      );
+      indexedDocumentCount += indexDocs.length;
     }
 
     if (docs.length < pageSize) break;
     page += 1;
   }
 
+  return { fetchedDocumentCount, indexedDocumentCount, pageCount };
+}
+
+async function assertStagingIndexHoldsEveryDocument(
+  stagingIndex: any,
+  stagingUid: string,
+  indexedDocumentCount: number,
+): Promise<void> {
+  const stats = await stagingIndex.getStats();
+  const storedDocumentCount = stats?.numberOfDocuments;
+  if (storedDocumentCount !== indexedDocumentCount) {
+    throw new Error(
+      `Refusing to swap: ${stagingUid} holds ${storedDocumentCount} documents but the rebuild indexed ${indexedDocumentCount}.`,
+    );
+  }
+}
+
+async function catchUpLiveIndexWithRowsChangedDuringBuild(
+  liveIndex: any,
+  changedRows: any[],
+  fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+): Promise<ResearchEntitySearchIndexCatchUpResult> {
+  const archivedIds = changedRows
+    .filter((row) => row?.archived === true)
+    .map(researchEntitySearchDocumentId)
+    .filter(Boolean);
+  if (archivedIds.length > 0) {
+    await assertMeiliTaskSucceeded(
+      liveIndex,
+      await liveIndex.deleteDocuments(archivedIds),
+      'catch-up deleteDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
+  }
+
+  const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
+    changedRows.filter((row) => row?.archived !== true),
+    fetchMemberNames,
+  );
+  if (indexDocs.length > 0) {
+    await assertMeiliTaskSucceeded(
+      liveIndex,
+      await liveIndex.addDocuments(indexDocs, {
+        primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+      }),
+      'catch-up addDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
+  }
+
+  return { catchUpReindexedCount: indexDocs.length, catchUpDeletedCount: archivedIds.length };
+}
+
+async function replaceResearchEntitySearchIndexBySwap(args: {
+  client: ResearchEntitySearchIndexAdminClient;
+  liveUid: string;
+  openAiApiKey: string | null;
+  targetsPrefixedIndex: boolean;
+  populate: (index: any) => Promise<ResearchEntitySearchIndexPopulateResult>;
+  catchUp: (liveIndex: any) => Promise<ResearchEntitySearchIndexCatchUpResult>;
+  swapConfirmation?: MeiliSwapConfirmationOptions;
+}): Promise<
+  ResearchEntitySearchIndexPopulateResult & { swap: ResearchEntitySearchIndexSwapResult }
+> {
+  const { client, liveUid } = args;
+  const stagingUid = researchEntitySearchStagingIndexUid(liveUid);
+  const liveExists = await meiliIndexExists(client, liveUid);
+
+  if (
+    !args.openAiApiKey &&
+    args.targetsPrefixedIndex &&
+    liveExists &&
+    (await indexHasStoredEmbedder(client.index(liveUid)))
+  ) {
+    throw new Error(
+      `Refusing to rebuild ${liveUid}: it has a stored embedder and OPENAI_API_KEY is unset or a placeholder, so the replacement index would serve keyword-only search. Set OPENAI_API_KEY in the rebuilding shell.`,
+    );
+  }
+
+  if (await meiliIndexExists(client, stagingUid)) {
+    console.warn(`Deleting ${stagingUid} left behind by an earlier rebuild that did not finish.`);
+    await deleteMeiliIndexAndConfirm(client, stagingUid);
+  }
+
+  await assertMeiliTaskSucceeded(
+    client,
+    await client.createIndex(stagingUid, { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY }),
+    `createIndex ${stagingUid}`,
+    MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  );
+
+  let createdLiveIndex = false;
+  let counts: ResearchEntitySearchIndexPopulateResult;
+  try {
+    const stagingIndex = client.index(stagingUid);
+    await applyResearchEntitySearchIndexSettings(stagingIndex);
+    if (args.openAiApiKey) {
+      await assertMeiliTaskSucceeded(
+        stagingIndex,
+        await stagingIndex.updateEmbedders(
+          buildResearchEntitySearchEmbedderConfig(args.openAiApiKey),
+        ),
+        'updateEmbedders',
+        MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+      );
+    }
+    counts = await args.populate(stagingIndex);
+    await assertStagingIndexHoldsEveryDocument(
+      stagingIndex,
+      stagingUid,
+      counts.indexedDocumentCount,
+    );
+    if (!liveExists) {
+      await assertMeiliTaskSucceeded(
+        client,
+        await client.createIndex(liveUid, { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY }),
+        `createIndex ${liveUid}`,
+        MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+      );
+      createdLiveIndex = true;
+    }
+    await swapMeiliIndexesAndConfirm(client, liveUid, stagingUid, args.swapConfirmation);
+  } catch (error) {
+    await deleteMeiliIndexAndConfirm(client, stagingUid).catch((cleanupError) =>
+      console.warn(
+        `Could not delete the partial ${stagingUid}; the next rebuild deletes it:`,
+        sanitizeLogValue(cleanupError),
+      ),
+    );
+    throw error;
+  }
+  invalidateResearchEntitySearchEmbedderCache();
+
+  const catchUp = await args.catchUp(client.index(liveUid));
+
+  let previousIndexDeleted = true;
+  await deleteMeiliIndexAndConfirm(client, stagingUid).catch((error) => {
+    previousIndexDeleted = false;
+    console.warn(
+      `${liveUid} now serves the rebuilt documents, but the previous copy at ${stagingUid} was not deleted; the next rebuild deletes it:`,
+      sanitizeLogValue(error),
+    );
+  });
+
+  return {
+    ...counts,
+    swap: {
+      liveIndexUid: liveUid,
+      stagingIndexUid: stagingUid,
+      createdLiveIndex,
+      previousIndexDeleted,
+      ...catchUp,
+    },
+  };
+}
+
+export async function rebuildResearchEntitySearchIndex(
+  options: ResearchEntitySearchIndexRebuildOptions = {},
+): Promise<ResearchEntitySearchIndexRebuildResult> {
+  // Validated before anything reaches the network or the database, so a bad argument still
+  // fails on the argument rather than on a connection timeout.
+  const pageSize = normalizeRebuildPageSize(options.pageSize);
+  const clearExisting = options.clearExisting ?? false;
+  const startedAt = new Date();
+  // A rebuild runs in its own process, so it warms the controlled vocabulary itself rather
+  // than inheriting the server's warm. Without it every index document holds the fragments and
+  // the facet offers them as filter values (#3807). Warmed here, at the batch entry point,
+  // rather than in the per-document builder, which `syncEntity` also calls once per row.
+  await (options.warmVocabulary || warmControlledVocabularyHeadings)();
+  const fetchPage = options.fetchPage || fetchResearchEntityPage;
+  const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+  const fetchChangedSince = options.fetchChangedSince || fetchResearchEntitiesChangedSince;
+  const liveUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  const targetsPrefixedIndex = liveUid !== RESEARCH_ENTITY_SEARCH_INDEX_NAME;
+  const openAiApiKey = usableOpenAiApiKey();
+  const populate = (index: any) =>
+    addEveryResearchEntityDocument(index, pageSize, fetchPage, fetchMemberNames);
+
+  let outcome: ResearchEntitySearchIndexPopulateResult & {
+    swap?: ResearchEntitySearchIndexSwapResult;
+  };
+  if (clearExisting) {
+    outcome = await replaceResearchEntitySearchIndexBySwap({
+      client: await (options.getClient || getMeiliClient)(),
+      liveUid,
+      openAiApiKey,
+      targetsPrefixedIndex,
+      populate,
+      catchUp: async (liveIndex: any) =>
+        catchUpLiveIndexWithRowsChangedDuringBuild(
+          liveIndex,
+          await fetchChangedSince(startedAt),
+          fetchMemberNames,
+        ),
+      swapConfirmation: options.swapConfirmation,
+    });
+  } else {
+    const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+    await applyResearchEntitySearchIndexSettings(index);
+    await applyResearchEntitySearchEmbedderSetting(index, openAiApiKey, targetsPrefixedIndex);
+    outcome = await populate(index);
+  }
+
+  const finishedAt = new Date();
   return {
     indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
     pageSize,
-    fetchedDocumentCount,
-    indexedDocumentCount,
-    pageCount,
+    fetchedDocumentCount: outcome.fetchedDocumentCount,
+    indexedDocumentCount: outcome.indexedDocumentCount,
+    pageCount: outcome.pageCount,
     clearedExisting: clearExisting,
+    ...(outcome.swap ? { swap: outcome.swap } : {}),
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
   };
 }

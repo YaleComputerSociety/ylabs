@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Department, DepartmentCategory } from '../../models/department';
 import { findOrCreateForOwner } from '../researchGroupService';
 
 describe('findOrCreateForOwner canonical PI assignment', () => {
@@ -12,11 +13,11 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -28,6 +29,7 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
       'role_assignments',
       'users',
       'research_entities',
+      'departments',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -80,5 +82,25 @@ describe('findOrCreateForOwner canonical PI assignment', () => {
     expect(
       await RoleAssignment.countDocuments({ 'target.kind': 'RESEARCH_ENTITY', role: 'PI' }),
     ).toBe(1);
+  });
+
+  it('names an individual stub with the person-scoped name rather than a hyphen suffix (#4372)', async () => {
+    await Department.collection.insertOne({
+      abbreviation: 'HIST',
+      name: 'Synthetic History',
+      displayName: 'Synthetic History',
+      primaryCategory: DepartmentCategory.HUMANITIES_ARTS,
+    });
+
+    const { group } = await findOrCreateForOwner({
+      _id: new mongoose.Types.ObjectId(),
+      netid: 'pi003',
+      fname: 'Ada',
+      lname: 'Quill',
+      primaryDepartment: 'Synthetic History',
+    });
+
+    expect(group.kind).toBe('individual');
+    expect(group.name).toBe('Ada Quill Faculty Research');
   });
 });

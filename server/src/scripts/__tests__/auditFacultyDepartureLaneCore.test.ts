@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   blockingDepartureLaneGate,
   laneHasEverEvaluatedARow,
+  rosterRunScope,
+  selectDepartureAuditRun,
   summarizeFacultyDepartureLaneAudit,
   summarizeStandingRosterFreezes,
   type FacultyDepartureLaneFacts,
@@ -28,7 +30,13 @@ function facts(overrides: Partial<FacultyDepartureLaneFacts> = {}): FacultyDepar
     entitiesWithLastSeen: 0,
     entitiesWithAbsenceRecorded: 0,
     entitiesReasonDeparted: 8,
-    readProvenance: { fetched: 112, 'cache-permitted': 0, 'not-read': 13, unrecorded: 0 },
+    readProvenance: {
+      fetched: 112,
+      'reused-within-sweep': 0,
+      'cache-permitted': 0,
+      'not-read': 13,
+      unrecorded: 0,
+    },
     newestRecordedReadAgeHours: 1,
     ...overrides,
   };
@@ -75,7 +83,13 @@ describe('faculty-departure lane audit: the blocking gate', () => {
     expect(
       blockingDepartureLaneGate(
         facts({
-          readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 230 },
+          readProvenance: {
+            fetched: 0,
+            'reused-within-sweep': 0,
+            'cache-permitted': 0,
+            'not-read': 0,
+            unrecorded: 230,
+          },
         }),
       ),
     ).toBe('no-snapshot-recorded-a-read');
@@ -85,7 +99,26 @@ describe('faculty-departure lane audit: the blocking gate', () => {
     expect(
       blockingDepartureLaneGate(
         facts({
-          readProvenance: { fetched: 0, 'cache-permitted': 3, 'not-read': 9, unrecorded: 0 },
+          readProvenance: {
+            fetched: 0,
+            'reused-within-sweep': 0,
+            'cache-permitted': 3,
+            'not-read': 9,
+            unrecorded: 0,
+          },
+        }),
+      ),
+    ).toBe('none');
+    expect(
+      blockingDepartureLaneGate(
+        facts({
+          readProvenance: {
+            fetched: 0,
+            'reused-within-sweep': 4,
+            'cache-permitted': 0,
+            'not-read': 9,
+            unrecorded: 0,
+          },
         }),
       ),
     ).toBe('none');
@@ -195,5 +228,90 @@ describe('summarizeStandingRosterFreezes', () => {
     expect(report.departmentsWithAnyAuthoritativeSnapshot).toBe(1);
     expect(report.departmentsWithNoAuthoritativeSnapshot).toBe(1);
     expect(report.standingFreezes).toEqual([]);
+  });
+});
+
+describe('selectDepartureAuditRun', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('keeps planning against the newest full run when a newer run was scoped to one department', () => {
+    const selection = selectDepartureAuditRun([
+      {
+        runId: 'full-older',
+        startedAt: at('2026-09-28T01:00:00Z'),
+        status: 'success',
+        options: {},
+      },
+      {
+        runId: 'full-newest',
+        startedAt: at('2026-10-03T03:54:00Z'),
+        status: 'success',
+        options: {},
+      },
+      {
+        runId: 'scoped-newer',
+        startedAt: at('2026-10-03T21:31:00Z'),
+        status: 'success',
+        options: { only: ['one-department'] },
+      },
+    ]);
+    expect(selection).toEqual({
+      runId: 'full-newest',
+      startedAt: '2026-10-03T03:54:00.000Z',
+      scope: [],
+      newerRunsSkipped: 1,
+      reason: 'newest-unscoped-successful-run',
+    });
+  });
+
+  it('skips a newer limited, failed, or invalidated run in favour of the newest full successful one', () => {
+    const selection = selectDepartureAuditRun([
+      { runId: 'full', startedAt: at('2026-10-01T00:00:00Z'), status: 'success', options: {} },
+      {
+        runId: 'limited',
+        startedAt: at('2026-10-02T00:00:00Z'),
+        status: 'success',
+        options: { limit: 2 },
+      },
+      { runId: 'failed', startedAt: at('2026-10-03T00:00:00Z'), status: 'failure', options: {} },
+      {
+        runId: 'invalidated',
+        startedAt: at('2026-10-04T00:00:00Z'),
+        status: 'success',
+        invalidated: true,
+        options: {},
+      },
+    ]);
+    expect(selection?.runId).toBe('full');
+    expect(selection?.newerRunsSkipped).toBe(2);
+  });
+
+  it('falls back to the newest run and says so when no unscoped successful run exists', () => {
+    const selection = selectDepartureAuditRun([
+      {
+        runId: 'scoped-old',
+        startedAt: at('2026-09-01T00:00:00Z'),
+        status: 'success',
+        options: { only: ['a'] },
+      },
+      {
+        runId: 'scoped-new',
+        startedAt: at('2026-09-02T00:00:00Z'),
+        status: 'success',
+        options: { only: ['b'], limit: 5 },
+      },
+    ]);
+    expect(selection).toMatchObject({
+      runId: 'scoped-new',
+      scope: ['only', 'limit'],
+      reason: 'no-unscoped-successful-run',
+    });
+    expect(selectDepartureAuditRun([])).toBeUndefined();
+  });
+
+  it('treats an empty only list or a zero limit as unscoped', () => {
+    expect(rosterRunScope({ only: [], limit: 0 })).toEqual([]);
+    expect(rosterRunScope(undefined)).toEqual([]);
+    expect(rosterRunScope({ only: ['x'] })).toEqual(['only']);
   });
 });

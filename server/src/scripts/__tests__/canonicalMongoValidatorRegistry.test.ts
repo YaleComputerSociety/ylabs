@@ -10,6 +10,7 @@ import {
 import {
   CANONICAL_MONGO_VALIDATORS,
   CANONICAL_MONGO_VALIDATOR_COLLECTIONS,
+  CANONICAL_MONGO_VALIDATOR_ENFORCEMENT,
 } from '../canonicalMongoValidatorRegistry';
 import { canonicalMongoValidatorFingerprint } from '../canonicalMongoValidatorsCore';
 
@@ -122,8 +123,52 @@ describe('canonical MongoDB validator registry', () => {
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('organizations');
   });
 
-  it('requires an explicit review when generated validator contracts drift', () => {
-    // Reviewed for #3377. The only drift is taxonomy_terms gaining the three review
+  it('records the enforcement decision so applying the validators cannot pass silently', () => {
+    expect(
+      CANONICAL_MONGO_VALIDATOR_ENFORCEMENT.state,
+      'This registry is declared and unapplied by decision (#752 declined): no environment carries any of these validators. If you have applied them, change this constant, update the runbook, and re-review the statement the strict-readiness report prints. Do not relax this assertion to get green.',
+    ).toBe('declared-not-applied');
+  });
+
+  it('requires an explicit review when the declared contracts drift, and certifies no database', () => {
+    // Each entry below reviews a change to the DECLARED contracts, which is all this
+    // gate covers: no environment applies these validators (#752 declined), so a review
+    // here approves what would be applied and asserts nothing about stored data (#3396).
+    //
+    // Reviewed for #4773. The only drift is accounts gaining archivedReason, an optional
+    // string limited to 'merged-local-part-netid-twin', archivedAt, an optional date, and
+    // mergedIntoAccountId, an optional objectId, which the local-part twin merge stamps on
+    // the account it archives. Every other account carries none. No other collection or
+    // property changed.
+    //
+    // Reviewed for #4010 before that. The only drift is accounts gaining sessionVersion, an optional
+    // non-negative number that sign-out bumps and deserialize compares against the
+    // session's claim, so a revoked cookie is refused. Accounts written before it
+    // carry none and read as 0. No other collection or property changed.
+    //
+    // Reviewed for #4162 before that. The only drift is accounts.profile losing college, year and
+    // major. A login no longer stores them and nothing read them, so the declaration
+    // stops describing three personal attributes the account no longer carries.
+    // No other collection or property changed.
+    //
+    // Reviewed for #3643 before that. The only drift is research_plans gaining restorableUntil, an
+    // optional date that unsave and unwatch stamp so undo can restore the archived plan
+    // whole, and that a TTL index deletes the archived plan on. Live plans carry none.
+    // No other collection or property changed.
+    //
+    // Reviewed for #3802 before that. The only drift is role_assignments.rosterProvenance gaining
+    // identityBasis, an optional string limited to 'profile-url' and 'identity-evidence',
+    // which a roster lane stamps on an edge whose person it resolved by identity evidence
+    // rather than minting a name-only person. Edges the lane minted for, and every edge it
+    // never wrote, carry none. No other collection or property changed.
+    //
+    // Reviewed for #3799 before that. The only drift is role_assignments.rosterProvenance gaining
+    // adoptedAt: { bsonType: ['date','null'] }, which the centers-institutes-index lane
+    // stamps when it adopts a provenance-less edge of a person it lists. It is optional
+    // because every edge the lane wrote itself, and every edge it has not adopted,
+    // carries none. No other collection or property changed.
+    //
+    // Reviewed for #3377 before that. The only drift is taxonomy_terms gaining the three review
     // provenance properties the reviewer writes: reviewedBy and reviewNote as bounded
     // strings and reviewedAt as a date. `taxonomy:review-term` requires a reviewer and
     // a note for every verdict, and until it existed nothing could move a term out of
@@ -135,8 +180,9 @@ describe('canonical MongoDB validator registry', () => {
     // Reviewed for #2880 before that: role_assignments gained
     // reviewNotes: { bsonType: ['string','null'], maxLength: 500 }, because two
     // retirement lanes already wrote that field and mongoose dropped it silently.
-    expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      '5488024dbacee95702ad480207e964a94fbc045acd3586e6169b5e9b573eff5d',
-    );
+    expect(
+      canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
+      'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
+    ).toBe('7180720dc7ccc39deca89b2b20fd94a371f59550ccbb24024371026784e449ae');
   });
 });

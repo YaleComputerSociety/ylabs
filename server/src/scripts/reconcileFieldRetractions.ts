@@ -20,9 +20,9 @@ import {
   type FieldRetractionResult,
 } from '../scrapers/fieldRetraction';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:reconcile-field-retractions';
 
@@ -75,6 +75,16 @@ function parsePositiveInteger(value: string | undefined): number {
   return parsed;
 }
 
+export function summarizePreFixAbsenceClaimExclusions(results: FieldRetractionResult[]) {
+  return results.flatMap((result) =>
+    Object.entries(result.counts.preFixAbsenceClaims ?? {}).map(([field, tally]) => ({
+      sourceName: result.sourceName,
+      field,
+      ...tally,
+    })),
+  );
+}
+
 export function totalPlannedRetractions(results: FieldRetractionResult[]): number {
   return results.reduce((sum, result) => sum + result.retractions.length, 0);
 }
@@ -118,6 +128,7 @@ async function main() {
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
     sources: args.sources,
+    preFixAbsenceClaimsExcluded: summarizePreFixAbsenceClaimExclusions(planned),
     planned: planned.map((result) => ({
       sourceName: result.sourceName,
       outcome: result.outcome,

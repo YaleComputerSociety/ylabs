@@ -18,6 +18,7 @@ import {
   runEponymousFraLabMergeStage,
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
 } from '../researchEntityEponymousMergeStage';
+import { emptyResearchPlanCarryReport } from '../../services/researchPlanMergeCarry';
 
 function eponymousShellRow(
   overrides: Partial<ResearchEntityPiDedupeRow> = {},
@@ -177,17 +178,50 @@ describe('runEponymousFraLabMergeStage', () => {
     const applyMergeGroup = vi.fn(async (group: { canonicalEntityId: string }) => ({
       canonicalEntityId: group.canonicalEntityId,
     }));
+    const previewResearchPlanCarry = vi.fn(async () => ({
+      ...emptyResearchPlanCarryReport(),
+      plansOnDuplicates: 2,
+      moved: 1,
+      merged: 1,
+    }));
     const delta = await runEponymousFraLabMergeStage({
       apply: false,
       maxMerges: 10,
       sinceIso: '2026-08-26T00:00:00.000Z',
       loadRows: async () => [eponymousShellRow()],
       applyMergeGroup,
+      previewResearchPlanCarry,
     });
     expect(applyMergeGroup).not.toHaveBeenCalled();
     expect(delta.plannedMergeCount).toBe(1);
     expect(delta.appliedMergeCount).toBe(0);
     expect(delta.mergedPairs).toHaveLength(1);
+    expect(previewResearchPlanCarry).toHaveBeenCalledWith([
+      expect.objectContaining({
+        canonicalEntityId: 'lovelace-lab',
+        duplicateEntityIds: ['lovelace-fra-shell'],
+      }),
+    ]);
+    expect(delta.researchPlansThatWouldMove).toBe(2);
+  });
+
+  it('reports the plans each applied merge carried', async () => {
+    const applyMergeGroup = vi.fn(async (group: { canonicalEntityId: string }) => ({
+      canonicalEntityId: group.canonicalEntityId,
+      researchPlanCarry: { ...emptyResearchPlanCarryReport(), plansOnDuplicates: 1, moved: 1 },
+    }));
+    const previewResearchPlanCarry = vi.fn();
+    const delta = await runEponymousFraLabMergeStage({
+      apply: true,
+      maxMerges: 10,
+      sinceIso: '2026-08-26T00:00:00.000Z',
+      loadRows: async () => [eponymousShellRow()],
+      applyMergeGroup,
+      previewResearchPlanCarry,
+    });
+    expect(previewResearchPlanCarry).not.toHaveBeenCalled();
+    expect(delta.researchPlanCarry.moved).toBe(1);
+    expect(delta.researchPlansThatWouldMove).toBe(1);
   });
 
   it('applies exactly one merge and reports the merge delta when enabled', async () => {

@@ -33,6 +33,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   },
 }));
 
+import { ResearchArea } from '../../models/researchArea';
 import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
   MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
@@ -48,6 +49,7 @@ import router, {
   normalizeAdminPagination,
   resolveAdminSortField,
 } from '../admin';
+import { errorHandler } from '../../middleware/errorHandler';
 
 const routeByPath = (path: string) =>
   (router as any).stack.map((layer: any) => layer.route).find((route: any) => route?.path === path);
@@ -82,6 +84,10 @@ const invokeRouteHandler = async (path: string, req: Record<string, any>, method
   const route = routeByPathAndMethod(path, method) || routeByPath(path);
   const stack = route?.stack || [];
   const handler = stack[stack.length - 1]?.handle;
+  let settle: (forwarded: unknown) => void = () => undefined;
+  const settled = new Promise<unknown>((resolve) => {
+    settle = resolve;
+  });
   const res = {
     statusCode: 200,
     body: undefined as unknown,
@@ -91,11 +97,16 @@ const invokeRouteHandler = async (path: string, req: Record<string, any>, method
     },
     json(body: unknown) {
       this.body = body;
+      settle(undefined);
       return this;
     },
   };
 
-  await handler(req, res);
+  void handler(req, res, settle);
+  const forwarded = await settled;
+  if (forwarded !== undefined) {
+    errorHandler(forwarded as Error, req as any, res as any, vi.fn());
+  }
   return res;
 };
 
@@ -169,7 +180,7 @@ describe('admin routes', () => {
     const res = await invokeRouteHandler('/audit-events', { query: {}, params: {} }, 'get');
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch admin audit events' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('does not leak internal messages from admin grant failures', async () => {
@@ -183,7 +194,7 @@ describe('admin routes', () => {
     });
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to grant admin access' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('does not leak raw validation text from admin grant failures', async () => {
@@ -233,7 +244,7 @@ describe('admin routes', () => {
     });
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to revoke admin access' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('allowlists admin sort fields before building Mongo sort objects', () => {
@@ -427,6 +438,86 @@ describe('admin routes', () => {
 
     expect(mocks.getListingModel).not.toHaveBeenCalled();
     expect(mocks.fellowshipFind).not.toHaveBeenCalled();
+  });
+
+  it('creates shared research areas on the audited admin router', async () => {
+    const findOne = vi.spyOn(ResearchArea, 'findOne').mockResolvedValue(null as any);
+    const save = vi.spyOn(ResearchArea.prototype, 'save').mockImplementation(async function (
+      this: any,
+    ) {
+      return this;
+    });
+
+    const res = await invokeRouteHandler('/research-areas', {
+      body: {
+        name: '  Applied\n\nPrivacy\tResearch  ',
+        field: 'Computing & Artificial Intelligence',
+      },
+      user: { netId: 'admin1' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(findOne).toHaveBeenCalledWith({ name: { $regex: /^Applied Privacy Research$/i } });
+    expect(save).toHaveBeenCalledOnce();
+    expect(save.mock.contexts[0]).toMatchObject({
+      name: 'Applied Privacy Research',
+      field: 'Computing & Artificial Intelligence',
+      addedBy: 'admin1',
+      isDefault: false,
+    });
+    expect(res.body).toMatchObject({
+      researchArea: {
+        name: 'Applied Privacy Research',
+        field: 'Computing & Artificial Intelligence',
+        isDefault: false,
+      },
+    });
+  });
+
+  it('rejects research area names that are oversized or embed contact information', async () => {
+    const findOne = vi.spyOn(ResearchArea, 'findOne');
+
+    for (const name of ['a'.repeat(121), 'AI outreach ada@example.edu', '   ']) {
+      const res = await invokeRouteHandler('/research-areas', {
+        body: { name, field: 'Computing & Artificial Intelligence' },
+        user: { netId: 'admin1' },
+      });
+
+      expect(res.statusCode, name).toBe(400);
+      expect(res.body, name).toEqual({ error: 'Invalid research area name' });
+    }
+
+    expect(findOne).not.toHaveBeenCalled();
+  });
+
+  it('rejects research areas with an unknown field', async () => {
+    const findOne = vi.spyOn(ResearchArea, 'findOne');
+
+    const res = await invokeRouteHandler('/research-areas', {
+      body: { name: 'Applied Privacy', field: 'Astrology' },
+      user: { netId: 'admin1' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid field value' });
+    expect(findOne).not.toHaveBeenCalled();
+  });
+
+  it('refuses to create a research area that already exists', async () => {
+    vi.spyOn(ResearchArea, 'findOne').mockResolvedValue({
+      name: 'Applied Privacy',
+      field: 'Computing & Artificial Intelligence',
+    } as any);
+    const save = vi.spyOn(ResearchArea.prototype, 'save');
+
+    const res = await invokeRouteHandler('/research-areas', {
+      body: { name: 'applied privacy', field: 'Computing & Artificial Intelligence' },
+      user: { netId: 'admin1' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({ error: 'Research area already exists' });
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('minimizes admin taxonomy management payloads', () => {

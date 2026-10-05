@@ -10,12 +10,11 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   buildDeadEndTombstoneRepairPlan,
   malformedPointerEntityIds,
-  type TombstoneChainNode,
 } from './repairDeadEndTombstoneChainsCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'repair-dead-end-tombstone-chains';
 
@@ -68,26 +67,10 @@ export async function runRepairDeadEndTombstoneChains(
     }>
   >();
 
-  const nodes = new Map<string, TombstoneChainNode>(
-    rows.map((row) => [
-      String(row._id),
-      {
-        id: String(row._id),
-        archived: row.archived === true,
-        ...(row.canonicalGroupId ? { canonicalGroupId: String(row.canonicalGroupId) } : {}),
-      },
-    ]),
-  );
+  const nodes = new Map(rows.map((row) => [String(row._id), row]));
+  const tombstones = rows.filter((row) => row.archived === true && row.canonicalGroupId);
 
-  const tombstones = rows
-    .filter((row) => row.archived === true && row.canonicalGroupId)
-    .map((row) => ({
-      id: String(row._id),
-      slug: row.slug || '',
-      canonicalGroupId: String(row.canonicalGroupId),
-    }));
-
-  const summary = buildDeadEndTombstoneRepairPlan({
+  const summary = await buildDeadEndTombstoneRepairPlan({
     tombstones,
     nodeById: (id) => nodes.get(id),
   });

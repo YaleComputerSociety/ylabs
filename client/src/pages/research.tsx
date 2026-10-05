@@ -1,11 +1,26 @@
-import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { isCancel } from 'axios';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
+import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
+import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
+import ResearchProgramsHandoff from '../components/research/ResearchProgramsHandoff';
+import { queryCarriesProgramsIntent } from '../utils/researchProgramsHandoff';
 import ResearchSortDropdown, {
   ResearchSortField,
 } from '../components/research/ResearchSortDropdown';
@@ -14,6 +29,7 @@ import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
+import useMediaQuery from '../hooks/useMediaQuery';
 import {
   approachingDeadlineAriaLabel,
   approachingDeadlineLabel,
@@ -31,17 +47,18 @@ import {
   ResearchEntitySearchResponse,
   StudentVisibilityTier,
 } from '../types/researchEntity';
+import type { ResearchSearchQueryCorrection } from '../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
+import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
   createResearchAnalyticsInteractionId,
-  researchPositionBucket,
   researchResultCountBucket,
   trackResearchEvent,
-  trackResearchEventOnce,
+  trackResearchResultsView,
 } from '../utils/researchAnalytics';
 
 interface DepartmentResearchHomeConfig {
@@ -75,6 +92,8 @@ const hasStructuredFilters = (filters: ResearchSearchFilters): boolean =>
     if (Array.isArray(value)) return value.length > 0;
     return value !== undefined && value !== null && value !== false;
   });
+
+const ADMIN_SEARCH_PARAM_KEYS = ['weak', 'quality', 'tier'] as const;
 
 const readSearchParamList = <T extends string>(
   params: URLSearchParams,
@@ -118,9 +137,12 @@ interface ResearchEntitySearchPage {
   // search ran and `estimatedTotalHits` carries no information about the result
   // set. Ends the walk without overwriting the total already on screen.
   depthLimited?: boolean;
+  degraded?: boolean;
+  queryCorrection?: ResearchSearchQueryCorrection;
 }
 
 interface ActiveResearchSearchRequest {
+  submittedText: string;
   searchQuery: string;
   filters: ResearchSearchFilters;
   options?: ResearchEntitySearchOptions;
@@ -134,6 +156,7 @@ interface ResearchFilterAnalyticsChange {
 interface ResearchPageSnapshot {
   key: string;
   isAdmin: boolean;
+  resultsSettled: boolean;
   query: string;
   submittedQuery: string;
   departmentSearch: DepartmentSearchTarget | null;
@@ -157,9 +180,10 @@ interface ResearchPageSnapshot {
   defaultSearchPage: number;
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
-  searchError: string;
   hasFacetError: boolean;
-  defaultSearchError: string;
+  searchDegraded: boolean;
+  defaultSearchDegraded: boolean;
+  queryCorrection: ResearchSearchQueryCorrection | null;
 }
 
 interface ResearchEntitySearchOptions {
@@ -172,12 +196,16 @@ interface ResearchEntitySearchOptions {
   // Marks a search this page issued on the student's behalf, so search-query
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
+  exactSpelling?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
   field === 'name' ? 'asc' : 'desc';
 
 let researchPageSnapshot: ResearchPageSnapshot | null = null;
+
+const lastLoadedPage = (page: number, isLoadingPage: boolean): number =>
+  isLoadingPage && page > 1 ? page - 1 : page;
 
 const searchResearchEntities = async (
   q: string,
@@ -204,6 +232,7 @@ const searchResearchEntities = async (
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
+      ...(options.exactSpelling ? { correctSpelling: false } : {}),
     },
     { signal },
   );
@@ -215,6 +244,8 @@ const searchResearchEntities = async (
     pageSize: normalized.pageSize || pageSize,
     facetDistribution: normalized.facetDistribution,
     depthLimited: normalized.depthLimited === true,
+    degraded: normalized.degraded === true,
+    queryCorrection: normalized.queryCorrection,
   };
 };
 
@@ -230,6 +261,11 @@ export const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) 
   page.depthLimited === true ||
   (page.researchEntities.length < page.pageSize &&
     page.page * page.pageSize >= page.estimatedTotalHits);
+
+const researchProfileCountFormatter = new Intl.NumberFormat('en-US');
+
+const researchProfileCountLabel = (count: number): string =>
+  `${researchProfileCountFormatter.format(count)} research ${count === 1 ? 'profile' : 'profiles'}`;
 
 const SectionHeading = ({ children }: { children: string }) => (
   <div className="mb-3 flex w-full items-center justify-between gap-3">
@@ -255,10 +291,18 @@ const resultSummary = (
   loading: boolean,
   departmentGapLabel?: string,
   totalMatchingHomeCount?: number,
+  degraded = false,
 ): string => {
-  if (loading) return `Searching y/labs for ${query}.`;
+  if (loading) {
+    return query === FILTERED_RESULT_QUERY_LABEL
+      ? 'Searching your filters'
+      : `Searching for '${query}'`;
+  }
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
+  if (degraded && matchingHomeCount === 0 && results.people.length === 0) {
+    return `No results could be confirmed for '${query}'.`;
+  }
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research yet for ${departmentGapLabel}.`;
   }
@@ -272,9 +316,17 @@ const resultSummary = (
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
   }
   if (results.pathways.length > 0) {
-    parts.push(pluralize(results.pathways.length, 'verified way in', 'verified ways in'));
+    parts.push(pluralize(results.pathways.length, 'way to get involved', 'ways to get involved'));
   }
   return parts.join(', ');
+};
+
+const researchSearchOutcome = (
+  resultCount: number,
+  degraded: boolean,
+): 'results' | 'zero_results' | 'degraded' => {
+  if (degraded) return 'degraded';
+  return resultCount > 0 ? 'results' : 'zero_results';
 };
 
 const EmptyGroup = ({ children }: { children: string }) => (
@@ -333,49 +385,46 @@ const buildDepartmentSearchTargets = (
     .filter((target) => target.filters.departments.length > 0)
     .sort((a, b) => a.label.localeCompare(b.label));
 
-const scrollResearchViewportToTop = () => {
-  const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]');
-  if (scrollContainer) {
-    scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
-    return;
-  }
+const withDepartmentSearchTarget = (
+  filters: ResearchSearchFilters,
+  target: DepartmentSearchTarget,
+): ResearchSearchFilters => ({ ...filters, departments: target.filters.departments });
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-};
+const researchClusterByEntity = new WeakMap<ResearchEntity, ResearchCluster>();
 
 const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, isAuthenticated } = useContext(UserContext);
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const {
     approachingCount: watchedDeadlineApproachingCount,
     notStartedCount: watchedDeadlineNotStartedCount,
   } = useWatchedDeadlineSummary(isAuthenticated);
-  const { departments } = useConfig();
+  const { departments, isLoading: isConfigLoading } = useConfig();
   const isAdmin = user?.isAdmin ?? false;
   const pageSnapshotKey = searchParams.toString();
-  const restorableSnapshot =
+  const snapshotForThisPage =
     researchPageSnapshot?.key === pageSnapshotKey && researchPageSnapshot.isAdmin === isAdmin
       ? researchPageSnapshot
       : null;
-  const restoredSnapshotRef = useRef<ResearchPageSnapshot | null>(restorableSnapshot);
-  const [query, setQuery] = useState(
-    () => restoredSnapshotRef.current?.query ?? searchParams.get('q') ?? '',
+  const [restoredSnapshot] = useState<ResearchPageSnapshot | null>(() =>
+    snapshotForThisPage?.resultsSettled ? snapshotForThisPage : null,
   );
+  const [query, setQuery] = useState(() => restoredSnapshot?.query ?? searchParams.get('q') ?? '');
+  const [showEmptySearchHint, setShowEmptySearchHint] = useState(false);
   const [submittedQuery, setSubmittedQuery] = useState(
-    () => restoredSnapshotRef.current?.submittedQuery ?? '',
+    () => restoredSnapshot?.submittedQuery ?? '',
   );
   const [departmentSearch, setDepartmentSearch] = useState<DepartmentSearchTarget | null>(
-    () => restoredSnapshotRef.current?.departmentSearch ?? null,
+    () => restoredSnapshot?.departmentSearch ?? null,
   );
   const [showWeakestProfilesFirst, setShowWeakestProfilesFirst] = useState(
     () =>
-      restoredSnapshotRef.current?.showWeakestProfilesFirst ??
-      (isAdmin && searchParams.get('weak') === '1'),
+      restoredSnapshot?.showWeakestProfilesFirst ?? (isAdmin && searchParams.get('weak') === '1'),
   );
   const [qualityFilters, setQualityFilters] = useState<ResearchQualityFilter[]>(
     () =>
-      restoredSnapshotRef.current?.qualityFilters ??
+      restoredSnapshot?.qualityFilters ??
       (isAdmin
         ? readSearchParamList(
             searchParams,
@@ -386,7 +435,7 @@ const Research = () => {
   );
   const [trustTierFilters, setTrustTierFilters] = useState<ResearchTrustTierFilter[]>(
     () =>
-      restoredSnapshotRef.current?.trustTierFilters ??
+      restoredSnapshot?.trustTierFilters ??
       (isAdmin
         ? readSearchParamList(
             searchParams,
@@ -396,24 +445,22 @@ const Research = () => {
         : []),
   );
   const [selectedEntityType, setSelectedEntityType] = useState(
-    () => restoredSnapshotRef.current?.selectedEntityType ?? readEntityTypeParam(searchParams),
+    () => restoredSnapshot?.selectedEntityType ?? readEntityTypeParam(searchParams),
   );
   const [selectedSchool, setSelectedSchool] = useState(
-    () => restoredSnapshotRef.current?.selectedSchool ?? searchParams.get('school') ?? '',
+    () => restoredSnapshot?.selectedSchool ?? searchParams.get('school') ?? '',
   );
   const [selectedDepartment, setSelectedDepartment] = useState(
-    () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
+    () => restoredSnapshot?.selectedDepartment ?? searchParams.get('department') ?? '',
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
-    () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
+    () => snapshotForThisPage?.sortBy ?? 'relevance',
   );
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(
-    () => restoredSnapshotRef.current?.sortOrder ?? 'asc',
+    () => snapshotForThisPage?.sortOrder ?? 'asc',
   );
   const sortByRef = useRef(sortBy);
   const sortOrderRef = useRef(sortOrder);
-  sortByRef.current = sortBy;
-  sortOrderRef.current = sortOrder;
   const currentSortRequestOptions = (): Pick<
     ResearchEntitySearchOptions,
     'sortBy' | 'sortOrder'
@@ -423,53 +470,54 @@ const Research = () => {
       : { sortBy: sortByRef.current, sortOrder: sortOrderRef.current };
   const [facetDistribution, setFacetDistribution] = useState<
     Record<string, Record<string, number>>
-  >(() => restoredSnapshotRef.current?.facetDistribution ?? {});
+  >(() => restoredSnapshot?.facetDistribution ?? {});
   const [browseFacetDistribution, setBrowseFacetDistribution] = useState<
     Record<string, Record<string, number>>
-  >(() => restoredSnapshotRef.current?.browseFacetDistribution ?? {});
+  >(() => restoredSnapshot?.browseFacetDistribution ?? {});
   const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(
-    () => restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
+    () => restoredSnapshot?.groupedResults ?? emptyGroupedResults(''),
   );
   const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<
     ResearchEntity[]
-  >(() => restoredSnapshotRef.current?.searchResultResearchEntities ?? []);
-  const [searchPage, setSearchPage] = useState(() => restoredSnapshotRef.current?.searchPage ?? 1);
-  const [searchTotal, setSearchTotal] = useState(
-    () => restoredSnapshotRef.current?.searchTotal ?? 0,
-  );
+  >(() => restoredSnapshot?.searchResultResearchEntities ?? []);
+  const [searchPage, setSearchPage] = useState(() => restoredSnapshot?.searchPage ?? 1);
+  const [searchTotal, setSearchTotal] = useState(() => restoredSnapshot?.searchTotal ?? 0);
   const [searchExhausted, setSearchExhausted] = useState(
-    () => restoredSnapshotRef.current?.searchExhausted ?? true,
+    () => restoredSnapshot?.searchExhausted ?? true,
   );
   const [activeSearchRequest, setActiveSearchRequest] =
     useState<ActiveResearchSearchRequest | null>(
-      () => restoredSnapshotRef.current?.activeSearchRequest ?? null,
+      () => restoredSnapshot?.activeSearchRequest ?? null,
     );
   const [defaultResearchEntities, setDefaultResearchEntities] = useState<ResearchEntity[]>(
-    () => restoredSnapshotRef.current?.defaultResearchEntities ?? [],
+    () => restoredSnapshot?.defaultResearchEntities ?? [],
   );
   const [defaultSearchPage, setDefaultSearchPage] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchPage ?? 1,
+    () => restoredSnapshot?.defaultSearchPage ?? 1,
   );
   const [defaultSearchTotal, setDefaultSearchTotal] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchTotal ?? 0,
+    () => restoredSnapshot?.defaultSearchTotal ?? 0,
   );
   const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
+    () => restoredSnapshot?.defaultSearchExhausted ?? false,
   );
-  const fetchedSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
-  const fetchedDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
+  const fetchedSearchPageRef = useRef(restoredSnapshot?.searchPage ?? 1);
+  const fetchedDefaultSearchPageRef = useRef(restoredSnapshot?.defaultSearchPage ?? 1);
   const [searchLoading, setSearchLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState(
-    () => restoredSnapshotRef.current?.searchError ?? '',
-  );
   const [hasFacetError, setHasFacetError] = useState(
-    () => restoredSnapshotRef.current?.hasFacetError ?? false,
+    () => restoredSnapshot?.hasFacetError ?? false,
   );
-  const [defaultSearchError, setDefaultSearchError] = useState(
-    () => restoredSnapshotRef.current?.defaultSearchError ?? '',
+  const [searchDegraded, setSearchDegraded] = useState(
+    () => restoredSnapshot?.searchDegraded ?? false,
+  );
+  const [defaultSearchDegraded, setDefaultSearchDegraded] = useState(
+    () => restoredSnapshot?.defaultSearchDegraded ?? false,
+  );
+  const [queryCorrection, setQueryCorrection] = useState<ResearchSearchQueryCorrection | null>(
+    () => restoredSnapshot?.queryCorrection ?? null,
   );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
@@ -487,8 +535,8 @@ const Research = () => {
   const pendingSearchSourceLocationKeyRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
-    restoredSnapshotRef.current
-      ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
+    restoredSnapshot
+      ? `${pageSnapshotKey}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
   const departmentSearchTargets = useMemo(
@@ -499,6 +547,32 @@ const Research = () => {
     () => new Map(departmentSearchTargets.map((target) => [target.label.toLowerCase(), target])),
     [departmentSearchTargets],
   );
+  const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
+  const urlQualityFiltersKey = isAdmin
+    ? readSearchParamList(
+        searchParams,
+        'quality',
+        QUALITY_FILTER_OPTIONS.map((option) => option.value),
+      ).join(',')
+    : '';
+  const urlTrustTierFiltersKey = isAdmin
+    ? readSearchParamList(
+        searchParams,
+        'tier',
+        TRUST_TIER_FILTER_OPTIONS.map((option) => option.value),
+      ).join(',')
+    : '';
+  const urlDepartmentLabelKey = (searchParams.get('dept') || '').toLowerCase();
+  const urlDepartmentSearch = useMemo(
+    () =>
+      urlDepartmentLabelKey
+        ? (departmentSearchTargetByLabel.get(urlDepartmentLabelKey) ?? null)
+        : null,
+    [departmentSearchTargetByLabel, urlDepartmentLabelKey],
+  );
+  const awaitingDepartmentConfig = Boolean(urlDepartmentLabelKey) && isConfigLoading;
+  const awaitingAdminScope =
+    isAuthLoading && ADMIN_SEARCH_PARAM_KEYS.some((key) => searchParams.has(key));
 
   useDocumentTitle('Research');
 
@@ -552,27 +626,11 @@ const Research = () => {
     };
   }, []);
 
-  useEffect(() => {
-    restoredSnapshotRef.current?.defaultResearchEntities.forEach((entity, index) => {
-      if (!entity._id) return;
-      void trackResearchEventOnce(`${browseAnalyticsSessionRef.current}:restored:${entity._id}`, {
-        eventType: 'research_entity_impression',
-        entityType: 'research_entity',
-        entityId: entity._id,
-        payload: {
-          surface: 'browse',
-          positionBucket: researchPositionBucket(index + 1),
-        },
-      });
-    });
-  }, []);
-
-  useEffect(() => {
-    if (isAdmin) return;
+  if (!isAdmin) {
     if (showWeakestProfilesFirst) setShowWeakestProfilesFirst(false);
     if (qualityFilters.length > 0) setQualityFilters([]);
     if (trustTierFilters.length > 0) setTrustTierFilters([]);
-  }, [isAdmin, showWeakestProfilesFirst, qualityFilters.length, trustTierFilters.length]);
+  }
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
     if (page === 1) fetchedDefaultSearchPageRef.current = 1;
@@ -583,7 +641,6 @@ const Research = () => {
     defaultSearchAbortRef.current = controller;
 
     setDefaultSearchLoading(true);
-    setDefaultSearchError('');
     if (page === 1) {
       setDefaultSearchExhausted(false);
     }
@@ -611,6 +668,11 @@ const Research = () => {
       setDefaultResearchEntities((current) =>
         page === 1 ? researchEntities : [...current, ...researchEntities],
       );
+      setDefaultSearchDegraded((current) =>
+        page === 1
+          ? researchEntitiesPage.degraded === true
+          : current || researchEntitiesPage.degraded === true,
+      );
       // Page 1 is where the server sends facets, but guard anyway: overwriting a
       // populated panel with undefined would clear the browse filters.
       if (page === 1 && researchEntitiesPage.facetDistribution) {
@@ -620,28 +682,14 @@ const Research = () => {
         setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       }
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
-      setDefaultSearchError('');
-      researchEntities.forEach((entity, index) => {
-        if (!entity._id) return;
-        void trackResearchEventOnce(`${browseLoadAnalyticsKey}:${entity._id}`, {
-          eventType: 'research_entity_impression',
-          entityType: 'research_entity',
-          entityId: entity._id,
-          payload: {
-            surface: 'browse',
-            positionBucket: researchPositionBucket(
-              (page - 1) * DEFAULT_RESEARCH_HOME_LIMIT + index + 1,
-            ),
-          },
-        });
-      });
+      void trackResearchResultsView(browseLoadAnalyticsKey, researchEntities, 'browse', page);
     } catch (error) {
       if (
         requestId === defaultSearchRequestIdRef.current &&
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setDefaultSearchError('Research results are temporarily unavailable.');
+        setDefaultSearchDegraded(true);
       }
     } finally {
       if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
@@ -660,9 +708,12 @@ const Research = () => {
       syncUrl?: boolean;
       filterChanges?: ResearchFilterAnalyticsChange[];
       preserveResults?: boolean;
+      preserveDraftQuery?: boolean;
+      exactSpelling?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
+    setDefaultSearchLoading(false);
     const trimmed = nextQuery.trim();
     const searchQuery = options.searchQuery ?? trimmed;
     const filters = options.filters ?? {};
@@ -683,6 +734,7 @@ const Research = () => {
       trustTierFilters: isAdmin ? trustTierFilters : [],
       includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
       sort: currentSortRequestOptions(),
+      exactSpelling: options.exactSpelling === true,
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -703,15 +755,17 @@ const Research = () => {
       setSearchResultResearchEntities([]);
     }
     setActiveSearchRequest({
+      submittedText: trimmed,
       searchQuery: searchQuery.trim(),
       filters,
       options: {
         trustTierFilters: isAdmin ? trustTierFilters : [],
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
         ...currentSortRequestOptions(),
+        ...(options.exactSpelling ? { exactSpelling: true } : {}),
       },
     });
-    setQuery(trimmed);
+    if (!options.preserveDraftQuery) setQuery(trimmed);
     setSubmittedQuery(resultQueryLabel);
     setDepartmentSearch(options.departmentSearch ?? null);
     if (!options.preserveResults) {
@@ -720,8 +774,9 @@ const Research = () => {
     setSearchLoading(true);
     setIsLoadingMore(false);
     setIsApplyingFilters(Boolean(options.preserveResults));
-    setSearchError('');
     setHasFacetError(false);
+    setSearchDegraded(false);
+    setQueryCorrection(null);
     if (!options.preserveResults) {
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
@@ -732,7 +787,7 @@ const Research = () => {
           departmentLabel: options.departmentSearch?.label,
           entityType: filters.entityType?.[0],
           school: filters.school?.[0],
-          department: filters.departments?.[0],
+          department: options.departmentSearch ? undefined : filters.departments?.[0],
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -752,14 +807,16 @@ const Research = () => {
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
+          ...(options.exactSpelling ? { exactSpelling: true } : {}),
         },
       );
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
       const researchEntities = researchEntitiesPage.researchEntities;
-      setSearchError('');
       setHasFacetError(false);
+      setSearchDegraded(researchEntitiesPage.degraded === true);
+      setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       if (researchEntitiesPage.facetDistribution) {
@@ -778,22 +835,14 @@ const Research = () => {
       void trackResearchEvent({
         eventType: 'research_search',
         payload: {
-          outcome: resultCount > 0 ? 'results' : 'zero_results',
+          outcome: researchSearchOutcome(resultCount, researchEntitiesPage.degraded === true),
           resultCountBucket: researchResultCountBucket(resultCount),
           searchKind,
           filterCountBucket,
         },
         dedupeKey: analyticsKey,
       });
-      researchEntities.forEach((entity, index) => {
-        if (!entity._id) return;
-        void trackResearchEventOnce(`${analyticsKey}:i:${entity._id}`, {
-          eventType: 'research_entity_impression',
-          entityType: 'research_entity',
-          entityId: entity._id,
-          payload: { surface: 'search', positionBucket: researchPositionBucket(index + 1) },
-        });
-      });
+      void trackResearchResultsView(`${analyticsKey}:results:1`, researchEntities, 'search', 1);
       options.filterChanges?.forEach((change) => {
         void trackResearchEvent({
           eventType: 'research_filter_change',
@@ -807,9 +856,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setSearchError(
-          'Live search metadata is unavailable right now. Try another topic or check back soon.',
-        );
+        setSearchDegraded(true);
         setHasFacetError(true);
         setSearchExhausted(true);
         void trackResearchEvent({
@@ -854,6 +901,7 @@ const Research = () => {
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
       const visibleResearchEntities = researchEntitiesPage.researchEntities;
+      if (researchEntitiesPage.degraded) setSearchDegraded(true);
 
       setSearchResultResearchEntities((current) => {
         const nextResearchEntities = [...current, ...visibleResearchEntities];
@@ -868,18 +916,12 @@ const Research = () => {
       });
       const analyticsKey = activeSearchAnalyticsKeyRef.current;
       if (analyticsKey) {
-        visibleResearchEntities.forEach((entity, index) => {
-          if (!entity._id) return;
-          void trackResearchEventOnce(`${analyticsKey}:i:${entity._id}`, {
-            eventType: 'research_entity_impression',
-            entityType: 'research_entity',
-            entityId: entity._id,
-            payload: {
-              surface: 'search',
-              positionBucket: researchPositionBucket((page - 1) * 24 + index + 1),
-            },
-          });
-        });
+        void trackResearchResultsView(
+          `${analyticsKey}:results:${page}`,
+          visibleResearchEntities,
+          'search',
+          page,
+        );
       }
       if (!researchEntitiesPage.depthLimited) {
         setSearchTotal(researchEntitiesPage.estimatedTotalHits);
@@ -891,7 +933,7 @@ const Research = () => {
         !controller.signal.aborted &&
         !isCancel(error)
       ) {
-        setSearchError('More research results are temporarily unavailable.');
+        setSearchDegraded(true);
         setSearchExhausted(true);
       }
     } finally {
@@ -901,14 +943,20 @@ const Research = () => {
     }
   };
 
-  const runSearchRef = useRef(runSearch);
-  const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
-  const runSearchResultsPageRef = useRef(runSearchResultsPage);
-  const returnToCleanResearchHomeRef = useRef<() => void>(() => {});
+  const runSearchFromEffect = useEffectEvent((...args: Parameters<typeof runSearch>) =>
+    runSearch(...args),
+  );
+  const runDefaultResearchHomeSearchFromEffect = useEffectEvent((page: number) =>
+    runDefaultResearchHomeSearch(page),
+  );
+  const runSearchResultsPageFromEffect = useEffectEvent((page: number) =>
+    runSearchResultsPage(page),
+  );
+  const latestRunSearchRef = useRef(runSearch);
+  useLayoutEffect(() => {
+    latestRunSearchRef.current = runSearch;
+  });
   const consumedHomeResetKeyRef = useRef<string | null>(null);
-  runSearchRef.current = runSearch;
-  runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
-  runSearchResultsPageRef.current = runSearchResultsPage;
 
   const studentSearchFilters = (
     school = selectedSchool,
@@ -920,8 +968,18 @@ const Research = () => {
     ...(department ? { departments: [department] } : {}),
   });
 
+  const activeSearchKeepsTypedSpelling = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.exactSpelling === true;
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!query.trim() && !selectedEntityType && !selectedSchool && !selectedDepartment) {
+      setShowEmptySearchHint(true);
+      searchInputRef.current?.focus();
+      return;
+    }
+    scrollViewportToTop();
     const filters = studentSearchFilters();
     void runSearch(query.trim(), {
       filters,
@@ -932,6 +990,7 @@ const Research = () => {
   const resetSearch = () => {
     searchAbortRef.current?.abort();
     searchRequestIdRef.current += 1;
+    activeSearchKeyRef.current = null;
     setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
@@ -946,27 +1005,24 @@ const Research = () => {
     setSearchExhausted(true);
     setActiveSearchRequest(null);
     activeSearchAnalyticsKeyRef.current = null;
-    setSearchError('');
     setHasFacetError(false);
+    setSearchDegraded(false);
+    setQueryCorrection(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
-    setDefaultSearchExhausted(false);
-    setDefaultSearchPage(1);
     writeResearchSearchParams(
       {
         showWeakest: showWeakestProfilesFirst,
         quality: qualityFilters,
         trustTiers: trustTierFilters,
       },
-      { replace: true },
+      { replace: true, markPending: true },
     );
-    if (defaultResearchEntities.length === 0) {
-      setDefaultSearchTotal(0);
-      void runDefaultResearchHomeSearch(1);
-    }
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
+  const programsHandoffQuery =
+    departmentSearch || submittedQuery === FILTERED_RESULT_QUERY_LABEL ? '' : submittedQuery.trim();
 
   useEffect(() => {
     const observedSearchParams = searchParams.toString();
@@ -1001,29 +1057,23 @@ const Research = () => {
     const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
-    const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
-    const urlQualityFilters = isAdmin
-      ? readSearchParamList(
-          searchParams,
-          'quality',
-          QUALITY_FILTER_OPTIONS.map((option) => option.value),
-        )
+    const urlQualityFilters = urlQualityFiltersKey
+      ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
-    const urlTrustTierFilters = isAdmin
-      ? readSearchParamList(
-          searchParams,
-          'tier',
-          TRUST_TIER_FILTER_OPTIONS.map((option) => option.value),
-        )
+    const urlTrustTierFilters = urlTrustTierFiltersKey
+      ? (urlTrustTierFiltersKey.split(',') as ResearchTrustTierFilter[])
       : [];
-    const syncKey = `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`;
+    const syncKey = `${pageSnapshotKey}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`;
 
     if (restoredSnapshotSyncKeyRef.current === syncKey) {
-      restoredSnapshotRef.current = null;
       return;
     }
+    restoredSnapshotSyncKeyRef.current = null;
 
     if (showWeakestProfilesFirst !== urlWeakestFirst) {
+      // The URL is the external system here, and this reconcile must run in effect order
+      // with the paging effects below, so it stays a synchronous effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowWeakestProfilesFirst(urlWeakestFirst);
       return;
     }
@@ -1055,20 +1105,29 @@ const Research = () => {
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
     };
 
-    const urlDepartmentSearch = urlDepartmentLabel
-      ? (departmentSearchTargetByLabel.get(urlDepartmentLabel.toLowerCase()) ?? null)
-      : null;
+    if (awaitingDepartmentConfig || awaitingAdminScope) return;
 
     if (urlDepartmentSearch) {
-      if (departmentSearch?.label === urlDepartmentSearch.label && hasSubmittedSearch) {
+      const departmentSearchFilters = withDepartmentSearchTarget(
+        studentFilters,
+        urlDepartmentSearch,
+      );
+      const isSameDepartmentSearch =
+        departmentSearch?.label === urlDepartmentSearch.label && hasSubmittedSearch;
+      if (
+        isSameDepartmentSearch &&
+        JSON.stringify(activeSearchRequest?.filters || {}) ===
+          JSON.stringify(departmentSearchFilters)
+      ) {
         return;
       }
-      void runSearchRef.current(urlDepartmentSearch.label, {
+      void runSearchFromEffect(urlDepartmentSearch.label, {
         searchQuery: '',
-        filters: { departments: urlDepartmentSearch.filters.departments },
+        filters: departmentSearchFilters,
         hasFilterSelections: true,
         departmentSearch: urlDepartmentSearch,
         syncUrl: false,
+        preserveResults: isSameDepartmentSearch,
       });
       return;
     }
@@ -1081,7 +1140,7 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current(urlQuery, {
+      void runSearchFromEffect(urlQuery, {
         filters: studentFilters,
         syncUrl: false,
         preserveResults: submittedQuery === urlQuery.trim(),
@@ -1096,7 +1155,7 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current('', {
+      void runSearchFromEffect('', {
         filters: studentFilters,
         hasFilterSelections: true,
         syncUrl: false,
@@ -1126,28 +1185,32 @@ const Research = () => {
     setSearchTotal(0);
     setSearchExhausted(true);
     setActiveSearchRequest(null);
-    setSearchError('');
     setHasFacetError(false);
+    setSearchDegraded(false);
     setSearchLoading(false);
     setIsLoadingMore(false);
     setDefaultResearchEntities([]);
     setDefaultSearchTotal(0);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
-    void runDefaultResearchHomeSearchRef.current(1);
+    void runDefaultResearchHomeSearchFromEffect(1);
   }, [
     searchParams,
     setSearchParams,
     location.key,
     pageSnapshotKey,
-    isAdmin,
+    urlWeakestFirst,
+    urlQualityFiltersKey,
+    urlTrustTierFiltersKey,
+    urlDepartmentSearch,
+    awaitingDepartmentConfig,
+    awaitingAdminScope,
     showWeakestProfilesFirst,
     qualityFilters,
     trustTierFilters,
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
-    departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
@@ -1158,6 +1221,9 @@ const Research = () => {
     researchPageSnapshot = {
       key: pageSnapshotKey,
       isAdmin,
+      resultsSettled: hasSubmittedSearch
+        ? !searchLoading
+        : !(defaultSearchLoading && defaultSearchPage <= 1),
       query,
       submittedQuery,
       departmentSearch,
@@ -1173,19 +1239,24 @@ const Research = () => {
       browseFacetDistribution,
       groupedResults,
       searchResultResearchEntities,
-      searchPage,
+      searchPage: lastLoadedPage(searchPage, isLoadingMore),
       searchTotal,
       searchExhausted,
       activeSearchRequest,
       defaultResearchEntities,
-      defaultSearchPage,
+      defaultSearchPage: lastLoadedPage(defaultSearchPage, defaultSearchLoading),
       defaultSearchTotal,
       defaultSearchExhausted,
-      searchError,
       hasFacetError,
-      defaultSearchError,
+      searchDegraded,
+      defaultSearchDegraded,
+      queryCorrection,
     };
   }, [
+    hasSubmittedSearch,
+    searchLoading,
+    isLoadingMore,
+    defaultSearchLoading,
     pageSnapshotKey,
     isAdmin,
     query,
@@ -1211,15 +1282,16 @@ const Research = () => {
     defaultSearchPage,
     defaultSearchTotal,
     defaultSearchExhausted,
-    searchError,
     hasFacetError,
-    defaultSearchError,
+    searchDegraded,
+    defaultSearchDegraded,
+    queryCorrection,
   ]);
 
   useEffect(() => {
     if (hasSubmittedSearch || defaultSearchPage <= fetchedDefaultSearchPageRef.current) return;
     fetchedDefaultSearchPageRef.current = defaultSearchPage;
-    void runDefaultResearchHomeSearchRef.current(defaultSearchPage);
+    void runDefaultResearchHomeSearchFromEffect(defaultSearchPage);
   }, [defaultSearchPage, hasSubmittedSearch]);
 
   useEffect(() => {
@@ -1227,15 +1299,23 @@ const Research = () => {
       return;
     }
     fetchedSearchPageRef.current = searchPage;
-    void runSearchResultsPageRef.current(searchPage);
+    void runSearchResultsPageFromEffect(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
   const isZeroResultSearch =
     hasSubmittedSearch &&
     !searchLoading &&
-    !searchError &&
+    !searchDegraded &&
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
+
+  const hasRelaxedQueryCandidate =
+    isZeroResultSearch &&
+    activeSearchRequest !== null &&
+    Boolean(relaxResearchQuery(activeSearchRequest.searchQuery ?? ''));
+  if (!hasRelaxedQueryCandidate && relaxedQuerySuggestion !== null) {
+    setRelaxedQuerySuggestion(null);
+  }
 
   useEffect(() => {
     const relaxedQuery = isZeroResultSearch
@@ -1243,7 +1323,6 @@ const Research = () => {
       : null;
     if (!relaxedQuery || !activeSearchRequest) {
       relaxProbeRequestIdRef.current += 1;
-      setRelaxedQuerySuggestion(null);
       return;
     }
 
@@ -1279,9 +1358,8 @@ const Research = () => {
   }, [isZeroResultSearch, activeSearchRequest]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
-  const clusterByEntityRef = useRef(new WeakMap<ResearchEntity, ResearchCluster>());
   const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
-    const cache = clusterByEntityRef.current;
+    const cache = researchClusterByEntity;
     return entities.map((entity) => {
       const cached = cache.get(entity);
       if (cached) return cached;
@@ -1298,6 +1376,12 @@ const Research = () => {
     () => clustersForEntities(searchResultResearchEntities),
     [clustersForEntities, searchResultResearchEntities],
   );
+  const programsHandoffApplies =
+    Boolean(programsHandoffQuery) && queryCarriesProgramsIntent(programsHandoffQuery);
+  const showsProgramsHandoff = programsHandoffApplies && activeClusters.length > 0;
+  const reservesProgramsHandoffSlot =
+    programsHandoffApplies && searchLoading && activeClusters.length === 0;
+  const showsProgramsHandoffSlot = showsProgramsHandoff || reservesProgramsHandoffSlot;
   const defaultClusters = useMemo(
     () => clustersForEntities(defaultResearchEntities),
     [clustersForEntities, defaultResearchEntities],
@@ -1322,14 +1406,14 @@ const Research = () => {
     Number(Boolean(selectedDepartment));
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
-  const searchDisabled =
-    (query.trim().length === 0 && !hasStudentFacetSelection) ||
-    (searchLoading && !hasSubmittableChange);
+  const searchDisabled = searchLoading && !hasSubmittableChange;
   const searchHelpText = query.trim()
-    ? 'Press Enter or Search to see matching research.'
+    ? ''
     : hasStudentFacetSelection
       ? 'Search with the selected filters.'
-      : 'Enter a topic or name to enable Search.';
+      : showEmptySearchHint
+        ? 'Type a topic, professor, or lab to search.'
+        : '';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
   const applyStudentFilters = (next: {
@@ -1350,11 +1434,24 @@ const Research = () => {
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
+    if (filterChanges.length > 0) scrollViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
     const filters = studentSearchFilters(school, department, entityType);
-    if (!query.trim() && !hasStructuredFilters(filters)) {
+    if (departmentSearch && !department) {
+      void runSearch(departmentSearch.label, {
+        searchQuery: '',
+        filters: withDepartmentSearchTarget(filters, departmentSearch),
+        hasFilterSelections: true,
+        departmentSearch,
+        filterChanges,
+        preserveResults: true,
+      });
+      return;
+    }
+    const textQuery = departmentSearch ? '' : query.trim();
+    if (!textQuery && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
           eventType: 'research_filter_change',
@@ -1365,45 +1462,70 @@ const Research = () => {
       resetSearch();
       return;
     }
-    void runSearch(query.trim(), {
+    void runSearch(textQuery, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
+      preserveResults: true,
+      exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
+    });
+  };
+  const clearSearchText = () => {
+    const filters = studentSearchFilters();
+    if (!hasStructuredFilters(filters)) {
+      resetSearch();
+      return;
+    }
+    const isAlreadyFiltersOnly = !departmentSearch && activeSearchRequest?.submittedText === '';
+    if (isAlreadyFiltersOnly) return;
+    void runSearch('', {
+      filters,
+      hasFilterSelections: true,
       preserveResults: true,
     });
   };
   const applyResearchSort = (nextSortBy: ResearchSortField, nextSortOrder?: 'asc' | 'desc') => {
     const order = nextSortOrder ?? defaultResearchSortOrder(nextSortBy);
     if (nextSortBy === sortBy && order === sortOrder) return;
+    scrollViewportToTop();
     sortByRef.current = nextSortBy;
     sortOrderRef.current = order;
     setSortBy(nextSortBy);
     setSortOrder(order);
     if (hasSubmittedSearch && activeSearchRequest) {
-      void runSearchRef.current(query.trim(), {
-        searchQuery: activeSearchRequest.searchQuery,
-        filters: activeSearchRequest.filters,
-        hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
-        departmentSearch,
-        preserveResults: true,
-        syncUrl: false,
-      });
+      rerunActiveSearch();
       return;
     }
+    reloadDefaultResearchHomes();
+  };
+  const rerunActiveSearch = () => {
+    if (!activeSearchRequest) return;
+    void runSearch(activeSearchRequest.submittedText, {
+      searchQuery: activeSearchRequest.searchQuery,
+      filters: activeSearchRequest.filters,
+      hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
+      departmentSearch,
+      preserveResults: true,
+      preserveDraftQuery: true,
+      syncUrl: false,
+      exactSpelling: activeSearchRequest.options?.exactSpelling === true,
+    });
+  };
+  const reloadDefaultResearchHomes = () => {
     setDefaultResearchEntities([]);
     setDefaultSearchPage(1);
     setDefaultSearchTotal(0);
     setDefaultSearchExhausted(false);
-    void runDefaultResearchHomeSearchRef.current(1);
+    void runDefaultResearchHomeSearch(1);
   };
   const toggleResearchSortDirection = () =>
     applyResearchSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc');
   const exploreHome = useCallback(
     (label: string) => {
-      scrollResearchViewportToTop();
+      scrollViewportToTop();
       const target = departmentSearchTargetByLabel.get(label.toLowerCase());
       if (target) {
-        void runSearchRef.current(target.label, {
+        void latestRunSearchRef.current(target.label, {
           searchQuery: '',
           filters: { departments: target.filters.departments },
           hasFilterSelections: true,
@@ -1411,7 +1533,7 @@ const Research = () => {
         });
         return;
       }
-      void runSearchRef.current(label);
+      void latestRunSearchRef.current(label);
     },
     [departmentSearchTargetByLabel],
   );
@@ -1419,6 +1541,7 @@ const Research = () => {
     const next = qualityFilters.includes(filter)
       ? qualityFilters.filter((value) => value !== filter)
       : [...qualityFilters, filter];
+    scrollViewportToTop();
     setQualityFilters(next);
     writeResearchSearchParams(
       {
@@ -1433,6 +1556,7 @@ const Research = () => {
     const next = trustTierFilters.includes(filter)
       ? trustTierFilters.filter((value) => value !== filter)
       : [...trustTierFilters, filter];
+    scrollViewportToTop();
     setTrustTierFilters(next);
     writeResearchSearchParams(
       {
@@ -1444,6 +1568,7 @@ const Research = () => {
     );
   };
   const setWeakestProfilesFirst = (value: boolean) => {
+    scrollViewportToTop();
     setShowWeakestProfilesFirst(value);
     writeResearchSearchParams(
       {
@@ -1459,32 +1584,13 @@ const Research = () => {
   };
 
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-  const [isWideFilterLayout, setIsWideFilterLayout] = useState(
-    () => window.matchMedia?.('(min-width: 1280px)').matches ?? false,
-  );
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(min-width: 1280px)');
-    if (!mediaQuery) return;
-    const handleChange = (event: MediaQueryListEvent) => setIsWideFilterLayout(event.matches);
-    setIsWideFilterLayout(mediaQuery.matches);
-    mediaQuery.addEventListener?.('change', handleChange);
-    return () => mediaQuery.removeEventListener?.('change', handleChange);
-  }, []);
-
-  const [isCompactViewport, setIsCompactViewport] = useState(
-    () => window.matchMedia?.('(max-width: 639px)').matches ?? false,
-  );
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(max-width: 639px)');
-    if (!mediaQuery) return;
-    const handleChange = (event: MediaQueryListEvent) => setIsCompactViewport(event.matches);
-    setIsCompactViewport(mediaQuery.matches);
-    mediaQuery.addEventListener?.('change', handleChange);
-    return () => mediaQuery.removeEventListener?.('change', handleChange);
-  }, []);
+  const isWideFilterLayout = useMediaQuery('(min-width: 1280px)');
+  const isCompactViewport = useMediaQuery('(max-width: 639px)');
   const searchPlaceholder = isCompactViewport
-    ? 'Type a topic, professor, lab, or technique'
-    : 'Type a topic, professor, lab, technique, or research question';
+    ? 'Topic, professor, or lab'
+    : isWideFilterLayout
+      ? 'Topic, professor, lab, or method'
+      : 'Type a topic, professor, lab, technique, or research question';
 
   const researchFilterProps = {
     facetDistribution,
@@ -1509,21 +1615,31 @@ const Research = () => {
 
   const retryRelaxedQuery = () => {
     if (!relaxedQuerySuggestion) return;
-    scrollResearchViewportToTop();
+    scrollViewportToTop();
     setQuery(relaxedQuerySuggestion);
     const filters = studentSearchFilters();
-    void runSearchRef.current(relaxedQuerySuggestion, {
+    void runSearch(relaxedQuerySuggestion, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
     });
   };
 
+  const searchOriginalSpelling = () => {
+    if (!queryCorrection) return;
+    const filters = studentSearchFilters();
+    void runSearch(queryCorrection.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      exactSpelling: true,
+    });
+  };
+
   const browseAllResearchHomes = () => {
-    scrollResearchViewportToTop();
+    scrollViewportToTop();
     resetSearch();
   };
   const returnToCleanResearchHome = () => {
-    scrollResearchViewportToTop();
+    scrollViewportToTop();
     const hasResetableSearchState =
       query.trim().length > 0 ||
       submittedQuery.length > 0 ||
@@ -1532,7 +1648,7 @@ const Research = () => {
     if (!hasResetableSearchState) return;
     resetSearch();
   };
-  returnToCleanResearchHomeRef.current = returnToCleanResearchHome;
+  const returnToCleanResearchHomeFromEffect = useEffectEvent(returnToCleanResearchHome);
 
   // The URL-sync effect cannot carry this on its own: an unsubmitted draft query
   // lives only in page state, and the page snapshot restores it whenever the
@@ -1542,40 +1658,85 @@ const Research = () => {
     if (!isResearchHomeResetState(location.state)) return;
     if (consumedHomeResetKeyRef.current === location.key) return;
     consumedHomeResetKeyRef.current = location.key;
-    returnToCleanResearchHomeRef.current();
+    returnToCleanResearchHomeFromEffect();
   }, [location.key, location.state]);
+
+  const weakestProfilesToggle = (
+    <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-3 py-2 text-sm font-medium text-ink-soft">
+      <input
+        type="checkbox"
+        checked={showWeakestProfilesFirst}
+        onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
+        className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
+      />
+      <span>Show weakest profiles first</span>
+    </label>
+  );
+  const qualityFilterChips = showWeakestProfilesFirst && (
+    <div
+      className="yr-muted-surface flex flex-wrap gap-2 rounded-card p-2"
+      aria-label="Quality filters"
+    >
+      {QUALITY_FILTER_OPTIONS.map((option) => {
+        const isActive = qualityFilters.includes(option.value);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => toggleQualityFilter(option.value)}
+            className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
+              isActive
+                ? 'border-brand bg-panel text-brand'
+                : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const trustTierFilterChips = (
+    <div
+      className="flex flex-wrap gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
+      aria-label="Trust tier filters"
+    >
+      {TRUST_TIER_FILTER_OPTIONS.map((option) => {
+        const isActive = trustTierFilters.includes(option.value);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => toggleTrustTierFilter(option.value)}
+            className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
+              isActive
+                ? 'border-brand bg-brand text-white'
+                : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
-      <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
-        <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <header className="yr-panel rounded-card p-4 sm:p-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <p className="yr-kicker mb-3">Research discovery</p>
-            <h1 className="yr-display max-w-3xl text-3xl font-semibold leading-tight text-ink sm:text-5xl">
+      <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-5 py-5 sm:py-8 lg:px-8">
+        <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
+          <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+            <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
               Find a Yale lab that fits you.
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:text-base xl:hidden"
+              className="mt-2 hidden max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:block sm:text-base sm:leading-6 xl:hidden"
             >
-              Search by interest, professor, course topic, method, or question. We&apos;ll help you
-              find relevant research profiles and verified ways in when the source evidence is
-              strong enough.
+              Search by interest, professor, course topic, method, or question.
             </p>
-
-            {!isAuthenticated && (
-              <div className="mt-4 rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy">
-                You&apos;re browsing as a guest.{' '}
-                <Link
-                  to="/login"
-                  state={{ from: `${location.pathname}${location.search}` }}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  Log in with Yale CAS
-                </Link>{' '}
-                to save research and reach out.
-              </div>
-            )}
 
             {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
               <div
@@ -1598,14 +1759,14 @@ const Research = () => {
               </div>
             )}
 
-            <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
+            <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
               <label
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-ink"
               >
                 Search y/labs
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+              <div className="flex flex-row gap-2 xl:flex-col">
                 <input
                   id="research-search"
                   ref={searchInputRef}
@@ -1614,134 +1775,160 @@ const Research = () => {
                   onChange={(event) => {
                     const nextQuery = event.target.value;
                     setQuery(nextQuery);
+                    setShowEmptySearchHint(false);
                     if (!nextQuery.trim() && hasSubmittedSearch) {
-                      resetSearch();
+                      clearSearchText();
                     }
                   }}
                   aria-describedby="research-search-context research-search-help"
                   placeholder={searchPlaceholder}
-                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14"
+                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11"
                 />
                 <button
                   type="submit"
-                  className="yr-focus-ring min-h-12 rounded-control bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14"
+                  className="yr-focus-ring yr-pressable min-h-12 shrink-0 rounded-control bg-[var(--yr-blue)] px-5 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 sm:px-6 xl:min-h-11"
                   disabled={searchDisabled}
                 >
-                  {searchLoading ? 'Searching...' : 'Search'}
+                  <span className="grid">
+                    <span
+                      aria-hidden={searchLoading || undefined}
+                      className={`col-start-1 row-start-1 ${searchLoading ? 'invisible' : ''}`}
+                    >
+                      Search
+                    </span>
+                    <span
+                      aria-hidden={searchLoading ? undefined : true}
+                      className={`col-start-1 row-start-1 ${searchLoading ? '' : 'invisible'}`}
+                    >
+                      Searching…
+                    </span>
+                  </span>
                 </button>
               </div>
-              <p id="research-search-help" className="mt-2 text-sm text-muted">
+              <p
+                id="research-search-help"
+                aria-live="polite"
+                className={`mt-2 text-sm text-muted xl:text-xs ${searchHelpText ? '' : 'hidden'}`}
+              >
                 {searchHelpText}
               </p>
             </form>
 
             {hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6">
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
                 <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
               </div>
             )}
             {!hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6">
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
                 <ResearchFilterDisclosure variant="sidebar" {...browseFilterProps} />
               </div>
             )}
+            {!hasSubmittedSearch && isWideFilterLayout && isAdmin && (
+              <section
+                aria-labelledby="research-operator-controls-heading"
+                className="mt-6 grid gap-3 border-t border-[var(--yr-line)] pt-6"
+              >
+                <h2
+                  id="research-operator-controls-heading"
+                  className="text-base font-semibold text-ink"
+                >
+                  Operator controls
+                </h2>
+                {weakestProfilesToggle}
+                {qualityFilterChips}
+                {trustTierFilterChips}
+              </section>
+            )}
+            <div
+              aria-hidden={isAuthLoading || undefined}
+              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
+            >
+              <p
+                aria-hidden={isAuthenticated || undefined}
+                className={`col-start-1 row-start-1 ${isAuthenticated ? 'invisible' : ''}`}
+              >
+                You&apos;re browsing as a guest.{' '}
+                <Link
+                  to="/login"
+                  state={{ from: `${location.pathname}${location.search}` }}
+                  tabIndex={isAuthenticated ? -1 : undefined}
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                >
+                  Log in with Yale CAS
+                </Link>{' '}
+                to save research and reach out.
+              </p>
+              <p
+                aria-hidden={!isAuthenticated || undefined}
+                className={`col-start-1 row-start-1 ${isAuthenticated ? '' : 'invisible'}`}
+              >
+                You&apos;re signed in. Research you save is on{' '}
+                <Link
+                  to="/dashboard"
+                  tabIndex={isAuthenticated ? undefined : -1}
+                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                >
+                  your dashboard
+                </Link>
+                , ready to compare.
+              </p>
+            </div>
           </header>
 
           <div className="min-w-0">
             {!hasSubmittedSearch && (
               <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="w-full">
+                <div className="mb-3 flex flex-row flex-wrap items-end justify-between gap-3 sm:mb-4">
+                  <div className="min-w-0">
                     <SectionHeading>Research to explore</SectionHeading>
-                    <p className="text-sm text-muted">
-                      Open a profile to review people, evidence, sources, and planning context.
+                    <p
+                      className={`yr-num text-sm text-muted ${defaultSearchTotal > 0 ? '' : 'invisible'}`}
+                      aria-hidden={defaultSearchTotal > 0 ? undefined : true}
+                    >
+                      {researchProfileCountLabel(defaultSearchTotal)}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <ResearchSortDropdown
                       sortBy={sortBy}
                       sortOrder={sortOrder}
+                      hasQuery={false}
                       onSortByChange={(field) => applyResearchSort(field)}
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
-                    {isAdmin && (
-                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-card px-3 py-2 text-sm font-medium text-ink-soft">
-                        <input
-                          type="checkbox"
-                          checked={showWeakestProfilesFirst}
-                          onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                          className="yr-focus-ring h-4 w-4 rounded-control border-[var(--yr-line-strong)] accent-brand"
-                        />
-                        <span>Show weakest profiles first</span>
-                      </label>
-                    )}
                   </div>
                 </div>
                 {!isWideFilterLayout && (
-                  <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
+                  <ResearchStickyFilterBar>
                     <ResearchFilterDisclosure
                       {...browseFilterProps}
                       isOpen={isFilterPanelOpen}
                       onOpenChange={setIsFilterPanelOpen}
+                      operatorControls={
+                        isAdmin ? (
+                          <>
+                            {weakestProfilesToggle}
+                            {qualityFilterChips}
+                            {trustTierFilterChips}
+                          </>
+                        ) : undefined
+                      }
+                      operatorActiveCount={
+                        isAdmin
+                          ? (showWeakestProfilesFirst ? 1 + qualityFilters.length : 0) +
+                            trustTierFilters.length
+                          : 0
+                      }
                     />
-                  </div>
+                  </ResearchStickyFilterBar>
                 )}
-                {defaultSearchError && (
-                  <div
-                    role="alert"
-                    className="mb-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-                  >
-                    {defaultSearchError}
-                  </div>
-                )}
-                {isAdmin && showWeakestProfilesFirst && (
-                  <div
-                    className="yr-muted-surface mb-4 flex flex-wrap gap-2 rounded-card p-2"
-                    aria-label="Quality filters"
-                  >
-                    {QUALITY_FILTER_OPTIONS.map((option) => {
-                      const isActive = qualityFilters.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => toggleQualityFilter(option.value)}
-                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
-                            isActive
-                              ? 'border-brand bg-panel text-brand'
-                              : 'border-[var(--yr-border-warm)] bg-transparent text-ink-soft hover:bg-[var(--yr-panel)]'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {isAdmin && (
-                  <div
-                    className="mb-4 flex flex-wrap gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-2"
-                    aria-label="Trust tier filters"
-                  >
-                    {TRUST_TIER_FILTER_OPTIONS.map((option) => {
-                      const isActive = trustTierFilters.includes(option.value);
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isActive}
-                          onClick={() => toggleTrustTierFilter(option.value)}
-                          className={`yr-focus-ring min-h-10 rounded-control border px-3 py-1.5 text-sm font-semibold transition-colors ${
-                            isActive
-                              ? 'border-brand bg-brand text-white'
-                              : 'border-[var(--yr-line)] bg-[var(--yr-panel)] text-ink-soft hover:bg-[var(--yr-panel-muted)]'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+                {defaultSearchDegraded && !defaultSearchLoading && (
+                  <div className="mb-4">
+                    <ResearchSearchDegradedNotice
+                      hasResults={defaultClusters.length > 0}
+                      onRetry={reloadDefaultResearchHomes}
+                    />
                   </div>
                 )}
                 {defaultSearchLoading && defaultClusters.length === 0 ? (
@@ -1753,13 +1940,14 @@ const Research = () => {
                 ) : defaultClusters.length > 0 ? (
                   <div className="grid gap-5">
                     <div>
-                      <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
                         {defaultClusters.map((cluster) => (
                           <ResearchHomeCard
                             key={cluster.id}
                             home={cluster}
                             onSelect={exploreHome}
                             variant="compact"
+                            openSource="browse"
                             showAdminQuality={isAdmin && showWeakestProfilesFirst}
                           />
                         ))}
@@ -1772,7 +1960,7 @@ const Research = () => {
                       )}
                     </div>
                   </div>
-                ) : (
+                ) : defaultSearchDegraded ? null : (
                   <EmptyGroup>
                     No research matches these filters. Try a broader topic, professor name, lab,
                     method, or research question.
@@ -1784,24 +1972,34 @@ const Research = () => {
             {hasSubmittedSearch && (
               <section aria-busy={searchLoading} aria-label="Search results">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p
-                    role="status"
-                    aria-live="polite"
-                    aria-atomic="true"
-                    className="min-w-0 text-sm font-medium text-ink-soft"
-                  >
-                    {resultSummary(
-                      activeResults,
-                      submittedQuery,
-                      searchLoading,
-                      departmentSearch?.label,
-                      searchTotal,
+                  <div className="min-w-0">
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="text-sm font-medium text-ink-soft"
+                    >
+                      {resultSummary(
+                        activeResults,
+                        queryCorrection?.correctedQuery ?? submittedQuery,
+                        searchLoading,
+                        departmentSearch?.label,
+                        searchTotal,
+                        searchDegraded,
+                      )}
+                    </p>
+                    {queryCorrection && !searchLoading && (
+                      <SearchSpellingNotice
+                        originalQuery={queryCorrection.originalQuery}
+                        onSearchOriginal={searchOriginalSpelling}
+                      />
                     )}
-                  </p>
+                  </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <ResearchSortDropdown
                       sortBy={sortBy}
                       sortOrder={sortOrder}
+                      hasQuery={Boolean(submittedQuery)}
                       onSortByChange={(field) => applyResearchSort(field)}
                       onToggleSortDirection={toggleResearchSortDirection}
                     />
@@ -1809,21 +2007,28 @@ const Research = () => {
                 </div>
 
                 {!isWideFilterLayout && (
-                  <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
+                  <ResearchStickyFilterBar>
                     <ResearchFilterDisclosure
                       {...researchFilterProps}
                       isOpen={isFilterPanelOpen}
                       onOpenChange={setIsFilterPanelOpen}
                     />
+                  </ResearchStickyFilterBar>
+                )}
+
+                {searchDegraded && !searchLoading && activeClusters.length > 0 && (
+                  <div className="mt-4">
+                    <ResearchSearchDegradedNotice hasResults onRetry={rerunActiveSearch} />
                   </div>
                 )}
 
-                {searchError && (
+                {showsProgramsHandoffSlot && (
                   <div
-                    role="alert"
-                    className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    className={`mt-4 yr-muted-surface rounded-card p-4 ${
+                      reservesProgramsHandoffSlot ? 'invisible' : ''
+                    }`}
                   >
-                    {searchError}
+                    <ResearchProgramsHandoff query={programsHandoffQuery} />
                   </div>
                 )}
 
@@ -1843,13 +2048,14 @@ const Research = () => {
                           isApplyingFilters ? 'opacity-50' : ''
                         }`}
                       >
-                        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
                           {activeClusters.map((cluster) => (
                             <ResearchHomeCard
                               key={cluster.id}
                               home={cluster}
                               onSelect={exploreHome}
                               variant="compact"
+                              openSource="search"
                             />
                           ))}
                         </div>
@@ -1859,6 +2065,12 @@ const Research = () => {
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
                     </>
+                  ) : searchDegraded ? (
+                    <ResearchSearchDegradedNotice
+                      hasResults={false}
+                      onRetry={rerunActiveSearch}
+                      onBrowseAll={browseAllResearchHomes}
+                    />
                   ) : (
                     <ResearchZeroResultRecovery
                       isDepartmentSearch={Boolean(departmentSearch)}
@@ -1874,6 +2086,7 @@ const Research = () => {
                       relaxedQuery={relaxedQuerySuggestion}
                       onRelaxQuery={retryRelaxedQuery}
                       onBrowseAll={browseAllResearchHomes}
+                      programsHandoffQuery={programsHandoffQuery}
                     />
                   )}
                 </section>

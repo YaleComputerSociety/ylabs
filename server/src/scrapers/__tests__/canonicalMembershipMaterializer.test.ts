@@ -131,11 +131,11 @@ describe('canonical membership materialization (integration)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -391,6 +391,48 @@ describe('canonical membership materialization (integration)', () => {
     await materializeCanonicalMembership(id, facts, identity);
     expect(await Researcher.countDocuments({})).toBe(1);
     expect(await RoleAssignment.countDocuments({})).toBe(1);
+  });
+
+  it('writes the live edge rather than reviving a retired twin beside it (#4791)', async () => {
+    const id = entityId();
+    const facts = {
+      legacyRole: 'pi',
+      displayName: 'Gamma Three',
+      isCurrentMember: true,
+      confidence: 0.8,
+    };
+    const identity = {
+      netid: 'gt345',
+      email: 'gt345@example.test',
+      displayName: 'Gamma Three',
+    };
+    await materializeCanonicalMembership(id, facts, identity);
+    const retired = await RoleAssignment.findOne({}).lean<WithObjectId<RoleAssignmentRecord>>();
+    await RoleAssignment.updateOne(
+      { _id: retired?._id },
+      { $set: { state: 'HISTORICAL', endedAt: new Date('2026-10-01T00:00:00Z'), archived: true } },
+    );
+    await RoleAssignment.create({
+      personId: retired?.personId,
+      target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(id) },
+      role: 'PI',
+      state: 'UNKNOWN',
+      confidence: 0.8,
+      reviewStatus: 'UNREVIEWED',
+      archived: false,
+    });
+
+    await materializeCanonicalMembership(id, facts, identity);
+
+    const live = await RoleAssignment.find({
+      'target.id': new mongoose.Types.ObjectId(id),
+      archived: { $ne: true },
+      state: { $ne: 'HISTORICAL' },
+    }).lean();
+    expect(live).toHaveLength(1);
+    const stillRetired = await RoleAssignment.findById(retired?._id).lean<RoleAssignmentRecord>();
+    expect(stillRetired?.state).toBe('HISTORICAL');
+    expect(stillRetired?.archived).toBe(true);
   });
 
   it('resolves by ORCID and skips the write on an accountId conflict (never merges)', async () => {

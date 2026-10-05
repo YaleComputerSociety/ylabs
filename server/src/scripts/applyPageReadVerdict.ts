@@ -24,9 +24,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
@@ -98,7 +98,11 @@ export function parsePageReadVerdictArgs(argv: readonly string[]): {
 
 async function main(): Promise<void> {
   const options = parsePageReadVerdictArgs(process.argv.slice(2));
-  const guard = assertScriptApplyAllowed({ scriptName: SCRIPT_NAME, apply: options.apply });
+  const guard = assertScriptApplyAllowed({
+    scriptName: SCRIPT_NAME,
+    apply: options.apply,
+    mongoUrl: process.env.MONGODBURL,
+  });
   if (options.apply && !options.confirmed) {
     throw new Error(`${SCRIPT_NAME} --apply requires ${CONFIRM_FLAG}`);
   }
@@ -106,7 +110,6 @@ async function main(): Promise<void> {
     `Environment: ${guard.environment}; mode: ${options.apply ? 'apply' : 'dry-run'}; arm: ${options.arm}`,
   );
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const doc = (await ResearchEntity.findOne({ slug: options.slug })

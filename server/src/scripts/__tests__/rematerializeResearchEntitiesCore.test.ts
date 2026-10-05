@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Types } from 'mongoose';
 import {
   MATERIALIZER_DERIVED_FIELD_GROUPS,
   withDerivedMaterializerFields,
@@ -8,13 +9,23 @@ import {
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
   collectRematerializeEntityReports,
+  foreignContactFieldsByRow,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  countProvenanceReconciliation,
+  provenanceReconciliationChanges,
+  slugsCarryingUnbackedProvenance,
   rematerializeChangeAffectsVisibilityGate,
+  rematerializeComparedFields,
+  rematerializeEntityReportFromChanges,
   rematerializeFailureMessage,
+  rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
+  rematerializeStateAfterPlan,
+  summarizeRematerializeEntities,
   researchEntityFieldIsStranded,
   selectRematerializeRegateEntityIds,
+  summarizeAccessSignalChanges,
 } from '../rematerializeResearchEntitiesCore';
 
 describe('parseRematerializeResearchEntitiesArgs', () => {
@@ -38,10 +49,46 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     expect(args.confirmRematerialize).toBe(true);
   });
 
+  it('opts into card synthesis for cut cards only when asked', () => {
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab']).resynthesizeCutCards,
+    ).toBe(false);
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--resynthesize-cut-cards'])
+        .resynthesizeCutCards,
+    ).toBe(true);
+  });
+
+  it('reads a card model for a repair pass and refuses an empty one (#4809)', () => {
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--card-model=gpt-5'])
+        .cardModel,
+    ).toBe('gpt-5');
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab']).cardModel,
+    ).toBeUndefined();
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--card-model=']),
+    ).toThrow();
+  });
+
   it('requires --slugs when no reclaim mode is given', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
-      '--slugs or --reclaim-stranded is required',
+      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact, --unbacked-research-areas or --access-signals is required',
     );
+  });
+
+  it('selects the unbacked-provenance cohort without slugs, and never alongside a reclaim', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--unbacked-provenance'])).toMatchObject({
+      unbackedProvenance: true,
+      slugs: [],
+    });
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs([
+        '--unbacked-provenance',
+        '--reclaim-stranded=methods',
+      ]),
+    ).toThrow('cannot reclaim a field');
   });
 
   it('rejects malformed slugs', () => {
@@ -232,6 +279,11 @@ describe('assertRematerializeApplyAllowed', () => {
     confirmRematerialize: true,
     onlyFields: [],
     includeArchived: false,
+    unbackedProvenance: false,
+    foreignContact: false,
+    unbackedResearchAreas: false,
+    accessSignals: false,
+    resynthesizeCutCards: false,
   };
 
   it('is a no-op for dry-run', () => {
@@ -263,6 +315,81 @@ describe('assertRematerializeApplyAllowed', () => {
 
   it('allows apply against Development', () => {
     expect(() => assertRematerializeApplyAllowed(base, 'cluster/Development')).not.toThrow();
+  });
+});
+
+describe('the unbacked-provenance cohort (#3769)', () => {
+  const lane = { sourceName: 'synthetic-retired-repair', sourceUrl: 'https://example.org/' };
+
+  it('selects a row by an entry naming a lane with no evidence id, and no other row', () => {
+    expect(
+      slugsCarryingUnbackedProvenance([
+        { slug: 'row-b', fieldProvenance: { entityType: lane } },
+        { slug: 'row-a', fieldProvenance: new Map([['school', lane]]) },
+        { slug: 'row-c', fieldProvenance: { name: { ...lane, observationId: 'x' } } },
+        { slug: 'row-d', fieldProvenance: { name: { ...lane, sourceId: 'x' } } },
+        {
+          slug: 'row-e',
+          fieldProvenance: {
+            researchAreas: { sourceName: 'description-derived-research-area', sourceUrl: '' },
+          },
+        },
+        { slug: '', fieldProvenance: { entityType: lane } },
+      ]),
+    ).toEqual(['row-a', 'row-b']);
+  });
+
+  it('reports each retired entry as a change, so the re-gate runs for it', () => {
+    const changes = provenanceReconciliationChanges(
+      { entityType: lane, name: { ...lane, observationId: 'x' } },
+      { name: { ...lane, observationId: 'x' } },
+    );
+    expect(changes).toEqual([
+      { field: 'fieldProvenance.entityType', before: 'synthetic-retired-repair', after: undefined },
+    ]);
+    expect(rematerializeChangeAffectsVisibilityGate(changes)).toBe(true);
+  });
+
+  it('reports a relinked entry by the observation it now cites, and counts the two apart (#3788)', () => {
+    const changes = provenanceReconciliationChanges(
+      { departments: lane, entityType: lane, name: { ...lane, observationId: 'kept' } },
+      { departments: { ...lane, observationId: 'synthetic-observation' }, name: { ...lane } },
+    );
+    expect(changes).toEqual([
+      {
+        field: 'fieldProvenance.departments',
+        before: 'synthetic-retired-repair',
+        after: { sourceName: 'synthetic-retired-repair', observationId: 'synthetic-observation' },
+      },
+      { field: 'fieldProvenance.entityType', before: 'synthetic-retired-repair', after: undefined },
+    ]);
+    expect(countProvenanceReconciliation([{ changes }, { changes: [] }])).toEqual({
+      retired: 1,
+      relinked: 1,
+    });
+  });
+
+  it('selects a row whose entry credits a grant lane with a field grants may not assert', () => {
+    const grant = { sourceName: 'nsf-award-search', observationId: 'synthetic-observation' };
+    expect(
+      slugsCarryingUnbackedProvenance([
+        { slug: 'row-name', fieldProvenance: { name: grant } },
+        { slug: 'row-grants', fieldProvenance: { recentGrants: grant } },
+      ]),
+    ).toEqual(['row-name']);
+  });
+
+  it('reports a retired grant entry, and not an unchanged one a lock kept', () => {
+    const grant = { sourceName: 'nih-reporter', observationId: 'synthetic-observation' };
+    expect(
+      provenanceReconciliationChanges({ name: grant, sourceUrls: grant }, { sourceUrls: grant }),
+    ).toEqual([{ field: 'fieldProvenance.name', before: 'nih-reporter', after: undefined }]);
+  });
+
+  it('reports nothing for an unrecorded entry the pass left alone', () => {
+    expect(provenanceReconciliationChanges({ departments: lane }, { departments: lane })).toEqual(
+      [],
+    );
   });
 });
 
@@ -404,6 +531,28 @@ describe('REMATERIALIZE_TRACKED_FIELDS', () => {
     }
   });
 
+  it('can scope a pass to the undergraduate evidence quote alone (#3592)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=undergradEvidenceQuote',
+    ]);
+    expect(args.onlyFields).toEqual(['undergradEvidenceQuote']);
+  });
+
+  it('can scope a pass to topics and the grant fields together (#4418)', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=researchAreas,recentGrants,recentGrantPeriods,recentGrantCount,fundingAgencies',
+    ]);
+    expect(args.onlyFields).toEqual([
+      'researchAreas',
+      'recentGrants',
+      'recentGrantPeriods',
+      'recentGrantCount',
+      'fundingAgencies',
+    ]);
+  });
+
   it('has no duplicate entries', () => {
     expect(new Set(REMATERIALIZE_TRACKED_FIELDS).size).toBe(REMATERIALIZE_TRACKED_FIELDS.length);
   });
@@ -413,6 +562,15 @@ describe('withDerivedMaterializerFields', () => {
   it('writes a derived pair together whichever half the operator scoped', () => {
     expect(withDerivedMaterializerFields(['entityType']).sort()).toEqual(['entityType', 'kind']);
     expect(withDerivedMaterializerFields(['kind']).sort()).toEqual(['entityType', 'kind']);
+  });
+
+  it('writes the whole grant closure whichever grant field the operator scoped', () => {
+    expect(withDerivedMaterializerFields(['recentGrantCount']).sort()).toEqual([
+      'fundingAgencies',
+      'recentGrantCount',
+      'recentGrantPeriods',
+      'recentGrants',
+    ]);
   });
 
   it('writes the whole org-unit closure whichever member the operator scoped', () => {
@@ -428,5 +586,354 @@ describe('withDerivedMaterializerFields', () => {
       'entityType',
       'kind',
     ]);
+  });
+});
+
+describe('the foreign-contact cohort (#3609)', () => {
+  const rowId = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+  const row = (fields: Record<string, unknown>) => ({
+    _id: rowId,
+    slug: 'example-survivor-lab',
+    ...fields,
+  });
+
+  it('runs alone and needs no slug list', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--foreign-contact']).foreignContact).toBe(true);
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--foreign-contact', '--unbacked-provenance']),
+    ).toThrow('runs on its own');
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--foreign-contact', '--only-fields=websiteUrl']),
+    ).toThrow('already scoped');
+  });
+
+  it('selects a stored contact field that only foreign evidence states, by field name', () => {
+    const cohort = foreignContactFieldsByRow(
+      [row({ contactEmail: 'coordinator@example.edu', contactRole: 'Lab Manager' })],
+      [
+        {
+          entityKey: 'ysm-example-merged-loser',
+          field: 'contactEmail',
+          value: 'coordinator@example.edu',
+        },
+        { entityKey: 'example-survivor-lab', field: 'contactRole', value: 'Lab Manager' },
+      ],
+    );
+
+    expect(Object.fromEntries(cohort)).toEqual({ 'example-survivor-lab': ['contactEmail'] });
+  });
+
+  it('selects a stored contact field whose row-keyed observation states a different value', () => {
+    const cohort = foreignContactFieldsByRow(
+      [row({ contactName: 'Loser Coordinator' })],
+      [
+        { entityKey: 'ysm-example-merged-loser', field: 'contactName', value: 'Loser Coordinator' },
+        { entityKey: 'example-survivor-lab', field: 'contactName', value: 'Survivor Coordinator' },
+      ],
+    );
+
+    expect(Object.fromEntries(cohort)).toEqual({ 'example-survivor-lab': ['contactName'] });
+  });
+
+  it('leaves a row whose contact is keyed to it by id, a locked field, and an empty field', () => {
+    const cohort = foreignContactFieldsByRow(
+      [
+        row({ contactEmail: 'coordinator@example.edu', contactName: '  ' }),
+        {
+          ...row({ contactRole: 'Lab Manager', manuallyLockedFields: ['contactRole'] }),
+          slug: 'example-locked-lab',
+        },
+      ],
+      [
+        {
+          entityId: rowId,
+          entityKey: 'some-other-key',
+          field: 'contactEmail',
+          value: ' coordinator@example.edu ',
+        },
+      ],
+    );
+
+    expect(cohort.size).toBe(0);
+  });
+});
+
+describe('the change set covers every field the run may write (#3822)', () => {
+  const syntheticEmail = 'synthetic-coordinator@example.edu';
+  const syntheticName = 'Synthetic Coordinator';
+  const stored = { name: 'Example Lab', contactEmail: syntheticEmail, contactName: syntheticName };
+  const comparedFields = rematerializeComparedFields([]);
+
+  it('compares the contact fields a run can write and the fields a scope names', () => {
+    for (const field of ['contactEmail', 'contactName', 'contactRole']) {
+      expect(comparedFields).toContain(field);
+    }
+    expect(rematerializeComparedFields(['location'])).toContain('location');
+    expect(new Set(comparedFields).size).toBe(comparedFields.length);
+  });
+
+  it('counts a --foreign-contact apply that clears one field as one changed entity', () => {
+    const afterReload = { name: 'Example Lab', contactName: syntheticName };
+    const report = rematerializeEntityReportFromChanges({
+      slug: 'example-lab',
+      entityId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      materializerFieldsWritten: 1,
+      changes: rematerializeReportedChanges(stored, afterReload, comparedFields),
+      foreignContact: true,
+    });
+
+    expect(report.changes).toEqual([{ field: 'contactEmail', withheld: 'cleared' }]);
+    expect(report.clearedContactFields).toEqual(['contactEmail']);
+    expect(report.fieldsWritten).toBe(1);
+    expect(summarizeRematerializeEntities([report], { foreignContact: true })).toEqual({
+      entitiesChanged: 1,
+      fieldsWritten: 1,
+      clearedContactFields: 1,
+      unbackedResearchAreas: {},
+      researchAreaChips: { added: 0, removed: 0 },
+    });
+    expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
+  });
+
+  it('never prints a contact value into the report, whether the field was cleared or replaced', () => {
+    const changes = rematerializeReportedChanges(
+      stored,
+      { name: 'Example Lab', contactName: 'Replacement Coordinator', contactRole: 'Lab Manager' },
+      comparedFields,
+    );
+    const report = rematerializeEntityReportFromChanges({
+      slug: 'example-lab',
+      changes,
+      foreignContact: true,
+    });
+    const serialized = JSON.stringify(report);
+
+    expect(changes).toEqual([
+      { field: 'contactEmail', withheld: 'cleared' },
+      { field: 'contactName', withheld: 'replaced' },
+      { field: 'contactRole', withheld: 'set' },
+    ]);
+    expect(report.clearedContactFields).toEqual(['contactEmail']);
+    for (const value of [syntheticEmail, syntheticName, 'Replacement Coordinator', 'Lab Manager']) {
+      expect(serialized).not.toContain(value);
+    }
+  });
+
+  it('reports the same changes for a dry run and for the apply that performs its plan', () => {
+    const before = { ...stored, websiteUrl: 'https://example.org/lab' };
+    const fields = rematerializeComparedFields([]);
+    const planned = rematerializeStateAfterPlan(
+      before,
+      { name: 'Example Research Lab' },
+      { websiteUrl: '', contactEmail: '' },
+      fields,
+    );
+    const reloadedAfterApply = { name: 'Example Research Lab', contactName: syntheticName };
+
+    const dryRun = rematerializeReportedChanges(before, planned, fields);
+    expect(rematerializeReportedChanges(before, reloadedAfterApply, fields)).toEqual(dryRun);
+    expect(dryRun).toEqual([
+      { field: 'name', before: 'Example Lab', after: 'Example Research Lab' },
+      { field: 'websiteUrl', before: 'https://example.org/lab', after: undefined },
+      { field: 'contactEmail', withheld: 'cleared' },
+    ]);
+  });
+
+  it('reports no grant change when a dry run plans the awards the row already stores', () => {
+    const plannedGrant = {
+      id: 'award-1',
+      agency: 'Example Agency',
+      title: 'Example Award',
+      startDate: new Date('2024-07-01T00:00:00.000Z'),
+      endDate: new Date('2027-06-30T00:00:00.000Z'),
+    };
+    const before = {
+      ...stored,
+      recentGrants: [{ ...plannedGrant, abstract: '', role: 'pi', _id: new Types.ObjectId() }],
+      recentGrantCount: 1,
+    };
+    const fields = rematerializeComparedFields([]);
+    const planned = rematerializeStateAfterPlan(
+      before,
+      { recentGrants: [plannedGrant], recentGrantCount: 1 },
+      {},
+      fields,
+    );
+
+    expect(rematerializeReportedChanges(before, planned, fields)).toEqual([]);
+  });
+
+  it('counts an entity with no measured change as unchanged whatever the materializer planned', () => {
+    const report = rematerializeEntityReportFromChanges({
+      slug: 'example-lab',
+      materializerFieldsWritten: 2,
+      changes: rematerializeReportedChanges(stored, stored, comparedFields),
+      foreignContact: true,
+    });
+    expect(report.fieldsWritten).toBe(0);
+    expect(report.materializerFieldsWritten).toBe(2);
+    expect(summarizeRematerializeEntities([report], { foreignContact: true })).toEqual({
+      entitiesChanged: 0,
+      fieldsWritten: 0,
+      clearedContactFields: 0,
+      unbackedResearchAreas: {},
+      researchAreaChips: { added: 0, removed: 0 },
+    });
+  });
+});
+
+describe('summarizeRematerializeEntities unbacked research areas (#3836)', () => {
+  it('counts each unbacked row by outcome, including a kept list that changed nothing', () => {
+    const report = (
+      slug: string,
+      unbackedResearchAreas?: 'rederived' | 'kept-stored-derived-empty',
+    ) =>
+      rematerializeEntityReportFromChanges({
+        slug,
+        changes:
+          unbackedResearchAreas === 'rederived'
+            ? [{ field: 'researchAreas', before: ['Petroleum Geology'], after: ['Neuroscience'] }]
+            : [],
+        foreignContact: false,
+        unbackedResearchAreas,
+      });
+
+    const summary = summarizeRematerializeEntities(
+      [
+        report('example-a', 'rederived'),
+        report('example-b', 'kept-stored-derived-empty'),
+        report('example-c', 'kept-stored-derived-empty'),
+        report('example-d'),
+      ],
+      { foreignContact: false },
+    );
+
+    expect(summary.unbackedResearchAreas).toEqual({
+      rederived: 1,
+      'kept-stored-derived-empty': 2,
+    });
+    expect(summary.entitiesChanged).toBe(1);
+  });
+});
+
+describe('summarizeRematerializeEntities research-area chips (#3836)', () => {
+  it('counts every stored chip a run removes and every chip it adds', () => {
+    const report = (slug: string, before: unknown, after: unknown) =>
+      rematerializeEntityReportFromChanges({
+        slug,
+        changes: [{ field: 'researchAreas', before, after }],
+        foreignContact: false,
+      });
+
+    const summary = summarizeRematerializeEntities(
+      [
+        report('example-a', ['Toxicology'], ['Toxicology', 'Data Mining', 'Water Quality']),
+        report('example-b', ['Epidemiology', 'Genetics'], ['Infectious Disease']),
+        report('example-c', undefined, ['Neuroscience']),
+        report('example-d', ['Immunology'], undefined),
+        rematerializeEntityReportFromChanges({
+          slug: 'example-e',
+          changes: [{ field: 'name', before: 'Example Lab', after: 'Example Research Lab' }],
+          foreignContact: false,
+        }),
+      ],
+      { foreignContact: false },
+    );
+
+    expect(summary.researchAreaChips).toEqual({ added: 4, removed: 3 });
+  });
+});
+
+describe('--unbacked-research-areas (#3836)', () => {
+  it('selects its own cohort, scoped to research areas, and runs on its own', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--unbacked-research-areas']);
+    expect(args.unbackedResearchAreas).toBe(true);
+    expect(args.onlyFields).toEqual(['researchAreas']);
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--unbacked-research-areas', '--foreign-contact']),
+    ).toThrow('runs on its own');
+  });
+});
+
+describe('the access-signals mode (#3921, #3928)', () => {
+  const retired = {
+    retired: [{ signalId: 's1', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' }],
+    revived: [],
+  };
+
+  it('selects its own cohort and runs on its own', () => {
+    expect(parseRematerializeResearchEntitiesArgs(['--access-signals'])).toMatchObject({
+      accessSignals: true,
+      slugs: [],
+    });
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--access-signals', '--only-fields=researchAreas']),
+    ).toThrow('--access-signals writes access signals only');
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--access-signals', '--foreign-contact']),
+    ).toThrow('--access-signals writes access signals only');
+  });
+
+  it('re-gates a row whose access signals changed even though no field did', () => {
+    expect(
+      selectRematerializeRegateEntityIds([
+        { entityId: 'a1', found: true, changes: [], accessSignalChanges: retired },
+        {
+          entityId: 'b2',
+          found: true,
+          changes: [],
+          accessSignalChanges: { retired: [], revived: [] },
+        },
+      ]),
+    ).toEqual(['a1']);
+  });
+
+  it('counts retirements and revivals per derivation key', () => {
+    expect(
+      summarizeAccessSignalChanges([
+        { entityId: 'a1', found: true, changes: [], accessSignalChanges: retired },
+        {
+          entityId: 'b2',
+          found: true,
+          changes: [],
+          accessSignalChanges: {
+            retired: [{ signalId: 's2', derivationKey: 'signal:REACH_OUT_PLAUSIBLE' }],
+            revived: [
+              { signalId: 's3', derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE' },
+            ],
+          },
+        },
+        { entityId: 'c3', found: true, changes: [] },
+      ]),
+    ).toEqual({
+      entitiesChanged: 2,
+      retiredByKey: { 'signal:REACH_OUT_PLAUSIBLE': 2 },
+      revivedByKey: { 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE': 1 },
+    });
+  });
+});
+
+describe('rematerializeReportedChanges on grant subdocuments (#4418)', () => {
+  const grant = (title: string) => ({
+    _id: new Types.ObjectId(),
+    id: 'R01XX000001',
+    title,
+    agency: 'NIH',
+  });
+
+  it('reports no change when a rewrite re-mints only the subdocument ids', () => {
+    const before = { recentGrants: [grant('Example Award')], recentGrantCount: 1 };
+    const reloaded = { recentGrants: [grant('Example Award')], recentGrantCount: 1 };
+
+    expect(
+      rematerializeReportedChanges(before, reloaded, ['recentGrants', 'recentGrantCount']),
+    ).toEqual([]);
+  });
+
+  it('still reports a grant whose content changed', () => {
+    const before = { recentGrants: [grant('Example Award')] };
+    const reloaded = { recentGrants: [grant('Renamed Award')] };
+
+    expect(rematerializeReportedChanges(before, reloaded, ['recentGrants'])).toHaveLength(1);
   });
 });

@@ -20,12 +20,12 @@ describe('itemOperations', () => {
     expect(model.findOneAndUpdate).toHaveBeenCalledWith(
       { _id: '67d8928150621bcef434a1d5' },
       { $inc: { views: 1 } },
-      { new: true, timestamps: false },
+      { returnDocument: 'after', timestamps: false },
     );
     expect(model.findOneAndUpdate).toHaveBeenCalledWith(
       { _id: '67d8928150621bcef434a1d5' },
       { $inc: { favorites: 1 } },
-      { new: true, timestamps: false },
+      { returnDocument: 'after', timestamps: false },
     );
   });
 

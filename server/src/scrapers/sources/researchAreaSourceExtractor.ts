@@ -1,12 +1,22 @@
-import axios from 'axios';
+import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  evidenceUrlCiterCounts,
+  normalizeEvidenceUrl,
+  type EvidenceCitingRow,
+} from '../utils/sharedEvidenceUrls';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import {
   createWorkPlannerMetrics,
   getWorkPlannerSourcePolicy,
@@ -17,10 +27,16 @@ import {
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
 import {
+  admissibleResearchAreas,
   getResearchAreaCanonicalizer,
   type ResearchAreaCanonicalizer,
 } from '../researchAreaCanonicalization';
+import {
+  loadResearchAreaEvidenceBackedRowIds,
+  researchAreasAreManuallyLocked,
+} from '../researchAreaEvidence';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import { removeNonSelfDeclaringContent } from '../utils/nonSelfDeclaringPageContent';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -39,7 +55,9 @@ export interface CandidateAreaEntity {
   name: string;
   websiteUrl: string;
   sourceUrls: string[];
+  departments?: string[];
   manuallyLockedFields?: string[];
+  refusedSharedDirectoryUrls?: string[];
 }
 
 export interface CandidateAreaEntityDoc {
@@ -50,6 +68,7 @@ export interface CandidateAreaEntityDoc {
   websiteUrl?: string;
   website?: string;
   sourceUrls?: string[];
+  departments?: string[];
   researchAreas?: unknown;
   manuallyLockedFields?: string[];
 }
@@ -69,6 +88,7 @@ export type AreaWorkPlanLoaderFn = (
 
 export interface ResearchAreaSourceExtractorDeps {
   fetchPage?: FetchAreaPageFn;
+  probePage?: LanePageProbe;
   canonicalizerLoader?: () => Promise<ResearchAreaCanonicalizer>;
   entityFinder?: (options?: {
     only?: string[];
@@ -163,28 +183,112 @@ function hasEmptyResearchAreas(value: unknown): boolean {
   return false;
 }
 
-export function candidateAreaUrlsForDoc(doc: CandidateAreaEntityDoc): string[] {
-  return uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])])
-    .filter((url) => !isRejectedAreaSourceUrl(url))
-    .sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
+const PEOPLE_DIRECTORY_SEGMENT = /^(?:faculty-directory|directory|people|faculty)$/i;
+
+export const MIN_SHARED_AREA_DIRECTORY_CITERS = 3;
+
+const slugTokens = (value: unknown): string[] =>
+  textValue(value)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * A people directory filtered to one area, such as `/faculty-directory/finance`, lists many
+ * people, so its page-level topics would be grafted onto every row that cites it (#4030, the
+ * #1663 shape). It has the same path shape as a person's own `/faculty-directory/<name>`
+ * profile, so the shape alone cannot refuse it: it is refused only when three or more rows
+ * cite it and its leaf does not name the row being read.
+ */
+export function isSharedAreaFilteredDirectoryUrl(
+  url: string,
+  doc: Pick<CandidateAreaEntityDoc, 'slug' | 'name' | 'displayName'>,
+  citerCounts: ReadonlyMap<string, number>,
+): boolean {
+  if ((citerCounts.get(normalizeEvidenceUrl(url)) || 0) < MIN_SHARED_AREA_DIRECTORY_CITERS) {
+    return false;
+  }
+  let segments: string[];
+  try {
+    segments = new URL(url).pathname.split('/').filter(Boolean);
+  } catch {
+    return false;
+  }
+  const leaf = segments[segments.length - 1] || '';
+  if (segments.length < 2 || /\.[a-z0-9]{2,5}$/i.test(leaf)) return false;
+  if (!PEOPLE_DIRECTORY_SEGMENT.test(segments[segments.length - 2])) return false;
+  const ownTokens = new Set([doc.slug, doc.name, doc.displayName].flatMap(slugTokens));
+  const leafTokens = slugTokens(leaf);
+  return !leafTokens.every((token) => ownTokens.has(token));
+}
+
+export function refusesSharedAreaFilteredDirectorySource(
+  citerCounts: ReadonlyMap<string, number>,
+): (doc: Pick<CandidateAreaEntityDoc, 'slug' | 'name' | 'displayName'>, url: string) => boolean {
+  return (doc, url) => isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts);
+}
+
+function partitionAreaUrlsForDoc(
+  doc: CandidateAreaEntityDoc,
+  citerCounts: ReadonlyMap<string, number> | undefined,
+): { urls: string[]; refused: string[] } {
+  const urls: string[] = [];
+  const refused: string[] = [];
+  for (const url of uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])])) {
+    if (isRejectedAreaSourceUrl(url)) continue;
+    if (citerCounts && isSharedAreaFilteredDirectoryUrl(url, doc, citerCounts)) refused.push(url);
+    else urls.push(url);
+  }
+  urls.sort((a, b) => areaSourceUrlPriority(a) - areaSourceUrlPriority(b) || a.localeCompare(b));
+  return { urls, refused };
+}
+
+export function candidateAreaUrlsForDoc(
+  doc: CandidateAreaEntityDoc,
+  citerCounts?: ReadonlyMap<string, number>,
+): string[] {
+  return partitionAreaUrlsForDoc(doc, citerCounts).urls;
+}
+
+export interface CandidateAreaSelectionOptions {
+  only?: string[];
+  evidenceBackedRowIds?: ReadonlySet<string>;
+  citerCounts?: ReadonlyMap<string, number>;
+}
+
+function hasResearchAreasToRead(
+  doc: CandidateAreaEntityDoc,
+  evidenceBackedRowIds: ReadonlySet<string> | undefined,
+): boolean {
+  if (hasEmptyResearchAreas(doc.researchAreas)) return true;
+  if (!evidenceBackedRowIds || researchAreasAreManuallyLocked(doc)) return false;
+  const rowId = idValue(doc._id);
+  return rowId.length > 0 && !evidenceBackedRowIds.has(rowId);
 }
 
 export function candidateAreaEntitiesFromDocs(
   docs: CandidateAreaEntityDoc[],
-  options: { only?: string[] } = {},
+  options: CandidateAreaSelectionOptions = {},
 ): CandidateAreaEntity[] {
   const keys = uniqueStrings(options.only || []);
   return docs.flatMap((doc) => {
-    if (!hasEmptyResearchAreas(doc.researchAreas)) return [];
-    const urls = candidateAreaUrlsForDoc(doc);
-    if (urls.length === 0) return [];
+    if (!hasResearchAreasToRead(doc, options.evidenceBackedRowIds)) return [];
+    const { urls, refused: refusedSharedDirectoryUrls } = partitionAreaUrlsForDoc(
+      doc,
+      options.citerCounts,
+    );
+    if (urls.length === 0 && refusedSharedDirectoryUrls.length === 0) return [];
     const candidate: CandidateAreaEntity = {
       _id: doc._id,
       slug: doc.slug,
       name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
-      websiteUrl: urls[0],
+      websiteUrl: urls[0] || '',
       sourceUrls: urls,
+      departments: doc.departments || [],
       manuallyLockedFields: doc.manuallyLockedFields || [],
+      refusedSharedDirectoryUrls,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
   });
@@ -313,6 +417,7 @@ function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $(NON_SUBJECT_CONTENT_SELECTOR).remove();
+  removeNonSelfDeclaringContent($);
   return textValue($('body').text() || $.root().text()).slice(0, MAX_SCAN_CHARS);
 }
 
@@ -334,15 +439,19 @@ export interface ResearchAreaExtraction {
  * matches over explicitly labeled items (which recovers approved single-word
  * areas the prose scan intentionally excludes) and the approved-registry phrase
  * scan over page prose. Every returned area is an approved `TaxonomyTerm` name -
- * fail-closed, so an unapproved or invented topic is never produced.
+ * fail-closed, so an unapproved or invented topic is never produced. Areas the row
+ * itself rejects (its own department, a division-level label) are removed with the
+ * materializer's own rule, so a page that names only those asserts nothing (#3836).
  */
 export function deriveCanonicalResearchAreasFromPage(
   canonicalizer: ResearchAreaCanonicalizer,
   html: string,
+  departments: unknown = [],
 ): ResearchAreaExtraction {
+  const admitted = (areas: string[]) => admissibleResearchAreas(canonicalizer, areas, departments);
   const labeledItems = extractLabeledResearchAreaItems(html);
-  const fromLabels = canonicalizer.matchCanonicalResearchAreas(labeledItems);
-  const fromProse = canonicalizer.deriveResearchAreasFromText(proseTextFromPage(html));
+  const fromLabels = admitted(canonicalizer.matchCanonicalResearchAreas(labeledItems));
+  const fromProse = admitted(canonicalizer.deriveResearchAreasFromText(proseTextFromPage(html)));
   const areas: string[] = [];
   const seen = new Set<string>();
   for (const area of [...fromLabels, ...fromProse]) {
@@ -374,22 +483,17 @@ export function researchAreaObservationsFromExtraction(
 }
 
 async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
-  // SSRF guard: url is a DB-sourced research-entity website - block private/metadata
-  // hosts and validate redirect hops at connect time.
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
-  const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 10_000,
+  const page = await fetchPageWithPolicy(url, {
+    timeoutMs: 10_000,
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
   });
-  return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
+  return { url: page.url, html: page.html };
 }
 
-async function defaultEntityFinder(
+// Only a scoped run reaches a row whose stored areas no live evidence backs: an unscoped
+// sweep would otherwise fan out to a live fetch for every such row on every run (#3836).
+export async function findResearchAreaCandidateEntities(
   options: { only?: string[]; exhaustive?: boolean } = {},
 ): Promise<CandidateAreaEntity[]> {
   const only = uniqueStrings(options.only || []);
@@ -406,9 +510,9 @@ async function defaultEntityFinder(
         ],
       }
     : {};
-  const emptyAreasFilter = {
-    $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }],
-  };
+  const emptyAreasFilter = only.length
+    ? {}
+    : { $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }] };
   const urlFilter = {
     $or: [
       { websiteUrl: /^https?:\/\//i },
@@ -426,6 +530,7 @@ async function defaultEntityFinder(
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      departments: 1,
       researchAreas: 1,
       manuallyLockedFields: 1,
     },
@@ -433,8 +538,23 @@ async function defaultEntityFinder(
   if (!only.length && !options.exhaustive) {
     query.limit(MAX_CANDIDATE_SCAN);
   }
-  const docs = await query.lean();
-  return candidateAreaEntitiesFromDocs(docs as CandidateAreaEntityDoc[], { only });
+  const docs = (await query.lean()) as CandidateAreaEntityDoc[];
+  const citerCounts = await loadEvidenceUrlCiterCounts();
+  const evidenceBackedRowIds = only.length
+    ? await loadResearchAreaEvidenceBackedRowIds(
+        docs.filter((doc) => !hasEmptyResearchAreas(doc.researchAreas)),
+        refusesSharedAreaFilteredDirectorySource(citerCounts),
+      )
+    : undefined;
+  return candidateAreaEntitiesFromDocs(docs, { only, evidenceBackedRowIds, citerCounts });
+}
+
+export async function loadEvidenceUrlCiterCounts(): Promise<Map<string, number>> {
+  const rows = (await ResearchEntity.find(
+    { archived: { $ne: true } },
+    { _id: 0, websiteUrl: 1, website: 1, sourceUrls: 1 },
+  ).lean()) as EvidenceCitingRow[];
+  return evidenceUrlCiterCounts(rows);
 }
 
 async function defaultWorkPlanLoader(
@@ -459,6 +579,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
   readonly displayName = 'Research-area source extractor (empty-area entities)';
 
   private readonly fetchPage: FetchAreaPageFn;
+  private readonly probePage?: LanePageProbe;
   private readonly canonicalizerLoader: () => Promise<ResearchAreaCanonicalizer>;
   private readonly entityFinder: (options?: {
     only?: string[];
@@ -468,8 +589,9 @@ export class ResearchAreaSourceExtractor implements IScraper {
 
   constructor(deps: ResearchAreaSourceExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
+    this.probePage = deps.probePage;
     this.canonicalizerLoader = deps.canonicalizerLoader || getResearchAreaCanonicalizer;
-    this.entityFinder = deps.entityFinder || defaultEntityFinder;
+    this.entityFinder = deps.entityFinder || findResearchAreaCandidateEntities;
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
   }
 
@@ -490,16 +612,21 @@ export class ResearchAreaSourceExtractor implements IScraper {
           });
 
     const canonicalizer = await this.canonicalizerLoader();
-    const candidates = (await this.entityFinder({ only, exhaustive: ctx.options.exhaustive }))
-      .filter(
-        (candidate) =>
-          candidateKeyMatches(candidate, only) &&
-          candidate.websiteUrl &&
-          !isRejectedAreaSourceUrl(candidate.websiteUrl),
-      )
+    const found = (await this.entityFinder({ only, exhaustive: ctx.options.exhaustive })).filter(
+      (candidate) => candidateKeyMatches(candidate, only),
+    );
+    const refusedSharedDirectoryUrls = new Set(
+      found.flatMap((candidate) =>
+        (candidate.refusedSharedDirectoryUrls || []).map(normalizeEvidenceUrl),
+      ),
+    );
+    const candidates = found
+      .filter((candidate) => candidate.websiteUrl && !isRejectedAreaSourceUrl(candidate.websiteUrl))
       .slice(offset, offset + limit);
 
     let observationCount = 0;
+    const pageReads = new LanePageReads();
+    const readPage = fetchRecordedBy(pageReads, this.fetchPage);
     let entitiesObserved = 0;
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
@@ -536,7 +663,7 @@ export class ResearchAreaSourceExtractor implements IScraper {
         for (const sourceUrl of urls) {
           let page: FetchedAreaPage | null = null;
           try {
-            page = await this.fetchPage(sourceUrl);
+            page = await readPage(sourceUrl);
           } catch (error) {
             ctx.log(
               `[${entity.slug || 'candidate'}] area source failed: ${sanitizeLogValue(error)}`,
@@ -544,7 +671,11 @@ export class ResearchAreaSourceExtractor implements IScraper {
             continue;
           }
           if (!page?.html) continue;
-          const extraction = deriveCanonicalResearchAreasFromPage(canonicalizer, page.html);
+          const extraction = deriveCanonicalResearchAreasFromPage(
+            canonicalizer,
+            page.html,
+            entity.departments,
+          );
           observations = researchAreaObservationsFromExtraction(extraction, {
             entityId: serializedDocumentId(entity._id),
             entityKey: entity.slug,
@@ -564,10 +695,25 @@ export class ResearchAreaSourceExtractor implements IScraper {
       }
     });
 
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length
+        ? {
+            entityKeys: [
+              ...only,
+              ...candidates.flatMap((entity) => (entity.slug ? [entity.slug] : [])),
+            ],
+          }
+        : undefined,
+    );
+    observationCount += pageHealth.gone + pageHealth.restored;
+
     return {
       observationCount,
       entitiesObserved,
-      notes: `Recovered approved research areas for ${entitiesObserved} empty-area research entities.`,
+      notes: `Recovered approved research areas for ${entitiesObserved} empty-area research entities. Refused ${refusedSharedDirectoryUrls.size} shared area-filtered directory page(s) as a topic source.`,
       metrics: { workPlanner: workPlannerMetrics },
     };
   }

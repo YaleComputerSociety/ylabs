@@ -66,13 +66,55 @@ test('every missing environment variable is reported at once, with its expected 
   assert.equal(missingReindexEnvVars({ ...fullEnv, MEILISEARCH_INDEX_PREFIX: '   ' }).length, 1);
 });
 
+test('the scoped write key satisfies the preflight and the legacy key still does', () => {
+  const { MEILISEARCH_API_KEY: _legacy, ...withoutLegacy } = fullEnv;
+  const scopedOnly = { ...withoutLegacy, MEILISEARCH_WRITE_API_KEY: 'scopedwritekeyvalue' };
+  assert.deepEqual(missingReindexEnvVars(scopedOnly), []);
+  assert.deepEqual(missingReindexEnvVars(fullEnv), []);
+  assert.deepEqual(
+    missingReindexEnvVars(withoutLegacy).map(({ name }) => name),
+    ['MEILISEARCH_WRITE_API_KEY'],
+  );
+
+  const plan = summarizeReindexPlan({ environment: 'beta', apply: true, env: scopedOnly });
+  assert.match(plan, /meili write key:\s+present \(MEILISEARCH_WRITE_API_KEY\)/);
+  assert.doesNotMatch(plan, /scopedwritekeyvalue/);
+});
+
+test('a production apply reports the write confirmation up front, not after the plan prints', () => {
+  const productionApply = { environment: 'production', apply: true };
+
+  const missing = missingReindexEnvVars(fullEnv, productionApply);
+  assert.deepEqual(
+    missing.map(({ name }) => name),
+    ['CONFIRM_PROD_SCRAPE'],
+  );
+  assert.match(describeMissingEnvVars(missing), /CONFIRM_PROD_SCRAPE/);
+
+  // Only the exact string counts, because that is what the guard compares.
+  assert.equal(
+    missingReindexEnvVars({ ...fullEnv, CONFIRM_PROD_SCRAPE: 'yes' }, productionApply).length,
+    1,
+  );
+  assert.deepEqual(
+    missingReindexEnvVars({ ...fullEnv, CONFIRM_PROD_SCRAPE: 'true' }, productionApply),
+    [],
+  );
+});
+
+test('the write confirmation is required only for a production apply', () => {
+  assert.deepEqual(missingReindexEnvVars(fullEnv, { environment: 'production', apply: false }), []);
+  assert.deepEqual(missingReindexEnvVars(fullEnv, { environment: 'beta', apply: true }), []);
+  assert.deepEqual(missingReindexEnvVars(fullEnv), []);
+});
+
 test('the plan never echoes credentials', () => {
   const plan = summarizeReindexPlan({ environment: 'beta', apply: true, env: fullEnv });
 
   // An operator may be sharing a terminal or pasting output into a ticket.
   assert.doesNotMatch(plan, /user:pass/);
   assert.doesNotMatch(plan, /supersecretkey/);
-  assert.match(plan, /meili api key:\s+present/);
+  assert.match(plan, /meili write key:\s+present \(legacy MEILISEARCH_API_KEY/);
 
   // But it must still show enough to abort on: host, prefix, and which database.
   assert.match(plan, /cluster0\.example\.net/);

@@ -1,17 +1,40 @@
 import mongoose from 'mongoose';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+
+const gate = vi.hoisted(() => ({ researchEntityServesPublicDetail: vi.fn() }));
+
+vi.mock('../researchEntityPublicDescription', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchEntityPublicDescription')>();
+  gate.researchEntityServesPublicDetail.mockImplementation(actual.researchEntityServesPublicDetail);
+  return {
+    ...actual,
+    researchEntityServesPublicDetail: gate.researchEntityServesPublicDetail,
+  };
+});
+
+const cardBuild = vi.hoisted(() => ({ leadGuardedServingInput: vi.fn() }));
+
+vi.mock('../researchGroupService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchGroupService')>();
+  cardBuild.leadGuardedServingInput.mockImplementation(actual.leadGuardedServingInput);
+  return { ...actual, leadGuardedServingInput: cardBuild.leadGuardedServingInput };
+});
 import {
   addSavedResearchEntities,
   addWatchedPrograms,
   getSavedResearchEntityList,
   getSavedResearchEntityPlans,
+  getSavedResearchEntitySlugs,
   getWatchedProgramPlans,
   removeSavedResearchEntities,
   removeWatchedPrograms,
   updateSavedResearchEntityPlan,
   updateWatchedProgramPlan,
 } from '../researchPlanService';
+import { toPublicResearchEntityDto } from '../researchEntityDto';
+import { RESEARCH_PLAN_RESTORE_WINDOW_MS, researchPlanSchema } from '../../models/researchPlan';
+import { RoleAssignment } from '../../models/roleAssignment';
 
 const NETID = 'teststud1';
 const ENTITY_ID = new mongoose.Types.ObjectId('64a0000000000000000000ab');
@@ -25,7 +48,7 @@ let memoryReplSet: MongoMemoryReplSet | undefined;
 const findPlan = (targetId: mongoose.Types.ObjectId) =>
   mongoose.connection.db!.collection('research_plans').findOne({ 'target.id': targetId });
 
-describe('researchPlanService unsave/unwatch clears private plan data', () => {
+describe('researchPlanService saved plans', () => {
   beforeAll(async () => {
     let mongoUrl = process.env.RESEARCH_PLAN_TEST_MONGO_URL;
     if (!mongoUrl) {
@@ -36,7 +59,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       mongoUrl = memoryReplSet.getUri('research_plan_test');
     }
     await mongoose.connect(mongoUrl);
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();
@@ -68,7 +91,37 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     await memoryReplSet?.stop();
   });
 
-  it('clears saved-entity private notes on unsave and does not resurrect them on re-save', async () => {
+  const expireRestoreWindow = (targetId: mongoose.Types.ObjectId) =>
+    mongoose.connection
+      .db!.collection('research_plans')
+      .updateOne(
+        { 'target.id': targetId },
+        { $set: { restorableUntil: new Date(Date.now() - 1) } },
+      );
+
+  it('restores the whole saved-entity plan when the student undoes an unsave', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await updateSavedResearchEntityPlan(NETID, entityId, {
+      stage: 'CONTACTED',
+      privateNotes: 'my private strategy notes',
+      checklist: plannedChecklist,
+      deadlines: [plannedDeadline],
+    });
+    const before = (await getSavedResearchEntityPlans(NETID))[entityId];
+
+    await removeSavedResearchEntities(NETID, [entityId]);
+    expect(await getSavedResearchEntityPlans(NETID)).toEqual({});
+    await addSavedResearchEntities(NETID, [entityId]);
+
+    const restored = (await getSavedResearchEntityPlans(NETID))[entityId];
+    expect(restored.stage).toBe('CONTACTED');
+    expect(restored.privateNotes).toBe('my private strategy notes');
+    expect(restored.checklist).toEqual(before.checklist);
+    expect(restored.deadlines).toEqual([plannedDeadline]);
+  });
+
+  it('does not resurrect saved-entity private notes on a re-save after the restore window', async () => {
     const entityId = ENTITY_ID.toHexString();
     await addSavedResearchEntities(NETID, [entityId]);
     await updateSavedResearchEntityPlan(NETID, entityId, {
@@ -78,27 +131,70 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       deadlines: [plannedDeadline],
     });
 
-    const savedPlans = await getSavedResearchEntityPlans(NETID);
-    expect(savedPlans[entityId].privateNotes).toBe('my private strategy notes');
-    expect(savedPlans[entityId].stage).toBe('CONTACTED');
-
     await removeSavedResearchEntities(NETID, [entityId]);
     const archivedDoc = await findPlan(ENTITY_ID);
     expect(archivedDoc?.archived).toBe(true);
-    expect(archivedDoc?.privateNotes).toBe('');
-    expect(archivedDoc?.checklist).toEqual([]);
-    expect(archivedDoc?.deadlines).toEqual([]);
-    expect(archivedDoc?.stage).toBe('SAVED');
+    expect(archivedDoc?.restorableUntil).toBeInstanceOf(Date);
 
+    await expireRestoreWindow(ENTITY_ID);
     await addSavedResearchEntities(NETID, [entityId]);
     const resavedPlans = await getSavedResearchEntityPlans(NETID);
     expect(resavedPlans[entityId].privateNotes).toBe('');
     expect(resavedPlans[entityId].checklist).toEqual([]);
     expect(resavedPlans[entityId].deadlines).toEqual([]);
     expect(resavedPlans[entityId].stage).toBe('SAVED');
+    expect((await findPlan(ENTITY_ID))?.restorableUntil).toBeUndefined();
   });
 
-  it('clears watched-program private notes on unwatch and does not resurrect them on re-watch', async () => {
+  it('stamps the restore window on the plan an unsave or an unwatch archives (#4163)', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    const programId = PROGRAM_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await addWatchedPrograms(NETID, [programId]);
+
+    const before = Date.now();
+    await removeSavedResearchEntities(NETID, [entityId]);
+    await removeWatchedPrograms(NETID, [programId]);
+    const after = Date.now();
+
+    for (const targetId of [ENTITY_ID, PROGRAM_ID]) {
+      const archived = await findPlan(targetId);
+      expect(archived?.archived).toBe(true);
+      const until = (archived?.restorableUntil as Date).getTime();
+      expect(until).toBeGreaterThanOrEqual(before + RESEARCH_PLAN_RESTORE_WINDOW_MS);
+      expect(until).toBeLessThanOrEqual(after + RESEARCH_PLAN_RESTORE_WINDOW_MS);
+    }
+  });
+
+  it('declares a TTL index that deletes an archived plan when its restore window passes', () => {
+    const ttlIndex = researchPlanSchema
+      .indexes()
+      .find(([fields]) => Object.keys(fields).join() === 'restorableUntil');
+    expect(ttlIndex?.[1]).toMatchObject({ expireAfterSeconds: 0 });
+  });
+
+  it('restores the watched-program plan when the student undoes an unwatch', async () => {
+    const programId = PROGRAM_ID.toHexString();
+    await addWatchedPrograms(NETID, [programId]);
+    await updateWatchedProgramPlan(NETID, programId, {
+      stage: 'APPLIED',
+      privateNotes: 'secret note',
+      checklist: plannedChecklist,
+      deadlines: [plannedDeadline],
+    });
+
+    await removeWatchedPrograms(NETID, [programId]);
+    expect(await getWatchedProgramPlans(NETID)).toEqual({});
+    await addWatchedPrograms(NETID, [programId]);
+
+    const restored = (await getWatchedProgramPlans(NETID))[programId];
+    expect(restored.stage).toBe('APPLIED');
+    expect(restored.privateNotes).toBe('secret note');
+    expect(restored.checklist.map((item) => item.label)).toEqual(['Read three papers']);
+    expect(restored.deadlines).toEqual([plannedDeadline]);
+  });
+
+  it('does not resurrect watched-program private notes on a re-watch after the restore window', async () => {
     const programId = PROGRAM_ID.toHexString();
     await addWatchedPrograms(NETID, [programId]);
     await updateWatchedProgramPlan(NETID, programId, {
@@ -106,16 +202,10 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       privateNotes: 'secret note',
     });
 
-    const watchedPlans = await getWatchedProgramPlans(NETID);
-    expect(watchedPlans[programId].privateNotes).toBe('secret note');
-
     await removeWatchedPrograms(NETID, [programId]);
-    const archivedDoc = await findPlan(PROGRAM_ID);
-    expect(archivedDoc?.archived).toBe(true);
-    expect(archivedDoc?.privateNotes).toBe('');
-    expect(archivedDoc?.stage).toBe('SAVED');
-
+    await expireRestoreWindow(PROGRAM_ID);
     await addWatchedPrograms(NETID, [programId]);
+
     const rewatchedPlans = await getWatchedProgramPlans(NETID);
     expect(rewatchedPlans[programId].privateNotes).toBe('');
     expect(rewatchedPlans[programId].stage).toBe('SAVED');
@@ -129,6 +219,17 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
     const entityKey = ENTITY_ID.toHexString();
     expect(savedPlans[entityKey].privateNotes).toBe('slug-addressed note');
+  });
+
+  it('reports saved entities by the same id the public detail DTO serves (#3637)', async () => {
+    const storedEntity = await mongoose.connection
+      .db!.collection('research_entities')
+      .findOne({ _id: ENTITY_ID });
+    const servedId = toPublicResearchEntityDto(storedEntity!)._id;
+
+    expect(await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString()])).toEqual([servedId]);
+    expect(await getSavedResearchEntitySlugs(NETID)).toEqual([servedId]);
+    expect(await removeSavedResearchEntities(NETID, [servedId])).toEqual([]);
   });
 
   it('rejects a plan update for a slug that resolves to no visible entity (#1051)', async () => {
@@ -257,6 +358,188 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     });
   });
 
+  describe('a saved-list read does the work it needs once and writes nothing (#3954)', () => {
+    const publicCopy = {
+      shortDescription:
+        'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      fullDescription:
+        'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+    };
+    const extraEntity = (hex: string, slug: string, overrides: Record<string, unknown> = {}) => ({
+      _id: new mongoose.Types.ObjectId(hex),
+      slug,
+      name: `${slug} name`,
+      kind: 'group',
+      departments: ['Computer Science'],
+      studentVisibilityTier: 'student_ready',
+      ...publicCopy,
+      sourceUrls: [`https://example.yale.edu/labs/${slug}`],
+      archived: false,
+      ...overrides,
+    });
+    const accounts = () => mongoose.connection.db!.collection('accounts');
+
+    const saveMixedTargets = async () => {
+      const entities = mongoose.connection.db!.collection('research_entities');
+      const targets = [
+        extraEntity('64a0000000000000000001a1', 'second-servable'),
+        extraEntity('64a0000000000000000001a2', 'archived-target'),
+        extraEntity('64a0000000000000000001a3', 'held-target'),
+        extraEntity('64a0000000000000000001a4', 'hollow-target'),
+        extraEntity('64a0000000000000000001a5', 'removed-target'),
+      ];
+      await entities.insertMany(targets);
+      await addSavedResearchEntities(NETID, [
+        ENTITY_ID.toHexString(),
+        ...targets.map((target) => target._id.toHexString()),
+      ]);
+      await entities.updateOne({ slug: 'archived-target' }, { $set: { archived: true } });
+      await entities.updateOne(
+        { slug: 'held-target' },
+        { $set: { studentVisibilityTier: 'operator_review' } },
+      );
+      await entities.updateOne(
+        { slug: 'hollow-target' },
+        { $set: { shortDescription: '', fullDescription: '', sourceUrls: [] } },
+      );
+      await entities.deleteOne({ slug: 'removed-target' });
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('leaves the account untouched on every saved-list read', async () => {
+      await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString()]);
+      const before = await accounts().findOne({ netid: NETID });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      await getSavedResearchEntityList(NETID);
+      await getSavedResearchEntitySlugs(NETID);
+      await getSavedResearchEntityPlans(NETID);
+
+      const after = await accounts().findOne({ netid: NETID });
+      expect(after?.updatedAt?.getTime()).toBe(before?.updatedAt?.getTime());
+      expect(await accounts().countDocuments({ netid: NETID })).toBe(1);
+    });
+
+    it('still creates a missing account when the student saves', async () => {
+      expect(await accounts().countDocuments({ netid: NETID })).toBe(0);
+
+      await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString()]);
+
+      expect(await accounts().countDocuments({ netid: NETID })).toBe(1);
+      expect(await getSavedResearchEntitySlugs(NETID)).toEqual(['test-lab']);
+    });
+
+    it('serves an empty list to an account that does not exist yet', async () => {
+      expect(await getSavedResearchEntityList(NETID)).toEqual({
+        savedResearchEntities: [],
+        unavailableSavedResearchEntities: [],
+      });
+      expect(await getSavedResearchEntitySlugs(NETID)).toEqual([]);
+      expect(await getSavedResearchEntityPlans(NETID)).toEqual({});
+    });
+
+    it('runs the detail gate once per saved row that reaches it', async () => {
+      await saveMixedTargets();
+      gate.researchEntityServesPublicDetail.mockClear();
+
+      await getSavedResearchEntityList(NETID);
+
+      expect(gate.researchEntityServesPublicDetail).toHaveBeenCalledTimes(3);
+    });
+
+    it('serves the same rows and reasons from the list, the slug read and the plan read', async () => {
+      await saveMixedTargets();
+
+      const list = await getSavedResearchEntityList(NETID);
+      const slugs = await getSavedResearchEntitySlugs(NETID);
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      expect([...list.savedResearchEntities.map((entity) => entity.slug)].sort()).toEqual([
+        'second-servable',
+        'test-lab',
+      ]);
+      expect(slugs).toEqual(list.savedResearchEntities.map((entity) => entity.slug));
+      expect(Object.keys(plans).sort()).toEqual(
+        list.savedResearchEntities.map((entity) => entity._id).sort(),
+      );
+      expect(
+        [...list.unavailableSavedResearchEntities].sort((a, b) => a._id.localeCompare(b._id)),
+      ).toEqual([
+        { _id: '64a0000000000000000001a2', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a3', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a4', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a5', reason: 'REMOVED' },
+      ]);
+    });
+
+    it('answers the slug read without a roster read', async () => {
+      await saveMixedTargets();
+      const rosterRead = vi.spyOn(RoleAssignment, 'find');
+
+      await getSavedResearchEntitySlugs(NETID);
+      expect(rosterRead).not.toHaveBeenCalled();
+
+      await getSavedResearchEntityList(NETID);
+      expect(rosterRead).toHaveBeenCalled();
+    });
+
+    it('answers the plan read without a roster read or a card build (#4077)', async () => {
+      await saveMixedTargets();
+      const rosterRead = vi.spyOn(RoleAssignment, 'find');
+      cardBuild.leadGuardedServingInput.mockClear();
+
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      expect(Object.keys(plans)).toHaveLength(2);
+      expect(rosterRead).not.toHaveBeenCalled();
+      expect(cardBuild.leadGuardedServingInput).not.toHaveBeenCalled();
+
+      await getSavedResearchEntityList(NETID);
+      expect(rosterRead).toHaveBeenCalled();
+      expect(cardBuild.leadGuardedServingInput).toHaveBeenCalledTimes(2);
+    });
+
+    it('keys the plan map by the served card id, in the served list order (#4077)', async () => {
+      await saveMixedTargets();
+
+      const list = await getSavedResearchEntityList(NETID);
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      expect(Object.keys(plans)).toEqual(list.savedResearchEntities.map((entity) => entity._id));
+      for (const entity of list.savedResearchEntities) {
+        expect(plans[entity._id]).toBeDefined();
+      }
+    });
+
+    it('keys the plan map by entity id and never by a saved target it cannot serve (#4077)', async () => {
+      await saveMixedTargets();
+      await updateSavedResearchEntityPlan(NETID, ENTITY_ID.toHexString(), {
+        stage: 'CONTACTED',
+        privateNotes: 'synthetic planning note',
+        checklist: plannedChecklist,
+        deadlines: [plannedDeadline],
+      });
+
+      const plans = await getSavedResearchEntityPlans(NETID);
+
+      for (const key of Object.keys(plans)) expect(key).toMatch(/^[a-f0-9]{24}$/);
+      expect(Object.keys(plans)).toContain(ENTITY_ID.toHexString());
+      expect(Object.keys(plans)).not.toContain('64a0000000000000000001a2');
+      expect(Object.keys(plans)).not.toContain('64a0000000000000000001a5');
+      expect(plans[ENTITY_ID.toHexString()]).toEqual(
+        expect.objectContaining({
+          stage: 'CONTACTED',
+          privateNotes: 'synthetic planning note',
+          checklist: plannedChecklist,
+          deadlines: [plannedDeadline],
+        }),
+      );
+    });
+  });
+
   it('serves undergraduate-access fields on saved entities, omitting neutral defaults (#1382)', async () => {
     const openId = new mongoose.Types.ObjectId('64a0000000000000000000f1');
     const db = mongoose.connection.db!;
@@ -280,7 +563,7 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       fullDescription:
         'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
       sourceUrls: ['https://example.yale.edu/labs/open-lab'],
-      hasUndergradHostingEvidence: true,
+      pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }],
       archived: false,
     });
 

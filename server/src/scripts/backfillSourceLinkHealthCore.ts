@@ -1,8 +1,10 @@
 import {
   isStaleSourceLinkHealth,
+  sourceLinkHealthAgeDays,
   type DatedSourceLinkHealth,
   type SourceLinkHealthStatus,
 } from '../services/sourceLinkHealth';
+import { deadLinkHealthRefusalEvidenceUrls } from './clearDeadResearchWebsitesCore';
 
 export interface SourceLinkHealthCandidateEntity {
   websiteUrl?: unknown;
@@ -15,6 +17,7 @@ export interface SourceLinkHealthCandidateEntity {
    * citation as possibly-live (#2666).
    */
   fieldProvenance?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -84,16 +87,56 @@ const isHttpUrl = (value: unknown): value is string => {
   }
 };
 
+/**
+ * Unlike `sourceLinkHealthKey`, this keeps the scheme: each spelling is probed and
+ * stored on its own, because on a host whose certificate fails `http:` answers while
+ * `https:` stops a browser at a warning, and one merged probe let the `http:` result
+ * speak for the `https:` link a student is sent to (#4080).
+ */
 export const sourceLinkCandidateKey = (url: string): string | null => {
   try {
     const parsed = new URL(url.trim());
     const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
     const path = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${host}${path}${parsed.search}`;
+    return `${parsed.protocol}//${host}${path}${parsed.search}`;
   } catch {
     return null;
   }
 };
+
+/** The plain-HTTP spelling of an `https:` URL, or null for any other URL. */
+export const httpSpellingOf = (url: string): string | null => {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== 'https:') return null;
+    parsed.protocol = 'http:';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The plain-HTTP spellings to probe because their `https:` twin failed certificate
+ * verification and neither spelling of the twin is already a candidate. Serve time can
+ * only offer a student the working spelling if that spelling carries its own verdict.
+ */
+export function tlsFallbackCandidates(
+  candidates: readonly string[],
+  freshHealth: ReadonlyMap<string, { tlsVerificationFailed?: boolean }>,
+): string[] {
+  const present = new Set(candidates.map((url) => sourceLinkCandidateKey(url)));
+  const fallbacks: string[] = [];
+  for (const url of candidates) {
+    if (freshHealth.get(url)?.tlsVerificationFailed !== true) continue;
+    const plain = httpSpellingOf(url);
+    const key = plain ? sourceLinkCandidateKey(plain) : null;
+    if (!plain || !key || present.has(key)) continue;
+    present.add(key);
+    fallbacks.push(plain);
+  }
+  return fallbacks;
+}
 
 /**
  * Every `sourceUrl` recorded in `fieldProvenance`. These are citations as far as
@@ -119,6 +162,7 @@ export function collectSourceLinkHealthCandidates(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ...fieldProvenanceSourceUrls(entity.fieldProvenance),
+    ...deadLinkHealthRefusalEvidenceUrls(entity),
     ...extraUrls,
   ];
 
@@ -140,6 +184,8 @@ export interface StoredSourceLinkHealthEntry {
   healthStatus: SourceLinkHealthStatus;
   httpStatusCode?: number;
   privateAddressHost?: boolean;
+  tlsVerificationFailed?: boolean;
+  httpsLandingUrl?: string;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
 }
@@ -148,17 +194,20 @@ export interface StoredSourceLinkHealthEntry {
  * Whether the stored entry should say this host resolves only into private space.
  *
  * A probe that came back with an HTTP status proves the host was publicly
- * routable at that moment, so the flag is dropped. A probe that learned nothing
+ * routable at that moment, so the flag is dropped, and so does public DNS mapping
+ * the host to public space, which is the only release a split-horizon host can
+ * ever earn because our own resolver refuses it before any request (#3903). A probe that learned nothing
  * about addressing - a timeout, a transport error - keeps whatever was stored,
  * because a failed measurement must not release a link a student cannot open.
  * That asymmetry is the whole point: routing is a fact we only ever unlearn from
  * positive evidence (#2556).
  */
 function privateAddressHostForEntry(
-  fresh: { httpStatusCode?: number; privateAddressHost?: boolean },
+  fresh: { httpStatusCode?: number; privateAddressHost?: boolean; publicAddressHost?: boolean },
   stored: StoredSourceLinkHealthEntry | undefined,
 ): boolean | undefined {
   if (fresh.privateAddressHost) return true;
+  if (fresh.publicAddressHost) return undefined;
   if (typeof fresh.httpStatusCode === 'number') return undefined;
   return stored?.privateAddressHost ? true : undefined;
 }
@@ -173,6 +222,11 @@ export function isDecisiveStoredVerdict(entry: unknown): boolean {
   if (!entry || typeof entry !== 'object') return false;
   const status = (entry as { healthStatus?: unknown }).healthStatus;
   return typeof status === 'string' && status !== 'UNKNOWN';
+}
+
+/** The stored shape a resolution failure leaves: `UNAVAILABLE` with no HTTP status. */
+export function isStoredUnresolvableVerdict(entry: StoredSourceLinkHealthEntry): boolean {
+  return entry.healthStatus === 'UNAVAILABLE' && typeof entry.httpStatusCode !== 'number';
 }
 
 export function storedSourceLinkHealthByUrl(
@@ -217,23 +271,35 @@ export function resolveSourceLinkHealthEntry(
     healthStatus: SourceLinkHealthStatus;
     httpStatusCode?: number;
     privateAddressHost?: boolean;
+    publicAddressHost?: boolean;
+    tlsVerificationFailed?: boolean;
+    httpsLandingUrl?: string;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
 ): ResolvedSourceLinkHealthEntry {
   const privateAddressHost = privateAddressHostForEntry(fresh, stored);
-  const routing = privateAddressHost ? { privateAddressHost: true as const } : {};
+  const routing = {
+    ...(privateAddressHost ? { privateAddressHost: true as const } : {}),
+    ...(fresh.tlsVerificationFailed ? { tlsVerificationFailed: true as const } : {}),
+  };
   const freshEntry: StoredSourceLinkHealthEntry = {
     url,
     healthStatus: fresh.healthStatus,
     ...(typeof fresh.httpStatusCode === 'number' ? { httpStatusCode: fresh.httpStatusCode } : {}),
     ...routing,
+    ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
     checkedAt: now,
   };
 
   if (fresh.healthStatus !== 'UNKNOWN')
     return { entry: freshEntry, preservedDecisiveVerdict: false };
   if (!isDecisiveStoredVerdict(stored))
+    return { entry: freshEntry, preservedDecisiveVerdict: false };
+  // A certificate that fails verification contradicts a stored HEALTHY for this very
+  // URL, so that verdict is not preserved: it was written by a probe that never
+  // negotiated this spelling's TLS (#4080). A stored UNAVAILABLE still stands.
+  if (fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY')
     return { entry: freshEntry, preservedDecisiveVerdict: false };
 
   const kept = stored as StoredSourceLinkHealthEntry;
@@ -243,9 +309,87 @@ export function resolveSourceLinkHealthEntry(
       healthStatus: kept.healthStatus,
       ...(typeof kept.httpStatusCode === 'number' ? { httpStatusCode: kept.httpStatusCode } : {}),
       ...routing,
+      ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
     preservedDecisiveVerdict: true,
+  };
+}
+
+/**
+ * How old a `HEALTHY` verdict may be before an unattended sweep probes the URL again.
+ *
+ * It must stay well inside `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`, so a regularly swept
+ * verdict never lapses into "unverified", and it is short because the gate and
+ * `dead-research-website-clear` act on these verdicts: a site that dies is noticed
+ * at most this many days late. Only `HEALTHY` earns the skip; every other verdict,
+ * and every URL without one, is probed on every sweep (#3568).
+ */
+export const SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS = 7;
+
+export function storedSourceLinkHealthByCandidateKey(
+  storedHealth: unknown,
+): Map<string, StoredSourceLinkHealthEntry> {
+  const index = new Map<string, StoredSourceLinkHealthEntry>();
+  if (!Array.isArray(storedHealth)) return index;
+  for (const entry of storedHealth) {
+    const url = (entry as { url?: unknown })?.url;
+    if (typeof url !== 'string' || !url) continue;
+    const key = sourceLinkCandidateKey(url);
+    if (key && !index.has(key)) index.set(key, entry as StoredSourceLinkHealthEntry);
+  }
+  return index;
+}
+
+export function isFreshHealthySourceLinkVerdict(
+  stored: StoredSourceLinkHealthEntry | undefined,
+  reprobeHealthyAfterDays: number,
+  now: Date,
+): boolean {
+  if (stored?.healthStatus !== 'HEALTHY') return false;
+  const ageDays = sourceLinkHealthAgeDays(stored, now);
+  return ageDays !== undefined && ageDays >= 0 && ageDays <= reprobeHealthyAfterDays;
+}
+
+export interface SourceLinkReprobePlan {
+  toProbe: string[];
+  carried: Map<string, StoredSourceLinkHealthEntry>;
+}
+
+export function planSourceLinkReprobe(
+  candidates: readonly string[],
+  storedHealth: unknown,
+  reprobeHealthyAfterDays: number,
+  now: Date,
+): SourceLinkReprobePlan {
+  const storedByKey = storedSourceLinkHealthByCandidateKey(storedHealth);
+  const toProbe: string[] = [];
+  const carried = new Map<string, StoredSourceLinkHealthEntry>();
+  for (const url of candidates) {
+    const key = sourceLinkCandidateKey(url);
+    const stored = key ? storedByKey.get(key) : undefined;
+    if (isFreshHealthySourceLinkVerdict(stored, reprobeHealthyAfterDays, now)) {
+      carried.set(url, stored as StoredSourceLinkHealthEntry);
+    } else {
+      toProbe.push(url);
+    }
+  }
+  return { toProbe, carried };
+}
+
+export function carryForwardSourceLinkHealthEntry(
+  url: string,
+  stored: StoredSourceLinkHealthEntry,
+): StoredSourceLinkHealthEntry {
+  return {
+    url,
+    healthStatus: stored.healthStatus,
+    ...(typeof stored.httpStatusCode === 'number' ? { httpStatusCode: stored.httpStatusCode } : {}),
+    ...(stored.privateAddressHost === true ? { privateAddressHost: true } : {}),
+    ...(stored.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
+    ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
+    ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
+    ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };
 }

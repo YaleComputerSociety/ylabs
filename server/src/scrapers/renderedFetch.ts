@@ -1,12 +1,32 @@
 import { execFile } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from './../utils/ssrfGuard';
-import { defaultHostConcurrencyLimiter } from './utils/hostConcurrencyLimiter';
+import {
+  assertPublicHttpUrl,
+  SsrfBlockedError,
+  ssrfSafeAgents,
+  stripIpv6Brackets,
+} from './../utils/ssrfGuard';
+import {
+  benchmarkCacheRead,
+  benchmarkCacheWrite,
+  benchmarkFrozenMetadata,
+  isBenchmarkModeActive,
+  isBenchmarkReplayActive,
+  refuseBenchmarkReplayNetwork,
+} from './snapshotBenchmarkMode';
+import { getCached, setCached } from './snapshotCache';
+import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
+import { hostnameForLimiter } from './utils/hostConcurrencyLimiter';
+import { retryOnRetryableResultStatus, type RetryPolicyOptions } from './utils/httpFetch';
+import {
+  startSsrfGuardedForwardProxy,
+  type SsrfGuardedForwardProxy,
+} from './utils/ssrfGuardedForwardProxy';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 import type {
   ScraperFetchAttemptMetrics,
   ScraperFetchMetric,
@@ -19,12 +39,13 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MIN_RENDERED_FETCH_TIMEOUT_MS = 1_000;
 const MAX_RENDERED_FETCH_TIMEOUT_MS = 30_000;
-const DEFAULT_BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'scraplingBridge.py');
-const SCRAPER_DIR = dirname(fileURLToPath(import.meta.url));
+const SCRAPER_DIR = join(resolveServerPackageRoot(import.meta.url), 'src', 'scrapers');
+const DEFAULT_BRIDGE_PATH = join(SCRAPER_DIR, 'scraplingBridge.py');
 const PYTHON_COMMAND_RE = /^python(?:3(?:\.\d{1,2})?)?$/;
 const RENDERED_FETCH_MODES = new Set(['dynamic', 'stealthy']);
 const MAX_RENDERED_FETCH_SELECTOR_LENGTH = 256;
 const MAX_RENDERED_SEED_REDIRECT_CHECK_MS = 5_000;
+const RENDERED_PAGE_CACHE_KEY_PREFIX = 'rendered-page:v1:';
 
 const normalizeRenderedPythonCommand = (value: string): string => {
   const command = value.trim();
@@ -67,6 +88,7 @@ const normalizeRenderedFetchSelector = (value: unknown): string | undefined => {
 };
 
 export interface RenderedFetchMetricOverrides {
+  failed?: boolean;
   blocked?: boolean;
   blockedReason?: string;
   selectorBreakage?: boolean;
@@ -92,6 +114,58 @@ export type RenderedFetcher = (
   request: RenderedFetchRequest,
 ) => Promise<RenderedFetchResult | null>;
 
+const isSuccessfulHttpStatus = (statusCode: number | undefined): boolean =>
+  typeof statusCode !== 'number' || (statusCode >= 200 && statusCode < 300);
+
+export function renderedPageFailureReason(
+  result: RenderedFetchResult | null | undefined,
+): string | null {
+  if (!result || typeof result !== 'object') return 'no-result';
+  if (result.blocked) return result.blockedReason || 'blocked';
+  if (!isSuccessfulHttpStatus(result.statusCode)) return `http-${result.statusCode}`;
+  if (typeof result.html !== 'string' || result.html.trim() === '') {
+    return result.blockedReason || 'empty-body';
+  }
+  return null;
+}
+
+export interface UsableRenderedPageRequest {
+  sourceName: string;
+  useCache: boolean;
+  request: RenderedFetchRequest;
+  renderedFetcher: RenderedFetcher | null;
+}
+
+export async function fetchUsableRenderedPage({
+  sourceName,
+  useCache,
+  request,
+  renderedFetcher,
+}: UsableRenderedPageRequest): Promise<RenderedFetchResult | null> {
+  if (!renderedFetcher) return null;
+  const cacheKey = `${RENDERED_PAGE_CACHE_KEY_PREFIX}${request.url}`;
+  const useLaneCache = useCache && !isRendererRecordedByBenchmark();
+  if (useLaneCache) {
+    const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
+    if (cached && renderedPageFailureReason(cached) === null) return cached;
+  }
+  const result = await renderedFetcher(request);
+  if (!result) return null;
+  const failureReason = renderedPageFailureReason(result);
+  if (failureReason !== null) return { ...result, html: '', blockedReason: failureReason };
+  if (useLaneCache) await setCached(sourceName, cacheKey, result);
+  return result;
+}
+
+export function measureRenderedFallback(
+  target: string,
+  page: UsableRenderedPageRequest,
+  options?: { selectorName?: string },
+): Promise<MeasuredRenderedFetch<RenderedFetchResult | null>> | null {
+  if (!page.renderedFetcher) return null;
+  return measureRenderedFetch(target, 'scrapling', () => fetchUsableRenderedPage(page), options);
+}
+
 export interface ScraplingRenderedFetcherOptions {
   enabled?: boolean;
   pythonCommand?: string;
@@ -99,7 +173,14 @@ export interface ScraplingRenderedFetcherOptions {
   mode?: 'dynamic' | 'stealthy';
   timeoutMs?: number;
   seedRedirectCheck?: (url: URL, timeoutMs: number) => Promise<boolean>;
+  startForwardProxy?: () => Promise<RenderedFetchForwardProxy>;
+  retry?: RetryPolicyOptions;
 }
+
+export type RenderedFetchForwardProxy = Pick<
+  SsrfGuardedForwardProxy,
+  'url' | 'forwardedHosts' | 'close'
+>;
 
 const isHttpRedirectStatus = (statusCode: number | undefined): boolean =>
   typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400;
@@ -160,17 +241,18 @@ export async function measureRenderedFetch<T, TFetchMode extends string = Scrape
   const fetchMode = (typeof second === 'function' ? first : second) as TFetchMode;
   const fetcher = (typeof second === 'function' ? second : third) as () => Promise<T>;
   const classify = (typeof second === 'function' ? third : undefined) as
-    | ((result: T) => RenderedFetchMetricOverrides)
-    | undefined;
+    ((result: T) => RenderedFetchMetricOverrides) | undefined;
   const startedAt = nowMs();
   const memoryStartBytes = currentMemoryBytes();
 
   try {
     const result = await fetcher();
-    const overrides = classify ? classify(result) : inferRenderedFetchOverrides(result);
+    const { failed, ...overrides } = classify
+      ? classify(result)
+      : inferRenderedFetchOverrides(result);
     const metrics = buildFetchAttemptMetrics({
       fetchMode,
-      success: !overrides.blocked && !overrides.selectorBreakage,
+      success: !failed && !overrides.blocked && !overrides.selectorBreakage,
       startedAt,
       memoryStartBytes,
       ...overrides,
@@ -279,8 +361,82 @@ function boundedRenderedFetchTimeout(value: unknown, fallback: number): number {
   );
 }
 
+export const RENDERED_FETCH_BENCHMARK_NAMESPACE = 'rendered-fetch';
+const RENDERER_ENABLED_KEY = 'renderer:enabled';
+
+export const isRenderedFetchMetadataKey = (requestKey: string): boolean =>
+  requestKey === RENDERER_ENABLED_KEY;
+
+export const renderedFetchBenchmarkKey = (request: RenderedFetchRequest): string =>
+  `render:v1:${request.url}\u0000${request.waitSelector ?? ''}\u0000${request.mode ?? ''}`;
+
+interface FrozenRender {
+  result: RenderedFetchResult | null;
+}
+
+/**
+ * A benchmark freezes a rendered page the way it freezes a fetched one (#3590). Capture records
+ * whether a renderer existed at all, because a lane with no renderer behaves differently from
+ * one whose render returns nothing, and every result the renderer gave, including a null or a
+ * blocked page. Replay reproduces both: no renderer when capture had none, and otherwise a
+ * renderer that serves the frozen result or counts a miss and refuses.
+ */
 export function createScraplingRenderedFetcher(
   options: ScraplingRenderedFetcherOptions = {},
+): RenderedFetcher | null {
+  return withBenchmarkRenderedFetcher(createLiveScraplingRenderedFetcher(options));
+}
+
+export function withBenchmarkRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher | null {
+  if (isBenchmarkReplayActive()) return frozenRenderedFetcher(live);
+  return isBenchmarkModeActive() ? recordingRenderedFetcher(live) : live;
+}
+
+const frozenRendererEnablement = (): { enabled?: unknown } | undefined =>
+  benchmarkFrozenMetadata(RENDERED_FETCH_BENCHMARK_NAMESPACE, RENDERER_ENABLED_KEY) as
+    { enabled?: unknown } | undefined;
+
+/**
+ * Whether the renderer freeze is the record of every render, so the lane's own rendered-page
+ * cache must stay out of it: during capture, and during a replay of a benchmark that recorded
+ * its renderer. A benchmark captured before #3590 froze its renders only in that lane cache.
+ */
+const isRendererRecordedByBenchmark = (): boolean =>
+  isBenchmarkModeActive() &&
+  (!isBenchmarkReplayActive() || frozenRendererEnablement() !== undefined);
+
+function frozenRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher | null {
+  const enablement = frozenRendererEnablement();
+  if (enablement === undefined) return live;
+  if (enablement.enabled !== true) return null;
+  return async (request) => {
+    const frozen = benchmarkCacheRead(
+      RENDERED_FETCH_BENCHMARK_NAMESPACE,
+      renderedFetchBenchmarkKey(request),
+    );
+    if (frozen.handled && frozen.payload) return (frozen.payload as FrozenRender).result;
+    return refuseBenchmarkReplayNetwork();
+  };
+}
+
+function recordingRenderedFetcher(live: RenderedFetcher | null): RenderedFetcher | null {
+  benchmarkCacheWrite(RENDERED_FETCH_BENCHMARK_NAMESPACE, RENDERER_ENABLED_KEY, {
+    enabled: live !== null,
+  });
+  if (!live) return null;
+  return async (request) => {
+    const requestKey = renderedFetchBenchmarkKey(request);
+    benchmarkCacheRead(RENDERED_FETCH_BENCHMARK_NAMESPACE, requestKey);
+    const result = await live(request);
+    benchmarkCacheWrite(RENDERED_FETCH_BENCHMARK_NAMESPACE, requestKey, {
+      result,
+    } satisfies FrozenRender);
+    return result;
+  };
+}
+
+function createLiveScraplingRenderedFetcher(
+  options: ScraplingRenderedFetcherOptions,
 ): RenderedFetcher | null {
   const enabled = options.enabled ?? process.env.SCRAPLING_RENDERER_ENABLED === 'true';
   if (!enabled) return null;
@@ -297,8 +453,10 @@ export function createScraplingRenderedFetcher(
     DEFAULT_TIMEOUT_MS,
   );
   const seedRedirectCheck = options.seedRedirectCheck || defaultRenderedSeedRedirectCheck;
+  const startForwardProxy = options.startForwardProxy || startSsrfGuardedForwardProxy;
 
-  return async (request) => {
+  const renderOnce: RenderedFetcher = async (request) => {
+    if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
     // SSRF guard: request.url originates from DB-stored / scraped values. Block private/metadata
     // hosts before handing the URL to the headless Python fetcher. Also fail closed if the seed
     // URL immediately redirects, because the Python renderer cannot use Node's connect-time
@@ -307,7 +465,7 @@ export function createScraplingRenderedFetcher(
     const seedUrl = await assertPublicHttpUrl(request.url);
     const safeRequestUrl = seedUrl.toString();
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
-    const releaseHostSlot = await defaultHostConcurrencyLimiter.acquire(seedUrl.hostname);
+    const releaseHostSlot = await scraperHostSlotLimiter().acquire(seedUrl.hostname);
     try {
       try {
         if (await seedRedirectCheck(seedUrl, timeoutMs)) {
@@ -329,6 +487,19 @@ export function createScraplingRenderedFetcher(
         };
       }
 
+      let forwardProxy: RenderedFetchForwardProxy;
+      try {
+        forwardProxy = await startForwardProxy();
+      } catch {
+        return {
+          url: seedUrl.toString(),
+          html: '',
+          blocked: true,
+          blockedReason: 'rendered-ssrf-proxy-unavailable',
+          fetchMode: 'scrapling',
+        };
+      }
+
       const args = [
         bridgePath,
         '--url',
@@ -337,6 +508,8 @@ export function createScraplingRenderedFetcher(
         normalizeRenderedFetchMode(request.mode || defaultMode),
         '--timeout-ms',
         String(timeoutMs),
+        '--proxy-server',
+        forwardProxy.url,
       ];
       const waitSelector = normalizeRenderedFetchSelector(request.waitSelector);
       if (waitSelector) args.push('--wait-selector', waitSelector);
@@ -354,6 +527,19 @@ export function createScraplingRenderedFetcher(
           blocked?: boolean;
           blockedReason?: string;
         };
+        if (
+          parsed.html &&
+          !forwardProxy.forwardedHosts().includes(stripIpv6Brackets(seedUrl.hostname))
+        ) {
+          return {
+            url: seedUrl.toString(),
+            html: '',
+            statusCode: parsed.statusCode,
+            blocked: true,
+            blockedReason: 'rendered-outside-ssrf-proxy',
+            fetchMode: 'scrapling',
+          };
+        }
         const renderedUrl = parsed.url || safeRequestUrl;
         let finalUrl: URL;
         try {
@@ -397,16 +583,39 @@ export function createScraplingRenderedFetcher(
           blockedReason: sanitizeLogValue(err),
           fetchMode: 'scrapling',
         };
+      } finally {
+        await forwardProxy.close();
       }
     } finally {
       releaseHostSlot();
     }
   };
+
+  return (request) =>
+    retryOnRetryableResultStatus(
+      hostnameForLimiter(request.url),
+      () => renderOnce(request),
+      (result) => ({
+        status: result?.statusCode,
+        succeeded: renderedPageFailureReason(result) === null,
+      }),
+      options.retry,
+    );
 }
 
 function inferRenderedFetchOverrides(result: unknown): RenderedFetchMetricOverrides {
-  if (!result || typeof result !== 'object') return { selectorBreakage: true };
+  if (!result || typeof result !== 'object') {
+    return { failed: true, blocked: false, blockedReason: 'no-result', selectorBreakage: false };
+  }
   const page = result as Partial<RenderedFetchResult>;
+  if (!page.blocked && !isSuccessfulHttpStatus(page.statusCode)) {
+    return {
+      failed: true,
+      blocked: false,
+      blockedReason: page.blockedReason || `http-${page.statusCode}`,
+      selectorBreakage: false,
+    };
+  }
   return {
     blocked: page.blocked ?? false,
     blockedReason: page.blockedReason,

@@ -3,7 +3,12 @@ export interface DeadLabHomeCandidate {
   sourceUrls?: unknown;
 }
 
-export type DeadLabHomeVerdict = 'not-a-ysm-lab-url' | 'in-index' | 'live-not-in-index' | 'clear';
+export type DeadLabHomeVerdict =
+  'not-a-ysm-lab-url' | 'in-index' | 'live-not-in-index' | 'address-refused' | 'clear';
+
+export const SSRF_REFUSED_PROBE = 'ssrf-refused' as const;
+
+export type LabHomeProbeStatus = number | typeof SSRF_REFUSED_PROBE | undefined;
 
 export const YSM_LAB_HOME = /^https?:\/\/medicine\.yale\.edu\/lab\/([^/?#]+)/i;
 
@@ -30,12 +35,13 @@ export function labSegment(url: unknown): string {
 export function classifyLabHome(
   entity: DeadLabHomeCandidate,
   indexSegments: ReadonlySet<string>,
-  httpStatus: number | undefined,
+  httpStatus: LabHomeProbeStatus,
 ): DeadLabHomeVerdict {
   const segment = labSegment(entity.websiteUrl);
   if (!segment) return 'not-a-ysm-lab-url';
   if (indexSegments.has(segment)) return 'in-index';
   if (httpStatus === 200) return 'live-not-in-index';
+  if (httpStatus === SSRF_REFUSED_PROBE) return 'address-refused';
   return 'clear';
 }
 

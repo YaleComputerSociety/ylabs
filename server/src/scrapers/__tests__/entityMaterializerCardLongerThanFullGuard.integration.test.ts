@@ -43,11 +43,11 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -165,10 +165,12 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
       fieldProvenance: {
         fullDescription: {
           sourceName: 'lab-microsite-undergrad-llm',
+          observationId: new mongoose.Types.ObjectId(),
           sourceUrl: 'https://example.edu/lab-microsite-undergrad-llm/',
         },
         shortDescription: {
           sourceName: 'lab-microsite-undergrad-llm',
+          observationId: new mongoose.Types.ObjectId(),
           sourceUrl: 'https://example.edu/lab-microsite-undergrad-llm/',
         },
       },

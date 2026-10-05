@@ -10,7 +10,20 @@ const mocks = vi.hoisted(() => ({
   getUserAnalytics: vi.fn(),
   getUserAnalyticsDrilldown: vi.fn(),
   emitResearchEvent: vi.fn(),
+  existingResearchEntityIds: vi.fn(),
   researchEntityExists: vi.fn(),
+  getLaneBenchmarkDashboard: vi.fn(),
+  hasActiveAdminGrant: vi.fn(),
+}));
+
+vi.mock('../../services/adminGrantService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/adminGrantService')>()),
+  hasActiveAdminGrant: mocks.hasActiveAdminGrant,
+}));
+
+vi.mock('../../services/laneBenchmarkDashboardService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/laneBenchmarkDashboardService')>()),
+  getLaneBenchmarkDashboard: mocks.getLaneBenchmarkDashboard,
 }));
 
 vi.mock('../../models/analytics', async (importOriginal) => ({
@@ -34,10 +47,12 @@ vi.mock('../../services/analyticsService', async (importOriginal) => ({
 vi.mock('../../services/researchAnalytics', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/researchAnalytics')>()),
   emitResearchEvent: mocks.emitResearchEvent,
+  existingResearchEntityIds: mocks.existingResearchEntityIds,
   researchEntityExists: mocks.researchEntityExists,
 }));
 
 import router from '../analytics';
+import { errorHandler } from '../../middleware/errorHandler';
 
 const routeByPath = (path: string) =>
   (router as any).stack.map((layer: any) => layer.route).find((route: any) => route?.path === path);
@@ -46,6 +61,11 @@ const invokeRouteHandler = async (path: string, request: any = {}) => {
   const route = routeByPath(path);
   expect(route).toBeTruthy();
   const handler = route.stack[route.stack.length - 1].handle;
+  const requestWithDefaults = { query: {}, params: {}, ...request };
+  let settle: (forwarded: unknown) => void = () => undefined;
+  const settled = new Promise<unknown>((resolve) => {
+    settle = resolve;
+  });
   const response = {
     statusCode: 200,
     body: undefined as unknown,
@@ -55,19 +75,48 @@ const invokeRouteHandler = async (path: string, request: any = {}) => {
     }),
     json: vi.fn(function (this: any, body: unknown) {
       this.body = body;
+      settle(undefined);
       return this;
     }),
   } as any;
 
-  await handler(
-    {
-      query: {},
-      params: {},
-      ...request,
-    },
-    response,
-  );
+  void handler(requestWithDefaults, response, settle);
+  const forwarded = await settled;
+  if (forwarded !== undefined) {
+    errorHandler(forwarded as Error, requestWithDefaults, response, vi.fn());
+  }
   return response;
+};
+
+const dispatchRoute = (path: string, request: any = {}) => {
+  const route = routeByPath(path);
+  expect(route).toBeTruthy();
+  const requestWithDefaults = { query: {}, params: {}, ...request };
+  return new Promise<any>((resolve) => {
+    const response = {
+      statusCode: 200,
+      body: undefined as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(body: unknown) {
+        this.body = body;
+        resolve(this);
+        return this;
+      },
+    } as any;
+    const dispatch = (index: number) => {
+      void route.stack[index].handle(requestWithDefaults, response, (error?: unknown) => {
+        if (error !== undefined) {
+          errorHandler(error as Error, requestWithDefaults, response, vi.fn());
+          return;
+        }
+        dispatch(index + 1);
+      });
+    };
+    dispatch(0);
+  });
 };
 
 const middlewareNames = () =>
@@ -96,6 +145,44 @@ describe('analytics routes', () => {
     vi.clearAllMocks();
   });
 
+  it('refuses the lane benchmark panel to a signed-out request (#3591)', async () => {
+    const res = await dispatchRoute('/lane-benchmarks');
+
+    expect(res.statusCode).toBe(401);
+    expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
+  it('refuses the lane benchmark panel to a signed-in user without an admin grant', async () => {
+    mocks.hasActiveAdminGrant.mockResolvedValue(false);
+
+    const res = await dispatchRoute('/lane-benchmarks', { user: { netId: 'test123' } });
+
+    expect(res.statusCode).toBe(403);
+    expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
+  it('serves the lane benchmark panel to an admin', async () => {
+    mocks.hasActiveAdminGrant.mockResolvedValue(true);
+    mocks.getLaneBenchmarkDashboard.mockResolvedValue({ benchmarks: [] });
+
+    const res = await dispatchRoute('/lane-benchmarks', { user: { netId: 'test123' } });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ benchmarks: [] });
+  });
+
+  it('answers 500 and never reaches the lane benchmark panel when the admin-grant lookup fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.hasActiveAdminGrant.mockRejectedValue(new Error('admin grant lookup failed'));
+    mocks.getLaneBenchmarkDashboard.mockResolvedValue({ benchmarks: [] });
+
+    const res = await dispatchRoute('/lane-benchmarks', { user: { netId: 'test123' } });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
   it('exposes the search-query analytics endpoint used by the analytics dashboard', () => {
     expect(routeByPath('/search-queries')).toBeTruthy();
   });
@@ -111,8 +198,8 @@ describe('analytics routes', () => {
   });
 
   it('accepts a batch of research events and reports the accepted count', async () => {
-    mocks.emitResearchEvent.mockResolvedValue(true);
-    mocks.researchEntityExists.mockResolvedValue(true);
+    mocks.emitResearchEvent.mockResolvedValue('recorded');
+    mocks.existingResearchEntityIds.mockResolvedValue(['lab-a', 'lab-b']);
 
     const res = await invokeRouteHandler('/research/batch', {
       body: {
@@ -127,10 +214,10 @@ describe('analytics routes', () => {
             },
           },
           {
-            eventType: 'research_entity_impression',
+            eventType: 'research_results_view',
             entityType: 'research_entity',
-            entityId: '507f1f77bcf86cd799439011',
-            payload: { surface: 'browse', positionBucket: '1-3' },
+            entityIds: ['lab-a', 'lab-b'],
+            payload: { surface: 'browse', pageBucket: '1' },
           },
         ],
       },
@@ -144,15 +231,80 @@ describe('analytics routes', () => {
     expect(mocks.emitResearchEvent).toHaveBeenCalledTimes(2);
   });
 
-  it('reports sent alongside accepted so a caller can tell delivery from acceptance', async () => {
+  it('stores a result page as one event carrying only the entities that exist', async () => {
+    mocks.emitResearchEvent.mockResolvedValue('recorded');
+    mocks.existingResearchEntityIds.mockResolvedValue(['lab-a', 'lab-c']);
+
     const res = await invokeRouteHandler('/research/batch', {
       body: {
         events: [
+          {
+            eventType: 'research_results_view',
+            entityType: 'research_entity',
+            entityIds: ['lab-a', 'lab-gone', 'lab-c'],
+            payload: { surface: 'search', pageBucket: '2' },
+            dedupeKey: 'search:abc:results:2',
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.body).toEqual({ accepted: 1, sent: 1 });
+    expect(mocks.existingResearchEntityIds).toHaveBeenCalledOnce();
+    expect(mocks.researchEntityExists).not.toHaveBeenCalled();
+    expect(mocks.emitResearchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'research_results_view',
+        entityIds: ['lab-a', 'lab-c'],
+        dedupeKey: 'search:abc:results:2',
+      }),
+    );
+  });
+
+  it('rejects a result page with no known entity and the retired per-entity impression', async () => {
+    mocks.existingResearchEntityIds.mockResolvedValue([]);
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_results_view',
+            entityType: 'research_entity',
+            entityIds: ['lab-gone'],
+            payload: { surface: 'browse', pageBucket: '1' },
+          },
           {
             eventType: 'research_entity_impression',
             entityType: 'research_entity',
             entityId: '507f1f77bcf86cd799439011',
             payload: { surface: 'browse', positionBucket: '1-3' },
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.body).toEqual({ accepted: 0, sent: 2 });
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports sent alongside accepted so a caller can tell delivery from acceptance', async () => {
+    mocks.emitResearchEvent.mockResolvedValue('recorded');
+    mocks.existingResearchEntityIds.mockResolvedValue(['lab-a']);
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_results_view',
+            entityType: 'research_entity',
+            entityIds: ['lab-a'],
+            payload: { surface: 'browse', pageBucket: '1' },
           },
           { eventType: 'not_a_research_event' },
         ],
@@ -164,6 +316,61 @@ describe('analytics routes', () => {
 
     expect(res.statusCode).toBe(202);
     expect(res.body).toEqual({ accepted: 1, sent: 2 });
+  });
+
+  it('does not count an event the store failed to write as accepted, and warns about it', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.emitResearchEvent.mockResolvedValueOnce('recorded').mockResolvedValueOnce('failed');
+
+    const searchEvent = {
+      eventType: 'research_search',
+      payload: {
+        outcome: 'results',
+        resultCountBucket: '6-20',
+        searchKind: 'query',
+        filterCountBucket: '0',
+      },
+    };
+    const res = await invokeRouteHandler('/research/batch', {
+      body: { events: [searchEvent, searchEvent] },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toEqual({ accepted: 1, sent: 2 });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(JSON.stringify(warnSpy.mock.calls[0])).toContain('unstored');
+    warnSpy.mockRestore();
+  });
+
+  it('does not count a Beta-suppressed event as accepted and does not warn about it', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mocks.emitResearchEvent.mockResolvedValue('suppressed');
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_search',
+            payload: {
+              outcome: 'results',
+              resultCountBucket: '6-20',
+              searchKind: 'query',
+              filterCountBucket: '0',
+            },
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.body).toEqual({ accepted: 0, sent: 1 });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('rejects a batch that is not a non-empty array', async () => {
@@ -205,7 +412,56 @@ describe('analytics routes', () => {
     const res = await invokeRouteHandler('/search-quality');
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch search quality analytics' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
+  });
+
+  it('does not count a degraded search as a search with results', async () => {
+    mocks.getSearchQualityAnalytics.mockResolvedValue({
+      totalSearches: 10,
+      degradedSearches: 3,
+      zeroResultSearches: 2,
+      zeroResultRate: 0.2857,
+      uniqueSearchers: 4,
+      byQueryAndEntityType: [],
+      topZeroResultQueries: [],
+      topQueries: [],
+      engagedSearches: 0,
+      returnedButIgnoredSearches: 0,
+    });
+
+    const res = await invokeRouteHandler('/search-quality');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.searchesWithResults).toBe(5);
+  });
+
+  it('keeps a degraded search in a listed query count, because it is still demand', async () => {
+    const query = {
+      query: 'first topic',
+      entityType: 'research_entity',
+      totalSearches: 5,
+      searchesThatReachedTheCorpus: 2,
+      zeroResultSearches: 2,
+      uniqueSearchers: 3,
+      avgResultCount: 0,
+    };
+    mocks.getSearchQualityAnalytics.mockResolvedValue({
+      totalSearches: 5,
+      degradedSearches: 3,
+      zeroResultSearches: 2,
+      zeroResultRate: 1,
+      uniqueSearchers: 3,
+      byQueryAndEntityType: [query],
+      topZeroResultQueries: [query],
+      topQueries: [query],
+      engagedSearches: 0,
+      returnedButIgnoredSearches: 0,
+    });
+
+    const res = await invokeRouteHandler('/search-quality');
+
+    expect(res.body.topQueries[0].count).toBe(5);
+    expect(res.body.zeroResultQueries[0].count).toBe(5);
   });
 
   it('does not leak internal messages from user analytics route failures', async () => {
@@ -217,7 +473,7 @@ describe('analytics routes', () => {
     const res = await invokeRouteHandler('/users');
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch user analytics' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 
   it('rejects oversized user analytics search before dispatching aggregation', async () => {
@@ -277,12 +533,40 @@ describe('analytics routes', () => {
     expect(body.stages.map((stage: any) => stage.label)).toEqual([
       'Searched research',
       'Opened a profile',
-      'Saved a research home',
-      'Compared saved homes',
+      'Saved research',
+      'Compared saved research',
       'Updated a plan',
       'Used a qualified route',
     ]);
     expect(body.stages.some((stage: any) => /visitor/i.test(stage.label))).toBe(false);
+  });
+
+  it('reports the qualified-route numbers as unmeasured when none was recorded', async () => {
+    mocks.getFunnelAnalytics.mockResolvedValue({
+      logins: 40,
+      searches: 30,
+      fellowshipViews: 5,
+      qualifiedActions: 0,
+      researchSearches: 20,
+      researchProfileOpens: 10,
+      researchSaves: 3,
+      researchComparisons: 1,
+      researchPlanUpdates: 1,
+      sourceInspections: 4,
+      officialRouteAttempts: 0,
+      applicationOpens: 0,
+      qualifiedActionEvents: 0,
+    });
+
+    const body = (await invokeRouteHandler('/funnel')).body as any;
+
+    expect(body.stages.map((stage: any) => stage.key)).not.toContain('qualified_actions');
+    expect(body.journeyMetrics).toEqual({
+      sourceInspections: 4,
+      officialRouteAttempts: null,
+      applicationOpens: null,
+    });
+    expect(body.overallConversionRate).toBeNull();
   });
 
   it('serves no visitor-shaped alias for the login count', async () => {
@@ -321,6 +605,6 @@ describe('analytics routes', () => {
     });
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch user analytics' });
+    expect(res.body).toEqual({ error: 'Internal server error' });
   });
 });

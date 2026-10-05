@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   BARREN_RUN_STREAK_FAILURE_THRESHOLD,
   barrenRunStreak,
+  barrenUnitStreak,
   classifyRunYield,
+  classifyUnitYield,
   resolveBarrenStreakFailure,
+  resolveBarrenUnitStreakFailures,
   sourceIsExpectedToYield,
   workPlannerSkippedEveryTarget,
   type RunYieldFacts,
@@ -34,6 +37,7 @@ describe('classifyRunYield', () => {
 
   it('treats a still-running or invalidated run as inconclusive', () => {
     expect(classifyRunYield({ status: 'running', observationCount: 0 })).toBe('inconclusive');
+    expect(classifyRunYield({ status: 'interrupted', observationCount: 0 })).toBe('inconclusive');
     expect(classifyRunYield({ status: 'success', observationCount: 9, invalidated: true })).toBe(
       'inconclusive',
     );
@@ -99,14 +103,21 @@ describe('barrenRunStreak', () => {
 });
 
 describe('sourceIsExpectedToYield', () => {
-  it('exempts a disabled source and a manual-override channel', () => {
-    expect(sourceIsExpectedToYield({ enabled: false, coverage: { tier: 'OFFICIAL_INDEX' } })).toBe(
-      false,
-    );
-    expect(sourceIsExpectedToYield({ enabled: true, coverage: { tier: 'MANUAL_OVERRIDE' } })).toBe(
-      false,
-    );
+  it('exempts a retired source and a manual-override channel', () => {
+    expect(
+      sourceIsExpectedToYield({ name: 'ylabs-listing', coverage: { tier: 'OFFICIAL_INDEX' } }),
+    ).toBe(false);
+    expect(sourceIsExpectedToYield({ coverage: { tier: 'MANUAL_OVERRIDE' } })).toBe(false);
     expect(sourceIsExpectedToYield(enabledSource)).toBe(true);
+  });
+
+  it('keeps a live source under the alarm even when its stored row reads disabled (#4025)', () => {
+    const storedDisabledLiveSource = {
+      name: 'fixture-live-lane',
+      enabled: false,
+      coverage: { tier: 'OFFICIAL_INDEX' },
+    };
+    expect(sourceIsExpectedToYield(storedDisabledLiveSource)).toBe(true);
   });
 });
 
@@ -150,10 +161,164 @@ describe('resolveBarrenStreakFailure', () => {
     expect(
       resolveBarrenStreakFailure({
         sourceName: 'fixture-manual-channel',
-        source: { enabled: true, coverage: { tier: 'MANUAL_OVERRIDE' } },
+        source: { coverage: { tier: 'MANUAL_OVERRIDE' } },
         priorRunsNewestFirst: barrenRuns(10),
         currentRun: barrenRun,
       }),
     ).toBeUndefined();
+  });
+
+  it('reads retirement from the run source name when the source row carries none', () => {
+    expect(
+      resolveBarrenStreakFailure({
+        sourceName: 'ylabs-listing',
+        source: { coverage: { tier: 'OFFICIAL_INDEX' } },
+        priorRunsNewestFirst: barrenRuns(10),
+        currentRun: barrenRun,
+      }),
+    ).toBeUndefined();
+  });
+});
+
+const THRESHOLD = BARREN_RUN_STREAK_FAILURE_THRESHOLD;
+
+function unitRun(unitYields: Record<string, number>, overrides: Partial<RunYieldFacts> = {}) {
+  return {
+    status: 'success',
+    // The whole point of the per-unit arm: the source total stays healthy, so the
+    // per-source check sees nothing wrong (#3876).
+    observationCount: 431,
+    metrics: { unitYields },
+    ...overrides,
+  } as RunYieldFacts;
+}
+
+describe('classifyUnitYield', () => {
+  it('calls a unit that yielded nothing barren and one that yielded productive', () => {
+    const run = unitRun({ dead: 0, alive: 120 });
+    expect(classifyUnitYield(run, 'dead')).toBe('barren');
+    expect(classifyUnitYield(run, 'alive')).toBe('productive');
+  });
+
+  it('calls a unit the run never reported inconclusive, never barren', () => {
+    expect(classifyUnitYield(unitRun({ alive: 120 }), 'dead')).toBe('inconclusive');
+    expect(classifyUnitYield({ status: 'success', observationCount: 431 }, 'dead')).toBe(
+      'inconclusive',
+    );
+  });
+
+  it('calls every unit of an inconclusive run inconclusive', () => {
+    expect(classifyUnitYield(unitRun({ dead: 0 }, { invalidated: true }), 'dead')).toBe(
+      'inconclusive',
+    );
+    expect(classifyUnitYield(unitRun({ dead: 0 }, { status: 'interrupted' }), 'dead')).toBe(
+      'inconclusive',
+    );
+    expect(classifyUnitYield(unitRun({ dead: 0 }, { options: { only: ['alive'] } }), 'dead')).toBe(
+      'inconclusive',
+    );
+  });
+});
+
+describe('barrenUnitStreak', () => {
+  it('counts consecutive barren runs for one unit and stops at its own productive run', () => {
+    const runs = [
+      unitRun({ dead: 0 }),
+      unitRun({ dead: 0 }),
+      unitRun({ dead: 7 }),
+      unitRun({ dead: 0 }),
+    ];
+    expect(barrenUnitStreak(runs, 'dead')).toBe(2);
+  });
+
+  it('counts a unit separately from the lane and from its siblings', () => {
+    const runs = [unitRun({ dead: 0, alive: 120 }), unitRun({ dead: 0, alive: 118 })];
+    expect(barrenUnitStreak(runs, 'dead')).toBe(2);
+    expect(barrenUnitStreak(runs, 'alive')).toBe(0);
+  });
+
+  it('steps over an inconclusive run without resetting or counting it', () => {
+    const runs = [
+      unitRun({ dead: 0 }),
+      unitRun({ dead: 0 }, { invalidated: true }),
+      unitRun({ dead: 0 }),
+    ];
+    expect(barrenUnitStreak(runs, 'dead')).toBe(2);
+  });
+});
+
+describe('resolveBarrenUnitStreakFailures', () => {
+  const args = (currentRun: RunYieldFacts, priorRunsNewestFirst: RunYieldFacts[]) => ({
+    sourceName: 'fixture-track-lane',
+    source: enabledSource,
+    currentRun,
+    priorRunsNewestFirst,
+  });
+
+  it('fails a unit at the threshold even though the lane itself is productive', () => {
+    const failures = resolveBarrenUnitStreakFailures(
+      args(
+        unitRun({ dead: 0, alive: 120 }),
+        Array.from({ length: THRESHOLD - 1 }, () => unitRun({ dead: 0, alive: 118 })),
+      ),
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0].barrenRunStreak).toBe(THRESHOLD);
+    expect(failures[0].message).toContain('"dead"');
+    expect(failures[0].message).not.toContain('"alive"');
+  });
+
+  it('is silent one run short of the threshold', () => {
+    expect(
+      resolveBarrenUnitStreakFailures(
+        args(
+          unitRun({ dead: 0 }),
+          Array.from({ length: THRESHOLD - 2 }, () => unitRun({ dead: 0 })),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('reports one failure per dead unit', () => {
+    const failures = resolveBarrenUnitStreakFailures(
+      args(
+        unitRun({ deadA: 0, deadB: 0, alive: 12 }),
+        Array.from({ length: THRESHOLD - 1 }, () => unitRun({ deadA: 0, deadB: 0, alive: 12 })),
+      ),
+    );
+    expect(failures.map((failure) => failure.barrenRunStreak)).toEqual([THRESHOLD, THRESHOLD]);
+    expect(failures[0].message).toContain('"deadA"');
+    expect(failures[1].message).toContain('"deadB"');
+  });
+
+  it('cannot fire on history it does not have, so a lane that has only just started reporting is silent', () => {
+    expect(
+      resolveBarrenUnitStreakFailures(
+        args(unitRun({ dead: 0 }), [
+          { status: 'success', observationCount: 431 },
+          { status: 'success', observationCount: 420 },
+          { status: 'success', observationCount: 430 },
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it('is silent for a lane that reports no unit counts at all', () => {
+    expect(
+      resolveBarrenUnitStreakFailures(
+        args({ status: 'success', observationCount: 0 }, barrenRuns(10)),
+      ),
+    ).toEqual([]);
+  });
+
+  it('never fails a source with no yield expectation', () => {
+    expect(
+      resolveBarrenUnitStreakFailures({
+        sourceName: 'fixture-manual-channel',
+        source: { coverage: { tier: 'MANUAL_OVERRIDE' } },
+        currentRun: unitRun({ dead: 0 }),
+        priorRunsNewestFirst: Array.from({ length: 10 }, () => unitRun({ dead: 0 })),
+      }),
+    ).toEqual([]);
   });
 });

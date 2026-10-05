@@ -7,7 +7,7 @@ import * as fellowshipController from '../controllers/fellowshipController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { logResearchEventOnSuccess } from '../services/researchAnalytics';
+import { routeParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -28,7 +28,7 @@ const logFellowshipEvent = (eventType: AnalyticsEventType) => {
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         const currentUser = req.user as { netId?: string; userType: string };
-        const fellowshipId = req.params.id;
+        const fellowshipId = routeParam(req, 'id');
 
         if (currentUser?.netId && fellowshipId) {
           logEvent({
@@ -57,7 +57,6 @@ router.put(
   isAuthenticated,
   validateObjectId('id'),
   logFellowshipEvent(AnalyticsEventType.FELLOWSHIP_VIEW),
-  logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'fellowship'),
   fellowshipController.addViewToFellowship,
 );
 

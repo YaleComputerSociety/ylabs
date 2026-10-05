@@ -24,7 +24,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface ResearchQualitySearchReviewCliOptions {
   topK: number;
@@ -266,7 +266,7 @@ function uniqueStrings(values: unknown[]): string[] {
 }
 
 async function aggregateCountAndTypes(
-  model: mongoose.Model<any>,
+  model: mongoose.Model<any, any, any, any>,
   entityIds: mongoose.Types.ObjectId[],
   typeField: string,
   extraMatch: Record<string, unknown> = {},

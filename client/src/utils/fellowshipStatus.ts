@@ -1,6 +1,17 @@
-import type { Fellowship } from '../types/types';
+import type { Fellowship, ProgramAudience } from '../types/types';
+import {
+  type ProgramDateBoundary,
+  formatProgramDate,
+  formatShortProgramDate,
+  parseProgramDate,
+  programDeadlineClosingInstant,
+} from './programDates';
 
 export const CLOSING_SOON_DAYS = 30;
+
+export const STALE_DEADLINE_MESSAGE = 'Check the official page for the current deadline';
+export const STALE_DEADLINE_SHORT_LABEL = 'Deadline: check official page';
+export const STALE_DEADLINE_STATUS_LABEL = 'Dates not confirmed';
 
 export type FellowshipApplicationStatusKind =
   | 'open'
@@ -9,6 +20,7 @@ export type FellowshipApplicationStatusKind =
   | 'closed'
   | 'deadlinePassed'
   | 'projectedNextCycle'
+  | 'staleDeadline'
   | 'unknown';
 
 export interface FellowshipApplicationStatus {
@@ -24,42 +36,16 @@ export interface FellowshipApplicationStatus {
   needsEligibilityReview: boolean;
 }
 
-const DATE_OPTIONS: Intl.DateTimeFormatOptions = {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-};
-
-const SHORT_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
-  month: 'short',
-  day: 'numeric',
-};
-
-const parseDate = (value: string | null | undefined): Date | null => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
 export const formatFellowshipDate = (
   value: string | null | undefined,
+  boundary: ProgramDateBoundary,
   fallback = 'Not specified',
-): string => {
-  const date = parseDate(value);
-  if (!date) return fallback;
-  return date.toLocaleString('en-US', DATE_OPTIONS);
-};
+): string => formatProgramDate(value, boundary, fallback);
 
 export const formatShortFellowshipDate = (
   value: string | null | undefined,
   fallback = 'Date not specified',
-): string => {
-  const date = parseDate(value);
-  if (!date) return fallback;
-  return date.toLocaleDateString('en-US', SHORT_DATE_OPTIONS);
-};
+): string => formatShortProgramDate(value, fallback);
 
 const ROLLING_APPLICATION_RE =
   /\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bas\s+applications?\s+are\s+received\b|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i;
@@ -99,6 +85,7 @@ export const getFellowshipApplicationStatus = (
     | 'applicationOpenDate'
     | 'deadline'
     | 'deadlineProjectedNextCycle'
+    | 'deadlineStale'
     | 'eligibility'
     | 'yearOfStudy'
     | 'termOfAward'
@@ -109,8 +96,8 @@ export const getFellowshipApplicationStatus = (
     FellowshipApplicationTextFields,
   now = new Date(),
 ): FellowshipApplicationStatus => {
-  const openDate = parseDate(fellowship.applicationOpenDate);
-  const deadline = parseDate(fellowship.deadline);
+  const openDate = parseProgramDate(fellowship.applicationOpenDate);
+  const deadline = programDeadlineClosingInstant(fellowship.deadline);
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const notOpenYet = openDate ? openDate.getTime() > now.getTime() : false;
   const rollingApplications = hasRollingApplicationWindow(fellowship);
@@ -129,12 +116,27 @@ export const getFellowshipApplicationStatus = (
   const needsDateReview = fellowship.isAcceptingApplications && !deadline;
 
   const base = {
-    deadlineLabel: formatFellowshipDate(fellowship.deadline),
-    openDateLabel: formatFellowshipDate(fellowship.applicationOpenDate),
+    deadlineLabel: formatFellowshipDate(fellowship.deadline, 'deadline'),
+    openDateLabel: formatFellowshipDate(fellowship.applicationOpenDate, 'opens'),
     daysUntilDeadline,
     needsDateReview,
     needsEligibilityReview,
   };
+
+  if (fellowship.deadlineStale) {
+    return {
+      ...base,
+      deadlineLabel: STALE_DEADLINE_MESSAGE,
+      openDateLabel: STALE_DEADLINE_MESSAGE,
+      daysUntilDeadline: null,
+      needsDateReview: false,
+      kind: 'staleDeadline',
+      label: STALE_DEADLINE_STATUS_LABEL,
+      detail: STALE_DEADLINE_MESSAGE,
+      isCurrentlyRelevant: true,
+      isApplicationWindowOpen: false,
+    };
+  }
 
   if (fellowship.deadlineProjectedNextCycle) {
     return {
@@ -205,7 +207,8 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'closingSoon',
       label: daysUntilDeadline <= 1 ? 'Due soon' : 'Closing soon',
-      detail: daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline} days left`,
+      detail:
+        daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline}\u00a0days left`,
       isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };
@@ -221,6 +224,21 @@ export const getFellowshipApplicationStatus = (
   };
 };
 
+const PROGRAM_AUDIENCE_LEVEL_LABELS: Record<ProgramAudience, string> = {
+  UNDERGRADUATE: 'Undergraduates only',
+  UNDERGRADUATE_AND_GRADUATE: 'Undergraduate and graduate students',
+  GRADUATE: 'Graduate students only',
+};
+
+const PROGRAM_AUDIENCE_LABELS: Record<ProgramAudience, string> = {
+  UNDERGRADUATE: 'Undergraduate students',
+  UNDERGRADUATE_AND_GRADUATE: 'Undergraduate and graduate students',
+  GRADUATE: 'Graduate students',
+};
+
+export const programAudienceLabel = (audience: ProgramAudience | null): string | null =>
+  audience ? PROGRAM_AUDIENCE_LABELS[audience] : null;
+
 export interface EligibilityDetail {
   label: string;
   value: string;
@@ -229,7 +247,7 @@ export interface EligibilityDetail {
 export const getStructuredEligibilityDetails = (
   fellowship: Pick<
     Fellowship,
-    | 'undergraduateOnly'
+    | 'audience'
     | 'yaleCollegeOnly'
     | 'yearOfStudy'
     | 'termOfAward'
@@ -240,12 +258,9 @@ export const getStructuredEligibilityDetails = (
 ): EligibilityDetail[] => {
   const details: EligibilityDetail[] = [];
 
-  if (fellowship.undergraduateOnly === true) {
-    details.push({ label: 'Level', value: 'Undergraduates only' });
-  } else if (fellowship.undergraduateOnly === false) {
-    details.push({ label: 'Level', value: 'Open beyond undergraduates' });
-  }
-  if (fellowship.yaleCollegeOnly === true) {
+  const level = fellowship.audience ? PROGRAM_AUDIENCE_LEVEL_LABELS[fellowship.audience] : null;
+  if (level) details.push({ label: 'Level', value: level });
+  if (fellowship.yaleCollegeOnly === true && fellowship.audience === 'UNDERGRADUATE') {
     details.push({ label: 'School', value: 'Yale College students only' });
   }
   if ((fellowship.yearOfStudy?.length || 0) > 0) {

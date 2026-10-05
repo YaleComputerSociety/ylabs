@@ -69,5 +69,10 @@ export interface SourceCoverageMetadata {
   artifactTypes: SourceCoverageArtifactType[];
   evidenceCategories: SourceCoverageEvidenceCategory[];
   defaultConfidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  /**
+   * The lane's text values are written by a language model rather than read off a page,
+   * so the written-description writer does not cite them as evidence (#4867).
+   */
+  producesModelText?: true;
   notes?: string;
 }

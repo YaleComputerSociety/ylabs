@@ -3,12 +3,16 @@
  */
 import { createContext } from 'react';
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
-import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
-import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
+import {
+  FellowshipQuickFilter,
+  ProgramSearchQueryCorrection,
+} from '../reducers/fellowshipSearchReducer';
 
 export interface FellowshipSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
+  queryCorrection: ProgramSearchQueryCorrection | null;
+  searchTypedSpelling: () => void;
 
   selectedYearOfStudy: string[];
   selectedProgramCategory: string[];
@@ -42,13 +46,13 @@ export interface FellowshipSearchContextType {
 
   fellowships: Fellowship[];
   isLoading: boolean;
+  loadError: boolean;
   searchExhausted: boolean;
 
   page: number;
   setPage: React.Dispatch<React.SetStateAction<number>>;
   pageSize: number;
   total: number;
-  journeySummary: ProgramJourneySummary;
 
   filterOptions: FellowshipFilterOptions;
 
@@ -58,6 +62,7 @@ export interface FellowshipSearchContextType {
 
   quickFilter: string | null;
   setQuickFilter: (filter: FellowshipQuickFilter) => void;
+  resetProgramFilters: () => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -66,6 +71,8 @@ export interface FellowshipSearchContextType {
 export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryString: '',
   setQueryString: () => {},
+  queryCorrection: null,
+  searchTypedSpelling: () => {},
   selectedYearOfStudy: [],
   selectedProgramCategory: [],
   selectedProgramKind: [],
@@ -96,12 +103,12 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   onToggleSortDirection: () => {},
   fellowships: [],
   isLoading: false,
+  loadError: false,
   searchExhausted: false,
   page: 1,
   setPage: () => {},
   pageSize: 20,
   total: 0,
-  journeySummary: emptyProgramJourneySummary,
   filterOptions: {
     programCategory: [],
     programKind: [],
@@ -118,6 +125,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   refreshFellowships: () => {},
   quickFilter: null,
   setQuickFilter: () => {},
+  resetProgramFilters: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
 };

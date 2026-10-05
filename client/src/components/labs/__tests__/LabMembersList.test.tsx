@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +6,7 @@ import LabMembersList from '../LabMembersList';
 import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigContext';
 import type { DepartmentConfig } from '../../../contexts/ConfigContext';
 import type { LabMember } from '../../../types/labDetail';
+import { undersizedRenderedTextClasses } from '../../../testUtils/textSize';
 
 const member = (imageUrl: string, overrides: Partial<LabMember['user']> = {}): LabMember => ({
   role: 'pi',
@@ -60,6 +61,25 @@ const renderMembersWithConfig = (members: LabMember[], entityDepartments: string
   );
 
 describe('LabMembersList', () => {
+  it('labels an emeritus lead beside the role (#4431)', () => {
+    renderMembers([member('', { title: 'Professor Emeritus of Physics', emeritus: true })]);
+
+    expect(screen.getByText('Emeritus')).toBeTruthy();
+    expect(screen.getByText('Principal Investigator')).toBeTruthy();
+  });
+
+  it('labels only a lead, and only one the server marked emeritus', () => {
+    renderMembers([
+      member('', { title: 'Professor Emeritus of Physics' }),
+      {
+        ...member('', { _id: 'user-2', displayName: 'Fixture Trainee', emeritus: true }),
+        role: 'grad-student',
+      },
+    ]);
+
+    expect(screen.queryByText('Emeritus')).toBeNull();
+  });
+
   it('does not link member netids to internal faculty profiles', () => {
     const { container } = renderMembers([member('')]);
 
@@ -186,6 +206,14 @@ describe('LabMembersList', () => {
 
     const image = container.querySelector('img[alt="Fixture Advisor"]');
     expect(image?.getAttribute('src')).toBe('https://yalies.io/images/fixture.jpg');
+  });
+
+  it('defers member avatars so a long roster does not fetch offscreen images up front', () => {
+    const { container } = renderMembers([member('https://yalies.io/images/fixture.jpg')]);
+
+    const image = container.querySelector('img[alt="Fixture Advisor"]');
+    expect(image?.getAttribute('loading')).toBe('lazy');
+    expect(image?.getAttribute('decoding')).toBe('async');
   });
 
   it('does not render unsafe or credentialed member profile image URLs', () => {
@@ -336,5 +364,70 @@ describe('LabMembersList', () => {
 
     expect(container.textContent).not.toContain('EASAPP');
     expect(container.textContent).not.toContain('Research Unit');
+  });
+});
+
+describe('LabMembersList lead email line', () => {
+  const leadMember = {
+    role: 'pi' as const,
+    user: {
+      fname: 'Ada',
+      lname: 'Fixture',
+      displayName: 'Ada Fixture',
+      email: 'ada.fixture@example.test',
+    },
+  };
+
+  it('shows the lead email as a side link beside the card', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList members={[leadMember]} />
+      </ConfigContext.Provider>,
+    );
+    const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    expect(link.textContent).toBe('ada.fixture@example.test');
+    expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
+  });
+
+  it('renders no email line when the member has no email', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[{ ...leadMember, user: { ...leadMember.user, email: undefined } }]}
+        />
+      </ConfigContext.Provider>,
+    );
+    expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
+  });
+});
+
+describe('LabMembersList text size floor', () => {
+  const contact = {
+    role: 'pi',
+    user: {
+      _id: 'user-9',
+      netid: 'fixture',
+      fname: 'Ada',
+      lname: 'Fixture',
+      displayName: 'Ada Fixture',
+      title: 'Professor of Synthetic Studies',
+      primaryDepartment: 'Computer Science',
+      primary_department: 'Computer Science',
+      email: 'ada.fixture@example.test',
+      orcid: '9999-9000-9999-9005',
+    },
+  } as unknown as LabMember;
+
+  it.each([true, false])('sets no line below text-xs with singleColumn %s', (singleColumn) => {
+    const { container } = render(
+      <MemoryRouter>
+        <ConfigContext.Provider value={defaultConfigContext}>
+          <LabMembersList members={[contact]} singleColumn={singleColumn} />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Professor of Synthetic Studies')).toBeTruthy();
+    expect(undersizedRenderedTextClasses(container)).toEqual([]);
   });
 });

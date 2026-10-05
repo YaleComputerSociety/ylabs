@@ -35,6 +35,16 @@ const fellowshipSourceLinkHealthSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const upcomingDuplicateWindowSchema = new mongoose.Schema(
+  {
+    deadline: { type: Date, required: true },
+    applicationOpenDate: { type: Date, required: false },
+    isAcceptingApplications: { type: Boolean, required: true },
+    sourceProgramId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  },
+  { _id: false },
+);
+
 export const programCategories = [
   'FELLOWSHIP',
   'CENTER_INTERNSHIP',
@@ -52,6 +62,8 @@ export const programKinds = [
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
+  'DEPARTMENT_RESEARCH_GUIDE',
+  'RESEARCH_AWARD',
   'OTHER',
 ] as const;
 
@@ -63,10 +75,23 @@ export const programEntryModes = [
   'SECURE_MENTOR_THEN_APPLY',
   'DIRECT_FACULTY_MATCHING',
   'TRACK_NEXT_CYCLE',
+  'CONTACT_FACULTY',
   'UNKNOWN',
 ] as const;
 
 export type ProgramEntryMode = (typeof programEntryModes)[number];
+
+// What a student needs before the program is useful to them, which is the axis /programs
+// groups by (#3904): getting started in research, funding for research already arranged, or
+// recognition for research already done.
+export const programRoles = [
+  'STARTS_RESEARCH',
+  'FUNDS_RESEARCH',
+  'RECOGNIZES_RESEARCH',
+  'UNCLASSIFIED',
+] as const;
+
+export type ProgramRole = (typeof programRoles)[number];
 
 const fellowshipSchema = new mongoose.Schema(
   {
@@ -84,6 +109,11 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       enum: programEntryModes,
       default: 'UNKNOWN',
+    },
+    programRole: {
+      type: String,
+      enum: programRoles,
+      required: false,
     },
     studentFacingCategory: {
       type: String,
@@ -165,6 +195,10 @@ const fellowshipSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    fullSourceDescription: {
+      type: String,
+      default: '',
+    },
     links: {
       type: [
         {
@@ -192,6 +226,11 @@ const fellowshipSchema = new mongoose.Schema(
     },
     deadline: {
       type: Date,
+      required: false,
+    },
+    // Derived by the visibility gate on every run and written by nothing else (#4382).
+    upcomingDuplicateWindow: {
+      type: upcomingDuplicateWindowSchema,
       required: false,
     },
     contactName: {
@@ -237,6 +276,10 @@ const fellowshipSchema = new mongoose.Schema(
     sourceUrl: {
       type: String,
       default: '',
+    },
+    sourcePageTitle: {
+      type: String,
+      required: false,
     },
     sourceLinkHealth: {
       type: fellowshipSourceLinkHealthSchema,

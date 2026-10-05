@@ -7,7 +7,8 @@ Where an older note, issue, or skill still describes `Person`, `ResearchGroup`/`
 
 Direction note (see [`decisions.md` 2026-08-25 "Simple Directory First"](./decisions.md#2026-08-25-simple-directory-first-signals-are-factual-enrichment-not-an-access-plausibility-tier)): the access-plausibility tier is being retired in favor of factual, non-gating signals shown as plain badges.
 Slice 1 has landed: the `accessAcceptanceLevel` grade, the browse trust filter it fed, and access-based browse ranking are removed - signals no longer score or rank access, and visibility is unchanged.
-The `REACH_OUT_PLAUSIBLE` style plausibility signals and the "Ways in" / "Evidence" / best-next-step framing still exist in runtime and are retired in later slices; update those sections only when their removal lands, not ahead of it.
+The `REACH_OUT_PLAUSIBLE` style plausibility signals were removed in #4637.
+The "Ways in" / "Evidence" / best-next-step framing still exists in runtime and is retired in later slices; update those sections only when their removal lands, not ahead of it.
 
 ## What This Solves
 
@@ -74,7 +75,7 @@ This probe lane is the safety net behind the cheaper sweep-time rule in the mate
 ### `Account` (`accounts`)
 
 The private login principal: the student or user who logs in.
-[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, faculty title/department or student college/year/major) persisted from the Yalies/Directory record at login, and `archived`.
+[`server/src/models/account.ts`](../server/src/models/account.ts) defines `netid` (unique), `email`, `status`, an optional `lastLoginAt`, an optional descriptive `profile` (name, `userType`, and faculty or staff title/department) persisted from the Yalies record at login, and `archived`.
 Authentication is wired onto `Account` (#367): CAS, dev-login, and the local bypass resolve-or-create an `Account` by netid and stamp `lastLoginAt`.
 The legacy `User` model has been retired (#2014): no runtime code reads or writes `User`, and identity lives entirely on `Account` (login) plus `Researcher` (public identity).
 Dropping the now-orphaned `users` collection is a separate, human-gated database cleanup.
@@ -88,10 +89,11 @@ Its roster is **not** embedded: membership lives in canonical `RoleAssignment` r
 Core fields include `slug`, `name`, `entityType` (see `researchEntityTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts): `LAB`, `CENTER`, `INSTITUTE`, `FACULTY_RESEARCH_AREA`, `FACULTY_PROJECT`, `INITIATIVE`, `CORE_FACILITY`), `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, canonicalized `school`/`schools[]`/`departments[]`/`researchAreas[]` strings, search-only `orgAffiliationLabels[]`, a computed `browseRankScore`, `rosterEnrichment` freshness/state metadata, `studentVisibilityTier` fields, and `archived`.
 It does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact fields, or a paper cache.
 Legacy `description` is retired (#351): `shortDescription`/`fullDescription` are the sole canonical prose pair.
-The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144), and `research-entity:resync-kind` backfills historically drifted rows.
+The legacy `kind` field (migration residue from the retired `ResearchGroup` model) is no longer an independent taxonomy: the materializer deterministically derives it from the canonical `entityType` via `mapEntityTypeToResearchGroupKind` (#2144).
+`derivedResearchGroupKind` runs on every research-entity projection, so a drifted row is re-derived on its next materialize and the one-off backfill that used to do it was deleted (#3675).
 The derivation is lossy wherever two legacy kinds shared one entity type: a stored `program`, `group`, or `solo` row resolves to `initiative`, `initiative`, or `individual` respectively, and no surviving `entityType` derives `program` or `group`, so those two kinds are reachable only as stored legacy values.
 The collapse is pinned in [`researchAccessModels.test.ts`](../server/src/models/__tests__/researchAccessModels.test.ts).
-The derivation is enforced in the scraper projection rather than in the schema, so every other writer must set the pair together (`researchGroupService` and the entity-type consolidation script already do); a direct `$set: { entityType }` elsewhere would reintroduce drift.
+The derivation is enforced in the scraper projection rather than in the schema, so every other writer must set the pair together (`researchGroupService` already does); a direct `$set: { entityType }` elsewhere would reintroduce drift.
 Two escapes are deliberate: an operator lock on `kind` still wins over the derivation, and an entity with no recognizable `entityType` has no derivable kind, so `kind` observations still classify it at mint time.
 Classify a research home by observing `entityType`: a source that observes only `kind` cannot correct an entity another source already minted under a different `entityType`.
 
@@ -107,6 +109,10 @@ That corroboration is read per assignment rather than per person, because `roste
 The mark is durable against re-observation as of #3143, and was not before it: every writer keys its upsert on `personId` plus `target` plus `role` with no `archived` or `reviewStatus` term, and while those two fields sat in the upsert's `$set` a later scrape of the same edge reattached it and left only the `reviewNotes` behind, which is how 133 of 391 retired edges across #2880, #1897 and #2768 were found back at `archived: false` and `UNREVIEWED`.
 `archived` and `reviewStatus` therefore leave the `$set` entirely and move to `roleAssignmentReattachWrite` ([`roleAssignment.ts`](../server/src/models/roleAssignment.ts)), a guarded second write that skips any row whose `reviewStatus` is `DISPUTED`; all three writers (`buildCanonicalRoleAssignmentUpsert`, `buildVisibilityRepairPiRoleAssignmentUpsert`, and the owner-PI write in `researchGroupService.ts`) route through it, and a new writer must too.
 It cannot be folded into the upsert filter, because `role_assignments` carries no unique index on those fields, so a filter that skipped the disputed row would insert a second un-disputed edge and re-attach by another route.
+The same missing index let a write revive a retired twin beside a live edge (#4791): the `(personId, target, role)` filter matches a `HISTORICAL` archived edge too, and the target index orders `HISTORICAL` ahead of `UNKNOWN`, so after a retirement archived the redundant twin of a pair the next roster write landed on that twin, reset its `state`, and the reattach cleared `archived`, putting the person on the row twice again.
+On Development all six retired twins of the 2026-10-04 duplicate pairs were the filter's first match.
+So all three writers first pin their filter to the live edge with `pinRoleAssignmentUpsertToLiveEdge` ([`roleAssignment.ts`](../server/src/models/roleAssignment.ts)) and fall back to the unpinned filter only when no live edge exists, which keeps a re-observation able to revive a retired edge that has no live twin.
+The merge in `applyResearchEntityDedupeMergeGroup` likewise retires every duplicate's live edge after the first for one person and role, rather than judging conflicts only against the survivor, so two losers that both list the lead hand the survivor one edge.
 A detachment is still keyed to one `personId`, so it is only as durable as the guarantee that the person has one `Researcher` row: `resolveOrCreateResearcherId` does not consult `identifiers.netid` and can mint a twin that holds a live edge past the detachment, measured at 2 of 258 detached edges with 385 rows exposed (#3152).
 Read via `getResearchEntityRoster`/`getResearchEntityRosterByEntityId` in [`researchEntityMembershipAccessor.ts`](../server/src/services/researchEntityMembershipAccessor.ts) (joins `Researcher`).
 The continuous canonical materializer write path (`entityMaterializer.ts`) is the sole roster write path (#353, #361): it resolves a scraped person name to a canonical `Researcher` via `resolveResearcherIdForPersonName` in [`researcherPersonNameResolver.ts`](../server/src/services/researcherPersonNameResolver.ts) (netid to `Researcher.identifiers.netid`, else netid to `Account` to `Researcher.accountId`, then a surname-plus-given-name match against `Researcher.displayName`, returning `absent`/`ambiguous`/`matched` and failing closed rather than merging distinct identities) before writing `RoleAssignment.personId`, so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
@@ -116,14 +122,18 @@ The continuous canonical materializer write path (`entityMaterializer.ts`) is th
 One extensible, source-attributed, typed fact about a research entity.
 [`server/src/models/signal.ts`](../server/src/models/signal.ts) generalizes and absorbs the retired `AccessSignal` and `UndergraduateLogisticsClaim` models.
 Fields: `researchEntityId`, `type` (see `signalTypes` in [`researchAccessTypes.ts`](../server/src/models/researchAccessTypes.ts)), `value?`, `confidence?`/`confidenceScore?`/`status?`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]` referencing `Observation`, `excerpt`), `observedAt`, `review`, and `archived`.
-Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
+Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, and so on) is its own `Signal.type`, so the per-type confidence gradient is preserved rather than collapsed into one value.
 The five undergraduate-logistics claim types that also lived here are retired (#3088), so `signalTypes` is now exactly `accessSignalTypes`.
+`LAB_MANAGER_LISTED`, `PROGRAM_MANAGER_LISTED`, `APPLICATION_ONLY`, `NO_EVIDENCE` and the `RECURRING_PROGRAM` signal type were dropped from the enum because no lane ever wrote one; `RECURRING_PROGRAM` remains a program category (#4585).
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
 Signals stay independent and neutral when unknown; materializer logic must not cross-infer one type from another.
 
 ### `ResearchEntityRelationship` (`research_entity_relationships`)
 
 Source-backed affiliations between research entities (the "Affiliated with" surface), keyed by `sourceResearchEntityId` (the center, institute, or umbrella entity) and `targetResearchEntityId` (the member lab, faculty research area, or project).
+An edge whose two ends are the same row means nothing, because a row is not affiliated with itself (#4043).
+`relatesTwoDistinctResearchEntities` in `server/src/utils/researchEntityRelationshipEndpoints.ts` is the one predicate for it, and every reader applies it: the detail page's related and affiliated lists, the visibility gate's alternate-access-path count, and the browse rank's hosting test.
+The writers refuse to produce one too: the relationship materializer skips a member key that resolves to the source row as `self-relationship`, and the dedupe relink archives an edge the relink has turned into a survivor-to-itself edge.
 
 ### `Observation` (`observations`)
 
@@ -135,13 +145,31 @@ Private student saved planning, keyed on `accountId` plus a target (`{ kind: 'RE
 The saved-research and program-watch routes read and write `ResearchPlan` through `researchPlanService` at runtime (PR #484 / commit `34b9fd7e`).
 With the `User` model retired (#2014), no embedded planning fields remain in code; any legacy `savedResearchEntities`/`savedPrograms` values that survive only in the orphaned `users` collection are covered by the human-gated #725 data backfill onto `ResearchPlan` before that collection is dropped, not an open design question.
 
+Unsave and unwatch archive the plan without clearing it and stamp `restorableUntil` one hour ahead (`RESEARCH_PLAN_RESTORE_WINDOW_MS`), so an undo, which re-saves the same target, brings back the stage, private notes, checklist and deadlines whole (#3643).
+A re-save after that moment clears those fields first, which keeps the #984 guarantee that a later save never resurrects text the student removed.
+A TTL index on `restorableUntil` deletes the archived plan once the window passes, so an unsaved plan's private text is not retained past it; the index is built by `yarn --cwd server db:build-indexes --apply` like every other declared index, and until it exists on an environment the re-save path still refuses to resurrect but the text is kept.
+Before #3643 unsave cleared the fields on the way to archiving, so no undo could restore a checklist, deadlines or stage, and plans archived before the change have nothing to restore.
+Plans archived before the window existed carry no `restorableUntil`, so the TTL index never matched them, and some archived before #984 still held private notes (#4163).
+`yarn --cwd server research-plans:expire-legacy-archived` gives each of them the window it would have had, `updatedAt` plus `RESEARCH_PLAN_RESTORE_WINDOW_MS`, and the TTL index then deletes it; it is dry-run by default, `--apply` needs `--confirm-expire-legacy-archived-research-plans`, and `--environment` names the database because `research_plans` is not promoted and each environment holds its own.
+A plan a system lane archived carries an `archivedReason`, such as the PI dedupe's former conflict archive of a duplicate plan, and the student never removed it, so the script gives it no window and its private notes are kept.
+
+A merge that folds a duplicate research entity into its survivor carries every plan on the duplicate to the survivor through `carryResearchPlansToSurvivor` (`server/src/services/researchPlanMergeCarry.ts`) and never archives one (#4701).
+Every merge writer calls it: `applyResearchEntityDedupeMergeGroup` (the PI dedupe, the URL-identity lanes, the eponymous FRA merge, the duplicate-name review and the grant-shell port), the same-lead merge, the department-roster shell fold in the materializer, and `recordResearchEntityMergeTombstone` when it points an archived row at a survivor.
+A plan with no counterpart on the survivor moves whole; a student-archived plan on the survivor is replaced by the live duplicate plan.
+When the student has live plans on both, the two combine into the survivor's plan: the more advanced stage, both notes with a visible separator between them, the union of the checklists by label (completed if either was), the union of the deadlines by label keeping the earliest still-open date, and each export preference only if both plans opted in.
+A combination that would exceed a plan limit is not truncated: the duplicate plan stays live and is counted as `heldOverCapacity`.
+Only a plan the student archived, one with no `archivedReason`, counts as archived here.
+A plan a system lane archived, such as the PI dedupe's old conflict archive, is carried as a live plan and restored, and is counted as `restoredSystemArchivedPlans`.
+Each merge planner's dry run reports `researchPlanCarry` and `researchPlansThatWouldMove`: the PI dedupe, the same-lead merge, the eponymous FRA merge, the duplicate-name review for accepted merge decisions, the grant-shell port, and the stranded-key redirect decisions.
+The department-roster shell fold runs inside materialization and has no dry run.
+
 A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
 `REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.
 Only the id and the reason are reported, never the record's name or copy, because the gate exists to keep exactly that text away from a student, and the owner already holds the id.
 Before #2174 both classes were dropped from the payload and from the saved count, so a student could not tell an item they had removed from one the corpus had stopped serving; 4,907 of 8,281 research-entity records sat in a state that would drop a saved plan that way when measured on 2026-09-22.
 The dashboard count is the number of plans the owner has rather than the number the list can render, so `SavedResearchPlans` reports `savedSlugs.length + unavailable.length`: counting only the servable half is what let the dashboard read "0 research plans" beside a notice about a plan it was holding back.
 The notice copy claims only that the student directory is not listing the row, never that the research home cannot be opened, because this gate is name-agnostic while `getResearchGroupDetail` resolves lead names, and #2597 measured 3 tier-admitted rows that fail here yet serve their own detail page.
-`REMOVED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable summary to key it to, so no surface can read that note back.
+`REMOVED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable record to key it to, so no surface can read that note back.
 A dedupe merge is the one removal path that relinks plans itself (`applyResearchEntityDedupeMergeGroup`), which is why repointing through the merged shell's `canonicalGroupId` tombstone is not a second mechanism here.
 
 ## Removed, Retired, And Frozen
@@ -157,6 +185,10 @@ Historical `paper` observations and source rows are retained as read-only archiv
 
 `Fellowship` is its own adjacent domain (the programs and funding page), not classified into the removed `EntryPathway`/`PostedOpportunity` concepts.
 [`server/src/models/fellowship.ts`](../server/src/models/fellowship.ts) uses `programCategory` (`FELLOWSHIP` | `CENTER_INTERNSHIP` | `RECURRING_PROGRAM` | `SUMMER_RESEARCH_PROGRAM`), `programKind`, and `entryMode` enums, not a stored reference to any removed model.
+`programRole` is derived from `programKind` on every resolve (#3904): `STARTS_RESEARCH` for a program that gets a student started in research (structured, internship, RA and mentor-matching programs and a department's own undergraduate research guidance page, `DEPARTMENT_RESEARCH_GUIDE`, which is derived only from the page's own title and served as guidance rather than an application, #4285), `FUNDS_RESEARCH` for funding for research a student has already arranged, `RECOGNIZES_RESEARCH` for an award for research already done (`RESEARCH_AWARD`), and `UNCLASSIFIED` for archive review.
+`/programs` is an application board, so it groups by application status rather than by role: due in the next 30 days, accepting applications, opening soon, the next cycle, department research guidance, and no dates posted (`client/src/utils/programBoard.ts`).
+A program whose served deadline is stale sits under no dates posted and in no timing quick filter, because its window is unknown rather than open or closed (#4363).
+The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
 The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.
@@ -170,6 +202,19 @@ The catalog carries three academic altitudes, `SCHOOL` (or `DIVISION`) then `DEP
 A `SECTION` is facet-eligible, and every resolved section additionally rolls its ancestor departments into `departments[]` through `buildDepartmentAncestorMap`, the same parent-chain derivation `schools[]` already uses for the school above it.
 That is what makes the parent department a property of the catalog rather than of the source string: 388 served rows carried a YSM section and only 323 also carried "Internal Medicine", so narrowing to the department dropped the other 65.
 The rollup only ever appends, so it is idempotent, and it heals a stored row on any later materialize pass, including one that touched only `school`.
+A `departments` observation that names no department (a school, a campus, or a funder's administrative unit such as a roster's "Yale School of Public Health") never wins the field (#3610).
+The materializer adopts the next-ranked observation that does name one, even at lower confidence, and when none does it leaves the stored departments alone, because a label that names no department is not evidence that the row has none.
+For the same reason such a label cannot hold the field against a merged-in loser's real department.
+A row with no stored department still gets the label as `orgAffiliationLabels[]` search text.
+When a department roster wins `departments`, the field is the union of every roster page that currently lists the person, because each page is an independent appointment rather than a rival value (#3621).
+This is one of two places where a merged-in loser's evidence combines with the survivor's instead of yielding to it, here either when a roster wins on the survivor's own evidence or when the survivor reads no roster of its own; the other is the lead's verified profile citation in `sourceUrls` ([research-data-pipeline.md](research-data-pipeline.md), #4695), and every other #3584 precedence rule stands.
+A loser's roster reading joins the union only after a roster has won on the survivor's own evidence, so it never adds weight toward that win.
+A survivor with no roster read of its own that names a department takes its merged-in rows' current roster appointments the same way, appended after its own departments, because a merge otherwise copied the loser's department once and the next rebuild dropped it (#4694).
+A survivor that does read a roster but whose department another source won still combines nothing.
+Only values that name a department combine, and only values read within 14 days of the row's newest roster read, since a department observation's fingerprint carries its value and a page that stops listing the person never supersedes its old value.
+A merged-in appointment an earlier rebuild appended leaves the stored departments once it falls outside that window, unless the survivor's own evidence names it.
+After a merge the roster keeps reading the page but files the person's appointment under the person key (`entityType: 'user'`), so a person-keyed roster read naming the same department also dates that appointment; it only dates a department the row's own or merged-in evidence already states, never adds one, and never moves the window's floor (#4694).
+The stored order is kept, so an existing home department stays first.
 `org-units:reclassify-sections` is the one-time catalog correction that moved the twelve `DEPARTMENT` rows parented to another department onto the new kind; `research-homes:backfill-org-units` is the served-data half that adds the rolled-up parent to existing rows.
 `org-units:seed-catalog-gaps` grows the catalog itself, and its `create-department` gaps take a `kind`, so a School of Medicine section (Surgical Oncology under Surgery, General Internal Medicine under Internal Medicine) is seeded at the section altitude rather than as a peer of its own parent.
 Yale HR strings are added as verbatim aliases rather than taught to the denoiser: #2500 measured that stripping a leading all-caps token by rule was wrong every time it fired, and a bare alias would be worse, because "Cardiology" names both an Internal Medicine section and a Pediatrics one, so only the coded string ("MEDINT Cardiology") says which.
@@ -216,16 +261,22 @@ It was added later (#2604) and the cleared list did not name it, so it went on s
 That one is not merely untidy, because `hasRecordedGateVerdict` reads it first to decide the `regate` bucket, so a stale stamp on an archived row is an instrument input rather than dead weight.
 
 The invariant is now that those five fields exist only on a live row.
-Three things hold it:
+Four things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
 `archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
+Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752), and relinks, merges into the survivor, or archives the row's live access signals (#4816).
 `LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
 Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
 `ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.
 - `clearArchivedResearchStudentVisibility` in `studentVisibilityGateService.ts` runs inside `applyStudentVisibilityGatePlans`, next to the archived-queue reconciliation it already did.
 There are roughly twenty sites that set `archived: true`, several through the raw driver on a collection name, so the gate apply is the backstop that reconciles any lane which archives a row and never re-gates it.
 It is idempotent: once the corpus is clean its filter matches nothing.
+`clearArchivedProgramStudentVisibility` runs beside it and applies the same filter to `Fellowship`, because `planProgramGateUpdates` scopes itself to `archived: false` too: before it existed, 17 archived Development programs still stored `student_ready` (#3753).
+- Programs hold the invariant at both admin transitions as well.
+`updateFellowship` owns both, so the archive and unarchive actions and the admin edit form all take the same path.
+A write that archives a program unsets the five verdict fields in that write.
+A write that restores an archived program unsets them too and then re-gates the program before returning it, so a restored program is judged on its current evidence instead of serving the verdict it held before it was archived, and a failed re-gate leaves it unserved.
 - `yarn --cwd server research-entity:archived-visibility-verdicts` is the measurement.
 Its dry-run prints every tier both ways plus the zero-hard-blocker held population both ways, and `--assert-clean` exits non-zero while the two readings disagree.
 `--apply --confirm-archived-visibility-verdict-repair` repairs stored rows and re-reads the census afterwards.
@@ -243,7 +294,27 @@ Dropping the now-orphaned `users` collection is the only remaining step and stay
 Accepted operator inputs should prefer ORCID over Yale netid.
 ORCID may enrich or disambiguate an existing Yale-confirmed `Researcher` (`Researcher.identifiers.orcid`), but ORCID must not create a Yale person record by itself.
 `identifiers.orcid` carries a unique sparse index, so an ORCID belongs to exactly one `Researcher` row: a scraped or directory-sourced ORCID that another `Researcher` already holds yields to that existing holder, and the enrichment target keeps the identity it already had instead of the write failing the whole source run.
-An ORCID identifier and its `ORCID` `profileLinks[]` entry always move together, so a stored ORCID link never points at a different ORCID than `identifiers.orcid`.
+An ORCID identifier and its `ORCID` `profileLinks[]` entry move together, and the schema validator rejects a save whose ORCID link names an ORCID `identifiers.orcid` does not hold, including a link with no identifier at all.
+The validator does not run on raw bulk writes, so two writers enforce the pairing themselves (#4501).
+`researchers:dedupe-accountless-shells` moves a shell's ORCID link with the ORCID it transfers, pulls it off the archived shell, and never appends a shell ORCID link the canonical record's resulting ORCID does not back.
+The directory materializer plans the ORCID link from the final `identifiers.orcid`, after any ORCID collision is forgiven, so a stored row that already holds a contradicting link gets the link its identifier backs, or none, and the contradiction is counted as a materialization conflict and logged instead of failing the key.
+Measured on Development on 2026-10-03, 4 of 2,354 researchers with an ORCID link held it without `identifiers.orcid`, all of them archived dedupe shells, and none held a link naming a different ORCID from a present identifier.
+`researchers:dedupe-accountless-shells` folds a shell into another record on four identities, in order: netid, roster identity, a shared official primary profile the link-health lane last probed as `HEALTHY`, then exact name.
+The verified-profile arm exists because a programme roster mints under a go-by name and the directory account under the legal one, so the two records never share a name; the same live official profile page held as primary identity by both is the evidence that joins them.
+The arm requires `healthStatus: HEALTHY` rather than `verifiedAt`, because every writer and every probe stamps `verifiedAt`, dead or unprobed links included.
+A healthy probe proves only that the page is live, not who it is about, so the vetoes below carry the identity check.
+It folds only into an account-backed record and applies two vetoes to each holder of the page before counting them: an incompatible surname, read past credentials after a comma, generational suffixes and trailing periods, and one title owning research while the other states a trainee rank, because the one measured counterexample was a trainee whose official link pointed at a professor's page.
+It resolves to nobody when two accounts survive those vetoes, so a wrong-person holder drops out rather than making the page ambiguous.
+Measured on Development on 2026-10-04, before the arm required a `HEALTHY` link, it folded 9 shells and refused that one pair; the healthy gate cannot fold more, and the count needs re-measuring.
+A group of accountless records with no account-backed member has nobody to outrank, so the four arms cannot fold it, and an ambiguous group stops a PI key from resolving to anybody.
+The same stage therefore folds such a group into a survivor chosen among its own members: the records that share a healthy verified primary profile, or the same normalized full name together with the same stated primary department.
+The survivor is the record with the most live role edges, then the most healthy verified primary links, then the record an ORCID identifies, then the oldest, so the choice is reproducible and never alphabetical.
+The ORCID step keeps the identified record's name when an older copy holds a name a label cleaner damaged (#4879).
+A page or name that any record outside the group also holds joins nobody, because the outranking arms already found it unable to tell those records apart.
+The whole group is refused on any disagreement of netid, ORCID, title rank, or surname, with every pair of surnames compared, and with credentials after a comma, generational suffixes and trailing periods read past.
+A standalone `Mc` or `Mac` token is read as part of the surname that follows it, because a label cleaner that split every case boundary stored such a surname as two words (#4879).
+Measured on Development on 2026-10-04 with that change: 3 groups, 2 folded, 1 refused on two different ORCIDs.
+Measured on Development on 2026-10-04, before pages and names held outside the group were excluded: 17 groups, 15 folded (66 records), 2 refused, one on two different ORCIDs and one on a record with no given name; the exclusion cannot fold more, and the count needs re-measuring.
 Netid is the internal disambiguation spine (`Researcher.identifiers.netid`, plus `Account.netid` for login) and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
 Researcher dedupe note: scraper-created same-person `Researcher` shells are merged by rewriting active references onto the canonical `Researcher` and marking the duplicate with `archived` and `dedupedIntoResearcherId`.
@@ -291,9 +362,10 @@ The current model expresses the entity as `ResearchEntity`, the access evidence 
 ### Retired Legacy Faculty-Research Duplicates (#2219)
 
 `INDIVIDUAL_RESEARCH` and `FACULTY_RESEARCH` were duplicates of `FACULTY_RESEARCH_AREA`: nothing minted them, and every consumer already treated the set as one thing.
-They are gone from `researchEntityTypes` and from `EntityTypeToResearchGroupKind`, and `research-entity:consolidate-faculty-type` converts stored rows to the canonical type.
+They are gone from `researchEntityTypes` and from `EntityTypeToResearchGroupKind`.
+No lane emits either spelling and Development holds 0 rows carrying one, so the one-off consolidation was deleted; the vocabulary that names them lives in `models/storedVocabularies.ts` for the readers that still tolerate them (#3675).
 
-Read paths stay deliberately tolerant of the stored values, because an environment that has not run the consolidation still holds rows.
+Read paths stay deliberately tolerant of the stored values, because nothing rewrites them any more and a copied or restored environment may still hold rows.
 This is safe rather than merely lenient: `derivedResearchGroupKind` returns `undefined` for an entity type it does not recognize, so such a row keeps its stored `kind: 'individual'` instead of being reclassified as a lab, and `isFacultyResearchEntity` matches on that kind.
 Retiring the type therefore stops new writes without changing how an unmigrated row renders.
 
@@ -317,7 +389,15 @@ Resolved 2026-09-23 by the `OrgUnit` attribution (#2214).
 A `Signal` may now target an `OrgUnit` through `orgUnitId`, and exactly one of `researchEntityId` and `orgUnitId` is set.
 `department-undergrad-research` reads a department's own course page and emits an `orgUnit` observation only when a sentence on that page names the route and names credit or a catalog code; the materializer turns it into a `COURSE_CREDIT_PATHWAY` signal on the department, and `getResearchGroupDetail` inherits it at read time as `departmentCourseCreditRoutes`, attributed to the department by name.
 Nothing is ever written onto an entity, so the department-to-all-entities fan-out is impossible by construction rather than by policy.
+
+Retired 2026-10-04 by owner decision (#4637).
+The materializer no longer turns the department observation into a `COURSE_CREDIT_PATHWAY` signal, the type left `accessSignalTypes`, and the research detail payload no longer carries `departmentCourseCreditRoutes`.
+The lane still records its `orgUnit` observations, so course credit can return as a sourced department fact if a lane collects it at real coverage.
+The sentence must also state how a student takes the route, so a deadline, a drop warning, a grade threshold or a statement that credit is not given is refused even when it names the route and its course (`statesHowToTakeCourseCreditRoute`, #4045).
+The lane emits one reading per department per run, and when every page configured for a department was read and none states an admissible route it emits `routeStated: false`, which archives the department's signal, so a department with no admissible quote serves no department context rather than a wrong one.
+A fetch failure or an `--only` run that skips one of the department's pages withdraws nothing.
 Measured on Development: 19 of 40 department pages state a route, producing 19 signals, all on an `OrgUnit` and none on an entity, reaching 517 of 3,314 served entity pages.
+The Beta data-quality scorecard audits the two targets as two edges: `signals.researchEntityId` is required only on a signal with no `orgUnitId`, and `signals.orgUnitId` must resolve to an `org_units` row, so a department-scoped signal no longer reads as a broken entity reference (#3582).
 See `docs/decisions.md` for the recorded decision.
 
 Under the organizational/program dead-end gate (issue #1359), a lead-exempt entity with no attached lead and no reachable alternate access path (a linked related entity or a discovered people/get-involved/programs/undergraduate-research/directed-research page) is still held at `operator_review` with `missing_alternate_access_path` rather than auto-published.
@@ -325,7 +405,7 @@ Under the organizational/program dead-end gate (issue #1359), a lead-exempt enti
 ## Access Evidence (Formerly EntryPathway And PostedOpportunity)
 
 `EntryPathway` and `PostedOpportunity` were removed (#363), along with the separate public practical-routes search endpoint/page and the `/api/opportunities/:id` detail surface.
-Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `REACH_OUT_PLAUSIBLE`, `NOT_CURRENTLY_AVAILABLE`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile, evidence, and planning context rather than split into a second student product.
+Ways-in and posted-opening evidence is now expressed as typed access `Signal` rows (for example `POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, `APPLICATION_FORM_EXISTS`), anchored to `researchEntityId` and projected through the y/labs surfaces as profile and evidence rather than split into a second student product.
 `NO_EVIDENCE` remains a computed state, not a stored fact, unless a source explicitly supports it.
 Course credit, fellowship funding, and thesis advising remain formalization outcomes after home and mentor fit, not access evidence by themselves, unless a source describes a structured hosted or mentor-matching program that is its own `ResearchEntity`.
 
@@ -357,6 +437,20 @@ Public cards or detail sections may link to that guarded official URL, but must 
 
 Public research detail payloads no longer carry `activeListings`, and browse payloads no longer carry `hasActiveListing`.
 
+`profileSynthesisDescription` and `descriptionSource` are stored-only and are served on no payload (#3937).
+Neither is declared on the `ResearchEntity` schema and no lane writes either one, so the stored values are frozen, carry no provenance, and cannot be refreshed or retracted by evidence.
+Serving text nothing asserts is the unbacked case the evidence contract in `AGENTS.md` refuses, so the DTO, the browse card summary and the client detail page all read the source-backed `fullDescription`/`shortDescription` instead, and a row whose only prose was the synthesis serves no research summary rather than an unbacked one.
+Search reads neither field either: the index document allowlist leaves both out, so no query matches or embeds the synthesis, and `browseRankScore` scores a row's description from the copy it serves, so the stored synthesis earns a row no rank (#4120).
+The stored fields stay in the corpus because two live guards read them as evidence about the row rather than as copy to publish: `guardNonResearchProfileSynthesisText` uses `descriptionSource` to blank a source-unbacked body that carries no research signal, and the research-scope, Yale-status, deceased-lead and quality readers treat the stored synthesis text as narrative evidence.
+Unsetting either field is therefore a separate change that has to retire those readers first, not a cleanup that follows this one.
+
+`sourceFieldContributions` credits a source only for a field the payload actually serves (#3922).
+The labels come from `fieldProvenance`, which is history and outlives the value it recorded: several materializer clear arms empty `websiteUrl`, and `departments` can resolve to an empty list, while the provenance entry stays.
+`contributionLabelIsServed` in `server/src/utils/servedFieldContributionLabels.ts` therefore drops a "Research website", "Department", "Topics", "Methods", "School" or "Research summary" label when the DTO serves that field empty, judged on the sanitized served value rather than the stored one.
+"Research summary" is judged on the served body, or on the served card line only when it is the stored card line itself, because a row with no usable description can still serve a card built from its topics.
+"Lead identity" and "Name" are not gated, because the lead is served on the roster outside the entity payload and every row serves a name.
+The provenance entries themselves are never pruned; only what the payload credits changes.
+
 ## Saved Research Entities
 
 Student workflow depth starts with saved research profiles.
@@ -365,9 +459,10 @@ The `/dashboard` planning workspace hydrates bounded entity summaries and treats
 
 Current behavior:
 
-- `/api/users/savedResearchEntityIds` returns canonical entity ids for optimistic UI state.
+- `/api/users/savedResearchEntityIds` returns public entity ids for optimistic UI state.
+A public entity id is the slug, the same value the public DTO serves as `_id` and `id` (`publicResearchEntityId`), so the detail page compares it with `group._id` and the dashboard with `entity.slug`; it is never the Mongo ObjectId, and a test pins the two to each other (#3637).
 - `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters, and reports an archived, hidden, or deleted target as an `unavailableSavedResearchEntities` row instead of pruning it (#2174); see [`ResearchPlan`](#researchplan-research_plans) for the two reasons and what each promises the owner.
-- `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account.
+- `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account, accept a public id or a Mongo ObjectId, and answer with the same public id list.
 - `/api/users/savedResearchEntityPlans` stores the owning student's sanitized planning details, keyed by entity id.
 - `GET /api/users/savedResearchEntityPlans/export` exports saved entities without private notes.
 - `POST /api/users/savedResearchEntityPlans/export` includes private notes only when `includePrivateNotes: true` is explicitly supplied.
@@ -392,7 +487,7 @@ Pathway-based fellowship matching was removed with `EntryPathway`, and fellowshi
 ## Access Signals
 
 Undergraduate-access evidence is stored as `Signal` rows in the `signals` collection (see [`Signal`](#signal-signals) above for the authoritative field shape); the standalone `AccessSignal` model was folded into it.
-Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved as per-signal evidence granularity.
+Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `PAST_UNDERGRADS`, and so on) is its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved as per-signal evidence granularity.
 
 Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive access `Signal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
 
@@ -421,16 +516,29 @@ Signal examples:
 
 Absence of evidence should usually be computed from missing signals, not stored as many `NO_EVIDENCE` records. Store negative signals only when a source explicitly states a limitation, such as application-only, not accepting students, or not currently available.
 
-Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives access `Signal` rows from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit. Current undergraduate counts can support `CURRENT_UNDERGRADS`; past undergraduate advisees can support `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE`. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program exists. Contact stays derived at read time, not materialized into stored routes. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; no source does, because the derivation reads only `undergradAccessEvidence`.
+Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives access `Signal` rows from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit. Current undergraduate counts can support `CURRENT_UNDERGRADS`; past undergraduate advisees can support `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE`, except that undergraduates a lab roster lists as alumni support `PAST_UNDERGRADS` only (#4430). Fellowship funding remains a formalization/funding-planning cue unless a real hosted program exists. Contact stays derived at read time, not materialized into stored routes. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; no source does, because the derivation reads only `undergradAccessEvidence`.
 
 Course-credit evidence is formalization-specific, not entry-specific. The CourseTable-backed `yale-course-catalog` scraper is no longer an active source. Course-specific evidence should not by itself create a generic exploratory-outreach or course-credit access signal. Thesis evidence should usually support thesis-fit/advising signals, formalization options, or planning next steps after a plausible mentor/home exists.
 
 Lab-microsite LLM evidence is now shaped as observations first.
 It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`.
 It no longer emits the `acceptingUndergrads` companion boolean.
-`accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, and `NOT_CURRENTLY_AVAILABLE` signals from those evidence observations.
+`accessMaterializer.ts` derives `APPLICATION_FORM_EXISTS` join-page signals from those evidence observations, and only when an undergraduate verdict is "yes".
+Since #4637 it derives no `REACH_OUT_PLAUSIBLE`, `CONTACT_INSTRUCTIONS_EXIST` or `NOT_CURRENTLY_AVAILABLE` signal: a lab's "no" is never served and only stops a join-page claim from being minted.
+A `joinPageUrl` backs `APPLICATION_FORM_EXISTS` only when `joinPageUrlRefusal` in `server/src/scrapers/undergradJoinPageAdmission.ts` admits it: not a study-recruitment page, not a path that names only a graduate, postdoctoral or admissions audience, not a bare site root, and not a department or center programme page unless it sits under the row's own website or is its own department's undergraduate research or research-assistant programme (#4430).
+That exception is an owner decision: a page such as a department's undergraduate research-assistant programme stays a way in on that department's faculty rows, matched by the row's `departments` against the host the department roster reads for that one department, so a center's training page on a shared medical-campus host stays refused on every row but the center's own.
+The microsite lane also reads the join page the model names, fetching it when its crawl skipped it, and refuses one that does not resolve, one in another entity's section of a shared school or center host, one that recruits no one, and one that recruits only non-undergraduates.
+It emits `joinPageUrl` on every complete read, empty when no page is admissible, and the field is latest-wins, so a re-read replaces the page an earlier read named.
+At serve time an `APPLICATION_FORM_EXISTS` claim and its page stand or fall together: its excerpt only says a page was found, so when `getResearchGroupDetail` withholds the signal's link (a refused citation such as a people or members page, or a page known to be gone) it withholds the claim too, and the stored signal is kept (#4430).
+A programme-shaped page the admission keeps, the row's own website or its own department's programme, is served as the link through the same `isProgrammePageAdmittedAsJoinRoute` the admission uses, so a lab's own research-opportunities page is not withheld on a person row.
 
 Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
+`redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.
+A phone number is redacted even when extracted HTML glues it to a label, as in "Phone" then the number or the number then "Fax", because the pattern is bounded by digit lookarounds rather than word boundaries (#3738).
+The one shape it leaves alone is a bare digit run with a letter directly before it and no phone label, because on Development every such run was a record id, such as an IRB protocol number or a journal article number.
+It also redacts hand-obfuscated addresses: bracketed or parenthesised `at` and `dot`, a spaced `@`, the fullwidth at sign, and its HTML entities (#4202).
+Spelled-out `at` counts only alongside an obfuscated `dot` ending in a known suffix, and a spaced `@` needs whitespace after it, so "available at github.com" and a social handle stay intact; the 7,667 stored Development descriptions it was measured over gained zero new redactions.
+The search index redacts the same way over every description field it indexes.
 
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
@@ -455,7 +563,7 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 
 ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
-Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies/Directory record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
+Create a `Researcher` only when a research signal attaches the person to the corpus (a roster or PI/director role on a research entity); bare directory identity (a Yalies record with a netid and a faculty-ish title) no longer mints a `Researcher` or `Account` on its own.
 Directory identity instead enriches an already-existing researcher: it fills profile fields and stamps the linked account's own netid on `Researcher.identifiers.netid` (the disambiguation spine, replacing the retired scraper-minted `Account` lookup), but never creates the person record.
 The [`Researcher`](#researcher-researchers) section owns how that identity is resolved and which netid may be stamped.
 Accounts are created only at login; the pruned directory people become login-provisioned identities if and when they actually sign in.
@@ -486,34 +594,28 @@ Examples:
 
 - `POSTED_OPENING` signal + open application URL -> Apply
 - `CREDIT_FORMALIZATION_POSSIBLE` -> Ask about credit after mentor/home fit
-- `FELLOWSHIP_COMPATIBLE` -> Ask about funding after mentor/home fit
 - structured mentor-matching fellowship (its own `ResearchEntity`) -> Apply to structured research program
-- `REACH_OUT_PLAUSIBLE` + official profile link-out -> Review the official profile
+- official profile link-out -> Review the official profile
 - lead identity under review -> Review source context
 - no evidence -> Save or check back later
 
 Following the Simple Directory First slice (see the direction note above), the read-time `accessSummary` payload, the graded "Evidence" chips, and the computed "Best Next Step" label are no longer produced or shown.
 Reaching out by opening the official profile is the constant contact action, and the remaining factual `Signal` rows render as plain badges without confidence stamps or a plausibility verdict.
 The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420/#463 and no longer exist on `ResearchEntity`.
-#2055 finished the job for `acceptingUndergrads`: no scraper emits it, no materializer reads it, it carries no served source-contribution label, and `yarn --cwd server observations:retire-accepting-undergrads` supersedes the stored observations and clears the `fieldProvenance` entries that credited a source for it.
+#2055 finished the job for `acceptingUndergrads`: no scraper emits it, no materializer reads it, and it carries no served source-contribution label.
+The retirement is engine behaviour rather than a script: `acceptingUndergrads` is in `RETIRED_ACCESS_OBSERVATION_FIELDS`, which `shouldIgnoreObservationForEntityMaterialization` consults, so the projection ignores such an observation whether or not one exists.
+The one-off `observations:retire-accepting-undergrads` was deleted once that made it unable to act (#3633).
 
 The `accessAcceptanceLevel` grade was retired by the 2026-08-25 "Simple Directory First" pivot: access plausibility no longer feeds ranking, filtering, or a trust tier, and the read-time `accessSummary` payload is no longer produced.
+Its last code, the unread grading helpers in `accessAcceptanceLevel.ts`, was removed in #4581; the hosted-undergraduates predicate it also held now lives in `services/hostedUndergraduates.ts`.
 
 Client API boundaries normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`.
 
 ## Admin Review
 
-Admins need a way to inspect derived access records before deeper editorial workflows are built.
-
-Implementation note: `GET /api/admin/access-review` filters, sorts, and paginates the environment-local `AdminAccessReviewProjection` before it hydrates the selected parent `ResearchEntity` rows.
-The projection stores only bounded normalized word suffixes that preserve case-insensitive substring search, sort keys, aggregate counts, the parent reference, and reconciliation state.
-Canonical access-record services invalidate the affected generation in the same transaction as a write and recompute it afterward, so concurrent writes cannot clear a newer invalidation.
-The list checks readiness and performs projection, progress-count, and parent-hydration reads sequentially in one snapshot transaction, so concurrent invalidation cannot produce a partially current response.
-The list fails with a temporary unavailable response when the projection is uninitialized, rebuilding, or stale.
-`GET /api/admin/access-review/:id` remains a separate full derived access bundle for one entity rather than reading through the list projection.
-`PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status, notes, and locks.
-The access-review records are access `Signal` rows only.
-The admin UI can inspect source evidence, update review state, manage locks, and filter records by review, evidence, and archive gaps.
+The admin access-review surface is retired: no route serves `/api/admin/access-review`, and its list projection no longer exists.
+`docs/research-model-refactor-phase0.md` ("Admin access-review projection") records the retirement.
+Per-row operator judgement lives in the refusal, archive, and review-verdict paths described in `docs/decisions.md`.
 
 ## Product Vocabulary
 

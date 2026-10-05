@@ -278,3 +278,36 @@ describe('an accumulating list field is unioned across a same-source group (#322
     expect(result[0].value).toEqual(['Genomics']);
   });
 });
+
+describe('an accumulating list field unions only within the row the freshest read was filed under (#4418)', () => {
+  const filedUnder = (member: string, observation: GrantObs) => ({ ...observation, member });
+  const memberOf = (observation: { member: string }) => observation.member;
+
+  it('drops an older read filed under another member of the same row', () => {
+    const result = collapseLatestWins(
+      [
+        filedUnder('merged-in', grantObs(1, ['A-01', 'A-02'])),
+        filedUnder('row', grantObs(20, ['A'])),
+      ],
+      'researchEntity',
+      memberOf,
+    );
+
+    expect(result).toHaveLength(1);
+    expect((result[0].value as Array<{ id: string }>).map((g) => g.id)).toEqual(['A']);
+  });
+
+  it('still unions reads filed under the same member', () => {
+    const result = collapseLatestWins(
+      [filedUnder('row', grantObs(1, ['A', 'B'])), filedUnder('row', grantObs(20, ['C']))],
+      'researchEntity',
+      memberOf,
+    );
+
+    expect((result[0].value as Array<{ id: string }>).map((g) => g.id).sort()).toEqual([
+      'A',
+      'B',
+      'C',
+    ]);
+  });
+});

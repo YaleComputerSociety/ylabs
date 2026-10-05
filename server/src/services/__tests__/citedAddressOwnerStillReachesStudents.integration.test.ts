@@ -48,11 +48,11 @@ describe('a stale citation does not suppress the row that publishes the address 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedPi = async (entityId: mongoose.Types.ObjectId, lastName: string) => {
@@ -110,10 +110,26 @@ describe('a stale citation does not suppress the row that publishes the address 
       websiteUrl: input.websiteUrl,
       sourceUrls: input.sourceUrls,
       fieldProvenance: {
-        websiteUrl: { sourceName: 'ysm-lab-site', sourceUrl: input.websiteUrl },
-        shortDescription: { sourceName: 'ysm-faculty', sourceUrl: descriptionSourceUrl },
-        fullDescription: { sourceName: 'ysm-faculty', sourceUrl: descriptionSourceUrl },
-        displayName: { sourceName: 'ysm-faculty', sourceUrl: descriptionSourceUrl },
+        websiteUrl: {
+          sourceName: 'ysm-lab-site',
+          sourceUrl: input.websiteUrl,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        shortDescription: {
+          sourceName: 'ysm-faculty',
+          sourceUrl: descriptionSourceUrl,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        fullDescription: {
+          sourceName: 'ysm-faculty',
+          sourceUrl: descriptionSourceUrl,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        displayName: {
+          sourceName: 'ysm-faculty',
+          sourceUrl: descriptionSourceUrl,
+          observationId: new mongoose.Types.ObjectId(),
+        },
       },
     });
     await seedPi(entityId, input.lastName);
@@ -188,6 +204,7 @@ describe('a stale citation does not suppress the row that publishes the address 
         $set: {
           'fieldProvenance.fullDescription': {
             sourceName: 'ysm-lab-site',
+            observationId: new mongoose.Types.ObjectId(),
             sourceUrl: OWNED_ADDRESS,
           },
         },

@@ -8,9 +8,7 @@ export interface NonOwnerPiEdgeRow {
 }
 
 export type NonOwnerPiEdgeRefusal =
-  | 'lead-can-host'
-  | 'edge-carries-provenance'
-  | 'edge-already-reviewed';
+  'lead-can-host' | 'edge-carries-provenance' | 'edge-already-reviewed';
 
 export interface NonOwnerPiEdgePlan {
   retire: NonOwnerPiEdgeRow[];

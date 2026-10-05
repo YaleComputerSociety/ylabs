@@ -6,19 +6,22 @@
  */
 import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
-import { formatTitleCaseLabel } from '../../utils/displayText';
+import { formatTopicChipLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
 import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
+  servedResearchWebsiteUrl,
 } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
-  isFacultyResearchEntity as isFacultyResearchEntityCopy,
+  profileKickerLabel,
   researchEntityTitle,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
+import { GlobeIcon } from '../shared/icons';
+import SlashBreakableText from '../shared/SlashBreakableText';
 
 interface LabHeaderProps {
   group: ResearchGroup;
@@ -47,7 +50,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
-      ? ensureHttpPrefix(group.websiteUrl)
+      ? ensureHttpPrefix(servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth) || '')
       : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);
   const hideWebsiteHref =
@@ -62,11 +65,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   });
   const showProfileResearchAreas =
     visibleProfileResearchAreas.length > 0 && group.researchAreaSource !== 'PI_PROFILE_FALLBACK';
-  const isFacultyResearchEntity = isFacultyResearchEntityCopy(group);
-  const kindLabel =
-    group.descriptionSource === 'PI_PROFILE_SYNTHESIS' && isFacultyResearchEntity
-      ? 'Faculty Research'
-      : entityKindLabel(group);
+  const kindLabel = entityKindLabel(group);
   const websiteLinkLabel = researchWebsiteCtaLabel(group);
 
   return (
@@ -78,29 +77,10 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="yr-kicker mb-2">Research profile</p>
-          <h1 className="yr-display text-3xl font-semibold leading-tight text-ink sm:text-4xl">
-            {researchEntityTitle(group)}
+          <p className="yr-kicker mb-2">{profileKickerLabel(group)}</p>
+          <h1 className="yr-display text-3xl font-semibold leading-tight text-ink sm:text-4xl sm:leading-10">
+            <SlashBreakableText text={researchEntityTitle(group)} />
           </h1>
-          {group.location && (
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              {group.location}
-            </p>
-          )}
         </div>
         {actions && <div className="w-full shrink-0 sm:w-auto">{actions}</div>}
       </div>
@@ -128,7 +108,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           <div className="flex flex-wrap gap-1.5">
             {visibleProfileResearchAreas.map((area) => (
               <span key={area} className="yr-pill ">
-                {formatTitleCaseLabel(area)}
+                {formatTopicChipLabel(area)}
               </span>
             ))}
           </div>
@@ -142,21 +122,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
           rel="noopener noreferrer"
           className="yr-link yr-focus-ring inline-flex min-h-[44px] w-fit items-center gap-1.5 rounded-control text-sm font-semibold"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-          </svg>
+          <GlobeIcon size={14} />
           {websiteLinkLabel}
         </a>
       )}

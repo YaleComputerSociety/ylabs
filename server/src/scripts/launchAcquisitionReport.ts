@@ -11,7 +11,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export interface LaunchAcquisitionReportCliOptions extends LaunchAcquisitionReportOptions {
   output?: string;
@@ -37,12 +37,10 @@ export function parseLaunchAcquisitionReportArgs(
     const arg = argv[i];
     if (arg === '--stage=pi_identity') {
       options.stages = ['pi_identity'];
-    } else if (arg === '--stage=action_evidence') {
-      options.stages = ['action_evidence'];
     } else if (arg === '--stage=source_description') {
       options.stages = ['source_description'];
     } else if (arg === '--stage=all') {
-      options.stages = ['pi_identity', 'action_evidence', 'source_description'];
+      options.stages = ['pi_identity', 'source_description'];
     } else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
     } else if (arg.startsWith('--sample-limit=')) {

@@ -48,11 +48,11 @@ describe('an alias-keyed PI attribution stops holding an entity from students (#
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -101,8 +101,16 @@ describe('an alias-keyed PI attribution stops holding an entity from students (#
       websiteUrl: SOURCE_URL,
       sourceUrls: [SOURCE_URL],
       fieldProvenance: {
-        shortDescription: { sourceName: 'official-profile-pi-backfill', sourceUrl: SOURCE_URL },
-        fullDescription: { sourceName: 'official-profile-pi-backfill', sourceUrl: SOURCE_URL },
+        shortDescription: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: SOURCE_URL,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        fullDescription: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: SOURCE_URL,
+          observationId: new mongoose.Types.ObjectId(),
+        },
       },
     });
 

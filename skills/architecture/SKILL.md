@@ -13,7 +13,7 @@ Yale CAS provides SSO authentication.
 ```
 React (Vite) -> Express (Passport.js) -> MongoDB Atlas + Meilisearch
                     |
-            External APIs: Yale CAS, Yalies, Yale Directory, CourseTable, OpenAI via Meilisearch embedder
+            External APIs: Yale CAS, Yalies, CourseTable, OpenAI via Meilisearch embedder
 ```
 
 The server follows **Routes -> Middleware -> Controllers -> Services -> Models**.
@@ -46,12 +46,12 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 
 | Layer           | Technology                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v7, MUI v7, TailwindCSS v3                                 |
-| Server          | Express 4, TypeScript 5.3, Passport.js 0.5, Mongoose 8                                                      |
-| Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
+| Client          | React 19, TypeScript 6.0, Vite 8, React Router v7, MUI v9, TailwindCSS v4                                   |
+| Server          | Express 5, TypeScript 6.0, Passport.js 0.7, Mongoose 9                                                      |
+| Search          | Meilisearch 0.62 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |
-| Tooling         | concurrently, nodemon, ts-node, cross-env                                                                   |
+| Tooling         | concurrently, tsx, cross-env                                                                                |
 
 ## Repo map
 
@@ -74,9 +74,9 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 
 | Command                                                          | Effect                                                                                       |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `yarn install:all`                                               | Install deps in root, server, and client.                                                    |
+| `bash scripts/install-all.sh`                                    | Install deps in root, server, and client, also on a fresh checkout.                          |
 | `yarn dev:client`                                                | Vite dev server on port 3000.                                                                |
-| `yarn dev:server`                                                | Express with nodemon on port 4000.                                                           |
+| `yarn dev:server`                                                | Express with tsx watch on port 4000.                                                         |
 | `yarn build`                                                     | Corepack enable, install all deps, build server, build client.                               |
 | `yarn start`                                                     | Run both servers in production.                                                              |
 | `yarn clean:all`                                                 | Remove all `node_modules` directories.                                                       |
@@ -92,14 +92,20 @@ Cycles are not the problem here and a cycle rule is not worth adding: the whole 
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
 
-Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 10000 ms and `hookTimeout` 60000 ms.
-The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and that teardown outlasts vitest's 10000 ms default under full-suite parallel load.
-Do not add a per-hook timeout to a new MongoMemory setup or teardown, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins the config default.
-An explicit hook argument wins over the config, so never write one below the configured `hookTimeout`: that reintroduces #2903 for the suite that carries it, and the guard parses every hook call in the `server/src` test and spec files and fails on an argument below the config value or on one it cannot resolve to a numeric literal.
-Existing hooks still pass an argument at or above the budget, which is harmless, and a setup genuinely slower than 60000 ms may keep its larger one.
-The guard reads its threshold from the config rather than from a copy, so raising `hookTimeout` also raises the threshold and turns every hook argument that now sits below the new value into a guard failure: raise the budget and delete those arguments in the same change.
+Server test timeouts are owned by `server/vitest.config.ts`: `testTimeout` 30000 ms and `hookTimeout` 180000 ms.
+The hook budget is derived in `server/src/test/testTimeBudgets.ts` as the in-memory MongoDB launch budget (120000 ms, applied to every launch by `server/src/test/mongoMemoryLaunchBudget.ts`) plus 60000 ms for the connect and index build that follow it, so the two cannot drift apart again (#3734).
+Before that, `hookTimeout` was 60000 ms, so vitest cut a `beforeAll` off at half the launch budget and a slow launch failed as `Hook timed out in 60000ms`.
+The hook budget is deliberately long because over a hundred suites start a `MongoMemoryReplSet` or `MongoMemoryServer` in `beforeAll` and stop it in `afterAll`, and both outlast vitest's 10000 ms default under parallel load.
+Do not add a per-hook timeout, because the config already covers it, and `server/src/scripts/__tests__/vitestHookBudget.test.ts` pins both the config value and its relation to the launch budget.
+An explicit hook argument wins over the config, so the guard parses every hook call in the `server/src` test and spec files and fails on an argument at or below the config value, on one it cannot resolve to a numeric literal, and on a config value that does not exceed the launch budget.
+Only a setup genuinely slower than 180000 ms may carry its own larger argument.
+Raising `hookTimeout` also raises the guard's threshold, so raise the budget and delete the hook arguments it overtakes in the same change.
 This applies to hooks only.
-`testTimeout` stays at 10000 ms, so a slow `it` still needs its own argument.
+`testTimeout` stays at 30000 ms, so a slow `it` still needs its own argument.
+
+A local server run uses at most 4 vitest workers (`server/src/test/localWorkerBudget.ts`), because each integration suite starts its own `mongod` and vitest's default of one worker per spare core put about 39 of them on a 14-core laptop when three runs overlapped, which is the normal state with several worktrees or gate runs testing at once.
+Set `YLABS_VITEST_MAX_WORKERS=<n>` to override it, or pass `--maxWorkers` on the command line.
+CI (`CI` set) keeps vitest's default, so CI timing is unchanged.
 
 The server suite is fenced off from the local environment by `server/src/test/hermeticEnvironment.ts`, registered as the only `setupFiles` entry.
 It neutralises `dotenv.config()` and `dotenv/config`, deletes every name `server/.env` and `server/.env.example` declare except the ones the runner and the operating system own (`NODE_ENV`, `CI`, `PATH`, `HOME`, `TMPDIR`, `TZ`), and replaces `utils/meiliClient` with a client that refuses every call.
@@ -109,16 +115,75 @@ A suite that spawns a real CLI builds the child environment with `hermeticChildE
 A module mock stops at the process boundary and a spawned script re-runs `dotenv.config()` for itself, so the child is fenced by its environment alone: unroutable backend values it cannot re-resolve, because `dotenv` only fills a name that is absent, plus the `YLABS_SKIP_LOCAL_DOTENV=true` the scripts honour.
 Never read a connection string or a feature flag from `process.env` in a test, and never re-load an env file inside one.
 
+Each server test run writes its temp files into its own directory, `ylabs-vitest-<pid>-<random>` under the system temp directory (#3735).
+`server/src/test/vitestGlobalSetup.ts` creates it, points `TMPDIR` at it before any worker starts, and removes it recursively at teardown, so a `mkdtemp(os.tmpdir(), ...)` a suite never removes, and the `mongo-mem-*` directory `mongodb-memory-server` deliberately keeps after a failed launch, both go with the run.
+The same setup first reaps what a killed run left behind: a `ylabs-vitest-*` root whose owning process is gone, and a `mongo-mem-*` directory older than an hour that no live `mongod` references (`server/src/test/runTempRoot.ts`).
+A suite therefore needs no cleanup of its own for temp residue, although removing what it creates is still the better habit.
+The root-level `node --test` suites under `scripts/` have no such runner hook, so each one removes its own temp directories in an `after` hook.
+That root makes `os.tmpdir()` about 75 bytes deep on macOS, which leaves too little room for a Unix socket name under the 104-byte `sun_path` limit, and libuv truncates a longer path silently rather than failing (#4117).
+So build any socket path with `brokerSocketPath` from `server/src/scrapers/utils/hostSlotBroker.ts`, which falls back to `/tmp` when the requested directory is too deep, and never with `path.join(os.tmpdir(), ...)`.
+
 Dev login bypass: `GET http://localhost:4000/api/dev-login` creates a test undergraduate session.
+It answers `404` unless the caller is loopback, as does the `LOCAL_AUTH_BYPASS` user; see `skills/auth-security/SKILL.md`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for another dev account.
 `?userType=admin` mints a local bootstrap `AdminGrant`, so admin authority comes from a grant rather than `userType`.
 
+## Server startup and shutdown
+
+`server/src/index.ts` is the only entry point the deployed process runs, and `tsup` bundles every module it reaches into `build/index.js`.
+Boot connects MongoDB with `initializeConnections()`, warms the controlled-vocabulary headings, then listens and starts the keep-alive and the two in-process schedulers.
+A failed connect is deliberately fatal: it logs and exits 1 so the platform restarts the instance, which is the only correct answer to a database the process cannot reach.
+Nothing on the boot path may disconnect the shared MongoDB connection, because every request serves from it.
+That is not a style rule.
+`source:health` used to tear it down on every deploy, because its `process.argv[1]` direct-run guard is true inside the bundle, where the module's own path is the bundle's path (#4186).
+A module that needs to tell a direct CLI run from an import asks `isDirectScriptInvocation(import.meta.url, '<module name>')` in `server/src/scripts/directScriptInvocation.ts`, which also requires the entry file to carry the script's own name, so the bundle can never satisfy it.
+Any other module the server entry reaches owes the same, and `server/src/scripts/__tests__/directScriptInvocation.test.ts` pins the bundle shape it has to survive: with the entry argument and the module's own path both `build/index.js`, the answer is false.
+`server/src/scripts/__tests__/bundledScriptCliBody.test.ts` proves the consequence end to end: it bundles the script under both names with the real bundler, and only the copy named after the script runs its CLI body.
+`seed:sources` repeated the same defect after #4474 made it reachable from the server entry: every boot ran its dry-run report and then disconnected the shared connection (#4492).
+The same bundle shape also breaks any path computed from the module's own location, because `build/index.js` sits at a different depth than the source module did, so the gate-refresh scheduler resolved its working directory to the repository root and every cycle failed (#4493).
+A module that needs a path inside the checkout asks `resolveServerPackageRoot(import.meta.url)` in `server/src/utils/serverPackageRoot.ts`, which walks up to the directory whose `package.json` is named `server` and so answers the same from `src/` and from `build/`.
+`server/src/__tests__/bundledModuleEntryPoints.test.ts` enumerates every module in a freshly built bundle from its source map and parses each one: a top-level direct-run check must be `isDirectScriptInvocation` with the module's own name, no top-level statement may call a local async or `main` function, and `import.meta.url` may only reach `isDirectScriptInvocation`, `resolveServerPackageRoot` or `createRequire`.
+`server/src/scrapers/prompts/index.ts` is the one module that still reads its own location, and it searches both layouts for its prompt files.
+`server/src/__tests__/bundledServerBoot.integration.test.ts` boots the built bundle against an in-memory MongoDB and fails if the process exits, the connection drops, a script report is printed, or the scheduler spawns `yarn gates:refresh` anywhere but the server package directory.
+The keep-alive is the only thing that heals a connection no request has touched, so `mongoKeepAliveTick` reconnects a connection that is disconnected or was never established instead of pinging a `connection.db` that is undefined in exactly that state.
+
+Shutdown is the mirror of that, and it lives in `server/src/serverShutdown.ts` rather than in the entry point so it can be tested.
+The hosting platform stops an instance by sending `SIGTERM` and killing it after a shutdown delay that defaults to 30 seconds, and Node's default action for `SIGTERM` is to exit at once, so before #4189 every request in flight during a deploy was cut with an empty reply.
+`registerGracefulShutdown` now stops accepting new connections, closes idle keep-alive sockets so no browser holds the drain open, waits up to `DRAIN_TIMEOUT_MS` (20 seconds, deliberately inside the 30 second kill timeout) for the requests already in flight, disconnects MongoDB, and exits 0, or 1 when the window expired and it had to cut what was left.
+A later `SIGTERM` or `SIGINT` during the drain joins the shutdown already running rather than starting a second one that would exit early.
+Lengthening the drain window means raising the platform's shutdown delay first, because a drain the platform interrupts is the same defect under another name.
+The timer stops come before the disconnect, and that order is load-bearing: the keep-alive pass reconnects a connection it finds down, so a shutdown that disconnected first would have the connection re-opened under it.
+
+## Request-path database waits
+
+The serving process and an operator script want opposite things from the driver, so `server/src/db/connections.ts` gives them different budgets.
+`mongoOptions` is the serving budget: 5 s to select a server, a 5 s Mongoose command buffer, and a 20 s socket ceiling.
+`scriptMongoConnectOptions` restores the long ones, 30 s selection and no socket timeout, because a sweep that starts during a replica-set election should wait for it rather than abort.
+`initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.
+`triggerReconnect` reuses whichever budget the process connected with, so a reconnect never moves a script onto the serving budget or the server onto the script one.
+The numbers come from measurement rather than taste: a reachable database answers a detail request in under 10 ms, while the driver's 30 s and 60 s defaults turned an unreachable or hung one into a 30 s to 63 s wait that ended in a generic 500 (#4188).
+The socket ceiling stays above the slowest request this server makes and under the hosting platform's own request timeout.
+Any single in-process operation that legitimately needs longer than the socket ceiling belongs in a script or a child process, which is where the heavy audits already run.
+
+A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.
+Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.
+A lost topology is reported too, but as the `mongo_topology_lost` warning, grouped into one issue and sent at most once per minute per process; the degraded-signal set is owned by the Error Reporting section of `docs/research-journey-analytics.md`.
+Selection timeouts, socket timeouts, a closed client, and a Mongoose buffering timeout are all the same condition under different names, so adding a newly observed name means adding it there rather than at a call site.
+`triggerReconnect` stays scoped to a lost topology, because the driver recovers from the others on its own and reconnecting under them would close the pool the next request is about to use.
+On the client, `/research` renders every failed search as the limited-search notice with its retry action, whatever the status was, so an outage never renders as "no research matches" (#4266).
+A 503 needs no special case there, because a 500, a 429 and a dropped connection with no response at all are the same thing to a student: a search that did not answer.
+
 ## TypeScript
 
-Server: target ES2022, module NodeNext, moduleResolution NodeNext, strict true, output to `build/`.
-Built with `tsup`; dev mode uses `tsx watch`.
+Both projects are on TypeScript 6.0, and `tsc` only type-checks them: each `tsconfig.json` sets `noEmit`, and the bundlers own the output.
+TypeScript 7 is held until `typescript-eslint` admits it; `docs/dependency-decisions.md` records the blocker and its exit condition.
 
-Client: target ES5, module ESNext, JSX `react-jsx`, strict true, noEmit true.
+Server: target ES2022, module ESNext, moduleResolution `bundler`, strict true, noEmit true, `types: ["node"]`.
+Built with `tsup` into `build/`; dev mode uses `tsx watch`.
+The server program also type-checks the client modules that server tests import, so it sets no `rootDir` or `outDir`.
+
+Client: target ES2015, module ESNext, moduleResolution `bundler`, JSX `react-jsx`, strict true, noEmit true, `types` including `vite/client`.
+TypeScript 6 checks side-effect imports by default, and `vite/client` is what declares `import './index.css'`.
 
 ## Routes
 
@@ -131,12 +196,10 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
 | `/users`          | `users.ts`          | Auth required.                                      |
-| `/profiles`       | `profiles.ts`       | Varies.                                             |
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
-| `/research-areas` | `researchAreas.ts`  | Admin for writes.                                   |
 | `/admin`          | `admin.ts`          | Admin.                                              |
-| `/seed`           | `seed.ts`           | Local development runtime only.                     |
+| `/ready`          | `ready.ts`          | Public; uncached readiness probe for monitoring.    |
 
 ## Key services
 
@@ -149,11 +212,11 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `researchEntitySearchIndexService.ts`                                                                                                       | Meilisearch index sync and query.                                    |
 | `meiliSyncService.ts`                                                                                                                       | Syncs ResearchEntity upserts into the Meilisearch index.             |
 | `signalService.ts`                                                                                                                          | Source-backed access read layer.                                     |
-| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
-| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
+| `adminOperatorBoardService.ts` / `adminGrantService.ts`                                                                                    | Operator board and admin grants.                                     |
+| `sourceHealthService.ts`                                                                                                                    | Scraper/source health.                                               |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts`                                          | Student visibility tiering and repair queue.                         |
 | `programClassifier.ts`                                                                                                                      | Program classification.                                              |
-| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
+| `yaliesService.ts`                                                                                                                          | External integrations.                                               |
 
 ## Naming conventions
 
@@ -181,8 +244,10 @@ Beta is the staging gate.
 | Prod        | Render `yalelabs.onrender.com`    | `prod`                     |
 
 Scraper fetches run from the local machine and need no Yale VPN or campus wifi; only private-address hosts such as `ensemble.yale.edu` are Yale-network-only.
-Development runs can fetch and materialize locally.
-Beta operator runs fetch observations into the `Beta` database without local materialization, then the Beta Render service materializes the recorded run ID and updates private Beta Meilisearch.
+Development is the only environment scrapers write to: every sweep fetches and materializes there.
+Beta receives the accepted Development dataset through `beta:refresh-from-development`, Production receives accepted Beta through `production:promote-beta-copy`, and each target then re-gates and reindexes from its Render shell.
+Those copies and the Beta-to-Development mirror are the only allowed database pairs, listed by their real database names (`Development`, `Beta`, `Prod`) in `DATABASE_COPY_PAIRS` in `server/src/scripts/databaseCopyPairs.ts`; each copy script refuses any other source or target, and `yarn --cwd server database:verify-names` runs the same check from a shell (#4150).
+The scrape CLI refuses a `run` or `materialize` write against Beta or Production.
 Use `docs/data-refresh-runbook.md` for the canonical commands.
 
 ## External integrations
@@ -190,8 +255,6 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | Service        | Purpose                                                | Location                                       |
 | -------------- | ------------------------------------------------------ | ---------------------------------------------- |
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
-| Yalies API     | Student and graduate data lookup                       | `yaliesService.ts`                             |
-| Yale Directory | Faculty data lookup                                    | `directoryService.ts`                          |
-| CourseTable    | Professor course data                                  | `courseTableService.ts`                        |
+| Yalies API     | Student, faculty and staff lookup at login             | `yaliesService.ts`                             |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
 | OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |

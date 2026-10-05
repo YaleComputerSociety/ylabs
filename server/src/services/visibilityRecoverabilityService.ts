@@ -12,6 +12,7 @@
  * One batched observation read per chunk, not one per record, because both callers
  * classify a whole page of the queue at once.
  */
+import type { Types } from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import {
@@ -133,7 +134,7 @@ export async function classifyRecoverabilityForRecordIds(
       superseded: { $ne: true },
       'rollback.rolledBackAt': { $exists: false },
       $or: [
-        { entityId: { $in: chunk.map((entity) => entity._id) } },
+        { entityId: { $in: chunk.map((entity) => entity._id as Types.ObjectId) } },
         { entityKey: { $in: chunk.map((entity) => String(entity.slug || '')) } },
       ],
     })

@@ -21,8 +21,9 @@ import {
   planSignalConsolidation,
   type SignalConsolidationPlan,
 } from './signalConsolidationMigrationCore';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'signal-consolidation-migration';
 
@@ -83,7 +84,7 @@ export async function migrateSignalConsolidation(options: SignalConsolidationMig
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL environment variable is required');
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const db = mongoose.connection.db;
     if (!db) throw new Error('No active MongoDB connection');

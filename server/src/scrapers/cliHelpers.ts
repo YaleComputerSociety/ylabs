@@ -20,12 +20,6 @@ export type ScraperCliPreflight =
       guard: ScraperCommandGuardResult;
     }
   | {
-      command: 'cron';
-      sourceName: string;
-      forceDisabled: boolean;
-      guard: ScraperCommandGuardResult;
-    }
-  | {
       command: 'materialize';
       runId: string;
       confirmMaterialize: boolean;
@@ -66,7 +60,6 @@ const BOOLEAN_FLAGS = new Set([
   'dry-run',
   'exhaustive',
   'explain',
-  'force-disabled',
   'force-llm',
   'ignore-work-planner',
   'release',
@@ -225,6 +218,48 @@ export function unmaterializedWriteRunWarning(input: {
   ].join(' ');
 }
 
+export interface ScrapeCliCompletionOutcome {
+  exitCode: 0 | 1;
+  errors: string[];
+  warnings: string[];
+}
+
+export function scrapeCliCompletionOutcome(input: {
+  runId: string;
+  runStatus?: string;
+  materializationErrors?: number;
+  visibilityGateSkipped?: boolean;
+}): ScrapeCliCompletionOutcome {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (input.runStatus === 'failure') {
+    errors.push(
+      `ScrapeRun ${input.runId} finished with status failure; read its errors with "yarn --cwd server scrape report --run ${input.runId}".`,
+    );
+  } else if (input.runStatus === 'interrupted') {
+    errors.push(
+      `ScrapeRun ${input.runId} was interrupted before it finished, so its observations are incomplete; re-run the source rather than materializing this run.`,
+    );
+  } else if (input.runStatus === 'partial') {
+    warnings.push(
+      `ScrapeRun ${input.runId} finished with status partial, so its coverage is incomplete; read its errors with "yarn --cwd server scrape report --run ${input.runId}".`,
+    );
+  }
+  const materializationErrors = input.materializationErrors ?? 0;
+  if (materializationErrors > 0) {
+    errors.push(
+      [
+        `Materialization of run ${input.runId} reported ${materializationErrors} row error(s).`,
+        ...(input.visibilityGateSkipped
+          ? ['The student visibility gate was skipped, so no row this run touched was re-gated.']
+          : []),
+        `Fix the cause and re-run "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize".`,
+      ].join(' '),
+    );
+  }
+  return { exitCode: errors.length > 0 ? 1 : 0, errors, warnings };
+}
+
 export function buildMaterializeOutputPayload({
   runId,
   materialization,
@@ -247,10 +282,6 @@ export function buildMaterializeOutputPayload({
     ...(visibilityGate !== undefined ? { visibilityGate } : {}),
     report,
   };
-}
-
-export function buildCronOutputPayload<T>(result: T): T {
-  return result;
 }
 
 export function buildScraperCliOutputPayload<T extends object>(
@@ -285,26 +316,6 @@ export function buildScraperCliPreflight(
         command,
         options,
         autoMaterialize: !!flags['auto-materialize'],
-        mongoUrl,
-        env,
-      }),
-    };
-  }
-
-  if (command === 'cron') {
-    const sourceName = flags.source as string;
-    if (!sourceName) {
-      throw new Error('ERROR: --source <name> is required');
-    }
-    const options = parseScraperOptions(flags);
-    return {
-      command,
-      sourceName,
-      forceDisabled: !!flags['force-disabled'],
-      guard: applyScraperEnvironmentGuards({
-        command,
-        options,
-        autoMaterialize: true,
         mongoUrl,
         env,
       }),

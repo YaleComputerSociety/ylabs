@@ -16,10 +16,12 @@ import { describe, expect, it } from 'vitest';
 import {
   descriptionExtractionToObservations,
   isInterestChipListText,
+  isProfileTemplateChrome,
   opensOnNavigationChrome,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
+import { DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS } from '../descriptionSourceOwnership';
 
 const SCHOOL_LANDING_PAGE = 'https://medicine.yale.edu/research/';
 
@@ -34,6 +36,10 @@ const landingExtraction = (): DescriptionExtraction => ({
   name: '',
 });
 
+const DISTINCT_CITER_NAMES = ['Marrowind Center', 'Peltasker Institute', 'Corvane Program'];
+
+const unrelatedCiters = (count: number): string[] => DISTINCT_CITER_NAMES.slice(0, count);
+
 const baseContext = {
   knownPersonSurnames: NO_SURNAME_ROSTER,
   entityId: 'entity-a',
@@ -44,13 +50,58 @@ const baseContext = {
 };
 
 describe('shared-evidence guard (#3148)', () => {
-  it('emits nothing from a page cited by more than one row', () => {
+  it('emits nothing from a page two other rows cite', () => {
     expect(
       descriptionExtractionToObservations(landingExtraction(), {
         ...baseContext,
         sharedEvidenceUrl: true,
+        descriptionSourceForeignCiterNames: unrelatedCiters(2),
       }),
     ).toEqual([]);
+  });
+
+  it('describes a row from a page one other row cites, on the ingest bar, but asserts no name from it (#3740)', () => {
+    const observations = descriptionExtractionToObservations(
+      { ...landingExtraction(), name: 'Center for Translational Discovery' },
+      {
+        ...baseContext,
+        sharedEvidenceUrl: true,
+        descriptionSourceForeignCiterNames: unrelatedCiters(1),
+      },
+    );
+    expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toBe(
+      SCHOOL_LANDING_PROSE,
+    );
+    expect(observations.some((obs) => obs.field === 'name' || obs.field === 'displayName')).toBe(
+      false,
+    );
+  });
+
+  it('holds the lane to the same citer bar as the ingest ownership guard (#3740)', () => {
+    expect(DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS).toBe(2);
+    const at = (foreignCiters: number) =>
+      descriptionExtractionToObservations(landingExtraction(), {
+        ...baseContext,
+        descriptionSourceForeignCiterNames: unrelatedCiters(foreignCiters),
+      }).length > 0;
+    expect(at(DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS - 1)).toBe(true);
+    expect(at(DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS)).toBe(false);
+  });
+
+  it('admits a page every citer of which is the same subject stored more than once, as the ingest bar does (#3740)', () => {
+    const observations = descriptionExtractionToObservations(landingExtraction(), {
+      ...baseContext,
+      sharedEvidenceUrl: true,
+      entityName: 'The Quillfeather Lab',
+      descriptionSourceForeignCiterNames: [
+        'Quillfeather Lab',
+        'Quillfeather Laboratory',
+        'Quillfeather Lab',
+      ],
+    });
+    expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toBe(
+      SCHOOL_LANDING_PROSE,
+    );
   });
 
   it('adopts the same prose when no other row cites the page', () => {
@@ -67,7 +118,11 @@ describe('shared-evidence guard (#3148)', () => {
     expect(
       descriptionExtractionToObservations(
         { ...landingExtraction(), name: 'Center for Translational Discovery' },
-        { ...baseContext, sharedEvidenceUrl: true },
+        {
+          ...baseContext,
+          sharedEvidenceUrl: true,
+          descriptionSourceForeignCiterNames: unrelatedCiters(3),
+        },
       ),
     ).toEqual([]);
   });
@@ -152,6 +207,47 @@ describe('navigation chrome refusal (#3148)', () => {
             'Main Menu Sub Menu home publications Research people alum/theses Outreach contact links Welcome Current Research Projects We are studying the electrical and electrothermal dynamics of graphene in order to explore device applications.',
         },
         { ...baseContext, sharedEvidenceUrl: false },
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('profile template chrome refusal (#4048)', () => {
+  it('recognises the MeSH chip run and the co-author panel of a title-only profile', () => {
+    expect(
+      isProfileTemplateChrome(
+        'Medical Research Interests Asthma; Pediatrics; Respiration Disorders ORCID 0000-0000-0000-0000',
+      ),
+    ).toBe(true);
+    expect(
+      isProfileTemplateChrome(
+        'Research Overview Medical Research Interests Lung Research at a Glance Yale Co-Authors Frequent collaborators of a fixture person.',
+      ),
+    ).toBe(true);
+    expect(
+      isProfileTemplateChrome(
+        'Research at a Glance Yale Co-Authors Frequent collaborators of a fixture person published research.',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves a research body that names medical research in passing alone', () => {
+    expect(
+      isProfileTemplateChrome(
+        'The lab studies how platelets contribute to alcohol-associated liver disease, and its medical research interests span thrombosis and inflammation.',
+      ),
+    ).toBe(false);
+  });
+
+  it('emits nothing for profile chrome reaching the observation builder', () => {
+    expect(
+      descriptionExtractionToObservations(
+        {
+          ...landingExtraction(),
+          fullDescription:
+            'Medical Research Interests Blood Platelets; Liver Diseases; Liver Diseases, Alcoholic ORCID 0000-0000-0000-0000',
+        },
+        { ...baseContext, sourceUrl: 'https://medicine.yale.edu/profile/fixture-person/' },
       ),
     ).toEqual([]);
   });

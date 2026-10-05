@@ -16,9 +16,28 @@ export { Source } from './source';
 export { VisibilityReleaseQueueItem } from './visibilityReleaseQueueItem';
 export { CorpusQualitySnapshot, CORPUS_QUALITY_SNAPSHOT_COLLECTION } from './corpusQualitySnapshot';
 export { GateScorecardSnapshot, GATE_SCORECARD_SNAPSHOT_COLLECTION } from './gateScorecardSnapshot';
+export {
+  LaneBenchmark,
+  LaneBenchmarkPage,
+  LANE_BENCHMARK_COLLECTION,
+  LANE_BENCHMARK_PAGE_COLLECTION,
+} from './laneBenchmark';
+export { LaneScorecardSnapshot, LANE_SCORECARD_SNAPSHOT_COLLECTION } from './laneScorecardSnapshot';
+export {
+  EngineBenchmark,
+  EngineBenchmarkRow,
+  ENGINE_BENCHMARK_COLLECTION,
+  ENGINE_BENCHMARK_ROW_COLLECTION,
+} from './engineBenchmark';
+export {
+  EngineBenchmarkSnapshot,
+  ENGINE_BENCHMARK_SNAPSHOT_COLLECTION,
+} from './engineBenchmarkSnapshot';
 export { Observation, type ObservedEntityType } from './observation';
 export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';
+export { WeeklySweepRun, WEEKLY_SWEEP_RUN_COLLECTION } from './weeklySweepRun';
+export { LoginSignalTally, LOGIN_SIGNAL_TALLY_COLLECTION } from './loginSignalTally';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';

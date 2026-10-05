@@ -26,9 +26,11 @@ export const REQUIRED_REINDEX_ENV_VARS = Object.freeze([
     why: 'The Meilisearch instance to rebuild. Must not be empty, or the rebuild would target localhost.',
   },
   {
-    name: 'MEILISEARCH_API_KEY',
-    example: '<the master or admin key for that instance>',
-    why: 'Write access to the instance. Without it the rebuild fails partway, after clearing.',
+    name: 'MEILISEARCH_WRITE_API_KEY',
+    example:
+      "<the scoped write key for this environment's indexes; see docs/meilisearch-reindex-runbook.md>",
+    why: "Write access to this environment's indexes. Without it the rebuild fails before the swap. The legacy MEILISEARCH_API_KEY is accepted in its place until the scoped key exists.",
+    legacyFallback: 'MEILISEARCH_API_KEY',
   },
   {
     name: 'MEILISEARCH_INDEX_PREFIX',
@@ -75,8 +77,35 @@ export function parseReindexArgs(argv) {
   return { environment, apply };
 }
 
-export function missingReindexEnvVars(env) {
-  return REQUIRED_REINDEX_ENV_VARS.filter(({ name }) => !String(env[name] || '').trim());
+// Required only for a production apply. `assertScriptApplyAllowed` refuses a
+// production write without it, and it fires AFTER the preflight and the index
+// reconcile plan have printed, so a run without it reads as working and then
+// stops at the last moment. That is the one-error-per-run discovery this module
+// exists to remove, so the requirement is reported up front with the others.
+export const PRODUCTION_APPLY_ENV_VARS = Object.freeze([
+  {
+    name: 'CONFIRM_PROD_SCRAPE',
+    example: 'true  (that exact string; any other value counts as unset)',
+    why: 'Production writes are confirmed by the operator, not by this wrapper. reindex:meili refuses the rebuild without it.',
+    requiredValue: 'true',
+  },
+]);
+
+export function requiredReindexEnvVars({ environment, apply } = {}) {
+  if (environment === 'production' && apply) {
+    return [...REQUIRED_REINDEX_ENV_VARS, ...PRODUCTION_APPLY_ENV_VARS];
+  }
+  return [...REQUIRED_REINDEX_ENV_VARS];
+}
+
+export function missingReindexEnvVars(env, options = {}) {
+  return requiredReindexEnvVars(options).filter(({ name, requiredValue, legacyFallback }) => {
+    const value =
+      String(env[name] || '').trim() ||
+      (legacyFallback ? String(env[legacyFallback] || '').trim() : '');
+    if (!value) return true;
+    return requiredValue !== undefined && value !== requiredValue;
+  });
 }
 
 export function describeMissingEnvVars(missing) {
@@ -90,15 +119,29 @@ export function describeMissingEnvVars(missing) {
     lines.push(`    why:      ${why}`);
     lines.push('');
   }
-  lines.push('Values come from the Render dashboard for the target service.');
+  lines.push(
+    'MONGODBURL, MEILISEARCH_HOST and MEILISEARCH_INDEX_PREFIX come from the Render dashboard for the target service.',
+  );
+  lines.push(
+    'MEILISEARCH_WRITE_API_KEY is not stored on the service: export it in this shell session only.',
+  );
   lines.push('Do not paste them into a shared shell history or a committed file.');
   return lines.join('\n');
 }
 
 // Only the host is shown, never credentials. MONGODBURL carries a password and
-// MEILISEARCH_API_KEY is a secret, so the plan reports whether each is present
+// a Meilisearch key is a secret, so the plan reports whether each is present
 // rather than echoing it: an operator running this on a server may be sharing a
 // terminal or a screenshot.
+function describeMeiliWriteKeyPresence(env) {
+  if (String(env.MEILISEARCH_WRITE_API_KEY || '').trim())
+    return 'present (MEILISEARCH_WRITE_API_KEY)';
+  if (String(env.MEILISEARCH_API_KEY || '').trim()) {
+    return 'present (legacy MEILISEARCH_API_KEY; set MEILISEARCH_WRITE_API_KEY instead)';
+  }
+  return '(unset)';
+}
+
 export function summarizeReindexPlan({ environment, apply, env }) {
   const meiliHost = String(env.MEILISEARCH_HOST || '').trim();
   const indexPrefix = String(env.MEILISEARCH_INDEX_PREFIX || '').trim();
@@ -122,7 +165,7 @@ export function summarizeReindexPlan({ environment, apply, env }) {
     `  meili host:     ${meiliHost || '(unset)'}`,
     `  index prefix:   ${indexPrefix || '(unset)'}`,
     `  mongo target:   ${mongoTarget}`,
-    `  meili api key:  ${String(env.MEILISEARCH_API_KEY || '').trim() ? 'present' : '(unset)'}`,
+    `  meili write key: ${describeMeiliWriteKeyPresence(env)}`,
     '',
     '  reindex:meili prints the authoritative preflight next, including the live',
     '  document count, and refuses to run if that count is zero.',

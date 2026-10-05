@@ -9,7 +9,14 @@ import {
   parsePhysicsUndergradResearchPage,
   parseStructuredOpportunityPage,
 } from '../sources/departmentUndergradResearchScraper';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
+import { resolveOrgUnitSlugForDepartmentName } from '../orgUnitSignalMaterializer';
 import type { ObservationInput, ScraperContext } from '../types';
+
+vi.mock('../orgUnitSignalMaterializer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../orgUnitSignalMaterializer')>()),
+  resolveOrgUnitSlugForDepartmentName: vi.fn(async () => null),
+}));
 
 const PHYSICS_HTML = `
 <main>
@@ -455,6 +462,93 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[0].description).not.toContain('coordinator@');
   });
 
+  it('does not take a news link whose slug merely contains "form" as the application route', () => {
+    const html = `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <a href="https://fixture.yale.edu/news/fellowship-helps-undergraduates-transform-big-questions">Read the story</a>
+      </main>
+    `;
+    const [record] = parseStructuredOpportunityPage(html, {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'Fixture Scholars',
+    });
+    expect(record.joinPageUrl).toBeUndefined();
+  });
+
+  it('takes a plural applications link as the application route', () => {
+    const html = `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <a href="https://fixture.yale.edu/fellowships/applications">Online Applications</a>
+      </main>
+    `;
+    const [record] = parseStructuredOpportunityPage(html, {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'Fixture Scholars',
+    });
+    expect(record.joinPageUrl).toBe('https://fixture.yale.edu/fellowships/applications');
+  });
+
+  it('skips a graduate-admissions application link and takes the undergraduate one (#4430)', () => {
+    const html = `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <a href="https://fixture.yale.edu/graduate/admissions/apply">Graduate Admissions Application</a>
+        <a href="https://fixture.yale.edu/apply-now">Apply to the PhD program</a>
+        <a href="https://fixture.yale.edu/scholars/applications">Undergraduate application</a>
+      </main>
+    `;
+    const [record] = parseStructuredOpportunityPage(html, {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity',
+      title: 'Fixture Scholars',
+    });
+    expect(record.joinPageUrl).toBe('https://fixture.yale.edu/scholars/applications');
+  });
+
+  it('observes the administering office a program page states, and only that (#4589)', () => {
+    const config = {
+      key: 'fixture-scholars',
+      url: 'https://fixture.yale.edu/opportunities/fixture-scholars',
+      department: 'Fixture Institute',
+      school: 'Yale University',
+      parser: 'structured-opportunity' as const,
+      title: 'Fixture Scholars',
+    };
+    const page = (statement: string) => `
+      <main>
+        <h1>Fixture Scholars</h1>
+        <p>The program places Yale College undergraduates as research assistants with faculty, chosen in a competitive application process in the fall.</p>
+        <p>${statement}</p>
+      </main>
+    `;
+    const officeObserved = (statement: string) =>
+      departmentUndergradResearchRecordsToObservations(
+        parseStructuredOpportunityPage(page(statement), config),
+      ).find((obs) => obs.field === 'contactOffice')?.value;
+
+    expect(
+      officeObserved('The program is administered by the Department of Fixture Studies.'),
+    ).toBe('Department of Fixture Studies');
+    expect(officeObserved('The program is administered by Pat Fixture.')).toBeUndefined();
+    expect(officeObserved('Questions go to the program office.')).toBeUndefined();
+  });
+
   it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
     const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
       (page) => page.key === 'history',
@@ -536,7 +630,11 @@ describe('departmentUndergradResearchScraper', () => {
           field: 'title',
           value: record.name,
         }),
-        expect.objectContaining({ entityKey: record.entityKey, field: 'programKind' }),
+        expect.objectContaining({
+          entityKey: record.entityKey,
+          field: 'undergraduateOnly',
+          value: true,
+        }),
         expect.objectContaining({ entityKey: record.entityKey, field: 'applicationLink' }),
       ]),
     );
@@ -562,9 +660,18 @@ describe('departmentUndergradResearchScraper', () => {
         'title',
         'summary',
         'description',
-        'programCategory',
-        'programKind',
         'applicationLink',
+      ]),
+    );
+    expect(fields).not.toContain('programKind');
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'fellowship',
+          field: 'sourceUrl',
+          value:
+            'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/undergraduate-research',
+        }),
       ]),
     );
     expect(fields).not.toEqual(
@@ -578,6 +685,76 @@ describe('departmentUndergradResearchScraper', () => {
       ]),
     );
     expect(fields).not.toContain('joinPageUrl');
+  });
+
+  describe('the page title the lane observes (#4285)', () => {
+    const guidanceConfig = {
+      key: 'fixture',
+      url: 'https://fixture.yale.edu/undergraduate/undergraduate-research',
+      department: 'Fixture Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance' as const,
+      title: 'Fixture Studies Undergraduate Research',
+    };
+    const pageWith = (head: string, heading: string, body: string) =>
+      `<html><head>${head}</head><body><main><h1>${heading}</h1>${body}</main></body></html>`;
+    const guidanceBody =
+      '<p>Undergraduate students interested in research should contact a faculty member whose laboratory matches their interests.</p>';
+    const seniorEssayBody =
+      '<p>Majors write a senior essay under the supervision of a faculty adviser and submit a prospectus to the director of undergraduate studies.</p>';
+    const observedPageTitle = (html: string) =>
+      departmentUndergradResearchRecordsToObservations(
+        parseGeneralDepartmentResearchPage(html, guidanceConfig),
+      ).find((observation) => observation.field === 'sourcePageTitle')?.value;
+    const classificationOf = (html: string) => {
+      const records = parseGeneralDepartmentResearchPage(html, guidanceConfig);
+      expect(records).toHaveLength(1);
+      return classificationFromObservedFacts(
+        departmentUndergradResearchRecordsToObservations(records),
+      );
+    };
+
+    it('observes the document title without its site suffix', () => {
+      expect(
+        observedPageTitle(
+          pageWith(
+            '<title>Undergraduate Fixture Research | Fixture School</title>',
+            'Research',
+            guidanceBody,
+          ),
+        ),
+      ).toBe('Undergraduate Fixture Research');
+    });
+
+    it('falls back to the page heading when the document has no title', () => {
+      expect(observedPageTitle(pageWith('', 'Undergraduate Research', guidanceBody))).toBe(
+        'Undergraduate Research',
+      );
+    });
+
+    it('derives department research guidance from a page titled as undergraduate research', () => {
+      expect(
+        classificationOf(
+          pageWith(
+            '<title>Undergraduate Research | Fixture</title>',
+            'Undergraduate Research',
+            guidanceBody,
+          ),
+        ).programKind,
+      ).toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
+
+    it('derives no guidance from a senior essay page the lane titles as research', () => {
+      expect(
+        classificationOf(
+          pageWith(
+            '<title>The Senior Essay | Fixture</title>',
+            'The Senior Essay',
+            seniorEssayBody,
+          ),
+        ).programKind,
+      ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
+    });
   });
 
   it('parses new official guidance configs as source-backed entity/access evidence only', () => {
@@ -842,6 +1019,68 @@ describe('departmentUndergradResearchScraper', () => {
     expect(record.joinPageUrl).not.toContain('admissions.yale.edu');
   });
 
+  it('reads the two program pages the funding recall found unread as application routes (#4648)', () => {
+    const configsByKey = new Map(
+      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
+    );
+    const awardConfig = configsByKey.get('global-affairs-undergraduate-research-award');
+    const surfConfig = configsByKey.get('gsas-summer-undergraduate-research-fellowship');
+
+    expect(awardConfig).toMatchObject({
+      url: 'https://jackson.yale.edu/academics-admissions/global-affairs-major/undergraduate-research',
+      parser: 'structured-opportunity',
+    });
+    expect(surfConfig).toMatchObject({
+      url: 'https://gsas.yale.edu/programs-of-study/summer-undergraduate-research-fellowship-program',
+      parser: 'structured-opportunity',
+    });
+
+    const awardHtml = `<html><head><title>Undergraduate Research | Synthetic School</title></head><body><nav><a href="/apply">Apply to Yale</a></nav><main>
+      <h1>Undergraduate Research</h1>
+      <p>Students in the major can conduct research that leads to a senior thesis and secure research funding from the school.</p>
+      <h2>Undergraduate Research Award</h2>
+      <p>The undergraduate research award supports undergraduate research up to a stated amount each academic year.</p>
+      <p>Fall applications are open this month and can be submitted through the <a href="https://forms.example.org/synthetic-award">Undergraduate Research Award Application</a>.</p>
+    </main></body></html>`;
+    const surfHtml = `<html><body><main>
+      <h1>Summer Undergraduate Research Fellowship Program</h1>
+      <p>Each summer the program brings undergraduates to Yale for eight weeks of mentored research with a faculty mentor.</p>
+      <p>Please apply through the <a href="https://consortium.example.org/summer-research">consortium website</a>.
+      You still need to apply through the <a href="https://consortium.example.org/summer-research">Consortium Application portal</a>.</p>
+    </main></body></html>`;
+
+    const [award] = parseStructuredOpportunityPage(awardHtml, awardConfig!);
+    const [surf] = parseStructuredOpportunityPage(surfHtml, surfConfig!);
+
+    expect(award).toMatchObject({
+      kind: 'program',
+      name: 'Jackson School Undergraduate Research Award',
+      joinPageUrl: 'https://forms.example.org/synthetic-award',
+    });
+    expect(surf).toMatchObject({
+      kind: 'program',
+      name: 'Yale Summer Undergraduate Research Fellowship (SURF) Program',
+      joinPageUrl: 'https://consortium.example.org/summer-research',
+    });
+
+    expect(
+      classificationFromObservedFacts(departmentUndergradResearchRecordsToObservations([award])),
+    ).toMatchObject({ programKind: 'FELLOWSHIP_FUNDING', entryMode: 'APPLY_TO_PROGRAM' });
+
+    const fields = departmentUndergradResearchRecordsToObservations([award, surf]).map(
+      (observation) => observation.field,
+    );
+    expect(fields).toEqual(expect.arrayContaining(['sourceUrl', 'applicationLink']));
+    expect(fields).not.toEqual(
+      expect.arrayContaining([
+        'programKind',
+        'programCategory',
+        'entryMode',
+        'studentFacingCategory',
+      ]),
+    );
+  });
+
   it('covers Sociology and Biomedical Engineering undergraduate research pages (#1281)', () => {
     const configsByKey = new Map(
       DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.map((page) => [page.key, page]),
@@ -958,7 +1197,7 @@ describe('departmentUndergradResearchScraper', () => {
       (observation) => observation.field,
     );
     expect(fields).toEqual(
-      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'researchFocused']),
     );
     expect(fields).not.toEqual(
       expect.arrayContaining([
@@ -1093,7 +1332,7 @@ describe('departmentUndergradResearchScraper', () => {
       (observation) => observation.field,
     );
     expect(fields).toEqual(
-      expect.arrayContaining(['sourceKey', 'title', 'description', 'programKind']),
+      expect.arrayContaining(['sourceKey', 'title', 'description', 'researchFocused']),
     );
     expect(fields).not.toEqual(
       expect.arrayContaining([
@@ -1322,5 +1561,112 @@ describe('departmentUndergradResearchScraper', () => {
     }).map((page) => `${page.key} -> ${page.url}`);
 
     expect(offenders).toEqual([]);
+  });
+
+  describe('department course-credit route (#4045)', () => {
+    const ROUTE_PAGE = page(
+      '<p>Seniors receive course credit for the senior essay by enrolling in ABCD 4491.</p>',
+    );
+    const DEADLINE_PAGE = page(
+      '<p>For the senior essay in ABCD 4491, the deadline is the Monday of the third to last week of classes.</p>',
+    );
+    const pageConfig = (key: string, url: string) => ({
+      key,
+      url,
+      department: 'Synthetic Studies',
+      school: 'Yale Faculty of Arts and Sciences',
+      parser: 'general-guidance' as const,
+      title: 'Synthetic Studies Undergraduate Research',
+    });
+    const FIRST = 'https://synthetic.yale.edu/undergraduate/research';
+    const SECOND = 'https://synthetic.yale.edu/undergraduate/senior-essay';
+    const routeObservations = (emitted: ObservationInput[]) =>
+      emitted.filter((obs) => obs.entityType === 'orgUnit');
+
+    function page(body: string): string {
+      return `<html><body><main><h1>Senior Essay</h1>${body}</main></body></html>`;
+    }
+
+    async function runOver(fetchHtml: (url: string) => Promise<string>) {
+      vi.mocked(resolveOrgUnitSlugForDepartmentName).mockImplementation(async (name) =>
+        name === 'Synthetic Studies' ? 'synthetic-studies' : null,
+      );
+      const scraper = new DepartmentUndergradResearchScraper({
+        pageConfigs: [
+          pageConfig('synthetic-research', FIRST),
+          pageConfig('synthetic-essay', SECOND),
+        ],
+        fetchHtml: async (url) =>
+          url.startsWith('https://synthetic.yale.edu/') ? fetchHtml(url) : '',
+      });
+      const emitted: ObservationInput[] = [];
+      const result = await scraper.run(buildContext(scraper, emitted));
+      return { emitted, result };
+    }
+
+    it('withdraws the route when every page for the department states none', async () => {
+      const { emitted, result } = await runOver(async () => DEADLINE_PAGE);
+
+      expect(routeObservations(emitted)).toEqual([
+        expect.objectContaining({
+          entityKey: 'synthetic-studies',
+          value: { schemaVersion: 1, routeStated: false },
+          sourceUrl: SECOND,
+        }),
+      ]);
+      expect(result.notes).toContain('course-credit routes withdrawn: 1');
+    });
+
+    it('states the route when any page for the department states one', async () => {
+      const { emitted } = await runOver(async (url) =>
+        url === FIRST ? ROUTE_PAGE : DEADLINE_PAGE,
+      );
+
+      expect(routeObservations(emitted)).toEqual([
+        expect.objectContaining({
+          entityKey: 'synthetic-studies',
+          value: expect.objectContaining({ evidenceQuote: expect.stringContaining('ABCD 4491') }),
+          sourceUrl: FIRST,
+        }),
+      ]);
+    });
+
+    it('keeps a route one spelling states when another spelling of the same department states none', async () => {
+      vi.mocked(resolveOrgUnitSlugForDepartmentName).mockImplementation(async (name) =>
+        name === 'Synthetic Studies' || name === 'Synthetic Studies Program'
+          ? 'synthetic-studies'
+          : null,
+      );
+      const scraper = new DepartmentUndergradResearchScraper({
+        pageConfigs: [
+          pageConfig('synthetic-research', FIRST),
+          { ...pageConfig('synthetic-essay', SECOND), department: 'Synthetic Studies Program' },
+        ],
+        fetchHtml: async (url) => {
+          if (url === FIRST) return ROUTE_PAGE;
+          if (url === SECOND) return DEADLINE_PAGE;
+          return '';
+        },
+      });
+      const emitted: ObservationInput[] = [];
+      await scraper.run(buildContext(scraper, emitted));
+
+      expect(routeObservations(emitted)).toEqual([
+        expect.objectContaining({
+          entityKey: 'synthetic-studies',
+          value: expect.objectContaining({ evidenceQuote: expect.stringContaining('ABCD 4491') }),
+          sourceUrl: FIRST,
+        }),
+      ]);
+    });
+
+    it('withdraws nothing when a page for the department could not be read', async () => {
+      const { emitted } = await runOver(async (url) => {
+        if (url === FIRST) throw new Error('Request failed with status code 503');
+        return DEADLINE_PAGE;
+      });
+
+      expect(routeObservations(emitted)).toEqual([]);
+    });
   });
 });

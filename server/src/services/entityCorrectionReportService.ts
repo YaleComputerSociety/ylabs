@@ -14,8 +14,14 @@ import { normalizeResearchDetailSlug } from './researchGroupService';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 import { replaceAsciiControls } from '../utils/asciiControl';
 import { resolveReporterIdentityByNetid } from './accountService';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const CATEGORIES = new Set<string>(EntityCorrectionReportCategory);
+
+type CorrectionReportCategory = (typeof EntityCorrectionReportCategory)[number];
+
+const isCorrectionReportCategory = (value: unknown): value is CorrectionReportCategory =>
+  typeof value === 'string' && CATEGORIES.has(value);
 const RESOLUTION_STATUSES = new Set<string>(['accepted', 'dismissed']);
 const STATUS_FILTERS = new Set<string>(EntityCorrectionReportStatus);
 
@@ -65,6 +71,15 @@ export const sanitizeReportNote = (value: unknown, maxLength = MAX_NOTE_LENGTH):
     .slice(0, maxLength);
 };
 
+const openReportConflictError = () => {
+  const error: any = new Error('An open report of this type already exists for this page');
+  error.status = 409;
+  return error;
+};
+
+const isDuplicateKeyError = (error: unknown): boolean =>
+  (error as { code?: unknown } | null)?.code === 11000;
+
 export const createEntityCorrectionReport = async (
   slug: string,
   input: unknown,
@@ -83,7 +98,7 @@ export const createEntityCorrectionReport = async (
 
   const body = normalizeRequestBody(input);
   const category = body.category;
-  if (typeof category !== 'string' || !CATEGORIES.has(category)) {
+  if (!isCorrectionReportCategory(category)) {
     throw new BadRequestError('Invalid report category');
   }
 
@@ -108,11 +123,7 @@ export const createEntityCorrectionReport = async (
   })
     .select('_id')
     .lean();
-  if (existingPending) {
-    const error: any = new Error('An open report of this type already exists for this page');
-    error.status = 409;
-    throw error;
-  }
+  if (existingPending) throw openReportConflictError();
 
   const providedName = [reporter.fname, reporter.lname].filter(Boolean).join(' ');
   const identity =
@@ -137,13 +148,37 @@ export const createEntityCorrectionReport = async (
       userType: reporter.userType || 'unknown',
       role: deriveReporterRole(reporter.userType),
     },
+  }).catch((error: unknown) => {
+    if (isDuplicateKeyError(error)) throw openReportConflictError();
+    throw error;
   });
 
-  console.info(
-    `Correction report ${report._id} submitted for ${entity._id} (${category}) by ${reporter.netId}`,
-  );
+  console.info(sanitizeLogValue(`Correction report ${report._id} submitted (${category})`));
 
   return report.toObject();
+};
+
+const REPORTER_VISIBLE_REPORT_FIELDS = [
+  '_id',
+  'category',
+  'status',
+  'note',
+  'reviewerNote',
+  'createdAt',
+] as const;
+
+export type ReporterCorrectionReport = Partial<
+  Record<(typeof REPORTER_VISIBLE_REPORT_FIELDS)[number], unknown>
+>;
+
+export const toReporterCorrectionReport = (
+  report: Record<string, unknown>,
+): ReporterCorrectionReport => {
+  const projected: ReporterCorrectionReport = {};
+  for (const field of REPORTER_VISIBLE_REPORT_FIELDS) {
+    if (report[field] !== undefined) projected[field] = report[field];
+  }
+  return projected;
 };
 
 export const listEntityCorrectionReports = async (params: {
@@ -218,7 +253,7 @@ export const reviewEntityCorrectionReport = async (
       reviewedAt,
       $push: { reviewHistory: { status, note, reviewedBy: reviewerNetId, reviewedAt } },
     },
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   ).lean();
 
   if (!report) {

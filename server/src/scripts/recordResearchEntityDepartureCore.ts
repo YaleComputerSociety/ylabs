@@ -15,9 +15,7 @@ export interface DepartureRecordCandidate {
 }
 
 export type DepartureRecordSkipReason =
-  | 'already_recorded'
-  | 'suppression_reason_locked'
-  | 'yale_status_cache_locked';
+  'already_recorded' | 'suppression_reason_locked' | 'yale_status_cache_locked';
 
 export interface DepartureRecordSet {
   studentVisibilitySuppressionReason: string;

@@ -11,7 +11,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const EXPECTED_SOURCE_NAMES = [
   'ysm-atoz-index',
@@ -47,33 +47,18 @@ const LEGACY_COLLECTIONS = [
 ] as const;
 
 export interface BetaReadinessGateCliOptions {
-  root: string;
-  strict: boolean;
   confirmBetaBackup: boolean;
   output?: string;
 }
 
-interface GateStatus {
-  status: 'ready' | 'deferred' | 'blocked';
-  message: string;
-  readyRows?: number;
-  blockedRows?: number;
-}
-
 export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCliOptions {
   const options: BetaReadinessGateCliOptions = {
-    root: '',
-    strict: false,
     confirmBetaBackup: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = argv[i + 1];
-    if (arg === '--strict') {
-      options.strict = true;
-      continue;
-    }
     if (arg === '--confirm-beta-backup') {
       options.confirmBetaBackup = true;
       continue;
@@ -87,28 +72,11 @@ export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCli
       options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
     }
-    if (arg === '--root') {
-      options.root = parseRequiredPath(next, '--root');
-      i++;
-      continue;
-    }
-    if (arg.startsWith('--root=')) {
-      options.root = parseRequiredPath(arg.slice('--root='.length), '--root');
-      continue;
-    }
 
     throw new Error(`Unknown Beta readiness gate argument: ${arg}`);
   }
 
   return options;
-}
-
-function parseRequiredPath(value: string | undefined, flag: '--output' | '--root'): string {
-  const pathValue = value?.trim();
-  if (!pathValue || pathValue.startsWith('--')) {
-    throw new Error(`${flag} requires a path`);
-  }
-  return pathValue;
 }
 
 export function writeBetaReadinessGateOutput(result: unknown, output?: string): void {
@@ -140,12 +108,8 @@ export function buildBetaReadinessGateOutput<T extends object>(
 
 export function buildBetaReadinessCommands() {
   return {
-    seedSources:
-      'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json',
-    sourceRun:
-      'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
-    meiliRebuild:
-      'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
+    refreshFromDevelopment: 'yarn beta:refresh-from-development:plan',
+    meiliRebuild: 'node scripts/reindex-search-index.mjs beta',
   };
 }
 
@@ -160,51 +124,8 @@ function describeMongoTarget(rawUrl: string | undefined): string {
   }
 }
 
-export function summarizeReviewedProfileLinkInput(
-  value: unknown,
-  readyMessage: string,
-  missingMessage: string,
-): GateStatus {
-  const record = (value || {}) as Record<string, unknown>;
-  const status = String(record.status || 'missing');
-  if (status === 'ready') {
-    return {
-      status: 'ready',
-      message: readyMessage,
-      readyRows: Number(record.readyRows || 0),
-      blockedRows: Number(record.blockedRows || 0),
-    };
-  }
-  return {
-    status: 'deferred',
-    message: missingMessage,
-    readyRows: Number(record.readyRows || 0),
-    blockedRows: Number(record.blockedRows || 0),
-  };
-}
-
-function summarizeFellowshipGate(status: Record<string, unknown>): GateStatus {
-  const programs = Array.isArray(status.fellowship) ? status.fellowship : [];
-  const readyPrograms = programs.filter((program) => program?.status === 'ready');
-  const blockedPrograms = programs.filter((program) => program?.status !== 'ready');
-
-  if (readyPrograms.length === programs.length && programs.length > 0) {
-    return {
-      status: 'ready',
-      message: 'All fellowship accepted CSVs are ready for Beta recipient runs.',
-      readyRows: readyPrograms.reduce((sum, program) => sum + Number(program.readyRows || 0), 0),
-      blockedRows: 0,
-    };
-  }
-
-  return {
-    status: 'deferred',
-    message:
-      'CSV-backed fellowship recipient runs are deferred until accepted fellowship CSVs validate.',
-    readyRows: readyPrograms.reduce((sum, program) => sum + Number(program.readyRows || 0), 0),
-    blockedRows: blockedPrograms.length,
-  };
-}
+export const betaReadinessExitCode = (blockingGateNames: readonly string[]): number =>
+  blockingGateNames.length > 0 ? 1 : 0;
 
 async function collectionCount(name: string): Promise<number> {
   const db = mongoose.connection.db;
@@ -226,8 +147,6 @@ async function main(): Promise<void> {
 
   await initializeConnections();
 
-  const users: any[] = [];
-  const acceptedInputs: Record<string, unknown> = {};
   const sourceRows = await Source.find(
     { name: { $in: [...EXPECTED_SOURCE_NAMES] } },
     'name enabled cadence',
@@ -255,7 +174,7 @@ async function main(): Promise<void> {
       message:
         legacyResidueCount === 0
           ? 'Canonical hard migration check found no legacy source collection rows.'
-          : 'Legacy source collections still contain rows; run/verify canonical migration cleanup before Beta writes.',
+          : 'Legacy source collections still contain rows; clean them up in Development and let the Development-to-Beta refresh mirror the result.',
       legacyCollectionCounts,
     },
     sourceMetadata: {
@@ -263,15 +182,9 @@ async function main(): Promise<void> {
       message:
         missingSources.length === 0
           ? 'Expected scraper source metadata exists.'
-          : 'Seed source metadata before Beta writes.',
+          : 'Expected scraper source metadata is missing; the Development-to-Beta refresh copies the sources collection.',
       missingSources,
     },
-    fellowshipInput: summarizeFellowshipGate(acceptedInputs),
-    scholarInput: summarizeReviewedProfileLinkInput(
-      acceptedInputs.scholar,
-      'Accepted Google Scholar profile links are ready for reviewed outbound navigation.',
-      'Accepted Google Scholar profile links remain optional manual-review metadata; no Scholar scraper or publication ingestion blocks Beta.',
-    ),
   };
 
   const blockingGateNames = Object.entries(gates)
@@ -282,12 +195,10 @@ async function main(): Promise<void> {
     {
       generatedAt: new Date().toISOString(),
       mongoTarget,
-      acceptedInputRoot: options.root,
-      readyForUnblockedBetaSeed: blockingGateNames.length === 0,
+      ready: blockingGateNames.length === 0,
       blockingGateNames,
       gates,
       counts: {
-        users: users.length,
         researchEntities: await ResearchEntity.countDocuments({ archived: { $ne: true } }),
       },
       rollout: {
@@ -306,9 +217,7 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify(result, null, 2));
   writeBetaReadinessGateOutput(result, options.output);
-  if (options.strict && blockingGateNames.length > 0) {
-    process.exitCode = 1;
-  }
+  process.exitCode = betaReadinessExitCode(blockingGateNames);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {

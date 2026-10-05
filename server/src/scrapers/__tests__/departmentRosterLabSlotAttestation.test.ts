@@ -14,7 +14,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  entryToResearchEntityObservations,
+  enrichEntryFromOfficialProfile,
+  rosterResearchEntityMint,
   mcdbExtractor,
   profileEnrichmentFromHtml,
   psychExtractor,
@@ -147,7 +148,7 @@ describe('the observation the lane emits', () => {
   } as never;
 
   const observationsFor = (entry: Record<string, unknown>) =>
-    entryToResearchEntityObservations(
+    rosterResearchEntityMint(
       {
         name: 'Ada Fixture',
         profileUrl: PROFILE_URL,
@@ -160,7 +161,7 @@ describe('the observation the lane emits', () => {
       dept,
       'https://mcdb.yale.edu/people/faculty',
       'dept-mcdb-ada-fixture',
-    );
+    ).observations;
 
   const absenceAssertions = (entry: Record<string, unknown>) =>
     observationsFor(entry)
@@ -183,6 +184,64 @@ describe('the observation the lane emits', () => {
     expect(
       absenceAssertions({ labUrl: 'https://fixturelab.org/', labSlotAttestation: 'empty' }),
     ).toEqual([]);
+  });
+});
+
+describe('a roster card attested empty whose profile page was never read', () => {
+  const rosterEntry = {
+    name: 'Ada Fixture',
+    profileUrl: PROFILE_URL,
+    labSlotAttestation: 'empty' as const,
+  };
+
+  const enrichWith = (htmlFetcher: () => Promise<string>) =>
+    enrichEntryFromOfficialProfile(
+      rosterEntry,
+      'dept-faculty-roster',
+      false,
+      htmlFetcher,
+      () => {},
+    );
+
+  it('drops the empty claim when the profile fetch fails', async () => {
+    const entry = await enrichWith(() => Promise.reject(new Error('socket hang up')));
+
+    expect(entry.labSlotAttestation).toBeUndefined();
+  });
+
+  it('drops the empty claim when the profile is off Yale and so is never fetched', async () => {
+    let fetched = false;
+    const entry = await enrichEntryFromOfficialProfile(
+      { ...rosterEntry, profileUrl: 'https://adafixture.example.org/about' },
+      'dept-faculty-roster',
+      false,
+      () => {
+        fetched = true;
+        return Promise.resolve(profilePage('<p>No links here.</p>'));
+      },
+      () => {},
+    );
+
+    expect(fetched).toBe(false);
+    expect(entry.labSlotAttestation).toBeUndefined();
+  });
+
+  it('records a refusal when the profile is refused as another person&apos;s page', async () => {
+    const entry = await enrichWith(() =>
+      Promise.resolve(
+        `<html><head><title>Bea Otherperson | MCDB</title>
+           <link rel="canonical" href="https://mcdb.yale.edu/people/bea-otherperson"></head>
+         <body><main><p><a href="https://otherpersonlab.org/">Lab website</a></p></main></body></html>`,
+      ),
+    );
+
+    expect(entry.labSlotAttestation).toBe('refused');
+  });
+
+  it('keeps the empty claim when the profile was read and offers no candidate', async () => {
+    const entry = await enrichWith(() => Promise.resolve(profilePage('<p>No links here.</p>')));
+
+    expect(entry.labSlotAttestation).toBe('empty');
   });
 });
 
@@ -232,5 +291,164 @@ describe('every parse that reads a lab URL states what it saw', () => {
       .map((block) => block.name);
 
     expect(silent).toEqual([]);
+  });
+});
+
+describe('a lab URL the corpus has already refused (#3452)', () => {
+  const dept = {
+    deptKey: 'mcdb',
+    deptName: 'Molecular, Cellular and Developmental Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://mcdb.yale.edu/people/faculty',
+  } as never;
+
+  const HOST_LAB = 'https://medicine.yale.edu/lab/host-pi/';
+
+  const fieldsFor = (labUrlIsUnusable?: (url: string) => boolean) =>
+    Object.fromEntries(
+      rosterResearchEntityMint(
+        {
+          name: 'Ada Fixture',
+          profileUrl: PROFILE_URL,
+          labUrl: HOST_LAB,
+          researchHomeDescription:
+            'The group studies the assembly of cytoskeletal fixtures in dividing cells, using live imaging and targeted genetic perturbation.',
+          researchHomeShortDescription: 'Studies cytoskeletal fixture assembly in dividing cells.',
+          topics: ['Cell Biology'],
+        } as never,
+        dept,
+        'https://mcdb.yale.edu/people/faculty',
+        'dept-mcdb-ada-fixture',
+        labUrlIsUnusable,
+      ).observations.map((observation) => [observation.field, observation.value]),
+    );
+
+  it('withdraws the lab identity, not only the websiteUrl', () => {
+    // The dominant recorded rule is `wrong_owner`: the roster row links a lab this
+    // person works in rather than runs. Before this the refusal withheld the
+    // websiteUrl while the name, kind, and entityType kept asserting the lab.
+    const byField = fieldsFor((url) => url === HOST_LAB);
+    expect(byField.name).toBe('Ada Fixture Faculty Research');
+    expect(byField.kind).toBe('individual');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('keeps the lab when the refusal names a different URL', () => {
+    const byField = fieldsFor((url) => url === 'https://unrelated.example/');
+    expect(byField.name).toBe('Ada Fixture Lab');
+    expect(byField.entityType).toBe('LAB');
+  });
+
+  it('keeps the lab when nothing is refused, so silence never costs an identity', () => {
+    const byField = fieldsFor();
+    expect(byField.name).toBe('Ada Fixture Lab');
+    expect(byField.entityType).toBe('LAB');
+  });
+});
+
+/**
+ * The roster research-entity mint is a second path to the #3410 defect: the new title
+ * screen reached `statesFacultyAppointment`, which gates cross-listed-programme
+ * admission, while this mint applied no title screen at all. So a support-staff entry
+ * with a lab link on an ordinary department roster still minted the PI's lab as its own.
+ */
+describe('the roster research-entity mint and a stated title (#3410)', () => {
+  const dept = {
+    deptKey: 'mcdb',
+    deptName: 'Molecular, Cellular and Developmental Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://mcdb.yale.edu/people/faculty',
+  } as never;
+
+  const mintFor = (title: string | undefined) =>
+    rosterResearchEntityMint(
+      {
+        name: 'Ada Fixture',
+        profileUrl: PROFILE_URL,
+        title,
+        labUrl: 'https://principal-lab.example.org/',
+        researchHomeDescription:
+          'The group studies the assembly of cytoskeletal fixtures in dividing cells, using live imaging and targeted genetic perturbation.',
+        researchHomeShortDescription: 'Studies cytoskeletal fixture assembly in dividing cells.',
+        topics: ['Cell Biology'],
+      } as never,
+      dept,
+      'https://mcdb.yale.edu/people/faculty',
+      'dept-mcdb-ada-fixture',
+    ).observations;
+
+  it('mints nothing for a research-support title', () => {
+    expect(mintFor('Laboratory Assistant 3')).toEqual([]);
+  });
+
+  it('mints nothing for a subordinate rank or a non-research staff role', () => {
+    expect(mintFor('Postdoctoral Associate')).toEqual([]);
+    expect(mintFor('Building Maintenance Supervisor')).toEqual([]);
+  });
+
+  it('still mints for a faculty title', () => {
+    expect(mintFor('Professor of Fixtures').length).toBeGreaterThan(0);
+  });
+
+  // Absence of a title is absence of evidence, and most roster rows carry none.
+  it('still mints when the entry states no title at all', () => {
+    expect(mintFor(undefined).length).toBeGreaterThan(0);
+    expect(mintFor('   ').length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * A title screen refusing a research row is not the roster dropping the person, and an entry
+ * that would have minted nothing anyway is neither. Both have to be told apart,
+ * because the call site records the first as still discovered on this roster and the
+ * departure lane reads a missing discovered key as absence (#3410).
+ */
+describe('rosterResearchEntityMint refusedByTitle', () => {
+  const dept = {
+    deptKey: 'mcdb',
+    deptName: 'Molecular, Cellular and Developmental Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://mcdb.yale.edu/people/faculty',
+  } as never;
+
+  const mint = (entry: Record<string, unknown>) =>
+    rosterResearchEntityMint(
+      {
+        name: 'Ada Fixture',
+        profileUrl: PROFILE_URL,
+        labUrl: 'https://principal-lab.example.org/',
+        researchHomeDescription:
+          'The group studies the assembly of cytoskeletal fixtures in dividing cells, using live imaging and targeted genetic perturbation.',
+        researchHomeShortDescription: 'Studies cytoskeletal fixture assembly in dividing cells.',
+        topics: ['Cell Biology'],
+        ...entry,
+      } as never,
+      dept,
+      'https://mcdb.yale.edu/people/faculty',
+      'dept-mcdb-ada-fixture',
+    );
+
+  it('reports a title refusal only when the entry would otherwise have minted', () => {
+    const refused = mint({ title: 'Laboratory Assistant 3' });
+    expect(refused.observations).toEqual([]);
+    expect(refused.refusedByTitle).toBe(true);
+  });
+
+  it('does not report a title refusal for an entry with no research evidence at all', () => {
+    const empty = mint({
+      title: 'Laboratory Assistant 3',
+      labUrl: undefined,
+      researchHomeDescription: undefined,
+      researchHomeShortDescription: undefined,
+      topics: [],
+    });
+    expect(empty.observations).toEqual([]);
+    expect(empty.refusedByTitle).toBe(false);
+  });
+
+  it('reports no refusal for a faculty title that mints', () => {
+    const minted = mint({ title: 'Professor of Fixtures' });
+    expect(minted.observations.length).toBeGreaterThan(0);
+    expect(minted.refusedByTitle).toBe(false);
   });
 });

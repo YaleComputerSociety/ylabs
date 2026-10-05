@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ResearchEntityRelationship } from '../../models/researchEntityRelationship';
 import { Signal } from '../../models/signal';
 import { recomputeBrowseRankForEntities } from '../researchEntityBrowseRankService';
-import { __testing } from '../researchEntityBrowseRank';
+import { __testing, BROWSE_RANK_SCORER_VERSION } from '../researchEntityBrowseRank';
 
 const { ENTITY_TYPE_RANK_ADJUSTMENT } = __testing;
 
@@ -15,11 +15,11 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -87,6 +87,17 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await scoreOf(archivedOnlyCenter._id)).toBe(await scoreOf(lab._id));
   });
 
+  it('does not read a relationship from a center to itself as hosting affiliated research', async () => {
+    const lab = await createEntity('lab-self', 'LAB');
+    const selfLinkedCenter = await createEntity('center-self-linked', 'CENTER');
+
+    await hostAffiliatedLab(selfLinkedCenter._id, selfLinkedCenter._id);
+
+    await recomputeBrowseRankForEntities([lab._id, selfLinkedCenter._id], { sync: false });
+
+    expect(await scoreOf(selfLinkedCenter._id)).toBe(await scoreOf(lab._id));
+  });
+
   it('does not demote a leaf initiative that hosts nothing', async () => {
     const lab = await createEntity('lab-c', 'LAB');
     const initiative = await createEntity('initiative-leaf', 'INITIATIVE');
@@ -97,26 +108,25 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await scoreOf(initiative._id)).toBe(await scoreOf(lab._id));
   });
 
-  it('persists hasUndergradHostingEvidence only for undergrad-specific signals, not generic outreach (#1054)', async () => {
+  it('persists hasUndergradHostingEvidence from the row the card reads, not from lingering signals (#3593)', async () => {
     const hosting = await createEntity('lab-hosting', 'LAB');
+    const staleSignalOnly = await createEntity('lab-stale-signal', 'LAB');
     const outreachOnly = await createEntity('lab-outreach-only', 'LAB');
-    const notAvailableWithOutreach = await createEntity('lab-not-available', 'LAB');
 
-    await Signal.create({ researchEntityId: hosting._id, type: 'PAST_UNDERGRADS' });
-    await Signal.create({ researchEntityId: outreachOnly._id, type: 'REACH_OUT_PLAUSIBLE' });
-    await Signal.create({
-      researchEntityId: notAvailableWithOutreach._id,
-      type: 'REACH_OUT_PLAUSIBLE',
-    });
-    await Signal.create({
-      researchEntityId: notAvailableWithOutreach._id,
-      type: 'NOT_CURRENTLY_AVAILABLE',
-    });
-
-    await recomputeBrowseRankForEntities(
-      [hosting._id, outreachOnly._id, notAvailableWithOutreach._id],
-      { sync: false },
+    await ResearchEntity.updateOne(
+      { _id: hosting._id },
+      { $set: { pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }] } },
     );
+    await Signal.create({ researchEntityId: staleSignalOnly._id, type: 'PAST_UNDERGRADS' });
+    await Signal.create({ researchEntityId: outreachOnly._id, type: 'APPLICATION_FORM_EXISTS' });
+    await ResearchEntity.updateOne(
+      { _id: staleSignalOnly._id },
+      { $set: { hasUndergradHostingEvidence: true } },
+    );
+
+    await recomputeBrowseRankForEntities([hosting._id, staleSignalOnly._id, outreachOnly._id], {
+      sync: false,
+    });
 
     const evidenceOf = async (id: mongoose.Types.ObjectId): Promise<boolean> => {
       const doc = await ResearchEntity.findById(id).lean<{
@@ -126,7 +136,82 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     };
 
     expect(await evidenceOf(hosting._id)).toBe(true);
+    expect(await evidenceOf(staleSignalOnly._id)).toBe(false);
     expect(await evidenceOf(outreachOnly._id)).toBe(false);
-    expect(await evidenceOf(notAvailableWithOutreach._id)).toBe(false);
+  });
+
+  const stampOf = async (id: mongoose.Types.ObjectId) =>
+    (await ResearchEntity.findById(id).lean<{ browseRankScorerVersion?: number }>())
+      ?.browseRankScorerVersion;
+
+  it('stamps every score it writes with the scorer version that computed it', async () => {
+    const lab = await createEntity('lab-stamped', 'LAB');
+
+    await recomputeBrowseRankForEntities([lab._id], { sync: false });
+
+    expect(await stampOf(lab._id)).toBe(BROWSE_RANK_SCORER_VERSION);
+  });
+
+  it('leaves a score stamped by a newer scorer alone when an older checkout recomputes it', async () => {
+    const lab = await createEntity('lab-newer-stamp', 'LAB');
+    await ResearchEntity.updateOne(
+      { _id: lab._id },
+      { $set: { browseRankScore: 41, browseRankScorerVersion: BROWSE_RANK_SCORER_VERSION } },
+    );
+
+    const result = await recomputeBrowseRankForEntities([lab._id], {
+      sync: false,
+      scorerVersion: BROWSE_RANK_SCORER_VERSION - 1,
+    });
+
+    expect(result.refusedNewerScorer).toBe(1);
+    expect(result.updated).toBe(0);
+    expect(await scoreOf(lab._id)).toBe(41);
+    expect(await stampOf(lab._id)).toBe(BROWSE_RANK_SCORER_VERSION);
+  });
+
+  it('rescores a row an older scorer wrote and counts its score as drifted', async () => {
+    const lab = await createEntity('lab-older-stamp', 'LAB');
+    await recomputeBrowseRankForEntities([lab._id], { sync: false });
+    const current = await scoreOf(lab._id);
+    await ResearchEntity.updateOne(
+      { _id: lab._id },
+      { $set: { browseRankScore: current + 5, browseRankScorerVersion: 1 } },
+    );
+
+    const check = await recomputeBrowseRankForEntities([lab._id], { sync: false, dryRun: true });
+    expect(check.scoreDrifted).toBe(1);
+    expect(await scoreOf(lab._id)).toBe(current + 5);
+
+    const repair = await recomputeBrowseRankForEntities([lab._id], { sync: false });
+    expect(repair.scoreDrifted).toBe(1);
+    expect(await scoreOf(lab._id)).toBe(current);
+    expect(await stampOf(lab._id)).toBe(BROWSE_RANK_SCORER_VERSION);
+  });
+
+  it('refuses the write when a newer scorer stamps the row after this one read it', async () => {
+    const lab = await createEntity('lab-raced-stamp', 'LAB');
+    const originalFind = ResearchEntity.find.bind(ResearchEntity);
+    const find = vi.spyOn(ResearchEntity, 'find').mockImplementationOnce(((...args: any[]) => {
+      const query = (originalFind as any)(...args);
+      const exec = query.exec.bind(query);
+      query.exec = async () => {
+        const rows = await exec();
+        await ResearchEntity.collection.updateOne(
+          { _id: lab._id },
+          {
+            $set: { browseRankScore: 41, browseRankScorerVersion: BROWSE_RANK_SCORER_VERSION + 1 },
+          },
+        );
+        return rows;
+      };
+      return query;
+    }) as any);
+
+    const result = await recomputeBrowseRankForEntities([lab._id], { sync: false });
+    find.mockRestore();
+
+    expect(result.refusedNewerScorer).toBe(1);
+    expect(await scoreOf(lab._id)).toBe(41);
   });
 });

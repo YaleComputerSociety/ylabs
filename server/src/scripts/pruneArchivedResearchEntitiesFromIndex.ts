@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { getMeiliClient, getMeiliIndex } from '../utils/meiliClient';
+import { getMeiliIndex } from '../utils/meiliClient';
+import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
 import {
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
@@ -16,13 +17,14 @@ import {
   assertPruneArchivedIndexApplyAllowed,
   computeIndexDocIdsToPrune,
   parsePruneArchivedIndexArgs,
+  readBackPrunedDocuments,
 } from './pruneArchivedResearchEntitiesFromIndexCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 async function loadLiveEntityIds(): Promise<string[]> {
   const docs = await ResearchEntity.find({ archived: { $ne: true } })
@@ -53,26 +55,15 @@ async function loadIndexedDocumentIds(pageSize: number): Promise<string[]> {
 
 async function deleteIndexDocuments(docIds: string[], pageSize: number): Promise<void> {
   const index = await getMeiliIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-  const client = await getMeiliClient();
   for (let start = 0; start < docIds.length; start += pageSize) {
     const batch = docIds.slice(start, start + pageSize);
-    const task = await index.deleteDocuments(batch);
-    await client.tasks.waitForTask(task.taskUid);
+    await assertMeiliTaskSucceeded(
+      index,
+      await index.deleteDocuments(batch),
+      'deleteDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
   }
-}
-
-async function verifyRemoved(docIds: string[]): Promise<number> {
-  const index = await getMeiliIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-  let stillPresent = 0;
-  for (const id of docIds) {
-    try {
-      await index.getDocument(id);
-      stillPresent += 1;
-    } catch {
-      continue;
-    }
-  }
-  return stillPresent;
 }
 
 function writeReport(report: Record<string, unknown>, output?: string): void {
@@ -99,10 +90,14 @@ async function main(): Promise<void> {
 
   let prunedCount = 0;
   let stillPresentAfter: number | undefined;
+  let unconfirmedAfter: number | undefined;
   if (args.apply && prunableDocIds.length > 0) {
     await deleteIndexDocuments(prunableDocIds, args.pageSize);
-    stillPresentAfter = await verifyRemoved(prunableDocIds);
-    prunedCount = prunableDocIds.length - stillPresentAfter;
+    const index = await getMeiliIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+    const readBack = await readBackPrunedDocuments(prunableDocIds, (id) => index.getDocument(id));
+    stillPresentAfter = readBack.stillPresent;
+    unconfirmedAfter = readBack.unconfirmed;
+    prunedCount = prunableDocIds.length - readBack.stillPresent - readBack.unconfirmed;
   }
 
   const report = {
@@ -117,6 +112,7 @@ async function main(): Promise<void> {
     prunableDocumentIds: prunableDocIds,
     prunedCount,
     stillPresentAfter,
+    unconfirmedAfter,
   };
   console.log(JSON.stringify(report, null, 2));
   writeReport(report, args.output);

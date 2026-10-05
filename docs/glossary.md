@@ -27,6 +27,7 @@ Some lane labels name retired models (`user`, `researchGroupMember` in `observed
 **Confidence resolver.**
 A pure function that takes every observation for one `(entity, field)` pair and picks a winner.
 It groups by serialized value, weights each group by `sum(source.weight x recencyDecay(observedAt))`, adds an agreement bonus when more than one source backs a group, returns the highest-weighted value, and flags a conflict when the runner-up is close.
+A website URL (`websiteUrl`, `website`) observed over both `http://` and `https://` for the same host and path is one group whose value is the `https://` form, so a lane that copies an anchor's scheme cannot downgrade a served research website (#3577).
 A locked field short-circuits the whole thing and returns the locked value.
 Owner: `server/src/scrapers/confidenceResolver.ts`.
 
@@ -37,7 +38,7 @@ Owner: `server/src/scrapers/entityMaterializer.ts`.
 
 **Sweep.**
 The batch run, `scrape:sweep`.
-It spawns one fault-isolated subprocess per source in ordered phases (`identity`, `discovery`, `funding`, `relationships`, `content-access`), then runs a chain of post-run stages.
+It spawns one fault-isolated subprocess per source in ordered phases (`identity`, `discovery`, `discovery-readers`, `funding`, `relationships`, `content-access`), then runs a chain of post-run stages.
 Owner: `server/src/scripts/runScraperSweep.ts`.
 
 **fieldProvenance.**
@@ -67,6 +68,11 @@ Owner: `fieldValueRefusalSchema` in `server/src/models/modelPrimitives.ts`.
 A tombstone on a record, not on a field.
 An absent `reason` is the resting state; a present one stops materializers resurrecting a record they would otherwise rewrite.
 Owner: `recordSuppressionSchema` in `server/src/models/modelPrimitives.ts`.
+
+**Written description.**
+The `fullDescription` the one writer, `research-entity:coverage-synthesis`, synthesizes from a row's live evidence (#4788).
+It is itself an observation, re-derived when the evidence or the prompt changes, and it outranks copied page text whenever it serves; copied text is the fallback only.
+Owner: `server/src/scripts/coverageSynthesis.ts`, with ranking in `server/src/scrapers/confidenceResolver.ts`.
 
 **Derivation versus repair.**
 Both are post-processing and both are legitimate, but they differ in durability.
@@ -143,8 +149,20 @@ When verifying, re-read the served surface.
 The detail DTO is an allowlist builder, so a new field is absent until it is added there.
 
 **Scoreboard.**
-The instrument for reading served state and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
+The instrument for reading served state and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, documented in `docs/served-corpus-scoreboard.md`.
 Prefer it to a throwaway script.
+
+**Creative practice.**
+A served faculty row whose own body describes exhibitions, performances, compositions, productions, creative writing, design practice or an instrument's practice rather than research, in an arts department or school.
+It is served and labelled "Creative practice" on the browse card and the detail page, never withheld, and never described as a lab, a research group or an opening.
+The served `creativePractice` flag is derived at serve time and written to no field.
+Owner: `server/src/utils/creativePracticeDescription.ts`; `docs/decisions.md` 2026-10-03 holds the decision.
+
+**Department research guidance.**
+A department's own page on how an undergraduate gets into research there, served on `/programs` with no application affordance and the action "Read the department's guidance".
+Stored as `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, earned only by the page's own title (`sourcePageTitle`) on a record that states no application cycle, and admitted by the programs gate with the reason `department_research_guidance`.
+The served `departmentResearchGuidance` flag carries that same predicate to the client, so a row whose kind alone reads as guidance keeps its application affordances.
+Owner: `server/src/services/departmentResearchGuidance.ts`; `docs/decisions.md` 2026-10-01 holds the decision.
 
 ## Environments and operations
 
@@ -154,7 +172,7 @@ Development is the only environment where scrapers run, so a data fix is applied
 `MONGODBURL` names the database the current process talks to.
 
 **Promotion.**
-`promoteAcceptedBetaCopy` replaces fifteen whole collections at once, so one promotion delivers every pending fix together.
+`promoteAcceptedBetaCopy` replaces twelve whole collections at once by default, fourteen with `--include-observations` and `--include-scrape-runs`, so one promotion delivers every pending fix together.
 Promotion is not per-fix work and never gets its own issue.
 It is also not monotonic: Production can hold the better value.
 
@@ -169,7 +187,7 @@ A dry run applies no patch, so a promotion count from a dry run is `null` rather
 
 **`*Core.ts`.**
 A library, not a CLI.
-Sixteen such files live in `server/src/scripts/` because the repository has no shared home for them yet; the suffix is the tell that a file is imported rather than run.
+Over a hundred such files live in `server/src/scripts/` because the repository has no shared home for them yet; the suffix is the tell that a file is imported rather than run.
 They are misplaced, not dead.
 
 **Predicate (identifying by predicate).**
@@ -192,6 +210,12 @@ These appear in older code and docs and must not be introduced in new copy, labe
 | `ResearchGroupMember` | `RoleAssignment` |
 | `AccessSignal`, `UndergraduateLogisticsClaim` | `Signal` with a type |
 | `Listing`, Pathways | `/research`, backed by `ResearchEntity` |
+| Yale Research (the product name), retired by #3186 | y/labs |
+| home, homes, saved homes (a saved item) | research, or "saved research profiles" |
+| "ways in", "verified ways in" (student copy) | "how to get involved" |
+| Journey, Program Kind, Entry Mode, Legacy Type (program filter tabs) | Opportunity, Program type, How you apply; the legacy category facet is operator-only |
 
 A client guard test enforces the copy half: `client/src/__tests__/deprecatedVocabularyGuard.test.ts`.
+It reads every JSX text node and every string in a JSX expression, a copy-bearing JSX attribute, or a `label`, `title`, `description`, or similar property, with whitespace collapsed, so a phrase split across source lines is still one phrase, and fails on the retired product name, the "home" noun, "ways in", and the internal program facet names.
+The rendered surfaces are held to the same words as well: `fellowships.test.tsx` and `FellowshipModal.test.tsx` for `/programs`, `labDetail.test.tsx` for the profile empty state, `research.test.tsx` for browse, `SavedResearchPlans.test.tsx` for the dashboard, and the student-journey smoke.
 `docs/decisions.md` holds the decisions behind each retirement.

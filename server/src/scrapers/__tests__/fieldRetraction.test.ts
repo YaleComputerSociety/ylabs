@@ -4,6 +4,7 @@ import {
   assertFieldRetractionContractsAreDeclarable,
   classifyFieldRetraction,
   completeReadsSupportingRetraction,
+  completeReadsAcrossMergedEvidence,
   FIELD_RETRACTION_DROP_GUARD_MIN_POPULATION,
   fieldRetractionContractFor,
   fieldRetractionContracts,
@@ -86,7 +87,14 @@ describe('field-retraction contract declarability', () => {
   });
 
   it('refuses a field ingest can drop, because a rejection reads as a retraction', () => {
-    for (const field of ['fullDescription', 'shortDescription', 'researchAreas', 'name', 'kind']) {
+    for (const field of [
+      'fullDescription',
+      'shortDescription',
+      'researchAreas',
+      'methods',
+      'name',
+      'kind',
+    ]) {
       expect(isIngestDroppableObservationField(field)).toBe(true);
       expect(() => assertDeclarableRetractionField(field, 'retractable')).toThrow(
         /ingest can drop/,
@@ -123,10 +131,88 @@ describe('field-retraction contract declarability', () => {
 
   it('does not treat an undeclared source as retraction capable', () => {
     expect(fieldRetractionContractFor('ysm-atoz-index')).toBeUndefined();
-    expect(fieldRetractionContractFor('official-profile-pi-backfill')).toBeUndefined();
     expect(fieldRetractionContractFor('constructor')).toBeUndefined();
     expect(fieldRetractionContractFor('ysm-faculty-directory')).toBeDefined();
     expect(fieldRetractionContractFor('dept-faculty-roster')).toBeDefined();
+  });
+});
+
+describe('completeReadsAcrossMergedEvidence', () => {
+  const read = (
+    entityKey: string,
+    scrapeRunId: string,
+    observedAt: string,
+    fields: string[] = [],
+  ) => ({
+    entityKey,
+    scrapeRunId,
+    observedAt: new Date(observedAt),
+    assertsNoValueFor: fields,
+  });
+
+  it('shares a survivor read with a key merged into it', () => {
+    const shared = completeReadsAcrossMergedEvidence(
+      [read('survivor-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl'])],
+      [{ entityKey: 'merged-key', survivorKey: 'survivor-key' }],
+    );
+    expect(shared).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityKey: 'merged-key',
+          scrapeRunId: 'run-2',
+          assertsNoValueFor: ['websiteUrl'],
+        }),
+        expect.objectContaining({ entityKey: 'survivor-key', scrapeRunId: 'run-2' }),
+      ]),
+    );
+  });
+
+  it('unions one run across the group instead of dropping a member read', () => {
+    const shared = completeReadsAcrossMergedEvidence(
+      [
+        read('merged-key', 'run-2', '2026-03-01T00:00:00Z'),
+        read('survivor-key', 'run-2', '2026-03-02T00:00:00Z', ['websiteUrl']),
+      ],
+      [{ entityKey: 'merged-key', survivorKey: 'survivor-key' }],
+    );
+    const forMerged = shared.filter((entry) => entry.entityKey === 'merged-key');
+    expect(forMerged).toHaveLength(1);
+    expect(forMerged[0].assertsNoValueFor).toEqual(['websiteUrl']);
+    expect(forMerged[0].observedAt).toEqual(new Date('2026-03-02T00:00:00Z'));
+  });
+
+  it('never gives a merged-in read to the survivor or to a sibling merged-in key', () => {
+    const reads = [read('merged-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl'])];
+    const shared = completeReadsAcrossMergedEvidence(reads, [
+      { entityKey: 'survivor-key', survivorKey: 'survivor-key' },
+      { entityKey: 'merged-key', survivorKey: 'survivor-key' },
+      { entityKey: 'sibling-key', survivorKey: 'survivor-key' },
+    ]);
+    expect(shared).toEqual(reads);
+  });
+
+  it('leaves a key with no merged evidence unchanged', () => {
+    const reads = [read('lone-key', 'run-1', '2026-03-01T00:00:00Z', ['websiteUrl'])];
+    expect(completeReadsAcrossMergedEvidence(reads, [{ entityKey: 'lone-key' }])).toEqual(reads);
+  });
+
+  it('lets the classifier see a merged key as re-read', () => {
+    const observation = {
+      scrapeRunId: 'run-1',
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+      field: 'websiteUrl',
+    };
+    const reads = completeReadsAcrossMergedEvidence(
+      [
+        read('survivor-key', 'run-2', '2026-03-01T00:00:00Z', ['websiteUrl']),
+        read('survivor-key', 'run-3', '2026-04-01T00:00:00Z', ['websiteUrl']),
+      ],
+      [{ entityKey: 'merged-key', survivorKey: 'survivor-key' }],
+    ).filter((entry) => entry.entityKey === 'merged-key');
+    expect(classifyFieldRetraction({ observation, completeReads: [] })).toBe(
+      'source-has-not-reread',
+    );
+    expect(classifyFieldRetraction({ observation, completeReads: reads })).toBe('retract');
   });
 });
 
@@ -510,6 +596,35 @@ describe('retraction value ownership (#3135, #2460)', () => {
     }
     expect(plan.counts.sharedBoilerplateValue).toBe(3);
   });
+
+  it('counts a survivor and its merged-in key as one holder, so their own link is probed', () => {
+    const lab = 'https://mergedlab.example.org/';
+    const keys = ['survivor-key', 'merged-in-key'];
+    const plan = planFieldRetractions({
+      sourceName: 'ysm-faculty-directory',
+      contract: CONTRACT,
+      completeReads: keys.flatMap((key) => [
+        read(key, 'run-2', '2026-02-01T00:00:00Z'),
+        read(key, 'run-3', '2026-03-01T00:00:00Z'),
+      ]),
+      activeObservations: keys.map((key, index) =>
+        observation({ observationId: `obs-${index}`, entityKey: key, value: lab }),
+      ),
+      entities: keys.map((key) =>
+        entity({
+          entityKey: key,
+          storedValues: { websiteUrl: lab },
+          liveObservationCountByField: { websiteUrl: 2 },
+        }),
+      ),
+      dropGuardMinPopulation: 100,
+    });
+    expect(plan.retractions).toHaveLength(2);
+    for (const retraction of plan.retractions) {
+      expect(retraction.maxEntitiesSharingAValue).toBe(1);
+    }
+    expect(plan.counts.sharedBoilerplateValue).toBe(0);
+  });
 });
 
 describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
@@ -570,6 +685,26 @@ describe('withholdSoleHolderRetractionsThatStillAnswer (#3135)', () => {
     expect(result.retained).toEqual([]);
     expect(result.withheld).toHaveLength(1);
   });
+
+  it('keeps the stored value when another key of the same row still answers', async () => {
+    const byValue = async (value: string) => ({ positivelyDead: value.endsWith('dead') });
+    const result = await withholdSoleHolderRetractionsThatStillAnswer(
+      [
+        planned({ entityKey: 'merged-in-key', retractedValues: ['https://a.example.org/dead'] }),
+        planned({
+          entityKey: 'survivor-key',
+          observationIds: ['obs-2'],
+          clearsStoredValue: false,
+          retractedValues: ['https://b.example.org/live'],
+        }),
+      ],
+      byValue,
+    );
+    expect(result.retained).toHaveLength(1);
+    expect(result.retained[0].entityKey).toBe('merged-in-key');
+    expect(result.retained[0].clearsStoredValue).toBe(false);
+    expect(result.withheld).toHaveLength(1);
+  });
 });
 
 describe('citedAddressNoLongerServesTheResource (#3135)', () => {
@@ -622,14 +757,19 @@ describe('sources that cannot attest an absence (#3261)', () => {
    * must have no contract at all rather than a permissive one.
    */
   it('names them, and refuses to give them a contract', () => {
-    for (const source of ['ysm-atoz-index', 'official-profile-pi-backfill']) {
+    for (const source of ['ysm-atoz-index']) {
       expect(sourceCannotAttestAbsence(source)).toBe(true);
       expect(fieldRetractionContractFor(source)).toBeUndefined();
     }
   });
 
   it('does not claim it of the sources that do attest', () => {
-    for (const source of ['ysm-faculty-directory', 'dept-faculty-roster']) {
+    for (const source of [
+      'ysm-faculty-directory',
+      'dept-faculty-roster',
+      'yse-faculty-directory',
+      'official-profile-pi-backfill',
+    ]) {
       expect(sourceCannotAttestAbsence(source)).toBe(false);
       expect(fieldRetractionContractFor(source)).toBeDefined();
     }

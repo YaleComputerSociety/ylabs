@@ -14,11 +14,17 @@ Most of the panel is a single MongoDB aggregation on the request, so it says wha
 |---|---|---|
 | Coverage, by tier, by school | Live aggregation | Now |
 | Has a research website, Generic "Faculty Research" title | Live aggregation | Now |
-| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
+| Has topics, No website and no topics, Opens by stating the research, Card summary only echoes the topics, Browse card cut mid-sentence, Browse card of six words or fewer, Serves a biography as its description, Public description invariant fails | Latest `corpus_quality_snapshots` row, tagged **measured** on screen | As of that measurement |
 
-Three rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and about **13 seconds** over the served corpus, against about **150 ms** for the aggregation. Those three carry a `measured` tag and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
+The snapshot rows cannot be an aggregation: each needs the roster resolved and `buildResearchEntityPublicDescriptionRepresentation` built per entity, which is JavaScript rules over 2,839 lines and, measured on 2026-09-14, about **13 seconds** over the served corpus against about **150 ms** for the aggregation.
+Read that 13 seconds as a pre-#4093 upper bound rather than a current figure.
+#4093 memoized the field-quality scoring a row was repeating once per card candidate, which cut this same representation over a 24-row browse page from 123 ms to 68 ms, so the pass over the corpus is materially cheaper per row; re-timed end to end on 2026-10-02 over a larger served corpus, the whole report took about 27 s.
+The choice does not turn on the exact number: it is seconds against milliseconds either way, and halving seconds leaves them seconds.
+Every snapshot-sourced row carries a `measured` tag, the header topic average carries its measurement date, and the header says how many rows are in that state, so nobody reads an as-of number as a now number.
 
-**The other five were measured to be identical, not assumed.** Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471. Routing them through the representation cost 13 seconds and bought nothing, so they moved.
+**The other five were measured to be identical, not assumed.**
+Over 3,120 served Development rows on 2026-09-14 the aggregation and the representation returned the same counts: research website 1,276, topics 3,026, topic total 15,136, dead ends 69, generic title 1,471.
+Routing them through the representation cost those same seconds and bought nothing, so they moved.
 
 **The topic metrics crossed that line in #3379, and the drift this paragraph warned about is why.**
 The unsourced domain-coherence guard rewrites `researchAreas` at serve time, reading `fieldProvenance` and the row's own prose, so no aggregation can reproduce it.
@@ -27,6 +33,12 @@ Measured on 3,386 served Development rows on 2026-09-25, with peers writing the 
 So the panel was reporting topic coverage on 77 rows where a student sees no topic at all, and counting 795 chips nobody can read.
 `servedRowFacts` now counts `publicResearchAreaArray(servedResearchEntityCopy(...))`, which is the DTO's own chip projection, and the two agree on every served row rather than on all but one.
 The withholding itself is untouched: the guard is doing what #1407 built it for.
+
+**#3379 moved the topic metrics on the server, and #4004 moved the panel with them.**
+Until #4004 the client still rendered "Has topics", "No website and no topics" and the header's topic average from the live aggregation, untagged, so the panel reported stored state under a "now" label and its trend compared that stored value against a served measurement.
+On Development on 2026-09-30 the panel read 17 dead ends where the newest measurement served 25.
+The panel now decides a row's source from the endpoint's `snapshotOnlyMetrics` list rather than from a second hard-coded list, so a metric the server moves to the measured side moves on screen with it.
+The live aggregation no longer computes the three topic metrics at all, so no reader can pick the stored count up by mistake, and the header's topic average reads the latest measurement.
 
 **The count was one of two defects, and #3401 is the other.**
 The guard judges only a chip with no `fieldProvenance.researchAreas`, and `applyDescriptionResearchAreaDerivation` set `researchAreas` without ever writing that entry, so every chip derived from a row's own description was exposed to it.
@@ -42,6 +54,19 @@ The rest were written by lanes that record provenance today and simply had not b
 So the remedy for that population is a re-materialize pass rather than anything this lane does, and an attribution arm that reached one row in 56 was removed rather than carried.
 
 If a future sanitizer starts rewriting `websiteUrl` or `name` at serve time, the aggregation would drift from the representation the same way. `corpus:snapshot` keeps recording the representation-derived value for those same metrics, so a divergence appears as a disagreement between the live number and the newest row rather than as a silently wrong number. `corpusQualityLiveMetricsParity.test.ts` pins which metrics sit on which side of that line.
+
+## The browse card rows (#4809)
+
+"Useful" counts are not a student's view of a card: on 2026-10-04 the panel read `fullDescriptionUseful` 3,505 of 3,505 and `shortDescriptionUseful` 3,504 of 3,505, while 914 of 3,543 browse cards ended mid-sentence in "…".
+The card a student scans is the list DTO's `cardDescription.text` run through the client's `cardSummary`, which ends at the last whole sentence within 200 characters and otherwise cuts at a word with "…".
+`servedRowFacts` reads that text through `servedResearchEntityBrowseCardText` in `server/src/services/researchEntityDto.ts`, which builds the same list DTO the browse route serves, so a card the serve path withholds or replaces with the "Limited public description" state is counted as that, not as the stored short or the whole body.
+`servedRowFacts` runs `browseCardSummary` (`server/src/utils/browseCardSummary.ts`), a server copy of `cardSummary`, because a server module cannot import a client util; `contracts/browseCardSummary.cases.json` pins the two copies, and both suites read it.
+**Browse card cut mid-sentence** counts cards that end in "…".
+**Browse card of six words or fewer** counts cards too short to say what is studied, such as "Studies human behavior."
+Snapshots taken before these rows existed carry no value and read "0 / 0", which the panel draws with no share and no trend rather than as 0%.
+
+The other half of the description measurement cannot be a count: whether a description is accurate and useful needs its cited page read.
+`docs/description-graded-sample.md` holds the rubric and procedure for that sample.
 
 ## The response is a DTO, not the stored row
 
@@ -96,8 +121,12 @@ Tightening a description flag shows up here as a dip, with no parallel heuristic
 ## The collection is environment-local
 
 `corpus_quality_snapshots` is listed in `scripts/mirrorCollectionPolicy.ts` and must never join `COPY_COLLECTIONS` in `promoteAcceptedBetaCopy.ts`.
-A promotion replaces whole collections with an unguarded `deleteMany({})`, so carrying this one would erase the history it exists to keep, and would attribute one environment's measurements to another.
+A promotion replaces whole collections through a staged collection swap, so carrying this one would replace the target's history with Beta's and erase the history it exists to keep, and would attribute one environment's measurements to another.
 Two tests pin that.
+
+Staying out of the mirror is not by itself protection.
+The Development refresh clears every Development collection Beta does not mirror, which was every environment-local collection, so until #4034 one refresh erased this history.
+`PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in the same policy file now exempts it, and `docs/data-refresh-runbook.md` records what the refresh keeps.
 
 ## How the history keeps growing
 
@@ -108,10 +137,17 @@ Staleness-driven rather than interval-driven, deliberately.
 A daily timer loses a day whenever the process restarts or the host spins down, and this deploy is kept awake by an external ping rather than by traffic, so "fire once every 24h from boot" would silently skip.
 Asking about staleness is correct across restarts and cheap when the answer is no.
 
+A measurement that is due is not cheap, and it runs on the serving event loop, so `readCorpusQualityReport` yields to the event loop before every served row it measures (#4193).
+Without the yield, the per-row representation ran in synchronous batches of 400 rows: measured over the Development corpus on 2026-10-02, one report took about 27 s with 8 event-loop stalls over 200 ms and the longest at 3.8 s, so every request on the instance waited.
+With it the same report takes about the same time, with no stall over 200 ms, a p99 event-loop delay of 38 ms, and a maximum of 150 ms, and the report it returns is byte-identical to the synchronous pass.
+A worker thread or a scheduled script would also have moved the work, but each needs its own database connection and a separate build entry, and the yield already brings every stall under the 200 ms bound, so it was chosen on that measurement.
+`corpusQualityReportEventLoop.test.ts` pins both halves: the report gives the event loop a turn per row, and its output equals the synchronous pass.
+
 The environment is discovered from the connected database name via `operatorEnvironmentForDatabaseName`, not from a flag, so a row can never be labelled with an environment it did not come from.
 A database the mapping cannot place records nothing.
 
-On by default in a deployed runtime, because a measurement nobody remembers to take is the problem this exists to solve.
+On by default in every runtime except `NODE_ENV=test`, because a measurement nobody remembers to take is the problem this exists to solve.
+That includes a laptop: a local server booted against Development records a Development snapshot when the newest one is stale, measured by whatever branch is checked out, while one booted on the local data path (`yarn dev:server:local`) records nothing, because the mapping cannot place `ylabs_local`.
 Off under `NODE_ENV=test` so suites never write, and disableable with `CORPUS_SNAPSHOT_DISABLED=true`.
 
 There is deliberately no GitHub Actions workflow and no database secret.
@@ -126,4 +162,4 @@ The series starts at its first snapshot.
 The 2026-08-31 hand-read in `docs/served-corpus-scoreboard.md` cannot be backfilled into it: that artifact holds served copy for 100 slugs, not corpus-wide ratios, so the earlier ratios are unrecoverable rather than merely unrecorded.
 
 The panel also reads one environment, whichever database the process is connected to.
-Cross-environment drift is a different question; `yarn --cwd server research-entity:served-scoreboard` reads all three.
+Cross-environment drift is a different question; `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>` reads all three.

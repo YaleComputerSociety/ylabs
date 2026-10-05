@@ -21,11 +21,13 @@ Follow [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md#local-development-setup).
 Two things are worth knowing before you start, because both have cost people an afternoon:
 
 - `server/.env` needs `MONGODBURL`, the database the process talks to. Without it the server throws `MONGODBURL is required` on boot. The `DEVELOPMENT_`, `BETA_`, and `PRODUCTION_` prefixed URLs are for cross-environment copies only and no request path reads them.
-- Ask a maintainer for Development MongoDB credentials. There is no local-only data path, so you cannot get a populated app without them.
+- You do not need credentials to start. `yarn local:setup` then `yarn dev:server:local` runs the app against a local MongoDB seeded with synthetic rows, which is enough for serve-time work. Ask a maintainer for Development MongoDB credentials when you need the real corpus.
 
 Sanity check that you are actually up:
 
 ```bash
+yarn meili:up         # start local Meilisearch
+yarn meili:seed       # build the local index from Development
 yarn meili:health     # {"status":"available"}
 yarn dev:server       # then http://localhost:4000/api/dev-login
 yarn dev:client       # then http://localhost:3000
@@ -53,8 +55,9 @@ Work in a dedicated git worktree, never in the primary checkout:
 scripts/new-agent-worktree.sh fix/short-description
 ```
 
-The helper branches from `beta`, installs dependencies in isolation, and reserves a free client dev-server port.
-The primary checkout at `~/Personal/ylabs` is for review and integration only.
+The helper branches from `beta`, installs dependencies in isolation, reserves a free client port and a free API port, and copies `server/.env` and `client/.env` from the primary checkout with those ports written in.
+Start the worktree with the two commands it prints, and log in through the dev-login URL it prints, which returns you to that worktree's client port.
+The primary checkout is for review and integration only.
 Two people or agents sharing one checkout will switch branches under each other and serve the wrong code.
 Do not symlink `node_modules` between worktrees while running dev servers, because they share Vite's `node_modules/.vite` cache and clobber each other.
 
@@ -84,12 +87,12 @@ yarn test:server   # server only
 yarn test:client   # client only
 ```
 
-`yarn test` runs the two suites **sequentially** and that is deliberate: run in parallel they contend for the same Development data and fabricate failures that are not real.
+`yarn test` runs the two suites **sequentially** and that is deliberate: neither suite reaches a real database, because the server suite is hermetic and the client suite runs under `jsdom`, but run in parallel they starve each other's in-memory MongoDB instances and Vitest workers and fabricate timeouts that are not real.
 
 `yarn verify` runs the full CI sequence locally.
 `yarn serve:fresh` does a clean install, build, and serve, which is a smoke check rather than a test.
 
-The suites are big: 675 server files (about 10,911 tests) and 104 client files (about 1,141 tests).
+The suites are big: `git ls-files 'server/*.test.ts' | wc -l` and `git ls-files 'client/*.test.ts' 'client/*.test.tsx' | wc -l` print the current file counts, several hundred on the server and well over a hundred on the client.
 On a loaded laptop that size turns into failures that are not real, so learn to recognise them before you go debugging one.
 
 **A local timeout is usually starvation, not a defect.**
@@ -107,7 +110,7 @@ CI on Linux is the authority on whether a test really fails.
 Close other work before running a full suite, and prefer running only the suite you touched.
 
 None of the above verifies served output.
-When a change is meant to improve what students see, re-read the served surface with `yarn --cwd server research-entity:served-scoreboard`.
+When a change is meant to improve what students see, re-read the served surface with `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, described in `docs/served-corpus-scoreboard.md`.
 An exit code is not verification and neither is a script's own counter.
 
 ## Open the pull request
@@ -129,37 +132,70 @@ Scan it before it exists anywhere public:
 yarn security:identifiers:body <file>
 ```
 
-The `Person identifier scan` check is advisory and cannot unpublish text, so a red run means "read the finding and rewrite now", never "wait for green".
+The `gh` identifier guard enforces this before posting: it runs the same scan on every `gh` issue, pull request, comment, and API body for this organisation and refuses a flagged one, so the text never reaches GitHub.
+`scripts/new-agent-worktree.sh` installs it; on any other checkout run `scripts/install-gh-identifier-guard.sh` once.
+The installer copies the guard to `~/.local/share/ylabs-gh-guard`, so deleting the checkout later does not break `gh`, and it fails unless its shim is the first `gh` on `PATH`.
+A pull request body written in the GitHub web UI is never scanned, so scan it yourself first.
+There is no after-the-fact bot, so a host without the guard has only your own scan.
 See [docs/person-identifier-convention.md](docs/person-identifier-convention.md).
+
+## Contributing from a fork
+
+You do not need write access to start.
+Fork the repository, then:
+
+```bash
+git clone https://github.com/<you>/ylabs.git && cd ylabs
+git remote add upstream https://github.com/YaleComputerSociety/ylabs.git
+git fetch upstream
+scripts/new-agent-worktree.sh <branch-name>
+```
+
+`scripts/new-agent-worktree.sh` installs the `gh` guard and branches from `upstream/beta` whenever an `upstream` remote exists, so the branch starts from this repository rather than from your fork's possibly stale `beta`.
+The guard scans a body whenever any remote of the checkout belongs to this organisation, so a fork checkout is guarded too.
+Push the branch to your fork and open the pull request against `YaleComputerSociety/ylabs` `beta`, for example with `gh pr create --repo YaleComputerSociety/ylabs --base beta`.
+A maintainer approves the first CI run for a first-time contributor; after that `test-and-build` and `student-journey-smoke` run on every push, and neither uses repository secrets.
+A maintainer reviews and merges it.
 
 ## Merge
 
 Merge when CI is green and the pull request is mergeable on its current head.
 
-`beta` is protected by the `require CI on beta` ruleset, which requires `test-and-build` and `student-journey-smoke` to pass, requires one approving review, and blocks force pushes.
-`Person identifier scan` is deliberately not required, for the reason above, and `release-hold` applies only to pull requests into `main`.
+`beta` is protected by two rulesets.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke` and a squash merge queue, blocks force pushes, and has no bypass actors.
+`require review on beta` requires one approving review.
+The `Admin Author Approval` workflow supplies it for a pull request whose author holds the Admin repository role, because a sole maintainer cannot approve their own pull request and the merge queue ignores ruleset bypasses.
+`release-hold` applies only to pull requests into `main`.
 Protection is configured as rulesets rather than classic branch protection, so inspect it with `gh api repos/YaleComputerSociety/ylabs/rulesets`; the `branches/beta/protection` endpoint reports 404 here and does not mean what it appears to mean.
 
 ```bash
-gh pr merge <n> --squash --delete-branch
+gh pr merge <n> --auto --repo YaleComputerSociety/ylabs
+gh pr view <n> --repo YaleComputerSociety/ylabs --json state --jq .state
+git push origin --delete <branch>
 ```
 
-**Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
+Delete the branch only once the state reads `MERGED`; deleting it while the pull request is still queued closes it.
 
-The Admin role bypasses the ruleset unconditionally, which is what `--admin` uses.
-It exists because a sole maintainer cannot approve their own pull request, and because the release watchdog's bot flow depends on it.
-If you have it, use it for the review requirement and never to get past a failing `test-and-build`: fix the check, or report the blocker.
+Do not pass `--delete-branch`: run from a worktree it removes that worktree and switches the primary checkout's branch.
+
+`--auto` puts the pull request in the merge queue once its checks pass.
+The queue rebases it onto the current `beta` plus everything queued ahead of it, reruns both checks on that exact commit, and squashes it with the pull request title and body only if they pass.
+A red check drops it out of the queue: fix the check, or report the blocker, and enqueue it again.
+
+**Without the Admin role you cannot merge your own pull request**, because of the one-approval rule. Ask for a review.
+Nobody bypasses the queue or the checks, so do not pass `--admin`.
 
 Confirm the linked issue auto-closed, then clean up:
 
 ```bash
-git worktree remove <path>
+git -C <primary-checkout> worktree remove <path>
 git worktree prune
+git -C <primary-checkout> branch --show-current   # still beta
 ```
 
 A stored-data fix does not close its issue on merge.
 Close it once Development is fixed and verified.
-Do not open an issue to track a promotion: one promotion replaces fifteen whole collections and delivers every pending fix together.
+Do not open an issue to track a promotion: one promotion replaces twelve whole collections by default and delivers every pending fix together.
 
 ## Where to look things up
 

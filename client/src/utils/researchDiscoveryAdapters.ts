@@ -1,4 +1,4 @@
-import type { PathwayBestNextStepCategory, PathwaySearchHit } from '../types/pathway';
+import type { PathwaySearchHit } from '../types/pathway';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -41,7 +41,6 @@ export type ResearchHomeContextState = 'complete' | 'sparse';
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
   fullDescription?: string | null;
-  profileSynthesisDescription?: string | null;
   cardDescription?: ResearchHomeContextSummary | null;
   researchAreas?: Array<string | undefined | null>;
   departments?: Array<string | undefined | null>;
@@ -111,28 +110,6 @@ const titleizeValue = (value?: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
-export const getPathwayActionLabel = (category?: PathwayBestNextStepCategory | string): string => {
-  switch (category) {
-    case 'apply':
-      return 'Apply';
-    case 'contact-program':
-      return 'Contact program';
-    case 'plan-outreach':
-      return 'Plan targeted outreach';
-    case 'find-funding':
-      return 'Find funding';
-    case 'register-for-credit':
-      return 'Ask about credit after finding a mentor';
-    case 'save-for-thesis':
-      return 'Save for thesis planning';
-    case 'check-back-later':
-    case 'save-for-later':
-      return 'Save for later';
-    default:
-      return 'Review next step';
-  }
-};
-
 export const getPathwayTypeLabel = (value?: string): string => {
   const studentFacingLabel = getStudentFacingPathwayLabel(value);
   if (studentFacingLabel !== 'Pathway') return studentFacingLabel;
@@ -195,20 +172,14 @@ export const getEvidenceSignalLabel = (value?: string): string => {
   switch (value) {
     case 'POSTED_OPENING':
       return 'Posted opening';
-    case 'RECURRING_PROGRAM':
-      return 'Recurring program';
     case 'PAST_UNDERGRADS':
       return 'Past undergraduate participation';
     case 'CURRENT_UNDERGRADS':
       return 'Current undergraduate participation';
     case 'FACULTY_SUPERVISION':
       return 'Faculty supervision evidence';
-    case 'FELLOWSHIP_COMPATIBLE':
-      return 'Fellowship-compatible evidence';
     case 'CREDIT_FORMALIZATION_POSSIBLE':
       return 'Credit may be possible later';
-    case 'REACH_OUT_PLAUSIBLE':
-      return 'Profile/contact evidence';
     default:
       return titleizeValue(value) || 'Source evidence';
   }
@@ -293,14 +264,9 @@ const selectResearchDescriptionSummary = (
     return buildCompleteContextSummary(input.fullDescription);
   }
 
-  const summaries = [
-    isWeakShortDescription(input.shortDescription)
-      ? undefined
-      : buildCompleteContextSummary(input.shortDescription),
-    buildCompleteContextSummary(input.profileSynthesisDescription, 'Profile context'),
-  ].filter((summary): summary is ResearchHomeContextSummary => Boolean(summary));
-
-  return summaries[0];
+  return isWeakShortDescription(input.shortDescription)
+    ? undefined
+    : buildCompleteContextSummary(input.shortDescription);
 };
 
 export const buildResearchHomeContextSummary = (
@@ -404,33 +370,40 @@ const pathwaysForEntities = (
   });
 };
 
-const hasContactRoute = (pathway: PathwaySearchHit): boolean =>
-  Boolean(pathway.contactRoute?.url || pathway.contactRoute?.routeType) ||
-  ['contact-program', 'plan-outreach'].includes(pathway.bestNextStepCategory);
+/**
+ * The browse card's fallback, for the surface where `pathways` is absent.
+ *
+ * The browse response from `/api/research/search` carries no `pathways` and no
+ * `wayInBadges` field, so on `/research` the signals were always empty and the
+ * block that renders them was never entered: 0 of 24 cards, measured. The same
+ * response does carry the underlying evidence, just in the entity shape, so the
+ * derivation is possible without a server change or a reindex. See #3555.
+ *
+ * `Contact route` is deliberately absent: the browse payload carries no contact
+ * field, so it cannot be derived here honestly. It stays a detail-surface badge.
+ */
+export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): string[] => {
+  if (!entity) return [];
 
-const pathwayEvidenceTypes = (pathways: PathwaySearchHit[]): string[] =>
-  pathways.flatMap((pathway) => pathway.evidence || []).map((item) => item.signalType);
-
-export const buildWayInBadges = (
-  entity: ResearchEntity | undefined,
-  pathways: PathwaySearchHit[],
-): string[] => {
-  const signalTypes = pathwayEvidenceTypes(pathways);
   const badges: string[] = [];
-  const addBadge = (label: string, condition: boolean) => {
-    if (condition && !badges.includes(label)) badges.push(label);
-  };
+  // `undergradEvidenceQuote` is deliberately NOT read here. #3569 measured the
+  // badge precision of its dominant source, `lab-microsite-undergrad-llm`, at
+  // 0.36 with a Wilson 95% upper bound of 0.50, over a seeded sample of 50 of
+  // the 925 rows that lane supplies. 19 of those 50 quotes were the model's own
+  // absence commentary, "No explicit mention of undergraduates on the provided
+  // pages", which passed the plausibility regex and switched this badge ON
+  // precisely where the lane had found no evidence.
+  //
+  // Showing the quote instead of asserting does not rescue it either: 20 of the
+  // 50 quotes are not on the page they cite. So the field cannot back a
+  // student-facing claim at all until that lane improves, tracked on #3592.
+  //
+  // The badge reads the served flag rather than re-deriving it here, so it
+  // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
+  // which read the same server predicate (#3593).
+  if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
 
-  addBadge('Contact route', pathways.some(hasContactRoute));
-  addBadge(
-    'Undergrad evidence',
-    signalTypes.some((signal) =>
-      ['CURRENT_UNDERGRADS', 'PAST_UNDERGRADS', 'FACULTY_SUPERVISION'].includes(signal),
-    ),
-  );
-  addBadge('Student project evidence', signalTypes.includes('FACULTY_SUPERVISES_STUDENT_PROJECTS'));
-
-  return badges.slice(0, 5);
+  return badges;
 };
 
 export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined): string => {
@@ -453,12 +426,7 @@ const pathwayDisplayKey = (pathway: PathwaySearchHit): string => {
     pathway.contactRoute?.url ||
     pathway.sourceUrls?.[0] ||
     pathway.evidence?.find((entry) => entry.sourceUrl)?.sourceUrl;
-  const opportunityKey =
-    sourceKey ||
-    pathway.bestNextStepCategory ||
-    pathway.bestNextStep ||
-    pathway.studentFacingLabel ||
-    pathway._id;
+  const opportunityKey = sourceKey || pathway.studentFacingLabel || pathway._id;
 
   return [entityKey, pathway.pathwayType || 'pathway', opportunityKey]
     .map(normalizeDisplayKeyPart)
@@ -514,7 +482,6 @@ const buildProfileDiscoveryClusters = (
     const contextSummary = buildResearchHomeContextSummary({
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
-      profileSynthesisDescription: entity.profileSynthesisDescription,
       cardDescription: entity.cardDescription,
       researchAreas: entity.researchAreas,
       departments: entity.departments,
@@ -539,7 +506,7 @@ const buildProfileDiscoveryClusters = (
         ...(entity.studentVisibilityTier === 'limited_but_safe' ? ['Limited profile'] : []),
         ...getUniqueDepartmentLabels(entity.departments).slice(0, 2),
       ]).slice(0, 5),
-      wayInBadges: buildWayInBadges(entity, pathways),
+      wayInBadges: buildWayInBadgesFromEntity(entity),
       entities: [entity],
       pathways,
       evidence: [

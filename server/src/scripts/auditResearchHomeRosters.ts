@@ -139,6 +139,7 @@ async function readStoredLaneState(
     | 'storedFreshnessExpiresAt'
     | 'materializedMembershipKeys'
     | 'expiredMaterializedRows'
+    | 'materializedRows'
   >
 > {
   const entity = await ResearchEntity.findOne({ slug: config.researchEntityKey })
@@ -157,25 +158,40 @@ async function readStoredLaneState(
         state: 'CURRENT',
         archived: { $ne: true },
       })
-        .select('rosterProvenance')
+        .select('personId rosterProvenance')
         .lean()
     : [];
   const now = Date.now();
   const provenance = roleRows.map(
     (row) => (row as { rosterProvenance?: Record<string, unknown> }).rosterProvenance ?? {},
   );
+  const isoTime = (value: unknown): string | undefined => {
+    const time = value instanceof Date ? value : value ? new Date(String(value)) : null;
+    return time && !Number.isNaN(time.getTime()) ? time.toISOString() : undefined;
+  };
   return {
     entityExists: Boolean(entity),
     entityArchived: Boolean((entity as { archived?: boolean } | null)?.archived),
     ...(typeof snapshot?.state === 'string' ? { storedSnapshotState: snapshot.state } : {}),
     storedMembershipKeys,
-    ...(snapshot?.observedAt ? { storedObservedAt: String(snapshot.observedAt) } : {}),
+    ...(isoTime(snapshot?.observedAt) ? { storedObservedAt: isoTime(snapshot?.observedAt) } : {}),
     ...(snapshot?.freshnessExpiresAt
       ? { storedFreshnessExpiresAt: String(snapshot.freshnessExpiresAt) }
       : {}),
     materializedMembershipKeys: provenance
       .map((row) => String(row.membershipKey ?? ''))
       .filter(Boolean),
+    materializedRows: roleRows
+      .map((row) => {
+        const typed = row as { personId?: unknown; rosterProvenance?: Record<string, unknown> };
+        const observedAt = isoTime(typed.rosterProvenance?.observedAt);
+        return {
+          membershipKey: String(typed.rosterProvenance?.membershipKey ?? ''),
+          personId: String(typed.personId ?? ''),
+          ...(observedAt ? { observedAt } : {}),
+        };
+      })
+      .filter((row) => row.membershipKey),
     expiredMaterializedRows: provenance.filter((row) => {
       const expiresAt = row.freshnessExpiresAt ? new Date(String(row.freshnessExpiresAt)) : null;
       return (
@@ -248,9 +264,6 @@ async function main(): Promise<void> {
   const configs = selectRosterConfigs(OFFICIAL_ROSTER_CONFIGS, options.only);
   if (configs.length === 0) throw new Error('--only matched no roster config');
 
-  // Indexes are not built on connect elsewhere in the operator scripts either: a
-  // read-only audit must not recreate a collection somebody deliberately dropped.
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const evidence: OfficialRosterLaneEvidence[] = [];
@@ -300,7 +313,7 @@ const isDirectRun = process.argv[1]
 
 if (isDirectRun) {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   main().catch((error) => {
     console.error('Failed to audit research-home rosters:', sanitizeLogValue(error));
     process.exitCode = 1;

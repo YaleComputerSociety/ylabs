@@ -50,11 +50,11 @@ describe('the PI-lead lane revisits a row whose only lead edge the gate rejects 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -101,8 +101,16 @@ describe('the PI-lead lane revisits a row whose only lead edge the gate rejects 
       websiteUrl: SOURCE_URL,
       sourceUrls: [SOURCE_URL],
       fieldProvenance: {
-        shortDescription: { sourceName: 'official-profile-pi-backfill', sourceUrl: SOURCE_URL },
-        fullDescription: { sourceName: 'official-profile-pi-backfill', sourceUrl: SOURCE_URL },
+        shortDescription: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: SOURCE_URL,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        fullDescription: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: SOURCE_URL,
+          observationId: new mongoose.Types.ObjectId(),
+        },
       },
     });
 

@@ -45,8 +45,9 @@ import { ResearchEntity } from '../models/researchEntity';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { htmlToText } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import {
-  synthesizeCoverageDescription,
+  coverageSynthesisDecision,
   defaultCoverageSynthesisLLM,
+  isCoverageSynthesisLlmFailure,
   type CoverageSnippet,
 } from '../scrapers/coverageSynthesis';
 import { isHighConfidencePersonBio } from '../utils/researchHomeDescriptionSelection';
@@ -68,8 +69,9 @@ import {
   servedFullDescription,
   type FraProfileSynthesisEntity,
 } from './fraProfileSynthesisLane';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const APPOINTMENT_LINE =
   /\b(?:Associate|Assistant|Adjunct|Emeritus|Clinical|Research)?\s*(?:Professor|Lecturer|Instructor|Senior\s+Research\s+Scientist|Chair|Chief|Director)\b[^.]{0,90}/;
@@ -112,12 +114,13 @@ interface Outcome {
 type ProfileProbe = Omit<Outcome, 'slug' | 'servedDescription'>;
 
 const FETCH_FAILED_NOTE = PROFILE_FETCH_FAILED_NOTE;
+const LLM_FAILED_NOTE = 'llm call failed';
 
 async function probeProfilePage(
   entity: FraProfileSynthesisEntity,
   profileUrl: string,
 ): Promise<ProfileProbe> {
-  let pageText = '';
+  let pageText: string;
   try {
     pageText = htmlToText((await fetchPageWithPolicy(profileUrl)).html);
   } catch {
@@ -135,7 +138,7 @@ async function probeProfilePage(
   if (snippets.length === 0) {
     return { ...probe, synthesized: '', note: 'no research snippets on page' };
   }
-  const result = await synthesizeCoverageDescription({
+  const { result, refusal } = await coverageSynthesisDecision({
     snippets,
     entityName: textValue(entity.name) || 'Research',
     entityType: FRA_PROFILE_SYNTHESIS_ENTITY_TYPE,
@@ -146,7 +149,9 @@ async function probeProfilePage(
     return {
       ...probe,
       synthesized: '',
-      note: 'synthesizer failed closed (grounding or quality gate)',
+      note: isCoverageSynthesisLlmFailure(refusal)
+        ? `${LLM_FAILED_NOTE} (${refusal})`
+        : `synthesizer failed closed (${refusal ?? 'no result'})`,
     };
   }
   // Arm B must be exactly what an apply run would write, or the guardrail
@@ -191,7 +196,7 @@ async function main(): Promise<void> {
     ? resolveSafeJsonReportOutputPath(argValue('--output') as string)
     : '';
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   // The lane's own cohort and candidate pages, not a copy of them: a harness that
   // reads only what a row cites, or only rows already serving a bio, measures a
   // narrower cohort than the lane visits, so its guardrail rates would describe
@@ -267,6 +272,9 @@ async function main(): Promise<void> {
   );
   console.log(
     `arm B failed closed (synthesizer or lane gate): ${outcomes.filter((o) => o.note?.startsWith('synth')).length}`,
+  );
+  console.log(
+    `arm B not scored because the llm call failed: ${outcomes.filter((o) => o.note?.startsWith(LLM_FAILED_NOTE)).length}`,
   );
 
   if (reportPath) {

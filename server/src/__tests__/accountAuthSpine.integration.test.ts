@@ -4,11 +4,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { Account } from '../models/account';
 import { recordAccountLogin, validateAccount } from '../services/accountService';
 import passport from '../passport';
+import { mintSessionClaim } from '../utils/sessionClaim';
 
 const deserializePrincipal = async (stored: unknown) => {
   const deserializer = (passport as any)._deserializers[0];
   return new Promise<{ error: unknown; user: any }>((resolve) => {
-    deserializer(stored, (error: unknown, user: any) => resolve({ error, user }));
+    deserializer({ ...(stored as object), ...mintSessionClaim(0) }, (error: unknown, user: any) =>
+      resolve({ error, user }),
+    );
   });
 };
 
@@ -18,11 +21,11 @@ describe('Account-backed auth spine (integration)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

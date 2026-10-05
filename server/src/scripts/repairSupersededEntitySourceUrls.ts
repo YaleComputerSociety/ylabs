@@ -27,10 +27,11 @@ import {
   type EntitySourceUrlRepairTarget,
 } from './repairSupersededEntitySourceUrlsCore';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const DEFAULT_PROBE_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 1500;
@@ -384,7 +385,7 @@ async function main(): Promise<void> {
     }`,
   );
 
-  await mongoose.connect(process.env.MONGODBURL as string);
+  await connectScriptMongo(process.env.MONGODBURL as string);
   try {
     const result = await runRepairSupersededEntitySourceUrls({
       apply: options.apply,

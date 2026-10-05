@@ -7,21 +7,21 @@ import UserContext from '../../contexts/UserContext';
 import Dashboard from '../dashboard';
 
 type ProgramSummary = {
-  count: number;
+  count: number | null;
   nextDeadlineLabel?: string;
   nextDeadlineDate?: string;
   approachingCount?: number;
   notStartedCount?: number;
 };
 
-let savedResearchCount = 2;
+let savedResearchCount: number | null = 2;
 let programSummary: ProgramSummary = { count: 1 };
 
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
     onCountChange,
   }: {
-    onCountChange?: (count: number) => void;
+    onCountChange?: (count: number | null) => void;
   }) => {
     useEffect(() => {
       onCountChange?.(savedResearchCount);
@@ -87,6 +87,18 @@ describe('Dashboard page', () => {
     expect(screen.getByText('Program watch list')).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 watched program/)).toBeTruthy();
+  });
+
+  it('shows no count rather than zero when a count is unknown', () => {
+    savedResearchCount = null;
+    programSummary = { count: null };
+    renderDashboard('student');
+
+    expect(screen.getByRole('tab', { name: 'Dashboard' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Program Watch' })).toBeTruthy();
+    expect(screen.queryByText(/0 research plans/)).toBeNull();
+    expect(screen.queryByText(/0 watched programs/)).toBeNull();
+    expect(screen.queryByText('Save research to start planning')).toBeNull();
   });
 
   it('lets an account switch between the Dashboard and Program Watch surfaces', () => {

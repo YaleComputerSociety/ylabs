@@ -38,6 +38,7 @@ export interface LabMemberUser {
   orcid?: string;
   orcidUrl?: string;
   title?: string;
+  emeritus?: boolean;
 }
 
 export interface LabMember {
@@ -70,13 +71,6 @@ export interface LabAccessSignal {
   observedAt?: string;
 }
 
-export interface DepartmentCourseCreditRoute {
-  departmentName: string;
-  evidenceQuote: string;
-  sourceUrl: string;
-  observedAt?: string;
-}
-
 export interface LabEntityRelationship {
   relatedResearchEntityId?: string;
   relatedResearchEntitySlug?: string;
@@ -96,11 +90,22 @@ export interface LabRelatedResearchEntitySummary {
   entityType?: string;
   departments: string[];
   blurb?: string;
+  creativePractice?: boolean;
 }
 
 export interface LabRelationshipCollectionMeta {
   returned: number;
   truncated: boolean;
+}
+
+export type ResearchDetailWithholdingCheck =
+  'visibility_tier' | 'deceased_lead' | 'description_invariant';
+
+export interface ResearchDetailOperatorPreview {
+  studentVisibilityTier: string;
+  studentVisibilityReasons: string[];
+  studentVisibilitySuppressionReason?: string;
+  withheldBy: ResearchDetailWithholdingCheck[];
 }
 
 export interface LabDetailPayload {
@@ -109,7 +114,6 @@ export interface LabDetailPayload {
   members: LabMember[];
   roster?: LabRosterDisclosure;
   accessSignals?: LabAccessSignal[];
-  departmentCourseCreditRoutes?: DepartmentCourseCreditRoute[];
   entityRelationships?: LabEntityRelationship[];
   relatedResearchEntities?: LabRelatedResearchEntitySummary[];
   relatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
@@ -117,4 +121,5 @@ export interface LabDetailPayload {
   affiliatedResearchEntities?: LabRelatedResearchEntitySummary[];
   affiliatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
   similarResearchEntities?: LabRelatedResearchEntitySummary[];
+  operatorPreview?: ResearchDetailOperatorPreview;
 }

@@ -1,17 +1,21 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import axios from '../../../utils/axios';
 import SavedResearchPlans from '../SavedResearchPlans';
+import { trackResearchEvent } from '../../../utils/researchAnalytics';
 
 vi.mock('../../../utils/axios', () => ({
   default: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
-vi.mock('sweetalert', () => ({ default: vi.fn() }));
+vi.mock('../../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
-vi.mock('../../../utils/researchAnalytics', () => ({
+vi.mock('../../../utils/researchAnalytics', async () => ({
+  ...(await vi.importActual<typeof import('../../../utils/researchAnalytics')>(
+    '../../../utils/researchAnalytics',
+  )),
   trackResearchEvent: vi.fn(),
   createResearchAnalyticsInteractionId: () => 'test-interaction',
 }));
@@ -192,6 +196,98 @@ describe('SavedResearchPlans', () => {
     expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
   });
 
+  it('sends no PUT and no research_plan_update when the note is unchanged', async () => {
+    withSavedPlans();
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    const textarea = await screen.findByRole('textbox', { name: 'Note for Owner Lab' });
+    act(() => textarea.focus());
+    fireEvent.blur(textarea);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(trackResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('sends one PUT and one event for a typed edit followed by a blur', async () => {
+    withSavedPlans();
+    mockedAxios.put.mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
+    fireEvent.change(note, { target: { value: 'Email the PI in September' } });
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.blur(note);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+    expect(trackResearchEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resend a note whose save is still in flight when the field blurs', async () => {
+    withSavedPlans();
+    let resolvePut: (value: unknown) => void = () => {};
+    mockedAxios.put.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePut = resolve;
+        }),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
+    fireEvent.change(note, { target: { value: 'Email the PI in September' } });
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.blur(note);
+    await act(async () => resolvePut({ data: {} }));
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a note on blur after its save failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    withSavedPlans();
+    mockedAxios.put.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
+    fireEvent.change(note, { target: { value: 'Email the PI in September' } });
+    await screen.findByText(/Not saved/, {}, { timeout: 2000 });
+    fireEvent.blur(note);
+
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
+  });
+
   it('removes a saved plan when unsaved', async () => {
     withSavedPlans();
     mockedAxios.delete.mockResolvedValue({ data: {} });
@@ -211,8 +307,11 @@ describe('SavedResearchPlans', () => {
         data: { savedResearchEntities: ['owner-lab'] },
       }),
     );
-    await waitFor(() => expect(screen.queryByText('Owner Lab')).toBeNull());
-    expect(screen.getByText('Other Lab')).toBeTruthy();
+    // The heading is what leaving the list means. The name also appears in the undo
+    // banner, which is the point of the banner, so the query has to be scoped to the
+    // list rather than to the document.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Owner Lab' })).toBeNull());
+    expect(screen.getByRole('heading', { name: 'Other Lab' })).toBeTruthy();
   });
 
   it('shows an empty state with a browse CTA when nothing is saved', async () => {
@@ -238,10 +337,10 @@ describe('SavedResearchPlans', () => {
     );
   });
 
-  it('enables comparison only when two to four homes are selected', async () => {
+  it('enables comparison only when two to four saved research profiles are selected', async () => {
     withSavedPlans();
 
-    render(
+    const { container } = render(
       <MemoryRouter>
         <SavedResearchPlans />
       </MemoryRouter>,
@@ -250,6 +349,10 @@ describe('SavedResearchPlans', () => {
     await screen.findByText('Owner Lab');
     const compareButton = screen.getByRole('button', { name: /^Compare/ });
     expect(compareButton).toBeDisabled();
+    expect(
+      screen.getByText('Select 2 to 4 saved research profiles to compare them side by side.'),
+    ).toBeTruthy();
+    expect(container.textContent).not.toMatch(/\bhomes?\b/i);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Owner Lab to compare' }));
     expect(compareButton).toBeDisabled();
@@ -279,7 +382,7 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
   });
 
-  it('caps comparison selection at four saved homes', async () => {
+  it('caps comparison selection at four saved research profiles', async () => {
     withManySavedPlans(5);
 
     render(
@@ -553,5 +656,190 @@ describe('SavedResearchPlans', () => {
     const openLinks = screen.getAllByRole('link', { name: 'Open' });
     expect(openLinks[0].getAttribute('href')).toBe('/research/other-lab');
     expect(openLinks[1].getAttribute('href')).toBe('/research/owner-lab');
+  });
+
+  /**
+   * Unsaving is reversible: the plan lives in its own collection with no delete
+   * path, so the privateNotes survive and re-favouriting restores them. None of
+   * that was discoverable, which is the defect. Shneiderman's sixth rule is about
+   * the reassurance as much as the recovery.
+   */
+  it('offers an undo window after unsaving, and says the notes are kept', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+
+    const undo = await screen.findByRole('button', { name: 'Undo' });
+    const region = undo.closest('[role="status"]');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.textContent).toContain('Owner Lab');
+    expect(region?.textContent).toContain('Undo restores your notes too');
+  });
+
+  /**
+   * The load-bearing test. Unsaving destroys privateNotes server-side and
+   * re-favouriting does not restore them, measured with a control on a real
+   * account, so undo has to re-post the note it captured before the removal.
+   * Without this the banner would promise a restoration that does not happen.
+   */
+  it('restores the note, not just the row, when undo is used', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    mockedAxios.put.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() =>
+      expect(
+        mockedAxios.put.mock.calls.some(
+          (call) =>
+            call[0] === '/users/savedResearchEntityPlans/id1' &&
+            (call[1] as { data?: { plan?: { privateNotes?: string } } })?.data?.plan
+              ?.privateNotes === 'Ask about rotations',
+        ),
+        'undo re-posts the captured note',
+      ).toBe(true),
+    );
+  });
+
+  /** A plan with no note needs no promise about notes, and must not re-post an empty one. */
+  it('promises nothing about notes when the plan had none', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Other Lab');
+    mockedAxios.put.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: /Remove Other Lab from saved plans/i }));
+
+    const undo = await screen.findByRole('button', { name: 'Undo' });
+    expect(undo.closest('[role="status"]')?.textContent).not.toContain('notes');
+
+    fireEvent.click(undo);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+    const wroteANote = mockedAxios.put.mock.calls.some((call) =>
+      Boolean(
+        (call[1] as { data?: { plan?: { privateNotes?: string } } })?.data?.plan?.privateNotes,
+      ),
+    );
+    expect(wroteANote, 'undo invents no note for a plan that had none').toBe(false);
+  });
+
+  it('withdraws the undo affordance once it is used', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+  });
+
+  /** A confirmation dialog would add friction to warn about a loss that does not happen. */
+  it('does not interrupt the unsave with a confirmation', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+
+    expect(screen.queryByText(/are you sure/i)).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
+  });
+
+  describe('when a load request fails', () => {
+    const failing = (failedUrl: string) => {
+      withSavedPlans();
+      const succeed = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+      let shouldFail = true;
+      mockedAxios.get.mockImplementation((url: string) =>
+        url === failedUrl && shouldFail ? Promise.reject(new Error('network')) : succeed(url),
+      );
+      return {
+        recover: () => {
+          shouldFail = false;
+        },
+      };
+    };
+
+    it.each([
+      '/users/savedResearchEntities',
+      '/users/savedResearchEntityPlans',
+      '/users/savedResearchEntityIds',
+    ])('reports a load error instead of claiming nothing is saved when %s fails', async (url) => {
+      failing(url);
+
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('Could not load your saved research');
+      expect(screen.queryByText('No saved research plans yet')).toBeNull();
+      expect(screen.queryByRole('link', { name: 'Explore Research' })).toBeNull();
+    });
+
+    it('reports an unknown count rather than zero when the saved ids fail', async () => {
+      failing('/users/savedResearchEntityIds');
+      const onCountChange = vi.fn();
+
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans onCountChange={onCountChange} />
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('alert');
+      expect(onCountChange).toHaveBeenLastCalledWith(null);
+      expect(onCountChange).not.toHaveBeenCalledWith(0);
+    });
+
+    it('loads the saved list again when the student retries', async () => {
+      const request = failing('/users/savedResearchEntities');
+
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+
+      await screen.findByRole('alert');
+      request.recover();
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+      expect(await screen.findByText('Owner Lab')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });

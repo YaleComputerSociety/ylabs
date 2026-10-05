@@ -59,3 +59,116 @@ describe('assertScriptApplyAllowed', () => {
     ).toMatchObject({ environment: 'production', dbLabel: 'localhost/Prod' });
   });
 });
+
+describe('the apply guard resolves its target rather than trusting the caller', () => {
+  const productionUrl = 'mongodb+srv://user:pass@example.mongodb.net/Prod';
+
+  it('blocks an apply whose production target is only in MONGODBURL', () => {
+    expect(() =>
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl },
+      }),
+    ).toThrow('target looks like production');
+  });
+
+  it('still requires confirmation for a production apply whose target comes from the environment', () => {
+    expect(() =>
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl, SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('CONFIRM_PROD_SCRAPE=true');
+  });
+
+  it('names the environment target in the report instead of calling it missing', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: false,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl },
+      }),
+    ).toMatchObject({ dbLabel: 'example.mongodb.net/Prod' });
+  });
+
+  it('prefers an explicit target over MONGODBURL', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        mongoUrl: 'mongodb://localhost:27017/Development',
+        env: { MONGODBURL: productionUrl },
+      }),
+    ).toMatchObject({ environment: 'development', dbLabel: 'localhost/Development' });
+  });
+
+  it('leaves a dry run against a production environment target allowed', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: false,
+        scriptName: 'fixture-script',
+        env: { MONGODBURL: productionUrl, SCRAPER_ENV: 'production' },
+      }),
+    ).toMatchObject({ environment: 'production' });
+  });
+
+  it('reports no target when neither the caller nor the environment names one', () => {
+    expect(
+      assertScriptApplyAllowed({ apply: true, scriptName: 'fixture-script', env: {} }),
+    ).toMatchObject({ dbLabel: 'missing' });
+  });
+});
+
+/**
+ * #3725 was one argument shape going unchecked rather than one script being
+ * wrong, so this closes the shape space instead of enumerating call sites: a new
+ * apply path can only reach the guard as one of these, and every one refuses.
+ */
+describe('no argument shape lets an apply reach a production database unchecked', () => {
+  const productionUrl = 'mongodb+srv://user:pass@example.mongodb.net/Prod';
+  const shapesNamingProduction = [
+    {
+      shape: 'the caller names the target',
+      args: { apply: true, scriptName: 'fixture-script', mongoUrl: productionUrl, env: {} },
+    },
+    {
+      shape: 'only the environment names the target',
+      args: { apply: true, scriptName: 'fixture-script', env: { MONGODBURL: productionUrl } },
+    },
+    {
+      shape: 'both name the target',
+      args: {
+        apply: true,
+        scriptName: 'fixture-script',
+        mongoUrl: productionUrl,
+        env: { MONGODBURL: productionUrl },
+      },
+    },
+    {
+      shape: 'the caller names the target and leaves the environment to process.env',
+      args: { apply: true, scriptName: 'fixture-script', mongoUrl: productionUrl },
+    },
+  ];
+
+  it.each(shapesNamingProduction)('refuses an apply where $shape', ({ args }) => {
+    expect(() => assertScriptApplyAllowed(args)).toThrow('target looks like production');
+  });
+
+  /**
+   * The one shape that resolves nothing, and so the one a caller must not use:
+   * an `env` override holding no `MONGODBURL` leaves the guard blind while the
+   * script connects through the real `process.env`. `skills/contributing/SKILL.md`
+   * forbids it, and this records that the guard cannot catch it on its own.
+   */
+  it('cannot resolve a target when an environment override omits MONGODBURL', () => {
+    expect(
+      assertScriptApplyAllowed({
+        apply: true,
+        scriptName: 'fixture-script',
+        env: { SOME_OTHER_VARIABLE: productionUrl },
+      }),
+    ).toMatchObject({ dbLabel: 'missing' });
+  });
+});

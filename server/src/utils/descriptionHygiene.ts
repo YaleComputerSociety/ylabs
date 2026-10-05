@@ -12,6 +12,7 @@
  * payload uses it as a second line of defense over already-stored records.
  */
 import { redactDirectContactInfo } from './contactRedaction';
+import { isNonResearchCardSentence, stripProgramRenameNote } from './nonResearchCardSentence';
 
 export function normalizeHygieneWhitespace(value: string): string {
   return String(value || '')
@@ -133,21 +134,64 @@ export function stripDanglingSourceSiteReferenceSentences(text: string): string 
 }
 
 const PROTECTED_ABBREVIATION_TAIL =
-  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
+  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al|Ph)\.\s*$/i;
+
+// "Jordan Q. Fixture" is a middle initial; "vitamin E." and "Hepatitis B. To read" end a
+// sentence (#3866). A capitalized word before the initial and a capitalized word after it
+// that is not a common sentence opener are what separate the two.
+const MIDDLE_INITIAL_TAIL = /(?:^|\s)[A-Z][a-z]+\s[A-Z]\.\s*$/;
+const SURNAME_HEAD = /^([A-Z][a-z]+)\b/;
+const SENTENCE_OPENER_WORDS = new Set(
+  (
+    'A An The This That These Those It Its We Our Us They Their He She His Her You Your I ' +
+    'In On At For From To With By Of As If When While Since After Before During Through ' +
+    'And But Or So Yet Also However Moreover Furthermore Additionally Thus Therefore ' +
+    'Please Contact Visit See Learn Read Click Email Call Apply Find Join More ' +
+    'There Here Each All Some Many Most Both Every Any No Not Students Applicants Researchers'
+  ).split(' '),
+);
+
+function continuesMiddleInitialName(segment: string, next: string): boolean {
+  if (!MIDDLE_INITIAL_TAIL.test(segment)) return false;
+  const surname = next.match(SURNAME_HEAD)?.[1];
+  return Boolean(surname) && !SENTENCE_OPENER_WORDS.has(surname as string);
+}
+
+const LATIN_EXAMPLE_ABBREVIATION_TAIL = /(?:^|[\s([])(?:[ei]\.|e\.g\.\s*|i\.e\.\s*)$/i;
+
+const GLUED_INITIAL_TAIL = /(?:^|[\s(.])[A-Z]\.$/;
+const GLUED_TITLE_PUNCTUATION = /[?!]$/;
+const TITLE_CONTINUATION_HEAD = /^[:;,)]/;
+const DOTTED_INITIALISM_TAIL = /(?:^|[\s(])(?:[A-Z]\.){2,}\s+$/;
+const LOWERCASE_HEAD = /^[a-z]/;
+
+// A sentence ends at terminal punctuation followed by whitespace, so "U." inside
+// "U.S." and the "?" of a title such as "Where Did It Go?: A History of Maps"
+// are not ends; neither is "U.S. " before a lowercase continuation.
+function isAbbreviationSplit(segment: string, next: string): boolean {
+  return (
+    GLUED_INITIAL_TAIL.test(segment) ||
+    (GLUED_TITLE_PUNCTUATION.test(segment) && TITLE_CONTINUATION_HEAD.test(next)) ||
+    (DOTTED_INITIALISM_TAIL.test(segment) && LOWERCASE_HEAD.test(next)) ||
+    PROTECTED_ABBREVIATION_TAIL.test(segment) ||
+    continuesMiddleInitialName(segment, next) ||
+    LATIN_EXAMPLE_ABBREVIATION_TAIL.test(segment)
+  );
+}
 
 /**
  * Re-join sentence segments that the terminal-punctuation tiling split inside a
- * common abbreviation (a title like "Prof."/"Dr.", or "Inc."/"etc."). Operating
- * on the lossless partition means the merge cannot drop or reorder any
- * character; it only removes an internal split point, so segment-level filtering
- * and deduplication downstream reason over whole sentences rather than
- * abbreviation fragments.
+ * common abbreviation (a title like "Prof."/"Dr.", "Inc."/"etc.", "Ph.D.", a
+ * middle initial followed by a surname, or a parenthetical "e.g."/"i.e."). Operating on the lossless partition means the
+ * merge cannot drop or reorder any character; it only removes an internal split
+ * point, so segment-level filtering and deduplication downstream reason over
+ * whole sentences rather than abbreviation fragments.
  */
 function mergeAbbreviationSplitSentences(segments: string[]): string[] {
   const merged: string[] = [];
   for (const segment of segments) {
     const previousIndex = merged.length - 1;
-    if (previousIndex >= 0 && PROTECTED_ABBREVIATION_TAIL.test(merged[previousIndex])) {
+    if (previousIndex >= 0 && isAbbreviationSplit(merged[previousIndex], segment)) {
       merged[previousIndex] += segment;
     } else {
       merged.push(segment);
@@ -353,8 +397,6 @@ const redactionPlaceholderPattern =
 
 const redactionTokenTest = /\[(?:email|phone) redacted\]/i;
 const redactionTokenGlobal = /\[(?:email|phone) redacted\]/gi;
-const splitIntoSentences = (value: string): string[] =>
-  value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
 const endsWithTerminalPunctuation = (value: string): boolean => /[.!?]["')\]]?$/.test(value.trim());
 const wordCount = (value: string): number => (value.match(/[A-Za-z]{2,}/g) || []).length;
 
@@ -373,11 +415,11 @@ export function stripRedactionPlaceholders(text: string): string {
   const value = normalizeHygieneWhitespace(text);
   if (!value || !redactionTokenTest.test(value)) return value;
   const kept: string[] = [];
-  for (const rawSentence of splitIntoSentences(value)) {
+  for (const rawSentence of partitionSentencesForFiltering(value)) {
     const sentence = rawSentence.trim();
     if (!sentence) continue;
     if (!redactionTokenTest.test(sentence)) {
-      kept.push(sentence);
+      kept.push(rawSentence);
       continue;
     }
     const matches = [...sentence.matchAll(redactionTokenGlobal)];
@@ -388,10 +430,10 @@ export function stripRedactionPlaceholders(text: string): string {
       sentence.replace(redactionPlaceholderPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
     );
     if (stripped && endsWithTerminalPunctuation(stripped) && wordCount(stripped) >= 2) {
-      kept.push(stripped);
+      kept.push(`${stripped} `);
     }
   }
-  return normalizeHygieneWhitespace(kept.join(' '));
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 /**
@@ -409,10 +451,10 @@ export function stripRedactionPlaceholders(text: string): string {
 export function sanitizeEvidenceExcerpt(value: string): string {
   const redacted = normalizeHygieneWhitespace(redactDirectContactInfo(String(value ?? '')));
   if (!redacted || !redactionTokenTest.test(redacted)) return redacted;
-  const kept = splitIntoSentences(redacted)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence && !redactionTokenTest.test(sentence));
-  return normalizeHygieneWhitespace(kept.join(' '));
+  const kept = partitionSentencesForFiltering(redacted).filter(
+    (sentence) => sentence.trim() && !redactionTokenTest.test(sentence),
+  );
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 const CATALOG_CHROME_PATTERNS: RegExp[] = [
@@ -436,9 +478,57 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
 ];
 
 export function stripCatalogChrome(text: string): string {
-  let out = String(text || '');
+  let out = stripLeadingProfileHeaderChrome(String(text || ''));
   for (const pattern of CATALOG_CHROME_PATTERNS) out = out.replace(pattern, ' ');
-  return normalizeHygieneWhitespace(out);
+  return normalizeHygieneWhitespace(stripTrailingRelatedContentBlock(out));
+}
+
+const RELATED_CONTENT_LABEL_TO_END = /\s*\bRelated (?:Content|News|Stories|Articles)\b[\s\S]*$/;
+
+// News headlines a page lists after its own prose, scraped as a run with no sentence
+// punctuation between them: "... many-body physics. With NSF grant, Yale leads effort
+// to develop quantum computers A new vision for quantum computing ...". Only an
+// unterminated tail that glues two headlines together (a lowercase word running into a
+// capitalised headline opener) is removed, only after a finished sentence, and only
+// when the tail itself opens on a headline opener.
+const TRAILING_GLUED_HEADLINE_RUN =
+  /(?<=[.!?]["”’)]?)\s+(?=(?:A|An|The|How|Why|New|With)\s[^.!?]*\b[a-z]{3,}\s+(?:A|An|The|How|Why|New|With)\s+[a-z])[^.!?]+$/u;
+
+export function stripTrailingRelatedContentBlock(text: string): string {
+  return String(text || '')
+    .replace(RELATED_CONTENT_LABEL_TO_END, '')
+    .replace(TRAILING_GLUED_HEADLINE_RUN, '');
+}
+
+const LEADING_BREADCRUMB_TRAIL = /^\s*Home\s*[/›»>]\s*(?:[^/›»>.]{1,40}[/›»>]\s*){1,5}/;
+
+const PROFILE_IMAGE_HEADER_BLOCK =
+  /^\s*((?:[A-Z][\p{L}'’.-]*\s+){1,4}?)Profile Image\b[\s\S]{0,600}?\bContact\s+\1/u;
+
+const DOUBLED_LEADING_NAME = /^((?:[A-Z][\p{L}'’.-]*\s+){1,4}?)\1/u;
+
+const LEADING_NAME_AND_APPOINTMENT_TITLE =
+  /^([A-Z][\p{L}'’-]+)(?:\s+[A-Z][\p{L}'’.-]*){0,3}\s+[^.]{0,80}?\b(?:Lecturer|Professor|Instructor|Lector|Director|Coordinator|Fellow|Artist|Critic)\b[^.]{0,60}?\s+(?=\1\b)/u;
+
+/**
+ * A directory profile's page header pasted ahead of the prose: a breadcrumb trail
+ * ("Home / About Us / Who We Are / ") or an image-and-fields block ("<Name> Profile
+ * Image <titles> <fields> Contact <Name>"). Both are recognised by their markers alone,
+ * so the strip never judges the prose. Only once a marker has matched is the header's
+ * own residue, the person's name printed twice and then their appointment title before
+ * the name opens the first sentence, removed too.
+ */
+export function stripLeadingProfileHeaderChrome(text: string): string {
+  const value = String(text || '');
+  const withoutMarker = value
+    .replace(PROFILE_IMAGE_HEADER_BLOCK, '')
+    .replace(LEADING_BREADCRUMB_TRAIL, '');
+  if (withoutMarker === value) return value;
+  const withoutResidue = withoutMarker
+    .trimStart()
+    .replace(DOUBLED_LEADING_NAME, '$1')
+    .replace(LEADING_NAME_AND_APPOINTMENT_TITLE, '');
+  return normalizeHygieneWhitespace(withoutResidue);
 }
 
 const staleMonthYearDeadlinePattern =
@@ -728,6 +818,13 @@ export function repairMissingSpaceAfterSentence(text: string): string {
 }
 
 const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},\s*){3,}/u;
+const citationSurnameCommaInitialsListPattern =
+  /^\s*(?:\p{Lu}[\p{L}'’-]+,\s+\p{Lu}\.(?:[\s-]*\p{Lu}\.)*\s*,\s*){3,}/u;
+const CITATION_FULL_NAME = String.raw`(?:\p{Lu}[\p{L}'’-]+|\p{Lu}\.)(?:[\s-]+(?:\p{Lu}[\p{L}'’-]+|\p{Lu}\.)){1,3}`;
+const citationFullNameAuthorListPattern = new RegExp(
+  String.raw`^\s*(?:${CITATION_FULL_NAME},\s+){2,}(?:and\s+)?${CITATION_FULL_NAME}\.\s+\p{Lu}`,
+  'u',
+);
 
 /**
  * A raw citation author-initials list ("Choma MA, Suter MJ, Vakoc BJ, Bouma
@@ -745,9 +842,33 @@ const citationAuthorInitialsListPattern = /(?:\p{Lu}[\p{L}'’-]+\s+\p{Lu}{1,3},
  * Development each change on its own newly matched nothing, and together they
  * newly matched one value, a pure bibliography entry that reported zero quality
  * flags (#2416).
+ *
+ * The same signature in APA order, "Surname, J. A., Surname, M.-L., ...", is a
+ * second arm: a description lane served one such bibliography entry as a body
+ * because only the "Surname INITIALS," order was known (#3885). It is anchored to the
+ * start of the text, so it refuses a value that IS a bibliography entry but not
+ * research prose that lists its publications after it: on Development the
+ * unanchored form also matched a served 798-character research description.
+ * Every tag is stripped before that anchor is tested, because an earlier
+ * cleaner can drop a closing tag and leave a bare leading `<p>` that
+ * `stripHtmlTagMarkupForDetection` does not reach.
+ *
+ * A third arm reads full given names, "Given Surname, Given Surname, Given
+ * Surname. Paper title.", which a description lane emitted from a faculty
+ * publications page as a row's body (#4623). It is start-anchored like the APA
+ * arm, and only a single-letter initial may carry a period inside a name, so a
+ * staff title list ("Assistant Director, Financial Aid. Deputy, ...") does not
+ * read as authors. Over the 20,382 live description observations on
+ * Development it matched 2 values, both citations.
  */
 export function isCitationAuthorListDumpText(text: unknown): boolean {
-  return citationAuthorInitialsListPattern.test(stripHtmlTagMarkupForDetection(text));
+  const stripped = stripHtmlTagMarkupForDetection(text);
+  const untagged = String(text || '').replace(anyHtmlTagPattern, ' ');
+  return (
+    citationAuthorInitialsListPattern.test(stripped) ||
+    citationSurnameCommaInitialsListPattern.test(untagged) ||
+    citationFullNameAuthorListPattern.test(untagged)
+  );
 }
 
 const CV_MONTH =
@@ -1391,24 +1512,26 @@ const truncationEllipsisTailPattern = /(?:\.{3}|…)\s*$/;
  * voice check so a bare keyword list behind a `Bio` label survives (#1077).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  const cleaned = stripUrlTopicsFromCardSummary(
-    collapseDoubledConjunction(
-      stripTrailingResearchHomeAffiliationClause(
-        collapseDoubledSynthesisVerb(
-          stripTrailingSourceLayoutLabelSection(
-            stripGluedProfileSectionLabel(
-              stripGluedResearchRoleTrackToken(
-                stripDirectoryResearcherNavChrome(
-                  stripGluedProfileRoleLabel(
-                    stripLeadingArtCommentaryPrefix(
-                      stripLeadingPageChrome(
-                        stripTrailingContactAddress(
-                          stripBibliographicReferenceArtifacts(
-                            stripInternalConfidenceHedge(
-                              stripCatalogChrome(
-                                evergreenizeStaleCycleDatePhrase(
-                                  repairMissingSpaceAfterSentence(
-                                    redactDirectContactInfo(String(text || '')),
+  const cleaned = stripProgramRenameNote(
+    stripUrlTopicsFromCardSummary(
+      collapseDoubledConjunction(
+        stripTrailingResearchHomeAffiliationClause(
+          collapseDoubledSynthesisVerb(
+            stripTrailingSourceLayoutLabelSection(
+              stripGluedProfileSectionLabel(
+                stripGluedResearchRoleTrackToken(
+                  stripDirectoryResearcherNavChrome(
+                    stripGluedProfileRoleLabel(
+                      stripLeadingArtCommentaryPrefix(
+                        stripLeadingPageChrome(
+                          stripTrailingContactAddress(
+                            stripBibliographicReferenceArtifacts(
+                              stripInternalConfidenceHedge(
+                                stripCatalogChrome(
+                                  evergreenizeStaleCycleDatePhrase(
+                                    repairMissingSpaceAfterSentence(
+                                      redactDirectContactInfo(String(text || '')),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1426,19 +1549,41 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
       ),
     ),
   );
-  if (isResearchAreaTemplateLeakText(cleaned)) return '';
-  if (isResearchAreaEchoDescription(cleaned)) return '';
-  if (isInstitutionalCenterBlurbText(cleaned)) return '';
-  if (isCtaNewsTickerDumpText(cleaned)) return '';
-  if (isStudiesTemplateGlueMalformed(cleaned)) return '';
-  if (isFirstPersonResearchVoiceText(cleaned)) return '';
-  if (isAdministrativeTitleEnumerationText(cleaned)) return '';
-  if (isNonSelfContainedShortDescription(cleaned)) return '';
-  if (containsHtmlTagMarkup(cleaned)) return '';
-  if (isCitationAuthorListDumpText(cleaned)) return '';
-  if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
-  if (truncationEllipsisTailPattern.test(cleaned)) return '';
-  return clampShortDescriptionToWholeSentences(cleaned);
+  if (cleaned.length <= MAX_SHORT_DESCRIPTION_LENGTH) {
+    return isRefusedCardText(cleaned) ? '' : cleaned;
+  }
+  if (isWholeTextDumpText(cleaned)) return '';
+  const clamped = clampShortDescriptionToWholeSentences(cleaned);
+  return isRefusedCardSentenceText(cleaned) && (!clamped || isRefusedCardSentenceText(clamped))
+    ? ''
+    : clamped;
+}
+
+function isRefusedCardText(text: string): boolean {
+  return isWholeTextDumpText(text) || isRefusedCardSentenceText(text);
+}
+
+function isWholeTextDumpText(text: string): boolean {
+  return (
+    isInstitutionalCenterBlurbText(text) ||
+    isCtaNewsTickerDumpText(text) ||
+    isCitationAuthorListDumpText(text)
+  );
+}
+
+function isRefusedCardSentenceText(text: string): boolean {
+  return (
+    isResearchAreaTemplateLeakText(text) ||
+    isResearchAreaEchoDescription(text) ||
+    isStudiesTemplateGlueMalformed(text) ||
+    isFirstPersonResearchVoiceText(text) ||
+    isAdministrativeTitleEnumerationText(text) ||
+    isNonSelfContainedShortDescription(text) ||
+    containsHtmlTagMarkup(text) ||
+    isContentlessResearchProjectsBoilerplateText(text) ||
+    isNonResearchCardSentence(text) ||
+    truncationEllipsisTailPattern.test(text)
+  );
 }
 
 const MIN_CLAMPED_SHORT_DESCRIPTION_WORDS = 8;
@@ -1483,8 +1628,45 @@ export function clampShortDescriptionToWholeSentences(
       value,
       MAX_CARD_SHORT_DESCRIPTION_LENGTH,
       MAX_CARD_SHORT_DESCRIPTION_WORDS,
-    )
+    ) ||
+    leadingSentenceCutAtClauseWithinCeiling(value)
   );
+}
+
+const CARD_CLAUSE_BOUNDARY_PATTERN =
+  /;\s|,\s+(?:including|with\s+(?:a|an|particular)\s+(?:focus|emphasis|interest)|particularly|especially|as\s+well\s+as|and\s+(?=[a-z]+s\b))|\s+(?:including|such\s+as|that|which|using|focusing\s+on|by\s+(?:using|applying|analyzing|integrating|combining)|to\s+(?:identify|understand|improve|determine|develop|inform|reduce|prevent))\s|:\s|\s\(/gi;
+const CARD_CLAUSE_DANGLING_TAIL_PATTERN =
+  /\b(?:a|an|the|and|or|of|to|for|with|in|on|at|by|from|into|that|which|who|as|its|their|such)$/i;
+const MIN_CARD_CLAUSE_WORDS = 10;
+
+/**
+ * The last resort for a card whose only leading sentence is past the hard ceiling:
+ * the longest head of that sentence ending at a clause boundary that fits. Dropping
+ * the card instead served a blank card on 22 student-ready rows whose whole body
+ * is one long research sentence.
+ */
+function leadingSentenceCutAtClauseWithinCeiling(value: string): string {
+  const [lead] = partitionSentencesForFiltering(value);
+  const sentence = normalizeHygieneWhitespace(lead || '');
+  if (!sentence) return '';
+  const heads: string[] = [];
+  for (const match of sentence.matchAll(CARD_CLAUSE_BOUNDARY_PATTERN)) {
+    const head = sentence
+      .slice(0, match.index)
+      .replace(/[\s,;:]+$/, '')
+      .trim();
+    if (!head || CARD_CLAUSE_DANGLING_TAIL_PATTERN.test(head)) continue;
+    if (countHygieneWords(head) < MIN_CARD_CLAUSE_WORDS) continue;
+    if ((head.match(/\(/g) || []).length !== (head.match(/\)/g) || []).length) continue;
+    const card = /[.!?]$/.test(head) ? head : `${head}.`;
+    if (
+      card.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+      countHygieneWords(card) > MAX_CARD_SHORT_DESCRIPTION_WORDS
+    )
+      break;
+    heads.push(card);
+  }
+  return heads.at(-1) ?? '';
 }
 
 function countHygieneWords(value: string): number {
@@ -2148,6 +2330,12 @@ export function isStudiesResearchAreaEchoDescription(
   return Boolean(reading && reading.namedChips.length > 0 && reading.unmatchedItems.length === 0);
 }
 
+const STUDIES_SENTENCE_NESTING_TOPICS_PATTERN = /^\s*Studies\s[^.!?]*?\bincluding\s/i;
+
+export function isStudiesSentenceNestingTopicsUnderTheFirst(text: unknown): boolean {
+  return typeof text === 'string' && STUDIES_SENTENCE_NESTING_TOPICS_PATTERN.test(text);
+}
+
 export interface StudiesResearchAreaEnumerationReading {
   namedChips: string[];
   unmatchedItems: string[];
@@ -2290,6 +2478,23 @@ const LABEL_ENUMERATION_LEAD_PATTERN =
   /^(?:Area(?:s)?\s+of\s+interest|Research\s+interests?|Interests?|Specializ(?:ations?|es?\s+in)|Keywords?)\s*:\s*/i;
 
 const titleCaseLedField = (field: string): boolean => /^[A-Z]/.test(field.trim());
+
+const INTERESTS_SENTENCE_FRAME_PATTERN =
+  /^[^:]{0,80}\bresearch\s+interests?\s+(?:include|includes|are|span|spans|cover|covers)\s*:?\s/i;
+
+/**
+ * A sentence that states someone's research interests and then lists them: "Her research
+ * interests include: Learning Theory, Optimization, ...". It has a subject and a verb, so
+ * its list is the sentence's object rather than a label. The owner chose to serve it as a
+ * body rather than the biography around it, even when it restates the row's topics (#4299).
+ */
+export function isResearchInterestsSentence(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  return (
+    partitionSentencesLossless(normalized).length === 1 &&
+    INTERESTS_SENTENCE_FRAME_PATTERN.test(normalized)
+  );
+}
 
 /**
  * The provenance-independent sibling of `isStudiesResearchAreaEchoDescription`

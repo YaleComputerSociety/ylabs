@@ -2,13 +2,14 @@
  * Unit tests for DoeOstiGrantScraper.
  *
  * No network, no Mongo - the OSTI fetcher, the Yale-faculty PI resolver, and the
- * canonical research-home resolver are all injected via the scraper's
+ * canonical research-row resolver are all injected via the scraper's
  * constructor, so run() is exercised deterministically against canned fixtures.
  */
 import { describe, it, expect, vi } from 'vitest';
+import { GRANT_WINDOW_PAGE_ATTEMPTS } from '../utils/grantWindowPageFetch';
 import {
   DoeOstiGrantScraper,
-  buildResearchGroupObservations,
+  buildResearchEntityObservations,
   groupReportsByPi,
   normalizeDoeContractId,
   parseOstiAuthor,
@@ -22,6 +23,7 @@ import type { CanonicalResearchHomeResolution } from '../canonicalResearchHomeRe
 import type { ObservationInput, ScraperContext } from '../types';
 
 const FIXED_NOW = new Date('2026-08-24T00:00:00Z');
+const MINTING_FIELDS = ['slug', 'name', 'kind', 'entityType'];
 
 function ctxWith(options: Partial<ScraperContext['options']> = {}): {
   ctx: ScraperContext;
@@ -43,11 +45,11 @@ function ctxWith(options: Partial<ScraperContext['options']> = {}): {
   return { ctx, emitted };
 }
 
-const HARRIS_REPORT: OstiRecord = {
+const AVERY_REPORT: OstiRecord = {
   osti_id: '3365558',
-  title: 'Relativistic Heavy Ion Physics at Yale',
-  description: 'Final technical report on heavy-ion collisions.',
-  authors: ['Harris, John [Yale Univ., New Haven, CT (United States)] (ORCID:000000000000)'],
+  title: 'Synthetic Plasma Transport Studies',
+  description: 'Final technical report on synthetic plasma transport.',
+  authors: ['Avery, Jordan [Yale Univ., New Haven, CT (United States)] (ORCID:000000000000)'],
   research_orgs: ['Yale University'],
   doe_contract_number: 'SC0023672; ',
   publication_date: '2026-05-29T00:00:00Z',
@@ -55,10 +57,10 @@ const HARRIS_REPORT: OstiRecord = {
 
 const SUBAWARD_REPORT: OstiRecord = {
   osti_id: '949875',
-  title: 'Model Developments for Improved Emission Scenarios',
+  title: 'Model Developments for Synthetic Scenarios',
   description: 'Integrated assessment modeling.',
-  authors: ['Yang, Zili [Department of Economics, SUNY at Binghamton]', 'Nordhaus, William'],
-  research_orgs: ['The Research Foundation of SUNY at Binghamton', 'Yale University'],
+  authors: ['Ember, Casey [Department of Economics, Example State University]', 'Quill, Morgan'],
+  research_orgs: ['Example State University Research Foundation', 'Yale University'],
   doe_contract_number: 'FG02-06ER64180;',
   publication_date: '2025-01-31T00:00:00Z',
 };
@@ -66,12 +68,11 @@ const SUBAWARD_REPORT: OstiRecord = {
 const STALE_REPORT: OstiRecord = {
   osti_id: '885075',
   title: 'Very old work',
-  authors: ['Berner, Robert A [Yale University]'],
+  authors: ['Stone, Robin A [Yale University]'],
   doe_contract_number: 'FG02-01ER15173;',
   publication_date: '2008-02-05T00:00:00Z',
 };
 
-// Two distinct Yale faculty authors => ambiguous => fail closed.
 const AMBIGUOUS_REPORT: OstiRecord = {
   osti_id: '111',
   title: 'Two Yale PIs',
@@ -82,15 +83,15 @@ const AMBIGUOUS_REPORT: OstiRecord = {
 
 describe('parseOstiAuthor', () => {
   it('splits name, affiliation, and strips ORCID', () => {
-    expect(parseOstiAuthor('Moore, David Craig [Yale Univ.] (ORCID:0000)')).toEqual({
-      name: 'Moore, David Craig',
+    expect(parseOstiAuthor('Lark, Dana Quinn [Yale Univ.] (ORCID:0000)')).toEqual({
+      name: 'Lark, Dana Quinn',
       affiliation: 'Yale Univ.',
     });
   });
 
   it('handles an affiliation-less author', () => {
-    expect(parseOstiAuthor('Nordhaus, William')).toEqual({
-      name: 'Nordhaus, William',
+    expect(parseOstiAuthor('Quill, Morgan')).toEqual({
+      name: 'Quill, Morgan',
       affiliation: '',
     });
   });
@@ -99,18 +100,18 @@ describe('parseOstiAuthor', () => {
 describe('selectYalePiCandidates', () => {
   it('prefers Yale-tagged authors and drops non-Yale institutions', () => {
     const picked = selectYalePiCandidates([
-      'Smith, Melinda [Colorado State University]',
-      'Moore, David [Yale University]',
+      'Fern, Riley [Example Mountain University]',
+      'Lark, Dana [Yale University]',
     ]);
-    expect(picked.map((c) => c.name)).toEqual(['Moore, David']);
+    expect(picked.map((c) => c.name)).toEqual(['Lark, Dana']);
   });
 
   it('falls back to affiliation-less authors only when none are Yale-tagged', () => {
     const picked = selectYalePiCandidates([
-      'Yang, Zili [Department of Economics, SUNY at Binghamton]',
-      'Nordhaus, William',
+      'Ember, Casey [Department of Economics, Example State University]',
+      'Quill, Morgan',
     ]);
-    expect(picked.map((c) => c.name)).toEqual(['Nordhaus, William']);
+    expect(picked.map((c) => c.name)).toEqual(['Quill, Morgan']);
   });
 
   it('returns nothing when every author is a tagged non-Yale collaborator', () => {
@@ -130,7 +131,7 @@ describe('normalizeDoeContractId', () => {
 
 describe('recordToGrant', () => {
   it('maps an OSTI record onto the recentGrants shape', () => {
-    const grant = recordToGrant(HARRIS_REPORT);
+    const grant = recordToGrant(AVERY_REPORT);
     expect(grant.id).toBe('DE-SC0023672');
     expect(grant.agency).toBe('DOE');
     expect(grant.url).toBe('https://www.osti.gov/biblio/3365558');
@@ -143,8 +144,12 @@ describe('recordToGrant', () => {
   });
 });
 
-const matchResolver = (byName: Record<string, string>): PiResolver => {
+const matchResolver = (
+  byName: Record<string, string>,
+  ambiguousNames: string[] = [],
+): PiResolver => {
   return async (canonicalName: string) => {
+    if (ambiguousNames.includes(canonicalName)) return { status: 'ambiguous' };
     const userId = byName[canonicalName];
     return userId ? { status: 'matched', userId } : { status: 'absent' };
   };
@@ -152,35 +157,42 @@ const matchResolver = (byName: Record<string, string>): PiResolver => {
 
 describe('resolveReportPi', () => {
   it('resolves a single Yale faculty author to its User', async () => {
-    const resolver = matchResolver({ 'John Harris': 'user-harris' });
-    expect(await resolveReportPi(HARRIS_REPORT, resolver)).toEqual({
-      userId: 'user-harris',
-      piName: 'John Harris',
+    const resolver = matchResolver({ 'Jordan Avery': 'user-avery' });
+    expect(await resolveReportPi(AVERY_REPORT, resolver)).toEqual({
+      status: 'matched',
+      userId: 'user-avery',
+      piName: 'Jordan Avery',
     });
   });
 
   it('excludes the non-Yale author and resolves the Yale PI', async () => {
-    const resolver = matchResolver({ 'William Nordhaus': 'user-nordhaus' });
+    const resolver = matchResolver({ 'Morgan Quill': 'user-quill' });
     expect(await resolveReportPi(SUBAWARD_REPORT, resolver)).toEqual({
-      userId: 'user-nordhaus',
-      piName: 'William Nordhaus',
+      status: 'matched',
+      userId: 'user-quill',
+      piName: 'Morgan Quill',
     });
   });
 
-  it('fails closed when no candidate resolves', async () => {
-    expect(await resolveReportPi(HARRIS_REPORT, matchResolver({}))).toBeNull();
+  it('reports absent when no candidate resolves', async () => {
+    expect(await resolveReportPi(AVERY_REPORT, matchResolver({}))).toEqual({ status: 'absent' });
   });
 
-  it('fails closed when two distinct faculty match (ambiguous)', async () => {
+  it('reports ambiguous when two distinct faculty match', async () => {
     const resolver = matchResolver({ 'Ann Alpha': 'user-a', 'Bob Beta': 'user-b' });
-    expect(await resolveReportPi(AMBIGUOUS_REPORT, resolver)).toBeNull();
+    expect(await resolveReportPi(AMBIGUOUS_REPORT, resolver)).toEqual({ status: 'ambiguous' });
+  });
+
+  it('reports ambiguous when the only candidate resolves to several researchers', async () => {
+    const resolver = matchResolver({}, ['Jordan Avery']);
+    expect(await resolveReportPi(AVERY_REPORT, resolver)).toEqual({ status: 'ambiguous' });
   });
 });
 
 describe('groupReportsByPi', () => {
   it('groups multiple reports under one PI', () => {
     const groups = groupReportsByPi([
-      { userId: 'u1', piName: 'A', record: HARRIS_REPORT },
+      { userId: 'u1', piName: 'A', record: AVERY_REPORT },
       { userId: 'u1', piName: 'A', record: STALE_REPORT },
       { userId: 'u2', piName: 'B', record: SUBAWARD_REPORT },
     ]);
@@ -189,88 +201,121 @@ describe('groupReportsByPi', () => {
   });
 });
 
-describe('buildResearchGroupObservations', () => {
-  it('mints a shell with a low-confidence name when no canonical home exists', () => {
-    const obs = buildResearchGroupObservations(
-      { userId: 'u1', piName: 'John Harris', records: [HARRIS_REPORT] },
-      null,
-      'https://www.osti.gov/api/v1/records',
-    );
+describe('buildResearchEntityObservations', () => {
+  const group = { userId: 'u1', piName: 'Jordan Avery', records: [AVERY_REPORT] };
+
+  it('keys every observation to the existing row and emits no identity fields', () => {
+    const obs = buildResearchEntityObservations(group, 'example-plasma-lab');
+    const fields = obs.map((o) => o.field);
+    for (const field of MINTING_FIELDS) expect(fields).not.toContain(field);
+    expect(obs.every((o) => o.entityKey === 'example-plasma-lab')).toBe(true);
     const byField = Object.fromEntries(obs.map((o) => [o.field, o]));
-    expect(byField.slug.value).toBe('doe-pi-u1');
-    expect(byField.name.value).toBe('John Harris Faculty Research');
-    expect(byField.name.confidenceOverride).toBeLessThan(0.5);
-    expect(byField.kind.value).toBe('individual');
     expect(byField.fundingAgencies.value).toEqual(['DOE']);
     expect(byField.inferredPiUserId.value).toBe('u1');
-  });
-
-  it('self-attaches to a canonical home without re-emitting identity fields', () => {
-    const obs = buildResearchGroupObservations(
-      { userId: 'u1', piName: 'John Harris', records: [HARRIS_REPORT] },
-      'harris-lab',
-      'https://www.osti.gov/api/v1/records',
-    );
-    const fields = obs.map((o) => o.field);
-    expect(fields).not.toContain('slug');
-    expect(fields).not.toContain('name');
-    expect(fields).not.toContain('kind');
-    expect(obs.every((o) => o.entityKey === 'harris-lab')).toBe(true);
-    expect(fields).toContain('recentGrants');
-    expect(fields).toContain('fundingAgencies');
+    expect(byField.recentGrantCount.value).toBe(1);
+    expect(byField.recentGrantPeriods.value).toHaveLength(1);
   });
 
   it('never emits a description field so abstract prose cannot leak', () => {
-    const obs = buildResearchGroupObservations(
-      { userId: 'u1', piName: 'John Harris', records: [HARRIS_REPORT] },
-      null,
-      'https://www.osti.gov/api/v1/records',
-    );
-    const fields = obs.map((o) => o.field);
+    const fields = buildResearchEntityObservations(group, 'example-plasma-lab').map((o) => o.field);
     expect(fields).not.toContain('fullDescription');
     expect(fields).not.toContain('description');
     expect(fields).not.toContain('shortDescription');
   });
 });
 
-const safeShell: CanonicalResearchHomeResolution = { status: 'safe-shell' };
 const canonical = (slug: string): CanonicalResearchHomeResolution => ({
   status: 'canonical',
   slug,
 });
 
+function scraperFor(
+  reports: OstiRecord[],
+  piResolver: PiResolver,
+  researchHomeResolver: (userId: string) => Promise<CanonicalResearchHomeResolution>,
+): DoeOstiGrantScraper {
+  const fetchPage = vi.fn().mockResolvedValueOnce(reports).mockResolvedValue([]);
+  return new DoeOstiGrantScraper({
+    fetchPage,
+    piResolver,
+    researchHomeResolver,
+    now: () => FIXED_NOW,
+  });
+}
+
 describe('DoeOstiGrantScraper.run', () => {
-  it('attributes Yale reports, drops stale ones, and enriches an existing home', async () => {
-    const fetchPage = vi
-      .fn()
-      .mockResolvedValueOnce([HARRIS_REPORT, SUBAWARD_REPORT, STALE_REPORT])
-      .mockResolvedValue([]);
-    const piResolver = matchResolver({
-      'John Harris': 'user-harris',
-      'William Nordhaus': 'user-nordhaus',
-    });
-    const researchHomeResolver = vi.fn(async (userId: string) =>
-      userId === 'user-harris' ? canonical('harris-heavy-ion-lab') : safeShell,
+  it('enriches the row the resolver names and drops stale reports', async () => {
+    const scraper = scraperFor(
+      [AVERY_REPORT, STALE_REPORT],
+      matchResolver({ 'Jordan Avery': 'user-avery' }),
+      async () => canonical('example-plasma-lab'),
     );
-    const scraper = new DoeOstiGrantScraper({
-      fetchPage,
-      piResolver,
-      researchHomeResolver,
-      now: () => FIXED_NOW,
-    });
     const { ctx, emitted } = ctxWith();
 
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(2);
-    const harris = emitted.filter((o) => o.entityKey === 'harris-heavy-ion-lab');
-    expect(harris.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['DOE']);
-    expect(harris.some((o) => o.field === 'slug')).toBe(false);
-    const nordhaus = emitted.filter((o) => o.entityKey === 'doe-pi-user-nordhaus');
-    expect(nordhaus.find((o) => o.field === 'name')?.value).toBe(
-      'William Nordhaus Faculty Research',
+    expect(result.entitiesObserved).toBe(1);
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(emitted.every((o) => o.entityKey === 'example-plasma-lab')).toBe(true);
+    expect(emitted.some((o) => MINTING_FIELDS.includes(o.field))).toBe(false);
+    expect(result.notes).toMatch(/rows enriched: 1;/);
+  });
+
+  it.each([
+    ['safe-shell', /0 ineligible row/, /1 have no existing research row/],
+    ['ineligible', /1 ineligible row/, /0 have no existing research row/],
+    ['ambiguous', /1 ambiguous row/, /0 have no existing research row/],
+  ] as const)(
+    'mints nothing and counts the refusal when the row resolves %s',
+    async (status, countPattern, noRowPattern) => {
+      const scraper = scraperFor(
+        [AVERY_REPORT],
+        matchResolver({ 'Jordan Avery': 'user-avery' }),
+        async () => ({ status }) as CanonicalResearchHomeResolution,
+      );
+      const { ctx, emitted } = ctxWith();
+
+      const result = await scraper.run(ctx);
+
+      expect(emitted).toHaveLength(0);
+      expect(result.observationCount).toBe(0);
+      expect(result.notes).toMatch(/rows enriched: 0;/);
+      expect(result.notes).toMatch(countPattern);
+      expect(result.notes).toMatch(noRowPattern);
+    },
+  );
+
+  it('mints nothing and counts reports that resolve to no researcher or several', async () => {
+    const researchHomeResolver = vi.fn(async () => canonical('unused-row'));
+    const scraper = scraperFor(
+      [AVERY_REPORT, AMBIGUOUS_REPORT],
+      matchResolver({ 'Ann Alpha': 'user-a', 'Bob Beta': 'user-b' }),
+      researchHomeResolver,
     );
-    expect(emitted.some((o) => String(o.entityKey).includes('robert'))).toBe(false);
+    const { ctx, emitted } = ctxWith();
+
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(researchHomeResolver).not.toHaveBeenCalled();
+    expect(result.notes).toMatch(/1 resolved to no researcher/);
+    expect(result.notes).toMatch(/1 resolved to several researchers/);
+  });
+
+  it('skips and counts a PI whose row lookup throws, without minting', async () => {
+    const scraper = scraperFor(
+      [AVERY_REPORT],
+      matchResolver({ 'Jordan Avery': 'user-avery' }),
+      async () => {
+        throw new Error('lookup failed');
+      },
+    );
+    const { ctx, emitted } = ctxWith();
+
+    const result = await scraper.run(ctx);
+
+    expect(emitted).toHaveLength(0);
+    expect(result.notes).toMatch(/1 PI\(s\) skipped on a resolve error/);
   });
 
   it('fails closed and emits nothing when OSTI is unreachable', async () => {
@@ -278,8 +323,9 @@ describe('DoeOstiGrantScraper.run', () => {
     const scraper = new DoeOstiGrantScraper({
       fetchPage,
       piResolver: matchResolver({}),
-      researchHomeResolver: async () => safeShell,
+      researchHomeResolver: async () => canonical('unused-row'),
       now: () => FIXED_NOW,
+      sleep: async () => undefined,
     });
     const { ctx, emitted } = ctxWith();
 
@@ -290,42 +336,68 @@ describe('DoeOstiGrantScraper.run', () => {
     expect(result.notes).toMatch(/failed closed/i);
   });
 
-  it('skips a PI whose research home is ambiguous', async () => {
-    const fetchPage = vi.fn().mockResolvedValueOnce([HARRIS_REPORT]).mockResolvedValue([]);
+  it('fails closed with no writes when a page after the first stays unreadable (#4026)', async () => {
+    const fullPage = Array.from({ length: 100 }, (_v, i) => ({
+      ...AVERY_REPORT,
+      osti_id: `full-${i}`,
+    }));
+    const fetchPage = vi
+      .fn()
+      .mockResolvedValueOnce(fullPage)
+      .mockRejectedValue(new Error('ECONNRESET'));
     const scraper = new DoeOstiGrantScraper({
       fetchPage,
-      piResolver: matchResolver({ 'John Harris': 'user-harris' }),
-      researchHomeResolver: async () => ({ status: 'ambiguous' }),
+      piResolver: matchResolver({ 'Jordan Avery': 'user-avery' }),
+      researchHomeResolver: async () => canonical('example-plasma-lab'),
       now: () => FIXED_NOW,
+      sleep: async () => undefined,
     });
     const { ctx, emitted } = ctxWith();
 
     const result = await scraper.run(ctx);
 
+    expect(fetchPage).toHaveBeenCalledTimes(1 + GRANT_WINDOW_PAGE_ATTEMPTS);
+    expect(fetchPage.mock.calls.slice(1).every((call) => call[0] === 2)).toBe(true);
     expect(emitted).toHaveLength(0);
-    expect(result.entitiesObserved).toBe(1);
+    expect(result.observationCount).toBe(0);
+    expect(result.notes).toMatch(/window incomplete: page 2 unreadable/);
+    expect(result.notes).toMatch(/100 in-window record\(s\) across 1 page\(s\)/);
+    expect(result.partialFailures).toEqual([result.notes]);
+    expect(result.failedClosed).toBe(true);
+  });
+
+  it('recovers a transiently failed page by retrying it', async () => {
+    const fetchPage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ETIMEDOUT'))
+      .mockResolvedValueOnce([AVERY_REPORT]);
+    const scraper = new DoeOstiGrantScraper({
+      fetchPage,
+      piResolver: matchResolver({ 'Jordan Avery': 'user-avery' }),
+      researchHomeResolver: async () => canonical('example-plasma-lab'),
+      now: () => FIXED_NOW,
+      sleep: async () => undefined,
+    });
+    const { ctx, emitted } = ctxWith();
+
+    const result = await scraper.run(ctx);
+
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(result.partialFailures).toBeUndefined();
+    expect(result.failedClosed).toBeUndefined();
   });
 
   it('honors --limit by capping the number of PIs processed', async () => {
-    const fetchPage = vi
-      .fn()
-      .mockResolvedValueOnce([HARRIS_REPORT, SUBAWARD_REPORT])
-      .mockResolvedValue([]);
-    const scraper = new DoeOstiGrantScraper({
-      fetchPage,
-      piResolver: matchResolver({
-        'John Harris': 'user-harris',
-        'William Nordhaus': 'user-nordhaus',
-      }),
-      researchHomeResolver: async () => safeShell,
-      now: () => FIXED_NOW,
-    });
+    const scraper = scraperFor(
+      [AVERY_REPORT, SUBAWARD_REPORT],
+      matchResolver({ 'Jordan Avery': 'user-avery', 'Morgan Quill': 'user-quill' }),
+      async (userId) => canonical(`row-${userId}`),
+    );
     const { ctx, emitted } = ctxWith({ limit: 1 });
 
     const result = await scraper.run(ctx);
 
     expect(result.entitiesObserved).toBe(1);
-    const entityKeys = new Set(emitted.map((o) => o.entityKey));
-    expect(entityKeys.size).toBe(1);
+    expect(new Set(emitted.map((o) => o.entityKey)).size).toBe(1);
   });
 });

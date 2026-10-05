@@ -1,13 +1,20 @@
 /**
  * Passport.js configuration for Yale CAS authentication.
  */
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import passport from 'passport';
-import { Strategy } from 'passport-cas';
-import { recordAccountLogin, validateAccount } from './services/accountService';
+import {
+  lastKnownAccountUserType,
+  recordAccountLogin,
+  revokeAccountSessions,
+  validateAccount,
+} from './services/accountService';
+import { isSessionClaimLive, mintSessionClaim, storedSessionClaim } from './utils/sessionClaim';
 import type { AccountProfile } from './models/account';
-import { classifyYalieByNetid } from './services/yaliesService';
-import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
+import { lookupYalieByNetid } from './services/yaliesService';
+import { loginSignalBucketForLookup, recordLoginSignal } from './services/loginSignalTallyService';
+import { isFacultyTitle } from './utils/facultyTitle';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
 import {
@@ -15,10 +22,22 @@ import {
   requiresDeployedRuntimeSecurity,
 } from './utils/environment';
 import { isPrivateOrLocalHostname } from './utils/urlSafety';
+import { isLoopbackRequest } from './utils/loopbackAccess';
 import { ensureBootstrapAdminGrant, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
-import { authLimiter } from './middleware/rateLimiters';
+import { authLimiter, markCasValidationAccepted } from './middleware/rateLimiters';
+import { captureServerError } from './utils/errorTracking';
+import {
+  CAS_SIGN_IN_TROUBLE_MESSAGE,
+  CAS_VALIDATION_TIMEOUT_MS,
+  CasValidationTimeoutError,
+  UnusableCasIdentityError,
+  casCallbackFailureStatus,
+  classifyCasCallbackError,
+  reportableCasLoginError,
+} from './utils/casCallbackFailure';
+import { CasStrategy, presentedCasTicket } from './utils/casStrategy';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -154,6 +173,25 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 
 function isLocalAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   return isLocalDevelopmentRuntime(env) && isTruthyEnvFlag(env.LOCAL_AUTH_BYPASS);
+}
+
+/**
+ * A development-only affordance is scoped to the machine running the server, so
+ * the runtime label alone never licenses one: the request must also have
+ * arrived over loopback.
+ */
+function isDevLoginRequestAllowed(
+  req: Pick<express.Request, 'headers' | 'socket'>,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return isDevLoginAllowed(env) && isLoopbackRequest(req);
+}
+
+function isLocalAuthBypassRequestAllowed(
+  req: Pick<express.Request, 'headers' | 'socket'>,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return isLocalAuthBypassAllowed(env) && isLoopbackRequest(req);
 }
 
 function isTrustedLogoutRequest(req: express.Request): boolean {
@@ -370,8 +408,8 @@ async function ensureDevLoginUser(userType: unknown) {
 
   const normalizedUserType = normalizeDevUserType(userType);
   const profile = DEV_LOGIN_PROFILES[normalizedUserType] ?? DEV_LOGIN_PROFILES.undergraduate;
-  // A real 'unknown' user is unconfirmed/unverified because Yalies and the
-  // Directory could not classify them; every other dev role is pre-confirmed
+  // A real 'unknown' user is unconfirmed/unverified because Yalies could not
+  // classify them; every other dev role is pre-confirmed
   // so it can exercise the rest of the app immediately.
   const isBootstrappedType = normalizedUserType !== 'unknown';
   const netId = profile.netId;
@@ -413,14 +451,20 @@ async function buildAuthenticatedSessionUser(
 
 /**
  * Resolve the login principal for a CAS-authenticated netid and ensure the
- * backing Account exists. Classification is derived at login (Yalies for
- * undergrad/grad, Yale Directory for faculty) without persisting a legacy
- * User; only the private Account is written, stamping lastLoginAt.
+ * backing Account exists. Classification is derived at login without persisting
+ * a legacy User; only the private Account is written, stamping lastLoginAt.
+ *
+ * Yalies answers for students and employees alike. An employee is `professor`
+ * when its title is a faculty title and `staff` otherwise. When Yalies cannot
+ * answer at all, the type a previous login stored on the account stands, so a
+ * timeout never re-types a known student `unknown` (#4234). A netid Yalies has
+ * no record of is `unknown`: the Yale Directory, once the fallback here, is
+ * behind a per-person CAS sign-in and has no server-callable API (#4287).
  */
 async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedUser> {
   const netid = normalizeAuthNetId(rawNetid);
   if (!netid) {
-    throw new Error('Invalid authentication principal');
+    throw new UnusableCasIdentityError();
   }
 
   let userType = 'unknown';
@@ -428,8 +472,10 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
   let email: string | undefined;
   let profile: AccountProfile | undefined;
 
-  const yalie = await classifyYalieByNetid(netid);
-  if (yalie) {
+  const lookup = await lookupYalieByNetid(netid);
+  void recordLoginSignal(loginSignalBucketForLookup(lookup));
+  if (lookup.kind === 'student') {
+    const yalie = lookup.identity;
     userType = yalie.userType;
     userConfirmed = yalie.userConfirmed;
     email = yalie.email;
@@ -437,32 +483,23 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
       firstName: yalie.fname,
       lastName: yalie.lname,
       userType: yalie.userType,
-      college: yalie.college,
-      year: yalie.year != null ? String(yalie.year) : undefined,
-      major: yalie.major,
     };
-    authDebug(`resolveLoginPrincipalForCas: Yalies success, type=${userType}`);
-  } else {
-    try {
-      const dirPerson = await fetchFromDirectory(netid, 'netid');
-      if (dirPerson && dirPerson.name) {
-        const facultyTitle = isFacultyTitle(dirPerson.title);
-        userType = facultyTitle ? 'professor' : 'unknown';
-        userConfirmed = facultyTitle;
-        email = dirPerson.email || undefined;
-        profile = {
-          firstName: dirPerson.firstName,
-          lastName: dirPerson.lastName,
-          userType,
-          title: dirPerson.title,
-          department: dirPerson.department,
-        };
-        authDebug(`resolveLoginPrincipalForCas: Directory record found, type=${userType}`);
-      }
-    } catch {
-      authDebug('resolveLoginPrincipalForCas: directory lookup failed, using default principal');
-    }
+  } else if (lookup.kind === 'employee') {
+    const employee = lookup.employee;
+    userType = isFacultyTitle(employee.title) ? 'professor' : 'staff';
+    userConfirmed = true;
+    email = employee.email;
+    profile = {
+      firstName: employee.fname,
+      lastName: employee.lname,
+      userType,
+      title: employee.title,
+      department: employee.department || undefined,
+    };
+  } else if (lookup.kind === 'unavailable') {
+    userType = (await lastKnownAccountUserType(netid)) ?? 'unknown';
   }
+  authDebug(`resolveLoginPrincipalForCas: lookup=${lookup.kind}, type=${userType}`);
 
   await recordAccountLogin({ netid, email, profile });
 
@@ -472,11 +509,11 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
 const authConfig = resolveAuthConfig();
 
 passport.use(
-  new Strategy(
+  new CasStrategy(
     {
-      version: 'CAS1.0',
       ssoBaseURL: authConfig.ssoBaseURL,
       serverBaseURL: authConfig.serverBaseURL,
+      validationTimeoutMs: CAS_VALIDATION_TIMEOUT_MS,
     },
     async function (profile, done) {
       try {
@@ -497,23 +534,28 @@ passport.serializeUser(function (user: any, done) {
     done(new Error('Invalid authentication principal'));
     return;
   }
-  done(null, principal);
+  withMongoReconnect(() => validateAccount(principal.netId)).then(
+    (account) => done(null, { ...principal, ...mintSessionClaim(account?.sessionVersion) }),
+    (error: unknown) => done(error),
+  );
 });
 
 // Runs on every authenticated request, so login-time classification
-// (Yalies/Directory) must not run here; the signed session carries the
+// (Yalies) must not run here; the signed session carries the
 // classified principal and only the dynamic admin grant is re-applied. A
-// missing or archived Account deserializes to unauthenticated.
+// missing or archived Account, a session revoked by a later sign-out, or one
+// older than the session lifetime deserializes to unauthenticated.
 passport.deserializeUser(async (stored: unknown, done) => {
   try {
     authDebug('Deserializing user');
     const principal = coerceStoredSessionPrincipal(stored);
-    if (!principal) {
+    const claim = storedSessionClaim(stored);
+    if (!principal || !claim) {
       done(null, null);
       return;
     }
     const account = await withMongoReconnect(() => validateAccount(principal.netId));
-    if (!account || account.archived) {
+    if (!account || account.archived || !isSessionClaimLive(claim, account.sessionVersion)) {
       done(null, null);
       return;
     }
@@ -543,80 +585,171 @@ const setPrivateAuthResponseHeaders = (res: express.Response): void => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 };
 
+/**
+ * A login callback completes a login only for the browser that started it: the
+ * start leg mints a single-use value into the signed cookie session and the
+ * callback has to return it. The session keeps the few most recent pending
+ * values, so a login started in one tab survives a later start in another.
+ *
+ * The value rides inside the request URL rather than beside it because
+ * `CasStrategy` derives the CAS `service` parameter from `req.originalUrl` and
+ * recomputes it when it validates the ticket. CAS refuses a ticket whose two
+ * service URLs differ, so both legs must spell the same URL.
+ */
+const CAS_LOGIN_STATE_PARAM = 'state';
+const CAS_LOGIN_STATE_KEY = 'casLoginStates';
+const CAS_LOGIN_STATE_BYTES = 16;
+const MAX_PENDING_CAS_LOGIN_STATES = 5;
+const CAS_LOGIN_STATE_RE = /^[0-9a-f]{32}$/;
+
+function casLoginStateUrl(originalUrl: string, state: string): string {
+  const target = new URL(originalUrl, RELATIVE_REDIRECT_BASE);
+  target.searchParams.set(CAS_LOGIN_STATE_PARAM, state);
+  return `${target.pathname}${target.search}`;
+}
+
+function returnedCasLoginState(req: express.Request): string | null {
+  const returned = req.query?.[CAS_LOGIN_STATE_PARAM];
+  const value = typeof returned === 'string' ? returned : '';
+  return CAS_LOGIN_STATE_RE.test(value) ? value : null;
+}
+
+function pendingCasLoginStates(session: NonNullable<express.Request['session']>): string[] {
+  const stored: unknown = session[CAS_LOGIN_STATE_KEY];
+  if (!Array.isArray(stored)) return [];
+  return stored.filter(
+    (value): value is string => typeof value === 'string' && CAS_LOGIN_STATE_RE.test(value),
+  );
+}
+
+function casLoginStatesEqual(stored: string, returned: string): boolean {
+  const storedBytes = Buffer.from(stored, 'utf8');
+  const returnedBytes = Buffer.from(returned, 'utf8');
+  return storedBytes.length === returnedBytes.length && timingSafeEqual(storedBytes, returnedBytes);
+}
+
+function beginCasLogin(req: express.Request): void {
+  const state = randomBytes(CAS_LOGIN_STATE_BYTES).toString('hex');
+  if (req.session) {
+    req.session[CAS_LOGIN_STATE_KEY] = [...pendingCasLoginStates(req.session), state].slice(
+      -MAX_PENDING_CAS_LOGIN_STATES,
+    );
+  }
+  req.originalUrl = casLoginStateUrl(req.originalUrl, state);
+}
+
+function acceptsCasLoginCallback(req: express.Request): boolean {
+  const session = req.session;
+  const returned = returnedCasLoginState(req);
+  if (!session || !returned) return false;
+  const pending = pendingCasLoginStates(session);
+  const matched = pending.findIndex((stored) => casLoginStatesEqual(stored, returned));
+  if (matched === -1) return false;
+  const remaining = pending.filter((_, index) => index !== matched);
+  if (remaining.length > 0) {
+    session[CAS_LOGIN_STATE_KEY] = remaining;
+  } else {
+    delete session[CAS_LOGIN_STATE_KEY];
+  }
+  return true;
+}
+
 const casLogin = function (
   req: express.Request,
   res: express.Response,
   next: express.NextFunction,
 ) {
   setPrivateAuthResponseHeaders(res);
-  passport.authenticate(
-    'cas',
-    function (
-      err: Error | null,
-      user: AuthenticatedSessionUser | false | null | undefined,
-      _info: PassportAuthInfo = {},
-    ) {
-      if (err) {
-        console.log('Error in authenticate function');
-        console.error('Authentication error details:', sanitizeLogValue(err));
 
+  if (!presentedCasTicket(req)) {
+    beginCasLogin(req);
+  } else if (!acceptsCasLoginCallback(req)) {
+    console.log('CAS callback did not match a login started in this session');
+    return res.status(401).json({ error: 'CAS callback does not match this login' });
+  }
+
+  let settled = false;
+  let validationTimer: NodeJS.Timeout | undefined;
+  const onVerdict = function (
+    err: Error | null,
+    user: AuthenticatedSessionUser | false | null | undefined,
+    _info: PassportAuthInfo = {},
+  ) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(validationTimer);
+
+    if (err) {
+      console.log('Error in authenticate function');
+      console.error('Authentication error details:', sanitizeLogValue(err));
+
+      const failure = classifyCasCallbackError(err);
+      if (failure === 'rejected') {
         const errorRedirect = safeRedirectTarget(req.query?.error);
         if (errorRedirect) {
           return res.redirect(errorRedirect);
         }
-
-        if (isTopologyLostError(err)) {
-          void triggerReconnect();
-          return res
-            .status(503)
-            .json({ error: 'Service temporarily unavailable, please try again' });
-        }
-
         return res.status(401).json({ error: 'Error in authentication' });
       }
 
-      if (!user) {
-        console.log('CAS auth but no user');
-        return res.status(401).json({ error: 'CAS auth but no user' });
+      if (isTopologyLostError(err)) void triggerReconnect();
+      captureServerError(reportableCasLoginError(failure, err), req);
+      return res.status(casCallbackFailureStatus(failure)).json({
+        error: CAS_SIGN_IN_TROUBLE_MESSAGE,
+      });
+    }
+
+    if (!user) {
+      console.log('CAS auth but no user');
+      return res.status(401).json({ error: 'CAS auth but no user' });
+    }
+
+    markCasValidationAccepted(req);
+
+    req.logIn(user, async function (err) {
+      if (err) {
+        console.error('CAS login failed during session creation');
+        return next(err);
       }
 
-      req.logIn(user, async function (err) {
-        if (err) {
-          console.error('CAS login failed during session creation');
-          return next(err);
-        }
-
-        try {
-          await logEvent({
-            eventType: AnalyticsEventType.LOGIN,
-            netid: user.netId,
-            userType: user.userType || 'unknown',
-            metadata: {
-              timestamp: new Date(),
-              loginMethod: 'CAS',
-            },
-          });
-          authDebug('Login event logged to analytics');
-        } catch (analyticsError) {
-          console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
-        }
-
-        const safeTarget = safeRedirectTarget(req.query?.redirect);
-        if (safeTarget) {
-          return res.redirect(safeTarget);
-        }
-
-        const defaultRedirect = isLocalDevelopmentRuntime() ? localDevOriginFromRequest(req) : '/';
-        return res.redirect(defaultRedirect);
+      const loginOutcome = await logEvent({
+        eventType: AnalyticsEventType.LOGIN,
+        netid: user.netId,
+        userType: user.userType || 'unknown',
+        metadata: {
+          timestamp: new Date(),
+          loginMethod: 'CAS',
+        },
       });
-    },
-  )(req, res, next);
+      authDebug(`Login analytics event ${loginOutcome}`);
+
+      const safeTarget = safeRedirectTarget(req.query?.redirect);
+      if (safeTarget) {
+        return res.redirect(safeTarget);
+      }
+
+      const defaultRedirect = isLocalDevelopmentRuntime() ? localDevOriginFromRequest(req) : '/';
+      return res.redirect(defaultRedirect);
+    });
+  };
+
+  if (presentedCasTicket(req)) {
+    validationTimer = setTimeout(
+      () => onVerdict(new CasValidationTimeoutError(), false),
+      CAS_VALIDATION_TIMEOUT_MS,
+    );
+  }
+
+  passport.authenticate('cas', onVerdict)(req, res, next);
 };
+
+export const visitorDedupeKey = (visitedAt: Date): string =>
+  `visitor:${visitedAt.toISOString().slice(0, 10)}`;
 
 const router = express.Router();
 
 router.use(async (req, res, next) => {
-  if (!req.user && isLocalAuthBypassAllowed() && !shouldSkipLocalAuthBypass(req.path)) {
+  if (!req.user && isLocalAuthBypassRequestAllowed(req) && !shouldSkipLocalAuthBypass(req.path)) {
     try {
       req.user = (await ensureLocalAuthBypassUser(process.env, req.headers)) as Express.User;
     } catch (error) {
@@ -626,22 +759,23 @@ router.use(async (req, res, next) => {
   }
 
   if (req.isAuthenticated() && !req.session!.visitorLogged) {
+    req.session!.visitorLogged = true;
     const user = req.user as any;
-    try {
-      await logEvent({
-        eventType: AnalyticsEventType.VISITOR,
-        netid: user.netId,
-        userType: user.userType || 'unknown',
-        metadata: {
-          timestamp: new Date(),
-          loginMethod: 'cookie',
-        },
-      });
-      authDebug('🍪 Visitor event logged to analytics (cookie login)');
-      req.session!.visitorLogged = true;
-    } catch (analyticsError) {
-      console.error('Error logging visitor analytics event:', sanitizeLogValue(analyticsError));
-    }
+    const visitedAt = new Date();
+    // The SPA's first requests arrive in parallel, each with its own copy of
+    // the cookie session, so the session flag alone cannot stop a duplicate;
+    // the per-day dedupe key makes the unique index the guard.
+    const visitorOutcome = await logEvent({
+      eventType: AnalyticsEventType.VISITOR,
+      netid: user.netId,
+      userType: user.userType || 'unknown',
+      dedupeKey: visitorDedupeKey(visitedAt),
+      metadata: {
+        timestamp: visitedAt,
+        loginMethod: 'cookie',
+      },
+    });
+    authDebug(`Visitor analytics event ${visitorOutcome} (cookie login)`);
   }
   next();
 });
@@ -681,19 +815,16 @@ const logoutRouteHandler = async (
 
   if (req.user) {
     const user = req.user as any;
-    try {
-      await logEvent({
-        eventType: AnalyticsEventType.LOGOUT,
-        netid: user.netId,
-        userType: user.userType || 'unknown',
-        metadata: {
-          timestamp: new Date(),
-        },
-      });
-      authDebug('Logout event logged to analytics');
-    } catch (analyticsError) {
-      console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
-    }
+    const logoutOutcome = await logEvent({
+      eventType: AnalyticsEventType.LOGOUT,
+      netid: user.netId,
+      userType: user.userType || 'unknown',
+      metadata: {
+        timestamp: new Date(),
+      },
+    });
+    authDebug(`Logout analytics event ${logoutOutcome}`);
+    await withMongoReconnect(() => revokeAccountSessions(user.netId));
   }
 
   const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;
@@ -722,10 +853,10 @@ router.get('/logout', (req, res, next) => {
 });
 
 if (isDevLoginAllowed()) {
-  router.get('/dev-login', async (req, res) => {
+  router.get('/dev-login', async (req, res, next) => {
     setPrivateAuthResponseHeaders(res);
-    if (!isDevLoginAllowed()) {
-      return res.status(403).json({ error: 'Dev login is disabled for this environment' });
+    if (!isDevLoginRequestAllowed(req)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     try {
@@ -734,35 +865,26 @@ if (isDevLoginAllowed()) {
 
       req.logIn(testUser, async (err) => {
         if (err) {
-          console.error('Dev login error:', sanitizeLogValue(err));
-          return res.status(500).json({ error: 'Dev login failed' });
+          return next(err);
         }
 
-        try {
-          await logEvent({
-            eventType: AnalyticsEventType.LOGIN,
-            netid: testUser.netId,
-            userType: testUser.userType || 'unknown',
-            metadata: {
-              timestamp: new Date(),
-              loginMethod: 'dev-login',
-            },
-          });
-          authDebug('Dev login event logged to analytics');
-        } catch (analyticsError) {
-          console.error(
-            'Error logging dev login analytics event:',
-            sanitizeLogValue(analyticsError),
-          );
-        }
+        const devLoginOutcome = await logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: testUser.netId,
+          userType: testUser.userType || 'unknown',
+          metadata: {
+            timestamp: new Date(),
+            loginMethod: 'dev-login',
+          },
+        });
+        authDebug(`Dev login analytics event ${devLoginOutcome}`);
 
         const redirectUrl =
           safeRedirectTarget(req.query?.redirect) ?? localDevOriginFromRequest(req);
         res.redirect(redirectUrl);
       });
     } catch (error) {
-      console.error('Dev login error:', sanitizeLogValue(error));
-      res.status(500).json({ error: 'Dev login failed' });
+      next(error);
     }
   });
 }
@@ -771,7 +893,9 @@ export {
   ensureDevLoginUser,
   ensureLocalAuthBypassUser,
   isDevLoginAllowed,
+  isDevLoginRequestAllowed,
   isLocalAuthBypassAllowed,
+  isLocalAuthBypassRequestAllowed,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
   localDevOriginFromRequest,

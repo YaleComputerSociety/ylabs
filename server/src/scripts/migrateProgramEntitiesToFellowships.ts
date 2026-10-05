@@ -16,7 +16,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'programs:migrate-program-entities-to-fellowships';
 
@@ -148,7 +148,7 @@ async function planMigration(limit?: number): Promise<MigrationPlan> {
     }
 
     const [signalsToDelete, roleAssignmentsToArchive] = await Promise.all([
-      Signal.countDocuments({ researchEntityId: entity._id }),
+      Signal.countDocuments({ researchEntityId: entity._id as mongoose.Types.ObjectId }),
       RoleAssignment.countDocuments({ 'target.id': entity._id, archived: { $ne: true } }),
     ]);
 
@@ -225,7 +225,9 @@ export async function runMigration(options: CliOptions) {
         else created += 1;
       }
 
-      const signalMatch = await Signal.deleteMany({ researchEntityId: entity._id });
+      const signalMatch = await Signal.deleteMany({
+        researchEntityId: entity._id as mongoose.Types.ObjectId,
+      });
       const roleMatch = await RoleAssignment.updateMany(
         { 'target.id': entity._id, archived: { $ne: true } },
         { $set: { archived: true } },

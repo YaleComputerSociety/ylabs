@@ -11,9 +11,25 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
+import { reduceAccountToMirroredFields } from './mirroredAccountFields';
+import {
+  assertEnvironmentLocalCollectionsClassified,
+  assertNoNeverCopyCollections,
+  PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS,
+} from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  accountCountChange,
+  applyAccountCarry,
+  loadAccountCarryPlan,
+  summarizeAccountCarry,
+  type AccountCarryPlan,
+  type AccountCarrySummary,
+} from './accountSwapCarry';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
+import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
+
+export { parseMongoTarget };
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const betaOperatorProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
@@ -23,14 +39,11 @@ if (fs.existsSync(betaOperatorProfilePath) && !process.env.BETA_MONGODBURL) {
     process.env.BETA_MONGODBURL = betaOperatorProfile.MONGODBURL;
   }
 }
-dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
+dotenv.config({ path: path.join(SERVER_ROOT, '.env'), quiet: true });
 
 type SyncMode = 'dry-run' | 'apply';
 type SyncCollectionCategory =
-  | 'research-discovery'
-  | 'identity-spine'
-  | 'source-audit'
-  | 'base-support';
+  'research-discovery' | 'identity-spine' | 'source-audit' | 'base-support';
 
 export interface SyncCollection {
   name: string;
@@ -40,7 +53,6 @@ export interface SyncCollection {
 }
 
 const BATCH_SIZE = 1000;
-const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 // The reviewable corpus plus the identity spine that resolves its leads. A
 // mirrored environment that carries research_entities without researchers,
@@ -60,27 +72,6 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_areas', category: 'base-support' },
   { name: 'taxonomy_terms', category: 'base-support' },
   { name: 'fellowships', category: 'base-support' },
-];
-
-// An allow-list rather than a delete-list: account state and student PII live
-// under `profile` on the current model, so a top-level field blocklist silently
-// stops covering them the moment a field moves or a new one is added.
-const MIRRORED_ACCOUNT_FIELDS = [
-  '_id',
-  'schemaVersion',
-  'netid',
-  'email',
-  'status',
-  'createdAt',
-  'updatedAt',
-];
-
-const MIRRORED_ACCOUNT_PROFILE_FIELDS = [
-  'firstName',
-  'lastName',
-  'userType',
-  'title',
-  'department',
 ];
 
 export interface BetaToDevelopmentOptions {
@@ -115,13 +106,8 @@ export interface BetaToDevelopmentSummary {
   excludedOperationalCollections: string[];
   unclassifiedBetaCollections: string[];
   localCollectionsClearedOnApply: string[];
+  localCollectionsPreservedOnApply: string[];
   userCopyPolicy: string;
-}
-
-interface ParsedMongoTarget {
-  database: string;
-  host: string;
-  local: boolean;
 }
 
 const EXCLUDED_BETA_COLLECTIONS = [
@@ -146,7 +132,20 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // copied gate scorecard presents one environment's promotion verdict as the
   // other's, and each row names the database its audit measured.
   'gate_scorecard_snapshots',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
+  // lane benchmark is a frozen input captured here, and its scorecards are its history.
+  // The engine benchmark is the same thing one layer up: a frozen observation set and
+  // stored row captured in this environment, and the trend measured against it.
+  'engine_benchmarks',
+  'engine_benchmark_rows',
+  'engine_benchmark_snapshots',
+  'lane_benchmarks',
+  'lane_benchmark_pages',
+  'lane_scorecard_snapshots',
   'listingclaimrequests',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a copied login
+  // tally attributes one environment's sign-ins to another.
+  'login_signal_tallies',
   'observation_reference_repair_audits',
   'research_plans',
   'review_decisions',
@@ -159,27 +158,8 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_profiles',
   'student_trackings',
   'visibility_release_queue_items',
+  'weekly_sweep_runs',
 ];
-
-export function parseMongoTarget(value: string): ParsedMongoTarget {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error('MongoDB URLs must be valid connection URLs');
-  }
-
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
-  if (!database) {
-    throw new Error('MongoDB URLs must include an explicit database name');
-  }
-
-  return {
-    database,
-    host: parsed.hostname,
-    local: LOCAL_MONGO_HOSTS.has(parsed.hostname),
-  };
-}
 
 export function replaceMongoDatabaseName(value: string, databaseName: string): string {
   let parsed: URL;
@@ -274,12 +254,13 @@ export function assertSafeBetaToDevelopmentOptions(options: BetaToDevelopmentOpt
 
   const beta = parseMongoTarget(options.betaUrl);
   const development = parseMongoTarget(options.developmentUrl);
-  if (beta.database !== 'Beta' || beta.local) {
+  const allowedPair = DATABASE_COPY_PAIRS['beta-to-development'];
+  if (beta.database !== allowedPair.source || beta.local) {
     throw new Error(
       `Beta source must be a remote MongoDB database named Beta; resolved ${beta.host}/${beta.database}`,
     );
   }
-  if (development.database !== 'Development' || development.local) {
+  if (development.database !== allowedPair.target || development.local) {
     throw new Error(
       `Development destination must be remote MongoDB database Development; resolved ${development.host}/${development.database}`,
     );
@@ -314,25 +295,7 @@ export function sanitizeMirroredAccount(
     };
   }
 
-  const sanitized: Document = pickDefinedFields(document, MIRRORED_ACCOUNT_FIELDS);
-  sanitized.archived = document.archived === true;
-  const profile = mirroredAccountProfile(document.profile);
-  if (profile) sanitized.profile = profile;
-  return sanitized;
-}
-
-function pickDefinedFields(source: Document, fields: string[]): Document {
-  const picked: Document = {};
-  for (const field of fields) {
-    if (source[field] !== undefined) picked[field] = source[field];
-  }
-  return picked;
-}
-
-function mirroredAccountProfile(profile: unknown): Document | undefined {
-  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return undefined;
-  const picked = pickDefinedFields(profile as Document, MIRRORED_ACCOUNT_PROFILE_FIELDS);
-  return Object.keys(picked).length > 0 ? picked : undefined;
+  return reduceAccountToMirroredFields(document);
 }
 
 function collectionExists(db: Db, collectionName: string): Promise<boolean> {
@@ -440,6 +403,7 @@ export function buildBetaToDevelopmentSummary(
   collections: SyncCollectionPlan[],
   unclassifiedBetaCollections: string[] = [],
   localCollectionsClearedOnApply: string[] = [],
+  localCollectionsPreservedOnApply: string[] = [],
 ): BetaToDevelopmentSummary {
   return {
     mode: options.mode,
@@ -453,6 +417,7 @@ export function buildBetaToDevelopmentSummary(
     excludedOperationalCollections: EXCLUDED_BETA_COLLECTIONS,
     unclassifiedBetaCollections,
     localCollectionsClearedOnApply,
+    localCollectionsPreservedOnApply,
     userCopyPolicy:
       'Copy the identity spine. Preserve accounts reachable from a Researcher, pseudonymize every other account, and remove account activity fields.',
   };
@@ -475,14 +440,23 @@ export function assertNoUnclassifiedBetaCollections(collectionNames: string[]): 
   );
 }
 
-function localNonMirrorCollectionNames(
+export function localNonMirrorCollectionNames(
   developmentCollectionNames: string[],
   mirrorCollectionNames: string[],
 ): string[] {
+  assertEnvironmentLocalCollectionsClassified();
   const mirror = new Set(mirrorCollectionNames);
+  const preserved = new Set(PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS);
   return developmentCollectionNames
-    .filter((name) => !name.startsWith('system.') && !mirror.has(name))
+    .filter((name) => !name.startsWith('system.') && !mirror.has(name) && !preserved.has(name))
     .sort();
+}
+
+export function preservedDevelopmentCollectionNames(
+  developmentCollectionNames: string[],
+): string[] {
+  const preserved = new Set(PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS);
+  return developmentCollectionNames.filter((name) => preserved.has(name)).sort();
 }
 
 function writeOutput(report: unknown, output?: string): void {
@@ -568,13 +542,50 @@ async function copyCollection(
   }
 }
 
+export function syncCountMismatches(
+  after: readonly SyncCollectionPlan[],
+  carry: AccountCarrySummary,
+): SyncCollectionPlan[] {
+  return after.filter((row) => {
+    const expected =
+      row.name === 'accounts'
+        ? row.sourceCopyCount + accountCountChange(carry)
+        : row.sourceCopyCount;
+    return expected !== row.targetCount;
+  });
+}
+
+function mirroredSourceAccounts(sourceDb: Db, collections: readonly SyncCollection[]) {
+  const accounts = collections.find((collection) => collection.name === 'accounts');
+  return async () => {
+    const rows = await sourceDb
+      .collection('accounts')
+      .find(accounts?.filter ?? {})
+      .toArray();
+    return accounts?.transform ? rows.map(accounts.transform) : rows;
+  };
+}
+
+export function previewSyncAccountCarry(
+  sourceDb: Db,
+  targetDb: Db,
+  collections: readonly SyncCollection[],
+): Promise<AccountCarryPlan> {
+  return loadAccountCarryPlan({
+    targetDb,
+    targetAccountsCollection: 'accounts',
+    loadPromotedAccounts: mirroredSourceAccounts(sourceDb, collections),
+  });
+}
+
 export async function applySync(
   betaDb: Db,
   developmentDb: Db,
   collections: SyncCollection[],
   clearedCollectionNames: string[],
-  verify: () => Promise<void>,
-): Promise<void> {
+  verify: (carry: AccountCarrySummary) => Promise<void>,
+): Promise<AccountCarrySummary> {
+  let carry = summarizeAccountCarry({ refreshes: [], restores: [], rekeys: [], inserts: [] });
   await applyStagedCollectionSwap({
     targetDb: developmentDb,
     collections,
@@ -583,8 +594,20 @@ export async function applySync(
     label: 'Beta to Development sync',
     stage: (collection, operationId) =>
       copyCollection(betaDb, developmentDb, collection, operationId),
-    verify,
+    afterCutover: async (backups) => {
+      const targetAccounts = backups.get('accounts');
+      if (!targetAccounts) return;
+      const plan = await loadAccountCarryPlan({
+        targetDb: developmentDb,
+        targetAccountsCollection: targetAccounts,
+        loadPromotedAccounts: () => developmentDb.collection('accounts').find({}).toArray(),
+      });
+      await applyAccountCarry(developmentDb, plan);
+      carry = summarizeAccountCarry(plan);
+    },
+    verify: () => verify(carry),
   });
+  return carry;
 }
 
 async function main(): Promise<void> {
@@ -615,34 +638,49 @@ async function main(): Promise<void> {
           approvedMirrorCollectionNames,
         )
       : [];
+    const localCollectionsPreservedOnApply = preservedDevelopmentCollectionNames(
+      developmentCollectionRows.map((collection) => collection.name),
+    );
     const before = await buildPlan(betaDb, developmentDb, collections);
     const summary = buildBetaToDevelopmentSummary(
       options,
       before,
       unclassifiedBetaCollections,
       localCollectionsClearedOnApply,
+      localCollectionsPreservedOnApply,
     );
 
     if (options.mode === 'dry-run') {
-      console.log(JSON.stringify(summary, null, 2));
-      writeOutput(summary, options.output);
+      const accountCarry = summarizeAccountCarry(
+        await previewSyncAccountCarry(betaDb, developmentDb, collections),
+      );
+      const report = { ...summary, accountCarry };
+      console.log(JSON.stringify(report, null, 2));
+      writeOutput(report, options.output);
       return;
     }
 
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    await applySync(betaDb, developmentDb, collections, clearedDevelopmentCollections, async () => {
-      after = await buildPlan(betaDb, developmentDb, collections);
-      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
-      if (mismatches.length > 0) {
-        throw new Error(
-          `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-        );
-      }
-    });
+    const accountCarry = await applySync(
+      betaDb,
+      developmentDb,
+      collections,
+      clearedDevelopmentCollections,
+      async (carry) => {
+        after = await buildPlan(betaDb, developmentDb, collections);
+        const mismatches = syncCountMismatches(after, carry);
+        if (mismatches.length > 0) {
+          throw new Error(
+            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+          );
+        }
+      },
+    );
     const result = {
       ...summary,
+      accountCarry,
       status: 'applied',
       collections: after,
       clearedDevelopmentCollections,

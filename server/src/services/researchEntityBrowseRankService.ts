@@ -2,7 +2,7 @@
  * Persistence + Meilisearch sync for the ResearchEntity browse-ranking score.
  *
  * The pure scorer lives in researchEntityBrowseRank.ts. This module gathers the
- * joins the scorer needs (lead members, active access-signal types, whether the
+ * joins the scorer needs (lead members, whether the
  * entity hosts affiliated research homes), writes the
  * resulting `browseRankScore` onto the ResearchEntity document, and re-syncs the
  * affected docs to the `researchentities` Meilisearch index so the default
@@ -10,17 +10,17 @@
  */
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
-import { Signal } from '../models/signal';
-import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAccessTypes';
-import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
 import {
-  hasUndergradHostingEvidenceFromSignals,
-  type AccessSignalConfidenceInput,
-} from './accessAcceptanceLevel';
+  BROWSE_RANK_SCORER_VERSION,
+  computeResearchEntityBrowseRank,
+} from './researchEntityBrowseRank';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 
 const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
@@ -41,43 +41,14 @@ const entitiesHostingAffiliations = async (entityIds: any[]): Promise<Set<string
     sourceResearchEntityId: { $in: entityIds },
     archived: { $ne: true },
   })
-    .select('sourceResearchEntityId')
+    .select('sourceResearchEntityId targetResearchEntityId')
     .lean();
   const hosting = new Set<string>();
-  for (const relationship of sourceIds as any[]) {
+  for (const relationship of (sourceIds as any[]).filter(relatesTwoDistinctResearchEntities)) {
     const key = browseRankDocumentId(relationship.sourceResearchEntityId);
     if (key) hosting.add(key);
   }
   return hosting;
-};
-
-const accessSignalsByEntityId = async (
-  entityIds: any[],
-): Promise<Map<string, AccessSignalConfidenceInput[]>> => {
-  if (entityIds.length === 0) return new Map();
-  const signals = await Signal.find({
-    researchEntityId: { $in: entityIds },
-    type: { $in: ACCESS_SIGNAL_TYPES },
-    archived: { $ne: true },
-  })
-    .select('researchEntityId type confidence confidenceScore derivationKey source.excerpt')
-    .lean();
-  const byId = new Map<string, AccessSignalConfidenceInput[]>();
-  for (const signal of signals as any[]) {
-    const key = browseRankDocumentId(signal.researchEntityId);
-    if (!key || !signal.type) continue;
-    byId.set(key, [
-      ...(byId.get(key) || []),
-      {
-        type: String(signal.type),
-        confidence: signal.confidence,
-        confidenceScore: signal.confidenceScore,
-        derivationKey: signal.derivationKey,
-        excerpt: signal.source?.excerpt,
-      },
-    ]);
-  }
-  return byId;
 };
 
 export interface RecomputeBrowseRankOptions {
@@ -85,75 +56,132 @@ export interface RecomputeBrowseRankOptions {
   dryRun?: boolean;
   /** When true, re-sync each updated doc to Meilisearch (default true). */
   sync?: boolean;
+  scorerVersion?: number;
 }
 
 export interface RecomputeBrowseRankResult {
   considered: number;
   updated: number;
+  stamped: number;
+  scoreDrifted: number;
+  refusedNewerScorer: number;
+  indexSyncFailures: number;
+  indexSyncDeferred?: number;
   scoresByEntityId: Map<string, number>;
 }
 
+const storedScorerVersion = (entity: Record<string, any>): number =>
+  typeof entity.browseRankScorerVersion === 'number' ? entity.browseRankScorerVersion : 0;
+
+const notScoredByANewerScorer = (scorerVersion: number) => ({
+  $or: [
+    { browseRankScorerVersion: { $exists: false } },
+    { browseRankScorerVersion: null },
+    { browseRankScorerVersion: { $lte: scorerVersion } },
+  ],
+});
+
 /**
  * Recompute browseRankScore for the given entity ids (loaded with their lead
- * members and active access signals), persist, and re-sync to Meilisearch.
+ * members), persist, and re-sync to Meilisearch.
  */
 export async function recomputeBrowseRankForEntities(
   entityIds: any[],
   options: RecomputeBrowseRankOptions = {},
 ): Promise<RecomputeBrowseRankResult> {
   const sync = options.sync ?? true;
+  const scorerVersion = options.scorerVersion ?? BROWSE_RANK_SCORER_VERSION;
   const scoresByEntityId = new Map<string, number>();
   if (entityIds.length === 0) {
-    return { considered: 0, updated: 0, scoresByEntityId };
+    return {
+      considered: 0,
+      updated: 0,
+      stamped: 0,
+      scoreDrifted: 0,
+      refusedNewerScorer: 0,
+      indexSyncFailures: 0,
+      scoresByEntityId,
+    };
   }
 
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
   const ids = entities.map((entity) => entity._id);
-  const [leadMembers, accessSignals, hostingAffiliations] = await Promise.all([
+  const [leadMembers, hostingAffiliations] = await Promise.all([
     leadMembersByEntityId(ids),
-    accessSignalsByEntityId(ids),
     entitiesHostingAffiliations(ids),
   ]);
 
   let updated = 0;
+  let stamped = 0;
+  let scoreDrifted = 0;
+  let refusedNewerScorer = 0;
+  let indexSyncFailures = 0;
+  let indexSyncDeferred = 0;
+  const indexWritesDeferred = searchIndexWritesDeferred();
   for (const entity of entities) {
     const id = browseRankDocumentId(entity._id);
     if (!id) continue;
-    const entitySignals = accessSignals.get(id) || [];
+    if (storedScorerVersion(entity) > scorerVersion) {
+      refusedNewerScorer += 1;
+      continue;
+    }
     const score = computeResearchEntityBrowseRank({
       entity,
       leadMembers: leadMembers.get(id) || [],
       hostsAffiliatedResearchHomes: hostingAffiliations.has(id),
     });
     scoresByEntityId.set(id, score);
-    const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
+    const undergradHostingEvidence = entityHasHostedUndergraduates(entity);
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const hostingUnchanged =
       (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
-    if (scoreUnchanged && hostingUnchanged) continue;
-    updated += 1;
-    if (options.dryRun) continue;
+    const servedFieldsUnchanged = scoreUnchanged && hostingUnchanged;
+    const stampUnchanged = storedScorerVersion(entity) === scorerVersion;
+    if (!scoreUnchanged) scoreDrifted += 1;
+    if (servedFieldsUnchanged && stampUnchanged) continue;
+    if (options.dryRun) {
+      if (servedFieldsUnchanged) stamped += 1;
+      else updated += 1;
+      continue;
+    }
 
-    await ResearchEntity.updateOne(
-      { _id: entity._id },
+    const write = await ResearchEntity.updateOne(
+      { _id: entity._id, ...notScoredByANewerScorer(scorerVersion) },
       {
         $set: {
           browseRankScore: score,
+          browseRankScorerVersion: scorerVersion,
           hasUndergradHostingEvidence: undergradHostingEvidence,
         },
       },
       { timestamps: false },
     );
-    if (sync) {
+    if (write.matchedCount === 0) {
+      refusedNewerScorer += 1;
+      continue;
+    }
+    if (servedFieldsUnchanged) {
+      stamped += 1;
+      continue;
+    }
+    updated += 1;
+    if (sync && indexWritesDeferred) {
+      indexSyncDeferred += 1;
+    } else if (sync) {
       const fresh = await ResearchEntity.findById(entity._id).lean();
-      if (fresh) await syncEntity('researchEntity', fresh);
+      if (!fresh || !(await syncEntity('researchEntity', fresh))) indexSyncFailures += 1;
     }
   }
 
   return {
     considered: entities.length,
     updated,
+    stamped,
+    scoreDrifted,
+    refusedNewerScorer,
+    indexSyncFailures,
+    ...(indexSyncDeferred > 0 ? { indexSyncDeferred } : {}),
     scoresByEntityId,
   };
 }

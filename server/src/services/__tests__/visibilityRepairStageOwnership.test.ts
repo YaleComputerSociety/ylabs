@@ -9,7 +9,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
-  ACTION_EVIDENCE_REPAIR_REASONS,
   PI_IDENTITY_REPAIR_REASONS,
   REVIEW_EXCEPTION_REPAIR_REASONS,
   SOURCE_DESCRIPTION_REPAIR_REASONS,
@@ -25,18 +24,19 @@ const EVERY_BLOCKER_REASON = [
   'all_citations_dead',
   'application_source_only',
   'archive_review',
+  'award_suspended',
   'blank_public_description',
   'citations_identify_no_person',
-  'content_page_risk',
-  'duplicate_name_risk',
+  'common_application_container',
+  'duplicate_program',
   'duplicate_risk',
   'exact_url_duplicate_risk',
+  'external_award_cycle_stale',
   'formalization_only',
   'generic_directory_shell',
   'grant_only_no_current_yale_source',
   'inactive_at_yale',
   'lab_name_org_type_mismatch',
-  'missing_action_evidence',
   'missing_alternate_access_path',
   'missing_application_route',
   'missing_card_description',
@@ -51,16 +51,18 @@ const EVERY_BLOCKER_REASON = [
   'non_research_program',
   'not_undergraduate_relevant',
   'permanently_closed',
+  'prize_for_completed_work',
   'profile_biography_shell',
   'profile_fallback_only',
   'profile_identity_risk',
+  'program_listing_page',
   'public_description_invariant_failed',
   'research_infrastructure_only',
   'thin_description',
   'unusable_name',
 ];
 
-const REPAIR_ATTEMPTING_STAGES = new Set(['source_description', 'pi_identity', 'action_evidence']);
+const REPAIR_ATTEMPTING_STAGES = new Set(['source_description', 'pi_identity']);
 
 describe('visibility repair stage has one owner (#2818 follow-through)', () => {
   // Comparing the two entry points would be a tautology now that one delegates to
@@ -71,35 +73,38 @@ describe('visibility repair stage has one owner (#2818 follow-through)', () => {
       all_citations_dead: 'review_exception',
       application_source_only: 'source_description',
       archive_review: 'suppression',
+      award_suspended: 'suppression',
       blank_public_description: 'source_description',
       citations_identify_no_person: 'review_exception',
-      content_page_risk: 'suppression',
-      duplicate_name_risk: 'pi_identity',
+      duplicate_program: 'suppression',
+      common_application_container: 'suppression',
       duplicate_risk: 'pi_identity',
       exact_url_duplicate_risk: 'suppression',
+      external_award_cycle_stale: 'suppression',
       formalization_only: 'review_exception',
       generic_directory_shell: 'suppression',
       grant_only_no_current_yale_source: 'suppression',
       inactive_at_yale: 'suppression',
       lab_name_org_type_mismatch: 'review_exception',
-      missing_action_evidence: 'action_evidence',
-      missing_alternate_access_path: 'action_evidence',
-      missing_application_route: 'action_evidence',
+      missing_alternate_access_path: 'review_exception',
+      missing_application_route: 'review_exception',
       missing_card_description: 'source_description',
       missing_description: 'source_description',
       missing_facet_signal: 'review_exception',
       missing_lead: 'pi_identity',
       missing_official_source: 'source_description',
-      missing_source_route: 'action_evidence',
+      missing_source_route: 'review_exception',
       missing_source_url: 'source_description',
       non_owner_grant_shell: 'suppression',
       non_research_entity: 'suppression',
       non_research_program: 'suppression',
       not_undergraduate_relevant: 'suppression',
       permanently_closed: 'suppression',
+      prize_for_completed_work: 'suppression',
       profile_biography_shell: 'suppression',
       profile_fallback_only: 'source_description',
       profile_identity_risk: 'pi_identity',
+      program_listing_page: 'suppression',
       public_description_invariant_failed: 'source_description',
       research_infrastructure_only: 'suppression',
       thin_description: 'source_description',
@@ -131,17 +136,18 @@ describe('visibility repair stage has one owner (#2818 follow-through)', () => {
     }
   });
 
-  it('routes a row held only by a missing alternate access path to a repair lane', () => {
-    const plan = buildVisibilityRepairPlan({
-      _id: 'probe',
-      collection: 'research',
-      recordId: 'probe-row',
-      label: 'probe-row',
-      blockerReasons: ['missing_alternate_access_path'],
-    } as any);
+  it('never stages a row for action evidence, because no lane collects a way in (#4574)', () => {
+    for (const reason of [...EVERY_BLOCKER_REASON, 'missing_action_evidence']) {
+      const plan = buildVisibilityRepairPlan({
+        _id: 'probe',
+        collection: 'research',
+        recordId: 'probe-row',
+        label: 'probe-row',
+        blockerReasons: [reason],
+      } as any);
 
-    expect(plan.repairStage).toBe('action_evidence');
-    expect(plan.safeToAttempt).toBe(true);
+      expect(plan.repairStage, reason).not.toBe('action_evidence');
+    }
   });
 
   it('stages an operator suppression marker as suppression rather than a review exception', () => {
@@ -149,6 +155,8 @@ describe('visibility repair stage has one owner (#2818 follow-through)', () => {
       'permanently_closed',
       'non_research_entity',
       'non_research_program',
+      'duplicate_program',
+      'common_application_container',
       'non_owner_grant_shell',
       'grant_only_no_current_yale_source',
       'profile_biography_shell',
@@ -162,9 +170,7 @@ describe('visibility repair stage has one owner (#2818 follow-through)', () => {
       const stage = classifyVisibilityRepairStage([reason]);
       if (!REPAIR_ATTEMPTING_STAGES.has(stage)) continue;
       const owned =
-        SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason) ||
-        PI_IDENTITY_REPAIR_REASONS.has(reason) ||
-        ACTION_EVIDENCE_REPAIR_REASONS.has(reason);
+        SOURCE_DESCRIPTION_REPAIR_REASONS.has(reason) || PI_IDENTITY_REPAIR_REASONS.has(reason);
       expect(owned, `${reason} staged ${stage} but no repair lane owns it`).toBe(true);
     }
   });
@@ -188,7 +194,6 @@ describe('visibility repair stage has one owner (#2818 follow-through)', () => {
     const sets = {
       source_description: SOURCE_DESCRIPTION_REPAIR_REASONS,
       pi_identity: PI_IDENTITY_REPAIR_REASONS,
-      action_evidence: ACTION_EVIDENCE_REPAIR_REASONS,
       review_exception: REVIEW_EXCEPTION_REPAIR_REASONS,
     };
     const overlaps: string[] = [];

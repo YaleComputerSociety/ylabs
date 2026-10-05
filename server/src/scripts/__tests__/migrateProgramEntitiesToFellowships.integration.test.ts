@@ -39,7 +39,7 @@ describe('migrateProgramEntitiesToFellowships with MongoDB', () => {
       replSet: { count: 1, storageEngine: 'wiredTiger' },
     });
     await mongoose.connect(memoryReplSet.getUri('program_migration_test'));
-  }, 120_000);
+  });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();

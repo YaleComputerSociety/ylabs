@@ -38,11 +38,11 @@ describe('the detail route applies the lead-name identity guards it resolved (#3
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -177,6 +177,62 @@ describe('the detail route applies the lead-name identity guards it resolved (#3
     const served = detail?.researchEntity as Record<string, unknown>;
 
     expect(served.name).toBe('QuorrowPET Imaging Program');
+  });
+
+  it("serves a unit name the row's own site declares under its Principal Investigator", async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const unit = 'Fixture Outbreak Computation Unit';
+    const seedUnitRow = async (slug: string, siteDeclaredOwnNames?: string[]) => {
+      const entityId = new mongoose.Types.ObjectId();
+      await db.collection('research_entities').insertOne({
+        _id: entityId,
+        slug,
+        name: unit,
+        displayName: unit,
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        departments: ['Epidemiology'],
+        researchAreas: ['Infectious disease modelling'],
+        studentVisibilityTier: 'student_ready',
+        studentVisibilityReasons: ['source_backed_description', 'concrete_next_step'],
+        shortDescription: READY_SHORT,
+        fullDescription: READY_FULL,
+        websiteUrl: 'https://fixtureunit.example.org/',
+        sourceUrls: [SOURCE_URL, 'https://fixtureunit.example.org/'],
+        ...(siteDeclaredOwnNames ? { siteDeclaredOwnNames } : {}),
+      });
+      const personId = new mongoose.Types.ObjectId();
+      await db.collection('researchers').insertOne({
+        _id: personId,
+        displayName: LEAD_DISPLAY_NAME,
+        firstName: 'Marlow',
+        lastName: 'Quorrow',
+        netid: `fixture-${slug}`,
+        archived: false,
+      });
+      await db.collection('role_assignments').insertOne({
+        personId,
+        target: { kind: 'RESEARCH_ENTITY', id: entityId },
+        role: 'PI',
+        state: 'CURRENT',
+        archived: false,
+        verifiedAt: new Date(),
+        source: { name: 'fixture-faculty', url: SOURCE_URL },
+      });
+    };
+    await seedUnitRow('ysm-faculty-marlow-quorrow', [`Yale ${unit}`]);
+    await seedUnitRow('ysm-faculty-marlow-quorrow-undeclared');
+
+    const declared = (await getResearchGroupDetail('ysm-faculty-marlow-quorrow'))
+      ?.researchEntity as Record<string, unknown>;
+    const undeclared = (await getResearchGroupDetail('ysm-faculty-marlow-quorrow-undeclared'))
+      ?.researchEntity as Record<string, unknown>;
+
+    expect(declared.name).toBe(unit);
+    expect(declared.displayName).toBe(unit);
+    expect(undeclared.name).not.toBe(unit);
   });
 
   /**

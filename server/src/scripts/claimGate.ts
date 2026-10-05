@@ -12,10 +12,11 @@ import {
 } from '../services/claimValidation/accessClaims';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export type ClaimGateCollection = 'research';
 
@@ -126,19 +127,17 @@ export async function loadResearchAccessArtifacts(
     .limit(limit)
     .lean();
 
-  return signals.map(
-    (signal: any): AccessArtifactCandidate => ({
-      artifactType: 'AccessSignal',
-      id: stringId(signal._id),
-      researchEntityId: stringId(signal.researchEntityId),
-      derivationKey: signal.derivationKey,
-      signalType: signal.type,
-      sourceEvidenceIds: strings((signal.source?.evidenceIds || []).map(stringId)),
-      sourceUrls: strings([signal.source?.url]),
-      sourceName: signal.source?.name,
-      sourceUrl: signal.source?.url,
-    }),
-  );
+  return signals.map((signal: any): AccessArtifactCandidate => ({
+    artifactType: 'AccessSignal',
+    id: stringId(signal._id),
+    researchEntityId: stringId(signal.researchEntityId),
+    derivationKey: signal.derivationKey,
+    signalType: signal.type,
+    sourceEvidenceIds: strings((signal.source?.evidenceIds || []).map(stringId)),
+    sourceUrls: strings([signal.source?.url]),
+    sourceName: signal.source?.name,
+    sourceUrl: signal.source?.url,
+  }));
 }
 
 export function shouldClaimGateFailStrict(report: Pick<ClaimGateReport, 'summary'>): boolean {
@@ -181,7 +180,7 @@ async function main(): Promise<void> {
     scriptName: 'scraper:claim-gate',
     mongoUrl,
   });
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const artifacts = await loadResearchAccessArtifacts(options.limit);
   const report = buildClaimGateOutput(
     buildClaimGateReport({

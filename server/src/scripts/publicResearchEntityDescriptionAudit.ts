@@ -8,7 +8,7 @@ import { auditStudentReadyPublicDescriptions } from '../services/researchEntityP
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface PublicDescriptionAuditOptions {
   includeSamples: boolean;

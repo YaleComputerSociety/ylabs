@@ -23,7 +23,7 @@ import {
 } from './leadEdgeRetirementReviewQueueCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'role-assignments:lead-edge-retirement-review-queue';
 const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'];
@@ -132,13 +132,11 @@ async function main(): Promise<void> {
     .select('entityKey sourceUrl sourceName')
     .lean()) as unknown as Array<Record<string, unknown>>;
   const lanes = laneNamesByCitation(
-    citationDocs.map(
-      (d): LeadEdgeCitation => ({
-        entityKey: String(d.entityKey ?? ''),
-        sourceUrl: String(d.sourceUrl ?? ''),
-        sourceName: String(d.sourceName ?? ''),
-      }),
-    ),
+    citationDocs.map((d): LeadEdgeCitation => ({
+      entityKey: String(d.entityKey ?? ''),
+      sourceUrl: String(d.sourceUrl ?? ''),
+      sourceName: String(d.sourceName ?? ''),
+    })),
   );
 
   const queue = buildLeadEdgeReviewQueue(

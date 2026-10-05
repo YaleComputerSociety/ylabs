@@ -35,17 +35,17 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
               cx="8"
               cy="8"
               r="5.5"
-              stroke={mode === 'union' ? '#16a34a' : '#9ca3af'}
+              stroke={mode === 'union' ? 'var(--yr-green)' : 'var(--yr-line-strong)'}
               strokeWidth="1.5"
-              fill={mode === 'union' ? '#dcfce7' : 'none'}
+              fill={mode === 'union' ? 'var(--yr-green-soft)' : 'none'}
             />
             <circle
               cx="16"
               cy="8"
               r="5.5"
-              stroke={mode === 'union' ? '#16a34a' : '#9ca3af'}
+              stroke={mode === 'union' ? 'var(--yr-green)' : 'var(--yr-line-strong)'}
               strokeWidth="1.5"
-              fill={mode === 'union' ? '#dcfce7' : 'none'}
+              fill={mode === 'union' ? 'var(--yr-green-soft)' : 'none'}
             />
           </svg>
           <span>Any</span>
@@ -72,7 +72,7 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
               cx="8"
               cy="8"
               r="5.5"
-              stroke={mode === 'intersection' ? '#2563eb' : '#9ca3af'}
+              stroke={mode === 'intersection' ? 'var(--yr-blue)' : 'var(--yr-line-strong)'}
               strokeWidth="1.5"
               fill="none"
             />
@@ -80,13 +80,13 @@ const VennDiagramToggle = ({ mode, setMode, compact = false }: VennDiagramToggle
               cx="16"
               cy="8"
               r="5.5"
-              stroke={mode === 'intersection' ? '#2563eb' : '#9ca3af'}
+              stroke={mode === 'intersection' ? 'var(--yr-blue)' : 'var(--yr-line-strong)'}
               strokeWidth="1.5"
               fill="none"
             />
             <path
               d="M12 2.8C10.6 4.2 10 5.9 10 8C10 10.1 10.6 11.8 12 13.2C13.4 11.8 14 10.1 14 8C14 5.9 13.4 4.2 12 2.8Z"
-              fill={mode === 'intersection' ? '#3b82f6' : '#d1d5db'}
+              fill={mode === 'intersection' ? 'var(--yr-blue)' : 'var(--yr-line)'}
             />
           </svg>
           <span>All</span>

@@ -4,6 +4,7 @@ import {
   getFellowshipDeadlineSubtitle,
   isLikelyRecurringFellowship,
 } from '../fellowshipCycle';
+import { getFellowshipApplicationStatus } from '../fellowshipStatus';
 import type { Fellowship } from '../../types/types';
 
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
@@ -15,6 +16,7 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -73,7 +75,7 @@ describe('fellowshipCycle', () => {
     );
 
     expect(status.category).toBe('openingSoon');
-    expect(status.label).toBe('Opens Soon');
+    expect(status.label).toBe('Opens soon');
   });
 
   it('classifies active fellowships as open or closing soon', () => {
@@ -107,7 +109,7 @@ describe('fellowshipCycle', () => {
     expect(isLikelyRecurringFellowship(fellowship)).toBe(true);
     expect(getFellowshipCycleStatus(fellowship, now)).toMatchObject({
       category: 'nextCycle',
-      label: 'Next Cycle Signal',
+      label: 'Deadline passed',
       likelyRecurring: true,
     });
     expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe('Past cycle; track for reopening');
@@ -125,6 +127,27 @@ describe('fellowshipCycle', () => {
     expect(getFellowshipCycleStatus(fellowship, now).category).toBe('closed');
   });
 
+  it('renders a deadline the server serves from another copy of the fund as the confirmed next deadline (#4382)', () => {
+    const servedFromAnotherCopy = baseFellowship({
+      isAcceptingApplications: true,
+      applicationOpenDate: '2026-06-05T04:00:00.000Z',
+      deadline: '2027-01-05T04:59:59.999Z',
+      deadlineProjectedNextCycle: false,
+    });
+    const autumn = new Date('2026-10-02T12:00:00.000Z');
+
+    expect(getFellowshipCycleStatus(servedFromAnotherCopy, autumn)).toMatchObject({
+      category: 'open',
+      deadlinePassed: false,
+    });
+    expect(getFellowshipDeadlineSubtitle(servedFromAnotherCopy, autumn)).toBe('Due Jan 4');
+    expect(getFellowshipApplicationStatus(servedFromAnotherCopy, autumn)).toMatchObject({
+      kind: 'open',
+      label: 'Accepting applications',
+      deadlineLabel: 'Jan 4, 2027',
+    });
+  });
+
   it('surfaces a server-projected next-cycle deadline distinctly from a real next-cycle signal', () => {
     const fellowship = baseFellowship({
       isAcceptingApplications: false,
@@ -134,10 +157,18 @@ describe('fellowshipCycle', () => {
 
     const status = getFellowshipCycleStatus(fellowship, now);
     expect(status.category).toBe('projectedNextCycle');
-    expect(status.label).toBe('Next Cycle (Est.)');
+    expect(status.label).toBe('Next cycle (est.)');
     expect(status.deadlinePassed).toBe(false);
     expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
       'Est. next cycle ~Feb 17 (unconfirmed)',
     );
+  });
+
+  it('names the New York date in the short due label, not the UTC date', () => {
+    const endOfNewYorkDay = baseFellowship({
+      isAcceptingApplications: true,
+      deadline: '2099-03-25T03:59:59.999Z',
+    });
+    expect(getFellowshipDeadlineSubtitle(endOfNewYorkDay, now)).toBe('Due Mar 24');
   });
 });

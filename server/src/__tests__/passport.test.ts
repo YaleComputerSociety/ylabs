@@ -28,6 +28,7 @@ import {
   shouldSkipLocalAuthBypass,
   validateProductionAuthConfig,
 } from '../passport';
+import { CasTicketRejectedError } from '../utils/casCallbackFailure';
 
 describe('auth environment guards', () => {
   it('allows dev login for local development even when the database name is beta-like', () => {
@@ -667,6 +668,9 @@ describe('auth environment guards', () => {
         userConfirmed: true,
         profileVerified: false,
         isAdmin: false,
+        sessionId: expect.stringMatching(/^[0-9a-f]{32}$/),
+        issuedAt: expect.any(Number),
+        sessionVersion: 0,
       },
     });
 
@@ -789,7 +793,7 @@ describe('auth environment guards', () => {
       .spyOn(passport, 'authenticate')
       .mockImplementation(
         ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
-          callback(new Error('CAS failed'), false, {}, req, res, next)) as any,
+          callback(new CasTicketRejectedError(), false, {}, req, res, next)) as any,
       );
 
     const casRoute = (passportRoutes as any).stack
@@ -835,7 +839,7 @@ describe('auth environment guards', () => {
       .spyOn(passport, 'authenticate')
       .mockImplementation(
         ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
-          callback(new Error('CAS failed'), false, {}, req, res, next)) as any,
+          callback(new CasTicketRejectedError(), false, {}, req, res, next)) as any,
       );
 
     const casRoute = (passportRoutes as any).stack

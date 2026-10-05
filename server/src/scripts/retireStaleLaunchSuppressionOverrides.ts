@@ -37,9 +37,9 @@ import {
   type StaleLaunchOverridePlan,
 } from './retireStaleLaunchSuppressionOverridesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'visibility:retire-stale-launch-overrides';
 const ROLLBACK_REASON =
@@ -118,7 +118,7 @@ export async function loadStaleLaunchOverrideCohort(): Promise<{
     archived: { $ne: true },
   })
     .select(
-      '_id slug entityType archived studentVisibilityOverrideTier studentVisibilityComputedTier studentVisibilityTier studentVisibilityReasons studentVisibilityComputedReasons studentVisibilitySuppressionReason',
+      '_id slug entityType archived websiteUrl website sourceUrls sourceLinkHealth studentVisibilityOverrideTier studentVisibilityComputedTier studentVisibilityTier studentVisibilityReasons studentVisibilityComputedReasons studentVisibilitySuppressionReason',
     )
     .lean()) as any[];
 

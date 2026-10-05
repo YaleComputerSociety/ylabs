@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
+import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
@@ -13,12 +15,21 @@ import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
-import { entityKeyNamesOnlyThisPerson } from '../../utils/researchHomeNameIdentityAuthority';
+import {
+  claimsAnotherPersonsLabByUrlPath,
+  classifyHarvestedResearchHomeName,
+  entityKeyNamesOnlyThisPerson,
+  NO_SURNAME_ROSTER,
+  researchHomeIdentityTokens,
+} from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
+import { rankPersonProfileUrls } from '../../utils/personProfileRanking';
+import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
+import { websiteIdentity } from '../survivorOwnedWebsiteClear';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
   canonicalLegacyResearchHomeUrl,
@@ -50,17 +61,25 @@ import {
 } from '../researchAreaLabels';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
+  emitLanePageHealthForCitedPages,
+  fetchRecordedBy,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
+import {
   isLikelyPersonSpecificYaleEmail,
   normalizeName,
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
+import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_THROTTLE_MS = 150;
+const PROFILE_FETCH_LOOKAHEAD = 4;
 const QUEUED_PI_BACKFILL_KEY = 'medicine-pi-backfill';
 const VISIBLE_PROFILE_BIO_BACKFILL_KEY = 'visible-profile-bio-backfill';
 const PROFILE_RESEARCH_HOME_BACKFILL_KEY = 'profile-research-home-backfill';
@@ -128,6 +147,7 @@ export interface OfficialProfileResearchHome {
   kind: 'center' | 'institute' | 'lab' | 'initiative';
   entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'INITIATIVE';
   score: number;
+  leadershipEvidenced: boolean;
 }
 
 const textValue = (value: unknown): string =>
@@ -424,8 +444,35 @@ export function shouldQueueEntityForPiBackfill(entity: Record<string, any>): boo
   return officialProfileUrlsForEntity(entity).length === 1;
 }
 
-export function preferredOfficialProfileUrl(candidates: string[]): string {
-  return candidates.find((url) => /medicine\.yale\.edu/i.test(url)) || candidates[0] || '';
+/**
+ * The lead's own recorded official profile first, then the order the detail page ranks
+ * person profiles by. A school-wide directory such as `medicine.yale.edu` mirrors a
+ * profile for people appointed elsewhere, so preferring it outright read a cross-listed
+ * School of Medicine page in place of the department profile the page shows (#4459).
+ */
+export function rankedOfficialProfileFetchCandidates(
+  candidates: string[],
+  entity: Record<string, any> = {},
+): string[] {
+  const leadOfficialProfiles = new Set(
+    objectStringValues(entity.leadOfficialProfileUrls).map(normalizeOfficialProfileUrl),
+  );
+  const isLeadOfficialProfile = (url: string) =>
+    leadOfficialProfiles.has(normalizeOfficialProfileUrl(url));
+  const ranked = rankPersonProfileUrls(uniqueStrings(candidates).filter(Boolean), {
+    schools: [entity.school, ...(Array.isArray(entity.schools) ? entity.schools : [])],
+  });
+  return [
+    ...ranked.filter(isLeadOfficialProfile),
+    ...ranked.filter((url) => !isLeadOfficialProfile(url)),
+  ];
+}
+
+export function preferredOfficialProfileUrl(
+  candidates: string[],
+  entity: Record<string, any> = {},
+): string {
+  return rankedOfficialProfileFetchCandidates(candidates, entity)[0] || '';
 }
 
 function userIdentityMatchEntity(
@@ -446,6 +493,7 @@ function userIdentityMatchEntity(
     websiteUrl: user.websiteUrl,
     profileUrls: user.profileUrls,
     leadProfileUrls,
+    leadOfficialProfileUrls: uniqueStrings([user.profileUrls?.official]),
   };
 }
 
@@ -563,10 +611,6 @@ function sameOfficialProfilePerson(left: string, right: string): boolean {
   const leftSlug = profileSlug(left);
   const rightSlug = profileSlug(right);
   return Boolean(leftSlug && rightSlug && leftSlug === rightSlug);
-}
-
-function orderedProfileFetchCandidates(candidates: string[]): string[] {
-  return uniqueStrings([preferredOfficialProfileUrl(candidates), ...candidates]).filter(Boolean);
 }
 
 function sameOfficialPersonPageForEntity(
@@ -1010,6 +1054,19 @@ function classifyResearchHome(
   return null;
 }
 
+/**
+ * A linked home whose name and URL carry no type word. A research team's own name says
+ * so ("<Surname> Group", "<Topic> Unit"); a name that does not is a project, program or
+ * community effort ("<Topic> Practice at Yale", "<Topic> in Women"), and calling it a
+ * lab tells a student it is a laboratory they could join.
+ */
+function untypedResearchHome(
+  name: string,
+): Pick<OfficialProfileResearchHome, 'kind' | 'entityType'> {
+  if (/\b(?:labs|group|team|unit)\b/i.test(name)) return { kind: 'lab', entityType: 'LAB' };
+  return { kind: 'initiative', entityType: 'INITIATIVE' };
+}
+
 function genericOrganizationName(name: string): boolean {
   return (
     /^(?:yale medicine|yale university|yale school of medicine|yale new haven health system)$/i.test(
@@ -1069,6 +1126,34 @@ function leadershipMentionsOrganization(text: string, name: string, rawName: str
   });
 }
 
+function organizationNameForLeadershipMatch(value: string): string {
+  return textValue(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/^(?:the|yale)\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Looser than `leadershipMentionsOrganization` on purpose, because a lab-website card has
+ * already named the organization and the only open question is whether the person runs it.
+ * Profiles state that as a title, a title with a trailing place ("Director of the X Unit at
+ * Yale School of Medicine") or a verb ("directs the X"), and spell "and" as "&" on one side
+ * only, and the strict test missed all three on the profiles that #4509 measured.
+ */
+export function profileTextStatesLeadershipOf(text: string, organizationName: string): boolean {
+  const name = organizationNameForLeadershipMatch(organizationName);
+  if (name.split(' ').length < 2) return false;
+  const normalizedText = organizationNameForLeadershipMatch(text);
+  const leadership =
+    '(?<!(?:deputy|assistant)(?: co| associate)? )(?:co director|associate director|founding director|director|directs|directed|leads|founded|founder|head|chief|principal investigator)';
+  return new RegExp(`\\b${leadership}(?: of| for| at| the| yale| and)* ${name}\\b`).test(
+    normalizedText,
+  );
+}
+
 export function textEvidencesNamedLeadership(text: string, names: string[]): boolean {
   const leadershipTitle =
     '(?:co-director|associate\\s+director|principal\\s+investigator|director|pi|faculty\\s+lead|founder)';
@@ -1100,7 +1185,7 @@ export async function candidateWebsiteOwnedByLead(
   useCache: boolean,
 ): Promise<boolean> {
   if (leadNames.length === 0) return false;
-  let html = '';
+  let html: string;
   try {
     html = await htmlFetcher(url, useCache, SOURCE_NAME);
   } catch {
@@ -1163,12 +1248,16 @@ function dedupeRepeatedProfileCardLabel(value: string): string {
   return left.toLowerCase() === right.toLowerCase() ? left : textValue(value);
 }
 
+// A surname such as McCormick or DiMaio carries its own case boundary, and splitting it
+// forks one person into two researchers downstream (#4879).
+const RUN_TOGETHER_WORD_BOUNDARY = /(?<=[a-z])(?<!(?:\b|[a-z])(?:Mc|Mac|Di|De|La|Le|Du))(?=[A-Z])/g;
+
 function cleanProfileCardLabWebsiteLabel(value: string): string {
   return dedupeRepeatedProfileCardLabel(
     textValue(value)
       .replace(/\bLab\s+Whisk\s+Cup\s+Streamline\s+Icon:\s*https?:\/\/streamlinehq\.com/gi, ' ')
       .replace(/\)([A-Z])/g, ') $1')
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(RUN_TOGETHER_WORD_BOUNDARY, ' ')
       .replace(/\bBio\s+Image\s+Suite\b/g, 'BioImage Suite')
       .replace(/\bCar\s+DS\b/g, 'CarDS')
       .replace(/\bNOu\s+RISH\b/g, 'NOURISH')
@@ -1240,6 +1329,22 @@ function disallowedProfileLinkedResearchHome(name: string, url: string): boolean
   );
 }
 
+function profilePersonSurname($: cheerio.CheerioAPI, profiles: Array<Record<string, any>>): string {
+  const name =
+    profileNameFromProfiles(profiles) ||
+    cleanOfficialProfileDisplayName(firstUsefulText($, ['main h1', 'h1']));
+  return splitName(name).last;
+}
+
+export function isEponymousResearchGroupLinkText(text: string, surname: string): boolean {
+  if (!surname) return false;
+  const surnamePattern = escapeRegex(surname).replace(/\s+/g, '\\s+');
+  return new RegExp(
+    `^(?:the\\s+)?${surnamePattern}\\s+(?:research\\s+)?(?:lab|laboratory|group)$`,
+    'i',
+  ).test(textValue(text));
+}
+
 function profileLinkedLabWebsitesFromHtml(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
@@ -1247,6 +1352,7 @@ function profileLinkedLabWebsitesFromHtml(
 ): OfficialProfileResearchHome[] {
   const homes: OfficialProfileResearchHome[] = [];
   const profileName = profileNameFromProfiles(profiles);
+  const surname = profilePersonSurname($, profiles);
   const evidenceText = profileEvidenceText($, profiles);
 
   $('main a[href], article a[href], body a[href]').each((_i, el) => {
@@ -1255,12 +1361,17 @@ function profileLinkedLabWebsitesFromHtml(
 
     const rawName = textValue(link.text());
     const context = textValue(link.closest('p,li,article,section,div').first().text());
-    if (!/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)) return;
+    const isEponymousGroupLink = isEponymousResearchGroupLinkText(rawName, surname);
+    if (!isEponymousGroupLink && !/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)) {
+      return;
+    }
 
     const url = publicProfileLinkedLabWebsiteUrl(link.attr('href'), profileUrl);
     if (!url) return;
     if (/\/(?:internal-medicine|intmed)\/ctra\//i.test(new URL(url).pathname)) return;
-    const name = profileLinkedLabWebsiteName(rawName, context, profileName);
+    const name = isEponymousGroupLink
+      ? canonicalResearchHomeName(rawName)
+      : profileLinkedLabWebsiteName(rawName, context, profileName);
     if (!name || genericOrganizationName(name)) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
     const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
@@ -1270,10 +1381,7 @@ function profileLinkedLabWebsitesFromHtml(
     ) {
       return;
     }
-    const classification = classifyResearchHome(name, url) || {
-      kind: 'lab' as const,
-      entityType: 'LAB' as const,
-    };
+    const classification = classifyResearchHome(name, url) || untypedResearchHome(name);
 
     homes.push({
       name,
@@ -1281,6 +1389,7 @@ function profileLinkedLabWebsitesFromHtml(
       url,
       ...classification,
       score: 20,
+      leadershipEvidenced: profileTextStatesLeadershipOf(evidenceText, name),
     });
   });
 
@@ -1321,7 +1430,7 @@ function linkedResearchHomesFromHtml(
     }
     if (score < 5) return;
 
-    homes.push({ name, rawName, url, ...classification, score });
+    homes.push({ name, rawName, url, ...classification, score, leadershipEvidenced: true });
   });
   return homes;
 }
@@ -1367,7 +1476,7 @@ export function extractOfficialProfileResearchHomes(
     }
     if (score < 5) continue;
 
-    addHome({ name, rawName, url, ...classification, score });
+    addHome({ name, rawName, url, ...classification, score, leadershipEvidenced: true });
   }
 
   for (const home of linkedResearchHomesFromHtml($, profileUrl)) {
@@ -1388,9 +1497,102 @@ export function extractOfficialProfileResearchHomes(
 // institute, program, or initiative the PI directs alongside their own grants)
 // is a separate organization, not that PI's personal lab, so attaching its
 // kind/entityType/website/description here would mint the exact "<PI> Lab"
-// CENTER hybrid this guard exists to prevent (issue #1484). A home already
-// classified as a lab is the PI's own and is never blocked.
+// CENTER hybrid this guard exists to prevent (issue #1484).
 const GRANT_DERIVED_PI_SHELL_SLUG_RE = /^(?:nih-pi-|nsf-pi-)/;
+
+/**
+ * Whether a home this profile links, already typed `LAB`, is somebody else's lab.
+ *
+ * The institutional guard below used to return early on a `LAB` home, on the reasoning
+ * that a home classified as a lab is the PI's own. That is an assumption rather than a test,
+ * and it is the one this lane cannot afford to make: it asserts `name` at 0.96, above
+ * every roster lane's 0.7 to 0.8, so a colleague's lab adopted here wins the resolve
+ * outright. The same page shape is where the graft came from on the sibling lane - 78 of
+ * the 90 rows whose stored name the authority condemns were harvested from a faculty
+ * profile that linked a lab belonging to someone else (#3529).
+ *
+ * The URL-path corroboration rather than the roster one, and for a reason rather than
+ * for convenience: the value being judged IS a lab's own site, so its path carries the
+ * eponym whenever there is one to carry ("The Quimby Lab" at `/lab/quimby/`), and the
+ * roster variant would add a corpus load to a per-profile check to cover a shape this
+ * lane does not produce.
+ *
+ * The profile person's name unioned with the entity key's tokens, because either can
+ * establish whose record this is and the authority's own identity helper unions them.
+ */
+function homeNamesAnotherPersonsLab(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  personName: unknown,
+): boolean {
+  return claimsAnotherPersonsLabByUrlPath({
+    harvestedName: home.name,
+    websiteUrl: home.url,
+    identityTokens: researchHomeIdentityTokens({ personName, slug: entity.slug }),
+  });
+}
+
+/**
+ * A profile's lab-website slot is filled with the person's own lab or with an organization
+ * they are merely affiliated with, and the shared authority tells the two apart (#2234). An
+ * organization is still this row's research home when the profile shows the person leads it,
+ * which is the test every other link shape this lane reads already applies (#4509).
+ */
+function linksAnOrganizationThePersonDoesNotLead(
+  home: OfficialProfileResearchHome,
+  personName: unknown,
+): boolean {
+  if (home.leadershipEvidenced) return false;
+  return (
+    classifyHarvestedResearchHomeName({
+      harvestedName: home.name,
+      personName: textValue(personName),
+      websiteUrl: home.url,
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+      recordCitedUrls: [home.url],
+    }) === 'AFFILIATED_ORGANIZATION'
+  );
+}
+
+/**
+ * Which arm refuses this home, or `null` when none does.
+ *
+ * Three arms answer three different questions, and a run that reports only "refused"
+ * cannot say which one fired. That is not cosmetic: a silent refusal is
+ * indistinguishable from a profile that linked nothing contentious, so absence of a
+ * graft in the observation log is evidence about the corpus rather than about the
+ * guard (#3537).
+ *
+ * The reason is the single source of truth and the boolean below is derived from it, so
+ * the two cannot drift.
+ */
+export type ProfileLinkedHomeRefusal =
+  | 'affiliated-organization-without-leadership'
+  | 'names-another-persons-lab'
+  | 'institutional-home-on-a-grant-shell'
+  | 'institutional-home-on-a-person-keyed-shell';
+
+export function profileLinkedHomeRefusal(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome | undefined,
+  personName: unknown,
+): ProfileLinkedHomeRefusal | null {
+  if (!home) return null;
+  if (linksAnOrganizationThePersonDoesNotLead(home, personName)) {
+    return 'affiliated-organization-without-leadership';
+  }
+  if (home.entityType === 'LAB' || !classifyResearchHome(home.name, home.url)) {
+    return homeNamesAnotherPersonsLab(entity, home, personName)
+      ? 'names-another-persons-lab'
+      : null;
+  }
+  if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) {
+    return 'institutional-home-on-a-grant-shell';
+  }
+  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName })
+    ? 'institutional-home-on-a-person-keyed-shell'
+    : null;
+}
 
 /**
  * The #1484 guard, widened to every shell whose key names nobody but the person
@@ -1407,9 +1609,152 @@ export function isInstitutionalHomeMismatchedWithPersonScopedShell(
   home: OfficialProfileResearchHome | undefined,
   personName: unknown,
 ): boolean {
-  if (!home || home.entityType === 'LAB') return false;
-  if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) return true;
-  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName });
+  return profileLinkedHomeRefusal(entity, home, personName) !== null;
+}
+
+const LINK_WITHDRAWING_HOME_REFUSALS: ReadonlySet<string> = new Set([
+  'affiliated-organization-without-leadership',
+  'website-owned-by-another-entity',
+]);
+
+/**
+ * The withdrawal a refusal triggers reaches every older website this lane asserted on the
+ * row, including one its lead-direct mode read from another slot, so a refusal is stated
+ * only when the row is serving the refused link itself.
+ */
+function rowStoresWebsite(entity: Record<string, any>, url: string): boolean {
+  const refused = websiteIdentity(url);
+  return (
+    Boolean(refused) &&
+    [entity.websiteUrl, entity.website].some((stored) => websiteIdentity(stored) === refused)
+  );
+}
+
+const LAB_WEBSITE_SLOT_LABEL_RE = /\b(?:view|visit)\s+(?:lab|group|research)\s+website\b/i;
+
+function affiliationIsALabWebsiteSlot(
+  value: unknown,
+  profileUrl: string,
+  storedIdentities: ReadonlySet<string>,
+): boolean {
+  const record =
+    value && typeof value === 'object' ? (value as Record<string, any>) : { name: value };
+  const rawUrl = textValue(record.url || record['@id']);
+  let url: string;
+  try {
+    url = rawUrl ? new URL(rawUrl, profileUrl).toString() : '';
+  } catch {
+    url = rawUrl;
+  }
+  if (url && storedIdentities.has(websiteIdentity(url))) return true;
+  const name = canonicalResearchHomeName(record.name);
+  return (
+    Boolean(name) && !genericOrganizationName(name) && Boolean(classifyResearchHome(name, url))
+  );
+}
+
+/**
+ * The only state in which this lane may say a row's website is gone, kept apart from every
+ * refusal path (#2647, #3153): it re-read the very profile the stored website was observed
+ * from, the page carries no lab-website slot of any kind, and the stored link appears nowhere
+ * among its links. A guard declining a link the page still carries never reaches here (#4544).
+ */
+export function profileAttestsItsLabWebsiteIsGone(
+  html: string,
+  profileUrl: string,
+  entity: Record<string, any>,
+): boolean {
+  const provenance = entity.fieldProvenance?.websiteUrl;
+  if (provenance?.sourceName !== SOURCE_NAME) return false;
+  if (
+    normalizeOfficialProfileUrl(provenance.sourceUrl) !== normalizeOfficialProfileUrl(profileUrl)
+  ) {
+    return false;
+  }
+  const storedIdentity = websiteIdentity(entity.websiteUrl);
+  if (!storedIdentity) return false;
+  const storedIdentities = new Set(
+    [storedIdentity, websiteIdentity(entity.website)].filter(Boolean),
+  );
+
+  const $ = cheerio.load(html);
+  const profiles = jsonLdProfiles($);
+  if (
+    affiliationValuesFromProfiles(profiles).some((value) =>
+      affiliationIsALabWebsiteSlot(value, profileUrl, storedIdentities),
+    )
+  ) {
+    return false;
+  }
+  const surname = profilePersonSurname($, profiles);
+  let carriesALabWebsiteSlot = false;
+  $('a[href]').each((_i, el) => {
+    if (carriesALabWebsiteSlot) return;
+    const link = $(el);
+    const href = textValue(link.attr('href'));
+    let absolute: string;
+    try {
+      absolute = new URL(href, profileUrl).toString();
+    } catch {
+      absolute = href;
+    }
+    if (storedIdentities.has(websiteIdentity(absolute))) {
+      carriesALabWebsiteSlot = true;
+      return;
+    }
+    if (isProfileChromeLink(link)) return;
+    const text = textValue(link.text());
+    const context = textValue(link.closest('p,li,article,section,div').first().text());
+    if (
+      LAB_WEBSITE_SLOT_LABEL_RE.test(`${text} ${context}`) ||
+      isEponymousResearchGroupLinkText(text, surname)
+    ) {
+      carriesALabWebsiteSlot = true;
+    }
+  });
+  return !carriesALabWebsiteSlot;
+}
+
+export function emptyLabWebsiteSlotObservation(
+  entity: Record<string, any>,
+  profileUrl: string,
+): ObservationInput {
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  const sourceUrl = normalizeOfficialProfileUrl(profileUrl);
+  return {
+    entityType: 'researchEntity',
+    ...(entityId ? { entityId } : {}),
+    ...(entityKey ? { entityKey } : {}),
+    sourceUrl,
+    confidenceOverride: 0.96,
+    field: 'sourceUrls',
+    value: [sourceUrl],
+    assertsNoValueFor: ['websiteUrl', 'website'],
+  };
+}
+
+/**
+ * A refusal is a judgement about a link the page still carries, not an absence, so it is
+ * stated as evidence: resolve then withdraws this lane's own older `websiteUrl` and
+ * `website` for the row, and another lane's value still counts (#3926).
+ */
+export function refusedResearchHomeWebsiteObservation(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  profileUrl: string,
+): ObservationInput {
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  return {
+    entityType: 'researchEntity',
+    ...(entityId ? { entityId } : {}),
+    ...(entityKey ? { entityKey } : {}),
+    sourceUrl: normalizeOfficialProfileUrl(profileUrl),
+    confidenceOverride: 0.96,
+    field: REFUSED_WEBSITE_URL_FIELD,
+    value: home.url,
+  };
 }
 
 export function entityResearchHomeToObservations(
@@ -2334,13 +2679,15 @@ export async function fetchHtml(
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: FETCH_TIMEOUT_MS,
-    maxRedirects: 5,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: FETCH_TIMEOUT_MS,
+      maxRedirects: 5,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(res.data || '');
   if (useCache) await setCached(sourceName, cacheKey, html);
   return html;
@@ -2356,6 +2703,30 @@ function applyFiniteCandidateLimit<T extends { limit(value: number): T }>(
     query.limit(Math.max(limit * multiplier, minimum));
   }
   return query;
+}
+
+export function sortByMostRecentlyObserved<T extends Record<string, any>>(entities: T[]): T[] {
+  return [...entities].sort((left, right) => {
+    const leftAt = observedAtMillis(left.lastObservedAt);
+    const rightAt = observedAtMillis(right.lastObservedAt);
+    if (leftAt !== rightAt) return rightAt - leftAt;
+    return idValue(left._id).localeCompare(idValue(right._id));
+  });
+}
+
+async function recentlyObservedResearchEntities(
+  filter: Record<string, any>,
+  fields: string,
+  limit: number,
+): Promise<Array<Record<string, any>>> {
+  const query = ResearchEntity.find(filter).select(`${fields} lastObservedAt`);
+  if (!Number.isFinite(limit)) {
+    return sortByMostRecentlyObserved((await query.lean()) as Array<Record<string, any>>);
+  }
+  return (await query
+    .sort({ lastObservedAt: -1, _id: 1 })
+    .limit(Math.max(limit * 20, 100))
+    .lean()) as Array<Record<string, any>>;
 }
 
 async function currentLeadRosterEntriesByEntity(
@@ -2560,17 +2931,11 @@ async function selectProfileDescriptionTargets(
           },
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...identityFilter,
-    })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...identityFilter },
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
 
   const entitiesWithLeadUsers = await annotateEntitiesWithLeadUsers(entities);
   const entitiesWithObservationUrls =
@@ -2606,9 +2971,11 @@ async function annotateEntitiesWithLeadUsers(
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
   const generatedProfileUrlsByEntity = new Map<string, string[]>();
+  const leadOfficialProfileUrlsByEntity = new Map<string, string[]>();
 
   for (const entry of rosterEntries) {
     const user = usersByNetid.get(entry.netid);
+    appendLeadOfficialProfileUrl(leadOfficialProfileUrlsByEntity, entry, user);
     const split = splitName(entry.name);
     const lead = {
       fname: user?.fname || split.first,
@@ -2634,44 +3001,144 @@ async function annotateEntitiesWithLeadUsers(
     ],
     leadUserProfileUrls: uniqueStrings([
       ...objectStringValues(entity.leadUserProfileUrls),
+      ...(leadOfficialProfileUrlsByEntity.get(idValue(entity._id || entity.id)) || []),
       ...(generatedProfileUrlsByEntity.get(idValue(entity._id || entity.id)) || []),
     ]),
+    leadOfficialProfileUrls:
+      leadOfficialProfileUrlsByEntity.get(idValue(entity._id || entity.id)) || [],
   }));
 }
 
-async function annotateEntitiesWithSourceObservationUrls(
+function appendLeadOfficialProfileUrl(
+  byEntity: Map<string, string[]>,
+  entry: ResearchEntityRosterEntry,
+  user: Record<string, any> | undefined,
+): void {
+  const official = textValue(user?.profileUrls?.official);
+  if (!official) return;
+  const entityId = idValue(entry.researchEntityId);
+  byEntity.set(entityId, uniqueStrings([...(byEntity.get(entityId) || []), official]));
+}
+
+export const OBSERVATION_LOOKUP_ENTITY_CHUNK_SIZE = 250;
+export const SOURCE_OBSERVATION_URLS_PER_ENTITY = 20;
+
+type ObservationEntityScope = {
+  entityIds: string[];
+  entityKeys: string[];
+};
+
+export function observationEntityScopeChunks(
+  entities: Array<Record<string, any>>,
+  chunkSize: number = OBSERVATION_LOOKUP_ENTITY_CHUNK_SIZE,
+): ObservationEntityScope[] {
+  const scopes: ObservationEntityScope[] = [];
+  for (let offset = 0; offset < entities.length; offset += chunkSize) {
+    const chunk = entities.slice(offset, offset + chunkSize);
+    const entityIds = uniqueStrings(chunk.map((entity) => idValue(entity._id || entity.id))).filter(
+      (id) => /^[a-f0-9]{24}$/i.test(id),
+    );
+    const entityKeys = uniqueStrings(chunk.map((entity) => textValue(entity.slug)));
+    if (entityIds.length > 0 || entityKeys.length > 0) scopes.push({ entityIds, entityKeys });
+  }
+  return scopes;
+}
+
+function observationEntityScopeClauses(scope: ObservationEntityScope): Array<Record<string, any>> {
+  return [
+    ...(scope.entityIds.length
+      ? [{ entityId: { $in: scope.entityIds.map((id) => new mongoose.Types.ObjectId(id)) } }]
+      : []),
+    ...(scope.entityKeys.length ? [{ entityKey: { $in: scope.entityKeys } }] : []),
+  ];
+}
+
+export type SourceObservationUrlGroup = {
+  entityId?: unknown;
+  entityKey?: unknown;
+  sourceUrl?: unknown;
+  lastObservedAt?: unknown;
+};
+
+function observedAtMillis(value: unknown): number {
+  const millis = value instanceof Date ? value.getTime() : new Date(String(value ?? '')).getTime();
+  return Number.isFinite(millis) ? millis : 0;
+}
+
+export function sourceObservationUrlsByEntityKey(
+  groups: SourceObservationUrlGroup[],
+  perEntityLimit: number = SOURCE_OBSERVATION_URLS_PER_ENTITY,
+): Map<string, string[]> {
+  const latestByEntityKey = new Map<string, Map<string, number>>();
+  for (const group of groups) {
+    const sourceUrl = textValue(group.sourceUrl);
+    if (!sourceUrl) continue;
+    const observedAt = observedAtMillis(group.lastObservedAt);
+    for (const key of uniqueStrings([idValue(group.entityId), textValue(group.entityKey)])) {
+      const latestByUrl = latestByEntityKey.get(key) || new Map<string, number>();
+      latestByUrl.set(sourceUrl, Math.max(latestByUrl.get(sourceUrl) ?? 0, observedAt));
+      latestByEntityKey.set(key, latestByUrl);
+    }
+  }
+
+  const urlsByEntityKey = new Map<string, string[]>();
+  for (const [key, latestByUrl] of latestByEntityKey) {
+    urlsByEntityKey.set(
+      key,
+      Array.from(latestByUrl.entries())
+        .sort(([leftUrl, leftAt], [rightUrl, rightAt]) =>
+          rightAt !== leftAt ? rightAt - leftAt : leftUrl.localeCompare(rightUrl),
+        )
+        .slice(0, perEntityLimit)
+        .map(([url]) => url),
+    );
+  }
+  return urlsByEntityKey;
+}
+
+async function sourceObservationUrlGroupsForScope(
+  scope: ObservationEntityScope,
+): Promise<SourceObservationUrlGroup[]> {
+  return (await Observation.aggregate([
+    {
+      $match: {
+        entityType: 'researchEntity',
+        superseded: { $ne: true },
+        sourceUrl: /^https?:\/\//i,
+        $or: observationEntityScopeClauses(scope),
+      },
+    },
+    {
+      $group: {
+        _id: { entityId: '$entityId', entityKey: '$entityKey', sourceUrl: '$sourceUrl' },
+        lastObservedAt: { $max: '$observedAt' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        entityId: '$_id.entityId',
+        entityKey: '$_id.entityKey',
+        sourceUrl: '$_id.sourceUrl',
+        lastObservedAt: 1,
+      },
+    },
+  ])) as SourceObservationUrlGroup[];
+}
+
+export async function annotateEntitiesWithSourceObservationUrls(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(
-    entities.map((entity) => idValue(entity._id || entity.id)),
-  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
-  const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
-  if (entityIds.length === 0 && entityKeys.length === 0) return entities;
+  const scopes = observationEntityScopeChunks(entities);
+  if (scopes.length === 0) return entities;
 
-  const rows = await Observation.find({
-    entityType: 'researchEntity',
-    superseded: { $ne: true },
-    sourceUrl: /^https?:\/\//i,
-    $or: [
-      ...(entityIds.length ? [{ entityId: { $in: entityIds } }] : []),
-      ...(entityKeys.length ? [{ entityKey: { $in: entityKeys } }] : []),
-    ],
-  })
-    .select('entityId entityKey sourceUrl observedAt')
-    .sort({ observedAt: -1 })
-    .limit(Math.max(entities.length * 20, 200))
-    .lean();
-
-  const urlsByEntity = new Map<string, string[]>();
-  for (const row of rows as Array<Record<string, any>>) {
-    const sourceUrl = textValue(row.sourceUrl);
-    if (!sourceUrl) continue;
-    for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
-      urlsByEntity.set(key, [...(urlsByEntity.get(key) || []), sourceUrl]);
-    }
+  const groups: SourceObservationUrlGroup[] = [];
+  for (const scope of scopes) {
+    groups.push(...(await sourceObservationUrlGroupsForScope(scope)));
   }
+  const urlsByEntity = sourceObservationUrlsByEntityKey(groups);
 
   return entities.map((entity) => ({
     ...entity,
@@ -2683,37 +3150,33 @@ async function annotateEntitiesWithSourceObservationUrls(
   }));
 }
 
-async function annotateProfileDescriptionPreferredSourceEvidence(
+export async function annotateProfileDescriptionPreferredSourceEvidence(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(
-    entities.map((entity) => idValue(entity._id || entity.id)),
-  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
-  const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
-  if (entityIds.length === 0 && entityKeys.length === 0) return entities;
-
-  const evidenceRows = await Observation.find({
-    entityType: 'researchEntity',
-    superseded: { $ne: true },
-    sourceName: { $in: PROFILE_DESCRIPTION_PREFERRED_SOURCE_NAMES },
-    field: { $in: PROFILE_DESCRIPTION_FIELDS },
-    $or: [
-      ...(entityIds.length ? [{ entityId: { $in: entityIds } }] : []),
-      ...(entityKeys.length ? [{ entityKey: { $in: entityKeys } }] : []),
-    ],
-  })
-    .select('entityId entityKey sourceName')
-    .lean();
+  const scopes = observationEntityScopeChunks(entities);
+  if (scopes.length === 0) return entities;
 
   const sourceNamesByEntity = new Map<string, Set<string>>();
-  for (const row of evidenceRows as Array<Record<string, any>>) {
-    const sourceName = textValue(row.sourceName);
-    if (!sourceName) continue;
-    for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
-      if (!sourceNamesByEntity.has(key)) sourceNamesByEntity.set(key, new Set());
-      sourceNamesByEntity.get(key)!.add(sourceName);
+  for (const scope of scopes) {
+    const evidenceRows = await Observation.find({
+      entityType: 'researchEntity',
+      superseded: { $ne: true },
+      sourceName: { $in: PROFILE_DESCRIPTION_PREFERRED_SOURCE_NAMES },
+      field: { $in: PROFILE_DESCRIPTION_FIELDS },
+      $or: observationEntityScopeClauses(scope),
+    })
+      .select('entityId entityKey sourceName')
+      .lean();
+
+    for (const row of evidenceRows as Array<Record<string, any>>) {
+      const sourceName = textValue(row.sourceName);
+      if (!sourceName) continue;
+      for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
+        if (!sourceNamesByEntity.has(key)) sourceNamesByEntity.set(key, new Set());
+        sourceNamesByEntity.get(key)!.add(sourceName);
+      }
     }
   }
 
@@ -2738,27 +3201,30 @@ async function selectResearchHomeProfileTargets(
     targetKeys.length > 0
       ? targetKeyFilter(targetKeys)
       : {
-          $and: [
+          $or: [
             {
-              $or: [{ websiteUrl: { $exists: false } }, { websiteUrl: null }, { websiteUrl: '' }],
+              $and: [
+                {
+                  $or: [
+                    { websiteUrl: { $exists: false } },
+                    { websiteUrl: null },
+                    { websiteUrl: '' },
+                  ],
+                },
+                {
+                  $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
+                },
+              ],
             },
-            {
-              $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
-            },
+            { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
           ],
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...targetFilter,
-    })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...targetFilter },
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
   if (entities.length === 0) return [];
 
   const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
@@ -2775,9 +3241,11 @@ async function selectResearchHomeProfileTargets(
   const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const profileUrlsByEntity = new Map<string, string[]>();
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
+  const leadOfficialProfileUrlsByEntity = new Map<string, string[]>();
 
   for (const entry of rosterEntries) {
     const user = usersByNetid.get(entry.netid);
+    appendLeadOfficialProfileUrl(leadOfficialProfileUrlsByEntity, entry, user);
     const urls = uniqueStrings([
       user?.website,
       user?.websiteUrl,
@@ -2803,6 +3271,7 @@ async function selectResearchHomeProfileTargets(
   const entitiesWithLeadUrls = entities.map((entity) => ({
     ...entity,
     leadUserProfileUrls: uniqueStrings(profileUrlsByEntity.get(idValue(entity._id)) || []),
+    leadOfficialProfileUrls: leadOfficialProfileUrlsByEntity.get(idValue(entity._id)) || [],
     leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
   }));
   const entitiesWithObservationUrls =
@@ -2832,17 +3301,11 @@ async function selectLeadDirectWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...targetFilter,
-    })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...targetFilter },
+    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
   if (entities.length === 0) return [];
 
   const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
@@ -2929,19 +3392,11 @@ async function selectSourceUrlWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await applyFiniteCandidateLimit(
-    ResearchEntity.find({
-      archived: { $ne: true },
-      ...targetFilter,
-    })
-      .select(
-        '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
-      )
-      .sort({ lastObservedAt: -1, _id: 1 }),
+  const entities = await recentlyObservedResearchEntities(
+    { archived: { $ne: true }, ...targetFilter },
+    '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
     limit,
-    20,
-    100,
-  ).lean()) as Array<Record<string, any>>;
+  );
   if (entities.length === 0) return [];
 
   const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(entities);
@@ -3079,20 +3534,37 @@ export async function resolveExistingUserForIdentity(
   return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
 }
 
-async function websiteUrlOwnedByAnotherEntity(
+/**
+ * For a row that already serves the link, only a student-visible holder can own it: a
+ * duplicate that is suppressed or held for review carrying the same site is a dedupe
+ * question, and withdrawing on it stripped real lab sites from the visible row in the
+ * #4544 dry run, with 3 more visible rows exposed to a held-for-review duplicate.
+ */
+export async function websiteUrlOwnedByAnotherEntity(
   websiteUrl: string,
   entity: Record<string, any>,
 ): Promise<boolean> {
   const lookupUrls = websiteDuplicateLookupUrls(websiteUrl);
   if (lookupUrls.length === 0) return false;
+  const entityId = idValue(entity._id || entity.id);
   const owner = (await ResearchEntity.findOne({
     archived: { $ne: true },
+    ...(mongoose.isValidObjectId(entityId) ? { _id: { $ne: entityId } } : {}),
+    ...(rowStoresWebsite(entity, websiteUrl)
+      ? { studentVisibilityTier: { $in: [...publicStudentVisibilityTiers] } }
+      : {}),
     $or: [{ websiteUrl: { $in: lookupUrls } }, { website: { $in: lookupUrls } }],
   })
     .select('_id')
     .lean()) as { _id?: unknown } | Array<{ _id?: unknown }> | null;
   const ownerRecord = Array.isArray(owner) ? owner[0] : owner;
-  return Boolean(ownerRecord && idValue(ownerRecord._id) !== idValue(entity._id || entity.id));
+  return Boolean(ownerRecord && idValue(ownerRecord._id) !== entityId);
+}
+
+interface FetchedProfile {
+  profileUrl: string;
+  html: string;
+  failures: Array<{ profileUrl: string; error: string }>;
 }
 
 export class OfficialProfilePiBackfillScraper implements IScraper {
@@ -3132,9 +3604,16 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       limit: number,
       targetKeys?: string[],
     ) => Promise<Array<Record<string, any>>> = selectSourceUrlWebsiteTargets,
+    private readonly probePage?: LanePageProbe,
   ) {}
 
+  private pageReads = new LanePageReads();
+
+  private readonly readHtml = (url: string, useCache: boolean, sourceName: string) =>
+    fetchRecordedBy(this.pageReads, this.htmlFetcher)(url, useCache, sourceName);
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
+    this.pageReads = new LanePageReads();
     const onlyValues = (ctx.options.only || [])
       .map((value) => value.toLowerCase().trim())
       .filter(Boolean);
@@ -3214,13 +3693,25 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       .slice(0, limit);
     let emitted = 0;
     let observed = 0;
+    let homesAdopted = 0;
+    const homesRefusedByReason: Record<string, number> = {};
     let fetchAttempts = 0;
 
-    for (const entity of entities) {
-      if (runOnlyWebsiteObservationBackfill) {
+    let fetchTurn: Promise<void> = Promise.resolve();
+    const awaitFetchTurn = (): Promise<void> => {
+      const spaced = fetchAttempts > 0 && this.profileFetchThrottleMs > 0;
+      fetchAttempts += 1;
+      fetchTurn = fetchTurn.then(() =>
+        spaced ? this.delay(this.profileFetchThrottleMs) : undefined,
+      );
+      return fetchTurn;
+    };
+
+    if (runOnlyWebsiteObservationBackfill) {
+      for (const entity of entities) {
         const websiteUrl = textValue(entity.leadDirectWebsiteUrl || entity.sourceUrlWebsiteUrl);
         if (!websiteUrl) continue;
-        let candidateHost: URL | null = null;
+        let candidateHost: URL | null;
         try {
           candidateHost = new URL(websiteUrl);
         } catch {
@@ -3230,14 +3721,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           const leadNames: string[] = entity.leadDirectWebsiteUrl
             ? entity.leadDirectWebsiteLeadNames || []
             : entity.sourceUrlWebsiteLeadNames || [];
-          if (fetchAttempts > 0 && this.profileFetchThrottleMs > 0) {
-            await this.delay(this.profileFetchThrottleMs);
-          }
-          fetchAttempts += 1;
+          await awaitFetchTurn();
           const owned = await candidateWebsiteOwnedByLead(
             websiteUrl,
             leadNames,
-            this.htmlFetcher,
+            this.readHtml,
             ctx.options.useCache,
           );
           if (!owned) {
@@ -3253,169 +3741,241 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         await ctx.emit(observations);
         emitted += observations.length;
         observed += 1;
-        continue;
       }
+    }
 
-      const candidates = runOnlyVisibleProfileBioBackfill
+    const profileCandidatesFor = (entity: Record<string, any>): string[] =>
+      runOnlyVisibleProfileBioBackfill
         ? visibleBioProfileUrlsForUser(entity)
         : uniqueStrings([
             ...officialProfileUrlsForEntity(entity),
             ...officialProfileUrlsForUser(entity),
           ]);
-      if (candidates.length === 0) continue;
+    const fetchFirstProfile = async (entity: Record<string, any>): Promise<FetchedProfile> => {
+      const failures: FetchedProfile['failures'] = [];
+      for (const candidateProfileUrl of rankedOfficialProfileFetchCandidates(
+        profileCandidatesFor(entity),
+        entity,
+      )) {
+        try {
+          await awaitFetchTurn();
+          const html = await this.readHtml(candidateProfileUrl, ctx.options.useCache, this.name);
+          return { profileUrl: candidateProfileUrl, html, failures };
+        } catch (err: any) {
+          failures.push({ profileUrl: candidateProfileUrl, error: sanitizeLogValue(err) });
+        }
+      }
+      return { profileUrl: '', html: '', failures };
+    };
+    const profileEntities = runOnlyWebsiteObservationBackfill
+      ? []
+      : entities.filter((entity) => profileCandidatesFor(entity).length > 0);
 
-      try {
-        let profileUrl = '';
-        let html = '';
-        for (const candidateProfileUrl of orderedProfileFetchCandidates(candidates)) {
-          try {
-            if (fetchAttempts > 0 && this.profileFetchThrottleMs > 0) {
-              await this.delay(this.profileFetchThrottleMs);
-            }
-            fetchAttempts += 1;
-            html = await this.htmlFetcher(candidateProfileUrl, ctx.options.useCache, this.name);
-            profileUrl = candidateProfileUrl;
-            break;
-          } catch (err: any) {
+    await forEachInOrderWithPrefetch(
+      profileEntities,
+      PROFILE_FETCH_LOOKAHEAD,
+      fetchFirstProfile,
+      async (entity, fetched) => {
+        const candidates = profileCandidatesFor(entity);
+        try {
+          if (fetched.status === 'rejected') throw fetched.reason;
+          const { profileUrl, html, failures } = fetched.value;
+          for (const failure of failures) {
             ctx.log('Profile fetch failed', {
               entityId: officialProfileDocumentId(entity._id),
-              profileUrl: candidateProfileUrl,
-              error: sanitizeLogValue(err),
+              profileUrl: failure.profileUrl,
+              error: failure.error,
             });
           }
-        }
-        if (!profileUrl) continue;
-        const observations: ObservationInput[] = [];
-        let profileIdentity: OfficialProfileIdentity | null | undefined;
-        let resolvedExistingUser: ExistingProfileUser | null | undefined;
+          if (!profileUrl) return;
+          const observations: ObservationInput[] = [];
+          let profileIdentity: OfficialProfileIdentity | null | undefined;
+          let resolvedExistingUser: ExistingProfileUser | null | undefined;
 
-        const identityForProfile = (options?: OfficialProfileIdentityOptions) => {
-          if (!options && profileIdentity !== undefined) return profileIdentity;
-          const identity = extractOfficialProfileIdentity(html, profileUrl, entity, options);
-          if (!options) profileIdentity = identity;
-          return identity;
-        };
+          const identityForProfile = (options?: OfficialProfileIdentityOptions) => {
+            if (!options && profileIdentity !== undefined) return profileIdentity;
+            const identity = extractOfficialProfileIdentity(html, profileUrl, entity, options);
+            if (!options) profileIdentity = identity;
+            return identity;
+          };
 
-        const existingUserForIdentity = async (identity: OfficialProfileIdentity) => {
-          if (resolvedExistingUser !== undefined) return resolvedExistingUser;
-          resolvedExistingUser = await this.userResolver(identity);
-          return resolvedExistingUser;
-        };
+          const existingUserForIdentity = async (identity: OfficialProfileIdentity) => {
+            if (resolvedExistingUser !== undefined) return resolvedExistingUser;
+            resolvedExistingUser = await this.userResolver(identity);
+            return resolvedExistingUser;
+          };
 
-        if (runQueuedPiBackfill || runVisibleProfileBioBackfill) {
-          const visibleExistingUser =
-            runVisibleProfileBioBackfill && textValue(entity.netid)
-              ? {
-                  _id: idValue(entity._id),
-                  netid: textValue(entity.netid),
-                  email: textValue(entity.email),
+          if (runQueuedPiBackfill || runVisibleProfileBioBackfill) {
+            const visibleExistingUser =
+              runVisibleProfileBioBackfill && textValue(entity.netid)
+                ? {
+                    _id: idValue(entity._id),
+                    netid: textValue(entity.netid),
+                    email: textValue(entity.email),
+                  }
+                : null;
+            const identity = identityForProfile({
+              requireEmail: false,
+            });
+            if (identity) {
+              const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
+              if (existingUser) {
+                observations.push(
+                  ...identityToUserObservations(identity, existingUser, {
+                    includeProfileEnrichment: runVisibleProfileBioBackfill,
+                    includeIdentityEnrichment: !runVisibleProfileBioBackfill,
+                  }),
+                );
+                if (runQueuedPiBackfill) {
+                  observations.push(
+                    ...identityToResearchEntityPiObservations(identity, existingUser, entity),
+                  );
                 }
-              : null;
-          const identity = identityForProfile({
-            requireEmail: false,
-          });
-          if (identity) {
-            const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
-            if (existingUser) {
+              } else if (runQueuedPiBackfill) {
+                const inferredNetid = yaleNetidFromEmail(identity.email);
+                if (inferredNetid) {
+                  const inferredUser = {
+                    netid: inferredNetid,
+                    email: identity.email.toLowerCase(),
+                  };
+                  observations.push(
+                    ...identityToUserObservations(identity, inferredUser, {
+                      includeProfileEnrichment: true,
+                      includeIdentityEnrichment: true,
+                    }),
+                    ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
+                  );
+                }
+              }
+            }
+          }
+
+          if (runProfileDescriptionBackfill) {
+            const identity = identityForProfile({
+              requireEmail: false,
+              expectedPeople: entity.leadUsers,
+            });
+            if (identity) {
+              if (shouldEmitProfileDescriptionBackfillForEntity(entity)) {
+                observations.push(
+                  ...identityToResearchEntityDescriptionObservations(identity, entity),
+                );
+              }
               observations.push(
-                ...identityToUserObservations(identity, existingUser, {
-                  includeProfileEnrichment: runVisibleProfileBioBackfill,
-                  includeIdentityEnrichment: !runVisibleProfileBioBackfill,
-                }),
+                ...identityToResearchEntityDepartmentObservations(identity, entity),
               );
-              if (runQueuedPiBackfill) {
+              const existingUser = await existingUserForIdentity(identity);
+              if (existingUser) {
                 observations.push(
                   ...identityToResearchEntityPiObservations(identity, existingUser, entity),
                 );
-              }
-            } else if (runQueuedPiBackfill) {
-              const inferredNetid = yaleNetidFromEmail(identity.email);
-              if (inferredNetid) {
-                const inferredUser = {
-                  netid: inferredNetid,
-                  email: identity.email.toLowerCase(),
-                };
-                observations.push(
-                  ...identityToUserObservations(identity, inferredUser, {
-                    includeProfileEnrichment: true,
-                    includeIdentityEnrichment: true,
-                  }),
-                  ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
-                );
+              } else {
+                const inferredNetid = yaleNetidFromEmail(identity.email);
+                if (inferredNetid) {
+                  const inferredUser = {
+                    netid: inferredNetid,
+                    email: identity.email.toLowerCase(),
+                  };
+                  observations.push(
+                    ...identityToUserObservations(identity, inferredUser, {
+                      includeProfileEnrichment: true,
+                      includeIdentityEnrichment: true,
+                    }),
+                    ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
+                  );
+                }
               }
             }
           }
-        }
 
-        if (runProfileDescriptionBackfill) {
-          const identity = identityForProfile({
-            requireEmail: false,
-            expectedPeople: entity.leadUsers,
+          if (runProfileResearchHomeBackfill) {
+            const identity = extractOfficialProfileIdentity(html, profileUrl, entity, {
+              requireEmail: false,
+              expectedPeople: entity.leadUsers,
+            });
+            const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
+            // Named so the run can report WHY a home was withheld. A silent refusal is
+            // indistinguishable from a guard that never ran: this lane withholds by
+            // emitting nothing, so absence of a graft in the observation log is evidence
+            // about the corpus rather than about the guard, and neither the #1484 nor the
+            // #3529 arm could be told apart from a profile that simply linked nothing
+            // contentious (#3537).
+            const homeRefusal: string | null = !home
+              ? null
+              : !identity
+                ? 'no-profile-identity'
+                : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
+                  ? 'website-owned-by-another-entity'
+                  : profileLinkedHomeRefusal(entity, home, identity.displayName);
+            if (homeRefusal) {
+              homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
+              if (
+                home &&
+                LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal) &&
+                rowStoresWebsite(entity, home.url)
+              ) {
+                observations.push(refusedResearchHomeWebsiteObservation(entity, home, profileUrl));
+              }
+            } else if (identity && home) {
+              observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
+              homesAdopted += 1;
+            } else if (identity && profileAttestsItsLabWebsiteIsGone(html, profileUrl, entity)) {
+              observations.push(emptyLabWebsiteSlotObservation(entity, profileUrl));
+              homesRefusedByReason['profile-no-longer-links-the-stored-website'] =
+                (homesRefusedByReason['profile-no-longer-links-the-stored-website'] ?? 0) + 1;
+            }
+          }
+
+          if (observations.length === 0) return;
+          await ctx.emit(observations);
+          emitted += observations.length;
+          observed += 1;
+        } catch (err: any) {
+          ctx.log('Profile fetch failed', {
+            entityId: officialProfileDocumentId(entity._id),
+            profileUrl: preferredOfficialProfileUrl(candidates, entity),
+            error: sanitizeLogValue(err),
           });
-          if (identity) {
-            if (shouldEmitProfileDescriptionBackfillForEntity(entity)) {
-              observations.push(
-                ...identityToResearchEntityDescriptionObservations(identity, entity),
-              );
-            }
-            observations.push(...identityToResearchEntityDepartmentObservations(identity, entity));
-            const existingUser = await existingUserForIdentity(identity);
-            if (existingUser) {
-              observations.push(
-                ...identityToResearchEntityPiObservations(identity, existingUser, entity),
-              );
-            } else {
-              const inferredNetid = yaleNetidFromEmail(identity.email);
-              if (inferredNetid) {
-                const inferredUser = {
-                  netid: inferredNetid,
-                  email: identity.email.toLowerCase(),
-                };
-                observations.push(
-                  ...identityToUserObservations(identity, inferredUser, {
-                    includeProfileEnrichment: true,
-                    includeIdentityEnrichment: true,
-                  }),
-                  ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
-                );
-              }
-            }
-          }
         }
+      },
+    );
 
-        if (runProfileResearchHomeBackfill) {
-          const identity = extractOfficialProfileIdentity(html, profileUrl, entity, {
-            requireEmail: false,
-            expectedPeople: entity.leadUsers,
-          });
-          if (!identity) continue;
-          const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
-          if (home && (await websiteUrlOwnedByAnotherEntity(home.url, entity))) continue;
-          if (
-            isInstitutionalHomeMismatchedWithPersonScopedShell(entity, home, identity.displayName)
-          ) {
-            continue;
+    const refusalSummary = Object.entries(homesRefusedByReason)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(', ');
+    // Logged as well as returned, because `notes` is a single line on the run record and
+    // the per-reason breakdown is what tells a reader which arm fired.
+    ctx.log('Profile-linked research homes', {
+      adopted: homesAdopted,
+      refused: homesRefusedByReason,
+    });
+
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      this.pageReads,
+      this.probePage,
+      targetKeys.length
+        ? {
+            entityKeys: [
+              ...targetKeys,
+              ...entities.flatMap((entity) => {
+                const slug = textValue(entity.slug);
+                return slug ? [slug] : [];
+              }),
+            ],
           }
-          observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
-        }
-
-        if (observations.length === 0) continue;
-        await ctx.emit(observations);
-        emitted += observations.length;
-        observed += 1;
-      } catch (err: any) {
-        ctx.log('Profile fetch failed', {
-          entityId: officialProfileDocumentId(entity._id),
-          profileUrl: preferredOfficialProfileUrl(candidates),
-          error: sanitizeLogValue(err),
-        });
-      }
-    }
+        : undefined,
+    );
+    emitted += pageHealth.gone + pageHealth.restored;
 
     return {
       observationCount: emitted,
       entitiesObserved: observed,
-      notes: `Processed ${entities.length} official profile records.`,
+      notes:
+        `Processed ${entities.length} official profile records; ` +
+        `adopted ${homesAdopted} profile-linked research homes` +
+        (refusalSummary ? `, refused ${refusalSummary}.` : ', refused none.'),
     };
   }
 }

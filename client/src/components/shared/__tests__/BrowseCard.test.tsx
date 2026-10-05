@@ -8,6 +8,7 @@ import ConfigContext, { defaultConfigContext } from '../../../contexts/ConfigCon
 import UserContext, { defaultUserContext } from '../../../contexts/UserContext';
 import type { BrowsableItem } from '../../../types/browsable';
 import type { Fellowship } from '../../../types/types';
+import { createFellowship } from '../../../utils/createFellowship';
 
 vi.mock('../../../utils/axios', () => ({
   default: {
@@ -29,6 +30,7 @@ const fellowship: Fellowship = {
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -140,6 +142,101 @@ describe('Browse admin controls', () => {
   });
 });
 
+describe('Program card deadline urgency', () => {
+  const inSixDays = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString();
+  const soonItem = (overrides: Partial<Fellowship>): BrowsableItem => ({
+    type: 'fellowship',
+    data: { ...fellowship, id: 'program-soon', deadline: inSixDays, ...overrides },
+  });
+
+  it('counts down to a confirmed deadline inside the urgency window', () => {
+    renderAdmin(<BrowseCard item={soonItem({})} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    expect(screen.getByText(/days left/)).toBeTruthy();
+  });
+
+  it('gives no countdown for a projected next-cycle date inside the urgency window (#3904)', () => {
+    renderAdmin(
+      <BrowseCard
+        item={soonItem({ deadlineProjectedNextCycle: true })}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/days left/)).toBeNull();
+  });
+
+  it('does not colour a projected next-cycle date inside the urgency window as closing (#3904)', () => {
+    renderAdmin(
+      <BrowseCard
+        item={soonItem({ deadlineProjectedNextCycle: true })}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    const subtitle = screen.getByText(/Est\. next cycle/);
+    expect(subtitle.className).not.toMatch(/amber/);
+    expect(subtitle.className).toMatch(/sky/);
+  });
+
+  it('gives no countdown on a list row for a projected next-cycle date (#3904)', () => {
+    renderAdmin(
+      <BrowseListItem
+        item={soonItem({ deadlineProjectedNextCycle: true })}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/days left/)).toBeNull();
+  });
+});
+
+describe('Program card with a stale served deadline (#4363)', () => {
+  const staleItem = (overrides: Partial<Fellowship> = {}): BrowsableItem => ({
+    type: 'fellowship',
+    data: {
+      ...fellowship,
+      id: 'program-stale',
+      deadlineStale: true,
+      deadline: null,
+      isAcceptingApplications: false,
+      ...overrides,
+    },
+  });
+
+  for (const [surface, Component] of [
+    ['card', BrowseCard],
+    ['list row', BrowseListItem],
+  ] as const) {
+    it(`tells the student to check the official page on a ${surface}`, () => {
+      const { container } = renderAdmin(
+        <Component item={staleItem()} isFavorite={false} onOpenModal={vi.fn()} />,
+      );
+
+      expect(screen.getByText('Deadline: check official page')).toBeTruthy();
+      expect(screen.getByText('Dates not confirmed')).toBeTruthy();
+      expect(container.textContent).not.toMatch(/passed|Closed|No dates posted|days left/i);
+    });
+
+    it(`shows no stated date on a ${surface} even when the payload carries one`, () => {
+      const { container } = renderAdmin(
+        <Component
+          item={staleItem({ deadline: '2019-11-15T23:59:59.999Z' })}
+          isFavorite={false}
+          onOpenModal={vi.fn()}
+        />,
+      );
+
+      expect(container.textContent).not.toContain('Nov 15');
+      expect(container.textContent).not.toMatch(/passed/i);
+      expect(screen.getByText('Deadline: check official page').className).not.toMatch(/red/);
+    });
+  }
+});
+
 describe('Program card visual hierarchy', () => {
   const withDeadline: BrowsableItem = {
     type: 'fellowship',
@@ -178,6 +275,22 @@ describe('Program card visual hierarchy', () => {
     expect(screen.queryByText(wholeBodyAsSummary)).toBeNull();
   });
 
+  it('shows no card line when the served card line is empty rather than the stored brief (#3904)', () => {
+    const storedBrief = 'Fixture program deadline announcement that fails the card bar.';
+    const withEmptyCardLine: BrowsableItem = {
+      type: 'fellowship',
+      data: {
+        ...fellowship,
+        id: 'program-empty-card-line',
+        summary: storedBrief,
+        cardSummary: '',
+      },
+    };
+    renderAdmin(<BrowseCard item={withEmptyCardLine} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    expect(screen.queryByText(storedBrief)).toBeNull();
+  });
+
   it('drops the next-step line when no curated best next step exists', () => {
     const withoutNextStep: BrowsableItem = {
       type: 'fellowship',
@@ -187,5 +300,171 @@ describe('Program card visual hierarchy', () => {
 
     expect(screen.queryByText('Next:')).toBeNull();
     expect(screen.getByText('Funding after mentor')).toBeTruthy();
+  });
+});
+
+describe('Program card icon cluster placement', () => {
+  const closingSoon: BrowsableItem = {
+    type: 'fellowship',
+    data: {
+      ...fellowship,
+      id: 'program-urgent',
+      deadline: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  };
+
+  it('anchors the icon cluster below the urgency banner rather than across it', () => {
+    const { container } = renderAdmin(
+      <BrowseCard
+        item={closingSoon}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onAdminEdit={vi.fn()}
+      />,
+    );
+
+    const card = container.firstElementChild as HTMLElement;
+    const banner = screen.getByText(/days left/).parentElement as HTMLElement;
+    const cluster = screen.getByRole('button', { name: 'Admin edit' }).parentElement as HTMLElement;
+    const anchor = cluster.parentElement as HTMLElement;
+
+    expect(banner.parentElement).toBe(card);
+    expect(cluster.className).toContain('absolute');
+    expect(anchor.className).toContain('relative');
+    expect(anchor.parentElement).toBe(card);
+    expect(anchor.previousElementSibling).toBe(banner);
+    expect(anchor.childElementCount).toBe(1);
+  });
+
+  it('keeps the icon cluster at the top of the card when no urgency banner renders', () => {
+    const { container } = renderAdmin(
+      <BrowseCard
+        item={item}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        onAdminEdit={vi.fn()}
+      />,
+    );
+
+    const card = container.firstElementChild as HTMLElement;
+    const cluster = screen.getByRole('button', { name: 'Admin edit' }).parentElement as HTMLElement;
+    const anchor = cluster.parentElement as HTMLElement;
+
+    expect(anchor.parentElement).toBe(card);
+    expect(anchor.previousElementSibling).toBeNull();
+  });
+});
+
+describe('Program card pointer target', () => {
+  it('does not promise a pointer target on a card wrapper that handles no click', () => {
+    const { container } = renderAdmin(
+      <BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+
+    expect(wrapper.className).not.toContain('cursor-pointer');
+  });
+
+  it('stretches the card View details action over the whole card', () => {
+    const { container } = renderAdmin(
+      <BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+    const action = screen.getByRole('button', { name: 'View details' });
+
+    expect(wrapper.className).toContain('relative');
+    expect(action.className).toContain('after:absolute');
+    expect(action.className).toContain('after:inset-0');
+  });
+
+  it('stretches the list row title action over the whole row', () => {
+    const { container } = renderAdmin(
+      <BrowseListItem item={item} isFavorite={false} onOpenModal={vi.fn()} />,
+    );
+
+    const wrapper = container.firstElementChild as HTMLElement;
+    const action = screen.getByRole('button', { name: /^View details for/ });
+
+    expect(wrapper.className).not.toContain('cursor-pointer');
+    expect(wrapper.className).toContain('relative');
+    expect(action.className).toContain('after:absolute');
+    expect(action.className).toContain('after:inset-0');
+  });
+
+  it('keeps each stretched target whole while pressed, because a transform or filter on the action shrinks its overlay to the action box', () => {
+    renderAdmin(<BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />);
+    const cardAction = screen.getByRole('button', { name: 'View details' });
+    cleanup();
+    renderAdmin(<BrowseListItem item={item} isFavorite={false} onOpenModal={vi.fn()} />);
+    const rowAction = screen.getByRole('button', { name: /^View details for/ });
+
+    for (const action of [cardAction, rowAction]) {
+      expect(action.className).toContain('[&:not(:disabled):active]:transform-none');
+      expect(action.className).toContain('[&:not(:disabled):active]:filter-none');
+    }
+  });
+
+  it('gives every card and row action a 44px minimum target', () => {
+    const controls = {
+      isFavorite: false,
+      onOpenModal: vi.fn(),
+      onToggleFavorite: vi.fn(),
+      onAdminEdit: vi.fn(),
+    };
+    const reaches44px = (element: HTMLElement) =>
+      /(^|\s)(min-h-11|min-h-\[44px\])(\s|$)/.test(element.className);
+
+    for (const surface of [
+      <BrowseCard key="card" item={item} {...controls} />,
+      <BrowseListItem key="row" item={item} {...controls} />,
+    ]) {
+      renderAdmin(surface);
+      const actions = [...screen.getAllByRole('button'), ...screen.queryAllByRole('link')];
+
+      expect(actions.length).toBeGreaterThan(2);
+      expect(actions.filter((action) => !reaches44px(action))).toEqual([]);
+      cleanup();
+    }
+  });
+});
+
+describe('Program card apply facts', () => {
+  const served = createFellowship({
+    _id: 'synthetic-served',
+    title: 'Synthetic Travel Grant',
+    programKind: 'FELLOWSHIP_FUNDING',
+    awardAmount: 'up to $1,500',
+    requiresMentorBeforeApply: true,
+  });
+
+  it('shows the served award and mentor requirement on a card', () => {
+    renderAdmin(
+      <BrowseCard
+        item={{ type: 'fellowship', data: served }}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Award: up to $1,500')).toBeTruthy();
+    expect(screen.getByText('Line up a mentor before you apply')).toBeTruthy();
+  });
+
+  it('shows the same facts on a list row', () => {
+    renderAdmin(
+      <BrowseListItem
+        item={{ type: 'fellowship', data: served }}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText('Award: up to $1,500 · Line up a mentor before you apply'),
+    ).toBeTruthy();
   });
 });

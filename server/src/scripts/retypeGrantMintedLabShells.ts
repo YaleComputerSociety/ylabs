@@ -15,8 +15,8 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { GRANT_LANE_SOURCE_NAMES } from '../scrapers/grantLaneSourceNames';
 import {
-  GRANT_LANE_SOURCE_NAMES,
   entityKeysWhoseLabClaimOnlyAGrantLaneWrote,
   entityKeysWithNonGrantLabEvidence,
   planGrantMintedLabShellRetype,
@@ -28,7 +28,7 @@ import {
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:retype-grant-minted-lab-shells';
 export const CONFIRM_FLAG = '--confirm-retype-grant-minted-lab-shells';
@@ -137,7 +137,6 @@ async function main(): Promise<void> {
   let kindObservationsCorrected = 0;
   let entityTypesCorrected = 0;
   let rematerialized = 0;
-  let servedNameStillAssertsALab = 0;
   let gateCounts: StudentVisibilityGateReport['counts'] | null = null;
 
   if (!options.dryRun && outcome.plans.length > 0) {
@@ -240,7 +239,7 @@ async function main(): Promise<void> {
   })
     .select('slug name kind entityType')
     .lean()) as unknown as Array<Record<string, unknown>>;
-  servedNameStillAssertsALab = after.filter(
+  const servedNameStillAssertsALab = after.filter(
     (doc) =>
       /\s+(?:Lab|Laboratory)$/i.test(String(doc.name ?? '').trim()) ||
       String(doc.entityType ?? '').toUpperCase() === 'LAB',

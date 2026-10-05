@@ -62,11 +62,7 @@ export interface CardBackfillEntity {
 }
 
 export type CardBackfillAction =
-  | 'short-ok'
-  | 'not-genuine-full'
-  | 'card-derived'
-  | 'card-synthesized'
-  | 'no-card';
+  'short-ok' | 'not-genuine-full' | 'card-derived' | 'card-synthesized' | 'no-card';
 
 export interface CardBackfillRow {
   id: string;
@@ -121,7 +117,7 @@ export async function planCardBackfillRow(
       leadMemberNames: entity.leadMemberNames ?? [],
     });
   const servedCardIsComplete = (candidateShort: string): boolean =>
-    servedRepresentation(candidateShort).quality.cardState === 'complete';
+    servedRepresentation(candidateShort).strictQuality.cardState === 'complete';
 
   // A complete card is not an acceptable card when it is a career biography with no
   // research focus in it: it tells a student where the person trained and what they
@@ -174,7 +170,7 @@ export async function planCardBackfillRow(
   // thin-full floor) is tuned for lab prose; a program's fullDescription is
   // legitimately terse and describes what it offers rather than what it
   // studies, so program-like entities skip straight to card resolution.
-  if (!isProgramLike && classifyFullDescription(full) !== 'genuine') {
+  if (!isProgramLike && classifyFullDescription(full, resolvedEntityType) !== 'genuine') {
     return {
       ...base,
       action: 'not-genuine-full',

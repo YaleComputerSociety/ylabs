@@ -8,6 +8,8 @@
  */
 
 import {
+  CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE,
+  isLegacyFacultyResearchEntityType,
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
   labSiteVerificationStates,
@@ -205,17 +207,34 @@ export function givenNameCore(displayName: unknown): string {
   return tokens.length >= 2 ? tokens[0] : '';
 }
 
+function givenInitialOnly(displayName: unknown): string {
+  const raw = flattenForNameMatch(displayName).trim().split(' ').filter(Boolean);
+  return raw.length >= 2 && raw[0].length === 1 && /[a-z]/.test(raw[0]) ? raw[0] : '';
+}
+
 /**
  * Strip markup so prose reads as prose, then keep the markup too: a members grid
  * often carries a name only in an `href` or an `aria-label`.
  */
 export function siteHaystack(html: string, visitedUrls: readonly string[] = []): string {
-  const stripped = String(html ?? '')
+  return ` ${flattenForNameMatch(`${pageText(html)} ${html} ${visitedUrls.join(' ')}`)} `;
+}
+
+/**
+ * The page's visible words, flattened, without its markup or the visited URLs.
+ * A slug's own href repeats the slug, so judging a slug against the haystack
+ * would let the slug supply its own evidence.
+ */
+export function visiblePageText(html: string): string {
+  return ` ${flattenForNameMatch(pageText(html))} `;
+}
+
+function pageText(html: string): string {
+  return String(html ?? '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]+>/g, ' ');
-  return ` ${flattenForNameMatch(`${stripped} ${html} ${visitedUrls.join(' ')}`)} `;
 }
 
 /**
@@ -228,15 +247,37 @@ export function siteHaystack(html: string, visitedUrls: readonly string[] = []):
 export function siteNamesPerson(haystack: string, displayName: unknown): boolean {
   const given = givenNameCore(displayName);
   const surname = surnameCore(displayName);
-  if (given.length < 2 || surname.length < 3 || given === surname) return false;
-  const escape = (token: string) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (given.length < 2 || surname.length < 2) return false;
+  const shortSurname = surname.length < 3;
+  const between = shortSurname ? '(?: [a-z]){0,2}' : '(?: [a-z0-9]{1,12}){0,3}';
   const forward = new RegExp(
-    `(?:^| )${escape(given)}(?: [a-z0-9]{1,12}){0,3} ${escape(surname)}(?: |$)`,
+    `(?:^| )${escapeForRegExp(given)}${between} ${escapeForRegExp(surname)}(?: |$)`,
   );
   if (forward.test(haystack)) return true;
-  const reversed = new RegExp(`(?:^| )${escape(surname)} ${escape(given)}(?: |$)`);
+  const reversed = new RegExp(
+    `(?:^| )${escapeForRegExp(surname)} ${escapeForRegExp(given)}(?: |$)`,
+  );
   if (reversed.test(haystack)) return true;
-  return haystack.includes(`${given}${surname}`);
+  return !shortSurname && given.length >= 3 && haystack.includes(`${given}${surname}`);
+}
+
+const escapeForRegExp = (token: string) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Whether the page names a lead whose given name is only an initial. The initial
+ * must carry its period, read from the page text rather than the flattened
+ * haystack, because a bare letter before a word is ordinary prose: `A. Young` is
+ * a name and `a young investigator` is not.
+ */
+export function siteNamesInitialAndSurname(html: string, displayName: unknown): boolean {
+  const initial = givenInitialOnly(displayName);
+  const surname = surnameCore(displayName);
+  if (!initial || surname.length < 4) return false;
+  const text = pageText(html).normalize('NFKD').replace(/[̀-ͯ]/g, '');
+  return new RegExp(
+    `(?:^|[^a-z0-9])${initial}\\.\\s*${escapeForRegExp(surname)}(?![a-z0-9])`,
+    'i',
+  ).test(text);
 }
 
 /**
@@ -346,9 +387,102 @@ export interface LabSiteReading {
 }
 
 /**
+ * The words a page uses to say who leads it. Deliberately not a bare
+ * `director`: a department page names a director of undergraduate studies, a
+ * medical director and a co-director of a core, and none of them leads the lab
+ * the row is about.
+ */
+const LEAD_ROLE_PHRASES = [
+  'principal investigator',
+  'lab director',
+  'laboratory director',
+  'faculty director',
+  'executive director',
+  'founding director',
+  'led by',
+  'lab head',
+];
+
+const LEAD_ROLE_PHRASE = new RegExp(`(?:^| )(?:${LEAD_ROLE_PHRASES.join('|')})(?: |$)`);
+
+/** A slug carrying a section or role word is a nav label, never another person. */
+const NON_NAME_SLUG_WORDS = new Set(
+  [...NON_PERSON_SLUGS, ...LEAD_ROLE_PHRASES, 'manager'].flatMap((entry) => entry.split(/[- ]/)),
+);
+
+const LEAD_ROLE_WINDOW_CHARS = 60;
+
+/** Two-letter surnames collide by chance among lab members, so they need the lead-role arm. */
+const MIN_NAMESAKE_SURNAME_LETTERS = 3;
+
+export function personNameTokensFromSlug(slug: string): string[] {
+  if (slug.includes('.')) return [];
+  const tokens = slug
+    .replace(/[0-9]+$/, '')
+    .split(/[-_]+/)
+    .filter(Boolean);
+  if (tokens.length < 2 || tokens.some((token) => !/^[a-z]{2,}$/.test(token))) return [];
+  if (tokens.some((token) => NON_NAME_SLUG_WORDS.has(token))) return [];
+  return tokens;
+}
+
+function slugNamesTheLead(tokens: readonly string[], leadDisplayName: unknown): boolean {
+  if (!tokens.includes(surnameCore(leadDisplayName))) return false;
+  const given = givenNameCore(leadDisplayName);
+  if (given) return tokens.includes(given);
+  const initial = givenInitialOnly(leadDisplayName);
+  const surname = surnameCore(leadDisplayName);
+  return Boolean(initial) && tokens.some((token) => token !== surname && token.startsWith(initial));
+}
+
+/**
+ * Whether a person the site links is positively another lead of this row, which
+ * is what `CONTRADICTED` must mean. A members page linking a student, a staff
+ * listing and a social handle all name somebody else without saying that
+ * somebody else leads the lab, and reading them as a contradiction made 32 of 47
+ * hand-read decidable contradictions wrong (#3750).
+ *
+ * Two shapes count. A namesake, because a same-surname person with a different
+ * given name is the collision this lane exists to find. Or a person the page
+ * itself names next to a lead-role phrase.
+ */
+export function slugNamesAnotherLead(
+  slug: string,
+  leadDisplayName: unknown,
+  visibleText: string,
+): boolean {
+  const tokens = personNameTokensFromSlug(slug);
+  if (!tokens.length || slugNamesTheLead(tokens, leadDisplayName)) return false;
+  const surname = surnameCore(leadDisplayName);
+  if (surname.length >= MIN_NAMESAKE_SURNAME_LETTERS && tokens.includes(surname)) return true;
+  const first = escapeForRegExp(tokens[0]);
+  const last = escapeForRegExp(tokens[tokens.length - 1]);
+  const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
+  for (const match of visibleText.matchAll(named)) {
+    const start = Math.max(0, (match.index ?? 0) - LEAD_ROLE_WINDOW_CHARS);
+    const end = (match.index ?? 0) + match[0].length + LEAD_ROLE_WINDOW_CHARS;
+    if (LEAD_ROLE_PHRASE.test(visibleText.slice(start, end))) return true;
+  }
+  return false;
+}
+
+/**
+ * A faculty research profile is about its lead, so the lead is right by
+ * construction and a site naming other people says the row's website is not the
+ * profile's own page. That is a website defect, and reading it as a lead
+ * contradiction accused the subject of 17 of the 19 hand-read profile rows (#3750).
+ */
+export function leadIsTheRecordSubjectFor(entityType: unknown): boolean {
+  return (
+    entityType === CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE ||
+    isLegacyFacultyResearchEntityType(typeof entityType === 'string' ? entityType : undefined)
+  );
+}
+
+/**
  * Judge one lead against what the site says. `CONTRADICTED` is returned only
- * when the site names somebody else, so a thin, JS-rendered, or director-less
- * page yields `UNSTATED` and never accuses a correct attachment.
+ * when the site names somebody else as a lead, so a thin, JS-rendered, or
+ * director-less page yields `UNSTATED` and never accuses a correct attachment.
  */
 export function judgeLeadAgainstSite(
   lead: LabSiteLeadCandidate,
@@ -356,6 +490,7 @@ export function judgeLeadAgainstSite(
   siteSlugs: Set<string>,
   haystack: string,
   contestedSurnames: ReadonlySet<string> = new Set(),
+  leadIsTheRecordSubject = false,
 ): LabSiteLeadJudgement {
   const base = { personId: lead.personId, role: lead.role };
   const leadSlugs = lead.officialProfileUrls.map(profileSlugFromUrl).filter(Boolean);
@@ -365,7 +500,10 @@ export function judgeLeadAgainstSite(
       lead.officialProfileUrls.find((url) => profileSlugFromUrl(url) === linkedSlug) || '';
     return { ...base, verdict: 'CONFIRMED', matchedBy: 'OFFICIAL_PROFILE_LINK', evidenceUrl };
   }
-  if (siteNamesPerson(haystack, lead.displayName)) {
+  if (
+    siteNamesPerson(haystack, lead.displayName) ||
+    siteNamesInitialAndSurname(reading.html, lead.displayName)
+  ) {
     return {
       ...base,
       verdict: 'CONFIRMED',
@@ -386,7 +524,13 @@ export function judgeLeadAgainstSite(
       evidenceUrl: reading.website,
     };
   }
-  const namesSomebodyElse = [...siteSlugs].some((slug) => !leadSlugs.includes(slug));
+  const visibleText = leadIsTheRecordSubject ? '' : visiblePageText(reading.html);
+  const namesSomebodyElse =
+    !leadIsTheRecordSubject &&
+    [...siteSlugs].some(
+      (slug) =>
+        !leadSlugs.includes(slug) && slugNamesAnotherLead(slug, lead.displayName, visibleText),
+    );
   return {
     ...base,
     verdict: namesSomebodyElse ? 'CONTRADICTED' : 'UNSTATED',
@@ -398,6 +542,7 @@ export function judgeLeadAgainstSite(
 export interface LabSiteLeadVerification {
   state: LabSiteVerificationState;
   checkedUrl: string;
+  requestedUrl?: string;
   httpStatusCode?: number;
   pagesRead: number;
   confirmedCount: number;
@@ -444,21 +589,42 @@ export function contestedSurnamesAmong(leads: readonly LabSiteLeadCandidate[]): 
   return contested;
 }
 
+function normalizedUrl(url: string): string {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return url;
+  }
+}
+
 export function buildLabSiteLeadVerification(
   leads: readonly LabSiteLeadCandidate[],
   reading: LabSiteReading,
   observedAt: Date,
+  entityType?: unknown,
 ): LabSiteLeadVerification {
   const bounded = leads.slice(0, MAX_VERIFIED_LEADS_PER_ENTITY);
   const siteSlugs = personSlugsOnSite(reading.html);
   const haystack = siteHaystack(reading.html, reading.visitedUrls);
   const contestedSurnames = contestedSurnamesAmong(bounded);
+  const leadIsTheRecordSubject = leadIsTheRecordSubjectFor(entityType);
   const judgements = bounded.map((lead) =>
-    judgeLeadAgainstSite(lead, reading, siteSlugs, haystack, contestedSurnames),
+    judgeLeadAgainstSite(
+      lead,
+      reading,
+      siteSlugs,
+      haystack,
+      contestedSurnames,
+      leadIsTheRecordSubject,
+    ),
   );
+  const checkedUrl = reading.visitedUrls[0] || reading.website;
   return {
     state: rollUpVerificationState(judgements),
-    checkedUrl: reading.website,
+    checkedUrl,
+    ...(normalizedUrl(checkedUrl) !== normalizedUrl(reading.website)
+      ? { requestedUrl: reading.website }
+      : {}),
     ...(typeof reading.httpStatusCode === 'number'
       ? { httpStatusCode: reading.httpStatusCode }
       : {}),

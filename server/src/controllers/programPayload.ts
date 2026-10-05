@@ -1,4 +1,5 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { withoutContactDirections } from '../utils/contactDirection';
 import {
   sanitizeCatalogDescription,
   stripRedactionPlaceholders,
@@ -8,7 +9,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { humanizeProgramLinkLabel } from '../utils/programLinkLabel';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
-import { classifyProgram, type ProgramClassificationInput } from '../services/programClassifier';
+import { classifyProgram } from '../services/programClassifier';
+import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
+import { programAudience } from '../services/programAudience';
+import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -57,7 +61,7 @@ const publicProgramLinks = (
 const publicProgramText = (value: unknown): unknown =>
   typeof value === 'string' ? redactDirectContactInfo(value) : value;
 
-const publicProgramDescription = (value: unknown): unknown =>
+export const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
     ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
     : value;
@@ -72,27 +76,6 @@ const publicProgramTextArray = (value: unknown): string[] =>
     ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
     : [];
 
-const asClassificationText = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value : undefined;
-
-const asClassificationTextArray = (value: unknown): string[] | undefined =>
-  Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : undefined;
-
-const classificationInputFromProgram = (program: any): ProgramClassificationInput => ({
-  title: asClassificationText(program.title),
-  competitionType: asClassificationText(program.competitionType),
-  summary: asClassificationText(program.summary),
-  description: asClassificationText(program.description),
-  applicationInformation: asClassificationText(program.applicationInformation),
-  eligibility: asClassificationText(program.eligibility),
-  additionalInformation: asClassificationText(program.additionalInformation),
-  purpose: asClassificationTextArray(program.purpose),
-  termOfAward: asClassificationTextArray(program.termOfAward),
-  sourceUrl: asClassificationText(program.sourceUrl),
-});
-
 const publicBestNextStep = (program: any): unknown => {
   const stored = publicProgramDescription(program.bestNextStep);
   if (typeof stored === 'string' && stored.trim()) return stored;
@@ -100,7 +83,7 @@ const publicBestNextStep = (program: any): unknown => {
     typeof program.bestNextStep === 'string' && program.bestNextStep.trim().length > 0;
   if (hadStoredText) return stored;
   return publicProgramDescription(
-    classifyProgram(classificationInputFromProgram(program)).bestNextStep,
+    classifyProgram(fellowshipClassificationInput(program)).bestNextStep,
   );
 };
 
@@ -128,19 +111,98 @@ const publicProgramSourceLinkHealth = (
   };
 };
 
+export type ProgramReaderFieldGuard =
+  | 'departmentResearchGuidance'
+  | 'publicHttpUrl'
+  | 'isUnhelpfulProgramUrl'
+  | 'publicProgramDescription'
+  | 'contactDirection';
+
+export interface ServedProgramReaderField<Value> {
+  value: Value | undefined;
+  withheldBy: ProgramReaderFieldGuard | null;
+}
+
+const nothingStored: ServedProgramReaderField<never> = { value: undefined, withheldBy: null };
+
+const servedValue = <Value>(value: Value): ServedProgramReaderField<Value> => ({
+  value,
+  withheldBy: null,
+});
+
+const withheld = <Value>(guard: ProgramReaderFieldGuard): ServedProgramReaderField<Value> => ({
+  value: undefined,
+  withheldBy: guard,
+});
+
+const hasStoredText = (value: unknown): boolean =>
+  typeof value === 'string' && value.trim().length > 0;
+
+export const servedProgramApplicationLink = (program: any): ServedProgramReaderField<string> => {
+  if (!hasStoredText(program?.applicationLink)) return nothingStored;
+  if (program.departmentResearchGuidance === true) return withheld('departmentResearchGuidance');
+  const url = publicHttpUrl(program.applicationLink);
+  if (!url) return withheld('publicHttpUrl');
+  if (isUnhelpfulProgramUrl(url, program.sourceUrl)) return withheld('isUnhelpfulProgramUrl');
+  return servedValue(url);
+};
+
+export const servedProgramEligibility = (program: any): ServedProgramReaderField<unknown> => {
+  const stored = program?.eligibility;
+  if (hasStoredText(stored)) {
+    const withoutContact = withoutContactDirections([stored]);
+    if (withoutContact.droppedSentences > 0 && !withoutContact.text) {
+      return { value: '', withheldBy: 'contactDirection' };
+    }
+    if (withoutContact.droppedSentences > 0) {
+      return servedValue(publicProgramDescription(withoutContact.text));
+    }
+  }
+  const eligibility = publicProgramDescription(stored);
+  return hasStoredText(stored) && !hasStoredText(eligibility)
+    ? { value: eligibility, withheldBy: 'publicProgramDescription' }
+    : servedValue(eligibility);
+};
+
+/**
+ * Every reader field a serve-time guard can withhold. `publicProgramForReader` serves these
+ * fields only through their decision, and the journey harness attributes a stored-to-served
+ * difference by calling the same decision, so a new guard belongs inside the decision and
+ * never inline in the payload (#4304).
+ */
+export const PROGRAM_READER_FIELD_DECISIONS = {
+  applicationLink: servedProgramApplicationLink,
+  eligibility: servedProgramEligibility,
+} as const;
+
+export type ProgramReaderDecidedField = keyof typeof PROGRAM_READER_FIELD_DECISIONS;
+
+export const withProgramAudience = (program: any) =>
+  program && typeof program === 'object'
+    ? {
+        ...program,
+        audience: programAudience(program),
+        departmentResearchGuidance: isDepartmentResearchGuidance(program),
+      }
+    : program;
+
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
+  const departmentResearchGuidance = program.departmentResearchGuidance === true;
   return {
     _id: id,
     id,
     programCategory: program.programCategory,
     programKind: program.programKind,
+    programRole: program.programRole,
+    departmentResearchGuidance,
     entryMode: program.entryMode,
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,
     mentorMatching: program.mentorMatching,
     undergraduateOnly: program.undergraduateOnly,
     yaleCollegeOnly: program.yaleCollegeOnly,
+    audience: programAudience(program),
     compensationSummary: publicCompensationSummary(program.compensationSummary),
     hoursPerWeek: program.hoursPerWeek,
     programDates: publicProgramText(program.programDates),
@@ -151,18 +213,20 @@ export const publicProgramForReader = (program: any) => {
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
     summary: publicProgramDescription(program.summary),
+    cardSummary: publicProgramDescription(program.cardSummary),
     description: publicProgramDescription(program.description),
     applicationInformation: publicProgramDescription(program.applicationInformation),
-    eligibility: publicProgramDescription(program.eligibility),
+    eligibility: servedProgramEligibility(program).value,
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramDescription(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
-    applicationLink: publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
+    applicationLink: servedProgramApplicationLink(program).value,
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
+    deadlineStale: program.deadlineStale === true,
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],

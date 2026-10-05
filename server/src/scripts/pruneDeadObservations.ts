@@ -16,12 +16,13 @@ import {
   parsePruneDeadObservationsArgs,
   type PruneDeadObservationsArgs,
 } from './pruneDeadObservationsCore';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 function writeReport(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
@@ -52,7 +53,7 @@ async function main(args: PruneDeadObservationsArgs): Promise<void> {
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for prune-dead-observations');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
 
   const prune = await pruneDeadObservations({
     apply,

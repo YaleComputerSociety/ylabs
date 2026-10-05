@@ -1,8 +1,59 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@import './tailwindPalette.css';
+
+/* `inline` so a utility compiles to the `--yr-*` variable itself, which is what the
+   design-token guards in src/__tests__ resolve against `:root`. */
+@theme inline {
+  --color-brand: var(--yr-blue);
+  --color-brand-navy: var(--yr-navy);
+  --color-brand-soft: var(--yr-blue-soft);
+  --color-gold: var(--yr-gold);
+  --color-gold-soft: var(--yr-gold-soft);
+  --color-ink: var(--yr-ink);
+  --color-ink-soft: var(--yr-ink-soft);
+  --color-muted: var(--yr-muted);
+  --color-canvas: var(--yr-page);
+  --color-parchment: var(--yr-parchment);
+  --color-panel: var(--yr-panel);
+  --color-panel-muted: var(--yr-panel-muted);
+  --color-line: var(--yr-line);
+  --color-line-strong: var(--yr-line-strong);
+  --color-line-control: var(--yr-line-control);
+  --color-line-warm: var(--yr-border-warm);
+  --color-line-brand: var(--yr-blue-border);
+  --color-scrim: var(--yr-scrim);
+  --color-success: var(--yr-green);
+  --color-success-soft: var(--yr-green-soft);
+
+  --font-sans: var(--yr-font-body);
+  --font-serif: var(--yr-font-serif);
+
+  --shadow-yr-raised: var(--yr-shadow-raised);
+  --shadow-yr-lifted: var(--yr-shadow-lifted);
+  --shadow-yr-overlay: var(--yr-shadow-overlay);
+  --shadow-yr-modal: var(--yr-shadow-modal);
+
+  --radius-control: var(--yr-radius-control);
+  --radius-card: var(--yr-radius-card);
+  --radius-overlay: var(--yr-radius-overlay);
+}
+
+/* Tailwind 3's absolute line heights. Tailwind 4 makes them ratios of the font size,
+   which re-sizes the line box of any element that pairs a `text-*` step with an
+   arbitrary `text-[...]` size. */
+@theme {
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+}
 
 :root {
+  color-scheme: light;
   --yr-blue: #00356b;
   --yr-navy: #0b1f3a;
   --yr-page: #fbfaf7;
@@ -17,23 +68,31 @@
   --yr-muted: #5f6570;
   --yr-line: var(--yr-border);
   --yr-line-strong: #cbd5e1;
+  --yr-line-control: #7c8594;
   --yr-paper: var(--yr-page);
   --yr-panel: #ffffff;
   --yr-panel-muted: #f7f3ec;
   --yr-blue-soft: #e6edf5;
   --yr-blue-border: color-mix(in srgb, #00356b 22%, white);
   --yr-gold-soft: #fff7e6;
+  --yr-gold-deep: #5d4722;
   --yr-green: #23705b;
   --yr-green-soft: #e5f4ee;
   --yr-shadow-raised: 0 1px 2px rgba(11, 31, 58, 0.04), 0 1px 1px rgba(11, 31, 58, 0.03);
   --yr-shadow-lifted: 0 2px 4px rgba(11, 31, 58, 0.04), 0 12px 28px rgba(11, 31, 58, 0.07);
   --yr-shadow-overlay: 0 4px 8px rgba(11, 31, 58, 0.06), 0 18px 38px rgba(11, 31, 58, 0.12);
   --yr-shadow-modal: 0 8px 16px rgba(11, 31, 58, 0.08), 0 32px 64px rgba(11, 31, 58, 0.16);
+  --yr-scrim: color-mix(in srgb, var(--yr-navy) 50%, transparent);
   /* Nesting, not taste: an inner element is tighter than the box holding it.
      Changing one of these without keeping control < card < overlay inverts that. */
   --yr-radius-control: 0.375rem;
   --yr-radius-card: 0.625rem;
   --yr-radius-overlay: 0.875rem;
+  /* One motion scale. Five uncoordinated durations were in use, because nothing
+     named them: 120, 150, 200, 220 and 300ms. */
+  --yr-motion-fast: 120ms;
+  --yr-motion-base: 150ms;
+  --yr-motion-slow: 220ms;
   --yr-font-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --yr-font-serif: 'Source Serif 4', Newsreader, Georgia, 'Times New Roman', serif;
 }
@@ -57,6 +116,10 @@ body,
 
 body {
   margin: 0;
+  /* Suppresses the 300ms double-tap-zoom wait on touch, and the grey tap flash
+     that iOS paints over our own pressed state. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   font-family: var(--yr-font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -69,6 +132,50 @@ code {
 }
 
 @layer base {
+  /* From here to the search field: Tailwind 3 preflight defaults that Tailwind 4
+     changed, restated so the upgrade renders unchanged. A bare `border` and a
+     `ring-*` with no colour class rely on the first rule. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+    --tw-ring-color: color-mix(in srgb, var(--color-blue-500) 50%, transparent);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button,
+  input,
+  select,
+  optgroup,
+  textarea,
+  ::file-selector-button {
+    font-style: normal;
+    font-variant: normal;
+    font-stretch: normal;
+  }
+
+  input:where(:not([type='button'], [type='reset'], [type='submit'])),
+  select,
+  textarea {
+    background-color: revert;
+  }
+
+  [type='search'] {
+    appearance: textfield;
+    outline-offset: -2px;
+  }
+
   h1,
   h2,
   h3,
@@ -78,6 +185,29 @@ code {
 
   p {
     text-wrap: pretty;
+  }
+
+  /* An in-page anchor otherwise lands the heading under the sticky header. */
+  :target {
+    scroll-margin-top: 6rem;
+  }
+
+  [data-scroll-container] {
+    scroll-padding-top: var(--yr-sticky-filter-bar-height, 0px);
+  }
+
+  /* `anywhere`, not `break-word`, because only `anywhere` lowers min-content,
+     which is what lets a flex or auto-sized grid track holding a long served
+     token shrink to the viewport instead of widening the page. */
+  [data-scroll-container],
+  [role='dialog'] {
+    overflow-wrap: anywhere;
+  }
+
+  /* A table keeps whole words and scrolls in its own wrapper rather than
+     squeezing columns until words split. */
+  :is([data-scroll-container], [role='dialog']) table {
+    overflow-wrap: break-word;
   }
 
   /* Proportional digits in Inter change width between rows, so a column of
@@ -92,8 +222,8 @@ code {
   button,
   .yr-pressable {
     transition:
-      transform 120ms ease,
-      filter 120ms ease;
+      transform var(--yr-motion-fast) ease,
+      filter var(--yr-motion-fast) ease;
   }
 
   button:not(:disabled):active,
@@ -141,9 +271,9 @@ code {
     background: var(--yr-panel);
     color: var(--yr-ink);
     transition:
-      border-color 150ms ease,
-      background-color 150ms ease,
-      color 150ms ease;
+      border-color var(--yr-motion-base) ease,
+      background-color var(--yr-motion-base) ease,
+      color var(--yr-motion-base) ease;
   }
 
   .yr-secondary-action:hover {
@@ -156,7 +286,7 @@ code {
   }
 
   .yr-row-hover {
-    transition: background-color 150ms ease;
+    transition: background-color var(--yr-motion-base) ease;
   }
 
   .yr-row-hover:hover {
@@ -180,9 +310,9 @@ code {
     background: var(--yr-panel);
     box-shadow: var(--yr-shadow-raised);
     transition:
-      border-color 150ms ease,
-      box-shadow 150ms ease,
-      transform 150ms ease;
+      border-color var(--yr-motion-base) ease,
+      box-shadow var(--yr-motion-base) ease,
+      transform var(--yr-motion-base) ease;
   }
 
   .yr-card-interactive:hover {
@@ -247,7 +377,7 @@ code {
   .yr-pill-gold {
     border-color: color-mix(in srgb, var(--yr-gold) 24%, white);
     background: var(--yr-gold-soft);
-    color: #5d4722;
+    color: var(--yr-gold-deep);
   }
 
   .yr-pill-green {
@@ -267,8 +397,23 @@ code {
     text-decoration-line: underline;
   }
 
-  .yr-focus-ring {
-    outline: none;
+  .yr-check-proxy {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--yr-line-control);
+    border-radius: var(--yr-radius-control);
+  }
+
+  /* The ring colour is set at rest because Tailwind 4's transition-colors
+     animates outline-color: only the discrete outline-style may change on focus,
+     or the ring fades in from the text colour. */
+  .yr-focus-ring,
+  .yr-focus-ring-peer {
+    outline: 2px none color-mix(in srgb, var(--yr-blue) 72%, white);
   }
 
   .yr-focus-ring:focus-visible {
@@ -284,8 +429,25 @@ code {
     outline-offset: 2px;
   }
 
+  .yr-segmented > :first-child {
+    border-top-left-radius: inherit;
+    border-bottom-left-radius: inherit;
+  }
+
+  .yr-segmented > :last-child {
+    border-top-right-radius: inherit;
+    border-bottom-right-radius: inherit;
+  }
+
+  /* Flex items paint in document order, so without this the next segment's fill
+     covers the shared edge of the focused segment's outset ring. */
+  .yr-segmented > :focus-visible {
+    position: relative;
+    z-index: 1;
+  }
+
   .yr-focus-ring-inset {
-    outline: none;
+    outline: 2px none color-mix(in srgb, var(--yr-blue) 72%, white);
   }
 
   /* Drawn inside the border box via a negative offset, for a control whose
@@ -295,19 +457,20 @@ code {
     outline-offset: -2px;
   }
 
+  /* Opacity only: a transform, filter, or perspective on this wrapper makes it the
+     containing block for every position: fixed descendant, so a modal that opens
+     during the fade is laid out against the page and jumps when the fade ends. */
   .yr-fade-in {
-    animation: yr-fade-in-up 220ms ease-out backwards;
+    animation: yr-fade-in var(--yr-motion-slow) ease-out backwards;
   }
 }
 
-@keyframes yr-fade-in-up {
+@keyframes yr-fade-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 

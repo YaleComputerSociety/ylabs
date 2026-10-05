@@ -2,7 +2,13 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalyticsEvent, AnalyticsEventType } from '../../models/analytics';
-import { getSearchQualityAnalytics, invalidateAnalyticsCaches } from '../analyticsService';
+import {
+  getActionNeededAnalytics,
+  getSearchQualityAnalytics,
+  getSearchQueryAnalytics,
+  invalidateAnalyticsCaches,
+  MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
+} from '../analyticsService';
 
 // Seeding and aggregating over a real replica set outruns the default per-test
 // timeout when several suites start their own server at once.
@@ -57,6 +63,8 @@ const legacySelfJoinPipeline = (): mongoose.PipelineStage[] => [
                       AnalyticsEventType.FELLOWSHIP_VIEW,
                       AnalyticsEventType.RESEARCH_VIEW,
                       AnalyticsEventType.PATHWAY_SAVE,
+                      AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+                      AnalyticsEventType.RESEARCH_SAVE,
                     ],
                   ],
                 },
@@ -189,11 +197,11 @@ describe('search-quality attribution single-pass equivalence', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -265,6 +273,21 @@ describe('search-quality attribution single-pass equivalence', () => {
         metadata: { entityType: 'research_entity', resultCount: 6 },
       }),
       event('stud04', AnalyticsEventType.FELLOWSHIP_VIEW, 5),
+
+      event('stud05', AnalyticsEventType.SEARCH, 0, {
+        searchQuery: 'ecology',
+        metadata: { entityType: 'research_entity', resultCount: 7 },
+      }),
+      event('stud05', AnalyticsEventType.RESEARCH_PROFILE_OPEN, 1),
+      event('stud05', AnalyticsEventType.SEARCH, 60, {
+        searchQuery: 'geology',
+        metadata: { entityType: 'research_entity', resultCount: 3 },
+      }),
+      event('stud05', AnalyticsEventType.RESEARCH_SAVE, 62),
+      event('stud05', AnalyticsEventType.SEARCH, 120, {
+        searchQuery: 'materials',
+        metadata: { entityType: 'research_entity', resultCount: 0 },
+      }),
     ]);
   };
 
@@ -280,7 +303,51 @@ describe('search-quality attribution single-pass equivalence', () => {
     expect(current.uniqueSearchers).toBe(legacyOverall.uniqueSearchers);
     expect(current.engagedSearches).toBe(legacyOverall.engagedSearches);
     expect(current.returnedButIgnoredSearches).toBe(legacyOverall.returnedButIgnoredSearches);
-    expect(current.byQueryAndEntityType).toEqual(legacy.byQueryAndEntityType);
+    expect(
+      current.byQueryAndEntityType.map(({ searchesThatReachedTheCorpus, ...row }) => {
+        expect(searchesThatReachedTheCorpus).toBe(row.totalSearches);
+        return row;
+      }),
+    ).toEqual(
+      legacy.byQueryAndEntityType.filter(
+        (row: { uniqueSearchers: number }) =>
+          row.uniqueSearchers >= MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY,
+      ),
+    );
+    expect(current.byQueryAndEntityType.length).toBeGreaterThan(0);
+    expect(
+      current.byQueryAndEntityType.reduce((sum, row) => sum + row.totalSearches, 0) +
+        current.suppressedQueries.searches,
+    ).toBe(legacyOverall.totalSearches);
+  });
+
+  it('credits a research search with the profile open that followed it inside the window', async () => {
+    const base = new Date('2026-02-01T12:00:00.000Z');
+    const researchSearch = (netid: string) => ({
+      netid,
+      userType: 'undergraduate',
+      eventType: AnalyticsEventType.SEARCH,
+      timestamp: base,
+      searchQuery: 'ecology',
+      metadata: { entityType: 'research_entity', resultCount: 7 },
+    });
+    const profileOpen = (netid: string, offset: number) => ({
+      netid,
+      userType: 'undergraduate',
+      eventType: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+      timestamp: minutes(base, offset),
+    });
+    await AnalyticsEvent.insertMany([
+      researchSearch('stud06'),
+      profileOpen('stud06', 1),
+      researchSearch('stud07'),
+      profileOpen('stud07', WINDOW_MINUTES + 1),
+    ]);
+
+    const result = await getSearchQualityAnalytics();
+
+    expect(result.engagedSearches).toBe(1);
+    expect(result.returnedButIgnoredSearches).toBe(1);
   });
 
   it('runs attribution without any self-join stage', async () => {
@@ -297,5 +364,47 @@ describe('search-quality attribution single-pass equivalence', () => {
     expect(result.totalSearches).toBeGreaterThan(0);
     expect(result.engagedSearches).toBeGreaterThan(0);
     expect(result.returnedButIgnoredSearches).toBeGreaterThan(0);
+  });
+  it('never counts a degraded search as a zero-result search, and reports it on its own', async () => {
+    const timestamp = new Date('2026-02-01T12:00:00.000Z');
+    const search = (netid: string, searchQuery: string, metadata: Record<string, unknown>) => ({
+      netid,
+      userType: 'undergraduate',
+      eventType: AnalyticsEventType.SEARCH,
+      timestamp,
+      searchQuery,
+      metadata: { entityType: 'research_entity', filters: {}, page: 1, ...metadata },
+    });
+    await AnalyticsEvent.insertMany([
+      search('stud01', 'outage topic', { resultCount: 0, degraded: true }),
+      search('stud02', 'outage topic', { resultCount: 0, degraded: true }),
+      search('stud04', 'outage topic', { resultCount: 0, degraded: true }),
+      search('stud01', 'coverage gap', { resultCount: 0, degraded: false }),
+      search('stud02', 'coverage gap', { resultCount: 0 }),
+      search('stud04', 'coverage gap', { resultCount: 0 }),
+      search('stud03', 'neuroscience', { resultCount: 4, degraded: false }),
+      search('stud05', 'neuroscience', { resultCount: 4 }),
+      search('stud06', 'neuroscience', { resultCount: 4 }),
+    ]);
+
+    const quality = await getSearchQualityAnalytics();
+    expect(quality.totalSearches).toBe(9);
+    expect(quality.degradedSearches).toBe(3);
+    expect(quality.zeroResultSearches).toBe(3);
+    expect(quality.zeroResultRate).toBe(0.5);
+    expect(quality.topZeroResultQueries.map((query) => query.query)).toEqual(['coverage gap']);
+
+    const actionNeeded = await getActionNeededAnalytics();
+    expect(actionNeeded.highSearchLowResults.map((query) => query.query)).toEqual(['coverage gap']);
+
+    const { queries } = await getSearchQueryAnalytics();
+    const zeroResultsByQuery = Object.fromEntries(
+      queries.map((row) => [row.query, row.zeroResultSearches]),
+    );
+    expect(zeroResultsByQuery).toMatchObject({
+      'outage topic': 0,
+      'coverage gap': 3,
+      neuroscience: 0,
+    });
   });
 });

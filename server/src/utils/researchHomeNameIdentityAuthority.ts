@@ -10,6 +10,7 @@
  * different people (issue #2234).
  */
 import { normalizeName } from '../scrapers/utils/scraperHelpers';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 import {
   isMultiTenantAcademicHostRootUrl,
@@ -18,8 +19,15 @@ import {
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
 import { researchEntityDisplayName } from './servedResearchEntityTitle';
+import { isNavigationMenuPhrase } from './titleHygiene';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
+
+const TRAILING_RESEARCH_GROUP_HEAD_RE = /\s(?:lab|labs|laborator(?:y|ies)|groups?)$/i;
+
+export function namesAResearchGroupRatherThanAPerson(value: unknown): boolean {
+  return TRAILING_RESEARCH_GROUP_HEAD_RE.test(textValue(value).replace(/[\s.]+$/, ''));
+}
 
 /**
  * A lab name written as one closed compound, which carries no left word boundary
@@ -302,6 +310,25 @@ export function isUmbrellaOrganizationName(value: unknown): boolean {
   return UMBRELLA_ORGANIZATION_HEAD_RE.test(name);
 }
 
+const UMBRELLA_ORGANIZATION_HEAD_GLOBAL_RE = new RegExp(
+  `\\b${UMBRELLA_ORGANIZATION_HEAD_SOURCE}\\b`,
+  'gi',
+);
+
+/**
+ * An umbrella-headed name whose only organizational noun is "Unit", the one head a
+ * single investigator's lab takes. A centre, institute, core or office keeps refusing
+ * even when its page credits a Principal Investigator, because those credit the lead
+ * of a shared organization rather than of the person's own lab.
+ */
+export function isPrincipalInvestigatorLedUnitName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!isUmbrellaOrganizationName(name) || WORKING_GROUP_RE.test(name)) return false;
+  return Array.from(name.matchAll(UMBRELLA_ORGANIZATION_HEAD_GLOBAL_RE)).every((match) =>
+    /^units?$/i.test(match[0]),
+  );
+}
+
 /**
  * Whether a name declares an organization a student could join, of any shape, as
  * against a topic a professor works on. This is the union of the two head-noun
@@ -339,9 +366,7 @@ export function namesAnOrganizationalResearchHome(value: unknown): boolean {
  * be decided from the name that is already in doubt (#2884).
  */
 export type ResearchEntityTypeNameContradiction =
-  | 'lab_named_as_a_topic'
-  | 'faculty_research_area_named_as_an_organization'
-  | '';
+  'lab_named_as_a_topic' | 'faculty_research_area_named_as_an_organization' | '';
 
 export function researchEntityTypeNameContradiction(entity: {
   entityType?: unknown;
@@ -661,6 +686,46 @@ export function personScopedResearchEntityNameFromPersonName(entity: {
   return `${tokens.join(' ')} ${researchEntityNameSuffix(entity)}`;
 }
 
+const HYPHEN_RESEARCH_SUFFIX_RE = /^(.*\S)\s+[-\u2013\u2014]\s*Research$/i;
+const PAGE_TITLE_SEPARATOR_RE = /\s+\|\s+/;
+const TRAILING_PLATFORM_WORD_RE =
+  /^(.*\S)\s+(?:git\s?hub|google\s+scholar|orcid|research\s?gate|linked\s?in)$/i;
+const NAMED_RESEARCH_HOME_RE = new RegExp(
+  `(?:\\S\\s+${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}$|^${RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.source}\\s+(?:of|for|on|in)\\s+\\S)`,
+  'i',
+);
+
+/**
+ * The served name for a stored name that wears page furniture around a real
+ * identity, or `''` when the name needs no rewrite: a minted "<Person> - Research"
+ * becomes the person-scoped name for the row's type, a page-title " | <subtitle>"
+ * tail is dropped, and a platform word appended to a research home ("<Surname> Lab
+ * GitHub") is peeled. Each rewrite keeps the identity underneath and produces a value
+ * no rewrite matches again, so it is idempotent (#4372).
+ */
+export function servedResearchEntityNameWithoutPageFurniture(entity: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+}): string {
+  const name = textValue(entity.candidateName);
+  if (!name) return '';
+  const personScopedName = (personName: string) =>
+    personScopedResearchEntityNameFromPersonName({ ...entity, candidateName: personName });
+  const hyphenHead = HYPHEN_RESEARCH_SUFFIX_RE.exec(name)?.[1];
+  if (hyphenHead) return personScopedName(hyphenHead);
+  const titleSegments = name.split(PAGE_TITLE_SEPARATOR_RE);
+  if (titleSegments.length > 1 && titleSegments[0]) {
+    return (
+      titleSegments.find((segment) => NAMED_RESEARCH_HOME_RE.test(segment)) ??
+      personScopedName(titleSegments[0])
+    );
+  }
+  const platformHead = TRAILING_PLATFORM_WORD_RE.exec(name)?.[1];
+  if (platformHead && NAMED_RESEARCH_HOME_RE.test(platformHead)) return platformHead;
+  return '';
+}
+
 const FACULTY_RESEARCH_NAME_SUFFIX_RE = /\s+faculty\s+research$/i;
 
 /**
@@ -697,6 +762,34 @@ export function labResearchEntityNameFromStaleFacultyResearchSuffix(entity: {
   const derived = personScopedResearchEntityNameFromPersonName({
     ...entity,
     candidateName: name.replace(FACULTY_RESEARCH_NAME_SUFFIX_RE, '').trim(),
+  });
+  return derived === name ? '' : derived;
+}
+
+const LAB_NAME_SUFFIX_RE = /\s+(?:lab|laboratory)$/i;
+
+/**
+ * The name a `FACULTY_RESEARCH_AREA` row should carry when it wears a lab suffix that
+ * no live observation asserts, or `''` otherwise.
+ *
+ * The #2884 objection above is to the suffix as page evidence, so this only reaches
+ * a suffix nothing currently asserts: a value whose writer no longer observes it, or
+ * whose observation is gone, carries no harvested information (#4638).
+ */
+export function facultyResearchNameFromUnassertedLabSuffix(entity: {
+  candidateName: unknown;
+  entityType?: unknown;
+  kind?: unknown;
+  labAssertedByLiveObservation: boolean;
+}): string {
+  if (entity.labAssertedByLiveObservation) return '';
+  if (textValue(entity.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA') return '';
+  const name = textValue(entity.candidateName);
+  if (!LAB_NAME_SUFFIX_RE.test(name)) return '';
+  const derived = personScopedResearchEntityNameFromPersonName({
+    entityType: entity.entityType,
+    kind: entity.kind,
+    candidateName: name.replace(LAB_NAME_SUFFIX_RE, '').trim(),
   });
   return derived === name ? '' : derived;
 }
@@ -1101,6 +1194,19 @@ export function entityKeyNamesOnlyThisPerson(args: {
   return keyTokens.every((token) => eponymMatchesIdentity(token, personTokens));
 }
 
+export function nameIsOnlyTheLeadPersonsName(args: {
+  name: unknown;
+  personName?: unknown;
+}): boolean {
+  if (!isBarePersonNameEntityName(args.name)) return false;
+  const leadTokens = personIdentityTokens(normalizeName(textValue(args.personName)));
+  if (leadTokens.length < 2) return false;
+  const nameTokens = personIdentityTokens(args.name);
+  const surname = leadTokens[leadTokens.length - 1];
+  if (!nameTokens.some((token) => eponymMatchesIdentity(token, [surname]))) return false;
+  return nameTokens.every((token) => eponymMatchesIdentity(token, leadTokens));
+}
+
 /**
  * The surname each display name ends on, as the eponym corroboration vocabulary.
  *
@@ -1260,6 +1366,17 @@ export type HarvestedNameIdentityVerdict =
   | 'NON_IDENTIFYING_LABEL'
   | 'UNUSABLE';
 
+const LOWERCASE_URL_LEAF_NAME_RE = /^[a-z][a-z0-9_-]*$/;
+const CAPITALISED_SINGLE_WORD_RE = /^\p{Lu}\p{Ll}+$/u;
+const TRAILING_LAB_HEAD_NOUN_RE = /\s+(?:labs?|laborator(?:y|ies)|groups?)$/i;
+
+function isHarvestedPageFurnitureName(name: string, personName: unknown): boolean {
+  if (isNavigationMenuPhrase(name.replace(TRAILING_LAB_HEAD_NOUN_RE, ''))) return true;
+  if (LOWERCASE_URL_LEAF_NAME_RE.test(name)) return true;
+  if (!CAPITALISED_SINGLE_WORD_RE.test(name)) return false;
+  return personIdentityTokens(personName).includes(name.toLowerCase());
+}
+
 /**
  * Classifies a name harvested from a website linked off a person's profile.
  * `OWN_IDENTITY` is returned when the name carries the person's own name, or
@@ -1297,6 +1414,7 @@ export function classifyHarvestedResearchHomeName(args: {
   if (name.length < 2) return 'UNUSABLE';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
+  if (isHarvestedPageFurnitureName(name, args.personName)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {
@@ -1323,15 +1441,6 @@ export function classifyHarvestedResearchHomeName(args: {
   return foreign ? 'ANOTHER_PERSONS_LAB' : 'OWN_IDENTITY';
 }
 
-const PERSON_SCOPED_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'INDIVIDUAL_RESEARCH',
-  'FACULTY_PROJECT',
-]);
-
-const PERSON_SCOPED_KINDS = new Set(['lab', 'individual', 'solo']);
-
 /**
  * Whether an entity's identity is a person or a person's lab, so an umbrella
  * organization name can never be its own name. Organization-shaped entities
@@ -1342,9 +1451,7 @@ export function isPersonScopedResearchEntity(entity: {
   entityType?: unknown;
   kind?: unknown;
 }): boolean {
-  const entityType = textValue(entity.entityType).toUpperCase();
-  if (entityType) return PERSON_SCOPED_ENTITY_TYPES.has(entityType);
-  return PERSON_SCOPED_KINDS.has(textValue(entity.kind).toLowerCase());
+  return isPersonScopedResearchEntityShape(entity);
 }
 
 /**
@@ -1396,6 +1503,14 @@ export interface PersonScopedNameIdentityArgs {
    * the page is real provenance for the person named on it.
    */
   recordCitedUrls?: unknown;
+  /**
+   * The names the record's own website gives itself on a page that also names the
+   * record's person as its Principal Investigator, as the lab-microsite lanes assert
+   * them. An umbrella-headed name matching one of these is the person's own lab under
+   * an organizational noun ("Computational Psychiatry Unit") rather than an
+   * organization they merely belong to.
+   */
+  siteDeclaredOwnNames?: readonly unknown[];
 }
 
 const nameNamesThisRecordsOwnPerson = (name: string, identityTokens: string[]): boolean =>
@@ -1521,7 +1636,13 @@ function personScopedNameIdentityPrelude(
   const personTokens = personIdentityTokens(args.personName);
   const identityTokens = researchHomeIdentityTokens(args);
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
-  if (isUmbrellaOrganizationName(name)) {
+  if (
+    isUmbrellaOrganizationName(name) &&
+    !(
+      isPrincipalInvestigatorLedUnitName(name) &&
+      organizationNameIsAmong(name, args.siteDeclaredOwnNames)
+    )
+  ) {
     return { settled: !nameNamesThisRecordsOwnPerson(name, identityTokens) };
   }
   if (
@@ -1534,6 +1655,59 @@ function personScopedNameIdentityPrelude(
     return { settled: true };
   }
   return { name, identityTokens };
+}
+
+const organizationNameMatchKey = (value: unknown): string =>
+  textValue(value)
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/^(?:the\s+)?(?:yale\s+)?/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+export function organizationNameIsAmong(name: unknown, names: readonly unknown[] = []): boolean {
+  const key = organizationNameMatchKey(name);
+  return key.length > 0 && names.some((candidate) => organizationNameMatchKey(candidate) === key);
+}
+
+// A single named Principal Investigator is how a lab's site credits its lead. A
+// center, institute or core credits a Director instead, and a shared unit lists
+// several investigators, so neither title reaches this test.
+const PRINCIPAL_INVESTIGATOR_LABEL_RE =
+  /(?<!\bco[-\s])\bprincipal\s+investigator\s*[:\u2013\u2014|-]\s*((?:dr\.?\s+|prof(?:essor)?\.?\s+)?[^\n.;:|]{1,60})/gi;
+const PRINCIPAL_INVESTIGATOR_TRAILING_RE =
+  /([^\n.;:|,]{1,40})\s*(?:,|[\u2013\u2014|-])\s*(?<!\bco[-\s])principal\s+investigator\b(?!s)/gi;
+
+const CREDITED_NAME_JOIN_RE = /\s*(?:,|&|\/|\band\b|\bprincipal\s+investigators?\b)\s*/i;
+const PERSON_NAME_SHAPED_RE =
+  /^(?:(?:dr|prof(?:essor)?)\.?\s+)?[A-Z][\w'’-]+(?:\s+[A-Z]\.?)*\s+[A-Z][\w'’-]+$/;
+
+/**
+ * Whether a page names this person as its single Principal Investigator, either as a
+ * label ("Principal Investigator: Jane Doe, Ph.D.") or as a trailing title ("Jane Doe,
+ * Principal Investigator"). Judged on the surname, the token every byline keeps. Every
+ * credit on the page must name the person and no one beside them, so a unit listing
+ * several investigators, on separate lines or joined in one credit, does not count.
+ */
+export function pageStatesPersonAsPrincipalInvestigator(
+  pageText: unknown,
+  personName: unknown,
+): boolean {
+  const surname = personIdentityTokens(personName).at(-1);
+  const text = textValue(pageText);
+  if (!surname || !text) return false;
+  const surnameRe = new RegExp(`\\b${surname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+  const credits = [PRINCIPAL_INVESTIGATOR_LABEL_RE, PRINCIPAL_INVESTIGATOR_TRAILING_RE].flatMap(
+    (pattern) => Array.from(text.matchAll(pattern), (match) => (match[1] || '').trim()),
+  );
+  const creditsOnlyThisPerson = (credit: string): boolean => {
+    const parts = credit.split(CREDITED_NAME_JOIN_RE);
+    return (
+      parts.some((part) => surnameRe.test(part)) &&
+      !parts.some((part) => !surnameRe.test(part) && PERSON_NAME_SHAPED_RE.test(part.trim()))
+    );
+  };
+  return credits.length > 0 && credits.every(creditsOnlyThisPerson);
 }
 
 export function personScopedResearchEntityNameNamesSomethingElseByUrlPath(

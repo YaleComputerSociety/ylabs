@@ -6,6 +6,8 @@ import {
   deriveCanonicalResearchAreasFromPage,
   extractLabeledResearchAreaItems,
   isRejectedAreaSourceUrl,
+  isSharedAreaFilteredDirectoryUrl,
+  refusesSharedAreaFilteredDirectorySource,
   researchAreaObservationsFromExtraction,
   type CandidateAreaEntity,
   type FetchedAreaPage,
@@ -24,6 +26,8 @@ const approvedRows = [
   { name: 'Cancer Biology' },
   { name: 'Genomics' },
   { name: 'History' },
+  { name: 'Psychology' },
+  { name: 'Social Media' },
 ];
 
 const canonicalizer: ResearchAreaCanonicalizer = createResearchAreaCanonicalizer(
@@ -113,6 +117,49 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
     expect(candidates.map((candidate) => candidate.slug)).toEqual(['empty-lab']);
   });
 
+  it('admits a non-empty row only when the evidence-backed set is supplied and omits it', () => {
+    const docs = [
+      {
+        _id: 'f',
+        slug: 'unbacked-areas',
+        websiteUrl: 'https://example.edu/research/f',
+        researchAreas: ['Neuroscience'],
+      },
+      {
+        _id: 'g',
+        slug: 'backed-areas',
+        websiteUrl: 'https://example.edu/research/g',
+        researchAreas: ['Neuroscience'],
+      },
+      {
+        _id: 'h',
+        slug: 'locked-areas',
+        websiteUrl: 'https://example.edu/research/h',
+        researchAreas: ['Neuroscience'],
+        manuallyLockedFields: ['researchAreas'],
+      },
+    ];
+    expect(candidateAreaEntitiesFromDocs(docs).map((candidate) => candidate.slug)).toEqual([]);
+    expect(
+      candidateAreaEntitiesFromDocs(docs, { evidenceBackedRowIds: new Set(['g']) }).map(
+        (candidate) => candidate.slug,
+      ),
+    ).toEqual(['unbacked-areas']);
+  });
+
+  it('keeps admitting an empty-area row whatever its locks, as before the widening', () => {
+    const candidates = candidateAreaEntitiesFromDocs([
+      {
+        _id: 'i',
+        slug: 'locked-empty',
+        websiteUrl: 'https://example.edu/research/i',
+        researchAreas: [],
+        manuallyLockedFields: ['researchAreas'],
+      },
+    ]);
+    expect(candidates.map((candidate) => candidate.slug)).toEqual(['locked-empty']);
+  });
+
   it('treats whitespace-only stored areas as empty', () => {
     const candidates = candidateAreaEntitiesFromDocs([
       {
@@ -123,6 +170,89 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
       },
     ]);
     expect(candidates.map((candidate) => candidate.slug)).toEqual(['blank-area']);
+  });
+});
+
+describe('shared area-filtered directory pages (#4030)', () => {
+  const areaPage = 'https://school.example.edu/faculty-research/faculty-directory/finance';
+  const ownProfile = 'https://school.example.edu/faculty-research/faculty-directory/ada-fixture';
+  const citers = new Map([
+    ['https://school.example.edu/faculty-research/faculty-directory/finance', 9],
+    ['https://school.example.edu/faculty-research/faculty-directory/ada-fixture', 3],
+    ['https://school.example.edu/faculty-research/faculty-directory/marketing', 2],
+  ]);
+  const row = { slug: 'faculty-ada-fixture', name: 'Ada Fixture' };
+
+  it('refuses a directory leaf that three or more rows cite and that does not name the row', () => {
+    expect(isSharedAreaFilteredDirectoryUrl(areaPage, row, citers)).toBe(true);
+  });
+
+  it('keeps the row its own directory profile even when several rows cite it', () => {
+    expect(isSharedAreaFilteredDirectoryUrl(ownProfile, row, citers)).toBe(false);
+  });
+
+  it('keeps a directory leaf fewer than three rows cite', () => {
+    expect(
+      isSharedAreaFilteredDirectoryUrl(
+        'https://school.example.edu/faculty-research/faculty-directory/marketing',
+        row,
+        citers,
+      ),
+    ).toBe(false);
+  });
+
+  it('gives the evidence backing check the same refusal for every caller', () => {
+    const refuses = refusesSharedAreaFilteredDirectorySource(citers);
+    expect(refuses(row, areaPage)).toBe(true);
+    expect(refuses(row, ownProfile)).toBe(false);
+  });
+
+  it('drops the shared directory page from the candidate urls and records the refusal', () => {
+    const doc = {
+      _id: 'j',
+      slug: 'faculty-ada-fixture',
+      name: 'Ada Fixture',
+      websiteUrl: areaPage,
+      sourceUrls: [ownProfile],
+      researchAreas: [],
+    };
+    expect(candidateAreaUrlsForDoc(doc, citers)).toEqual([ownProfile]);
+    const [candidate] = candidateAreaEntitiesFromDocs([doc], { citerCounts: citers });
+    expect(candidate.sourceUrls).toEqual([ownProfile]);
+    expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
+  });
+
+  it('records the refusal for a row whose only url is the shared directory page', () => {
+    const [candidate] = candidateAreaEntitiesFromDocs(
+      [{ _id: 'k', slug: 'faculty-ada-fixture', websiteUrl: areaPage, researchAreas: [] }],
+      { citerCounts: citers },
+    );
+    expect(candidate.sourceUrls).toEqual([]);
+    expect(candidate.refusedSharedDirectoryUrls).toEqual([areaPage]);
+  });
+
+  it('counts each refused page once in the run notes, including rows it leaves with no url', async () => {
+    const docs = [
+      { _id: 'k', slug: 'faculty-ada-fixture', websiteUrl: areaPage, researchAreas: [] },
+      { _id: 'l', slug: 'faculty-bo-fixture', websiteUrl: `${areaPage}/`, researchAreas: [] },
+    ];
+    let fetched = 0;
+    const extractor = new ResearchAreaSourceExtractor({
+      fetchPage: async (url) => {
+        fetched += 1;
+        return { url, html: '' };
+      },
+      canonicalizerLoader: async () => canonicalizer,
+      entityFinder: async () => candidateAreaEntitiesFromDocs(docs, { citerCounts: citers }),
+    });
+    const { ctx } = makeContext();
+    const result = await extractor.run(ctx);
+    expect(fetched).toBe(0);
+    expect(result.notes).toContain('Refused 1 shared area-filtered directory page(s)');
+  });
+
+  it('refuses nothing when no citer counts are supplied', () => {
+    expect(candidateAreaUrlsForDoc({ websiteUrl: areaPage })).toEqual([areaPage]);
   });
 });
 
@@ -170,6 +300,95 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
       areas: [],
       labeledBacked: false,
     });
+  });
+
+  it('ignores an in-body social-follow block and a social-links label (#4047)', () => {
+    const html = `
+      <h1>Example Institute</h1>
+      <p>The institute studies neuroscience.</p>
+      <div class="quick-links">
+        <h2 class="quick-links__heading">Follow us on social media</h2>
+        <p>Keep up to date and tag us on social media</p>
+        <a href="https://x.com/example">X</a>
+        <a href="https://www.instagram.com/example">Instagram</a>
+      </div>
+      <dl>
+        <dt class="profile-detail__social"><p class="h6">Social media</p></dt>
+        <dd><a href="https://www.linkedin.com/in/example">LinkedIn</a></dd>
+      </dl>`;
+    const result = deriveCanonicalResearchAreasFromPage(canonicalizer, html);
+    expect(result.areas).toEqual(['Neuroscience']);
+  });
+
+  it('ignores a follow call whose platform links sit in a sibling container (#4047)', () => {
+    const html = `
+      <p>The institute studies genomics.</p>
+      <div class="quick-links">
+        <div class="quick-links__text">
+          <h2 class="quick-links__heading">Follow us on social media</h2>
+          <p class="quick-links__description">Keep up to date and tag us on social media</p>
+        </div>
+        <ul class="quick-links__list">
+          <li><a href="https://x.com/example">X</a></li>
+          <li><a href="https://www.linkedin.com/company/example">LinkedIn</a></li>
+        </ul>
+      </div>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(['Genomics']);
+  });
+
+  it('keeps a social-media topic the page itself declares or studies (#4047)', () => {
+    const labeled = `
+      <h3>Expertise</h3>
+      <ul><li>Social Media</li><li>Psychology</li></ul>
+      <a href="https://x.com/example">X</a>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, labeled).areas).toEqual(
+      expect.arrayContaining(['Social Media', 'Psychology']),
+    );
+    const prose = '<p>Her research examines how social media shapes adolescent psychology.</p>';
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, prose).areas).toEqual(
+      expect.arrayContaining(['Social Media', 'Psychology']),
+    );
+  });
+
+  it('still reads a talk title that only links to a video platform (#4047)', () => {
+    const html = `
+      <ul class="related-links">
+        <li><a href="https://www.youtube.com/watch?v=example">Machine learning methods in modern genomics</a></li>
+      </ul>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Genomics']),
+    );
+    const shortTitle = `
+      <ul><li><a href="https://www.youtube.com/watch?v=example">Machine Learning in Genomics</a></li></ul>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, shortTitle).areas).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Genomics']),
+    );
+    const platformWordTitles = `
+      <ul>
+        <li><a href="https://vimeo.com/example">X-ray views of genomics</a></li>
+        <li><a href="https://www.youtube.com/watch?v=example">Machine learning on YouTube</a></li>
+      </ul>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, platformWordTitles).areas).toEqual(
+      expect.arrayContaining(['Machine Learning', 'Genomics']),
+    );
+  });
+
+  it('keeps a topic section headed by a social-media label that carries no follow link (#4047)', () => {
+    const html = `
+      <div><h3>Social Media</h3><p>We study misinformation and polarization on social media platforms.</p></div>
+      <div><h3 class="card__title">Social</h3><p>We study the psychology of intergroup relations.</p></div>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(
+      expect.arrayContaining(['Social Media', 'Psychology']),
+    );
+  });
+
+  it('keeps a short topic line that sits beside icon-only social links (#4047)', () => {
+    const html = `
+      <div class="profile-hero">
+        <p>Studies cancer genomics</p>
+        <a href="https://www.linkedin.com/in/example" aria-label="LinkedIn"><svg></svg></a>
+      </div>`;
+    expect(deriveCanonicalResearchAreasFromPage(canonicalizer, html).areas).toEqual(['Genomics']);
   });
 
   it('ignores a CSS-hidden global mega-menu panel rendered outside a nav tag', () => {
@@ -354,6 +573,45 @@ describe('ResearchAreaSourceExtractor.run', () => {
     const result = await extractor.run(ctx);
     expect(result.entitiesObserved).toBe(0);
     expect(emitted).toEqual([]);
+  });
+
+  describe('areas the row itself rejects (#3836)', () => {
+    const psychologyEntity: CandidateAreaEntity = { ...entity, departments: ['Psychology'] };
+    const secondUrl = 'https://synthetic-lab.example.edu/research/topics/';
+    const pages: Record<string, string> = {
+      [entity.websiteUrl]: '<h3>Research Areas</h3><ul><li>Psychology</li><li>Pediatrics</li></ul>',
+      [secondUrl]: '<h3>Research Areas</h3><ul><li>Psychology</li><li>Neuroscience</li></ul>',
+    };
+    const extractorFor = (candidate: CandidateAreaEntity) =>
+      new ResearchAreaSourceExtractor({
+        fetchPage: async (url) => ({ url, html: pages[url] ?? '' }),
+        canonicalizerLoader: async () => canonicalizer,
+        entityFinder: async () => [candidate],
+      });
+
+    it('asserts nothing when every area is the row own department or a division label', async () => {
+      const { ctx, emitted } = makeContext();
+      const result = await extractorFor(psychologyEntity).run(ctx);
+      expect(result.entitiesObserved).toBe(0);
+      expect(emitted).toEqual([]);
+    });
+
+    it('reads the next source instead, and keeps only the areas that survive', async () => {
+      const { ctx, emitted } = makeContext();
+      await extractorFor({
+        ...psychologyEntity,
+        sourceUrls: [entity.websiteUrl, secondUrl],
+      }).run(ctx);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({ sourceUrl: secondUrl, value: ['Neuroscience'] });
+    });
+
+    it('keeps a department name that is not the row own department', async () => {
+      const { ctx, emitted } = makeContext();
+      await extractorFor({ ...psychologyEntity, departments: ['Neuroscience'] }).run(ctx);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]).toMatchObject({ value: ['Psychology'] });
+    });
   });
 
   it('skips entities the work planner reports as fresh', async () => {

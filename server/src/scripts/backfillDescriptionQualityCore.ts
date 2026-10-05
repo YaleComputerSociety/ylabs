@@ -4,6 +4,7 @@ import {
   shortDescriptionQuality,
   type DescriptionQualityFlag,
 } from '../utils/researchEntityDescriptionQuality';
+import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { isConnectedToKeywordListStub } from '../utils/descriptionHygiene';
 
 export const THIN_SHORT_MAX_CHARS = 40;
@@ -15,6 +16,7 @@ export interface DescriptionEntityInput {
   slug?: string;
   shortDescription?: unknown;
   fullDescription?: unknown;
+  entityType?: ResearchEntityType;
 }
 
 export type FullDescriptionClass = 'empty' | 'templated-stub' | 'off-topic' | 'thin' | 'genuine';
@@ -61,6 +63,10 @@ const OFF_TOPIC_FLAGS: DescriptionQualityFlag[] = [
   'fundraising-appeal',
   'source-news-fragment',
   'paper-fragment',
+  'role-biography',
+  'third-party-page',
+  'instruction-offering',
+  'practice-biography',
   'broken-template',
   'malformed-generated-text',
   'synthetic-placeholder',
@@ -148,20 +154,28 @@ export function isTemplatedKeywordStub(value: unknown): boolean {
   return isConnectedToKeywordListStub(text);
 }
 
-export function isOffTopicFullDescription(value: unknown): boolean {
+export function isOffTopicFullDescription(
+  value: unknown,
+  entityType?: ResearchEntityType,
+): boolean {
   const text = normalizeText(value);
   if (!text) return false;
   if (AZ_INDEX_PATTERN.test(text)) return true;
-  return fullDescriptionQuality(text).flags.some((flag) => OFF_TOPIC_FLAGS.includes(flag));
+  return fullDescriptionQuality(text, undefined, entityType).flags.some((flag) =>
+    OFF_TOPIC_FLAGS.includes(flag),
+  );
 }
 
-export function classifyFullDescription(value: unknown): FullDescriptionClass {
+export function classifyFullDescription(
+  value: unknown,
+  entityType?: ResearchEntityType,
+): FullDescriptionClass {
   const text = normalizeText(value);
   if (!text) return 'empty';
   if (isTemplatedKeywordStub(text)) return 'templated-stub';
-  if (isOffTopicFullDescription(text)) return 'off-topic';
+  if (isOffTopicFullDescription(text, entityType)) return 'off-topic';
   if (text.length < THIN_FULL_MAX_CHARS) return 'thin';
-  if (fullDescriptionQuality(text).isUseful) return 'genuine';
+  if (fullDescriptionQuality(text, undefined, entityType).isUseful) return 'genuine';
   return 'off-topic';
 }
 
@@ -178,13 +192,15 @@ export function assessEntityDescription(
   const removedCaveat = fullSanitized.removedCaveat || shortSanitized.removedCaveat;
   const removedArtifacts = fullSanitized.removedArtifacts || shortSanitized.removedArtifacts;
 
-  const fullClass = classifyFullDescription(sanitizedFull);
+  const fullClass = classifyFullDescription(sanitizedFull, entity.entityType);
   const shortEqualsFull =
     sanitizedShort.length > 0 &&
     sanitizedFull.length > 0 &&
     normalizeComparable(sanitizedShort) === normalizeComparable(sanitizedFull);
 
-  const shortEval = shortDescriptionQuality(sanitizedShort, sanitizedFull);
+  const shortEval = shortDescriptionQuality(sanitizedShort, sanitizedFull, undefined, {
+    entityType: entity.entityType,
+  });
   const needsShort =
     sanitizedShort.length === 0 ||
     shortEqualsFull ||
@@ -273,6 +289,7 @@ const rawArtifactPresent = (value: string): boolean =>
 interface DescriptionPair {
   shortDescription: string;
   fullDescription: string;
+  entityType?: ResearchEntityType;
 }
 
 function countDefects(pairs: DescriptionPair[]): DescriptionDefectCounts {
@@ -305,8 +322,10 @@ function countDefects(pairs: DescriptionPair[]): DescriptionDefectCounts {
     }
     if (rawArtifactPresent(`${short} ${full}`)) counts.scrapeArtifacts += 1;
     if (isTemplatedKeywordStub(full)) counts.templatedStub += 1;
-    if (full && isOffTopicFullDescription(full)) counts.offTopic += 1;
-    if (full && !fullDescriptionQuality(full).isUseful) counts.fullNotUseful += 1;
+    if (full && isOffTopicFullDescription(full, pair.entityType)) counts.offTopic += 1;
+    if (full && !fullDescriptionQuality(full, undefined, pair.entityType).isUseful) {
+      counts.fullNotUseful += 1;
+    }
   }
   return counts;
 }
@@ -350,6 +369,7 @@ export function summarizeDescriptionBackfill(
   const beforePairs: DescriptionPair[] = entities.map((entity) => ({
     shortDescription: normalizeText(entity.shortDescription),
     fullDescription: normalizeText(entity.fullDescription),
+    entityType: entity.entityType,
   }));
   const afterPairs: DescriptionPair[] = entities.map((entity, index) => {
     const assessment = assessments[index];
@@ -358,6 +378,7 @@ export function summarizeDescriptionBackfill(
         assessment.proposedShort ?? sanitizeDescriptionText(entity.shortDescription).text,
       fullDescription:
         assessment.proposedFull ?? sanitizeDescriptionText(entity.fullDescription).text,
+      entityType: entity.entityType,
     };
   });
 

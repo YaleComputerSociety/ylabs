@@ -1,7 +1,7 @@
 /**
  * Route guard that restricts access to admin users only.
  */
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useContext, FunctionComponent, useEffect } from 'react';
 import UserContext from '../contexts/UserContext';
 import { buildApiUrl } from '../utils/apiBaseUrl';
@@ -42,6 +42,7 @@ const getLocalAdminDevLoginUrl = () => {
 
 const AdminRoute = ({ Component }: AdminRouteProps) => {
   const { user, isLoading, isAuthenticated } = useContext(UserContext);
+  const location = useLocation();
   const localAdminDevLoginUrl = getLocalAdminDevLoginUrl();
 
   useEffect(() => {
@@ -61,25 +62,26 @@ const AdminRoute = ({ Component }: AdminRouteProps) => {
   if (!isAuthenticated) {
     if (localAdminDevLoginUrl) {
       return (
-        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
-          Opening local admin session...
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-muted">
+          Opening local admin session…
         </div>
       );
     }
 
-    return <Navigate to="/login" />;
+    const returnPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to="/login" state={{ from: returnPath }} replace />;
   }
 
   if (user && !user.isAdmin) {
     if (localAdminDevLoginUrl) {
       return (
-        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-gray-600">
-          Opening local admin session...
+        <div className="flex min-h-[50vh] items-center justify-center px-4 text-center text-muted">
+          Opening local admin session…
         </div>
       );
     }
 
-    return <Navigate to="/" />;
+    return <Navigate to="/" replace />;
   }
 
   return <Component />;

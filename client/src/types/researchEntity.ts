@@ -10,10 +10,7 @@ import {
 } from '../utils/researchTextNormalization';
 
 export type ResearchEntityDescriptionState =
-  | 'source_backed'
-  | 'profile_synthesis'
-  | 'thin'
-  | 'missing';
+  'source_backed' | 'profile_synthesis' | 'thin' | 'missing';
 
 export type ResearchEntityLeadState = 'lead_attached' | 'lead_weak' | 'lead_missing';
 
@@ -33,10 +30,7 @@ export interface ResearchEntityQualitySummary {
 }
 
 export type StudentVisibilityTier =
-  | 'student_ready'
-  | 'limited_but_safe'
-  | 'operator_review'
-  | 'suppressed';
+  'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 
 export interface ResearchEntity extends ResearchEntityBacking {
   /** Whether public lead identity evidence is safe to display or requires review. */
@@ -162,7 +156,6 @@ export function normalizeResearchEntityDetailPayload(
       withheldCount: 0,
     },
     accessSignals: payload.accessSignals ?? [],
-    departmentCourseCreditRoutes: payload.departmentCourseCreditRoutes ?? [],
     entityRelationships: payload.entityRelationships ?? [],
     relatedResearchEntities: payload.relatedResearchEntities ?? [],
     affiliatedRelationships: payload.affiliatedRelationships ?? [],

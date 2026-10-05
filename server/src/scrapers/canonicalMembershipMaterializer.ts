@@ -2,9 +2,12 @@ import mongoose from 'mongoose';
 import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
+  isRosterIdentityBasis,
+  pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
   type RoleAssignmentReviewStatus,
+  type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
   type RoleAssignmentState,
 } from '../models/roleAssignment';
@@ -18,6 +21,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { escapeRegex } from '../utils/regex';
 import { canonicalPersonName } from './utils/personNameCasing';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
   if (value instanceof mongoose.Types.ObjectId) return value;
@@ -217,6 +221,7 @@ export interface CanonicalMemberIdentity {
   orcid?: unknown;
   displayName?: unknown;
   hasCanonicalSourceReference?: boolean;
+  resolvedPersonId?: mongoose.Types.ObjectId;
 }
 
 export interface CanonicalMemberFacts {
@@ -256,6 +261,11 @@ const cleanRosterProvenance = (
   if (observedAt) cleaned.observedAt = observedAt;
   const freshnessExpiresAt = coerceProvenanceDate(provenance.freshnessExpiresAt);
   if (freshnessExpiresAt) cleaned.freshnessExpiresAt = freshnessExpiresAt;
+  const adoptedAt = coerceProvenanceDate(provenance.adoptedAt);
+  if (adoptedAt) cleaned.adoptedAt = adoptedAt;
+  if (isRosterIdentityBasis(provenance.identityBasis)) {
+    cleaned.identityBasis = provenance.identityBasis;
+  }
   return Object.keys(cleaned).length > 0 ? cleaned : undefined;
 };
 
@@ -344,12 +354,12 @@ async function resolveOrCreateAccountId(
   if (identityIsOrganizationalMailbox(identity)) return undefined;
   const netid = normalizedNetid(identity.netid);
   const email = normalizedEmail(identity.email);
-  if (!netid || !email) return undefined;
+  if (!netid || !email || !looksLikeYaleNetid(netid)) return undefined;
   try {
     const account = await Account.findOneAndUpdate(
       { netid },
       { $setOnInsert: { netid, email, status: 'UNKNOWN', archived: false } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
     )
       .select('_id')
       .lean();
@@ -432,7 +442,7 @@ async function resolveOrCreateResearcherId(
       const researcher = await Researcher.findOneAndUpdate(
         { accountId },
         { $setOnInsert: setOnInsert },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
       )
         .select('_id')
         .lean();
@@ -566,6 +576,41 @@ async function resolveOrCreateNameOnlyResearcherId(
   }
 }
 
+async function liveResearcherId(
+  personId: mongoose.Types.ObjectId | undefined,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  if (!personId) return undefined;
+  const live = await Researcher.findOne({ _id: personId, archived: { $ne: true } })
+    .select('_id')
+    .lean();
+  return toObjectId((live as { _id?: unknown } | null)?._id);
+}
+
+/**
+ * Whether a name-only mint under this display name would stand beside a researcher who
+ * already carries an identity (an account, a netid or an ORCID) under the same name.
+ *
+ * The comparison is the one the mint and the accountless-shell dedupe both make, the
+ * canonical display name compared without case or spacing, so the answer here is exactly
+ * whether the mint would produce a row that dedupe folds back by name (#3802).
+ */
+export async function identifiedResearcherHoldsDisplayName(displayName: unknown): Promise<boolean> {
+  const tokens = canonicalPersonName(trimmed(displayName)).split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  const namesake = await Researcher.findOne({
+    displayName: new RegExp(`^\\s*${tokens.map(escapeRegex).join('\\s+')}\\s*$`, 'i'),
+    archived: { $ne: true },
+    $or: [
+      { accountId: { $exists: true, $ne: null } },
+      { 'identifiers.netid': { $exists: true, $nin: [null, ''] } },
+      { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
+    ],
+  })
+    .select('_id')
+    .lean();
+  return Boolean(namesake);
+}
+
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -651,16 +696,35 @@ export async function materializeCanonicalMembership(
   facts: CanonicalMemberFacts,
   identity: CanonicalMemberIdentity,
 ): Promise<CanonicalMembershipOutcome> {
+  return (await writeCanonicalMembership(researchEntityId, facts, identity)).outcome;
+}
+
+export interface CanonicalMembershipWrite {
+  outcome: CanonicalMembershipOutcome;
+  personId?: mongoose.Types.ObjectId;
+}
+
+/**
+ * `materializeCanonicalMembership`, also naming the person the edge was written for, so a
+ * caller that must act on that person's other edges uses the identity this write resolved
+ * rather than resolving it a second time.
+ */
+export async function writeCanonicalMembership(
+  researchEntityId: string,
+  facts: CanonicalMemberFacts,
+  identity: CanonicalMemberIdentity,
+): Promise<CanonicalMembershipWrite> {
+  const refused = (outcome: CanonicalMembershipOutcome): CanonicalMembershipWrite => ({ outcome });
   const entityObjectId = toObjectId(researchEntityId);
-  if (!entityObjectId) return 'refused-entity';
-  if (!canonicalRoleForLegacy(facts.legacyRole)) return 'refused-role';
+  if (!entityObjectId) return refused('refused-entity');
+  if (!canonicalRoleForLegacy(facts.legacyRole)) return refused('refused-role');
   if (identityIsOrganizationalMailbox(identity)) {
     console.warn(
       `[canonical-membership] skipped mint for entity ${sanitizeLogValue(
         researchEntityId,
       )}: identity resembles an organizational mailbox, not an individual`,
     );
-    return 'refused-organizational-mailbox';
+    return refused('refused-organizational-mailbox');
   }
 
   const state = roleStateForLegacyMembership(facts);
@@ -670,9 +734,10 @@ export async function materializeCanonicalMembership(
   const reviewStatus = reviewStatusForLegacyMembership(facts, state, resolution);
 
   try {
-    const accountId = await resolveOrCreateAccountId(identity);
-    const personId = await resolveOrCreateResearcherId(identity, accountId);
-    if (!personId) return 'refused-person';
+    const personId =
+      (await liveResearcherId(identity.resolvedPersonId)) ??
+      (await resolveOrCreateResearcherId(identity, await resolveOrCreateAccountId(identity)));
+    if (!personId) return refused('refused-person');
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {
       state,
@@ -682,17 +747,22 @@ export async function materializeCanonicalMembership(
       endedAt: state === 'HISTORICAL' ? (facts.endedAt ?? undefined) : undefined,
       rosterProvenance: facts.rosterProvenance,
     });
-    if (!upsert) return 'refused-upsert-shape';
-    const before = await RoleAssignment.findOne(upsert.filter)
+    if (!upsert) return refused('refused-upsert-shape');
+    const filter = await pinRoleAssignmentUpsertToLiveEdge(upsert.filter);
+    const reattach = roleAssignmentReattachWrite(filter, reviewStatus);
+    const before = await RoleAssignment.findOne(filter)
       .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
       .lean();
-    const written = await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
-    await RoleAssignment.updateOne(upsert.reattach.filter, upsert.reattach.update);
-    if ((written.upsertedCount ?? 0) > 0 || !before) return 'created';
-    const after = await RoleAssignment.findOne(upsert.filter)
+    const written = await RoleAssignment.updateOne(filter, upsert.update, { upsert: true });
+    await RoleAssignment.updateOne(reattach.filter, reattach.update);
+    if ((written.upsertedCount ?? 0) > 0 || !before) return { outcome: 'created', personId };
+    const after = await RoleAssignment.findOne(filter)
       .select(GOVERNED_ROLE_ASSIGNMENT_FIELDS)
       .lean();
-    return governedRoleAssignmentFieldsDiffer(before, after) ? 'updated' : 'unchanged';
+    return {
+      outcome: governedRoleAssignmentFieldsDiffer(before, after) ? 'updated' : 'unchanged',
+      personId,
+    };
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       console.warn(
@@ -700,10 +770,86 @@ export async function materializeCanonicalMembership(
           researchEntityId,
         )} due to duplicate key`,
       );
-      return 'refused-duplicate-key';
+      return refused('refused-duplicate-key');
     }
     throw error;
   }
+}
+
+/**
+ * What a roster lane that listed a person on an entity stamps onto that person's edges on
+ * the entity that carry no provenance at all (#3799).
+ *
+ * An edge with no `rosterProvenance` names no source, so no lane's retirement can ever end
+ * it. The canonical upsert already adopts one whose role the listing states, because it
+ * matches on `(personId, target, role)`; this reaches the rest of that person's
+ * provenance-less edges on the same entity, whose roles the listing does not state.
+ */
+export interface UnprovenancedEdgeAdoption {
+  personId: mongoose.Types.ObjectId;
+  sourceName: string;
+  sourceUrl?: string;
+  profileUrl?: string;
+  listedRole: RoleAssignmentRole;
+  listedMembershipKey: string;
+  listedObservedAt: Date;
+  membershipKeyForRole: (role: RoleAssignmentRole) => string;
+  adoptedAt: Date;
+}
+
+const UNPROVENANCED_EDGE_FILTER = {
+  archived: { $ne: true },
+  state: { $ne: 'HISTORICAL' },
+  'rosterProvenance.sourceName': { $in: [null, ''] },
+};
+
+/**
+ * A role the listing does not state is dated from the edge itself, not from the read: the
+ * lane never observed that claim, so the read that adopts it already counts as a read
+ * that omits it.
+ */
+export async function adoptUnprovenancedRoleAssignments(
+  researchEntityId: string,
+  adoption: UnprovenancedEdgeAdoption,
+): Promise<number> {
+  const entityObjectId = toObjectId(researchEntityId);
+  if (!entityObjectId || !trimmed(adoption.sourceName)) return 0;
+  const edges = (await RoleAssignment.find({
+    personId: adoption.personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entityObjectId,
+    ...UNPROVENANCED_EDGE_FILTER,
+  })
+    .select('_id role startedAt createdAt')
+    .lean()) as unknown as Array<{
+    _id: mongoose.Types.ObjectId;
+    role: RoleAssignmentRole;
+    startedAt?: Date;
+    createdAt?: Date;
+  }>;
+  let adopted = 0;
+  for (const edge of edges) {
+    const listed = edge.role === adoption.listedRole;
+    const membershipKey = listed
+      ? adoption.listedMembershipKey
+      : adoption.membershipKeyForRole(edge.role);
+    const observedAt = listed ? adoption.listedObservedAt : (edge.startedAt ?? edge.createdAt);
+    const rosterProvenance = cleanRosterProvenance({
+      sourceName: adoption.sourceName,
+      sourceUrl: adoption.sourceUrl,
+      profileUrl: adoption.profileUrl,
+      membershipKey,
+      observedAt,
+      adoptedAt: adoption.adoptedAt,
+    });
+    if (!membershipKey || !observedAt || !rosterProvenance) continue;
+    const result = await RoleAssignment.updateOne(
+      { _id: edge._id, ...UNPROVENANCED_EDGE_FILTER },
+      { $set: { rosterProvenance } },
+    );
+    adopted += result.modifiedCount ?? 0;
+  }
+  return adopted;
 }
 
 export async function archiveCanonicalRoleAssignmentsForPersons(

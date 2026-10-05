@@ -26,9 +26,9 @@ import {
   crossDomainAreaCollision,
 } from './crossDomainAreaCollisionCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 export function parseAuditCrossDomainAreaCollisionsArgs(argv: string[]): { output?: string } {
   const args: { output?: string } = {};
@@ -45,7 +45,6 @@ export function parseAuditCrossDomainAreaCollisionsArgs(argv: string[]): { outpu
 
 async function main(): Promise<void> {
   const args = parseAuditCrossDomainAreaCollisionsArgs(process.argv.slice(2));
-  mongoose.set('autoIndex', false);
   await initializeConnections();
 
   const rows = (await ResearchEntity.find({

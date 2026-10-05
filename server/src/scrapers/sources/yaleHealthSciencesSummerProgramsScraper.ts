@@ -19,16 +19,23 @@
  * fetched or cited as a source.
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
-import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
-import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
-import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import {
+  PROGRAM_PAGE_NON_PROSE_SELECTOR,
+  isApplyLink,
+  nearestDeadlineText,
+  programApplicationLinks,
+  programPageDescription,
+  programPageTitle,
+} from '../utils/programPageEvidence';
+import { parseProgramDate } from '../utils/programDeadline';
+import { boundedObservedFellowshipProse } from '../fellowshipProse';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -51,6 +58,14 @@ export const CURATED_YALE_HEALTH_SCIENCES_SUMMER_PROGRAM_SEEDS: HealthSciencesPr
   {
     url: 'https://medicine.yale.edu/center-clinical-investigation/for-students-and-interns/summer-enrichment-research-experience/',
     hostingOffice: 'Yale Center for Clinical Investigation',
+  },
+  {
+    url: 'https://medicine.yale.edu/center-clinical-investigation/for-students-and-interns/exposures-program/',
+    hostingOffice: 'Yale Center for Clinical Investigation',
+  },
+  {
+    url: 'https://medicine.yale.edu/childstudy/education-and-training/undergraduate-pga/interns/',
+    hostingOffice: 'Yale Child Study Center',
   },
   {
     url: 'https://medicine.yale.edu/labmed/ycceh/enrichment/summer-scholars-program/',
@@ -88,21 +103,7 @@ export const EXCLUDED_ALREADY_COVERED_URLS = [
 
 const MAX_DISCOVERED_PROGRAM_PAGES = 80;
 const MAX_PROGRAM_LINKS = 8;
-
-const MONTHS: Record<string, number> = {
-  january: 0,
-  february: 1,
-  march: 2,
-  april: 3,
-  may: 4,
-  june: 5,
-  july: 6,
-  august: 7,
-  september: 8,
-  october: 9,
-  november: 10,
-  december: 11,
-};
+const DEADLINE_APPLICATION_SECTION_CHARS = 1200;
 
 export interface HealthSciencesProgramCandidate {
   sourceKey: string;
@@ -242,81 +243,13 @@ function sectionTextForHeading($: cheerio.CheerioAPI, headingPattern: RegExp): s
     if (section) sections.push(section);
   });
   const combined = normalizeWhitespace(sections.join(' '));
-  return combined ? combined.slice(0, 1200) : undefined;
-}
-
-function nearestDeadlineText(text: string): string {
-  const normalized = normalizeWhitespace(text);
-  const label =
-    /\b(?:application\s+)?deadline\b|\bapplications?\s+(?:are\s+)?due\b|\bapply\s+by\b|\bdue\s+by\b/i.exec(
-      normalized,
-    );
-  if (!label || label.index === undefined) return '';
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
-  const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
-  const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'i');
-  const after = normalized.slice(
-    label.index + label[0].length,
-    label.index + label[0].length + 120,
-  );
-  return datePattern.exec(after)?.[0] || '';
-}
-
-export function parseDeadlineToUtcEndOfDay(
-  text: string,
-  referenceDate: Date = new Date(),
-): Date | undefined {
-  const normalized = normalizeWhitespace(text);
-  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
-  if (numeric) {
-    const month = Number(numeric[1]) - 1;
-    const day = Number(numeric[2]);
-    const year = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
-    const date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-    if (
-      date.getUTCFullYear() === year &&
-      date.getUTCMonth() === month &&
-      date.getUTCDate() === day
-    ) {
-      return date;
-    }
-  }
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const match = normalized.match(
-    new RegExp(`(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`, 'i'),
-  );
-  if (!match) return undefined;
-  const month = MONTHS[match[1].toLowerCase()];
-  const day = Number(match[2]);
-  let year = match[3] ? Number(match[3]) : referenceDate.getUTCFullYear();
-  let date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  if (!match[3] && date.getTime() < referenceDate.getTime() - 30 * 24 * 60 * 60 * 1000) {
-    year += 1;
-    date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  }
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
-    return undefined;
-  }
-  return date;
+  return combined ? boundedObservedFellowshipProse(combined) : undefined;
 }
 
 function hasActiveApplicationLanguage(text: string): boolean {
   return /\bapplications?\s+(?:are\s+)?(?:now\s+)?open\b|\bcurrently accepting applications\b|\baccepting applications\b|\bapplications?\s+(?:are\s+)?accepted\b/i.test(
     text,
   );
-}
-
-function isInExcludedRegion($link: cheerio.Cheerio<any>): boolean {
-  return (
-    $link.closest(
-      'header, nav, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    ).length > 0
-  );
-}
-
-function isApplyLink(url: string, label: string): boolean {
-  return /\bapply|application|register\b/i.test(label) || /\bapply|application\b/i.test(url);
 }
 
 function fingerprintCandidate(
@@ -356,17 +289,13 @@ export function parseHealthSciencesProgramPage(
   const $ = cheerio.load(html);
   $('script, style, noscript').remove();
 
-  const title = normalizeWhitespace($('h1').first().text());
+  const title = programPageTitle($, pageUrl);
   if (!title || title.length > 200) return undefined;
 
   const contentRoot = $('main, [role="main"], article').first();
   const root = contentRoot.length > 0 ? contentRoot : $('body');
   const chromeFree = root.clone();
-  chromeFree
-    .find(
-      'nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    )
-    .remove();
+  chromeFree.find(PROGRAM_PAGE_NON_PROSE_SELECTOR).remove();
   const bodyText = normalizeWhitespace(chromeFree.text());
   const identityText = `${title} ${bodyText}`;
 
@@ -381,33 +310,19 @@ export function parseHealthSciencesProgramPage(
       ));
   if (!hasSummerResearch) return undefined;
 
-  const description = sanitizeStoredCatalogDescription(bodyText, 2000) || undefined;
+  const description = programPageDescription($, chromeFree, bodyText);
   const eligibility = sectionTextForHeading($, ELIGIBILITY_HEADING_RE);
-  const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE);
-  const deadline = parseDeadlineToUtcEndOfDay(
+  const applicationInfo = sectionTextForHeading($, APPLICATION_HEADING_RE)?.slice(
+    0,
+    DEADLINE_APPLICATION_SECTION_CHARS,
+  );
+  const deadline = parseProgramDate(
     nearestDeadlineText(`${applicationInfo || ''} ${bodyText}`),
+    'deadline',
     referenceDate,
   );
 
-  const links: Array<{ label: string; url: string }> = [];
-  const seenUrls = new Set<string>();
-  for (const link of root.find('a').toArray()) {
-    const $link = $(link);
-    if (isInExcludedRegion($link)) continue;
-    const rawUrl = absoluteUrl($link.attr('href'), pageUrl);
-    if (!rawUrl) continue;
-    const url = normalizeUrl(rawUrl);
-    if (seenUrls.has(url)) continue;
-    const rawLabel = normalizeWhitespace($link.text());
-    if (!isApplyLink(url, rawLabel)) continue;
-    if (isUnhelpfulProgramUrl(url, pageUrl)) continue;
-    seenUrls.add(url);
-    links.push({
-      label: humanizeProgramLinkLabel(rawLabel, url) || rawLabel || 'Application',
-      url,
-    });
-    if (links.length >= MAX_PROGRAM_LINKS) break;
-  }
+  const links = programApplicationLinks($, root, pageUrl, MAX_PROGRAM_LINKS);
   const applicationLink = links.find((link) => isApplyLink(link.url, link.label))?.url;
 
   const termOfAward = inferTerm(identityText);
@@ -493,30 +408,11 @@ function currentSourceObservation(
 export function candidateToObservations(
   candidate: HealthSciencesProgramCandidate,
 ): ObservationInput[] {
-  const classification = classifyProgram({
-    title: candidate.title,
-    competitionType: candidate.competitionType,
-    description: candidate.description,
-    eligibility: candidate.eligibility,
-    purpose: candidate.purpose,
-    termOfAward: candidate.termOfAward,
-    sourceUrl: candidate.sourceUrl,
-  });
   return [
     observation('sourceKey', candidate.sourceKey, candidate),
     observation('sourceName', YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE, candidate),
     observation('sourceUrl', candidate.sourceUrl, candidate),
     observation('sourceFingerprint', candidate.sourceFingerprint, candidate),
-    observation('programCategory', classification.programCategory, candidate),
-    observation('programKind', classification.programKind, candidate),
-    observation('entryMode', classification.entryMode, candidate),
-    observation('studentFacingCategory', classification.studentFacingCategory, candidate),
-    observation('requiresMentorBeforeApply', classification.requiresMentorBeforeApply, candidate),
-    observation('mentorMatching', classification.mentorMatching, candidate),
-    observation('undergraduateOnly', classification.undergraduateOnly, candidate),
-    observation('programDates', classification.programDates, candidate),
-    observation('bestNextStep', classification.bestNextStep, candidate),
-    observation('prepSteps', classification.prepSteps, candidate),
     observation('title', candidate.title, candidate),
     observation('competitionType', candidate.competitionType, candidate),
     observation('description', candidate.description, candidate),
@@ -543,16 +439,18 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 30000,
-    headers: {
-      'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
-      Accept: 'text/html,application/xhtml+xml',
-    },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(res.data || '');
   if (useCache) await setCached(YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE, cacheKey, html);
   return html;

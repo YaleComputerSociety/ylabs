@@ -2,6 +2,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 import { randomBytes } from 'node:crypto';
 import { allowsNonProductionSecurityBypass } from '../utils/environment';
+import { presentedCasTicket } from '../utils/casStrategy';
 import { createRateLimitHandler } from './rateLimitResponse';
 
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -54,9 +55,9 @@ const withoutTrailingPort = (value: string): string => {
 // caller, so keying on it collapses every client into a single bucket and turns
 // a per-client limit into a global one - express-rate-limit's own troubleshooting
 // guide describes this as becoming "effectively a global one and blocking all
-// requests once the limit is reached" (#2318). `authLimiter` is 20 per 15 minutes
-// on the CAS login path, so that was 20 logins per window for the entire user
-// base.
+// requests once the limit is reached" (#2318). `authLimiter` is
+// `AUTH_VALIDATION_FAILURE_MAX` rejected CAS ticket validations per 15 minutes,
+// so that would be one failure budget per window for the entire user base.
 //
 // `req.ip` is the client address that the validated `trust proxy` predicate in
 // app.ts already resolves from the forwarded chain, which is why that apparatus
@@ -247,8 +248,7 @@ export const resetFirstContactVolumeNotices = (): void => {
 
 export const observeFirstContactVolume = (req: Request, _res: Response, next: NextFunction) => {
   const info = (req as any).rateLimit as
-    | { used?: number; limit?: number; resetTime?: Date }
-    | undefined;
+    { used?: number; limit?: number; resetTime?: Date } | undefined;
   if (!isFirstContactRequest(req) || !info || typeof info.used !== 'number') return next();
 
   const limit = typeof info.limit === 'number' && info.limit > 0 ? info.limit : firstContactMax();
@@ -284,19 +284,60 @@ export const writeLimit = rateLimit({
   skip: () => bypassRuntimeSecurity,
 });
 
-// Per-IP brute-force ceiling on the CAS callback. Keyed by the client address
-// the validated `trust proxy` predicate resolves, which accepts a forwarded
-// address only from a peer inside TRUSTED_PROXY_CIDRS, so a client cannot shift
-// buckets by spoofing forwarding headers (#2318).
+// A request to the CAS route with no `ticket` is the START of login: the strategy
+// only redirects the caller to CAS. A ticket-bearing request is the one that
+// spends a CAS validation. Calls the strategy's own `presentedCasTicket`, so this
+// limiter's idea of a validation attempt cannot drift from what the strategy
+// actually attempts.
+const attemptsCasTicketValidation = (req: Request): boolean =>
+  presentedCasTicket(req) !== undefined;
+
+// The status cannot tell an accepted validation from a rejected one, because
+// `casLogin` answers both with a redirect when the caller names an `error`
+// target. So the route records acceptance itself, and every unrecorded outcome
+// is charged.
+const acceptedCasValidations = new WeakSet<Request>();
+
+export const markCasValidationAccepted = (req: Request): void => {
+  acceptedCasValidations.add(req);
+};
+
+// `skipSuccessfulRequests` refunds every response this predicate calls
+// successful, so the sense is inverted relative to the shared
+// `requestWasSuccessful` above: a 5xx has to read as successful here to keep the
+// same outage exemption the other limiters get from `skipFailedRequests`, leaving
+// a rejected validation as the only charge.
+const casValidationEarnsRefund = (req: Request, res: Response): boolean =>
+  acceptedCasValidations.has(req) || res.statusCode >= 500;
+
+// Per-IP ceiling on repeated FAILED CAS ticket validation. Keyed by the client
+// address the validated `trust proxy` predicate resolves, which accepts a
+// forwarded address only from a peer inside TRUSTED_PROXY_CIDRS, so a client
+// cannot shift buckets by spoofing forwarding headers (#2318).
+//
+// Scope: the budget covers validation failures only. The ticketless redirect that
+// starts login is skipped, and a validation that succeeds is refunded, so a
+// completed login costs nothing. Counting both legs billed every login twice
+// against a bucket a whole NATed cohort shares, and a CAS ticket is minted and
+// validated by CAS rather than supplied by the caller, so repeated failure is the
+// only thing here worth bounding.
+//
+// Budget: what remains on this key is accidental repetition - a refreshed or
+// stale callback - plus the outbound CAS validation each one costs. 60 per 15
+// minutes is one failure every 15 seconds from a single address, which a NATed
+// cohort's ordinary mistakes stay well below while repeated failure is still
+// bounded.
+export const AUTH_VALIDATION_FAILURE_MAX = 60;
+
 export const authLimiter = rateLimit({
   windowMs: WINDOW_MS,
-  max: 20,
+  max: AUTH_VALIDATION_FAILURE_MAX,
   keyGenerator: getPeerIpKey,
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: true,
-  requestWasSuccessful,
-  message: { error: 'Too many login attempts, please try again later.' },
-  handler: createRateLimitHandler('Too many login attempts, please try again later.'),
-  skip: () => bypassRuntimeSecurity,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: casValidationEarnsRefund,
+  message: { error: 'Too many failed login attempts, please try again later.' },
+  handler: createRateLimitHandler('Too many failed login attempts, please try again later.'),
+  skip: (req) => bypassRuntimeSecurity || !attemptsCasTicketValidation(req),
 });

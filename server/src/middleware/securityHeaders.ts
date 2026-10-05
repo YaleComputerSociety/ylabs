@@ -10,11 +10,6 @@ const CONNECT_SRC_ORIGINS = [
   'https://www.yalelabs.io',
   'https://yalelabs.onrender.com',
   'https://ylabs-gr4v.onrender.com',
-  'https://sheets.googleapis.com',
-  'https://www.google-analytics.com',
-  'https://analytics.google.com',
-  'https://region1.google-analytics.com',
-  'https://stats.g.doubleclick.net',
 ];
 
 const IMG_SRC_ORIGINS = [
@@ -26,14 +21,30 @@ const IMG_SRC_ORIGINS = [
   'https://ysm-res.cloudinary.com',
   'https://yalies.io',
   'https://*.yalies.io',
-  'https://www.google-analytics.com',
-  'https://stats.g.doubleclick.net',
 ];
 
+const SENTRY_INGEST_HOST = /^o\d+\.ingest(?:\.[a-z]{2})?\.sentry\.io$/;
+
+export const sentryIngestOrigin = (dsn: unknown): string | undefined => {
+  if (typeof dsn !== 'string' || dsn.length === 0) return undefined;
+
+  try {
+    const parsed = new URL(dsn);
+    const isSentryIngest =
+      parsed.protocol === 'https:' && !parsed.port && SENTRY_INGEST_HOST.test(parsed.hostname);
+    return isSentryIngest ? `https://${parsed.hostname}` : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const connectSrcDirective = (allowLocalDevelopmentConnect: boolean) => {
-  const origins = allowLocalDevelopmentConnect
-    ? [...CONNECT_SRC_ORIGINS, 'http://localhost:4000']
-    : CONNECT_SRC_ORIGINS;
+  const sentryOrigin = sentryIngestOrigin(process.env.VITE_SENTRY_DSN);
+  const origins = [
+    ...CONNECT_SRC_ORIGINS,
+    ...(sentryOrigin ? [sentryOrigin] : []),
+    ...(allowLocalDevelopmentConnect ? ['http://localhost:4000'] : []),
+  ];
   return `connect-src ${origins.join(' ')}`;
 };
 
@@ -47,7 +58,7 @@ export const buildContentSecurityPolicy = (
     "base-uri 'none'",
     "object-src 'none'",
     "frame-ancestors 'none'",
-    "script-src 'self' https://www.googletagmanager.com",
+    "script-src 'self'",
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",

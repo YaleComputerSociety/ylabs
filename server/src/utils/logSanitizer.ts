@@ -1,3 +1,5 @@
+import { PHONE_SHAPED_DIGITS_PATTERN, phoneRedactionReplacement } from './contactRedaction';
+
 const CREDENTIAL_URL_RE = /\b([a-z][a-z0-9+.-]*:\/\/)([^@\s/]+)@/gi;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
@@ -16,7 +18,7 @@ const SECRET_BARE_FIELD_RE = new RegExp(
   `(["']?(?:${SECRET_FIELD_NAME_PATTERN})["']?\\s*:\\s*)([^"',}\\]\\s]+)`,
   'gi',
 );
-const PHONE_RE = /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b/g;
+const DUPLICATE_KEY_VALUE_RE = /\b(dup key:)[^\r\n]*/gi;
 const MAX_SANITIZED_LOG_VALUE_LENGTH = 12000;
 const TRUNCATED_LOG_SUFFIX = '[log-truncated]';
 
@@ -51,8 +53,9 @@ export const sanitizeLogValue = (value: unknown): string => {
     .replace(TOKEN_ASSIGNMENT_RE, '$1=[secret-redacted]')
     .replace(SECRET_QUOTED_FIELD_RE, '$1$2[secret-redacted]$2')
     .replace(SECRET_BARE_FIELD_RE, '$1[secret-redacted]')
+    .replace(DUPLICATE_KEY_VALUE_RE, '$1 [key-redacted]')
     .replace(EMAIL_RE, '[email redacted]')
-    .replace(PHONE_RE, '[phone redacted]');
+    .replace(PHONE_SHAPED_DIGITS_PATTERN, phoneRedactionReplacement);
 
   return truncateSanitizedLogValue(sanitized);
 };

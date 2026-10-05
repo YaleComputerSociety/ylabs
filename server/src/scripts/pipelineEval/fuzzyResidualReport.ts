@@ -8,7 +8,11 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { buildFuzzyResidualPlan, type MatcherEntity } from './fuzzyResidualMatcher';
 import { normalizeToken } from './fuzzyMatchFeatures';
 import { loadFuzzyGroundTruth } from './fuzzyMatchLabeledSet';
+import { AUTOMATED_MERGE_ARCHIVE_REASONS } from '../../models/entityArchival';
+import { DEFAULT_EVAL_SAMPLE_SEED, seededSample } from './seededSample';
 import {
+  groundTruthPairsByProvenance,
+  labelProvenances,
   buildGroundTruthClusters,
   buildLabeledNegatives,
   clusterPairs,
@@ -20,26 +24,26 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
 interface Args {
   sample?: number;
   limit?: number;
-  includeArchived: boolean;
+  seed: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { includeArchived: false };
+  const args: Args = { seed: DEFAULT_EVAL_SAMPLE_SEED };
   for (const token of argv) {
     if (token.startsWith('--sample=')) args.sample = Number(token.slice('--sample='.length));
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
-    else if (token === '--include-archived') args.includeArchived = true;
+    else if (token.startsWith('--seed=')) args.seed = token.slice('--seed='.length).trim();
   }
+  if (!args.seed) throw new Error('--seed must not be empty');
   return args;
 }
 
-const SELECT =
-  'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId embedding';
+const SELECT = 'slug name entityType departments researchAreas methods websiteUrl inferredPiUserId';
 
 function buildInScopeQuarantines(entities: MatcherEntity[]): SameNameQuarantineLike[] {
   const byName = new Map<string, Array<{ id: string; personId?: unknown }>>();
@@ -66,7 +70,6 @@ function toMatcherEntity(doc: Record<string, any>): MatcherEntity {
     researchAreas: doc.researchAreas,
     methods: doc.methods,
     websiteUrl: doc.websiteUrl,
-    embedding: doc.embedding,
     entityType: typeof doc.entityType === 'string' ? doc.entityType : undefined,
     pi,
   };
@@ -77,17 +80,16 @@ async function main() {
   await initializeConnections();
   const dbLabel = mongoose.connection.db?.databaseName ?? 'unknown';
 
-  const match = args.includeArchived ? {} : { archived: { $ne: true } };
   let docs: Record<string, any>[];
   if (args.sample && Number.isFinite(args.sample)) {
-    const projection = Object.fromEntries(SELECT.split(' ').map((f) => [f, 1]));
-    docs = (await ResearchEntity.aggregate([
-      { $match: match },
-      { $sample: { size: args.sample } },
-      { $project: { ...projection, _id: 1 } },
-    ])) as Record<string, any>[];
+    const ids = (
+      (await ResearchEntity.find({}).select('_id').lean()) as Array<{ _id: unknown }>
+    ).map((doc) => String(doc._id));
+    docs = (await ResearchEntity.find({ _id: { $in: seededSample(ids, args.sample, args.seed) } })
+      .select(SELECT)
+      .lean()) as Record<string, any>[];
   } else {
-    const query = ResearchEntity.find(match).select(SELECT).lean();
+    const query = ResearchEntity.find({}).select(SELECT).lean();
     if (args.limit && Number.isFinite(args.limit)) query.limit(args.limit);
     docs = (await query) as Record<string, any>[];
   }
@@ -101,14 +103,20 @@ async function main() {
     groundTruth.canonicalGroupRows,
   );
   const allPositives = clusterPairs(positiveClusters);
-  const inScopePositives = new Set(
-    [...allPositives].filter((key) => {
-      const [a, b] = key.split('|');
-      return loadedIds.has(a) && loadedIds.has(b);
-    }),
-  );
+  const inScope = (pairs: Set<string>): Set<string> =>
+    new Set(
+      [...pairs].filter((key) => {
+        const [a, b] = key.split('|');
+        return loadedIds.has(a) && loadedIds.has(b);
+      }),
+    );
+  const inScopePositives = inScope(allPositives);
 
   const inScopeNegatives = buildLabeledNegatives(buildInScopeQuarantines(entities));
+  const positivesByProvenance = groundTruthPairsByProvenance(
+    groundTruth.canonicalGroupRows,
+    AUTOMATED_MERGE_ARCHIVE_REASONS,
+  );
 
   const { plan, candidatePairs } = buildFuzzyResidualPlan(entities);
   const autoPairs = new Set(
@@ -120,11 +128,11 @@ async function main() {
     generatedAt: new Date().toISOString(),
     db: dbLabel,
     selection: args.sample
-      ? `random-sample:${args.sample}`
+      ? `seeded-sample:${args.sample}`
       : args.limit
         ? `first:${args.limit}`
         : 'all',
-    includeArchived: args.includeArchived,
+    seed: args.sample ? args.seed : undefined,
     entitiesLoaded: entities.length,
     candidatePairs: candidatePairs.size,
     autoBandPairs: autoPairs.size,
@@ -133,7 +141,14 @@ async function main() {
     inScopeNegatives: inScopeNegatives.size,
     blockingPairCompleteness: pairCompleteness(candidatePairs, inScopePositives),
     autoBandVsPositives: pairwiseMetrics(autoPairs, inScopePositives, inScopeNegatives),
-    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Use --include-archived for a true recall estimate (merge losers are often archived). No merges are applied.',
+    autoBandRecallByProvenance: Object.fromEntries(
+      labelProvenances.map((provenance) => {
+        const positives = inScope(positivesByProvenance[provenance]);
+        const metrics = pairwiseMetrics(autoPairs, positives, new Set());
+        return [provenance, { inScopePositives: positives.size, recall: metrics.recall }];
+      }),
+    ),
+    note: 'Report-only. Precision is measured against same-name-different-PI hard negatives drawn from the loaded set. Archived rows are always loaded because merge losers are archived and leaving them out understates recall. autoBandRecallByProvenance splits recall by who decided each label: automated labels come from the engine being measured and unattributed ones cannot be told apart. Buckets do not partition inScopePositives, because a transitive pair whose members were merged by different provenances belongs to no bucket. No merges are applied.',
   };
   console.log(JSON.stringify(report, null, 2));
 }

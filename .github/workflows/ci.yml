@@ -5,39 +5,63 @@ on:
     branches:
       - main
       - beta
+  # The beta merge queue gates on this run: it tests the exact squash commit
+  # that lands, on top of every queued pull request ahead of it (#4512). The
+  # required contexts never report on a queued group without this trigger, so
+  # removing it stalls every merge.
+  merge_group:
+    types:
+      - checks_requested
+  # Post-merge signal on the landed commit, kept as a safety net for anything
+  # that reaches beta outside the queue (#3913). It is not a merge gate.
+  push:
+    branches:
+      - beta
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Only push runs share a group, so a burst of merges only tests the newest beta
+# head. Every other run gets its own group and is neither queued nor cancelled,
+# because a cancelled run reports as a non-success on a required context.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
-  test-and-build:
+  # The jobs below run side by side, so the run takes as long as its slowest job
+  # rather than the sum of every step (#4666). One serial `checks` job was 5.9
+  # of the 6.1 minutes a sharded run took. Each job pays its own ~30 second
+  # install, which is far less than the steps it moves off the critical path.
+  # Changing which job holds a step also requires updating the job list in
+  # skills/finishing-work/SKILL.md, which readers follow to predict CI.
+  checks:
     runs-on: ubuntu-latest
-    # Operator escape hatch for an advisory-registry outage. Absent or anything
-    # other than "1" leaves the audit failing closed, so the default stays strict
-    # and turning it on is a deliberate, revocable act recorded in repo settings
-    # rather than an --admin merge that bypasses every other check too.
-    # Set repository variable ALLOW_UNREACHABLE_ADVISORY_AUDIT=1 to use it, and
-    # unset it the moment the registry is healthy again.
-    env:
-      DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: ${{ vars.ALLOW_UNREACHABLE_ADVISORY_AUDIT }}
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # .node-version is the single declaration of the runtime major, read here
+      # and by the hosting provider, so CI and the deployed service cannot drift
+      # apart (#3915).
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 26
+          node-version-file: .node-version
 
       # Node 25 removed Corepack from the distribution, so `corepack enable` alone exits
       # non-zero on a current runner and the install dies before any test runs. The
       # preinstalled Yarn 1 does not delegate on its own either. `packageManager` in the
       # root package.json stays the single source of truth for the Yarn version (#3216).
+      # The version is pinned rather than @latest: an unpinned install lets a new
+      # Corepack release change the tool that selects Yarn between two runs of the
+      # same commit, and break every workflow at once (#3915).
       - name: Install Corepack
-        run: npm install -g corepack@latest
+        run: npm install -g corepack@0.36.0
 
       - name: Enable Corepack
         run: corepack enable
@@ -59,24 +83,60 @@ jobs:
       # Errors block; warnings do not. `yarn lint` sets no warning ceiling, so
       # ESLint's unlimited default applies and only an error exits non-zero.
       # Deliberate (ylabs#3070): this gates the class that actually reached beta
-      # and cannot be defeated by warning drift. Placed ahead of the suites
-      # because a lint error costs seconds to report and the tests cost minutes.
+      # and cannot be defeated by warning drift. Kept in a job that runs no long
+      # suite, so a lint error reports in about two minutes, beside the tests
+      # rather than behind them.
       # Changing this order also requires updating the step list in
       # skills/finishing-work/SKILL.md, which readers follow to predict CI.
       - name: Run ESLint (errors block, warnings advisory)
         run: yarn lint
 
+      # Registration and inventory guards report in seconds, so a guard failure
+      # surfaces here before the sharded server suite in `server-tests` finishes,
+      # which still runs them again (#3737). Changing this order also requires
+      # updating the step list in skills/finishing-work/SKILL.md.
+      - name: Run server guard tests
+        run: yarn --cwd server test:guards
+
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Operator escape hatch for an advisory-registry outage. Absent or anything
+    # other than "1" leaves the audit failing closed, so the default stays strict
+    # and turning it on is a deliberate, revocable act recorded in repo settings
+    # rather than an --admin merge that bypasses every other check too.
+    # Set repository variable ALLOW_UNREACHABLE_ADVISORY_AUDIT=1 to use it, and
+    # unset it the moment the registry is healthy again.
+    env:
+      DEPENDENCY_AUDIT_ALLOW_UNREACHABLE: ${{ vars.ALLOW_UNREACHABLE_ADVISORY_AUDIT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Corepack
+        run: npm install -g corepack@0.36.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
       - name: Run server typecheck
         run: npx tsc --noEmit -p server/tsconfig.json
 
-      # A step inside test-and-build rather than a separate job: test-and-build
-      # is the only required check on the ruleset, so a new job would be
-      # advisory and could not block a merge.
       - name: Run client typecheck
         run: npx tsc --noEmit -p client/tsconfig.json
-
-      - name: Run server tests
-        run: yarn --cwd server test
 
       - name: Run model inventory operator tests
         run: yarn model-refactor:inventory:test-operator-tools
@@ -84,8 +144,8 @@ jobs:
       - name: Run data profile safety tests
         run: yarn test:data-profiles
 
-      - name: Run client tests
-        run: yarn --cwd client test:ci
+      - name: Run every scripts test suite
+        run: yarn test:scripts
 
       - name: Run deploy security preflight
         run: yarn security:preflight
@@ -104,7 +164,7 @@ jobs:
       # blocks a merge, never this artifact (ylabs#2381).
       - name: Publish advisory verdict
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: advisory-verdict
           path: ${{ runner.temp }}/advisory-verdict.json
@@ -113,3 +173,92 @@ jobs:
 
       - name: Build server and client
         run: yarn build
+
+  client-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Corepack
+        run: npm install -g corepack@0.36.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      - name: Run client tests
+        run: yarn --cwd client test:ci
+
+  # The server suite is most of the wall time of one run (8.6 of 14.7 minutes on
+  # one runner), and every pull request runs CI twice on its way in: once on the
+  # pull request and once in the merge queue (#4666). Vitest's --shard splits the
+  # test files into disjoint slices whose union is the whole suite, so four
+  # parallel slices run every file exactly once. Changing the shard count
+  # requires changing both the matrix list and the `/4` divisor together.
+  server-tests:
+    name: server-tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Install Corepack
+        run: npm install -g corepack@0.36.0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies from lockfiles
+        run: |
+          yarn install --immutable
+          yarn --cwd server install --immutable
+          yarn --cwd client install --immutable
+
+      - name: Run server tests
+        run: yarn --cwd server test --shard=${{ matrix.shard }}/4
+
+  # The one context the beta and main rulesets require. It reports success only
+  # when every job above succeeded, so a failed, cancelled, or skipped shard
+  # fails it. `if: always()` makes it report rather than be skipped when a
+  # needed job fails, because a skipped required context reads as passing.
+  # Adding a job above also requires adding it to `needs`.
+  test-and-build:
+    needs: [checks, typecheck-and-build, client-tests, server-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done

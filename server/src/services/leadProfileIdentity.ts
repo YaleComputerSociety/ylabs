@@ -1,3 +1,4 @@
+import { escapeRegex } from '../utils/regex';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import type { ResearcherProfileLink } from '../models/researcher';
 
@@ -119,6 +120,26 @@ const canonicalOfficialProfilePath = (host: string, path: string): string => {
   return sectioned ? `/profile/${sectioned[1]}` : path;
 };
 
+const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
+
+export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(url || '').trim());
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const path = canonicalOfficialProfilePath(host, parsed.pathname.replace(/\/+$/, ''));
+  const anySection =
+    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
+  return new RegExp(
+    `^https?://(?:www\\.)?${escapeRegex(host)}${anySection}${escapeRegex(path)}/*(?:[?#].*)?$`,
+    'i',
+  );
+};
+
 export const normalizeOfficialProfileDestination = (url?: string | null): string => {
   const value = String(url || '').trim();
   if (!value) return '';
@@ -169,20 +190,25 @@ const PERSON_PROFILE_PATH_SEGMENTS = [
   'faculty-directory',
 ];
 
-const normalizeIdentityToken = (value: unknown): string =>
+// A directory slug spells an accented name without the accent (`Cantó` as
+// `canto`), so the accent must fold before tokenizing; split on `[^a-z]` first
+// and the accented letter breaks one name token into two.
+const foldedLowercase = (value: unknown): string =>
   String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase();
+
+const normalizeIdentityToken = (value: unknown): string =>
+  foldedLowercase(value).replace(/[^a-z0-9]+/g, '');
 
 const nameTokensFrom = (value: unknown): string[] =>
-  String(value ?? '')
-    .toLowerCase()
+  foldedLowercase(value)
     .split(/[^a-z]+/)
     .filter((token) => token.length >= 2);
 
 const orderedNameTokensFrom = (value: unknown): string[] =>
-  String(value ?? '')
-    .toLowerCase()
+  foldedLowercase(value)
     .split(/[^a-z]+/)
     .filter(Boolean);
 
@@ -191,6 +217,7 @@ interface LeadDirectoryIdentity {
   nameTokens: Set<string>;
   nameTokenList: string[];
   profileSlugs: Set<string>;
+  profileSlugNameTokens: string[][];
 }
 
 const GROUP_LIKE_SLUG_TOKENS = new Set([
@@ -260,8 +287,7 @@ const leadOfficialProfileSlugs = (lead: LeadProfileIdentityLead): string[] => {
     .map((url) =>
       personProfileSlugFromDestination(normalizeOfficialProfileDestination(String(url))),
     )
-    .filter(Boolean)
-    .map((slug) => normalizeIdentityToken(slug));
+    .filter(Boolean);
 };
 
 const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirectoryIdentity => {
@@ -275,11 +301,13 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     lead.name ||
     row.name ||
     '';
+  const ownProfileSlugs = leadOfficialProfileSlugs(lead);
   return {
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
-    profileSlugs: new Set(leadOfficialProfileSlugs(lead)),
+    profileSlugs: new Set(ownProfileSlugs.map(normalizeIdentityToken)),
+    profileSlugNameTokens: ownProfileSlugs.map((slug) => nameTokensFrom(slug)),
   };
 };
 
@@ -317,6 +345,18 @@ const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => 
   return shared;
 };
 
+// Shared surname or suffix tokens alone (a compound surname, `jr`) are also
+// carried by a different person, so the slug's given name must be exactly the
+// given name on the lead's own profile.
+const sharesGivenNameAndAnotherToken = (slug: string, orderedNameTokens: string[]): boolean => {
+  const [slugGiven] = nameTokensFrom(slug);
+  const [leadGiven] = orderedNameTokens;
+  if (!slugGiven || slugGiven !== leadGiven) return false;
+  return (
+    sharedNameTokenCount(slug, new Set(orderedNameTokens)) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
+  );
+};
+
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
 
 // An abbreviated given name is the SAME name shortened (Doug/Douglas, La/Laurie),
@@ -342,6 +382,13 @@ const firstInitialSurnameMatch = (normalizedSlug: string, nameTokenList: string[
   return normalizedSlug === `${given[0]}${surname}`;
 };
 
+// A slug can drop the separator inside a compound surname (`alex-cantopastor`
+// for Alex Canto-Pastor), which leaves it one shared token short of the
+// two-token rule. It spells the lead's whole name, so it names no competing
+// given name either.
+const compactedFullNameMatch = (normalizedSlug: string, nameTokenList: string[]): boolean =>
+  nameTokenList.length >= 2 && normalizedSlug === nameTokenList.join('');
+
 const MIN_SURNAME_ONLY_SLUG_LENGTH = 3;
 
 const profileSlugCorroboratesLead = (
@@ -362,6 +409,15 @@ const profileSlugCorroboratesLead = (
   if (sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE) {
     return true;
   }
+  // A lead can go by a given name their account does not carry; their own
+  // verified profile is evidence of the names they use.
+  if (
+    identity.profileSlugNameTokens.some((ownProfileTokens) =>
+      sharesGivenNameAndAnotherToken(slug, ownProfileTokens),
+    )
+  ) {
+    return true;
+  }
 
   // A genuine self-profile whose slug is not a full first+last name (#1060):
   // initials, abbreviations, nicknames, or a surname-only home for a single
@@ -373,6 +429,7 @@ const profileSlugCorroboratesLead = (
   const leadSurname = nameTokenList[nameTokenList.length - 1];
 
   if (firstInitialSurnameMatch(normalizedSlug, nameTokenList)) return true;
+  if (compactedFullNameMatch(normalizedSlug, nameTokenList)) return true;
 
   const slugTokens = orderedNameTokensFrom(slug);
   if (slugTokens.length >= 2) {

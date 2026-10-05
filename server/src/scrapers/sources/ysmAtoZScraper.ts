@@ -17,6 +17,7 @@
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
@@ -31,7 +32,14 @@ import {
   YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
   YSM_LAB_INDEX_HEALTH_FIELD,
 } from '../ysmLabDelistingReconciler';
+import { fetchFailureMessage } from '../utils/fetchFailure';
+import {
+  emitLanePageHealthForCitedPages,
+  LanePageReads,
+  type LanePageProbe,
+} from '../lanePageHealth';
 import { flattenHtmlToText } from '../utils/htmlText';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonName } from '../utils/personNameCasing';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -123,26 +131,34 @@ export function inferPiNameFromLabName(name: string): PiNameHint | null {
   };
 }
 
-async function fetchPage(useCache: boolean): Promise<string> {
+async function fetchPage(useCache: boolean, pageReads: LanePageReads): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(PAGE_URL);
   const agents = ssrfSafeAgents();
   if (useCache) {
     const cached = await getCached<string>('ysm-atoz-index', 'page');
     if (cached) return cached;
   }
-  const res = await axios.get(safeUrl.toString(), {
-    timeout: 30000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrl.toString(), {
+      timeout: 30000,
+      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
+  pageReads.recordRead(PAGE_URL, res.request?.res?.responseUrl || PAGE_URL);
   const html = res.data as string;
   if (useCache) await setCached('ysm-atoz-index', 'page', html);
   return html;
 }
 
-async function fetchLabHomepage(url: string, useCache: boolean): Promise<string | null> {
+async function fetchLabHomepage(
+  url: string,
+  useCache: boolean,
+  log: (message: string) => void,
+  pageReads: LanePageReads,
+): Promise<string | null> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const cacheKey = `lab-homepage:${safeUrlText}`;
@@ -153,17 +169,22 @@ async function fetchLabHomepage(url: string, useCache: boolean): Promise<string 
 
   try {
     const agents = ssrfSafeAgents();
-    const res = await axios.get(safeUrlText, {
-      timeout: 30000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-      maxRedirects: 5,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-    });
+    const res = await retryOnRetryableStatus(() =>
+      axios.get(safeUrlText, {
+        timeout: 30000,
+        headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+        maxRedirects: 5,
+        httpAgent: agents.httpAgent,
+        httpsAgent: agents.httpsAgent,
+      }),
+    );
+    pageReads.recordRead(url, res.request?.res?.responseUrl || url);
     const html = res.data as string;
     if (useCache) await setCached('ysm-atoz-index', cacheKey, html);
     return html;
-  } catch {
+  } catch (error) {
+    pageReads.recordFailure(url, error);
+    log(`Lab page fetch failed: ${sanitizeLogValue(url)}: ${fetchFailureMessage(error)}`);
     return null;
   }
 }
@@ -670,6 +691,8 @@ export class YsmAtoZScraper implements IScraper {
   readonly name = 'ysm-atoz-index';
   readonly displayName = 'YSM A-to-Z Lab Websites';
 
+  constructor(private readonly probePage?: LanePageProbe) {}
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const offsetOption = ctx.options.offset;
     if (offsetOption !== undefined && (!Number.isSafeInteger(offsetOption) || offsetOption < 0)) {
@@ -681,7 +704,8 @@ export class YsmAtoZScraper implements IScraper {
     }
 
     ctx.log(`Fetching ${PAGE_URL}`);
-    const html = await fetchPage(ctx.options.useCache);
+    const pageReads = new LanePageReads();
+    const html = await fetchPage(ctx.options.useCache, pageReads);
     const labs = parseLabs(html);
     ctx.log(`Parsed ${labs.length} labs from index`);
 
@@ -715,10 +739,17 @@ export class YsmAtoZScraper implements IScraper {
     let totalObs = 0;
     let piMatched = 0;
     let descriptionsFound = 0;
+    let pageFetchFailures = 0;
 
     for (const { lab, piOnly } of work) {
       const observations = piOnly ? [] : labToObservations(lab, PAGE_URL);
-      const homepageHtml = await fetchLabHomepage(lab.url, ctx.options.useCache);
+      const homepageHtml = await fetchLabHomepage(
+        lab.url,
+        ctx.options.useCache,
+        ctx.log,
+        pageReads,
+      );
+      if (homepageHtml === null) pageFetchFailures++;
       if (!piOnly) {
         const homepageDescription = homepageHtml
           ? extractLabHomepageDescription(homepageHtml)
@@ -731,8 +762,9 @@ export class YsmAtoZScraper implements IScraper {
       if (homepageHtml) {
         const researchFacultyUrl = extractResearchFacultyUrl(homepageHtml, lab.url);
         const researchFacultyHtml = researchFacultyUrl
-          ? await fetchLabHomepage(researchFacultyUrl, ctx.options.useCache)
+          ? await fetchLabHomepage(researchFacultyUrl, ctx.options.useCache, ctx.log, pageReads)
           : null;
+        if (researchFacultyUrl && researchFacultyHtml === null) pageFetchFailures++;
         const researchFacultyProfile = researchFacultyHtml
           ? extractSoleResearchFacultyProfile(researchFacultyHtml, researchFacultyUrl)
           : null;
@@ -794,14 +826,23 @@ export class YsmAtoZScraper implements IScraper {
       );
     }
 
+    const pageHealth = await emitLanePageHealthForCitedPages(
+      ctx,
+      pageReads,
+      this.probePage,
+      only.length ? { entityKeys: work.map(({ lab }) => lab.slug) } : undefined,
+    );
+    totalObs += pageHealth.gone + pageHealth.restored;
+
     ctx.log(`Emitted ${totalObs} observations across ${work.length} labs`);
     ctx.log(`Inferred PI for ${piMatched}/${work.length} labs`);
     ctx.log(`Found official homepage descriptions for ${descriptionsFound}/${work.length} labs`);
+    ctx.log(`${pageFetchFailures} lab page fetch(es) failed`);
 
     return {
       observationCount: totalObs,
       entitiesObserved: work.length,
-      notes: `Discovered ${work.length} YSM labs (${piMatched} with inferred PI, ${descriptionsFound} with official descriptions)`,
+      notes: `Discovered ${work.length} YSM labs (${piMatched} with inferred PI, ${descriptionsFound} with official descriptions, ${pageFetchFailures} lab page fetch failures)`,
     };
   }
 }

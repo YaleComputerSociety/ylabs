@@ -29,12 +29,11 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
 import mongoose from 'mongoose';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 import { initializeConnections } from '../db/connections';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
@@ -45,7 +44,7 @@ import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { assertPublicHttpUrl } from '../utils/ssrfGuard';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -81,16 +80,11 @@ const firstMatch = (html: string, pattern: RegExp): string => {
 
 async function readPage(url: string): Promise<PageRead> {
   try {
-    const safeUrl = await assertPublicHttpUrl(url);
-    const response = await axios.get(safeUrl.toString(), {
-      timeout: READ_TIMEOUT_MS,
+    const response = await fetchPublicHttpUrl(url, {
+      timeoutMs: READ_TIMEOUT_MS,
       headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' },
-      maxRedirects: 5,
-      validateStatus: () => true,
-      responseType: 'text',
-      transformResponse: [(data) => data],
-    } as Parameters<typeof axios.get>[1] & { validateStatus: () => boolean });
-    const html = typeof response.data === 'string' ? response.data : '';
+    });
+    const html = response.body;
     return {
       status: String(response.status),
       bytes: html.length,
@@ -109,13 +103,16 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const apply = argv.includes('--apply');
   const confirmed = argv.includes(CONFIRM_FLAG);
-  const guard = assertScriptApplyAllowed({ scriptName: SCRIPT_NAME, apply });
+  const guard = assertScriptApplyAllowed({
+    scriptName: SCRIPT_NAME,
+    apply,
+    mongoUrl: process.env.MONGODBURL,
+  });
   if (apply && !confirmed) {
     throw new Error(`${SCRIPT_NAME} --apply requires ${CONFIRM_FLAG}`);
   }
   console.log(`Environment: ${guard.environment}; mode: ${apply ? 'apply' : 'dry-run'}`);
 
-  mongoose.set('autoIndex', false);
   await initializeConnections();
   try {
     const candidates = (await ResearchEntity.find({

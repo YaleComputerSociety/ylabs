@@ -1,0 +1,89 @@
+{
+  "queries": [
+    {
+      "query": "neuroscience",
+      "note": "A broad topic with its own departments, so a top result should be about brains or behaviour rather than merely mentioning the word.",
+      "topK": 10,
+      "minRelevant": 8,
+      "relevantWhen": {
+        "anyTopicMatches": [
+          "neuro",
+          "brain",
+          "cognit",
+          "neural",
+          "behavio",
+          "psychiat",
+          "vision",
+          "memory"
+        ],
+        "anyDepartmentMatches": ["Neuroscience", "Psychology", "Psychiatry", "Neurology"]
+      }
+    },
+    {
+      "query": "machine learning",
+      "note": "A method query rather than a subject query, so a relevant result may sit in any department as long as it names the method.",
+      "topK": 10,
+      "minRelevant": 7,
+      "relevantWhen": {
+        "anyTopicMatches": [
+          "machine learning",
+          "deep learning",
+          "artificial intelligence",
+          "computational",
+          "statistic",
+          "data science",
+          "neural network"
+        ],
+        "anyDepartmentMatches": ["Computer Science", "Statistics and Data Science", "Biostatistics"]
+      }
+    },
+    {
+      "query": "climate change",
+      "note": "Spans environmental science, engineering, and policy, so the department matchers stay wide.",
+      "topK": 10,
+      "minRelevant": 6,
+      "relevantWhen": {
+        "anyTopicMatches": [
+          "climate",
+          "environment",
+          "ecolog",
+          "sustainab",
+          "atmospher",
+          "carbon",
+          "energy",
+          "geophys",
+          "ocean"
+        ],
+        "anyDepartmentMatches": [
+          "Environment",
+          "Earth and Planetary Sciences",
+          "Ecology and Evolutionary Biology",
+          "Chemical and Environmental Engineering"
+        ]
+      }
+    },
+    {
+      "query": "cancer biology",
+      "topK": 10,
+      "minRelevant": 7,
+      "relevantWhen": {
+        "anyTopicMatches": [
+          "cancer",
+          "oncolog",
+          "tumor",
+          "tumour",
+          "carcino",
+          "metasta",
+          "cell biolog",
+          "genetic"
+        ],
+        "anyDepartmentMatches": ["Pathology", "Genetics", "Therapeutic Radiology", "Immunobiology"]
+      }
+    },
+    {
+      "query": "qzxjvmw not a research topic",
+      "note": "The legitimate zero-result path. An empty result must be distinguishable from a failure, and must not come back degraded.",
+      "expectNoResults": true
+    }
+  ]
+}

@@ -37,6 +37,23 @@ describe('phase0IdentityCollisionAudit CLI', () => {
     ).toThrow(/must never target Production/);
   });
 
+  it.each(['Prod', 'prod', 'Production'])(
+    'refuses the primary production database named %s on every ambient path',
+    (databaseName) => {
+      expect(() =>
+        assertHardenedIdentityCollisionProfile('development', {
+          MONGODBURL: atlasUrl(databaseName),
+        }),
+      ).toThrow(/must never target Production/);
+      expect(() =>
+        assertHardenedIdentityCollisionProfile('beta', {
+          YLABS_PHASE0_ALLOW_AMBIENT_TARGET: 'true',
+          MONGODBURL: atlasUrl(databaseName),
+        }),
+      ).toThrow(/must never target Production/);
+    },
+  );
+
   it('requires explicit bounded read-only arguments and parses strict mode', () => {
     expect(
       parsePhase0IdentityCollisionAuditArgs([

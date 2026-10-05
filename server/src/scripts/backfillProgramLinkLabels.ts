@@ -22,7 +22,7 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import { humanizeProgramLinkLabel, isBareUrlLinkLabel } from '../utils/programLinkLabel';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   apply: boolean;

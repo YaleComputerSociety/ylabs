@@ -18,6 +18,7 @@ Claude Code can auto-discover them if `.claude/skills` is symlinked to `skills/`
 | `skills/auth-security/SKILL.md` | Touching auth, sessions, CAS login, middleware, rate limits, CORS, CSRF, SSRF, env vars, or sensitive files. |
 | `skills/scrapers/SKILL.md` | Working in `server/src/scrapers/`, source scrapers, observations, materializers, confidence resolution, scrape CLI, or scraper write guards. |
 | `skills/contributing/SKILL.md` | Adding an API endpoint, a client page or route, or modifying a Mongoose schema. |
+| `skills/interaction-design/SKILL.md` | Deciding what a surface carries, in what order, and how a student gets from a vague interest to a lab they could join. The decision layer above the visual system. |
 | `skills/frontend-polish/SKILL.md` | Building or changing client UI: applying the polish, accessibility, and design-token bar. Pairs with `client/DESIGN.md`. |
 | `skills/finishing-work/SKILL.md` | Wrapping up: verification, diff review, docs maintenance, and roadmap cleanup. |
 | `docs/release-process.md` | Promoting `beta` to `main`, holding a release, feature flags, hotfix ordering, and the data-migration sequence a promotion requires. Read before any promotion or production data operation. |
@@ -94,24 +95,27 @@ This applies to whoever or whatever writes it, automation included: never put a 
 Write "the 12 rows where `manuallyLockedFields` contains `activeAtYaleCache`" rather than naming the rows.
 A flagged body cannot be repaired by editing it, because GitHub serves every prior revision to anyone without an account, so the draft is the only chance.
 Scan it before it exists anywhere public: `yarn security:identifiers:body <file>`, or `node scripts/check-no-person-identifiers.mjs --body-file <file>` when yarn is unavailable.
-The `Person identifier scan` check fails when a posted body is flagged.
-It is not a required check and it cannot unpublish the text, so treat a failure as "rewrite by predicate now and know the original is already public", never as a gate to wait on.
+The enforcement is the `gh` identifier guard, which runs that scan on every `gh` issue, pull request, comment, and API body for this organisation and refuses to post a flagged one, so nothing reaches GitHub.
+`scripts/new-agent-worktree.sh` installs it, and `scripts/install-gh-identifier-guard.sh` installs it on its own; a host without it has no protection at all, because there is no after-the-fact bot.
+A refusal from the guard means rewrite by predicate and re-run, never call the real `gh` directly and never add an `identifier-exempt:` line to get past it.
 
 ### Merging
 
 - Merge only when CI checks are all green and the PR is mergeable on its current head.
-`Person identifier scan` is the one exception, because it is not required and its prose-name rule is fuzzy on purpose: a red run means "read the finding", never "wait for green".
-Rewrite the body by predicate when the pairing is real, and when the match is a Title Case product phrase rather than a person, say so in a comment and merge on the red.
-Never clear a red scan with an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it.
-- Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
-- `--admin` is load-bearing here rather than a shortcut, and the reason is worth knowing so it is not "cleaned up". Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
-`require CI on beta` requires `test-and-build` and `student-journey-smoke`, requires **one approving review**, and blocks force pushes; `protect main (production)` additionally requires `release-hold` and allows merge commits only.
-A sole maintainer cannot approve their own PR, so without the Admin bypass nothing merges at all.
-- What `--admin` may and may not be used for: the review requirement, the watchdog's bot flow, and a red `Person identifier scan` that has been read and answered, yes.
-To get past a red `test-and-build` or `student-journey-smoke`, never; fix the check or report the blocker.
-The bypass is unconditional, so the flag really will override a failing suite, which makes the restraint the contract rather than the configuration.
+- Merge through the queue: `gh pr merge <n> --auto --repo YaleComputerSociety/ylabs`.
+The queue rebases the PR onto the current `beta` plus every PR queued ahead of it, runs `test-and-build` and `student-journey-smoke` on that exact commit, and squashes it only if both pass, so a PR tested against a stale base can no longer land red (#4512).
+The squash commit takes the PR title and body, so the PR title is the commit subject.
+Do not pass `--delete-branch`: run from a worktree it removes that worktree and switches the primary checkout's branch.
+Once `gh pr view <n> --json state` reads `MERGED`, delete the remote branch with `git push origin --delete <branch>`; deleting it while the PR is still queued closes the PR.
+- Never pass `--admin`, and do not try to get around a refusal.
+Protection on this repository is **rulesets**, not classic branch protection, so `GET /branches/beta/protection` answers 404 and that 404 means nothing; read `gh api repos/YaleComputerSociety/ylabs/rulesets`.
+`require CI on beta` requires `test-and-build` and `student-journey-smoke` and the squash merge queue, and has no bypass actors, so nothing reaches `beta` around the queue.
+`require review on beta` requires **one approving review**.
+GitHub does not honour a ruleset bypass when enqueuing, so the `Admin Author Approval` workflow approves a PR whose author holds the Admin repository role; every other contributor's PR waits for a human review.
+`protect main (production)` additionally requires `release-hold` and allows merge commits only.
+- A red check in the queue drops the PR out of it; fix the check or report the blocker, then enqueue again.
 - The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
-- After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
+- After merging, remove the worktree with `git -C ~/Personal/ylabs worktree remove <path>`, prune stale entries with `git worktree prune`, and confirm `git -C ~/Personal/ylabs branch --show-current` still prints `beta`.
 - Asking after the fact whether a merge was gated is an **ancestry** question, never an equality one, and the report that answers it lives in the watchdog repository rather than here (#2452).
 A correctly gated head moves after the run, because the gate rebases and pushes its own review and document commits, so no recorded SHA equals the head that merged.
 Compare against the pull request's `headRefOid` and never against the commit the merge produces: every merge here is a squash, so the branch head is not an ancestor of it, measured 20 of 20 on the last 20 merged pull requests.
@@ -136,16 +140,19 @@ It is done when the data operation has run against Development and the result ha
 Beta and Production receive whole-collection copies, so a repair applied to Development reaches them through promotion.
 Running the same repair three times is redundant and multiplies the number of writes against a student-facing database.
 - Do not open an issue to track a promotion, and do not hold a fix's issue open waiting for one.
-Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces fifteen whole collections at once, so a single promotion delivers every pending fix together.
+Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces twelve whole collections at once (fourteen with `--include-observations` and `--include-scrape-runs`), so a single promotion delivers every pending fix together.
 An issue per fix implies a queue of operations that does not exist, and the tracker fills with entries nobody can act on individually.
 - What is undelivered is a property of the environments, so read it rather than file it.
 Close a stored-data issue when Development is fixed and verified.
 - Verification is a re-read of the served surface.
 An exit code is not verification, and neither is a script's own counter: #2440 records that the repair queue's patch count overstates promotions, so the counter is now named `patched` and the promotion count is `resolvedByGate`.
 A dry run applies no patch, so it reports `resolvedByGate: null` with a note rather than a `0` that reads as "the gate promotes nothing"; take a promotion count from an apply run only.
-- The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard`, documented in `docs/served-corpus-scoreboard.md`.
+- The scoreboard is the instrument for both reads, per-fix verification and cross-environment drift: `yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`, documented in `docs/served-corpus-scoreboard.md`.
 - Is the corpus getting better over time? Read the Corpus Quality panel on `/analytics`, or take a measurement with `yarn --cwd server corpus:snapshot`, documented in `docs/corpus-quality-panel.md`.
+- Is a served description accurate and useful to a student? A count cannot say, so grade a fresh sample against the cited pages, documented in `docs/description-graded-sample.md`.
 Do not answer a coverage or quality question with a throwaway script when a stored measurement already exists.
+- Is one lane getting better? Replay it on its frozen benchmark with `yarn --cwd server lane:scorecard`, documented in `docs/lane-scorecard.md`.
+The other instruments move when the corpus moves; this one moves only when lane code does.
 - What browse actually serves is a third question, and `yarn --cwd server journey:eval` answers it through the real search route, documented in `server/src/scripts/journeyEval/README.md`.
 The panel counts stored values, so a field the serving path withholds reads as present there; take a served number from the route.
 A browse defect belongs in that harness as a case rather than in a new audit script, and its README carries the two rules that keep a case useful: assert that a stored-to-served difference is attributable to a named guard rather than absent, and never gate on a rate.
@@ -217,9 +224,12 @@ Never `git switch`, commit, or edit feature work directly in it.
 Multiple agents sharing one checkout will switch branches under each other and serve the wrong code.
 - Create one worktree plus branch per workstream, based on `beta`:
 `scripts/new-agent-worktree.sh <branch-name>`.
-The helper creates the worktree, runs `yarn install:all` so dependencies are fully isolated, and reserves a free client dev-server port.
+The helper creates the worktree, runs `scripts/install-all.sh` so dependencies are fully isolated, and reserves a free client dev-server port and a free API port.
+It copies `server/.env` and `client/.env` from the primary checkout with mode 0600, writes the reserved ports into them (`PORT`, `SERVER_BASE_URL`, `VITE_APP_SERVER`), and prints both start commands and a dev-login URL that returns to the worktree's client port.
+It never prints the env values, and says so when the primary checkout has no `server/.env` to copy.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
 A real per-worktree install is the isolation boundary.
-- Run each worktree's client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
+- Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
+`compose.yaml` pins the Compose project name, so `yarn meili:up` from any worktree reuses the one local Meilisearch.
 - Integrate an approved branch by merging or landing its pull request, then remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.

@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const syncEntitiesMock = vi.fn(
-  async (_entityType: string, _docs: Array<Record<string, unknown>>) => {},
+  async (_entityType: string, docs: Array<Record<string, unknown>>) => docs.length,
 );
 
 vi.mock('../../services/meiliSyncService', () => ({
@@ -43,11 +43,11 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
     setResearchAreaCanonicalizerForTesting(null);
   });
 
@@ -143,12 +143,22 @@ describe('runResearchAreaBackfill Meili sync wiring (issue #1002)', () => {
     syncEntitiesMock.mockImplementationOnce(
       async (_type: string, docs: Array<Record<string, unknown>>) => {
         observedAreasAtSyncTime = docs[0]?.researchAreas;
+        return docs.length;
       },
     );
 
     await runResearchAreaBackfill({ ...options, dryRun: false });
 
     expect(observedAreasAtSyncTime).toEqual(['Machine Learning', 'Neuroscience']);
+  });
+
+  it('reports a refused sync as a failure and never as a resync (#3726)', async () => {
+    syncEntitiesMock.mockResolvedValueOnce(0);
+
+    const result = await runResearchAreaBackfill({ ...options, dryRun: false });
+
+    expect(result.syncedToMeili).toBe(0);
+    expect(result.indexSyncFailures).toBe(1);
   });
 
   it('scopes the run to only the given record ids, leaving other empty-area docs untouched (issue #1717)', async () => {

@@ -25,6 +25,7 @@ export interface LaunchTrustContractOptions {
   sourceName?: string;
   recordIds?: string[];
   limit?: number;
+  environment?: string;
 }
 
 export interface LaunchTrustRepairLane {
@@ -73,14 +74,22 @@ export interface LaunchTrustContractReport {
 
 const publicTiers = new Set<string>(publicStudentVisibilityTiers);
 const publicSafeTiers = new Set<string>(publicSafeStudentVisibilityTiers);
-const BETA_COMMAND_PREFIX = 'SCRAPER_ENV=beta ';
+/**
+ * Development is the only environment scrape writes are accepted in since #3674, so a report
+ * that was not told which environment it measured points its commands there.
+ */
+const DEFAULT_COMMAND_ENVIRONMENT = 'development';
 
-function betaCommand(command: string): string {
+/**
+ * Prefixes a command with the environment the audit measured. The prefix was hard-coded to
+ * Beta, so a Development sweep printed repair commands against another database, and against
+ * a mode #3674 now refuses (#3818).
+ */
+function environmentCommand(command: string, environment: string): string {
   const trimmed = command.trim();
-  if (!trimmed || trimmed.startsWith(BETA_COMMAND_PREFIX)) return trimmed;
-  if (/^[A-Z_][A-Z0-9_]*=/.test(trimmed)) return trimmed;
+  if (!trimmed || /^[A-Z_][A-Z0-9_]*=/.test(trimmed)) return trimmed;
   if (trimmed.startsWith('yarn --cwd server ') || trimmed.startsWith('yarn scrape ')) {
-    return `${BETA_COMMAND_PREFIX}${trimmed}`;
+    return `SCRAPER_ENV=${environment} ${trimmed}`;
   }
   return command;
 }
@@ -97,6 +106,7 @@ const increment = (counts: Record<string, number>, key: string) => {
 const laneCommand = (
   stage: VisibilityRepairStage,
   collection: StudentVisibilityGateCollection,
+  environment: string,
 ): string => {
   const collectionArg = collection === 'all' ? '--collection=all' : `--collection=${collection}`;
   const dryRunRepairCommand = (
@@ -105,7 +115,7 @@ const laneCommand = (
     limit: number,
     extraArgs = '',
   ) =>
-    betaCommand(
+    environmentCommand(
       [
         'yarn --cwd server beta:repair-queue',
         collectionArg,
@@ -118,6 +128,7 @@ const laneCommand = (
       ]
         .filter(Boolean)
         .join(' '),
+      environment,
     );
 
   if (stage === 'source_description') {
@@ -130,9 +141,6 @@ const laneCommand = (
   if (stage === 'pi_identity') {
     return dryRunRepairCommand('pi_identity', 'ylabs-beta-repair-pi-identity.json', 250);
   }
-  if (stage === 'action_evidence') {
-    return dryRunRepairCommand('action_evidence', 'ylabs-beta-repair-action-evidence.json', 250);
-  }
   if (stage === 'suppression') {
     return dryRunRepairCommand(
       'suppression',
@@ -141,12 +149,13 @@ const laneCommand = (
       '--suppress-unsafe',
     );
   }
-  return betaCommand(launchReviewExceptionsOperatorCommand(collectionArg));
+  return environmentCommand(launchReviewExceptionsOperatorCommand(collectionArg), environment);
 };
 
 function buildRepairLanes(
   violations: LaunchTrustViolation[],
   collection: StudentVisibilityGateCollection,
+  environment: string,
 ): LaunchTrustRepairLane[] {
   const byStage = new Map<VisibilityRepairStage, LaunchTrustRepairLane>();
 
@@ -157,7 +166,7 @@ function buildRepairLanes(
         stage: violation.repairStage,
         count: 0,
         reasons: {},
-        command: laneCommand(violation.repairStage, collection),
+        command: laneCommand(violation.repairStage, collection, environment),
         nextAction: repairActionForStage(violation.repairStage, violation.reasons),
         samples: [],
       } satisfies LaunchTrustRepairLane);
@@ -188,8 +197,10 @@ function buildRepairLanes(
 
 export function buildLaunchTrustContractReport(
   plans: StudentVisibilityGatePlan[],
-  options: Required<Pick<LaunchTrustContractOptions, 'collection' | 'mode'>>,
+  options: Required<Pick<LaunchTrustContractOptions, 'collection' | 'mode'>> &
+    Pick<LaunchTrustContractOptions, 'environment'>,
 ): LaunchTrustContractReport {
+  const environment = options.environment || DEFAULT_COMMAND_ENVIRONMENT;
   const counts = {
     scanned: plans.length,
     launchEligible: 0,
@@ -228,15 +239,16 @@ export function buildLaunchTrustContractReport(
     }
   }
 
-  const repairLanes = buildRepairLanes(violations, options.collection);
+  const repairLanes = buildRepairLanes(violations, options.collection, environment);
   const sampledViolations = [
     ...violations.filter((violation) => violation.publicVisibilityViolation),
     ...violations.filter((violation) => !violation.publicVisibilityViolation),
   ].slice(0, 50);
   const gateCollectionArg =
     options.collection === 'all' ? '--collection=all' : `--collection=${options.collection}`;
-  const gateCommand = betaCommand(
+  const gateCommand = environmentCommand(
     `yarn --cwd server student-visibility:gate ${gateCollectionArg} --mode=dry-run --output /tmp/ylabs-student-visibility-gate.json`,
+    environment,
   );
 
   return {
@@ -265,6 +277,7 @@ export async function runLaunchTrustContractAudit(
   });
 
   return buildLaunchTrustContractReport(plans, {
+    environment: options.environment,
     collection: options.collection,
     mode: options.mode || 'student-ready-only',
   });

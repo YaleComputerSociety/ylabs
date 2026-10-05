@@ -30,11 +30,11 @@ describe('materializeEntity keeps the persisted kind derived from entityType (#2
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -125,7 +125,7 @@ describe('materializeEntity keeps the persisted kind derived from entityType (#2
     await seedObservation({
       field: 'kind',
       value: 'lab',
-      sourceName: 'federal-award-usaspending',
+      sourceName: 'nsf-award-search',
       confidence: 0.95,
     });
 

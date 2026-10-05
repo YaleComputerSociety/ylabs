@@ -4,10 +4,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
-dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env') });
+dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
 
 const INDEX_NAME = 'observationFingerprint_1_superseded_1';
 const CONFIRM_FLAG = '--confirm-repartition-fingerprint-index';
@@ -28,7 +29,7 @@ async function main(apply: boolean): Promise<void> {
   });
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const collection = mongoose.connection.db!.collection('observations');
 
   const before: any = await mongoose.connection.db!.command({ collStats: 'observations' });

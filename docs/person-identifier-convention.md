@@ -29,6 +29,10 @@ A body may name a person with no identifier in it at all, in ordinary prose, and
 ## What counts as a person-bearing identifier
 
 - An entity slug carrying a person-bearing prefix: `nih-pi-`, `nsf-pi-`, `ysm-faculty-`, `faculty-research-area-`.
+  A prefix partway through a hyphenated token counts too, so `screenshot-nih-pi-<name>.png` is still a slug.
+  The exception is a registered source or server script name that contains a prefix, such as `ysm-faculty-directory`, which the scan allows by exact match on the whole token.
+  The allowance is pinned by test against three registries: the seed list in `seedSources.ts`, `RETIRED_SOURCE_NAMES` in `sourceDispatch.ts`, and the `server/package.json` script names.
+  A retired source name keeps its allowance, because retiring a source does not stop it being discussed and stored `fieldProvenance` still cites it; a name that leaves all three loses it, which is what stops the set drifting into a stoplist.
 - A directory profile path: `<host>.yale.edu/profile/<name>`, and the `people` and `faculty` variants.
 - A personal `@yale.edu` address.
   A role address such as `physics@yale.edu` is not person-bearing.
@@ -80,13 +84,21 @@ Fixing it afterwards costs either the tracking context or nothing at all.
 Two arms, with different strengths, because a single mechanism cannot cover both.
 
 **Blocking.** `yarn security:identifiers`, inside `yarn security:preflight`, inside the required `test-and-build` check.
-It fails on a committed data file that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
-It deliberately ignores anything under a test or fixture path, because synthetic identifiers there are intentional, and it ignores source files.
+It fails on a committed data or markup file (`json`, `ndjson`, `csv`, `tsv`, `html`, `htm`, `xml`, `txt`) that holds many distinct personal addresses or profile URLs, which is the shape of a scraped directory dump.
+Under a test or fixture path the threshold does not apply: one personal-shaped `yale.edu` address in a fixture of those extensions fails, because a captured page is the likeliest place for a real address to be committed (#4203).
+A fixture clears that arm with a synthetic address on `example.invalid`, a local part ending in a reserved synthetic marker, a role or placeholder address, or the synthetic surname roster.
+Source files are left to the body and review path.
+The preflight's denylist of real identifiers that once appeared in tests is stored as SHA-256 digests, so the repository no longer republishes the values it forbids; it hashes each run of up to four word tokens in every test and fixture file and fails on a matching digest.
 
-**Loud, and not required.** `.github/workflows/person-identifier-scan.yml`, on issue and pull request bodies.
-When a body trips a rule the workflow comments with the rule names and counts, never the matched text, and then fails its own check run so a green check cannot read as a clean body.
-Because the check is not required, that failure informs a merge path rather than stopping one.
-`scripts/person-identifier-scan-workflow.test.mjs` pins both halves: a flagged body turns the run red and still posts a report that never echoes the match, and a body written by predicate leaves the run green and posts nothing.
+**Blocking before posting.** `scripts/gh-identifier-guard.mjs`, installed as a `gh` shim ahead of the real binary on PATH, on issue, pull request, comment, review, merge, close and reopen comment, and API bodies, GraphQL mutations included.
+For a call that targets a `YaleComputerSociety` repository, whether through `-R`, `GH_REPO`, any remote of the checkout (so a fork whose `upstream` is this repository is guarded, #4259), an API endpoint, or a URL argument, it scans the title and body before `gh` runs, and when a rule fires it prints the rule names and counts, never the matched text, and exits without calling GitHub.
+It also refuses when the scanner itself is missing, so a broken install fails closed rather than posting unchecked.
+A refused draft is kept at `$TMPDIR/gh-guard-<random>/body.md`, readable only by its owner, and the refusal prints that path, so the author can read exactly what to rewrite.
+`scripts/new-agent-worktree.sh` installs it through `scripts/install-gh-identifier-guard.sh`, which refuses to overwrite a `gh` there that is not a guard shim, and `scripts/gh-identifier-guard.test.mjs` pins that a flagged body never reaches the real `gh` and a clean one reaches it unchanged.
+The installer copies the guard into `~/.local/share/ylabs-gh-guard` and the shim runs that copy, falling back to the checkout it was installed from, so moving or deleting a checkout leaves `gh` working (#4258).
+When neither is present the shim names both missing paths, refuses every publishing and API command, and passes read-only commands through.
+The installer exits non-zero, and `scripts/new-agent-worktree.sh` stops before creating a worktree, when the shim is not the first `gh` on `PATH`.
+There is no after-the-fact bot: a comment on text GitHub already serves cannot unpublish it, so the workflow that posted one was removed (#3682).
 
 The body arm separates a finding from a note.
 
@@ -100,6 +112,24 @@ The body arm separates a finding from a note.
 A slug, a personal address and a netid remain findings unconditionally.
 Unlike a URL, none of them has a legitimate evidentiary use in a body.
 
+The one allowance is the synthetic fixture roster, `SYNTHETIC_FIXTURE_SURNAMES` in `scripts/check-no-person-identifiers-core.mjs`, which holds the invented surnames the detector's own tests use.
+The body scan lets an identifier or prose name built from one of them through, because a pull request about the detector has to quote its fixtures and the no-mistakes gate pastes its adversarial inputs into the body.
+The allowance tests only the identifier itself, meaning the slug from its prefix onward or a two-word prose name ending in a roster surname, so a fixture surname sitting next to another name does not let that other name through.
+The tests scan in strict mode, which ignores the roster, so they still prove every shape is flagged.
+Write a new test fixture from the roster rather than inventing another name, and widening the roster is a reviewed change that its pin test makes deliberate.
+
+A roster of surnames does not scale to a driver that invents its own people, which is what the `no-mistakes` gate's live-validation drivers do, so two consecutive pull requests failed the body scan on entirely synthetic data (#3540).
+The second allowance is therefore a marker convention rather than a name list: `SYNTHETIC_FIXTURE_MARKERS` holds `fixture`, `sample`, `synthetic`, `placeholder` and `example`, and the body scan clears a slug, an address local part or a directory profile URL's leaf whose **final** segment is one of them.
+So `ysm-faculty-<given>-fixture`, `<given>.sample@yale.edu` and `.../profile/<given>-fixture/` are read as invented, while `nih-pi-fixture-<surname>`, `fixture.<surname>@yale.edu` and `.../profile/fixture-<surname>/` still flag, because the marker is not last and the thing in the surname position is a name.
+Prefer a marker over the surname roster when writing a fixture, because it needs no change here to add one.
+
+The set was chosen against the live corpus rather than by taste: 0 of 9,119 research-entity slugs end in any marker, 0 carry one as a segment at all, and 0 of 11,155 researcher addresses have a local part ending in one.
+`sample` and `example` are the only two attested as surnames anywhere, so if either ever appears in the corpus the answer is to drop that word from the set rather than to special-case the row.
+The allowance is a body-scan allowance only, and a test asserts every marker form is still flagged in strict mode, so it cannot quietly become a stoplist.
+The same allowance covers one netid shape, `SYNTHETIC_NETID_RE`: `zz`, an optional third letter, then digits beginning with `99`, such as `zz9993` or `zzq9999`.
+It is the only netid form a fixture may use, and the marker convention deliberately does not extend to netids: a netid is opaque, so no marker can be read out of one without also clearing real netids, and a test pins that this arm was not widened.
+A real netid would need both `zz` initials and a `99` digit prefix to pass the body scan, and that is the accepted limit of the allowance.
+
 Check a draft before posting it, which is the only moment the fix is free:
 
 ```
@@ -107,22 +137,22 @@ yarn security:identifiers:body /tmp/pr-body.md
 ```
 
 The prose-name rule is fuzzy on purpose and lives only on the body arm.
-Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms, quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
+Measured against the repository's own documentation, roughly nine in ten of its early matches were Title Case technical phrases rather than people; excluding headings, table rows, code fences, indented blocks, acronyms (including plural ones such as `IDs` and `POSTs`, meaning any token that opens with two capitals), quoted titles, and segments that do not read as prose cut that to eleven matches across all of `docs/` and `skills/`, two of which are real names.
 A pull request body is shorter and far less dense in Title Case than those files, so treat that as an upper bound.
-The blocking arm never calls this rule, so a false positive cannot fail a required check.
-It can fail the body arm's own run, which is why `AGENTS.md` excepts `Person identifier scan` from "merge only when checks are green": the remedy for a Title Case product phrase matched as a name is a comment saying so, then a merge on the red.
+The blocking file arm never calls this rule, so a false positive cannot fail a required check.
+It does stop the guard from posting, so a Title Case product phrase matched as a name is fixed in the detector, with a regression test, rather than worked around.
 It is never an `identifier-exempt:` line, which suppresses the whole body including a real name elsewhere in it, and a detector switched off to discuss ordinary work stays off.
+Never call the real `gh` directly to get past a refusal either.
 
-The body arm cannot prevent the text from being published, and this is a real limit rather than an oversight.
-A workflow cannot prevent an issue from being created, and adding `edited` to the `ci.yml` trigger would rerun the entire test-and-build job on every body tweak.
-The comment tells the author while the context is fresh, which is the moment the fix is still free.
+The gate writes its pull request body from the diff, so it quotes test fixtures, and the guard cannot tell a synthetic fixture from a real person.
+Almost all of that quoting was in the generated evidence appendix rather than the narrative: of 250 strings the guard refused in gate-written bodies over two days, 246 sat in its test logs and pipeline round history (#4666).
+`.no-mistakes.yaml` therefore sets `pr.appendix: minimal`, which publishes only a one-line risk summary and the attestation, and leaves the test logs in the local run log.
+The key needs no-mistakes v1.85.0 or later: an older gate ignores it without an error and keeps publishing the full appendix, so check `no-mistakes --version` and run `no-mistakes update` when it is older.
+When the gate's `pr` step fails on a guard refusal, run `no-mistakes sync --yes` to take the gate's pushed head, then re-run `no-mistakes axi run` with an `--intent` that carries this rule: describe the regression tests by behaviour only and never quote a test fixture string, slug, or name from the diff.
+The rule lowers the odds rather than guaranteeing a clean body, so read the kept draft before re-running.
 
-The body arm does, however, fail its own check run on a finding, and that is not a contradiction.
-It succeeded either way until #2953, which made a green `gh pr checks` read as "the body is clean" to every automated merge path: two pull request bodies naming a person reached `beta` that way, each with the scan check green beside the comment that flagged it.
-The failure cannot unpublish anything.
-It exists so that a merge path reading `gh pr checks` sees the finding rather than a green row, and it is safe to make loud precisely because the check is not required, so a false positive delays nobody.
-It is not a guarantee that the finding is seen: the run is queued by the `opened` event after `gh pr create` returns, so a path that polls and merges promptly can finish before the check exists.
-Closing that would mean requiring the check, which the paragraph above rules out.
+The guard protects only a host it is installed on.
+A body posted from anywhere else is not scanned at all, and commit messages are not guarded anywhere, because another tool owns `core.hooksPath` on the maintainer machine, so scan them by hand before a push.
 
 ## Escape hatch
 

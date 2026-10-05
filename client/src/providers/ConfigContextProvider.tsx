@@ -4,13 +4,23 @@
  * State transitions live in reducers/configReducer.ts (pure, testable).
  * This component owns the fetch side effect and derived memoized lookups.
  */
-import { FC, useEffect, useCallback, useMemo, useReducer, ReactNode } from 'react';
+import {
+  FC,
+  useContext,
+  useEffect,
+  useCallback,
+  useMemo,
+  useReducer,
+  useRef,
+  ReactNode,
+} from 'react';
 import axios from '../utils/axios';
 import ConfigContext, {
   ConfigContextType,
   ResearchAreaConfig,
   DepartmentConfig,
 } from '../contexts/ConfigContext';
+import UserContext from '../contexts/UserContext';
 import { configReducer, createInitialConfigState } from '../reducers/configReducer';
 
 const colorKeyToTailwind: Record<string, { bg: string; text: string; border: string }> = {
@@ -96,9 +106,17 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     }
   }, []);
 
+  // A cold visit's requests sent before any response has set the session cookie each
+  // spend a per-IP firstContactLimiter unit, so config waits for the session check to
+  // answer and carries the cookie it issued (#4118, skills/auth-security/SKILL.md).
+  const { isLoading: isSessionCheckPending } = useContext(UserContext);
+  const hasRequestedConfig = useRef(false);
+
   useEffect(() => {
+    if (isSessionCheckPending || hasRequestedConfig.current) return;
+    hasRequestedConfig.current = true;
     void fetchConfig();
-  }, [fetchConfig]);
+  }, [isSessionCheckPending, fetchConfig]);
 
   const researchAreaMap = useMemo(() => {
     const map = new Map<string, ResearchAreaConfig>();
@@ -162,16 +180,16 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       if (abbr) {
         const deptConfig = departmentAbbrMap.get(abbr);
         if (deptConfig) {
-          return departmentColorKeyToTailwind[deptConfig.colorKey] || 'bg-gray-100';
+          return departmentColorKeyToTailwind[deptConfig.colorKey] || 'bg-panel-muted';
         }
       }
 
       const byName = departmentNameMap.get(dept.toLowerCase());
       if (byName) {
-        return departmentColorKeyToTailwind[byName.colorKey] || 'bg-gray-100';
+        return departmentColorKeyToTailwind[byName.colorKey] || 'bg-panel-muted';
       }
 
-      return 'bg-gray-100';
+      return 'bg-panel-muted';
     },
     [departmentAbbrMap, departmentNameMap],
   );

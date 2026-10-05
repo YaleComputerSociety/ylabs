@@ -74,11 +74,9 @@ export const orgUnitSchema = new mongoose.Schema<OrgUnitRecord>(
       ref: 'OrgUnit',
       required: false,
       validate: {
-        validator: function (
-          this: { _id: mongoose.Types.ObjectId },
-          value?: mongoose.Types.ObjectId,
-        ) {
-          return value === undefined || !value.equals(this._id);
+        validator: function (this: unknown, value?: mongoose.Types.ObjectId) {
+          const orgUnit = this as { _id: mongoose.Types.ObjectId };
+          return value === undefined || !value.equals(orgUnit._id);
         },
         message: 'parentOrgUnitId cannot reference the same OrgUnit.',
       },

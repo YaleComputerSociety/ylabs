@@ -59,11 +59,11 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -116,8 +116,16 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
       websiteUrl: RESEARCH_HOME,
       sourceUrls: [RESEARCH_HOME],
       fieldProvenance: {
-        shortDescription: { sourceName: 'lab-microsite-description', sourceUrl: RESEARCH_HOME },
-        fullDescription: { sourceName: 'lab-microsite-description', sourceUrl: RESEARCH_HOME },
+        shortDescription: {
+          sourceName: 'lab-microsite-description',
+          sourceUrl: RESEARCH_HOME,
+          observationId: new mongoose.Types.ObjectId(),
+        },
+        fullDescription: {
+          sourceName: 'lab-microsite-description',
+          sourceUrl: RESEARCH_HOME,
+          observationId: new mongoose.Types.ObjectId(),
+        },
       },
     });
     entityId = entity._id as mongoose.Types.ObjectId;
@@ -138,6 +146,16 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
     expect(released?.studentVisibilityTier).toBe('student_ready');
     expect(released?.studentVisibilityReasons).not.toContain('missing_lead');
     expect(await servedLeadNames()).toEqual([LEAD_NAME]);
+  }, 60000);
+
+  it('reports the released row the index refused as a sync failure (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never);
+
+    const report = await runLabSiteNamedLeadAttachment({ apply: true, maxApply: 5, readPages });
+
+    expect(report.created).toBe(1);
+    expect(report.indexResynced).toBe(0);
+    expect(report.indexSyncFailures).toBe(1);
   }, 60000);
 
   it('refuses a row another hard blocker also holds without reading its site', async () => {

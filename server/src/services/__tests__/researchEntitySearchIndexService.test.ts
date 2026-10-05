@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import * as meiliClient from '../../utils/meiliClient';
 import {
   buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
@@ -11,14 +12,23 @@ import {
   fetchResearchEntitySearchMemberNames,
   getResearchEntitySearchIndexSettings,
   invalidateResearchEntitySearchEmbedderCache,
+  RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS,
   isResearchEntitySearchEmbedderConfigured,
+  readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
+  RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
   rebuildResearchEntitySearchIndex,
+  researchEntityTypeSearchTerms,
 } from '../researchEntitySearchIndexService';
+import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
+
+const succeedingTaskClient = {
+  waitForTask: async () => ({ status: 'succeeded' }),
+};
 
 describe('researchEntitySearchIndexService', () => {
   it('drops a person-scoped displayName that names an umbrella organization (#2351)', () => {
@@ -69,6 +79,99 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc?.displayName).toBe('Yale Center for Customer Insights');
   });
 
+  it('indexes a sort title taken from the heading the card shows, not the stored name', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title',
+      name: 'Yale Optics Institute',
+      displayName: 'Institute for Applied Optics',
+      kind: 'institute',
+      entityType: 'INSTITUTE',
+      archived: false,
+    });
+
+    expect(doc?.sortTitle).toBe('institute for applied optics');
+  });
+
+  it('folds case, accents, and leading punctuation out of the sort title', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title-folded',
+      name: '"Émergent  Materials" Center',
+      kind: 'center',
+      entityType: 'CENTER',
+      archived: false,
+    });
+
+    expect(doc?.sortTitle).toBe('emergent materials" center');
+  });
+
+  it('indexes the department and school a same-titled card is suffixed with as the tiebreak', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title-qualifier',
+      name: 'Nebula Imaging Center',
+      kind: 'center',
+      entityType: 'CENTER',
+      departments: ['Écology', 'Physics'],
+      school: 'Graduate School',
+      archived: false,
+    });
+
+    expect(doc?.sortTitleQualifier).toBe('ecology) graduate school)');
+  });
+
+  it('indexes a browse tiebreak key that is fixed per row and independent of observation time', () => {
+    const indexed = (lastObservedAt: string) =>
+      buildResearchEntitySearchIndexDocument({
+        _id: 'entity-browse-tiebreak',
+        name: 'Nebula Imaging Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        archived: false,
+        lastObservedAt,
+      })?.browseTiebreakKey;
+    const otherRow = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-browse-tiebreak-other',
+      name: 'Nebula Imaging Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+    })?.browseTiebreakKey;
+
+    expect(indexed('2026-01-01T00:00:00.000Z')).toMatch(/^[0-9a-f]{16}$/);
+    expect(indexed('2026-01-01T00:00:00.000Z')).toBe(indexed('2026-09-01T00:00:00.000Z'));
+    expect(otherRow).not.toBe(indexed('2026-01-01T00:00:00.000Z'));
+  });
+
+  it('breaks a title tie in the order the suffixed headings read when one label prefixes another', () => {
+    const qualifierFor = (department: string) =>
+      buildResearchEntitySearchIndexDocument({
+        _id: `entity-sort-title-qualifier-${department}`,
+        name: 'Nebula Imaging Center',
+        kind: 'center',
+        entityType: 'CENTER',
+        departments: [department],
+        archived: false,
+      })?.sortTitleQualifier as string;
+    const headings = ['Physics', 'Physics and Astronomy'].map(
+      (department) => `nebula imaging center (${department.toLowerCase()})`,
+    );
+
+    expect(qualifierFor('Physics and Astronomy') < qualifierFor('Physics')).toBe(
+      headings[1] < headings[0],
+    );
+  });
+
+  it('sorts a faculty research row by its title without the synthesized suffix', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-sort-title-faculty',
+      name: 'Quasar Topics Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+
+    expect(doc?.sortTitle).toBe('quasar topics');
+  });
+
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-1',
@@ -89,7 +192,7 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('embedding');
   });
 
-  it('blanks a "Studies <chips>" area echo of researchAreas in the indexed description fields (#1466)', () => {
+  it('blanks a "Studies <chips>" area echo of researchAreas beside other prose in the indexed description fields (#1466)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-studies-echo',
       name: 'Echo Lab',
@@ -97,9 +200,27 @@ describe('researchEntitySearchIndexService', () => {
       researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
       fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
       shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      profileSynthesisDescription:
+        'The Echo Lab builds models of how households save across business cycles.',
     });
 
     expect(doc?.fullDescription).toBe('');
+    expect(doc?.shortDescription).toBe('');
+  });
+
+  it('keeps a "Studies <chips>" body echo that is the only body, as thin but accurate', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-studies-echo-only',
+      name: 'Echo Faculty Research',
+      archived: false,
+      researchAreas: ['Economic Theory', 'Financial Economics', 'Macroeconomics'],
+      fullDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+      shortDescription: 'Studies economic theory, financial economics, and macroeconomics.',
+    });
+
+    expect(doc?.fullDescription).toBe(
+      'Studies economic theory, financial economics, and macroeconomics.',
+    );
     expect(doc?.shortDescription).toBe('');
   });
 
@@ -320,6 +441,49 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it.each([
+    'Our director is an economist of trade. Download CV',
+    'Research on Japanese film theory. A short CV is available at my Yale profile.',
+    'Health services research. The CV lists over 100 publications in medical journals.',
+    'Political economy and game theory. CV | Google Scholar',
+  ])(
+    'does not tag a curriculum-vitae link as computer vision without vision context (#3853): %s',
+    (fullDescription) => {
+      const doc = buildResearchEntitySearchIndexDocument({
+        _id: 'entity-cv-link',
+        name: 'Fixture Faculty Research',
+        departments: ['Economics'],
+        fullDescription,
+        archived: false,
+      });
+
+      expect(doc?.studentSearchTerms ?? []).not.toEqual(
+        expect.arrayContaining(['computer vision']),
+      );
+    },
+  );
+
+  it.each([
+    [['Radiology and Biomedical Imaging'], 'Cancer early detection research. Download CV'],
+    [['Ophthalmology and Visual Science'], 'Retinal disease research. Download CV'],
+    [['Internal Medicine'], 'CV imaging of heart failure and CV outcomes.'],
+  ])(
+    'does not let a department or a generic word corroborate a bare CV (#3853): %s',
+    (departments, fullDescription) => {
+      const doc = buildResearchEntitySearchIndexDocument({
+        _id: 'entity-cv-generic-context',
+        name: 'Fixture Faculty Research',
+        departments,
+        fullDescription,
+        archived: false,
+      });
+
+      expect(doc?.studentSearchTerms ?? []).not.toEqual(
+        expect.arrayContaining(['computer vision']),
+      );
+    },
+  );
+
   it('still triggers computer-vision aliases when a lab genuinely abbreviates as CV (#899)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-real-cv',
@@ -426,6 +590,23 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it('indexes a type word only for types whose label a student searches by, never the raw enum (#3942)', () => {
+    const facilityRow = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-core-facility-type-term',
+      name: 'Synthetic Imaging Suite',
+      kind: 'core_facility',
+      entityType: 'CORE_FACILITY',
+      archived: false,
+    });
+
+    expect(researchEntityTypeSearchTerms('FACULTY_RESEARCH_AREA')).toEqual([]);
+    expect(researchEntityTypeSearchTerms('LAB')).toEqual(['lab']);
+    expect(researchEntityTypeSearchTerms('not-a-type')).toEqual([]);
+    expect(facilityRow?.entityTypeSearchTerms).toEqual(['core facility']);
+    expect(facilityRow?.studentSearchTerms ?? []).not.toContain('core facility');
+    expect(facilityRow).toMatchObject({ kind: 'core_facility', entityType: 'CORE_FACILITY' });
+  });
+
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
@@ -446,13 +627,51 @@ describe('researchEntitySearchIndexService', () => {
       id: 'entity-url-safety',
       fullDescription: '',
       shortDescription: 'Email [email redacted] for details.',
-      websiteUrl: 'https://safe.example.edu/lab',
-      sourceUrls: ['https://safe.example.edu/source'],
     });
+    expect(doc).not.toHaveProperty('websiteUrl');
+    expect(doc).not.toHaveProperty('website');
+    expect(doc).not.toHaveProperty('sourceUrls');
     expect(JSON.stringify(doc)).not.toContain('javascript:');
     expect(JSON.stringify(doc)).not.toContain('mailto:');
     expect(JSON.stringify(doc)).not.toContain('pi@example.edu');
     expect(JSON.stringify(doc)).not.toContain('203-555-1212');
+  });
+
+  it('redacts direct contact text from biography description fields stored in the index', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-biography-contact',
+      name: 'Biography Contact Lab',
+      profileSynthesisDescription:
+        'Studies synaptic plasticity. Email: someone@example.edu Phone555-010-0040Fields of interest: memory.',
+      description: 'Reach the office by calling 555-010-0041.',
+      archived: false,
+    });
+
+    const serialized = JSON.stringify(doc);
+    expect(serialized).not.toContain('someone@example.edu');
+    expect(serialized).not.toContain('555-010-0040');
+    expect(serialized).not.toContain('555-010-0041');
+    expect(doc).not.toHaveProperty('profileSynthesisDescription');
+    expect(doc).not.toHaveProperty('description');
+  });
+
+  it('derives no match text, topic alias or rank from stored profile-synthesis prose no surface serves (#3937)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-unserved-synthesis',
+      name: 'Unserved Synthesis Lab',
+      shortDescription: 'Studies coastal sediment transport.',
+      profileSynthesisDescription:
+        'Applies machine learning to glacier imaging and hydroclimate forecasting.',
+      websiteUrl: 'https://example.yale.edu/unserved-synthesis',
+      archived: false,
+    });
+
+    const serialized = JSON.stringify(doc).toLowerCase();
+    expect(serialized).not.toContain('glacier');
+    expect(serialized).not.toContain('hydroclimate');
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['artificial intelligence']),
+    );
   });
 
   it('strips endowed-chair honorific titles from searchable description text so a chair-name term does not surface unrelated faculty (#1286)', () => {
@@ -521,6 +740,9 @@ describe('researchEntitySearchIndexService', () => {
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
     expect(searchable).toEqual(expect.arrayContaining(['methods']));
     expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
+    for (const unseenTokenField of ['websiteUrl', 'sourceUrls', 'kind', 'entityType']) {
+      expect(searchable).not.toContain(unseenTokenField);
+    }
     expect(searchable).not.toContain('keywords');
     expect(searchable).not.toContain('summary');
     expect(searchable).not.toContain('description');
@@ -554,7 +776,15 @@ describe('researchEntitySearchIndexService', () => {
     });
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
-      expect.arrayContaining(['lastObservedAt', 'name', 'createdAt', 'updatedAt']),
+      expect.arrayContaining([
+        'browseTiebreakKey',
+        'lastObservedAt',
+        'name',
+        'sortTitle',
+        'sortTitleQualifier',
+        'createdAt',
+        'updatedAt',
+      ]),
     );
   });
 
@@ -587,13 +817,13 @@ describe('researchEntitySearchIndexService', () => {
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
         calls.push({ kind: 'settings', payload: settings });
-      },
-      deleteAllDocuments: async () => {
-        calls.push({ kind: 'clear' });
+        return { taskUid: 1 };
       },
       addDocuments: async (documents: unknown, options: unknown) => {
         calls.push({ kind: 'documents', payload: { documents, options } });
+        return { taskUid: 3 };
       },
+      tasks: succeedingTaskClient,
     };
     const fetchPage = async (page: number) =>
       page === 1
@@ -604,22 +834,23 @@ describe('researchEntitySearchIndexService', () => {
         : [];
 
     const result = await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
       pageSize: 2,
-      clearExisting: true,
       getIndex: async () => fakeIndex,
       fetchPage,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
       pageSize: 2,
       fetchedDocumentCount: 2,
       indexedDocumentCount: 2,
       pageCount: 1,
-      clearedExisting: true,
+      clearedExisting: false,
     });
-    expect(calls.map((call) => call.kind)).toEqual(['settings', 'clear', 'documents']);
-    expect(calls[2].payload).toMatchObject({
+    expect(result.swap).toBeUndefined();
+    expect(calls.map((call) => call.kind)).toEqual(['settings', 'documents']);
+    expect(calls[1].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
   });
@@ -655,17 +886,19 @@ describe('researchEntitySearchIndexService', () => {
   it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {
     const embedderCalls: any[] = [];
     const fakeIndex = {
-      updateSettings: async () => {},
+      updateSettings: async () => ({ taskUid: 1 }),
       updateEmbedders: async (embedders: unknown) => {
         embedderCalls.push(embedders);
+        return { taskUid: 2 };
       },
-      deleteAllDocuments: async () => {},
-      addDocuments: async () => {},
+      addDocuments: async () => ({ taskUid: 4 }),
+      tasks: succeedingTaskClient,
     };
     const fetchPage = async (page: number) =>
       page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [];
     const run = () =>
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage,
@@ -687,6 +920,135 @@ describe('researchEntitySearchIndexService', () => {
     else delete process.env.OPENAI_API_KEY;
   });
 
+  it('removes a stored embedder when the rebuild has no usable OPENAI_API_KEY', async () => {
+    const calls: string[] = [];
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => {
+        calls.push('updateEmbedders');
+        return { taskUid: 2 };
+      },
+      resetEmbedders: async () => {
+        calls.push('resetEmbedders');
+        return { taskUid: 5 };
+      },
+      addDocuments: async () => ({ taskUid: 4 }),
+      getEmbedders: async () => (calls.at(-1) === 'resetEmbedders' ? {} : { default: {} }),
+      tasks: succeedingTaskClient,
+    };
+    const run = () =>
+      rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async (page: number) =>
+          page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+        fetchMemberNames: async () => new Map(),
+      });
+    const prev = process.env.OPENAI_API_KEY;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      process.env.OPENAI_API_KEY = 'sk-test';
+      await run();
+      expect(calls).toEqual(['updateEmbedders']);
+      expect(await readResearchEntitySearchEmbedderState(fakeIndex)).toBe('configured');
+
+      for (const unusable of [undefined, '', '<your-openai-key>']) {
+        calls.length = 0;
+        if (unusable === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = unusable;
+        const result = await run();
+        expect(calls).toEqual(['resetEmbedders']);
+        expect(result.indexedDocumentCount).toBe(1);
+        expect(await readResearchEntitySearchEmbedderState(fakeIndex)).toBe('absent');
+      }
+    } finally {
+      logSpy.mockRestore();
+      invalidateResearchEntitySearchEmbedderCache();
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+      else delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it('leaves the stored embedder of a prefixed index alone when the rebuild has no usable key', async () => {
+    const calls: string[] = [];
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => {
+        calls.push('updateEmbedders');
+        return { taskUid: 2 };
+      },
+      resetEmbedders: async () => {
+        calls.push('resetEmbedders');
+        return { taskUid: 5 };
+      },
+      addDocuments: async () => ({ taskUid: 4 }),
+      getEmbedders: async () => (calls.includes('resetEmbedders') ? {} : { default: {} }),
+      tasks: succeedingTaskClient,
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    const prefixSpy = vi
+      .spyOn(meiliClient, 'resolveIndexName')
+      .mockImplementation((name: string) => `beta_${name}`);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      for (const unusable of [undefined, '<your-openai-key>']) {
+        if (unusable === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = unusable;
+        const result = await rebuildResearchEntitySearchIndex({
+          warmVocabulary: async () => new Set<string>(),
+          pageSize: 5,
+          getIndex: async () => fakeIndex as any,
+          fetchPage: async (page: number) =>
+            page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+          fetchMemberNames: async () => new Map(),
+        });
+        expect(result.indexedDocumentCount).toBe(1);
+      }
+      expect(calls).toEqual([]);
+      expect(await readResearchEntitySearchEmbedderState(fakeIndex)).toBe('configured');
+    } finally {
+      warnSpy.mockRestore();
+      prefixSpy.mockRestore();
+      invalidateResearchEntitySearchEmbedderCache();
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+      else delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it('surfaces a failed resetEmbedders task instead of reporting a keyword-only rebuild', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      resetEmbedders: async () => ({ taskUid: 2 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 2
+            ? { status: 'failed', error: { code: 'index_not_found', message: 'gone' } }
+            : { status: 'succeeded' },
+      },
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await expect(
+        rebuildResearchEntitySearchIndex({
+          warmVocabulary: async () => new Set<string>(),
+          pageSize: 5,
+          getIndex: async () => fakeIndex as any,
+          fetchPage: async () => [],
+          fetchMemberNames: async () => new Map(),
+        }),
+      ).rejects.toThrow(/resetEmbedders task 2 did not succeed.*index_not_found/s);
+    } finally {
+      logSpy.mockRestore();
+      if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    }
+  });
+
   it('surfaces a failed updateEmbedders task instead of swallowing it', async () => {
     const fakeIndex = {
       updateSettings: async () => ({ taskUid: 1 }),
@@ -706,6 +1068,7 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
@@ -727,6 +1090,7 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
@@ -734,7 +1098,7 @@ describe('researchEntitySearchIndexService', () => {
     ).rejects.toThrow(/updateSettings task 1 did not succeed.*index_not_found/s);
   });
 
-  it('does not wait on a task when the index client has no task-status support', async () => {
+  it('refuses to report a rebuild when the index client cannot confirm its tasks', async () => {
     const fakeIndex = {
       updateSettings: async () => ({ taskUid: 1 }),
       updateEmbedders: async () => ({ taskUid: 2 }),
@@ -744,12 +1108,13 @@ describe('researchEntitySearchIndexService', () => {
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 5,
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
         fetchMemberNames: async () => new Map(),
       }),
-    ).resolves.toMatchObject({ fetchedDocumentCount: 0 });
+    ).rejects.toThrow(/updateSettings task 1 cannot be confirmed/);
 
     if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     else delete process.env.OPENAI_API_KEY;
@@ -761,13 +1126,17 @@ describe('researchEntitySearchIndexService', () => {
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
         calls.push({ kind: 'settings', payload: settings });
+        return { taskUid: 1 };
       },
       addDocuments: async (documents: unknown, options: unknown) => {
         calls.push({ kind: 'documents', payload: { documents, options } });
+        return { taskUid: 2 };
       },
+      tasks: succeedingTaskClient,
     };
 
     await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
       pageSize: 2,
       getIndex: async () => fakeIndex,
       fetchPage: async (page: number) =>
@@ -781,8 +1150,8 @@ describe('researchEntitySearchIndexService', () => {
               },
             ]
           : [],
-      fetchMemberNames: async (entityIds: unknown[]) => {
-        expect(entityIds).toEqual([entityId]);
+      fetchMemberNames: async (entities: any[]) => {
+        expect(entities.map((entity) => entity._id)).toEqual([entityId]);
         return new Map([
           [
             entityId,
@@ -809,11 +1178,68 @@ describe('researchEntitySearchIndexService', () => {
     });
   });
 
+  it('fails the rebuild when a document batch is accepted but its task fails (#3720)', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      addDocuments: async () => ({ taskUid: 3 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 3
+            ? { status: 'failed', error: { code: 'invalid_document_fields' } }
+            : { status: 'succeeded' },
+      },
+    };
+
+    const outcome = await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
+      pageSize: 5,
+      getIndex: async () => fakeIndex as any,
+      fetchPage: async (page: number) =>
+        page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+      fetchMemberNames: async () => new Map(),
+    }).then(
+      (result) => ({ threw: false, indexed: result.indexedDocumentCount, message: '' }),
+      (error: Error) => ({ threw: true, indexed: 0, message: error.message }),
+    );
+
+    expect(outcome.threw).toBe(true);
+    expect(outcome.message).toMatch(
+      /addDocuments task 3 did not succeed.*invalid_document_fields/s,
+    );
+  });
+
+  it('bounds each document task wait with a finite timeout', async () => {
+    const timeouts: Array<number | undefined> = [];
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      addDocuments: async () => ({ taskUid: 3 }),
+      tasks: {
+        waitForTask: async (_taskUid: number, options?: { timeout?: number }) => {
+          timeouts.push(options?.timeout);
+          return { status: 'succeeded' };
+        },
+      },
+    };
+
+    await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
+      pageSize: 5,
+      getIndex: async () => fakeIndex as any,
+      fetchPage: async (page: number) =>
+        page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
+      fetchMemberNames: async () => new Map(),
+    });
+
+    expect(timeouts).toHaveLength(2);
+    for (const timeout of timeouts) expect(Number.isFinite(timeout)).toBe(true);
+  });
+
   it('rejects unsafe rebuild page sizes before configuring the index', async () => {
     let getIndexCalls = 0;
 
     await expect(
       rebuildResearchEntitySearchIndex({
+        warmVocabulary: async () => new Set<string>(),
         pageSize: 9007199254740992,
         getIndex: async () => {
           getIndexCalls += 1;
@@ -860,6 +1286,76 @@ describe('isResearchEntitySearchEmbedderConfigured', () => {
     expect(configured).toBe(false);
   });
 
+  it('caches a failed embedder check briefly, then asks again once it expires', async () => {
+    let calls = 0;
+    const index = {
+      getEmbedders: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error('meili unreachable');
+        return { default: {} };
+      },
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-03T12:00:00Z') });
+
+    try {
+      expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(false);
+      expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(false);
+      expect(calls).toBe(1);
+      vi.setSystemTime(Date.now() + RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS + 1);
+      expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+      expect(calls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+      consoleError.mockRestore();
+    }
+  });
+
+  it('logs a failed embedder check through the sanitized logger', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await isResearchEntitySearchEmbedderConfigured({
+        getEmbedders: async () => {
+          throw new Error('meili unreachable at http://user:secret@meili.internal:7700');
+        },
+      });
+
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const logged = consoleError.mock.calls[0].map(String).join(' ');
+      expect(logged).toMatch(/embedder/i);
+      expect(logged).not.toContain('secret');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('reports a failed embedder check as unknown rather than absent', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      expect(
+        await readResearchEntitySearchEmbedderState({
+          getEmbedders: async () => {
+            throw new Error('meili unreachable');
+          },
+        }),
+      ).toBe('unknown');
+      invalidateResearchEntitySearchEmbedderCache();
+      expect(await readResearchEntitySearchEmbedderState({ getEmbedders: async () => ({}) })).toBe(
+        'absent',
+      );
+      invalidateResearchEntitySearchEmbedderCache();
+      expect(
+        await readResearchEntitySearchEmbedderState({
+          getEmbedders: async () => ({ default: {} }),
+        }),
+      ).toBe('configured');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('caches the result until the cache is invalidated', async () => {
     let calls = 0;
     const index = {
@@ -885,11 +1381,11 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -928,11 +1424,375 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
     await seedMember(entityId, 'Lab Staff', 'STAFF');
     await seedMember(entityId, 'Former Professor', 'PI', 'HISTORICAL');
 
-    const byEntityId = await fetchResearchEntitySearchMemberNames([entityId]);
+    const byEntityId = await fetchResearchEntitySearchMemberNames([{ _id: entityId }]);
     const fields = byEntityId.get(entityId.toString());
 
     expect(fields?.leadProfessorNames).toEqual(['Lead Professor']);
     expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
+  });
+
+  it('indexes no member whose listed name is a lab rather than a person (#4360)', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, 'Quillon Lab', 'CORE_FACULTY', 'UNKNOWN');
+    await seedMember(entityId, 'Ferrow Laboratory', 'CORE_FACULTY', 'UNKNOWN');
+    await seedMember(entityId, 'Marlow Quillon', 'CORE_FACULTY', 'UNKNOWN');
+
+    const fields = (await fetchResearchEntitySearchMemberNames([{ _id: entityId }])).get(
+      entityId.toString(),
+    );
+
+    expect(fields?.professorNames).toEqual(['Marlow Quillon']);
+  });
+
+  it('names a lead whose edge state is unknown, as the detail page serves it (#3745)', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, 'Unknown State Lead', 'PI', 'UNKNOWN');
+    await seedMember(entityId, 'Unknown State Faculty', 'CORE_FACULTY', 'UNKNOWN');
+    await seedMember(entityId, 'Departed Lead', 'DIRECTOR', 'HISTORICAL');
+
+    const fields = (await fetchResearchEntitySearchMemberNames([{ _id: entityId }])).get(
+      entityId.toString(),
+    );
+
+    expect(fields?.leadProfessorNames).toEqual(['Unknown State Lead']);
+    expect(fields?.professorNames).toEqual(['Unknown State Lead', 'Unknown State Faculty']);
+  });
+
+  it('withholds an official-roster lead the detail page drops as stale (#3745)', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const person = await Researcher.create({
+      displayName: 'Stale Roster Lead',
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'UNKNOWN',
+      confidence: 0.9,
+      rosterProvenance: {
+        sourceName: 'official-research-home-roster',
+        evidenceStatus: 'verified',
+        membershipKey: 'roster-key',
+        sourceUrl: 'https://example.org/people',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+      },
+    });
+
+    const byEntityId = await fetchResearchEntitySearchMemberNames([{ _id: entityId }]);
+
+    expect(byEntityId.get(entityId.toString())).toBeUndefined();
+  });
+});
+
+describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', () => {
+  type Call = { uid: string; op: string; arg?: unknown };
+
+  const makeFakeMeili = (
+    args: {
+      existing?: string[];
+      liveEmbedders?: Record<string, unknown>;
+      failAddDocuments?: boolean;
+      reportedDocumentCount?: number;
+      swapTaskHiddenFromKey?: boolean;
+      swapNeverApplies?: boolean;
+    } = {},
+  ) => {
+    const calls: Call[] = [];
+    const existing = new Set(args.existing ?? ['researchentities']);
+    const createdAtByUid = new Map<string, string>();
+    let clock = 0;
+    const stampCreatedAt = (uid: string) =>
+      createdAtByUid.set(uid, new Date(Date.UTC(2026, 0, 1, 0, 0, clock++)).toISOString());
+    for (const uid of existing) stampCreatedAt(uid);
+    const hiddenTasks = new Set<number>();
+    const documentsByUid = new Map<string, unknown[]>();
+    let nextTaskUid = 1;
+    const failingTasks = new Set<number>();
+    const enqueue = (failed = false) => {
+      const taskUid = nextTaskUid++;
+      if (failed) failingTasks.add(taskUid);
+      return { taskUid };
+    };
+    const tasks = {
+      waitForTask: async (taskUid: number) => {
+        if (hiddenTasks.has(taskUid)) {
+          throw Object.assign(new Error(`Task \`${taskUid}\` not found.`), {
+            cause: { code: 'task_not_found' },
+          });
+        }
+        return failingTasks.has(taskUid)
+          ? { status: 'failed', error: { code: 'internal' } }
+          : { status: 'succeeded' };
+      },
+    };
+    const index = (uid: string) => ({
+      updateSettings: async (settings: unknown) => {
+        calls.push({ uid, op: 'updateSettings', arg: settings });
+        return enqueue();
+      },
+      updateEmbedders: async (embedders: unknown) => {
+        calls.push({ uid, op: 'updateEmbedders', arg: embedders });
+        return enqueue();
+      },
+      resetEmbedders: async () => {
+        calls.push({ uid, op: 'resetEmbedders' });
+        return enqueue();
+      },
+      getEmbedders: async () =>
+        uid === 'researchentities' || uid.endsWith('_researchentities')
+          ? (args.liveEmbedders ?? {})
+          : {},
+      addDocuments: async (documents: unknown[]) => {
+        calls.push({ uid, op: 'addDocuments' });
+        documentsByUid.set(uid, [...(documentsByUid.get(uid) ?? []), ...documents]);
+        return enqueue(args.failAddDocuments);
+      },
+      deleteDocuments: async (ids: string[]) => {
+        calls.push({ uid, op: 'deleteDocuments', arg: ids });
+        return enqueue();
+      },
+      deleteAllDocuments: async () => {
+        calls.push({ uid, op: 'deleteAllDocuments' });
+        return enqueue();
+      },
+      getStats: async () => ({
+        numberOfDocuments: args.reportedDocumentCount ?? (documentsByUid.get(uid) ?? []).length,
+      }),
+      tasks,
+    });
+    const notFound = () =>
+      Object.assign(new Error('index not found'), { cause: { code: 'index_not_found' } });
+    const client = {
+      index,
+      tasks,
+      getRawIndex: async (uid: string) => {
+        if (!existing.has(uid)) throw notFound();
+        return { uid, createdAt: createdAtByUid.get(uid) };
+      },
+      createIndex: async (uid: string, options?: unknown) => {
+        calls.push({ uid, op: 'createIndex', arg: options });
+        existing.add(uid);
+        stampCreatedAt(uid);
+        return enqueue();
+      },
+      swapIndexes: async (swaps: Array<{ indexes: [string, string] }>) => {
+        calls.push({ uid: '*', op: 'swapIndexes', arg: swaps });
+        if (!args.swapNeverApplies) {
+          for (const { indexes } of swaps) {
+            const [left, right] = indexes;
+            const leftCreatedAt = createdAtByUid.get(left);
+            createdAtByUid.set(left, createdAtByUid.get(right) as string);
+            createdAtByUid.set(right, leftCreatedAt as string);
+          }
+        }
+        const task = enqueue();
+        if (args.swapTaskHiddenFromKey) hiddenTasks.add(task.taskUid);
+        return task;
+      },
+      deleteIndex: async (uid: string) => {
+        calls.push({ uid, op: 'deleteIndex' });
+        existing.delete(uid);
+        createdAtByUid.delete(uid);
+        return enqueue();
+      },
+    };
+    return { client, calls, existing };
+  };
+
+  const rows = [
+    { _id: 'e1', name: 'Sample Lab', archived: false },
+    { _id: 'e2', name: 'Other Lab', archived: false },
+  ];
+  const rebuild = (client: unknown, changedDuringBuild: unknown[] = []) =>
+    rebuildResearchEntitySearchIndex({
+      swapConfirmation: { timeoutMs: 50, pollIntervalMs: 1, sleep: async () => {} },
+      warmVocabulary: async () => new Set<string>(),
+      pageSize: 5,
+      clearExisting: true,
+      getClient: async () => client as any,
+      getIndex: async () => {
+        throw new Error('a replacing rebuild must not write the live index in place');
+      },
+      fetchPage: async (page: number) => (page === 1 ? rows : []),
+      fetchMemberNames: async () => new Map(),
+      fetchChangedSince: async () => changedDuringBuild,
+    });
+
+  let previousKey: string | undefined;
+  beforeEach(() => {
+    previousKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    invalidateResearchEntitySearchEmbedderCache();
+    if (previousKey !== undefined) process.env.OPENAI_API_KEY = previousKey;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('builds a fresh index, swaps it in once, and deletes the previous copy afterwards', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    const { client, calls } = makeFakeMeili();
+
+    const result = await rebuild(client);
+
+    expect(calls.filter((call) => call.uid === 'researchentities')).toEqual([]);
+    expect(calls.map((call) => `${call.op} ${call.uid}`)).toEqual([
+      'createIndex researchentities_next',
+      'updateSettings researchentities_next',
+      'updateEmbedders researchentities_next',
+      'addDocuments researchentities_next',
+      'swapIndexes *',
+      'deleteIndex researchentities_next',
+    ]);
+    expect(calls.find((call) => call.op === 'updateSettings')?.arg).toEqual(
+      getResearchEntitySearchIndexSettings(),
+    );
+    expect(calls.find((call) => call.op === 'swapIndexes')?.arg).toEqual([
+      { indexes: ['researchentities', 'researchentities_next'] },
+    ]);
+    expect(result).toMatchObject({
+      indexedDocumentCount: 2,
+      clearedExisting: true,
+      swap: {
+        liveIndexUid: 'researchentities',
+        stagingIndexUid: 'researchentities_next',
+        createdLiveIndex: false,
+        previousIndexDeleted: true,
+        catchUpReindexedCount: 0,
+        catchUpDeletedCount: 0,
+      },
+    });
+    expect(Date.parse(result.finishedAt)).toBeGreaterThanOrEqual(Date.parse(result.startedAt));
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('confirms the swap from the live index when a prefix-scoped key cannot read the swap task (#4859)', async () => {
+    const { client, calls } = makeFakeMeili({ swapTaskHiddenFromKey: true });
+
+    const result = await rebuild(client);
+
+    expect(calls.map((call) => `${call.op} ${call.uid}`).slice(-2)).toEqual([
+      'swapIndexes *',
+      'deleteIndex researchentities_next',
+    ]);
+    expect(result.swap).toMatchObject({ previousIndexDeleted: true });
+  });
+
+  it('fails and swaps nothing it can claim when a hidden swap task never reaches the live index', async () => {
+    const { client, calls } = makeFakeMeili({
+      swapTaskHiddenFromKey: true,
+      swapNeverApplies: true,
+    });
+
+    await expect(rebuild(client)).rejects.toThrow(
+      /swapIndexes researchentities researchentities_next task \d+ was not confirmed within 50 ms/,
+    );
+    expect(calls.at(-1)).toEqual({ uid: 'researchentities_next', op: 'deleteIndex' });
+    expect(calls.filter((call) => call.uid === 'researchentities')).toEqual([]);
+  });
+
+  it('re-adds a row edited during the build to the live index after the swap', async () => {
+    const { client, calls } = makeFakeMeili();
+    const editedDuringBuild = { _id: 'e1', name: 'Renamed Lab', archived: false };
+
+    const result = await rebuild(client, [editedDuringBuild]);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    expect(ops.indexOf('addDocuments researchentities')).toBeGreaterThan(
+      ops.indexOf('swapIndexes *'),
+    );
+    expect(ops).not.toContain('deleteDocuments researchentities');
+    expect(result.swap).toMatchObject({ catchUpReindexedCount: 1, catchUpDeletedCount: 0 });
+  });
+
+  it('deletes a row archived during the build from the live index after the swap', async () => {
+    const { client, calls } = makeFakeMeili();
+    const archivedDuringBuild = { _id: 'e2', name: 'Other Lab', archived: true };
+
+    const result = await rebuild(client, [archivedDuringBuild]);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    const liveDelete = calls.find(
+      (call) => call.op === 'deleteDocuments' && call.uid === 'researchentities',
+    );
+    expect(liveDelete?.arg).toEqual(['e2']);
+    expect(ops.indexOf('deleteDocuments researchentities')).toBeGreaterThan(
+      ops.indexOf('swapIndexes *'),
+    );
+    expect(ops).not.toContain('addDocuments researchentities');
+    expect(result.swap).toMatchObject({ catchUpReindexedCount: 0, catchUpDeletedCount: 1 });
+  });
+
+  it('leaves the live index untouched and swaps nothing when a document batch fails', async () => {
+    const { client, calls, existing } = makeFakeMeili({ failAddDocuments: true });
+
+    await expect(rebuild(client)).rejects.toThrow(/addDocuments task \d+ did not succeed/);
+
+    expect(calls.filter((call) => call.uid === 'researchentities')).toEqual([]);
+    expect(calls.some((call) => call.op === 'swapIndexes')).toBe(false);
+    expect(calls.at(-1)).toEqual({ uid: 'researchentities_next', op: 'deleteIndex' });
+    expect([...existing]).toEqual(['researchentities']);
+  });
+
+  it('refuses to swap when the fresh index holds fewer documents than were built', async () => {
+    const { client, calls } = makeFakeMeili({ reportedDocumentCount: 1 });
+
+    await expect(rebuild(client)).rejects.toThrow(
+      /Refusing to swap: researchentities_next holds 1 documents but the rebuild indexed 2/,
+    );
+    expect(calls.some((call) => call.op === 'swapIndexes')).toBe(false);
+  });
+
+  it('deletes a staging index an interrupted rebuild left behind before building', async () => {
+    const { client, calls } = makeFakeMeili({
+      existing: ['researchentities', 'researchentities_next'],
+    });
+
+    await rebuild(client);
+
+    expect(calls.slice(0, 2).map((call) => `${call.op} ${call.uid}`)).toEqual([
+      'deleteIndex researchentities_next',
+      'createIndex researchentities_next',
+    ]);
+  });
+
+  it('creates an empty live index first when none exists, so the swap has two sides', async () => {
+    const { client, calls } = makeFakeMeili({ existing: [] });
+
+    const result = await rebuild(client);
+
+    const ops = calls.map((call) => `${call.op} ${call.uid}`);
+    expect(ops.indexOf('createIndex researchentities')).toBeLessThan(ops.indexOf('swapIndexes *'));
+    expect(result.swap?.createdLiveIndex).toBe(true);
+  });
+
+  it('refuses before building when a prefixed live index has an embedder the shell cannot recreate', async () => {
+    vi.spyOn(meiliClient, 'resolveIndexName').mockImplementation((name: string) => `beta_${name}`);
+    const { client, calls } = makeFakeMeili({
+      existing: ['beta_researchentities'],
+      liveEmbedders: { default: {} },
+    });
+
+    await expect(rebuild(client)).rejects.toThrow(/stored embedder and OPENAI_API_KEY/);
+    expect(calls).toEqual([]);
+  });
+
+  it('rebuilds a prefixed index without a key when the live index carries no embedder', async () => {
+    vi.spyOn(meiliClient, 'resolveIndexName').mockImplementation((name: string) => `beta_${name}`);
+    const { client, calls } = makeFakeMeili({ existing: ['beta_researchentities'] });
+
+    const result = await rebuild(client);
+
+    expect(
+      calls.some((call) => call.op === 'updateEmbedders' || call.op === 'resetEmbedders'),
+    ).toBe(false);
+    expect(result.swap?.stagingIndexUid).toBe('beta_researchentities_next');
   });
 });
 
@@ -942,11 +1802,11 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -956,15 +1816,16 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
   const collectIndexedIds = async () => {
     const indexedIds: string[] = [];
     const fakeIndex = {
-      updateSettings: async () => {},
-      deleteAllDocuments: async () => {},
+      updateSettings: async () => ({ taskUid: 1 }),
       addDocuments: async (documents: Array<{ id: string }>) => {
         for (const document of documents) indexedIds.push(document.id);
+        return { taskUid: 3 };
       },
+      tasks: succeedingTaskClient,
     };
     await rebuildResearchEntitySearchIndex({
+      warmVocabulary: async () => new Set<string>(),
       pageSize: 50,
-      clearExisting: true,
       getIndex: async () => fakeIndex as any,
       fetchMemberNames: async () => new Map(),
     });
@@ -1091,5 +1952,167 @@ describe('first-person revoice parity with the detail path (#3418)', () => {
       shortDescription: already,
     } as any);
     expect(doc?.shortDescription).toBe(already);
+  });
+});
+
+describe('index document field allowlist (#3944)', () => {
+  const bookkeepingRow = () => ({
+    _id: new mongoose.Types.ObjectId('64b7f0c2a1b2c3d4e5f60718'),
+    __v: 3,
+    slug: 'allowlist-fixture-lab',
+    name: 'Allowlist Fixture Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    archived: false,
+    school: 'School of Public Health',
+    departments: ['Epidemiology'],
+    researchAreas: ['Genetics', 'China'],
+    shortDescription: 'Studies how inherited variation shapes disease risk.',
+    studentVisibilityTier: 'student_ready',
+    browseRankScore: 12,
+    fieldProvenance: {
+      researchAreas: {
+        sourceName: 'ysm-mesh-keyword',
+        sourceUrl: 'https://ysph.yale.edu/profile/allowlist-fixture/',
+      },
+    },
+    recentGrants: [{ id: 'award-allowlist', agency: 'NIH', title: 'Synthetic award' }],
+    sourceLinkHealth: [{ url: 'https://example.yale.edu/allowlist', healthStatus: 'OK' }],
+    confidenceByField: { researchAreas: 0.9 },
+    manuallyLockedFields: ['name'],
+    fieldLockProvenance: { name: { lockedBy: 'operator' } },
+    studentVisibilityReasons: ['synthetic reason'],
+    accessAcceptanceLevel: 'high',
+    studentVisibilityVersion: 3,
+    totalInquiriesCache: 4,
+    claimedByFaculty: false,
+    studentDecisionExplanation: { summary: 'A synthetic retired explanation.' },
+    description: 'A synthetic legacy paragraph.',
+    archiveReason: 'synthetic misspelled reason',
+    departmentIds: ['dept-1'],
+    researchAreaIds: ['area-1'],
+    openness: 'open',
+    profileSynthesisDescription: 'A synthetic synthesis paragraph.',
+    embedding: [0.1, 0.2],
+  });
+
+  it('indexes only allowlisted fields, dropping provenance, operator bookkeeping and retired fields', () => {
+    const doc = buildResearchEntitySearchIndexDocument(bookkeepingRow());
+
+    expect(doc).not.toBeNull();
+    for (const key of Object.keys(doc as Record<string, unknown>)) {
+      expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(key);
+    }
+    for (const dropped of [
+      '_id',
+      '__v',
+      'fieldProvenance',
+      'recentGrants',
+      'sourceLinkHealth',
+      'confidenceByField',
+      'manuallyLockedFields',
+      'fieldLockProvenance',
+      'studentVisibilityReasons',
+      'accessAcceptanceLevel',
+      'studentVisibilityVersion',
+      'totalInquiriesCache',
+      'claimedByFaculty',
+      'studentDecisionExplanation',
+      'description',
+      'archiveReason',
+      'departmentIds',
+      'researchAreaIds',
+      'openness',
+      'profileSynthesisDescription',
+      'embedding',
+    ]) {
+      expect(doc).not.toHaveProperty(dropped);
+    }
+    expect(doc).toMatchObject({
+      id: '64b7f0c2a1b2c3d4e5f60718',
+      slug: 'allowlist-fixture-lab',
+      studentVisibilityTier: 'student_ready',
+      browseRankScore: 12,
+      departments: ['Epidemiology'],
+    });
+  });
+
+  it('still consults provenance while building, though provenance is not indexed', () => {
+    const doc = buildResearchEntitySearchIndexDocument(bookkeepingRow());
+
+    expect(doc?.researchAreas).toEqual(['Genetics']);
+    expect(doc).not.toHaveProperty('fieldProvenance');
+  });
+
+  it('allowlists every attribute the index settings search, filter or sort on', () => {
+    const settings = getResearchEntitySearchIndexSettings();
+    for (const attribute of [
+      RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+      ...settings.searchableAttributes,
+      ...settings.filterableAttributes,
+      ...settings.sortableAttributes,
+    ]) {
+      expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(attribute);
+    }
+  });
+
+  it('allowlists every field the embedder template renders and every field an index reader retrieves', () => {
+    const template =
+      buildResearchEntitySearchEmbedderConfig('synthetic-key').default.documentTemplate;
+    const templateFields = Array.from(template.matchAll(/doc\.([A-Za-z_]+)/g), (match) => match[1]);
+
+    expect(templateFields.length).toBeGreaterThan(0);
+    for (const field of [
+      ...templateFields,
+      ...RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS,
+      'slug',
+      'departments',
+      'researchAreas',
+      'leadProfessorNames',
+      'professorNames',
+      'studentVisibilityTier',
+      'sortTitle',
+      'sortTitleQualifier',
+      'browseTiebreakKey',
+    ]) {
+      expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(field);
+    }
+  });
+});
+
+describe('buildResearchEntitySearchIndexDocument MeSH descriptor terms (#4373)', () => {
+  const meshProfileRow = (overrides: Record<string, unknown> = {}) => ({
+    _id: new mongoose.Types.ObjectId(),
+    slug: 'synthetic-mesh-profile',
+    name: 'Synthetic Clinical Outcomes Group',
+    entityType: 'LAB',
+    fullDescription: 'Studies outcomes after urologic surgery in adult patients.',
+    departments: ['Urology'],
+    researchAreas: ['Robotics', 'Urology'],
+    fieldProvenance: {
+      researchAreas: { sourceUrl: 'https://medicine.yale.edu/profile/synthetic-person/' },
+    },
+    ...overrides,
+  });
+
+  it('records the descriptor words no own evidence on a MeSH-indexed profile names', () => {
+    const document = buildResearchEntitySearchIndexDocument(meshProfileRow());
+    expect(document?.meshDescriptorOnlyTerms).toEqual(['robotic']);
+    expect(document?.researchAreas).toEqual(['Robotics', 'Urology']);
+  });
+
+  it('records nothing when the row names the descriptor or its topics are not from MeSH', () => {
+    expect(
+      buildResearchEntitySearchIndexDocument(
+        meshProfileRow({ fullDescription: 'Builds surgical robotics platforms.' }),
+      )?.meshDescriptorOnlyTerms,
+    ).toBeUndefined();
+    expect(
+      buildResearchEntitySearchIndexDocument(
+        meshProfileRow({
+          fieldProvenance: { researchAreas: { sourceUrl: 'https://synthetic-lab.example.org/' } },
+        }),
+      )?.meshDescriptorOnlyTerms,
+    ).toBeUndefined();
   });
 });

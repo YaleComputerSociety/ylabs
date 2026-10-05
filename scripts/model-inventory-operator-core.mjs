@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isPrimaryProductionDatabaseName, SERVING_DATABASE_NAMES } from './databaseNames.mjs';
 import { assertTempArtifactParent } from './tempArtifactRoots.mjs';
 
 export const INVENTORY_PROFILES = Object.freeze({
@@ -247,8 +248,10 @@ export function validateInventoryProfileValues(profileName, values) {
   if (!databaseName || databaseName.includes('/')) {
     throw new Error('MONGODBURL must include one explicit database name.');
   }
-  if (databaseName.toLowerCase() === 'production') {
-    throw new Error('Inventory profiles must never select the primary Production database.');
+  if (isPrimaryProductionDatabaseName(databaseName)) {
+    throw new Error(
+      `Inventory profiles must never select the primary Production database (${SERVING_DATABASE_NAMES.production}).`,
+    );
   }
   if (databaseName !== profile.databaseName) {
     throw new Error(

@@ -27,6 +27,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON } from '../../models/entityArchival';
 import {
   healedEntityTypeForRetiredProgramObservations,
   isRetiredProgramResearchEntityType,
@@ -41,11 +42,11 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -55,7 +56,7 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities']) {
+    for (const name of ['observations', 'research_entities', 'fellowships']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -115,7 +116,7 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
     ).toBe(false);
   });
 
-  it('heals a retired PROGRAM assertion from the co-observed kind rather than dropping the entity (#2206)', () => {
+  it('heals a retired PROGRAM assertion from a research-structure kind rather than dropping the entity (#2206)', () => {
     const kindObservation = (value: string) => ({
       field: 'kind',
       value,
@@ -124,9 +125,6 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
       observedAt: new Date('2026-08-24T00:00:00Z'),
     });
 
-    expect(healedEntityTypeForRetiredProgramObservations([kindObservation('program')])).toBe(
-      'INITIATIVE',
-    );
     expect(healedEntityTypeForRetiredProgramObservations([kindObservation('lab')])).toBe('LAB');
     expect(healedEntityTypeForRetiredProgramObservations([kindObservation('individual')])).toBe(
       'FACULTY_RESEARCH_AREA',
@@ -164,7 +162,21 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
     expect(healed.map((o) => o.value)).toEqual(['INITIATIVE', 'LAB', 'PROGRAM']);
   });
 
-  it('mints a department research pathway that used to be dropped, typed from its kind (#2206)', async () => {
+  it('treats a program kind as confirming the retired type, never healing it (#3746)', () => {
+    expect(
+      healedEntityTypeForRetiredProgramObservations([
+        {
+          field: 'kind',
+          value: 'program',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.8,
+          observedAt: new Date('2026-08-24T00:00:00Z'),
+        },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('mints no research entity for a department pathway its source classified as a program (#3746)', async () => {
     await seedObservation(
       'department-undergrad-research-psychology',
       'name',
@@ -177,15 +189,11 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
       entityKey: 'department-undergrad-research-psychology',
     });
 
-    expect(result.skipped).not.toBe('program-entity-type-retired');
-    expect(result.created).toBe(true);
-
-    const doc = await ResearchEntity.findOne({
-      slug: 'department-undergrad-research-psychology',
-    }).lean<{ entityType?: string; kind?: string; name?: string }>();
-    expect(doc?.entityType).toBe('INITIATIVE');
-    expect(doc?.kind).toBe('initiative');
-    expect(doc?.name).toBe('Psychology Undergraduate Research Opportunities');
+    expect(result.skipped).toBe('program-entity-type-retired');
+    expect(result.created).toBe(false);
+    await expect(
+      ResearchEntity.countDocuments({ slug: 'department-undergrad-research-psychology' }),
+    ).resolves.toBe(0);
   });
 
   it('mints a PI lab whose stale entityType said PROGRAM but whose kind said lab (#2206)', async () => {
@@ -301,5 +309,122 @@ describe('materializeEntity refuses to mint or resurrect a PROGRAM research enti
 
     expect(result.skipped).not.toBe('program-entity-type-retired');
     expect(result.created).toBe(true);
+  });
+  describe('a research row whose program lives on /programs (#3746)', () => {
+    const pathwayKey = 'department-undergrad-research-example-pathway';
+
+    const seedFellowship = async (archived: boolean): Promise<void> => {
+      const db = mongoose.connection.db;
+      if (!db) throw new Error('no db');
+      await db.collection('fellowships').insertOne({
+        _id: new mongoose.Types.ObjectId(),
+        sourceKey: pathwayKey,
+        title: 'Example Pathway Undergraduate Research',
+        archived,
+      });
+    };
+
+    const seedLiveInitiative = async (): Promise<mongoose.Types.ObjectId> => {
+      const db = mongoose.connection.db;
+      if (!db) throw new Error('no db');
+      const _id = new mongoose.Types.ObjectId();
+      await db.collection('research_entities').insertOne({
+        _id,
+        slug: pathwayKey,
+        name: 'Example Pathway Undergraduate Research',
+        kind: 'initiative',
+        entityType: 'INITIATIVE',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+      });
+      return _id;
+    };
+
+    const seedProgramTypedEvidence = async (): Promise<void> => {
+      await seedObservation(pathwayKey, 'name', 'Example Pathway Undergraduate Research');
+      await seedObservation(pathwayKey, 'entityType', 'PROGRAM');
+    };
+
+    const storedRow = () =>
+      ResearchEntity.findOne({ slug: pathwayKey }).lean<{
+        archived?: boolean;
+        archivedReason?: string;
+        studentVisibilityTier?: string;
+      }>();
+
+    it('archives the research row with an attributed reason and removes it from search', async () => {
+      const id = await seedLiveInitiative();
+      await seedProgramTypedEvidence();
+      await seedFellowship(false);
+
+      const result = await materializeEntity('researchEntity', { entityKey: pathwayKey });
+
+      expect(result.skipped).toBe('program-lives-on-programs');
+      const doc = await storedRow();
+      expect(doc?.archived).toBe(true);
+      expect(doc?.archivedReason).toBe(PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON);
+      expect(doc?.studentVisibilityTier).toBeUndefined();
+      expect(meiliMocks.deleteFromIndex).toHaveBeenCalledWith('researchEntity', String(id));
+      expect(meiliMocks.syncEntity).not.toHaveBeenCalled();
+    });
+
+    it('re-derives the same answer on a second run without writing or reviving the row', async () => {
+      await seedLiveInitiative();
+      await seedProgramTypedEvidence();
+      await seedFellowship(false);
+      await materializeEntity('researchEntity', { entityKey: pathwayKey });
+      vi.clearAllMocks();
+
+      const second = await materializeEntity('researchEntity', { entityKey: pathwayKey });
+
+      expect(second.skipped).toBe('program-lives-on-programs');
+      expect(second.fieldsWritten).toBe(0);
+      expect(meiliMocks.syncEntity).not.toHaveBeenCalled();
+      expect((await storedRow())?.archived).toBe(true);
+    });
+
+    it('plans the archive on a dry run without writing it', async () => {
+      await seedLiveInitiative();
+      await seedProgramTypedEvidence();
+      await seedFellowship(false);
+
+      const result = await materializeEntity(
+        'researchEntity',
+        { entityKey: pathwayKey },
+        { dryRun: true },
+      );
+
+      expect(result.skipped).toBe('program-lives-on-programs');
+      expect(result.plannedSet).toMatchObject({
+        archived: true,
+        archivedReason: PROGRAM_LIVES_ON_PROGRAMS_ARCHIVE_REASON,
+      });
+      expect((await storedRow())?.archived).toBe(false);
+      expect(meiliMocks.deleteFromIndex).not.toHaveBeenCalled();
+    });
+
+    it('mints nothing for program-typed evidence whose program already lives on /programs', async () => {
+      await seedProgramTypedEvidence();
+      await seedObservation(pathwayKey, 'kind', 'center');
+      await seedFellowship(false);
+
+      const result = await materializeEntity('researchEntity', { entityKey: pathwayKey });
+
+      expect(result.skipped).toBe('program-lives-on-programs');
+      expect(result.created).toBe(false);
+      await expect(ResearchEntity.countDocuments({ slug: pathwayKey })).resolves.toBe(0);
+    });
+
+    it('keeps the research row live when its program has no live record on /programs', async () => {
+      await seedLiveInitiative();
+      await seedProgramTypedEvidence();
+      await seedFellowship(true);
+
+      const result = await materializeEntity('researchEntity', { entityKey: pathwayKey });
+
+      expect(result.skipped).not.toBe('program-lives-on-programs');
+      expect((await storedRow())?.archived).toBe(false);
+      expect(meiliMocks.deleteFromIndex).not.toHaveBeenCalled();
+    });
   });
 });

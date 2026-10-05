@@ -1,16 +1,29 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { memo, type MouseEvent } from 'react';
+import { CheckIcon } from '../shared/icons';
 
 import {
-  buildWayInBadges,
+  buildWayInBadgesFromEntity,
   buildResearchHomeContextLine,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import ArrowRightIcon from '../shared/ArrowRightIcon';
-import { formatTitleCaseLabel } from '../../utils/displayText';
-import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
+import SlashBreakableText from '../shared/SlashBreakableText';
+import { formatTitleCaseLabel, formatTopicChipLabel } from '../../utils/displayText';
+import { cardSummary } from '../../utils/cardSummary';
+import {
+  CREATIVE_PRACTICE_KIND_LABEL,
+  entityKindLabel,
+  isCreativePracticeEntity,
+  leadRoleLabelForEntity,
+  sanitizeResearchEntityCopy,
+} from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
+import {
+  researchProfileOpenState,
+  type ResearchProfileOpenSource,
+} from '../../utils/researchAnalytics';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -19,6 +32,7 @@ interface ResearchHomeCardProps {
   onOpen?: (home: ResearchCluster) => void;
   variant?: 'default' | 'compact';
   showAdminQuality?: boolean;
+  openSource?: ResearchProfileOpenSource;
 }
 
 const countLabel = (count: number, singular: string, plural: string): string =>
@@ -27,11 +41,9 @@ const countLabel = (count: number, singular: string, plural: string): string =>
 const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
-const titleCaseContactRole = (role?: string): string => {
-  const trimmed = (role || '').trim();
-  if (!trimmed) return 'Principal investigator';
-  return formatTitleCaseLabel(trimmed);
-};
+const DEFAULT_CONTACT_ROLE = 'Principal investigator';
+
+const servedContactRole = (role?: string): string => (role || '').trim() || DEFAULT_CONTACT_ROLE;
 
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   'Undergrad evidence': 'Has hosted undergraduate researchers',
@@ -44,6 +56,17 @@ const ACCESS_SIGNAL_PRIORITY = ['Undergrad evidence', 'Student project evidence'
 const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project evidence']);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
+
+const sentenceCaseLabel = (label: string): string =>
+  label
+    .split(' ')
+    .map((word, index) => (index === 0 ? word : word.toLowerCase()))
+    .join(' ');
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const titleAlreadyNamesKind = (title: string, kind: string): boolean =>
+  new RegExp(`\\b${escapeRegExp(kind)}\\b`, 'i').test(title);
 
 const accessSignalRank = (label: string): number => {
   const index = ACCESS_SIGNAL_PRIORITY.indexOf(label);
@@ -77,8 +100,10 @@ const ResearchHomeCard = ({
   onOpen,
   variant = 'default',
   showAdminQuality = false,
+  openSource,
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
+  const profileOpenState = openSource ? researchProfileOpenState(openSource) : undefined;
   const isCompact = variant === 'compact';
   const homeEntities = home.entities.slice(0, 3).map((entity) => ({
     id: entity._id || entity.slug,
@@ -92,7 +117,7 @@ const ResearchHomeCard = ({
       : null;
   const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
-    : buildWayInBadges(home.entities[0], home.pathways || []);
+    : buildWayInBadgesFromEntity(home.entities[0]);
   const orderedAccessSignals = orderAccessSignals(wayInBadges);
   const leadAccessSignal = orderedAccessSignals.find((signal) =>
     ELEVATED_ACCESS_SIGNALS.has(signal),
@@ -121,14 +146,14 @@ const ResearchHomeCard = ({
     ),
   );
   const mobileTopicCap = isCompact ? 2 : 3;
-  const desktopTopicCap = isCompact ? 3 : 5;
+  const desktopTopicCap = isCompact ? mobileTopicCap : 5;
   const alwaysVisibleTopicBadges = topicBadges.slice(0, mobileTopicCap);
-  const desktopOnlyTopicBadges = isCompact
-    ? []
-    : topicBadges.slice(mobileTopicCap, desktopTopicCap);
-  const mobileMoreCount = topicBadges.length - mobileTopicCap;
-  const desktopMoreCount = topicBadges.length - desktopTopicCap;
-  const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
+  const desktopOnlyTopicBadges = topicBadges.slice(mobileTopicCap, desktopTopicCap);
+  const mobileMoreCount = Math.max(0, topicBadges.length - mobileTopicCap);
+  const desktopMoreCount = Math.max(0, topicBadges.length - desktopTopicCap);
+  const moreCountIsResponsive = mobileMoreCount !== desktopMoreCount;
+  const sanitizedDescription = sanitizeResearchEntityCopy(home.description, home.entities[0]);
+  const description = isCompact ? cardSummary(sanitizedDescription) : sanitizedDescription;
   const primaryProfileUrl = primaryLinkedEntity
     ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}`
     : '';
@@ -138,12 +163,26 @@ const ResearchHomeCard = ({
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
-  const leadRole = titleCaseContactRole(leadEntity?.contactRole);
+  const contactRole = servedContactRole(leadEntity?.contactRole);
+  const leadRole =
+    leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
+  const isEmeritusLed = home.entities[0]?.emeritusLed === true;
+  const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
+  const kindLabel = sentenceCaseLabel(entityKindLabel(home.entities[0]));
+  const showsKindLabel =
+    isCompact &&
+    home.entities.length === 1 &&
+    !isCreativePractice &&
+    !titleAlreadyNamesKind(home.label, kindLabel);
+  const cardContextLine = showsKindLabel
+    ? [kindLabel, contextLine].filter(Boolean).join(' · ')
+    : contextLine;
+  const showsProfileFooter = !(isCompact && singleLinkedEntity);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
     if (primaryProfileUrl) {
       onOpen?.(home);
-      void navigate(primaryProfileUrl);
+      void navigate(primaryProfileUrl, { state: profileOpenState });
       return;
     }
 
@@ -153,6 +192,64 @@ const ResearchHomeCard = ({
     if (!isCardClickable || isInteractiveElement(event.target)) return;
     activateCard();
   };
+
+  const statusPills = [
+    isCreativePractice && (
+      <span
+        key="creative-practice"
+        className="yr-pill yr-pill-compact border-line-warm bg-parchment px-2 py-0.5 text-ink-soft"
+      >
+        {CREATIVE_PRACTICE_KIND_LABEL}
+      </span>
+    ),
+    isEmeritusLed && (
+      <span key="emeritus" className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
+        Led by emeritus faculty
+      </span>
+    ),
+    ...metadataBadges.map((label) => (
+      <span key={`metadata-${label}`} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
+        {formatTitleCaseLabel(label)}
+      </span>
+    )),
+  ].filter(Boolean);
+  const sparseContextPill = home.contextState === 'sparse' && home.contextLabel && (
+    <span key="sparse-context" className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
+      {home.contextLabel}
+    </span>
+  );
+  const compactStatusPills = sparseContextPill ? [...statusPills, sparseContextPill] : statusPills;
+  const topicPills = [
+    ...alwaysVisibleTopicBadges.map((label) => (
+      <span key={`topic-${label}`} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
+        {formatTopicChipLabel(label)}
+      </span>
+    )),
+    ...desktopOnlyTopicBadges.map((label) => (
+      <span
+        key={`topic-${label}`}
+        className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+      >
+        {formatTopicChipLabel(label)}
+      </span>
+    )),
+    mobileMoreCount > 0 && (
+      <span
+        key="more-mobile"
+        className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+      >
+        +{mobileMoreCount} more
+      </span>
+    ),
+    moreCountIsResponsive && desktopMoreCount > 0 && (
+      <span
+        key="more-desktop"
+        className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+      >
+        +{desktopMoreCount} more
+      </span>
+    ),
+  ].filter(Boolean);
 
   return (
     <article
@@ -171,22 +268,23 @@ const ResearchHomeCard = ({
             {singleLinkedEntity ? (
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
+                state={profileOpenState}
                 className="yr-link yr-focus-ring rounded-control"
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpen?.(home);
                 }}
               >
-                {home.label}
+                <SlashBreakableText text={home.label} />
               </Link>
             ) : (
-              home.label
+              <SlashBreakableText text={home.label} />
             )}
           </h3>
         </div>
 
-        {contextLine && (
-          <p className="text-xs font-medium leading-relaxed text-muted">{contextLine}</p>
+        {cardContextLine && (
+          <p className="text-xs font-medium leading-relaxed text-muted">{cardContextLine}</p>
         )}
 
         {leadName && (
@@ -229,45 +327,28 @@ const ResearchHomeCard = ({
           </div>
         )}
 
-        <div className="flex flex-wrap gap-1.5">
-          {metadataBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
-              {formatTitleCaseLabel(label)}
-            </span>
-          ))}
-          {alwaysVisibleTopicBadges.map((label) => (
-            <span key={label} className="yr-pill yr-pill-blue yr-pill-compact px-2 py-0.5">
-              {formatTitleCaseLabel(label)}
-            </span>
-          ))}
-          {desktopOnlyTopicBadges.map((label) => (
-            <span
-              key={label}
-              className="yr-pill yr-pill-blue hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
-            >
-              {formatTitleCaseLabel(label)}
-            </span>
-          ))}
-          {mobileMoreCount > 0 && (
-            <span className="yr-pill yr-pill-compact px-2 py-0.5 sm:hidden">
-              +{mobileMoreCount} more
-            </span>
-          )}
-          {desktopMoreCount > 0 && !isCompact && (
-            <span className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex">
-              +{desktopMoreCount} more
-            </span>
-          )}
-          {home.contextState === 'sparse' && home.contextLabel && (
-            <span className="yr-pill yr-pill-gold yr-pill-compact px-2 py-0.5">
-              {home.contextLabel}
-            </span>
-          )}
-        </div>
-
-        <p className={`${isCompact ? 'line-clamp-4' : ''} text-sm leading-relaxed text-muted`}>
-          {description}
-        </p>
+        {isCompact ? (
+          <>
+            {compactStatusPills.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">{compactStatusPills}</div>
+            )}
+            {description && <p className="text-sm leading-relaxed text-muted">{description}</p>}
+            {topicPills.length > 0 && (
+              <div className="flex flex-wrap gap-1.5" aria-label="Topics">
+                {topicPills}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {statusPills}
+              {topicPills}
+              {sparseContextPill}
+            </div>
+            <p className="text-sm leading-relaxed text-muted">{description}</p>
+          </>
+        )}
       </div>
 
       {!isCompact && (
@@ -297,18 +378,7 @@ const ResearchHomeCard = ({
         >
           {leadAccessSignal && (
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]">
-              <svg
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="h-4 w-4 shrink-0"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 011.42-1.42l2.79 2.8 6.79-6.8a1 1 0 011.42 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
+              <CheckIcon className="h-4 w-4 shrink-0" />
               {accessSignalLabel(leadAccessSignal)}
             </span>
           )}
@@ -322,7 +392,7 @@ const ResearchHomeCard = ({
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Research entries</p>
+          <p className="yr-kicker mb-2">Research entries</p>
           <div className="flex flex-col gap-1">
             {homeEntities.map((entity) => {
               if (!entity.slug) {
@@ -341,6 +411,7 @@ const ResearchHomeCard = ({
                 <Link
                   key={entity.slug}
                   to={`/research/${safeRouteSegment(entity.slug)}`}
+                  state={profileOpenState}
                   className="yr-focus-ring yr-link inline-flex min-h-[44px] items-center text-sm font-medium"
                   onClick={(event) => event.stopPropagation()}
                 >
@@ -354,7 +425,7 @@ const ResearchHomeCard = ({
 
       {showEvidenceFooter && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">Evidence</p>
+          <p className="yr-kicker mb-2">Evidence</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
             {primaryEvidenceUrl && (
               <a
@@ -371,23 +442,26 @@ const ResearchHomeCard = ({
         </div>
       )}
 
-      {primaryLinkedEntity ? (
-        <div className="mt-auto flex flex-wrap gap-2 border-t border-line pt-3">
-          <Link
-            to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
-            className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-            onClick={(event) => event.stopPropagation()}
-          >
-            View profile
-            <ArrowRightIcon />
-          </Link>
+      {primaryLinkedEntity && showsProfileFooter ? (
+        <div className="mt-auto pt-4">
+          <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+            <Link
+              to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
+              state={profileOpenState}
+              className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
+              onClick={(event) => event.stopPropagation()}
+            >
+              View profile
+              <ArrowRightIcon />
+            </Link>
+          </div>
         </div>
       ) : !primaryLinkedEntity && onSelect ? (
         <div className="mt-auto pt-4">
           <button
             type="button"
             onClick={() => onSelect(home.label)}
-            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
+            className="yr-focus-ring inline-flex min-h-[44px] items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-blue-soft)]"
           >
             Search this area
           </button>

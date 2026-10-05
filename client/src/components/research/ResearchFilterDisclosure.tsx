@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
 import {
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
+import useMediaQuery from '../../hooks/useMediaQuery';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -29,6 +31,8 @@ interface ResearchFilterDisclosureProps {
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  operatorControls?: ReactNode;
+  operatorActiveCount?: number;
 }
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
@@ -57,6 +61,8 @@ const ResearchFilterDisclosure = ({
   variant = 'popover',
   isOpen: controlledIsOpen,
   onOpenChange,
+  operatorControls,
+  operatorActiveCount = 0,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -69,9 +75,7 @@ const ResearchFilterDisclosure = ({
     },
     [isControlledOpen, onOpenChange],
   );
-  const [isDesktop, setIsDesktop] = useState(
-    () => window.matchMedia?.('(min-width: 640px)').matches ?? false,
-  );
+  const isDesktop = useMediaQuery('(min-width: 640px)');
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -113,6 +117,7 @@ const ResearchFilterDisclosure = ({
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment));
+  const triggerCount = activeCount + operatorActiveCount;
   const visibleFields = (
     [
       showEntityType && 'entityType',
@@ -137,15 +142,6 @@ const ResearchFilterDisclosure = ({
     }
     closeRef.current?.focus();
   }, [isDesktop]);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(min-width: 640px)');
-    if (!mediaQuery) return;
-    const handleChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
-    setIsDesktop(mediaQuery.matches);
-    mediaQuery.addEventListener?.('change', handleChange);
-    return () => mediaQuery.removeEventListener?.('change', handleChange);
-  }, []);
 
   const closeFilters = useCallback(
     (restoreFocus = true) => {
@@ -197,7 +193,7 @@ const ResearchFilterDisclosure = ({
   }, [closeFilters, isDesktop, isOpen, isSidebar]);
 
   const emptyMessage = hasFacetError
-    ? 'Filter options are temporarily unavailable. Your search still works, and active filters can be cleared.'
+    ? 'Filter options could not load with this search. Active filters can still be cleared.'
     : isApplying
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
@@ -220,7 +216,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
@@ -240,7 +236,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
@@ -260,7 +256,7 @@ const ResearchFilterDisclosure = ({
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-strong)] bg-white px-3 text-base text-ink"
+              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (
@@ -338,7 +334,7 @@ const ResearchFilterDisclosure = ({
         </div>
         {isApplying && (
           <p role="status" className="mt-1 text-xs text-muted">
-            Applying filters...
+            Applying filters…
           </p>
         )}
         <div className="mt-4 min-w-0 space-y-4">
@@ -360,38 +356,20 @@ const ResearchFilterDisclosure = ({
           aria-expanded={isOpen}
           aria-haspopup="dialog"
           aria-controls={isOpen ? panelId : undefined}
-          aria-label={`Filters${activeCount > 0 ? `, ${activeCount} active` : ''}`}
+          aria-label={`Filters${triggerCount > 0 ? `, ${triggerCount} active` : ''}`}
           onClick={() => (isOpen ? closeFilters() : setIsOpen(true))}
           className="yr-focus-ring inline-flex min-h-11 max-w-full items-center gap-2 rounded-card border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)]"
         >
-          <svg
-            aria-hidden="true"
-            className="h-4 w-4 shrink-0"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M3 5h18M6 12h12M10 19h4"
-            />
-          </svg>
+          <FiltersIcon className="h-4 w-4 shrink-0" />
           <span>Filters</span>
-          {activeCount > 0 && (
+          {triggerCount > 0 && (
             <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
-              {activeCount}
+              {triggerCount}
             </span>
           )}
-          <svg
-            aria-hidden="true"
+          <ChevronDownIcon
             className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M5.2 7.5 10 12.3l4.8-4.8 1.4 1.4-6.2 6.2-6.2-6.2 1.4-1.4Z" />
-          </svg>
+          />
         </button>
 
         {isOpen && (
@@ -400,7 +378,7 @@ const ResearchFilterDisclosure = ({
               data-testid="research-filter-backdrop"
               aria-hidden="true"
               onMouseDown={() => closeFilters()}
-              className="fixed inset-0 z-40 bg-[var(--yr-navy)]/30 sm:hidden"
+              className="fixed inset-0 z-40 bg-scrim sm:hidden"
             />
             <div
               id={panelId}
@@ -423,14 +401,14 @@ const ResearchFilterDisclosure = ({
                   first.focus();
                 }
               }}
-              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full max-w-full overflow-y-auto rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay"
+              className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full max-w-full overflow-y-auto rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[22rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay"
             >
               <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--yr-line)] px-4 py-3">
                 <div className="min-w-0">
                   <h3 className="truncate text-base font-semibold text-ink">Research filters</h3>
                   {isApplying && (
                     <p role="status" className="mt-0.5 text-xs text-muted">
-                      Applying filters...
+                      Applying filters…
                     </p>
                   )}
                 </div>
@@ -439,9 +417,9 @@ const ResearchFilterDisclosure = ({
                   type="button"
                   aria-label="Close filters"
                   onClick={() => closeFilters()}
-                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-card text-2xl text-muted hover:bg-[var(--yr-panel-muted)]"
+                  className="yr-focus-ring inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-card text-muted hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
                 >
-                  <span aria-hidden="true">×</span>
+                  <CloseIcon size={20} />
                 </button>
               </div>
 
@@ -449,6 +427,20 @@ const ResearchFilterDisclosure = ({
                 {facetCountWarning}
                 {filterFields}
                 {clearAllButton}
+                {operatorControls && (
+                  <section
+                    aria-labelledby={`${panelId}-operator-controls`}
+                    className="grid gap-3 border-t border-[var(--yr-line)] pt-4"
+                  >
+                    <h4
+                      id={`${panelId}-operator-controls`}
+                      className="text-sm font-semibold text-ink"
+                    >
+                      Operator controls
+                    </h4>
+                    {operatorControls}
+                  </section>
+                )}
               </div>
             </div>
           </>

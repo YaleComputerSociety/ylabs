@@ -11,13 +11,16 @@ import {
 } from '../scrapers/observationFingerprintNormalization';
 import {
   LATEST_WINS_FINGERPRINT_FIELDS,
+  LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE,
+  LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE,
   QUALITY_GUARDED_PROSE_FIELDS,
 } from '../scrapers/observationStore';
 import { resolveMongoDatabaseName, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SCRIPT_NAME = 'observations:normalize-fingerprints';
 const BATCH_SIZE = 1000;
@@ -178,6 +181,12 @@ async function collapseActiveDuplicates(
         $or: [
           { field: { $in: [...LATEST_WINS_FINGERPRINT_FIELDS] } },
           { entityType: 'fellowship' },
+          ...Object.entries(LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE).map(
+            ([entityType, fields]) => ({ entityType, field: { $in: [...fields] } }),
+          ),
+          ...Object.entries(LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE).map(
+            ([sourceName, fields]) => ({ sourceName, field: { $in: [...fields] } }),
+          ),
         ],
       },
     },
@@ -250,7 +259,7 @@ async function main(args: NormalizeFingerprintsArgs): Promise<void> {
   const databaseName = resolveMongoDatabaseName(mongoUrl);
   assertNormalizeFingerprintsApplyAllowed({ ...args, databaseName });
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const fingerprints = await rewriteFingerprints(args, args.apply);
     const collapse = await collapseActiveDuplicates(args, args.apply);

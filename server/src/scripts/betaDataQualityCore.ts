@@ -1,12 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import type { ReferenceEdge } from './referenceEdgeAudit';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type BetaDataQualitySeverity = 'ok' | 'warn' | 'error';
 export type DataQualityWarningClassification =
-  | 'must_fix_before_promotion'
-  | 'accepted_release_warning'
-  | 'post_promotion_backlog';
+  'must_fix_before_promotion' | 'accepted_release_warning' | 'post_promotion_backlog';
 
 export interface BetaDataQualityOptions {
   strict: boolean;
@@ -1441,3 +1440,22 @@ function parsePositiveIntegerValue(value: string, flagName: string): number {
   }
   return parsed;
 }
+
+export const SIGNAL_TARGET_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
+  {
+    name: 'signals.researchEntityId',
+    collectionName: 'signals',
+    localField: 'researchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+    ownerFilter: { orgUnitId: null },
+  },
+  {
+    name: 'signals.orgUnitId',
+    collectionName: 'signals',
+    localField: 'orgUnitId',
+    targetCollectionName: 'org_units',
+    required: true,
+    ownerFilter: { orgUnitId: { $ne: null } },
+  },
+]);

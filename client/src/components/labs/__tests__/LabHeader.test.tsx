@@ -24,14 +24,9 @@ const baseGroup: ResearchGroup = {
   name: 'Lovelace Computational Lab',
   kind: 'lab',
   websiteUrl: 'https://example.edu/lovelace',
-  location: 'Watson Center, Room 200',
   departments: ['Computer Science', 'Mathematics'],
   researchAreas: ['Theoretical CS'],
   school: 'School of Engineering & Applied Science',
-  typicalUndergradRoles: [],
-  prerequisiteCourses: [],
-  creditOptions: [],
-  fundingPrograms: [],
   contactEmail: 'ada@example.edu',
   contactName: 'Ada Lovelace',
   contactRole: 'PI',
@@ -39,12 +34,11 @@ const baseGroup: ResearchGroup = {
 };
 
 describe('LabHeader', () => {
-  it('renders the lab name, school, and location', () => {
+  it('renders the lab name and school', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     const h1 = container.querySelector('h1');
     expect(h1?.textContent).toBe('Lovelace Computational Lab');
     expect(container.textContent).toContain('School of Engineering & Applied Science');
-    expect(container.textContent).toContain('Watson Center, Room 200');
   });
 
   it('renders displayName in the H1 when it differs from name', () => {

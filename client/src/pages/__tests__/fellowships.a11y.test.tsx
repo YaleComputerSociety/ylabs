@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,7 +11,6 @@ import FellowshipSearchContext, {
 import UserContext from '../../contexts/UserContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
-import { summarizeProgramJourney } from '../../utils/programJourney';
 import axios from '../../utils/axios';
 import { expectNoAxeViolations } from '../../testUtils/axe';
 
@@ -40,6 +39,7 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -98,7 +98,6 @@ const renderPage = (
     setPage: vi.fn(),
     pageSize: 500,
     total: fellowships.length,
-    journeySummary: summarizeProgramJourney(fellowships),
     ...overrides,
   };
 
@@ -146,6 +145,26 @@ describe('fellowships surface accessibility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('has no serious or critical axe violations for a failed load', async () => {
+    const { container } = renderPage([], { loadError: true, total: 0 });
+    await screen.findByRole('alert');
+    await expectNoAxeViolations(container);
+  });
+
+  it('offers a retry in place of the empty state and the tiles when the load failed', async () => {
+    const refreshFellowships = vi.fn();
+    renderPage([], { loadError: true, total: 0, refreshFellowships });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Could not load programs and fellowships');
+    expect(screen.queryByText('No program records found')).toBeNull();
+    expect(screen.queryByText('Open application windows')).toBeNull();
+    expect(screen.queryByText(/\d+ results?$/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refreshFellowships).toHaveBeenCalledTimes(1);
+  });
+
   it('has no serious or critical axe violations for the program detail modal', async () => {
     const { container } = render(
       <MemoryRouter>
@@ -168,5 +187,40 @@ describe('fellowships surface accessibility', () => {
     const dialog = await screen.findByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations for department research guidance (#4285)', async () => {
+    const guidance = baseFellowship({
+      id: 'guidance',
+      title: 'Fixture Guidance Page',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      departmentResearchGuidance: true,
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Department research guidance',
+      requiresMentorBeforeApply: false,
+      isAcceptingApplications: false,
+      deadline: null,
+      sourceUrl: 'https://fixture.yale.edu/undergraduate-research',
+    });
+    const { container } = renderPage([baseFellowship(), guidance]);
+    await screen.findByText('Fixture Guidance Page');
+    await expectNoAxeViolations(container);
+    cleanup();
+
+    const modal = render(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={guidance}
+            isOpen
+            isFavorite={false}
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('dialog');
+    await expectNoAxeViolations(modal.container);
   });
 });

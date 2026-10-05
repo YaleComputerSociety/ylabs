@@ -10,6 +10,7 @@ import {
   type RawYseFaculty,
 } from '../sources/yseFacultyDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import type { LabUrlEvidence } from '../utils/labUrlEvidence';
 import * as cheerio from 'cheerio';
 
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
@@ -257,6 +258,36 @@ describe('facultyToResearchEntityObservations', () => {
     expect(obs.find((o) => o.field === 'fullDescription')?.confidenceOverride).toBe(0.55);
   });
 
+  // The retirement pass's population is lane-agnostic, so this lane has to ask the
+  // same title screens the YSM and roster mints ask or it keeps minting rows the pass
+  // then archives (#3410).
+  it('mints no research entity for a title that owns no research', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    for (const title of [
+      'Laboratory Assistant 3',
+      'Postdoctoral Associate',
+      'Building Maintenance Supervisor',
+    ]) {
+      expect(
+        facultyToResearchEntityObservations({ ...profile, title }, 'yse:jordan-rivers'),
+      ).toEqual([]);
+    }
+  });
+
+  it('still mints for a faculty title and when no title is stated', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    expect(
+      facultyToResearchEntityObservations(
+        { ...profile, title: 'Professor of Hydrology' },
+        'yse:jordan-rivers',
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      facultyToResearchEntityObservations({ ...profile, title: undefined }, 'yse:jordan-rivers')
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it('keys the lead PI on the person-specific email so an existing professor resolves by email', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
     const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers');
@@ -320,10 +351,13 @@ describe('facultyToResearchEntityObservations', () => {
   });
 });
 
+const noStoredEvidence = async () => new Map<string, LabUrlEvidence>();
+const liveLabLinks = async () => false;
+
 describe('YseFacultyDirectoryScraper.run', () => {
   it('rejects unsafe runtime limits before fetching', async () => {
     const fetcher = vi.fn(async () => DIRECTORY_HTML);
-    const scraper = new YseFacultyDirectoryScraper(fetcher);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
     const { ctx } = makeContext({ limit: 9007199254740992 });
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
     expect(fetcher).not.toHaveBeenCalled();
@@ -336,7 +370,7 @@ describe('YseFacultyDirectoryScraper.run', () => {
       if (url === MEADOW.profileUrl) return PROFILE_NO_LAB;
       throw new Error(`unexpected url ${url}`);
     });
-    const scraper = new YseFacultyDirectoryScraper(fetcher);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -352,6 +386,53 @@ describe('YseFacultyDirectoryScraper.run', () => {
     expect(everySource).toContain(RIVERS.profileUrl);
     expect(everySource).toContain(MEADOW.profileUrl);
   });
+
+  // The whole run, not just the mint: a support-staff profile carrying a lab link it
+  // does not own still describes a real person, so the lane must emit the person and
+  // no research entity (#3410).
+  it('emits the person but no research entity for a support-staff profile carrying a lab link', async () => {
+    const staffSlug = 'quinn-instrument';
+    const staffUrl = `https://environment.yale.edu/directory/faculty/${staffSlug}`;
+    const directory = `
+<html><body><main>
+  <li><article class="profile__item">
+    <div class="profile__segment--name"><h2><a href="/directory/faculty/${staffSlug}">Quinn Instrument</a></h2></div>
+  </article></li>
+</main></body></html>
+`;
+    const staffProfile = `
+<html><body><main class="main-content">
+  <section class="profile flexhero">
+    <h1>Quinn Instrument</h1>
+    <div class="intro-text profile__position"><p><span class="semijoin">Laboratory Assistant 3</span></p></div>
+    <aside>
+      <div class="profile__info">
+        <div class="eyebrow">Links</div>
+        <ul><li><a href="https://riverslab.example.org" rel="nofollow">Lab Website</a></li></ul>
+      </div>
+    </aside>
+  </section>
+  <div class="grid-container">
+    <div class="cell medium-8">
+      <div class="wysiwyg">
+        <p>Runs the wetland isotope facility and maintains its instrumentation for the group.</p>
+      </div>
+    </div>
+  </div>
+</main></body></html>
+`;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return directory;
+      if (url === staffUrl) return staffProfile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.some((o) => o.entityType === 'researchEntity')).toBe(false);
+    expect(emitted.some((o) => o.entityType === 'user')).toBe(true);
+  });
 });
 
 describe('a linked lab site the corpus knows is dead (#3452)', () => {
@@ -360,10 +441,8 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     // LAB named "<Person> Lab" and the websiteUrl retraction could never stick:
     // this lane re-asserted the URL on the next run.
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
-    const obs = facultyToResearchEntityObservations(
-      profile,
-      'yse:jordan-rivers',
-      (url) => url === 'https://riverslab.example.org/',
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', (url) =>
+      url === 'https://riverslab.example.org/' ? 'dead' : 'usable',
     );
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
@@ -371,14 +450,28 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     expect(byField.name).toBe('Jordan Rivers Faculty Research');
     expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
     expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+    expect(obs.find((o) => o.field === 'slug')?.assertsNoValueFor).toEqual(['websiteUrl']);
+  });
+
+  it('withdraws the lab on a refusal but states no absence, because a refused link may still answer', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', () => 'refused');
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+    expect(obs.some((o) => o.assertsNoValueFor)).toBe(false);
+  });
+
+  it('states no absence for a profile with no lab link at all', () => {
+    const profile = { ...extractProfile(PROFILE_WITH_LAB, RIVERS), labUrl: undefined };
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', () => 'dead');
+    expect(obs.some((o) => o.assertsNoValueFor)).toBe(false);
   });
 
   it('keeps the lab when the verdict is about a different URL', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
-    const obs = facultyToResearchEntityObservations(
-      profile,
-      'yse:jordan-rivers',
-      (url) => url === 'https://some-other-site.example.org/',
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers', (url) =>
+      url === 'https://some-other-site.example.org/' ? 'dead' : 'usable',
     );
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('LAB');
@@ -391,14 +484,99 @@ describe('a linked lab site the corpus knows is dead (#3452)', () => {
     expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
   });
 
-  it('mints nothing when a dead lab link was the only reason to mint', () => {
-    // Withdrawing the lab drops the row to the areas/description arm, and a
-    // profile with neither must still mint nothing rather than an empty home.
+  it('mints nothing new when a dead lab link was the only reason to mint', () => {
     const bare = {
       ...extractProfile(PROFILE_WITH_LAB, RIVERS),
       researchAreas: [],
       description: '',
     };
-    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => true)).toEqual([]);
+    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead')).toEqual(
+      [],
+    );
+  });
+
+  it('still demotes and retracts an existing row whose dead lab link was its only content', () => {
+    const bare = {
+      ...extractProfile(PROFILE_WITH_LAB, RIVERS),
+      researchAreas: [],
+      description: '',
+    };
+    const obs = facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'dead', true);
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.kind).toBe('individual');
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(obs.some((o) => o.field === 'websiteUrl')).toBe(false);
+    expect(obs.find((o) => o.field === 'slug')?.assertsNoValueFor).toEqual(['websiteUrl']);
+  });
+
+  it('mints nothing when a refused lab link was the only reason to mint', () => {
+    const bare = {
+      ...extractProfile(PROFILE_WITH_LAB, RIVERS),
+      researchAreas: [],
+      description: '',
+    };
+    expect(facultyToResearchEntityObservations(bare, 'yse:jordan-rivers', () => 'refused')).toEqual(
+      [],
+    );
+  });
+});
+
+describe('a lab link whose verdict the link-health lane has since dropped (#3452)', () => {
+  const RIVERS_SLUG = 'yse-faculty-jordan-rivers';
+  const LAB_URL = 'https://riverslab.example.org/';
+  const fetcher = async (url: string) => {
+    if (url === DIRECTORY_URL) return DIRECTORY_HTML;
+    if (url === RIVERS.profileUrl) return PROFILE_WITH_LAB;
+    if (url === MEADOW.profileUrl) return PROFILE_NO_LAB;
+    throw new Error(`unexpected url ${url}`);
+  };
+  const riversFields = (emitted: ObservationInput[]) =>
+    Object.fromEntries(
+      emitted
+        .filter((o) => o.entityType === 'researchEntity' && o.entityKey === RIVERS_SLUG)
+        .map((o) => [o.field, o.value]),
+    );
+
+  it('probes the link itself and stays withdrawn instead of re-minting the lab', async () => {
+    const prober = vi.fn(async (url: string) => url === LAB_URL);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, prober);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(prober).toHaveBeenCalledWith(LAB_URL);
+    const fields = riversFields(emitted);
+    expect(fields.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(fields.kind).toBe('individual');
+    expect(fields.name).toBe('Jordan Rivers Faculty Research');
+    expect(fields.sourceUrls).toEqual([RIVERS.profileUrl]);
+    expect(fields.websiteUrl).toBeUndefined();
+    const slugObs = emitted.find((o) => o.entityKey === RIVERS_SLUG && o.field === 'slug');
+    expect(slugObs?.assertsNoValueFor).toEqual(['websiteUrl']);
+  });
+
+  it('keeps the lab when the probe does not positively show the link is gone', async () => {
+    const scraper = new YseFacultyDirectoryScraper(fetcher, noStoredEvidence, liveLabLinks);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const fields = riversFields(emitted);
+    expect(fields.entityType).toBe('LAB');
+    expect(fields.kind).toBe('lab');
+    expect(fields.websiteUrl).toBe(LAB_URL);
+  });
+
+  it('never probes when a stored verdict already answers, so it cannot overrule the link-health lane', async () => {
+    const prober = vi.fn(async () => true);
+    const healthy = async () =>
+      new Map<string, LabUrlEvidence>([
+        [RIVERS_SLUG, { sourceLinkHealth: [{ url: LAB_URL, healthStatus: 'HEALTHY' }] }],
+      ]);
+    const scraper = new YseFacultyDirectoryScraper(fetcher, healthy, prober);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(prober).not.toHaveBeenCalled();
+    expect(riversFields(emitted).entityType).toBe('LAB');
   });
 });

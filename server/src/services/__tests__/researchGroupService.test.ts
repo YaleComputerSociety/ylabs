@@ -18,13 +18,29 @@ const mocks = vi.hoisted(() => ({
   accessSignalFind: vi.fn(),
   contactRouteFind: vi.fn(),
   postedOpportunityFind: vi.fn(),
-  listPlanningContextsForResearchEntities: vi.fn(),
   getPublicUndergraduateLogistics: vi.fn(),
   getResearchSearchQueryVector: vi.fn(),
+  hasAdminAuthorityForUser: vi.fn(),
+  researchEntityServesPublicDetail: vi.fn(),
+}));
+
+vi.mock('../researchEntityPublicDescription', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchEntityPublicDescription')>();
+  mocks.researchEntityServesPublicDetail.mockImplementation(
+    actual.researchEntityServesPublicDetail,
+  );
+  return {
+    ...actual,
+    researchEntityServesPublicDetail: mocks.researchEntityServesPublicDetail,
+  };
+});
+
+vi.mock('../adminGrantService', () => ({
+  hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     searchSimilarDocuments: mocks.searchSimilarDocuments,
     getEmbedders: mocks.getEmbedders,
@@ -75,10 +91,6 @@ vi.mock('../../models/signal', () => ({
   },
 }));
 
-vi.mock('../planningContextService', () => ({
-  listPlanningContextsForResearchEntities: mocks.listPlanningContextsForResearchEntities,
-}));
-
 vi.mock('../researchSearchQueryEmbedding', () => ({
   getResearchSearchQueryVector: mocks.getResearchSearchQueryVector,
 }));
@@ -90,6 +102,9 @@ vi.mock('../undergraduateLogisticsService', () => ({
 
 import {
   orderCandidatesByKeywordLeg,
+  fuseKeywordAndSemanticRankings,
+  keywordLegTopHitIsNameMatch,
+  SEMANTIC_LEG_SIZE,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
   dropCoincidentalTypoOnlyHits,
@@ -99,6 +114,8 @@ import {
   listSimilarResearchEntities,
   normalizeResearchSearchQuery,
   promoteExactAliasFieldMatches,
+  rankOwnEvidenceAboveMeshDescriptorMatches,
+  keepMeshDescriptorMatchesBelowOwnEvidence,
   normalizeResearchGroupObjectId,
   isFreshVerifiedOfficialRosterRow,
   publicResearchEntityLeadMemberNames,
@@ -110,11 +127,14 @@ import {
   PUBLIC_RELATED_ENTITY_PROJECTION,
 } from '../researchGroupService';
 import { missingPublicDescriptionGateFields } from '../researchEntityPublicDescription';
+import { detailServedSource, toPublicResearchEntityDto } from '../researchEntityDto';
 import {
   invalidateResearchEntitySearchEmbedderCache,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../researchSearchPagination';
+import { searchResearchGroups } from '../../controllers/researchGroupController';
+import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -150,7 +170,10 @@ beforeEach(() => {
   mocks.getResearchSearchQueryVector.mockReset();
   // Default to "no vector available" so every existing case keeps asserting the
   // params Meilisearch sees when it embeds the query itself.
-  mocks.getResearchSearchQueryVector.mockResolvedValue(null);
+  mocks.getResearchSearchQueryVector.mockResolvedValue({
+    vector: null,
+    semanticLegAffordable: true,
+  });
   mocks.listingDistinct.mockReset();
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
@@ -158,7 +181,6 @@ beforeEach(() => {
   // reads "no such row" rather than undefined.
   mocks.researchEntityFindOne.mockReturnValue(leanResult(null));
   mocks.researchEntityFind.mockReset();
-  mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
   mocks.roleAssignmentFind.mockReset();
@@ -181,7 +203,6 @@ beforeEach(() => {
   mocks.accessSignalFind.mockReturnValue(queryResult([]));
   mocks.contactRouteFind.mockReturnValue(queryResult([]));
   mocks.postedOpportunityFind.mockReturnValue(queryResult([]));
-  mocks.listPlanningContextsForResearchEntities.mockResolvedValue(new Map());
   mocks.getPublicUndergraduateLogistics.mockResolvedValue({ status: 'ready', claims: [] });
 });
 
@@ -196,6 +217,16 @@ describe('searchResearchGroupsViaMeili', () => {
       query: 'computer vision medical imaging',
       tokens: ['computer', 'vision', 'medical', 'imaging'],
       isTopicAliasQuery: false,
+    });
+  });
+
+  it('folds accented letters instead of splitting the word apart at them', () => {
+    expect(normalizeResearchSearchQuery('Pâtisserie Chimique Münchner')).toMatchObject({
+      query: 'patisserie chimique munchner',
+      tokens: ['patisserie', 'chimique', 'munchner'],
+    });
+    expect(normalizeResearchSearchQuery('Kıyı Økologi Straße')).toMatchObject({
+      tokens: ['kiyi', 'okologi', 'strasse'],
     });
   });
 
@@ -251,6 +282,139 @@ describe('searchResearchGroupsViaMeili', () => {
     ]) {
       expect(normalizeResearchSearchQuery(query)).toMatchObject({ query });
     }
+  });
+
+  it('ranks a keyword hit resting on a MeSH descriptor below hits with their own evidence', () => {
+    const hits = [
+      { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'own-lab' },
+      { id: 'descriptor-elsewhere', meshDescriptorOnlyTerms: ['urology'] },
+      { id: 'second-own-lab' },
+    ];
+    const ordered = rankOwnEvidenceAboveMeshDescriptorMatches(
+      hits,
+      normalizeResearchSearchQuery('robotics'),
+    );
+    expect(ordered.map((hit) => hit.id)).toEqual([
+      'own-lab',
+      'descriptor-elsewhere',
+      'second-own-lab',
+      'descriptor-only',
+    ]);
+    expect(
+      rankOwnEvidenceAboveMeshDescriptorMatches(hits, normalizeResearchSearchQuery('ml')).map(
+        (hit) => hit.id,
+      ),
+    ).toEqual(hits.map((hit) => hit.id));
+  });
+
+  it('keeps a MeSH descriptor match below own evidence after the semantic leg is fused in (#4538)', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const keywordLeg = rankOwnEvidenceAboveMeshDescriptorMatches(
+      [
+        { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+        { id: 'own-lab' },
+        { id: 'second-own-lab' },
+      ],
+      query,
+    );
+    const semanticLeg = [
+      { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'semantic-neighbour' },
+      { id: 'own-lab' },
+    ];
+    const fused = fuseKeywordAndSemanticRankings(keywordLeg, semanticLeg);
+
+    expect(fused.map((hit) => hit.id).indexOf('descriptor-only')).toBeLessThan(
+      fused.map((hit) => hit.id).indexOf('second-own-lab'),
+    );
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(fused, keywordLeg, query).map((hit) => hit.id),
+    ).toEqual(['own-lab', 'second-own-lab', 'descriptor-only', 'semantic-neighbour']);
+  });
+
+  it('leaves the fused order alone when no row rests on a MeSH descriptor for the query', () => {
+    const fused = [{ id: 'a' }, { id: 'b', meshDescriptorOnlyTerms: ['urology'] }, { id: 'c' }];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(
+        fused,
+        fused,
+        normalizeResearchSearchQuery('robotics'),
+      ),
+    ).toBe(fused);
+  });
+
+  it('keeps semantic neighbours that follow every own-evidence row behind the demoted rows', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const fused = [
+      { id: 'own-lab' },
+      { id: 'descriptor-only', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'neighbour-before' },
+      { id: 'second-own-lab' },
+      { id: 'neighbour-after' },
+    ];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(
+        fused,
+        [{ id: 'own-lab' }, { id: 'second-own-lab' }],
+        query,
+      ).map((hit) => hit.id),
+    ).toEqual([
+      'own-lab',
+      'neighbour-before',
+      'second-own-lab',
+      'descriptor-only',
+      'neighbour-after',
+    ]);
+  });
+
+  it('leaves a MeSH descriptor match the fusion already ranked below own evidence where it was', () => {
+    const query = normalizeResearchSearchQuery('robotics');
+    const keywordLeg = [{ id: 'own-lab' }];
+    const fused = [
+      { id: 'early-descriptor', meshDescriptorOnlyTerms: ['robotic'] },
+      { id: 'own-lab' },
+      { id: 'neighbour-a' },
+      { id: 'neighbour-b' },
+      { id: 'late-descriptor', meshDescriptorOnlyTerms: ['robotic'] },
+    ];
+
+    expect(
+      keepMeshDescriptorMatchesBelowOwnEvidence(fused, keywordLeg, query).map((hit) => hit.id),
+    ).toEqual(['own-lab', 'early-descriptor', 'neighbour-a', 'neighbour-b', 'late-descriptor']);
+    expect(keepMeshDescriptorMatchesBelowOwnEvidence(fused, [], query)).toBe(fused);
+  });
+
+  it('drops the institution name so it cannot outrank the topic', () => {
+    for (const query of [
+      'machine learning yale',
+      'machine learning research at yale',
+      'machine learning yale university',
+      'Yale machine learning',
+    ]) {
+      expect(normalizeResearchSearchQuery(query)).toMatchObject({
+        query: 'machine learning',
+        tokens: ['machine', 'learning'],
+      });
+    }
+    expect(normalizeResearchSearchQuery('yale quantum institute')).toMatchObject({
+      query: 'quantum institute',
+    });
+  });
+
+  it('keeps university as a topic and searches a bare institution query as typed', () => {
+    expect(normalizeResearchSearchQuery('university governance')).toMatchObject({
+      query: 'university governance',
+    });
+    expect(normalizeResearchSearchQuery('history of the university')).toMatchObject({
+      query: 'history university',
+    });
+    expect(normalizeResearchSearchQuery('yale')).toMatchObject({ query: 'yale' });
+    expect(normalizeResearchSearchQuery('yale university')).toMatchObject({
+      query: 'yale university',
+    });
   });
 
   it('strips question-frame verbs that name nothing in the corpus', () => {
@@ -435,23 +599,33 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
-  it('expands cross-domain biomedical, environmental, and social-science vernacular to canonical terms (#1463)', () => {
-    expect(normalizeResearchSearchQuery('cancer')).toMatchObject({
-      query: 'oncology cancer biology tumor biology cancer',
-      isTopicAliasQuery: true,
-      aliasTerms: ['oncology', 'cancer biology', 'tumor biology', 'cancer'],
+  it('sends a full-word topic the student typed down the ordinary path unexpanded (#1463, #3940)', () => {
+    for (const word of ['cancer', 'climate', 'mental health', 'infectious disease', 'heart']) {
+      expect(normalizeResearchSearchQuery(word)).toMatchObject({
+        query: word,
+        isTopicAliasQuery: false,
+        isAliasExpanded: false,
+        aliasExpansionKeepsShorthand: false,
+        aliasTerms: null,
+      });
+    }
+  });
+
+  it('expands a topic alias only when it is the whole query (#3797)', () => {
+    expect(normalizeResearchSearchQuery('drug addiction')).toMatchObject({
+      query: 'drug addiction',
+      tokens: ['drug', 'addiction'],
+      isTopicAliasQuery: false,
+      isAliasExpanded: false,
+      aliasTerms: null,
     });
-    expect(normalizeResearchSearchQuery('climate')).toMatchObject({
-      isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['climate change', 'environmental science']),
+    expect(normalizeResearchSearchQuery('neuro ethics')).toMatchObject({
+      query: 'neuro ethics',
+      isAliasExpanded: false,
     });
-    expect(normalizeResearchSearchQuery('mental health')).toMatchObject({
+    expect(normalizeResearchSearchQuery('neuro')).toMatchObject({
       isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['psychiatry']),
-    });
-    expect(normalizeResearchSearchQuery('infectious disease')).toMatchObject({
-      isTopicAliasQuery: true,
-      aliasTerms: expect.arrayContaining(['epidemiology', 'microbiology']),
+      aliasTerms: expect.arrayContaining(['neuroscience', 'neurology']),
     });
   });
 
@@ -1081,19 +1255,88 @@ describe('searchResearchGroupsViaMeili', () => {
   });
 
   it('marks browse results degraded when Meili cannot sort by browse rank', async () => {
+    const unsortable = {
+      code: 'invalid_search_sort',
+      message: 'Attribute `browseRankScore` is not sortable.',
+    };
+    mocks.search
+      .mockRejectedValueOnce(unsortable)
+      .mockRejectedValueOnce(unsortable)
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(3);
+    expect(mocks.search.mock.calls[2][1]).toEqual(
+      expect.objectContaining({ sort: ['lastObservedAt:desc'] }),
+    );
+    expect(result.degraded).toBe(true);
+  });
+
+  it('breaks default browse ties on the stable tiebreak key rather than observation time', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1].sort).toEqual([
+      'browseRankScore:desc',
+      'browseTiebreakKey:asc',
+    ]);
+  });
+
+  it('keeps the browse rank when only the tiebreak key is not yet sortable', async () => {
     mocks.search
       .mockRejectedValueOnce({
         code: 'invalid_search_sort',
-        message: 'Attribute `browseRankScore` is not sortable.',
+        message: 'Attribute `browseTiebreakKey` is not sortable.',
       })
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
 
     const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
-    expect(mocks.search.mock.calls[1][1]).toEqual(
-      expect.objectContaining({ sort: ['lastObservedAt:desc'] }),
+    expect(mocks.search.mock.calls[1][1].sort).toEqual([
+      'browseRankScore:desc',
+      'lastObservedAt:desc',
+    ]);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('keeps a text query sorted only by browse rank after relevance', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    for (const [, params] of mocks.search.mock.calls) {
+      if (params.sort) expect(params.sort).toEqual(['browseRankScore:desc']);
+    }
+  });
+
+  it('sorts A-Z by the indexed card title rather than the stored name', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24, { sortBy: 'name', sortOrder: 'asc' });
+
+    expect(mocks.search.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ sort: ['sortTitle:asc', 'sortTitleQualifier:asc'] }),
     );
+  });
+
+  it('falls back to the stored name when the index cannot sort by card title yet', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'invalid_search_sort',
+        message: 'Attribute `sortTitle` is not sortable.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {
+      sortBy: 'name',
+      sortOrder: 'desc',
+    });
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[1][1]).toEqual(expect.objectContaining({ sort: ['name:desc'] }));
     expect(result.degraded).toBe(true);
   });
 
@@ -1113,7 +1356,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'researchAreas', 'entityType'],
+        facets: ['schools', 'departments', 'entityType'],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -1142,6 +1385,18 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       hybrid: { semanticRatio: 0.8, embedder: 'default' },
       matchingStrategy: 'all',
+    });
+  });
+
+  it('searches a full-word topic over every attribute with the semantic leg, as the typed word (#3940)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('heart', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('heart');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('attributesToSearchOn');
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
     });
   });
 
@@ -1207,6 +1462,48 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).toHaveBeenCalledTimes(1);
   });
 
+  it('asks for no topic facet on a browse page that filters on no topic (#3951)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'School of Medicine': 4 },
+        departments: { Psychiatry: 2 },
+        entityType: { LAB: 4 },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', { departments: ['Psychiatry'] }, 1, 24);
+
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params.facets ?? []).not.toContain('researchAreas');
+    }
+    expect(result.facetDistribution).not.toHaveProperty('researchAreas');
+    expect(result.facetDistribution).toMatchObject({
+      school: { 'School of Medicine': 4 },
+      entityType: { LAB: 4 },
+    });
+  });
+
+  it('still counts the topic facet disjunctively while a topic filter is active (#3951)', async () => {
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 0,
+        facetDistribution: { schools: { 'School of Medicine': 1 }, departments: {} },
+      })
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 0,
+        facetDistribution: { researchAreas: { Histones: 5, Medicare: 3 } },
+      });
+
+    const result = await searchResearchGroupsViaMeili('', { researchAreas: ['Histones'] }, 1, 24);
+
+    expect(mocks.search.mock.calls[1][1]).toMatchObject({ facets: ['researchAreas'] });
+    expect(result.facetDistribution?.researchAreas).toEqual({ Histones: 5, Medicare: 3 });
+  });
+
   it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
@@ -1234,7 +1531,10 @@ describe('searchResearchGroupsViaMeili', () => {
 
   it('embeds the query once and hands the vector to every hybrid query in the request (#3149)', async () => {
     const queryVector = [0.1, 0.2, 0.3];
-    mocks.getResearchSearchQueryVector.mockResolvedValue(queryVector);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: queryVector,
+      semanticLegAffordable: true,
+    });
     mocks.search
       .mockResolvedValueOnce({
         hits: [],
@@ -1248,17 +1548,23 @@ describe('searchResearchGroupsViaMeili', () => {
     await searchResearchGroupsViaMeili('constitutional law', { school: ['Law School'] }, 1, 24);
 
     expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledTimes(1);
-    expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledWith('constitutional law');
+    expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledWith(
+      'constitutional law',
+      undefined,
+    );
     const hybridCalls = mocks.search.mock.calls.filter(([, params]) => params.hybrid);
     expect(hybridCalls).toHaveLength(3);
     hybridCalls.forEach(([, params]) => expect(params.vector).toEqual(queryVector));
     const keywordLegCalls = mocks.search.mock.calls.filter(([, params]) => !params.hybrid);
-    expect(keywordLegCalls).toHaveLength(1);
-    expect(keywordLegCalls[0][1]).not.toHaveProperty('vector');
+    expect(keywordLegCalls.map(([, params]) => params.matchingStrategy)).toEqual(['all', 'last']);
+    keywordLegCalls.forEach(([, params]) => expect(params).not.toHaveProperty('vector'));
   });
 
   it('omits the vector when no embedding is available so Meilisearch embeds the query itself (#3149)', async () => {
-    mocks.getResearchSearchQueryVector.mockResolvedValue(null);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: null,
+      semanticLegAffordable: true,
+    });
     mocks.search
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 })
       .mockResolvedValueOnce({ totalHits: 0 })
@@ -1271,7 +1577,10 @@ describe('searchResearchGroupsViaMeili', () => {
   });
 
   it('drops the vector with the embedder when the hybrid retry degrades to keyword search (#3149)', async () => {
-    mocks.getResearchSearchQueryVector.mockResolvedValue([0.1, 0.2, 0.3]);
+    mocks.getResearchSearchQueryVector.mockResolvedValue({
+      vector: [0.1, 0.2, 0.3],
+      semanticLegAffordable: true,
+    });
     mocks.search
       .mockRejectedValueOnce(
         Object.assign(new Error('Embedder `default` does not exist'), {
@@ -1450,6 +1759,32 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(false);
   });
 
+  it('marks a text search degraded when the embedder check itself fails', async () => {
+    mocks.getEmbedders.mockRejectedValue(new Error('meili embedders endpoint timed out'));
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+      expect(mocks.search).toHaveBeenCalledTimes(1);
+      expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+      expect(result.degraded).toBe(true);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('keeps a keyword-only text search undegraded when no embedder is configured', async () => {
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+    expect(result.degraded).toBe(false);
+  });
+
   it('drops a lone coincidental single-typo keyword hit for a real zero-coverage query (#1015)', async () => {
     const historianId = '67d8928150621bcef434a1f7';
     mocks.search.mockResolvedValueOnce({
@@ -1536,6 +1871,232 @@ describe('searchResearchGroupsViaMeili', () => {
       'machine-learning-lab',
     ]);
     expect(result.estimatedTotalHits).toBe(1);
+  });
+
+  describe('fuseKeywordAndSemanticRankings (#3797)', () => {
+    const hit = (id: string) => ({ id });
+
+    it('ranks by summed reciprocal rank, so a row both legs rank highly beats a single-leg leader', () => {
+      const fused = fuseKeywordAndSemanticRankings(
+        [hit('exact-tag'), hit('both'), hit('keyword-only')],
+        [hit('both'), hit('semantic-only')],
+      );
+      expect(fused.map((h) => h.id)).toEqual([
+        'both',
+        'exact-tag',
+        'semantic-only',
+        'keyword-only',
+      ]);
+    });
+
+    it('reads no deeper than the semantic leg size', () => {
+      const semantic = Array.from({ length: SEMANTIC_LEG_SIZE + 5 }, (_, i) => hit(`s${i}`));
+      expect(fuseKeywordAndSemanticRankings([], semantic)).toHaveLength(SEMANTIC_LEG_SIZE);
+    });
+  });
+
+  describe('keywordLegTopHitIsNameMatch (#3797)', () => {
+    const lead = (name: string, spans: Array<[number, number]>) => ({
+      leadProfessorNames: [name],
+      _matchesPosition: {
+        leadProfessorNames: spans.map(([start, length]) => ({ start, length, indices: [0] })),
+      },
+    });
+
+    it('is true when every query word is matched exactly inside a person name', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Ada Fixture', [
+              [0, 3],
+              [4, 7],
+            ]),
+          ],
+          ['ada', 'fixture'],
+        ),
+      ).toBe(true);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              professorNames: ['Other Person', "Ada O'Fixture"],
+              _matchesPosition: { professorNames: [{ start: 4, length: 9, indices: [1] }] },
+            },
+          ],
+          ['ofixture'],
+        ),
+      ).toBe(true);
+    });
+
+    it('matches a typed accented name against the same accented name in a lead', () => {
+      const query = normalizeResearchSearchQuery('Jösef Fixtüre');
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Jösef Fixtüre', [
+              [0, 5],
+              [6, 7],
+            ]),
+          ],
+          query.tokens,
+        ),
+      ).toBe(true);
+    });
+
+    it('admits a short first name beside an exact surname, never a lone prefix (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Adaline Fixture', [
+              [0, 3],
+              [8, 7],
+            ]),
+          ],
+          ['ada', 'fixture'],
+        ),
+      ).toBe(true);
+      expect(keywordLegTopHitIsNameMatch([lead('Adaline Fixture', [[0, 3]])], ['ada'])).toBe(false);
+    });
+
+    it('admits a short first name before the surname, which Meili highlights as the whole typo-matched word (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            lead('Steven Vexmoor', [
+              [0, 6],
+              [7, 7],
+            ]),
+          ],
+          ['steve', 'vexmoor'],
+        ),
+      ).toBe(true);
+      expect(keywordLegTopHitIsNameMatch([lead('Steven Vexmoor', [[0, 6]])], ['steve'])).toBe(
+        false,
+      );
+    });
+
+    it('keeps a person-named center a title match when its type word also matches (#3942)', () => {
+      const center = {
+        name: 'Vexmoor Center',
+        entityTypeSearchTerms: ['center'],
+        _matchesPosition: {
+          name: [
+            { start: 0, length: 7 },
+            { start: 8, length: 6 },
+          ],
+          entityTypeSearchTerms: [{ start: 0, length: 6, indices: [0] }],
+        },
+      };
+      expect(keywordLegTopHitIsNameMatch([center], ['vexmoor', 'center'])).toBe(true);
+    });
+
+    it('is false when a topic word only happens to match a surname', () => {
+      const greenLead = {
+        ...lead('Pat Green', [[4, 5]]),
+        _matchesPosition: {
+          ...lead('Pat Green', [[4, 5]])._matchesPosition,
+          researchAreas: [{ start: 0, length: 9 }],
+        },
+      };
+      expect(keywordLegTopHitIsNameMatch([greenLead], ['green', 'chemistry'])).toBe(false);
+    });
+
+    it('applies the topic veto when a lead name covers only some query words and the title the rest (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              name: 'Green Chemistry Lab',
+              leadProfessorNames: ['Pat Green'],
+              _matchesPosition: {
+                leadProfessorNames: [{ start: 4, length: 5, indices: [0] }],
+                name: [
+                  { start: 0, length: 5 },
+                  { start: 6, length: 9 },
+                ],
+                researchAreas: [{ start: 0, length: 9 }],
+              },
+            },
+          ],
+          ['green', 'chemistry'],
+        ),
+      ).toBe(false);
+    });
+
+    it('is false for a typo or prefix match inside a name', () => {
+      expect(keywordLegTopHitIsNameMatch([lead('Sam Braun', [[4, 5]])], ['brain'])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([lead('Sam Stoneman', [[4, 5]])], ['stone'])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([lead('Sam Stoneman', [[4, 8]])], ['stoneman'])).toBe(
+        true,
+      );
+    });
+
+    it('counts an exact whole-word match in the entity title, where unindexed leads leave the name (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              name: 'Ada Fixture Faculty Research',
+              leadProfessorNames: [],
+              _matchesPosition: {
+                name: [
+                  { start: 0, length: 3 },
+                  { start: 4, length: 7 },
+                ],
+              },
+            },
+          ],
+          ['ada', 'fixture'],
+        ),
+      ).toBe(true);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              displayName: 'Fixturely Lab',
+              _matchesPosition: { displayName: [{ start: 0, length: 7 }] },
+            },
+          ],
+          ['fixture'],
+        ),
+      ).toBe(false);
+    });
+
+    it('reads a title match as a topic when the same row matches the query in its topic fields (#3853)', () => {
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              name: 'Statistics Lab',
+              _matchesPosition: {
+                name: [{ start: 0, length: 10 }],
+                departments: [{ start: 0, length: 10 }],
+              },
+            },
+          ],
+          ['statistics'],
+        ),
+      ).toBe(false);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            {
+              leadProfessorNames: ['Pat Fixture'],
+              _matchesPosition: {
+                leadProfessorNames: [{ start: 4, length: 7, indices: [0] }],
+                researchAreas: [{ start: 0, length: 7 }],
+              },
+            },
+          ],
+          ['fixture'],
+        ),
+      ).toBe(true);
+    });
+
+    it('is false with no hits or no query words', () => {
+      expect(keywordLegTopHitIsNameMatch([], ['ada'])).toBe(false);
+      expect(keywordLegTopHitIsNameMatch([lead('Ada Fixture', [[0, 3]])], [])).toBe(false);
+    });
   });
 
   describe('orderCandidatesByKeywordLeg', () => {
@@ -1805,8 +2366,19 @@ describe('searchResearchGroupsViaMeili', () => {
 
     const poolParams = mocks.search.mock.calls[0][1];
     const keywordLegParams = mocks.search.mock.calls[2][1];
-    expect(poolParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
-    expect(keywordLegParams.attributesToRetrieve).toEqual(['id', 'departments', 'researchAreas']);
+    expect(poolParams.attributesToRetrieve).toEqual([
+      'id',
+      'departments',
+      'researchAreas',
+      'meshDescriptorOnlyTerms',
+    ]);
+    expect(keywordLegParams.attributesToRetrieve).toEqual([
+      'id',
+      'departments',
+      'researchAreas',
+      'meshDescriptorOnlyTerms',
+    ]);
+    expect(keywordLegParams).not.toHaveProperty('showMatchesPosition');
     // The keyword leg is identified by carrying no hybrid block, and it still
     // asks for the ranking-score details the typo filter reads.
     expect(keywordLegParams).not.toHaveProperty('hybrid');
@@ -2007,6 +2579,145 @@ describe('searchResearchGroupsViaMeili', () => {
       expect(result.estimatedTotalHits).toBe(1);
     });
 
+    describe('rank fusion with the semantic leg (#3797)', () => {
+      const exactTagHit = {
+        ...typoCorrectedKeywordHit,
+        id: '67d8928150621bcef434a1f1',
+        slug: 'single-exact-tag',
+        name: 'Single Exact Tag',
+        _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
+      };
+      const topicalLab = {
+        ...typoCorrectedKeywordHit,
+        id: '67d8928150621bcef434a1f2',
+        slug: 'topical-lab',
+        name: 'Topical Lab',
+        _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
+      };
+      const semanticOnlyLab = {
+        ...semanticNeighbour,
+        id: '67d8928150621bcef434a1f3',
+        slug: 'semantic-only-lab',
+        name: 'Semantic Only Lab',
+      };
+
+      it('fuses the keyword and semantic rankings so a row both legs rank highly leads', async () => {
+        mocks.search
+          .mockResolvedValueOnce({ hits: [exactTagHit], estimatedTotalHits: 3, totalHits: 3 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 3 })
+          .mockResolvedValueOnce({ hits: [exactTagHit, topicalLab] })
+          .mockResolvedValueOnce({ hits: [topicalLab, semanticOnlyLab] });
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(exactTagHit), servable(topicalLab), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('robotics', {}, 1, 18);
+
+        const semanticLegParams = mocks.search.mock.calls[3][1];
+        expect(semanticLegParams.hybrid).toMatchObject({ semanticRatio: 1 });
+        expect(semanticLegParams).not.toHaveProperty('rankingScoreThreshold');
+        expect(semanticLegParams).toMatchObject({ hitsPerPage: SEMANTIC_LEG_SIZE });
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'topical-lab',
+          'single-exact-tag',
+          'semantic-only-lab',
+        ]);
+      });
+
+      it('withholds semantic-only rows when the best keyword hit is a name match', async () => {
+        const namedLab = {
+          ...exactTagHit,
+          leadProfessorNames: ['Ada Fixture'],
+          _matchesPosition: {
+            leadProfessorNames: [
+              { start: 0, length: 3, indices: [0] },
+              { start: 4, length: 7, indices: [0] },
+            ],
+          },
+        };
+        mocks.search
+          .mockResolvedValueOnce({ hits: [semanticOnlyLab], estimatedTotalHits: 2, totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [namedLab] })
+          .mockResolvedValueOnce({ hits: [semanticOnlyLab, namedLab] });
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(namedLab), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'single-exact-tag',
+        ]);
+        expect(result.estimatedTotalHits).toBe(1);
+      });
+
+      it('keeps the keyword order for a name search instead of re-ranking same-named rows by meaning (#3853)', async () => {
+        const personRow = {
+          ...exactTagHit,
+          leadProfessorNames: ['Ada Fixture'],
+          _matchesPosition: {
+            leadProfessorNames: [
+              { start: 0, length: 3, indices: [0] },
+              { start: 4, length: 7, indices: [0] },
+            ],
+          },
+        };
+        const sameSurnameRow = { ...topicalLab, leadProfessorNames: ['Bo Fixture'] };
+        mocks.search
+          .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 2, totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [personRow, sameSurnameRow] })
+          .mockResolvedValueOnce({ hits: [sameSurnameRow, semanticOnlyLab, personRow] });
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(personRow), servable(sameSurnameRow), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'single-exact-tag',
+          'topical-lab',
+        ]);
+      });
+
+      it('keeps the keyword-first order when the semantic leg fails, and says so', async () => {
+        mocks.search
+          .mockResolvedValueOnce({ hits: [semanticOnlyLab], estimatedTotalHits: 2, totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 2 })
+          .mockResolvedValueOnce({ hits: [topicalLab] })
+          .mockRejectedValueOnce(new Error('semantic leg unavailable'));
+        mocks.researchEntityFind.mockReturnValue(
+          queryResult([servable(topicalLab), servable(semanticOnlyLab)]),
+        );
+
+        const result = await searchResearchGroupsViaMeili('robotics', {}, 1, 18);
+
+        expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+          'topical-lab',
+          'semantic-only-lab',
+        ]);
+        expect(result.degraded).toBe(true);
+      });
+
+      it('runs no semantic leg under an explicit sort, which the student chose over relevance', async () => {
+        mocks.search
+          .mockResolvedValueOnce({ hits: [topicalLab], estimatedTotalHits: 1, totalHits: 1 })
+          .mockResolvedValueOnce({ hits: [], totalHits: 1 })
+          .mockResolvedValueOnce({ hits: [topicalLab] });
+        mocks.researchEntityFind.mockReturnValue(queryResult([servable(topicalLab)]));
+
+        await searchResearchGroupsViaMeili('robotics', {}, 1, 18, {
+          sortBy: 'lastObservedAt',
+          sortOrder: 'desc',
+        } as never);
+
+        expect(
+          mocks.search.mock.calls.filter(([, params]) => params.hybrid?.semanticRatio === 1),
+        ).toHaveLength(0);
+      });
+    });
+
     it('reports a total that covers the merged keyword rows so pagination can reach them', async () => {
       const secondKeywordHit = {
         ...typoCorrectedKeywordHit,
@@ -2060,7 +2771,6 @@ describe('searchResearchGroupsViaMeili', () => {
         facetDistribution: {
           schools: { 'School of Medicine': 210, 'Faculty of Arts and Sciences': 90 },
           departments: { Oncology: 120 },
-          researchAreas: { Oncology: 300 },
         },
       });
 
@@ -2070,13 +2780,12 @@ describe('searchResearchGroupsViaMeili', () => {
       rankingScoreThreshold: 0.15,
       page: 1,
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-      facets: ['schools', 'departments', 'researchAreas', 'entityType'],
+      facets: ['schools', 'departments', 'entityType'],
     });
     expect(result.estimatedTotalHits).toBe(313);
     expect(result.facetDistribution).toEqual({
       school: { 'School of Medicine': 210, 'Faculty of Arts and Sciences': 90 },
       departments: { Oncology: 120 },
-      researchAreas: { Oncology: 300 },
     });
   });
 
@@ -2163,7 +2872,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(74);
   });
 
-  it('grows the candidate pool to cover a page window deeper than the fixed pool (#1064)', async () => {
+  it('requests the same head candidate pool on a deep page as on page 1 (#3943)', async () => {
     mocks.search
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 400 })
       .mockResolvedValueOnce({ hits: [], totalHits: 400 });
@@ -2172,7 +2881,103 @@ describe('searchResearchGroupsViaMeili', () => {
 
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       page: 1,
-      hitsPerPage: 12 * 18,
+      hitsPerPage: HYBRID_CANDIDATE_POOL_SIZE,
+    });
+  });
+
+  describe('a text query total that does not depend on the requested page (#3943)', () => {
+    const fixtureId = (index: number) =>
+      `67d8928150621bcef434${index.toString(16).padStart(4, '0')}`;
+    const semanticHit = (index: number) => ({
+      id: fixtureId(index),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    });
+    const keywordHit = (index: number) => ({
+      id: fixtureId(index),
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 1 },
+        typo: { typoCount: 0, maxTypoCount: 1 },
+        exactness: { matchType: 'exactMatch' },
+      },
+    });
+    const range = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, offset) => from + offset);
+    const thresholdedPool = range(0, 320).map(semanticHit);
+    const keywordLeg = range(100, 360).map(keywordHit);
+    const semanticLeg = range(0, 100).map(semanticHit);
+
+    const routeFixtureSearch = () =>
+      mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+        if (params.hybrid?.semanticRatio === 1) {
+          return { hits: semanticLeg.slice(0, params.hitsPerPage) };
+        }
+        if (params.hybrid && params.attributesToRetrieve?.length === 1) {
+          return { hits: [], totalHits: 150 };
+        }
+        const source = params.hybrid ? thresholdedPool : keywordLeg;
+        return {
+          hits: source.slice(0, params.hitsPerPage),
+          estimatedTotalHits: 4000,
+          totalHits: source.length,
+        };
+      });
+
+    const servableFixtureRows = () =>
+      mocks.researchEntityFind.mockImplementation((filter: any) =>
+        queryResult(
+          ((filter?._id?.$in as string[]) || []).map((id) => ({
+            _id: id,
+            slug: `fixture-${id.slice(-4)}`,
+            name: `Fixture Row ${id.slice(-4)}`,
+            kind: 'lab',
+            departments: [],
+            researchAreas: [],
+            sourceUrls: [],
+            ...validPublicDescriptions,
+          })),
+        ),
+      );
+
+    it('reports the same total on every page and serves exactly that many rows', async () => {
+      routeFixtureSearch();
+      servableFixtureRows();
+
+      const totals: number[] = [];
+      const servedSlugs: string[] = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const result = await searchResearchGroupsViaMeili('neuroscience', {}, page, 24);
+        totals.push(result.estimatedTotalHits as number);
+        servedSlugs.push(...result.researchEntities.map((entity: any) => entity.slug));
+        if (result.researchEntities.length < 24) break;
+      }
+
+      expect(new Set(totals)).toEqual(new Set([360]));
+      expect(servedSlugs).toHaveLength(360);
+      expect(new Set(servedSlugs).size).toBe(360);
+    });
+
+    it('keeps the first page in the order the fixed head window gives it', async () => {
+      routeFixtureSearch();
+      servableFixtureRows();
+
+      const pageOne = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+      mocks.search.mockReset();
+      mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+        if (params.hitsPerPage > HYBRID_CANDIDATE_POOL_SIZE)
+          throw new Error('deep pool unavailable');
+        if (params.hybrid?.semanticRatio === 1) return { hits: semanticLeg };
+        if (params.hybrid && params.attributesToRetrieve?.length === 1) {
+          return { hits: [], totalHits: 150 };
+        }
+        const source = params.hybrid ? thresholdedPool : keywordLeg;
+        return { hits: source.slice(0, params.hitsPerPage), totalHits: source.length };
+      });
+      const headOnly = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+      expect(pageOne.researchEntities.map((entity: any) => entity.slug)).toEqual(
+        headOnly.researchEntities.map((entity: any) => entity.slug),
+      );
+      expect(headOnly.degraded).toBe(true);
     });
   });
 
@@ -2294,41 +3099,8 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
-  it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {
-    mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
-    mocks.researchEntityFind.mockReturnValue(
-      queryResult([
-        {
-          _id: '67d8928150621bcef434a1d5',
-          slug: 'ailong-lab',
-          name: 'Ailong Lab',
-          departments: [],
-          researchAreas: [],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-        {
-          _id: '67d8928150621bcef434a1d6',
-          slug: 'actual-ai-lab',
-          name: 'Actual AI Lab',
-          departments: [],
-          researchAreas: ['Machine Learning'],
-          keywords: [],
-          sourceUrls: [],
-          ...validPublicDescriptions,
-        },
-      ]),
-    );
-
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
-
-    expect(result.researchEntities).toEqual([expect.objectContaining({ slug: 'actual-ai-lab' })]);
-  });
-
-  it('keeps base research results usable when optional planning context fails', async () => {
+  it('serves search hits with no planning context and no degraded flag from it (#4581)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.search.mockResolvedValueOnce({ hits: [{ id: entityId }], estimatedTotalHits: 1 });
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
@@ -2344,20 +3116,11 @@ describe('searchResearchGroupsViaMeili', () => {
         },
       ]),
     );
-    mocks.listPlanningContextsForResearchEntities.mockRejectedValueOnce(
-      new Error('optional store unavailable'),
-    );
-
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
     expect(result.researchEntities).toHaveLength(1);
     expect(result.researchEntities[0]).not.toHaveProperty('planningContext');
-    expect(result.degraded).toBe(true);
-    expect(consoleError).toHaveBeenCalledWith(
-      'Optional research planning-context enrichment failed:',
-      expect.any(String),
-    );
-    consoleError.mockRestore();
+    expect(result.degraded).not.toBe(true);
   });
 
   it('drops object-shaped Meili hit ids before Mongo visibility filtering', async () => {
@@ -2892,6 +3655,70 @@ describe('getResearchGroupDetail', () => {
 
     expect(detail).toBeNull();
     expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
+  });
+
+  it('lets an operator preview a held row with no tier filter and names what withholds it', async () => {
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: '67d8928150621bcef434a1d7',
+        slug: 'held-review-lab',
+        name: 'Held Review Lab',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/held-review'],
+        departments: [],
+        researchAreas: [],
+        studentVisibilityTier: 'operator_review',
+        studentVisibilityReasons: ['missing_lead'],
+      }),
+    );
+
+    const detail = await getResearchGroupDetail('held-review-lab', {
+      includeWithheldForOperator: true,
+    });
+
+    expect(mocks.researchEntityFindOne).toHaveBeenCalledWith({
+      slug: 'held-review-lab',
+      archived: { $ne: true },
+    });
+    expect(detail?.researchEntity.slug).toBe('held-review-lab');
+    expect(detail?.operatorPreview).toEqual({
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityReasons: ['missing_lead'],
+      studentVisibilitySuppressionReason: undefined,
+      withheldBy: ['visibility_tier', 'description_invariant'],
+    });
+  });
+
+  it('lets an operator preview a deceased-lead row that students get a 404 for', async () => {
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: '67d8928150621bcef434a1e3',
+        slug: 'memoriam-lab',
+        name: 'Memoriam Lab',
+        kind: 'lab',
+        entityType: 'RESEARCH_GROUP',
+        departments: ['Astronomy'],
+        researchAreas: [],
+        sourceUrls: ['https://astronomy.yale.edu/people/example-person-1932-2025'],
+        fullDescription:
+          'Example Person (1932 - 2025), Professor Emeritus of Astronomy, studied stellar structure and evolution.',
+        shortDescription: 'Example Person (1932 - 2025) studied stellar structure and evolution.',
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+
+    const detail = await getResearchGroupDetail('memoriam-lab', {
+      includeWithheldForOperator: true,
+    });
+
+    expect(detail?.operatorPreview?.withheldBy).toContain('deceased_lead');
+    expect(detail?.operatorPreview?.withheldBy).not.toContain('visibility_tier');
   });
 
   it('uses only current non-archived members for public detail pages', () => {
@@ -3817,7 +4644,7 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('userId');
   });
 
-  it('corrects non-PI leading possessive names in public descriptions', async () => {
+  it('serves no stored profile-synthesis field even when the sanitizer would have corrected it (#3937)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     const entityObjectId = new mongoose.Types.ObjectId(entityId);
     const personId = new mongoose.Types.ObjectId();
@@ -3871,13 +4698,12 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('glahn-lab-dcg32');
 
-    expect(detail?.researchEntity.profileSynthesisDescription).toContain(
-      'This lab studies how humans process complex sound patterns.',
-    );
-    expect(detail?.researchEntity.profileSynthesisDescription).not.toContain("David Lang's");
+    expect(detail?.researchEntity).not.toHaveProperty('profileSynthesisDescription');
+    expect(detail?.researchEntity).not.toHaveProperty('descriptionSource');
+    expect(JSON.stringify(detail)).not.toContain('complex sound patterns');
   });
 
-  it('removes non-research PI profile synthesis content that does not match lead PI names', async () => {
+  it('serves no stored profile-synthesis field when its prose carries no research signal (#3937)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
@@ -3898,7 +4724,9 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('glahn-lab-dcg32');
 
-    expect(detail?.researchEntity.profileSynthesisDescription).toBe('');
+    expect(detail?.researchEntity).not.toHaveProperty('profileSynthesisDescription');
+    expect(detail?.researchEntity).not.toHaveProperty('descriptionSource');
+    expect(JSON.stringify(detail)).not.toContain('renowned concert halls');
   });
 });
 
@@ -4014,6 +4842,100 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(JSON.stringify(result)).not.toContain('hidden@example.edu');
   });
 
+  it('never lists a research row among its own related or affiliated research', async () => {
+    const currentEntityId = '67d8928150621bcef434a1e5';
+    const affiliatedCenterId = '67d8928150621bcef434a1e6';
+    const relatedLabId = '67d8928150621bcef434a1e7';
+    const selfEdge = {
+      _id: 'rel-self',
+      sourceResearchEntityId: currentEntityId,
+      targetResearchEntityId: currentEntityId,
+      relationshipType: 'AFFILIATED_LAB',
+      label: 'Affiliated lab',
+      evidenceStrength: 'MODERATE',
+    };
+
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult([
+          selfEdge,
+          {
+            _id: 'rel-related',
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: relatedLabId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+            evidenceStrength: 'MODERATE',
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        queryResult([
+          selfEdge,
+          {
+            _id: 'rel-affiliated',
+            sourceResearchEntityId: affiliatedCenterId,
+            targetResearchEntityId: currentEntityId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+            evidenceStrength: 'MODERATE',
+          },
+        ]),
+      );
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: currentEntityId,
+          slug: 'center-synthetic-self-linked',
+          name: 'Synthetic Self Linked Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: affiliatedCenterId,
+          slug: 'center-synthetic-umbrella',
+          name: 'Synthetic Umbrella Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: relatedLabId,
+          slug: 'synthetic-member-lab',
+          name: 'Synthetic Member Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    const servedSlugs = [
+      ...result.relatedResearchEntities.map((entity) => entity.slug),
+      ...result.affiliatedResearchEntities.map((entity) => entity.slug),
+      ...result.entityRelationships.map((edge) => edge.relatedResearchEntitySlug),
+      ...result.affiliatedRelationships.map((edge) => edge.relatedResearchEntitySlug),
+    ];
+    expect(servedSlugs).not.toContain('center-synthetic-self-linked');
+    expect(result.relatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'synthetic-member-lab',
+    ]);
+    expect(result.affiliatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'center-synthetic-umbrella',
+    ]);
+    expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+    expect(result.affiliatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+  });
+
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
     const currentEntityId = '67d8928150621bcef434a1d5';
     const select = vi.fn();
@@ -4114,6 +5036,50 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
     const relatedSlugs = result.relatedResearchEntities.map((entity) => entity.slug);
     expect(new Set(relatedSlugs).size).toBe(relatedSlugs.length);
+  });
+
+  it('serves the related rail blurb from the card the target detail page serves (#4248)', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const targetId = '67d8928150621bcef434a1e1';
+    const target = {
+      _id: targetId,
+      slug: 'synthetic-channel-lab',
+      name: 'Synthetic Channel Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      shortDescription: '',
+      fullDescription:
+        'Bio: The lab studies ion channels in neurons and how their gating shapes synaptic signalling across development. The group combines electrophysiology with imaging to track channel kinetics in living tissue.',
+      researchAreas: ['Ion Channels'],
+    };
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult([
+          {
+            _id: 'rel-member',
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: targetId,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            label: 'Member lab',
+          },
+        ]),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(queryResult([target]));
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    const detailCard = String(
+      toPublicResearchEntityDto(detailServedSource(target, []), { leadMemberNames: [] })
+        .shortDescription || '',
+    );
+    expect(detailCard).not.toBe('');
+    expect(result.relatedResearchEntities.map((entity) => entity.blurb)).toEqual([
+      detailCard.slice(0, 280),
+    ]);
   });
 });
 
@@ -4303,6 +5269,148 @@ describe('listSimilarResearchEntities', () => {
     const result = await listSimilarResearchEntities(viewedEntity);
 
     expect(result.map((entity) => entity.slug)).toEqual(['closest', 'middle', 'furthest']);
+  });
+
+  describe('evaluates only as many candidates as the rail shows (#3948)', () => {
+    const candidateIds = (count: number) =>
+      Array.from(
+        { length: count },
+        (_, index) => `67d8928150621bcef434c${String(index).padStart(3, '0')}`,
+      );
+    const gateFailingCopy = {
+      shortDescription: '',
+      fullDescription: '',
+      profileSynthesisDescription: '',
+      researchAreas: [],
+    };
+    const leadReadEntityIds = (): string[] =>
+      mocks.roleAssignmentFind.mock.calls.flatMap(([filter]) =>
+        (filter?.['target.id']?.$in ?? []).map(String),
+      );
+
+    beforeEach(() => {
+      mocks.researchEntityServesPublicDetail.mockClear();
+    });
+
+    it('asks the index for ids and slugs only', async () => {
+      mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
+
+      await listSimilarResearchEntities(viewedEntity);
+
+      const [request] = mocks.searchSimilarDocuments.mock.calls.at(-1) as [Record<string, any>];
+      expect(request.attributesToRetrieve).toEqual(['id', 'slug']);
+      expect(request.showRankingScore).toBe(true);
+    });
+
+    it('stops gating and reading leads once six candidates serve', async () => {
+      const ids = candidateIds(20);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo(ids.map((id, index) => mongoEntity(id, `pool-${index}`, `Pool ${index}`)));
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.slug)).toEqual(
+        ids.slice(0, 6).map((_, index) => `pool-${index}`),
+      );
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(6);
+      expect(leadReadEntityIds().sort()).toEqual(ids.slice(0, 6).sort());
+    });
+
+    it('fills the rail from later candidates, in similarity order, when early ones fail the gate', async () => {
+      const ids = candidateIds(12);
+      const failing = new Set([0, 1, 4]);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9 - index * 0.01)),
+      });
+      hydrateFromMongo(
+        [...ids].reverse().map((id) => {
+          const index = ids.indexOf(id);
+          return mongoEntity(
+            id,
+            `pool-${index}`,
+            `Pool ${index}`,
+            failing.has(index) ? gateFailingCopy : {},
+          );
+        }),
+      );
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.slug)).toEqual([
+        'pool-2',
+        'pool-3',
+        'pool-5',
+        'pool-6',
+        'pool-7',
+        'pool-8',
+      ]);
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(9);
+      expect(leadReadEntityIds().sort()).toEqual(
+        [2, 3, 5, 6, 7, 8].map((index) => ids[index]).sort(),
+      );
+    });
+
+    it('serves every passing candidate when fewer than six pass', async () => {
+      const ids = candidateIds(8);
+      const failing = new Set([0, 2, 3, 5, 7]);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo(
+        ids.map((id, index) =>
+          mongoEntity(
+            id,
+            `pool-${index}`,
+            `Pool ${index}`,
+            failing.has(index) ? gateFailingCopy : {},
+          ),
+        ),
+      );
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.slug)).toEqual(['pool-1', 'pool-4', 'pool-6']);
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(8);
+    });
+
+    it('keeps the first servable copy of a repeated slug without gating the repeat', async () => {
+      const ids = candidateIds(4);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo([
+        mongoEntity(ids[0], 'shared-slug', 'First Copy Lab'),
+        mongoEntity(ids[1], 'shared-slug', 'Second Copy Lab'),
+        mongoEntity(ids[2], 'pool-2', 'Pool 2'),
+        mongoEntity(ids[3], 'pool-3', 'Pool 3'),
+      ]);
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => [entity.slug, entity.name])).toEqual([
+        ['shared-slug', 'First Copy Lab'],
+        ['pool-2', 'Pool 2'],
+        ['pool-3', 'Pool 3'],
+      ]);
+      expect(mocks.researchEntityServesPublicDetail).toHaveBeenCalledTimes(3);
+    });
+
+    it('lets a later copy of a slug fill in when the first copy fails the gate', async () => {
+      const ids = candidateIds(2);
+      mocks.searchSimilarDocuments.mockResolvedValue({
+        hits: ids.map((id, index) => similarHit(id, `pool-${index}`, 0.9)),
+      });
+      hydrateFromMongo([
+        mongoEntity(ids[0], 'shared-slug', 'First Copy Lab', gateFailingCopy),
+        mongoEntity(ids[1], 'shared-slug', 'Second Copy Lab'),
+      ]);
+
+      const result = await listSimilarResearchEntities(viewedEntity);
+
+      expect(result.map((entity) => entity.name)).toEqual(['Second Copy Lab']);
+    });
   });
 
   it('returns an empty list when no hit survives the similarity threshold', async () => {
@@ -4701,5 +5809,416 @@ describe('resolveArchivedResearchEntityCanonicalSlug', () => {
       );
 
     await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBeNull();
+  });
+});
+
+describe('student search serves only rows whose detail page serves (#3749)', () => {
+  const servableId = '67d8928150621bcef434a2e1';
+  const unservableId = '67d8928150621bcef434a2e2';
+  const meiliHit = (id: string, slug: string) => ({
+    id,
+    slug,
+    name: slug,
+    kind: 'lab',
+    departments: [],
+    researchAreas: [],
+    sourceUrls: [],
+  });
+  const storedRow = (id: string, slug: string, descriptions: Record<string, string>) => ({
+    _id: id,
+    slug,
+    name: slug,
+    kind: 'lab',
+    departments: [],
+    researchAreas: [],
+    sourceUrls: [],
+    studentVisibilityTier: 'student_ready',
+    ...descriptions,
+  });
+  const unservableDescriptions = { shortDescription: 'Lab.', fullDescription: 'Lab.' };
+
+  const serveBrowsePage = () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [meiliHit(servableId, 'servable-row'), meiliHit(unservableId, 'unservable-row')],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        storedRow(servableId, 'servable-row', validPublicDescriptions),
+        storedRow(unservableId, 'unservable-row', unservableDescriptions),
+      ]),
+    );
+  };
+
+  const searchAsStudent = async () => {
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
+    const response = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+    await searchResearchGroups(
+      { body: { q: '', page: 1 }, user: { userType: 'undergraduate' } } as any,
+      response,
+    );
+    return response.json.mock.calls[0][0];
+  };
+
+  it('drops a student_ready row whose detail page would 404 from the student search route', async () => {
+    serveBrowsePage();
+
+    const result = await searchAsStudent();
+
+    expect(mocks.search.mock.calls[0][1].filter).toContain(
+      'studentVisibilityTier = "student_ready"',
+    );
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
+  });
+
+  it('drops the same row on the service call the controller makes for a student', async () => {
+    serveBrowsePage();
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { studentVisibilityTier: publicStudentVisibilityTiers },
+      1,
+      24,
+      {},
+      { includeNonPublic: false },
+    );
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['servable-row']);
+  });
+
+  it('keeps the unfiltered operator view for an admin who asks for a tier', async () => {
+    serveBrowsePage();
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
+    const response = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(
+      { body: { q: '', page: 1, studentVisibilityTier: ['student_ready'] } } as any,
+      response,
+    );
+
+    expect(
+      response.json.mock.calls[0][0].researchEntities.map((entity: any) => entity.slug),
+    ).toEqual(['servable-row', 'unservable-row']);
+  });
+});
+
+describe('a failed companion Meilisearch query marks the search degraded (#3751)', () => {
+  const entityId = '67d8928150621bcef434a2f1';
+  type Companion = 'exhaustive' | 'disjunctive' | 'keyword';
+
+  const companionOf = (params: Record<string, any>): Companion | 'primary' => {
+    if (!params.hybrid) return 'keyword';
+    if (params.facets?.length === 1) return 'disjunctive';
+    if (params.attributesToRetrieve?.length === 1) return 'exhaustive';
+    return 'primary';
+  };
+
+  const searchWith = async (failing?: Companion) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const companion = companionOf(params);
+      if (companion === failing) throw new Error('timeout');
+      if (companion === 'primary') {
+        return {
+          hits: [
+            {
+              id: entityId,
+              slug: 'sociology-row',
+              name: 'Sociology Row',
+              kind: 'lab',
+              _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+            },
+          ],
+          estimatedTotalHits: 1,
+          facetDistribution: { schools: { 'Yale College': 1 } },
+        };
+      }
+      if (companion === 'exhaustive') {
+        return { totalHits: 1, facetDistribution: { schools: { 'Yale College': 1 } } };
+      }
+      if (companion === 'disjunctive') {
+        return { facetDistribution: { schools: { 'Yale College': 1, 'Law School': 4 } } };
+      }
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'sociology-row',
+          name: 'Sociology Row',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    const result = await searchResearchGroupsViaMeili(
+      'sociology',
+      { school: ['Yale College'] },
+      1,
+      24,
+      {},
+      { includeFacets: true },
+    );
+    consoleError.mockRestore();
+    return result;
+  };
+
+  const companionsCalled = () =>
+    mocks.search.mock.calls.map(([, params]) => companionOf(params)).sort();
+
+  it('stays undegraded when every companion query succeeds', async () => {
+    const result = await searchWith();
+
+    expect(companionsCalled()).toEqual(['disjunctive', 'exhaustive', 'keyword', 'primary']);
+    expect(result.degraded).toBe(false);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['sociology-row']);
+  });
+
+  it.each<Companion>(['exhaustive', 'disjunctive', 'keyword'])(
+    'marks the search degraded and still serves the row when the %s query fails',
+    async (failing) => {
+      const result = await searchWith(failing);
+
+      expect(companionsCalled()).toEqual(['disjunctive', 'exhaustive', 'keyword', 'primary']);
+      expect(result.degraded).toBe(true);
+      expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['sociology-row']);
+    },
+  );
+
+  it('marks a browse degraded when its disjunctive facet query fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 6,
+        facetDistribution: { schools: { 'Law School': 6 }, departments: {} },
+      })
+      .mockRejectedValueOnce(new Error('timeout'));
+
+    const result = await searchResearchGroupsViaMeili('', { school: ['Law School'] }, 1, 24);
+
+    expect(result.facetDistribution?.school).toEqual({ 'Law School': 6 });
+    expect(result.degraded).toBe(true);
+    consoleError.mockRestore();
+  });
+});
+
+describe('the independent Meilisearch legs of a text search run concurrently (#3949)', () => {
+  type Leg =
+    'pool' | 'count' | 'keyword' | 'semantic' | 'matchPositions' | 'deepPool' | 'deepKeyword';
+
+  const legOf = (params: Record<string, any>): Leg => {
+    if (params.showMatchesPosition) return 'matchPositions';
+    if (params.hybrid?.semanticRatio === 1) return 'semantic';
+    if (params.hybrid) {
+      if (params.hitsPerPage === RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS) return 'count';
+      if (params.hitsPerPage === RESEARCH_SEARCH_MAX_REACHABLE_RECORDS) return 'deepPool';
+      return 'pool';
+    }
+    return params.hitsPerPage === RESEARCH_SEARCH_MAX_REACHABLE_RECORDS ? 'deepKeyword' : 'keyword';
+  };
+
+  const candidateId = (index: number) => (index + 1).toString(16).padStart(24, 'a');
+  const keywordHit = (index: number) => ({
+    id: candidateId(index),
+    departments: [],
+    researchAreas: [],
+    _rankingScoreDetails: { words: { matchingWords: 1, maxMatchingWords: 1 } },
+  });
+
+  it('starts every leg as soon as the legs it depends on have returned', async () => {
+    const pending: Array<{ leg: Leg; resolve: (value: unknown) => void }> = [];
+    mocks.search.mockImplementation((_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') {
+        return Promise.resolve({
+          hits: Array.from({ length: HYBRID_CANDIDATE_POOL_SIZE }, (_, index) => ({
+            id: candidateId(index),
+            _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+          })),
+          estimatedTotalHits: HYBRID_CANDIDATE_POOL_SIZE,
+        });
+      }
+      return new Promise((resolve) => pending.push({ leg, resolve }));
+    });
+    mocks.researchEntityFind.mockReturnValue(queryResult([]));
+    const legsStarted = () => pending.map(({ leg }) => leg).sort();
+    const resolveLeg = (leg: Leg, value: unknown) => {
+      const call = pending.find((entry) => entry.leg === leg);
+      call?.resolve(value);
+    };
+
+    const search = searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    await vi.waitFor(() => expect(legsStarted()).toEqual(['count', 'deepPool', 'keyword']));
+
+    resolveLeg('keyword', { hits: [keywordHit(0), keywordHit(1)] });
+
+    await vi.waitFor(() =>
+      expect(legsStarted()).toEqual([
+        'count',
+        'deepKeyword',
+        'deepPool',
+        'keyword',
+        'matchPositions',
+        'semantic',
+      ]),
+    );
+
+    resolveLeg('count', { totalHits: HYBRID_CANDIDATE_POOL_SIZE });
+    resolveLeg('deepPool', { hits: [] });
+    resolveLeg('deepKeyword', { hits: [] });
+    resolveLeg('semantic', { hits: [] });
+    resolveLeg('matchPositions', { hits: [] });
+    const result = await search;
+
+    expect(result.degraded).toBe(false);
+  });
+
+  it('reads the name check from the first surviving keyword row re-read with its match positions', async () => {
+    const typoOnlyHit = {
+      ...keywordHit(0),
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 2 },
+        typo: { typoCount: 1, maxTypoCount: 2 },
+        exactness: { matchType: 'noExactMatch' },
+      },
+    };
+    const personRow = keywordHit(1);
+    const topicRow = keywordHit(2);
+    const semanticOnlyRow = {
+      id: candidateId(3),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    };
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') return { hits: [semanticOnlyRow], estimatedTotalHits: 1 };
+      if (leg === 'count') return { totalHits: 1 };
+      if (leg === 'keyword') return { hits: [typoOnlyHit, personRow, topicRow] };
+      if (leg === 'semantic') return { hits: [semanticOnlyRow, topicRow] };
+      if (leg === 'matchPositions') {
+        return {
+          hits: [
+            {
+              ...personRow,
+              leadProfessorNames: ['Ada Fixture'],
+              _matchesPosition: {
+                leadProfessorNames: [
+                  { start: 0, length: 3, indices: [0] },
+                  { start: 4, length: 7, indices: [0] },
+                ],
+              },
+            },
+          ],
+        };
+      }
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        [personRow, topicRow, semanticOnlyRow].map((hit, index) => ({
+          _id: hit.id,
+          slug: `row-${index}`,
+          name: `Row ${index}`,
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        })),
+      ),
+    );
+
+    const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+    const keywordLegParams = mocks.search.mock.calls
+      .map(([, params]) => params)
+      .find((params) => legOf(params) === 'keyword');
+    expect(keywordLegParams).not.toHaveProperty('showMatchesPosition');
+    const matchPositionParams = mocks.search.mock.calls
+      .map(([, params]) => params)
+      .filter((params) => legOf(params) === 'matchPositions');
+    expect(matchPositionParams).toHaveLength(1);
+    expect(matchPositionParams[0]).toMatchObject({ page: 2, hitsPerPage: 1 });
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['row-0', 'row-1']);
+    expect(result.degraded).toBe(false);
+  });
+
+  it('does not withhold meaning-based rows when the re-read returns a different row', async () => {
+    const personRow = keywordHit(0);
+    const semanticOnlyRow = {
+      id: candidateId(1),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    };
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') return { hits: [semanticOnlyRow], estimatedTotalHits: 1 };
+      if (leg === 'count') return { totalHits: 1 };
+      if (leg === 'keyword') return { hits: [personRow] };
+      if (leg === 'semantic') return { hits: [semanticOnlyRow] };
+      if (leg === 'matchPositions') {
+        return {
+          hits: [
+            {
+              ...keywordHit(5),
+              leadProfessorNames: ['Ada Fixture'],
+              _matchesPosition: {
+                leadProfessorNames: [
+                  { start: 0, length: 3, indices: [0] },
+                  { start: 4, length: 7, indices: [0] },
+                ],
+              },
+            },
+          ],
+        };
+      }
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        [personRow, semanticOnlyRow].map((hit, index) => ({
+          _id: hit.id,
+          slug: `row-${index}`,
+          name: `Row ${index}`,
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        })),
+      ),
+    );
+
+    const result = await searchResearchGroupsViaMeili('ada fixture', {}, 1, 18);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual(['row-0', 'row-1']);
+  });
+
+  it('marks a fused search degraded when the match-position re-read fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const topicRow = keywordHit(0);
+    const semanticOnlyRow = {
+      id: candidateId(1),
+      _rankingScoreDetails: { vectorSort: { similarity: 0.6 } },
+    };
+    mocks.search.mockImplementation(async (_query: string, params: Record<string, any>) => {
+      const leg = legOf(params);
+      if (leg === 'pool') return { hits: [semanticOnlyRow], estimatedTotalHits: 1 };
+      if (leg === 'count') return { totalHits: 1 };
+      if (leg === 'keyword') return { hits: [topicRow] };
+      if (leg === 'semantic') return { hits: [semanticOnlyRow] };
+      if (leg === 'matchPositions') throw new Error('timeout');
+      return { hits: [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(queryResult([]));
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 18);
+
+    expect(result.degraded).toBe(true);
+    consoleError.mockRestore();
   });
 });

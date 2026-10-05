@@ -1,11 +1,25 @@
 import nodeAssert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as yaml from 'js-yaml';
 import {
   ORCID_PATTERN,
   orcidIsUnsafeForFixtures,
   SYNTHETIC_ORCID_EXAMPLE,
 } from './orcidFixtureShape.mjs';
 import nodeTest, { after } from 'node:test';
+import {
+  findUnguardedOutboundFetches,
+  listOutboundFetchScanFiles,
+  REVIEWED_OUTBOUND_FETCHES,
+  unreviewedOutboundFetches,
+} from './unguardedOutboundFetchScan.mjs';
 
 import {
   DEFAULT_AUDIT_TIMEOUT_MS,
@@ -64,6 +78,36 @@ after(() => {
   );
 });
 
+const serverDirectory = fileURLToPath(new URL('../server/', import.meta.url));
+const serverTsx = path.join(serverDirectory, 'node_modules', '.bin', 'tsx');
+
+const runServerGuard = (moduleRelativePath, body, input) => {
+  const moduleUrl = new URL(`../server/${moduleRelativePath}`, import.meta.url).href;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-guard-'));
+  const script = path.join(directory, 'evaluate.mts');
+  try {
+    fs.writeFileSync(
+      script,
+      [
+        `import * as guard from ${JSON.stringify(moduleUrl)};`,
+        'const input = JSON.parse(process.argv[2]);',
+        `const output = ((guard, input) => { ${body} })(guard, input);`,
+        'process.stdout.write(JSON.stringify(output));',
+      ].join('\n'),
+    );
+    const result = spawnSync(serverTsx, [script, JSON.stringify(input)], {
+      cwd: serverDirectory,
+      encoding: 'utf8',
+    });
+    if (result.status !== 0) {
+      throw new Error(`guard evaluation failed for ${moduleRelativePath}: ${result.stderr}`);
+    }
+    return JSON.parse(result.stdout);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+};
+
 const packageJson = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
 );
@@ -78,6 +122,10 @@ const postPromotionVerifyWorkflow = fs.readFileSync(
 );
 const releaseHoldWorkflow = fs.readFileSync(
   new URL('../.github/workflows/release-hold.yml', import.meta.url),
+  'utf8',
+);
+const e2eSmokeWorkflow = fs.readFileSync(
+  new URL('../.github/workflows/e2e-smoke.yml', import.meta.url),
   'utf8',
 );
 const yarnrc = fs.readFileSync(new URL('../.yarnrc.yml', import.meta.url), 'utf8');
@@ -103,52 +151,97 @@ test('TypeScript source files do not contain nested import declarations', () => 
   }
 });
 
-test('Yarn git dependency allowlist is narrow', () => {
-  assert.match(
-    yarnrc,
-    /approvedGitRepositories:\s*\n\s*- "https:\/\/github\.com\/coursetable\/passport-cas"/,
-  );
+const isGitResolution = (resolution) => {
+  const source = resolution.slice(resolution.indexOf('@', 1) + 1);
+  return /^(?:git\+|git:|git@|github:)/.test(source) || /#commit=|\.git#/.test(source);
+};
+
+test('Yarn approves no git dependency source', () => {
+  assert.deepEqual(yaml.load(yarnrc).approvedGitRepositories, []);
+  for (const lockfile of ['../yarn.lock', '../server/yarn.lock', '../client/yarn.lock']) {
+    const entries = yaml.load(fs.readFileSync(new URL(lockfile, import.meta.url), 'utf8'));
+    const gitResolutions = Object.values(entries)
+      .map((entry) => entry?.resolution)
+      .filter((resolution) => typeof resolution === 'string' && isGitResolution(resolution));
+    assert.deepEqual(gitResolutions, [], `${lockfile} resolves a dependency from a git source`);
+  }
   assert.match(yarnrc, /npmMinimalAgeGate: 1d/);
-  assert.doesNotMatch(yarnrc, /approvedGitRepositories:\s*\n\s*- "\*\*"/);
   assert.doesNotMatch(yarnrc, /\n\s*- "\*"/);
   assert.doesNotMatch(yarnrc, /npmMinimalAgeGate: 0/);
 });
 
+const DENIED_IDENTIFIER_MAX_TOKENS = 4;
+const DENIED_IDENTIFIER_DIGEST_PREFIX = 'ylabs-denied-identifier:';
+
+const digestDeniedIdentifier = (value) =>
+  createHash('sha256').update(`${DENIED_IDENTIFIER_DIGEST_PREFIX}${value}`).digest('hex');
+
+const deniedIdentifierSpans = (source, deniedDigests) => {
+  const tokens = [...source.matchAll(/[A-Za-z0-9]+/g)].map((match) => [
+    match.index,
+    match.index + match[0].length,
+  ]);
+  const offsets = [];
+  tokens.forEach(([start], index) => {
+    for (let width = 1; width <= DENIED_IDENTIFIER_MAX_TOKENS; width += 1) {
+      const last = tokens[index + width - 1];
+      if (!last) break;
+      if (deniedDigests.has(digestDeniedIdentifier(source.slice(start, last[1])))) {
+        offsets.push(start);
+        break;
+      }
+    }
+  });
+  return offsets;
+};
+
+test('the denied-identifier matcher reports a multi-token value only as a whole run of tokens', () => {
+  const deniedDigests = new Set([
+    '32393c67da8ea854db76ef5aec157bc6c12d07786d0993edaba4f3bb2003a3a3',
+  ]);
+  const prefix = 'Curator: ';
+  const source = `${prefix}Example Q. Placeholder, see ExampleQ Placeholders.`;
+
+  assert.deepEqual(deniedIdentifierSpans(source, deniedDigests), [prefix.length]);
+  assert.deepEqual(deniedIdentifierSpans('Example Q. Placeholders', deniedDigests), []);
+});
+
 test('test fixtures do not contain known real Yale identifiers', () => {
-  const denied = [
-    'Toma_Tebaldi',
-    'Toma Tebaldi',
-    'yongli-zhang',
-    'anna-arnal-estape',
-    'james-e-hansen',
-    'eric-winer',
-    'Eric P. Winer',
-    'christopher-whitlow',
-    'paul-bloom',
-    'alison-galvani',
-    'lucila-ohno-machado',
-    'john-tsang',
-    'Mehran M. Sadeghi',
-    'Cardiovascular Molecular Imaging Laboratory',
-    'Nadya Dimitrova',
-    'nadya-dimitrova',
-    'Sofia, Bulgaria',
-    'a-higginschen',
-    'lawrence-guan',
-    'br574',
-    'dglahn',
-    'jp2492',
-    'jdp52',
-    'dtm27',
-    't-zhu',
-    'Deb Vargas',
-    'deb-vargas',
-    'deb.vargas',
-    'Fatima El-Tayeb',
-    'fatima-el-tayeb',
-  ];
+  const deniedDigests = new Set([
+    '0be956b84d239431818d981d565833751eadfc8243c528738702bbd01645276a',
+    '12d498aa448ffcc14222d415548d2669f1edb79848ece97d504b67f19dc4d41d',
+    '186cd266eb859fcc2e6af68a26bf7f60f490448f847a15e9cae95e95b6f3435f',
+    '2036a72a78ffafb6cf935aaf65f75d21d790799fe472373a365b5f3ee3e59992',
+    '3eb7ef1eec43cf4bdff95b843d08e9b9aabf3c54222caf2986a0796923b4bc6b',
+    '45dec25df55868a59526bcbeba67b54f1087c88adebaff4edb557f01b844baec',
+    '4ca85e3db3374d1821520be2fe2f51299f35c560b679158965458570e0312f62',
+    '5710b1112278fa0030ca32b4a197a192db29e2cecb34015e3049c1f078898283',
+    '5915afab6d504ccfc04ea57914523002b8d48ac7284c77244856d956d99f868f',
+    '5a5977ef469b8bf0a1990d5506cfbcf213a8a6ba8a8ce1a58717b3fb9d5aef71',
+    '6678bf6a4c5c9caf867bd62759425fb87911ac3ed7af0240638aaac6afc2bc6c',
+    '700e70f60c14782e7d06e8b1f3f950a28da9a59af1905ae6f21af056b95ce809',
+    '71ca453f7e22a56d4f3c47ca34ca006474ac0ad1d5ff3fb2e76d5205c41020c9',
+    '746ae06138628c7fd484d50103a48ee7daf454d9ec41dd0b5d6d782586a6aca9',
+    '78a4fc65456f0c0d3ae296b21579fc6b529a8bcfe0a475000b84b31d2c21049b',
+    '86bdb694eb5c17dce8aef27dc4763b1d9b0396b6a9c21ea3b68c39946d0b6426',
+    '8981918b1affbab2e57deada29a905edfe9a58a0372b4328ff74f12b2b7fd440',
+    '8b1ca1d8c0d6bc1e46896c768ab1400f0fe2b06de7f897640dab0eecd1bdc06d',
+    'adf8f3154475b4b7389c5b491edd8bf544039ead0b5054aeb2aaf535f238d58e',
+    'b235f8806ae681e86446c879b0f788480ff0225866a509f5c6d47f12d6b72bae',
+    'b2536216e3af1863fd19abb07751fec354a2820f2ee3b03e6ebf7d63192385c5',
+    'b671f9c3f7becfc0451bfe50d362213db4b97428e37f9af5b8544aba773c916c',
+    'bd1e89d06ed3ec582d64eecee82dcf9887212951badc6690e78fbdcf5c3a3b2a',
+    'c34f5837a7f2ee3d2c4052cf7f1f1e71f67ea321719cbd9a8f9cfce9c81751ba',
+    'c60f217237615f8e100b2c7df498e921a0e4efcd12656d5792134d8340a3b842',
+    'd2600b890e8cd8b4cb9397b8d97ab5470963e060bece325fc44f2a731ecf2118',
+    'e27df19f288d77589219c11ac58592459062730ac850bf309d74deb8580a6564',
+    'eadd6b20bdddcb50d7727fbfed4e53d5117c2f7bfc355e45412ab4c30778b3d1',
+    'ed9a1b2c67defa3f0721740ecdaa9e4c9c3ac2ca5f0ef13a500beb6085e63eee',
+    'fa75c97500bfe10b1c082cb43c3d81e57f15f7bc5474d1797a6f9e26be6e783b',
+  ]);
   const roots = ['../server/src', '../client/src'];
-  const testFilePattern = /(__tests__|\.test\.|\.spec\.).*\.(?:ts|tsx|js|jsx|mjs|cjs)$/;
+  const testFilePattern =
+    /(__tests__|__fixtures__|\/fixtures\/|\.test\.|\.spec\.).*\.(?:ts|tsx|js|jsx|mjs|cjs|json|ndjson|csv|tsv|html?|xml|txt)$/;
 
   const files = [];
   const visit = (dir) => {
@@ -165,13 +258,12 @@ test('test fixtures do not contain known real Yale identifiers', () => {
   for (const root of roots) visit(root);
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    for (const value of denied) {
-      assert.equal(
-        source.includes(value),
-        false,
-        `${file} contains real Yale identifier fixture: ${value}`,
-      );
-    }
+    const deniedSpans = deniedIdentifierSpans(source, deniedDigests);
+    assert.deepEqual(
+      deniedSpans,
+      [],
+      `${file} contains a denylisted real Yale identifier at offsets ${deniedSpans.join(', ')}`,
+    );
     // The four ORCIDs this list used to name are gone, superseded by a shape rule rather
     // than kept as a second authority that drifts: each was checksum-valid and inside
     // ORCID's allocated space, so the rule below catches all four and every value like
@@ -410,32 +502,6 @@ test('service-layer search and materialization sync logs sanitize caught errors'
   }
 });
 
-test('external directory integration sanitizes fetch errors before logging', () => {
-  const directorySource = fs.readFileSync(
-    new URL('../server/src/services/directoryService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(directorySource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.match(directorySource, /const MAX_DIRECTORY_QUERY_LENGTH = 120/);
-  assert.match(directorySource, /const DIRECTORY_SEARCH_TYPES = new Set\(\['netid', 'name'\]\)/);
-  assert.match(
-    directorySource,
-    /query\.trim\(\)\.replace\(\s*\/\\s\+\/g, ' '\)\.slice\(0, MAX_DIRECTORY_QUERY_LENGTH\)/,
-  );
-  assert.match(
-    directorySource,
-    /const safeSearchType = DIRECTORY_SEARCH_TYPES\.has\(searchType\) \? searchType : 'netid'/,
-  );
-  assert.match(directorySource, /params: \{ search: safeQuery, searchType: safeSearchType \}/);
-  assert.match(
-    directorySource,
-    /console\.error\('Directory lookup failed:', sanitizeLogValue\(error\)\)/,
-  );
-  assert.doesNotMatch(directorySource, /Directory lookup for/);
-  assert.doesNotMatch(directorySource, /error\.message/);
-});
-
 test('shared pagination validation rejects object and array query controls before numeric coercion', () => {
   const source = fs.readFileSync(
     new URL('../server/src/middleware/validation.ts', import.meta.url),
@@ -469,38 +535,73 @@ test('shared pagination validation rejects object and array query controls befor
 });
 
 test('log sanitizer redacts common token, secret, and header forms', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/utils/logSanitizer.ts', import.meta.url),
-    'utf8',
+  const cases = [
+    ['Authorization: Bearer abc.def-ghi', 'Authorization: [secret-redacted]', 'abc.def-ghi'],
+    ['sent Bearer abc.def-ghi upstream', 'sent Bearer [token-redacted] upstream', 'abc.def-ghi'],
+    ['sent Basic dXNlcjpwYXNz upstream', 'sent Basic [token-redacted] upstream', 'dXNlcjpwYXNz'],
+    [
+      'key sk-proj-ABCDEFGHIJKLMNOPQRST failed',
+      'key sk-[secret-redacted] failed',
+      'ABCDEFGHIJKLMNOPQRST',
+    ],
+    [
+      'key sk-ABCDEFGHIJKLMNOPQRST failed',
+      'key sk-[secret-redacted] failed',
+      'ABCDEFGHIJKLMNOPQRST',
+    ],
+    ['Cookie: session=abc123; other=def', 'Cookie: [secret-redacted]', 'abc123'],
+    ['Set-Cookie: session=abc123; Path=/', 'Set-Cookie: [secret-redacted]', 'abc123'],
+    ['X-Seed-Token: seed-value', 'X-Seed-Token: [secret-redacted]', 'seed-value'],
+    ['X-Csrf-Token: csrf-value', 'X-Csrf-Token: [secret-redacted]', 'csrf-value'],
+    ['GET /cb?ticket=ST-123&next=/', 'GET /cb?ticket=[secret-redacted]&next=/', 'ST-123'],
+    ['api_key=raw-key here', 'api_key=[secret-redacted] here', 'raw-key'],
+    ['clientSecret=raw-secret', 'clientSecret=[secret-redacted]', 'raw-secret'],
+    ['{"accessToken":"raw-access"}', '{"accessToken":"[secret-redacted]"}', 'raw-access'],
+    ["{'refreshToken': 'raw-refresh'}", "{'refreshToken': '[secret-redacted]'}", 'raw-refresh'],
+    ['idToken: raw-id, next', 'idToken: [secret-redacted], next', 'raw-id'],
+    ['{"csrfToken":"a\\"b"}', '{"csrfToken":"[secret-redacted]"}', 'a\\"b'],
+    ['{"setCookie":"s=1"}', '{"setCookie":"[secret-redacted]"}', 's=1'],
+    ['{"password":"hunter2"}', '{"password":"[secret-redacted]"}', 'hunter2'],
+    ['{"sessionSecret":"s3"}', '{"sessionSecret":"[secret-redacted]"}', '"s3"'],
+    ['{"casTicket":"ST-9"}', '{"casTicket":"[secret-redacted]"}', 'ST-9'],
+    ['mongodb://user:pass@host/db', 'mongodb://[credentials-redacted]@host/db', 'user:pass'],
+    ['E11000 dup key: { email: "a@b.co" }', 'E11000 dup key: [key-redacted]', 'a@b.co'],
+    ['contact jdoe@example.edu now', 'contact [email redacted] now', 'jdoe@'],
+    ['call 555-010-0000 now', 'call [phone redacted] now', '555-010'],
+  ];
+  const outputs = runServerGuard(
+    'src/utils/logSanitizer.ts',
+    'return input.map((value) => guard.sanitizeLogValue(value));',
+    cases.map(([input]) => input),
   );
+  cases.forEach(([input, expected, secret], index) => {
+    assert.ok(
+      outputs[index].includes(expected) && !outputs[index].includes(secret),
+      `sanitizeLogValue leaked ${secret} from ${input}: ${outputs[index]}`,
+    );
+  });
 
-  assert.match(source, /const BEARER_TOKEN_RE/);
-  assert.match(source, /const BASIC_TOKEN_RE/);
-  assert.match(source, /const OPENAI_KEY_RE/);
-  assert.match(source, /const SECRET_FIELD_NAME_PATTERN/);
-  assert.match(source, /accessToken/);
-  assert.match(source, /refreshToken/);
-  assert.match(source, /idToken/);
-  assert.match(source, /csrfToken/);
-  assert.match(source, /clientSecret/);
-  assert.match(source, /setCookie/);
-  assert.match(source, /x\[_-\]\?seed\[_-\]\?token/);
-  assert.match(source, /const SECRET_HEADER_RE/);
-  assert.match(source, /const TOKEN_ASSIGNMENT_RE/);
-  assert.match(source, /authorization\|cookie\|set-cookie/);
-  assert.match(source, /const SECRET_QUOTED_FIELD_RE/);
-  assert.match(source, /const SECRET_BARE_FIELD_RE/);
-  assert.match(source, /MAX_SANITIZED_LOG_VALUE_LENGTH = 12000/);
-  assert.match(source, /TRUNCATED_LOG_SUFFIX = '\[log-truncated\]'/);
-  assert.match(source, /const truncateSanitizedLogValue = \(value: string\): string => \{/);
-  assert.match(source, /api\[_-\]\?key/);
-  assert.match(source, /const sanitized = raw/);
-  assert.match(source, /\.replace\(BASIC_TOKEN_RE, '\$1\[token-redacted\]'\)/);
-  assert.match(source, /\.replace\(OPENAI_KEY_RE, 'sk-\[secret-redacted\]'\)/);
-  assert.match(source, /\.replace\(SECRET_HEADER_RE, '\$1: \[secret-redacted\]'\)/);
-  assert.match(source, /\.replace\(SECRET_QUOTED_FIELD_RE, '\$1\$2\[secret-redacted\]\$2'\)/);
-  assert.match(source, /\.replace\(SECRET_BARE_FIELD_RE, '\$1\[secret-redacted\]'\)/);
-  assert.match(source, /return truncateSanitizedLogValue\(sanitized\)/);
+  const [structured, oversized, exact] = runServerGuard(
+    'src/utils/logSanitizer.ts',
+    [
+      'return [',
+      '  guard.sanitizeLogValue(input.structured),',
+      '  guard.sanitizeLogValue(input.oversized),',
+      '  guard.sanitizeLogValue(input.exact),',
+      '];',
+    ].join(' '),
+    {
+      structured: { apiKey: 'raw-api', nested: { authorization: 'Bearer raw-bearer' } },
+      oversized: `apiKey=raw-api ${'x'.repeat(13000)}`,
+      exact: 'y'.repeat(12000),
+    },
+  );
+  assert.doesNotMatch(structured, /raw-api|raw-bearer/);
+  assert.match(structured, /\[secret-redacted\]/);
+  assert.equal(oversized.length, 12000 + '[log-truncated]'.length);
+  assert.ok(oversized.endsWith('[log-truncated]'));
+  assert.ok(oversized.startsWith('apiKey=[secret-redacted]'));
+  assert.equal(exact, 'y'.repeat(12000));
 });
 
 test('global error handler does not log stack traces in deployed runtimes', () => {
@@ -588,7 +689,7 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
 
   assert.match(
     fellowshipModal,
-    /const applicationHref = safeHttpUrl\(fellowship\.applicationLink\)/,
+    /const applicationHref = guidance\s*\?\s*undefined\s*:\s*safeHttpUrl\(fellowship\.applicationLink\)/,
   );
   assert.doesNotMatch(fellowshipModal, /safeUrl\(fellowship\.applicationLink\)/);
   assert.match(fellowshipModal, /const linkHref = safeHttpUrl\(match\[2\]\)/);
@@ -637,7 +738,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 test('root package exposes a deploy security preflight', () => {
   assert.equal(
     packageJson.scripts['security:policy'],
-    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/person-identifier-scan-workflow.test.mjs',
+    'node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/gh-identifier-guard.test.mjs',
   );
   assert.equal(
     packageJson.scripts['security:preflight'],
@@ -647,12 +748,12 @@ test('root package exposes a deploy security preflight', () => {
     packageJson.scripts['security:identifiers'],
     'node scripts/check-no-person-identifiers.mjs',
   );
-  // No repo file invokes install:all:immutable: its consumer is the Render
-  // dashboard build command, which docs/release-process.md prescribes. It looks
-  // dead to a caller search, so do not delete it on that evidence.
+  // No repo file invokes install:all:immutable: a Render dashboard build command
+  // configured before #4035 may still call it. It looks dead to a caller search,
+  // so do not delete it on that evidence.
   assert.equal(
     packageJson.scripts['install:all:immutable'],
-    'yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable',
+    'bash scripts/install-all.sh --immutable',
   );
 });
 
@@ -686,6 +787,109 @@ test('all-environment dependency audit covers every workspace recursively', () =
   assert.deepEqual(audit.directories, ['.', 'server', 'client']);
   assert.deepEqual(audit.auditArgs, ['--recursive', '--severity', 'moderate']);
   assert.match(ciWorkflow, /run:\s*yarn security:audit:all-environments/);
+});
+
+const PATCHED_BRACE_EXPANSION_BY_MAJOR = new Map([
+  [1, [1, 1, 21]],
+  [2, [2, 1, 7]],
+  [3, [3, 0, 9]],
+  [5, [5, 0, 12]],
+]);
+
+const lockfileVersionsOf = (lockfileText, packageName) =>
+  [
+    ...lockfileText.matchAll(
+      new RegExp(`^"${packageName}@[^\\n]*":\\n  version: ([0-9.]+)$`, 'gm'),
+    ),
+  ].map((match) => match[1].split('.').map(Number));
+
+const isAtLeast = (version, floor) => {
+  for (let index = 0; index < floor.length; index += 1) {
+    if (version[index] !== floor[index]) return version[index] > floor[index];
+  }
+  return true;
+};
+
+test('every locked brace-expansion is on a patched release of its own major', () => {
+  for (const lockfile of ['../yarn.lock', '../server/yarn.lock', '../client/yarn.lock']) {
+    const versions = lockfileVersionsOf(
+      fs.readFileSync(new URL(lockfile, import.meta.url), 'utf8'),
+      'brace-expansion',
+    );
+    assert.ok(
+      versions.length > 0,
+      `${lockfile} locks no brace-expansion, so this pin reads nothing`,
+    );
+    for (const version of versions) {
+      const floor = PATCHED_BRACE_EXPANSION_BY_MAJOR.get(version[0]);
+      assert.ok(
+        floor,
+        `${lockfile} locks brace-expansion ${version.join('.')}, a major with no patched floor here`,
+      );
+      assert.ok(
+        isAtLeast(version, floor),
+        `${lockfile} locks brace-expansion ${version.join('.')}, below the patched ${floor.join('.')}`,
+      );
+    }
+  }
+});
+
+test('the minimatch the root lint toolchain loads can expand a brace set', () => {
+  const requireFromConfigArray = createRequire(
+    new URL('../node_modules/@eslint/config-array/package.json', import.meta.url),
+  );
+  const minimatch = requireFromConfigArray('minimatch');
+  const match = typeof minimatch === 'function' ? minimatch : minimatch.minimatch;
+
+  assert.equal(match('a.js', '*.{js,ts}'), true);
+  assert.equal(match('a.md', '*.{js,ts}'), false);
+});
+
+const splitDescriptor = (descriptor) => {
+  const [, name, range] = descriptor.match(/^(@?[^@]+)(?:@(.*))?$/);
+  return { name, range };
+};
+
+const lockfileDescriptorsOf = (lockfileText) => {
+  const entries = Object.entries(yaml.load(lockfileText)).filter(([key]) => key !== '__metadata');
+  const locked = entries.flatMap(([key]) => key.split(', ').map(splitDescriptor));
+  const requested = entries.flatMap(([, entry]) =>
+    Object.entries(entry.dependencies ?? {}).map(([name, range]) => ({ name, range })),
+  );
+  return { locked, requested };
+};
+
+const overrideIsLoadBearing = (key, { locked, requested }) => {
+  const segments = key.split('/');
+  const scope = segments.at(-2);
+  const target = scope?.startsWith('@') ? `${scope}/${segments.at(-1)}` : segments.at(-1);
+  const { name, range } = splitDescriptor(target);
+  if (range === undefined) return locked.some((descriptor) => descriptor.name === name);
+  return [...locked, ...requested].some(
+    (descriptor) => descriptor.name === name && descriptor.range === range,
+  );
+};
+
+test('every dependency override matches a descriptor its own lockfile resolves', () => {
+  for (const workspace of ['.', 'server', 'client']) {
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL(`../${workspace}/package.json`, import.meta.url), 'utf8'),
+    );
+    const descriptors = lockfileDescriptorsOf(
+      fs.readFileSync(new URL(`../${workspace}/yarn.lock`, import.meta.url), 'utf8'),
+    );
+    const overrides = Object.keys(manifest.resolutions ?? {});
+    assert.ok(
+      overrides.length > 0,
+      `${workspace} declares no resolutions, so this pin reads nothing`,
+    );
+    for (const key of overrides) {
+      assert.ok(
+        overrideIsLoadBearing(key, descriptors),
+        `${workspace}/package.json overrides ${key}, which no ${workspace}/yarn.lock descriptor matches, so the pin does nothing`,
+      );
+    }
+  }
 });
 
 test('the advisory verdict is published as an artifact, never as a merge-gating check', () => {
@@ -789,19 +993,19 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
     'ci.yml must run yarn lint so a lint error fails the required check (ylabs#3070)',
   );
 
-  // Warnings stay advisory: --max-warnings would make the two standing
-  // unused-variable warnings blocking, which #3070 deliberately declined.
+  // Warnings stay advisory: #3070 deliberately declined --max-warnings.
   assert.doesNotMatch(ciWorkflow, /^\s*run:[^\n]*yarn lint[^\n]*--max-warnings/m);
   assert.doesNotMatch(packageJson.scripts.lint, /--max-warnings/);
 
   // A lint error is seconds to report and the suites are minutes, so the gate
   // is worth nothing behind them.
-  const lintAt = ciWorkflow.search(lintRun);
-  const firstSuiteAt = ciWorkflow.search(/^\s*run:\s*yarn --cwd server test\s*$/m);
-  assert.ok(firstSuiteAt > 0, 'ci.yml must still run the server suite');
+  const checksSteps = yaml.load(ciWorkflow).jobs.checks.steps.map((step) => step.run ?? '');
+  const lintAt = checksSteps.findIndex((run) => run.trim() === 'yarn lint');
+  const firstSuiteAt = checksSteps.findIndex((run) => /^\s*yarn (--cwd \w+ )?test\b/m.test(run));
+  assert.ok(lintAt >= 0, 'the checks job must run yarn lint');
   assert.ok(
-    lintAt > 0 && lintAt < firstSuiteAt,
-    'the lint step must run before the server suite',
+    lintAt < firstSuiteAt,
+    'the lint step must run before the first suite in the checks job',
   );
 
   // verify:fast is the documented pre-push predictor of CI's cheap gates, so a
@@ -810,44 +1014,923 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   assert.match(packageJson.scripts.verify, /verify:fast/);
 });
 
-test('GitHub workflows run with read-only repository token permissions', () => {
-  for (const [name, workflow] of [
-    ['ci', ciWorkflow],
-    ['keep-alive', keepAliveWorkflow],
-    ['release-hold', releaseHoldWorkflow],
-    ['post-promotion-verify', postPromotionVerifyWorkflow],
-  ]) {
-    assert.match(
-      workflow,
-      /permissions:\s*\n\s*contents:\s*read/,
-      `${name} workflow must pin GITHUB_TOKEN to read-only repository contents`,
+test('CI runs the server registration guards right after lint, beside the sharded suite', () => {
+  const checksSteps = yaml.load(ciWorkflow).jobs.checks.steps.map((step) => step.run?.trim() ?? '');
+  const guardAt = checksSteps.indexOf('yarn --cwd server test:guards');
+  const lintAt = checksSteps.indexOf('yarn lint');
+  assert.ok(guardAt >= 0, 'the checks job must run the server guard tests (ylabs#3737)');
+  assert.ok(lintAt < guardAt, 'the guard step runs after lint');
+  assert.match(packageJson.scripts['verify:fast'], /yarn --cwd server test:guards/);
+});
+
+test('the server suite runs as disjoint shards that together cover every file', () => {
+  const { jobs } = yaml.load(ciWorkflow);
+  const shards = jobs['server-tests'].strategy.matrix.shard;
+  const suiteRuns = jobs['server-tests'].steps
+    .map((step) => step.run?.trim())
+    .filter((run) => run?.startsWith('yarn --cwd server test'));
+  assert.deepEqual(
+    suiteRuns,
+    [`yarn --cwd server test --shard=\${{ matrix.shard }}/${shards.length}`],
+    'each shard must run exactly its slice, and the divisor must equal the number of shards, or some files run nowhere (#4666)',
+  );
+  assert.deepEqual(
+    shards,
+    Array.from({ length: shards.length }, (_, index) => index + 1),
+    'the shard indexes must be 1..N with no gap, or a slice runs nowhere',
+  );
+  assert.equal(jobs['server-tests'].strategy['fail-fast'], false);
+  for (const [jobId, job] of Object.entries(jobs)) {
+    for (const step of job.steps ?? []) {
+      assert.doesNotMatch(
+        step.run ?? '',
+        /^\s*yarn --cwd server test\s*$/m,
+        `${jobId} must not also run the whole server suite unsharded`,
+      );
+    }
+  }
+});
+
+test('test-and-build is an aggregate that fails unless every other CI job succeeded', () => {
+  const { jobs } = yaml.load(ciWorkflow);
+  const gate = jobs['test-and-build'];
+  assert.deepEqual(
+    [...gate.needs].sort(),
+    Object.keys(jobs)
+      .filter((jobId) => jobId !== 'test-and-build')
+      .sort(),
+    'every CI job must be in test-and-build needs, because only that context is required by the rulesets',
+  );
+  assert.equal(
+    gate.if,
+    'always()',
+    'without always() a failed job skips the gate, and a skipped required context reads as passing',
+  );
+  assert.equal(gate.steps[0].env.RESULTS, "${{ join(needs.*.result, ' ') }}");
+  const verdictFor = (results) =>
+    gate.steps.every(
+      (step) =>
+        spawnSync('bash', ['-e', '-c', step.run], {
+          env: { ...process.env, RESULTS: results },
+          encoding: 'utf8',
+        }).status === 0,
     );
-    assert.doesNotMatch(
-      workflow,
-      /contents:\s*write|pull-requests:\s*write|actions:\s*write|checks:\s*write|deployments:\s*write|id-token:\s*write/,
-      `${name} workflow should not request write-capable token permissions`,
+  assert.equal(verdictFor('success success'), true);
+  for (const results of ['success failure', 'success cancelled', 'skipped success']) {
+    assert.equal(
+      verdictFor(results),
+      false,
+      `test-and-build must fail when the job results are ${results}`,
     );
   }
 });
 
-test('GitHub checkout steps do not persist repository credentials', () => {
-  for (const [name, workflow] of [
-    ['ci', ciWorkflow],
-    ['post-promotion-verify', postPromotionVerifyWorkflow],
-  ]) {
-    const checkoutStep =
-      /uses:\s*actions\/checkout@[^\n]+[\s\S]{0,160}?persist-credentials:\s*false/;
-    assert.match(
-      workflow,
-      checkoutStep,
-      `${name} workflow must disable checkout credential persistence`,
-    );
-    assert.doesNotMatch(
-      workflow,
-      /uses:\s*actions\/checkout@[^\n]+(?![\s\S]{0,160}?persist-credentials:\s*false)/,
-      `${name} checkout must not leave GITHUB_TOKEN in local git config`,
+const CI_CHECK_COMMANDS = [
+  'yarn format:check',
+  'yarn lint',
+  'yarn --cwd server test:guards',
+  'npx tsc --noEmit -p server/tsconfig.json',
+  'npx tsc --noEmit -p client/tsconfig.json',
+  'yarn model-refactor:inventory:test-operator-tools',
+  'yarn test:data-profiles',
+  'yarn test:scripts',
+  'yarn --cwd client test:ci',
+  'yarn security:preflight',
+  'yarn security:audit:all-environments',
+  'yarn build',
+];
+
+const ciJobRuns = () =>
+  Object.entries(yaml.load(ciWorkflow).jobs).map(([jobId, job]) => [
+    jobId,
+    (job.steps ?? []).map((step) => step.run?.trim()).filter(Boolean),
+  ]);
+
+test('CI runs every check exactly once across its parallel jobs', () => {
+  const runs = ciJobRuns().flatMap(([, jobRuns]) => jobRuns);
+  for (const command of CI_CHECK_COMMANDS) {
+    assert.equal(
+      runs.filter((run) => run === command).length,
+      1,
+      `ci.yml must run ${command} in exactly one job, so splitting jobs for speed cannot drop or double a check (#4666)`,
     );
   }
+});
+
+test('CI runs lint and the client suite beside the server shards, not behind them', () => {
+  const jobOf = (command) => ciJobRuns().find(([, jobRuns]) => jobRuns.includes(command))?.[0];
+  const lintJob = jobOf('yarn lint');
+  const clientJob = jobOf('yarn --cwd client test:ci');
+  assert.ok(lintJob && clientJob);
+  assert.notEqual(
+    lintJob,
+    clientJob,
+    'a lint error must not wait for the client suite to report (#4666)',
+  );
+  const { jobs } = yaml.load(ciWorkflow);
+  for (const jobId of [lintJob, clientJob, 'server-tests']) {
+    assert.equal(jobs[jobId].needs, undefined, `${jobId} must start at once, beside the others`);
+  }
+});
+
+test('the smoke waits for the background Playwright install and fails when it failed', () => {
+  const steps = yaml.load(e2eSmokeWorkflow).jobs['student-journey-smoke'].steps;
+  const indexOf = (name) => steps.findIndex((step) => step.name === name);
+  const startAt = indexOf('Start Playwright Chromium install');
+  const waitAt = indexOf('Install Playwright Chromium');
+  const smokeAt = indexOf('Run student-journey smoke');
+  assert.ok(startAt >= 0 && startAt < waitAt && waitAt < smokeAt);
+  assert.ok(startAt > indexOf('Install dependencies from lockfiles'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-wait-'));
+  try {
+    const inTempDir = (script) => script.replaceAll('/tmp/playwright-install', `${dir}/install`);
+    const stubBin = path.join(dir, 'bin');
+    fs.mkdirSync(stubBin);
+    const handshakeExit = (npxExit) => {
+      fs.rmSync(`${dir}/install.exit`, { force: true });
+      fs.writeFileSync(
+        path.join(stubBin, 'npx'),
+        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\nexit ${npxExit}\n`,
+        { mode: 0o755 },
+      );
+      const env = { ...process.env, PATH: `${stubBin}:${process.env.PATH}` };
+      const start = spawnSync('bash', ['-e', '-c', inTempDir(steps[startAt].run)], {
+        env,
+        encoding: 'utf8',
+      });
+      assert.equal(start.status, 0, 'the start step must return at once and never fail the job');
+      return spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
+        env,
+        encoding: 'utf8',
+      }).status;
+    };
+    assert.equal(handshakeExit(0), 0);
+    assert.notEqual(handshakeExit(1), 0, 'a failed browser install must fail the smoke job');
+    assert.deepEqual(fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n'), [
+      'npx playwright install --with-deps chromium',
+      'npx playwright install --with-deps chromium',
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+const everyWorkflowFile = () => {
+  const directory = new URL('../.github/workflows/', import.meta.url);
+  const files = fs
+    .readdirSync(directory)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => [file, yaml.load(fs.readFileSync(new URL(file, directory), 'utf8'))]);
+  assert.ok(files.length > 0, 'the workflow directory must hold at least one workflow');
+  return files;
+};
+
+const workflowJobs = (workflow) => Object.entries(workflow?.jobs ?? {});
+
+// An allowlist of values rather than a denylist of scope names: a denylist
+// has to be extended for every write-capable scope GitHub adds, and the old
+// one already missed statuses, issues, packages and write-all (ylabs#3912).
+const WRITE_FREE_SCOPE_LEVELS = new Set(['read', 'none']);
+
+const REVIEWED_JOB_WRITE_GRANTS = {
+  'admin-author-approval.yml': { approve: ['pull-requests'] },
+  'keep-alive.yml': { alert: ['issues'] },
+};
+
+const permissionViolations = (where, permissions, reviewedWriteScopes = []) => {
+  if (permissions === undefined || permissions === 'read-all') return [];
+  if (permissions === null || typeof permissions !== 'object' || Array.isArray(permissions)) {
+    return [`${where} grants \`permissions: ${JSON.stringify(permissions)}\``];
+  }
+  return Object.entries(permissions)
+    .filter(([, level]) => !WRITE_FREE_SCOPE_LEVELS.has(level))
+    .filter(([scope, level]) => !(level === 'write' && reviewedWriteScopes.includes(scope)))
+    .map(([scope, level]) => `${where} requests \`${scope}: ${JSON.stringify(level)}\``);
+};
+
+const tokenPermissionViolations = (workflow, reviewedJobWrites = {}) => [
+  ...(workflow?.permissions?.contents === 'read'
+    ? []
+    : [
+        'the top level must pin GITHUB_TOKEN to `contents: read`, or the token takes the repository default scopes',
+      ]),
+  ...permissionViolations('the top level', workflow?.permissions),
+  ...workflowJobs(workflow).flatMap(([job, definition]) =>
+    permissionViolations(`job ${job}`, definition?.permissions, reviewedJobWrites[job]),
+  ),
+];
+
+const checkoutSteps = (workflow) =>
+  workflowJobs(workflow).flatMap(([job, definition]) =>
+    (definition?.steps ?? [])
+      .filter((step) => typeof step?.uses === 'string' && step.uses.startsWith('actions/checkout@'))
+      .map((step) => ({ job, persistsCredentials: step.with?.['persist-credentials'] !== false })),
+  );
+
+test('GitHub workflows run with read-only repository token permissions', () => {
+  for (const [file, workflow] of everyWorkflowFile()) {
+    assert.deepEqual(
+      tokenPermissionViolations(workflow, REVIEWED_JOB_WRITE_GRANTS[file]),
+      [],
+      `${file} must run with read-only token scopes, and a read scope beyond contents is admitted explicitly rather than by widening a pattern`,
+    );
+  }
+});
+
+test('the token-permission guard rejects a write-capable scope anywhere in a workflow', () => {
+  const workflowWith = (topLevel, jobLevel) =>
+    yaml.load(
+      [
+        'on: push',
+        'permissions:',
+        '  contents: read',
+        ...topLevel,
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        ...jobLevel,
+        '    steps:',
+        '      - run: |',
+        '          permissions: write-all',
+      ].join('\n'),
+    );
+
+  assert.deepEqual(tokenPermissionViolations(workflowWith([], [])), []);
+  assert.deepEqual(tokenPermissionViolations(workflowWith([], ['    permissions: read-all'])), []);
+  assert.deepEqual(tokenPermissionViolations(workflowWith([], ['    permissions: {}'])), []);
+  for (const [description, topLevel, jobLevel] of [
+    ['a job-level contents write', [], ['    permissions:', '      contents: write']],
+    ['a job-level write-all', [], ['    permissions: write-all']],
+    ['a top-level statuses write', ['  statuses: write'], []],
+    [
+      'a job-level flow mapping with a write',
+      [],
+      ['    permissions: { contents: read, issues: write }'],
+    ],
+  ]) {
+    assert.equal(
+      tokenPermissionViolations(workflowWith(topLevel, jobLevel)).length,
+      1,
+      `${description} must be rejected`,
+    );
+  }
+  assert.notDeepEqual(
+    tokenPermissionViolations(yaml.load('on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n')),
+    [],
+    'a workflow without a top-level permissions block must be rejected',
+  );
+});
+
+test('every reviewed job write grant is still requested, and only by its own job', () => {
+  const workflows = new Map(everyWorkflowFile());
+  for (const [file, jobs] of Object.entries(REVIEWED_JOB_WRITE_GRANTS)) {
+    const workflow = workflows.get(file);
+    assert.ok(workflow, `${file} carries a reviewed write grant and must still exist`);
+    for (const [job, scopes] of Object.entries(jobs)) {
+      for (const scope of scopes) {
+        assert.equal(
+          workflow.jobs?.[job]?.permissions?.[scope],
+          'write',
+          `${file} job ${job} no longer requests ${scope}: write, so its reviewed grant is stale and must be removed`,
+        );
+      }
+    }
+  }
+  const sameScopeOnAnotherJob = yaml.load(
+    [
+      'on: push',
+      'permissions:',
+      '  contents: read',
+      'jobs:',
+      '  ping:',
+      '    runs-on: ubuntu-latest',
+      '    permissions:',
+      '      issues: write',
+      '    steps: []',
+    ].join('\n'),
+  );
+  assert.equal(
+    tokenPermissionViolations(sameScopeOnAnotherJob, REVIEWED_JOB_WRITE_GRANTS['keep-alive.yml'])
+      .length,
+    1,
+    'a reviewed grant admits one scope on one job, never the same scope on a sibling job',
+  );
+});
+
+test('GitHub checkout steps do not persist repository credentials', () => {
+  let checkouts = 0;
+  for (const [file, workflow] of everyWorkflowFile()) {
+    for (const { job, persistsCredentials } of checkoutSteps(workflow)) {
+      checkouts += 1;
+      assert.equal(
+        persistsCredentials,
+        false,
+        `${file} job ${job} checkout must set persist-credentials: false, or GITHUB_TOKEN stays in local git config for every later step`,
+      );
+    }
+  }
+  assert.ok(checkouts > 0, 'at least one workflow must still check out the repository');
+});
+
+test('the checkout guard rejects a checkout that leaves credentials in git config', () => {
+  const persistence = (step) =>
+    checkoutSteps(
+      yaml.load(
+        ['jobs:', '  build:', '    runs-on: ubuntu-latest', '    steps:', ...step].join('\n'),
+      ),
+    ).map(({ persistsCredentials }) => persistsCredentials);
+
+  assert.deepEqual(
+    persistence([
+      '      - uses: actions/checkout@v4',
+      '        with:',
+      '          persist-credentials: false',
+    ]),
+    [false],
+  );
+  assert.deepEqual(persistence(['      - uses: actions/checkout@v4']), [true]);
+  assert.deepEqual(persistence(["      - uses: 'actions/checkout@v4'"]), [true]);
+  assert.deepEqual(
+    persistence([
+      '      - uses: actions/checkout@v4',
+      '        with: { ref: main }',
+      '        env:',
+      '          persist-credentials: false',
+    ]),
+    [true],
+  );
+  assert.deepEqual(
+    persistence([
+      '      - uses: actions/checkout@v4',
+      '        with:',
+      "          persist-credentials: 'false'",
+    ]),
+    [true],
+  );
+});
+
+const runScript = (script, env, args = []) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(fileURLToPath(new URL(script, import.meta.url)), args, {
+      env: { ...process.env, ...env },
+    });
+    let output = '';
+    child.stdout.on('data', (chunk) => (output += chunk));
+    child.stderr.on('data', (chunk) => (output += chunk));
+    child.on('error', reject);
+    child.on('close', (code) => resolve({ code, output }));
+  });
+
+const withStubEndpoint = async (statusCode, probe) => {
+  let requests = 0;
+  const server = http.createServer((request, response) => {
+    requests += 1;
+    response.writeHead(statusCode).end();
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    return { ...(await probe(url)), requests: () => requests };
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+};
+
+const probeBeta = (url) =>
+  runScript('./keep-alive-probe.sh', {
+    BETA_HEALTH_URL: url,
+    KEEP_ALIVE_RETRY_DELAY_SECONDS: '0',
+  });
+
+test('the keep-alive probe fails after retrying a beta endpoint that answers 500', async () => {
+  const result = await withStubEndpoint(500, probeBeta);
+  assert.equal(result.code, 1, 'a persistent 500 must fail the job (ylabs#3910)');
+  assert.equal(result.requests(), 3, 'the probe retries before failing');
+  assert.match(result.output, /::error::.*last HTTP 500/, 'a red run names the status it saw');
+});
+
+test('the keep-alive probe passes when beta answers 2xx', async () => {
+  const result = await withStubEndpoint(204, probeBeta);
+  assert.equal(result.code, 0);
+  assert.equal(result.requests(), 1);
+});
+
+test('the keep-alive probe retries and reports a transport failure instead of aborting', async () => {
+  const server = http.createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+
+  const result = await probeBeta(`http://127.0.0.1:${port}/`);
+  assert.equal(result.code, 1);
+  assert.equal(result.output.match(/^attempt \d\/3: HTTP 000$/gm)?.length, 3);
+  assert.match(result.output, /::error::.*last HTTP 000/);
+});
+
+const checkReleaseHold = (liveState) => {
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-hold-gh-'));
+  const ghStub = path.join(stubDir, 'gh');
+  fs.writeFileSync(
+    ghStub,
+    liveState === null
+      ? '#!/usr/bin/env bash\necho "gh: HTTP 502" >&2\nexit 1\n'
+      : `#!/usr/bin/env bash\ncat <<'JSON'\n${JSON.stringify(liveState)}\nJSON\n`,
+    { mode: 0o755 },
+  );
+  return runScript('./release-hold-check.sh', {
+    PATH: `${stubDir}${path.delimiter}${process.env.PATH}`,
+    PR_NUMBER: '1',
+    TARGET_REPO: 'example/example',
+  }).finally(() => fs.rmSync(stubDir, { recursive: true, force: true }));
+};
+
+test('release-hold decides from the live pull request state it reads at run time', async () => {
+  // A re-run replays the original event payload, so the check must read the
+  // labels and draft flag live or it would clear a hold still in effect (ylabs#3911).
+  const clear = await checkReleaseHold({ isDraft: false, labels: [{ name: 'ready' }] });
+  assert.equal(clear.code, 0, clear.output);
+
+  const draft = await checkReleaseHold({ isDraft: true, labels: [] });
+  assert.equal(draft.code, 1);
+  assert.match(draft.output, /::error::This promotion is still a draft/);
+
+  for (const spelling of ['hold', 'Hold', 'HOLD']) {
+    const held = await checkReleaseHold({ isDraft: false, labels: [{ name: spelling }] });
+    assert.equal(held.code, 1, `a '${spelling}' label must block the promotion`);
+    assert.match(held.output, /::error::The 'hold' label is set/);
+  }
+
+  const unreadable = await checkReleaseHold(null);
+  assert.notEqual(unreadable.code, 0, 'an unreadable live state must fail closed');
+});
+
+// The behaviour tests above run the scripts, so they cannot see the workflow
+// wiring them up. These pin the wiring: what the job probes, and where its
+// decision comes from. Both defects were in the workflow, not in a script.
+test('the keep-alive job probes the served API and keeps its exit status', () => {
+  assert.match(
+    keepAliveWorkflow,
+    /BETA_HEALTH_URL:\s*https:\/\/ylabs-gr4v\.onrender\.com\/api\/config\s*$/m,
+    'keep-alive must probe /api/config: the service root answers 2xx while the API answers 500, which is exactly the green history ylabs#3910 reports',
+  );
+  for (const [name, source] of [
+    ['keep-alive.yml', keepAliveWorkflow],
+    [
+      'keep-alive-probe.sh',
+      fs.readFileSync(new URL('./keep-alive-probe.sh', import.meta.url), 'utf8'),
+    ],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /curl[^\n]*\|\|\s*(echo|true)/,
+      `${name} must not discard the probe exit status: \`|| echo\` turned three days of HTTP 500 on beta into an unbroken green history (ylabs#3910)`,
+    );
+  }
+});
+
+const ghRecorderStub = (openIssue) => {
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'keep-alive-alert-gh-'));
+  const log = path.join(stubDir, 'calls.jsonl');
+  fs.writeFileSync(
+    path.join(stubDir, 'gh'),
+    [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      'const args = process.argv.slice(2);',
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');`,
+      `if (args[0] === 'issue' && args[1] === 'list') process.stdout.write(${JSON.stringify(openIssue)});`,
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  const calls = () =>
+    fs.existsSync(log)
+      ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
+      : [];
+  return { stubDir, calls };
+};
+
+const runKeepAliveAlert = async ({
+  result,
+  lastStatus = '500',
+  attempts = '3',
+  openIssue = '',
+}) => {
+  const { stubDir, calls } = ghRecorderStub(openIssue);
+  try {
+    const run = await runScript('./keep-alive-alert.sh', {
+      PATH: `${stubDir}${path.delimiter}${process.env.PATH}`,
+      PROBE_RESULT: result,
+      PROBE_LAST_STATUS: lastStatus,
+      PROBE_ATTEMPTS: attempts,
+      PROBED_ROUTE: '/api/config',
+      TARGET_REPO: 'example/example',
+      RUN_URL: 'https://github.com/example/example/actions/runs/1',
+    });
+    return { ...run, calls: calls() };
+  } finally {
+    fs.rmSync(stubDir, { recursive: true, force: true });
+  }
+};
+
+const ghVerbs = (calls) => calls.map((args) => args.slice(0, 2).join(' '));
+const flagValue = (args, flag) => args[args.indexOf(flag) + 1];
+
+test('a failing beta probe opens one labelled outage issue when none is open', async () => {
+  const run = await runKeepAliveAlert({ result: 'failure' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list', 'label create', 'issue create']);
+  const [list, , create] = run.calls;
+  assert.equal(flagValue(list, '--label'), 'beta-probe-failing');
+  assert.equal(flagValue(list, '--state'), 'open');
+  assert.equal(flagValue(create, '--label'), 'beta-probe-failing');
+  assert.equal(flagValue(create, '--title'), 'ops: beta probe failing');
+  const body = flagValue(create, '--body');
+  assert.match(body, /\/api\/config/);
+  assert.match(body, /HTTP 500/);
+  assert.match(body, /3 attempts/);
+  assert.match(body, /actions\/runs\/1/);
+});
+
+test('a failing beta probe comments on the open outage issue instead of opening another', async () => {
+  const run = await runKeepAliveAlert({ result: 'failure', lastStatus: '000', openIssue: '42' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list', 'issue comment']);
+  const comment = run.calls[1];
+  assert.equal(comment[2], '42');
+  assert.match(flagValue(comment, '--body'), /HTTP 000/);
+});
+
+test('a recovered beta probe closes the open outage issue with a comment', async () => {
+  const run = await runKeepAliveAlert({ result: 'success', lastStatus: '200', openIssue: '42' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list', 'issue close']);
+  const close = run.calls[1];
+  assert.equal(close[2], '42');
+  assert.match(flagValue(close, '--comment'), /actions\/runs\/1/);
+});
+
+test('a healthy beta probe with no open outage writes nothing', async () => {
+  const run = await runKeepAliveAlert({ result: 'success', lastStatus: '200' });
+  assert.equal(run.code, 0, run.output);
+  assert.deepEqual(ghVerbs(run.calls), ['issue list']);
+});
+
+test('a cancelled or skipped beta probe neither opens nor closes the outage issue', async () => {
+  for (const result of ['cancelled', 'skipped']) {
+    const run = await runKeepAliveAlert({ result, openIssue: '42' });
+    assert.equal(run.code, 0, run.output);
+    assert.deepEqual(run.calls, [], `${result} must not touch the outage issue`);
+  }
+});
+
+test('the outage alert posts only a validated status and attempt count', async () => {
+  const run = await runKeepAliveAlert({
+    result: 'failure',
+    lastStatus: '<html>upstream said something</html>',
+    attempts: '3; rm -rf /',
+  });
+  assert.equal(run.code, 0, run.output);
+  const body = flagValue(run.calls.at(-1), '--body');
+  assert.doesNotMatch(body, /html|upstream|rm -rf/);
+  assert.match(body, /HTTP unknown/);
+});
+
+test('the keep-alive probe publishes its last status and attempt count as step outputs', async () => {
+  const outputFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'keep-alive-out-')), 'out');
+  try {
+    await withStubEndpoint(500, (url) =>
+      runScript('./keep-alive-probe.sh', {
+        BETA_HEALTH_URL: url,
+        KEEP_ALIVE_RETRY_DELAY_SECONDS: '0',
+        GITHUB_OUTPUT: outputFile,
+      }),
+    );
+    const outputs = fs.readFileSync(outputFile, 'utf8');
+    assert.match(outputs, /^last-status=500$/m);
+    assert.match(outputs, /^attempts=3$/m);
+  } finally {
+    fs.rmSync(path.dirname(outputFile), { recursive: true, force: true });
+  }
+});
+
+test('the keep-alive alert job is the only job that may write issues', () => {
+  const workflow = yaml.load(keepAliveWorkflow);
+  assert.deepEqual(workflow.permissions, { contents: 'read' });
+  assert.equal(
+    workflow.jobs.ping.permissions,
+    undefined,
+    'the probe job keeps the read-only default',
+  );
+  const alert = workflow.jobs.alert;
+  assert.ok(alert, 'keep-alive must have an alert job (ylabs#4143)');
+  assert.deepEqual(alert.permissions, { contents: 'read', issues: 'write' });
+  assert.equal(alert.needs, 'ping');
+  assert.equal(
+    alert.if,
+    "${{ always() && (needs.ping.result == 'failure' || needs.ping.result == 'success') }}",
+    'the alert must run after a failed or a recovered probe, and never after a cancelled or skipped one',
+  );
+  const alertStep = alert.steps.find((step) => step.run === 'scripts/keep-alive-alert.sh');
+  assert.ok(alertStep, 'the alert job must run the tested alert script');
+  assert.equal(alertStep.env.PROBE_RESULT, '${{ needs.ping.result }}');
+  assert.equal(alertStep.env.GH_TOKEN, '${{ github.token }}');
+  const probeStep = workflow.jobs.ping.steps.find((step) => step.id === 'probe');
+  assert.equal(probeStep?.run, 'scripts/keep-alive-probe.sh');
+  assert.equal(workflow.jobs.ping.outputs['last-status'], '${{ steps.probe.outputs.last-status }}');
+  assert.equal(workflow.jobs.ping.outputs.attempts, '${{ steps.probe.outputs.attempts }}');
+});
+
+test('the release-hold job reads live state rather than the replayed event payload', () => {
+  // github.event is a frozen copy of the payload that started the run, so a
+  // re-run of an earlier attempt re-reads the labels and draft flag as they were
+  // then and would clear a hold that is still in effect (ylabs#3911).
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.labels/,
+    'release-hold must not read labels from the event payload',
+  );
+  assert.doesNotMatch(
+    releaseHoldWorkflow,
+    /github\.event\.pull_request\.draft/,
+    'release-hold must not read draft state from the event payload',
+  );
+  assert.match(
+    releaseHoldWorkflow,
+    /pull-requests:\s*read/,
+    'reading the live pull request state needs the pull-requests: read scope',
+  );
+  assert.match(
+    fs.readFileSync(new URL('./release-hold-check.sh', import.meta.url), 'utf8'),
+    /gh pr view[^\n]*--json isDraft,labels/,
+    'the check must read the live label and draft state at run time',
+  );
+  for (const trigger of [
+    'labeled',
+    'unlabeled',
+    'ready_for_review',
+    'converted_to_draft',
+    'synchronize',
+  ]) {
+    assert.match(
+      releaseHoldWorkflow,
+      new RegExp(`\\b${trigger}\\b`),
+      `release-hold must keep the ${trigger} trigger so a state change still produces a new run`,
+    );
+  }
+  assert.match(
+    releaseHoldWorkflow,
+    /name:\s*release-hold/,
+    'the job name is the required context name on the main ruleset and must not change',
+  );
+});
+
+const workflowDirectory = new URL('../.github/workflows/', import.meta.url);
+const parsedWorkflows = () =>
+  fs
+    .readdirSync(workflowDirectory)
+    .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
+    .map((file) => [file, yaml.load(fs.readFileSync(new URL(file, workflowDirectory), 'utf8'))]);
+const workflowSteps = (workflow) =>
+  Object.values(workflow.jobs ?? {}).flatMap((job) => job.steps ?? []);
+const runsCommand = (step, ...tokens) =>
+  typeof step.run === 'string' &&
+  step.run
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .some((line) => tokens.every((token, index) => line[index] === token));
+
+test('every workflow takes its Node major from .node-version', () => {
+  const declared = fs.readFileSync(new URL('../.node-version', import.meta.url), 'utf8').trim();
+  assert.match(
+    declared,
+    /^\d+$/,
+    '.node-version must hold a bare major, because it is read by setup-node and by the hosting provider',
+  );
+
+  for (const [file, workflow] of parsedWorkflows()) {
+    for (const step of workflowSteps(workflow)) {
+      if (!step.uses?.startsWith('actions/setup-node@')) continue;
+      assert.equal(
+        step.with?.['node-version-file'],
+        '.node-version',
+        `${file} must read the Node major from .node-version so CI and the deployed runtime cannot drift (ylabs#3915)`,
+      );
+      assert.equal(
+        step.with?.['node-version'],
+        undefined,
+        `${file} must not pin a Node major inline beside the file it is supposed to read`,
+      );
+    }
+  }
+
+  // A bump is one commit that moves the file and every manifest together, so a
+  // manifest floor can never sit below the only major CI exercises.
+  const bound = `>=${declared} <${Number(declared) + 1}`;
+  for (const manifest of ['../package.json', '../server/package.json', '../client/package.json']) {
+    const { engines } = JSON.parse(fs.readFileSync(new URL(manifest, import.meta.url), 'utf8'));
+    assert.equal(
+      engines?.node,
+      bound,
+      `${manifest} must bound engines.node to the major .node-version declares`,
+    );
+  }
+});
+
+test('the documented installs use the Corepack pin and builtin installer CI uses', () => {
+  const readDoc = (doc) => fs.readFileSync(new URL(doc, import.meta.url), 'utf8');
+  const ciCorepack = ciWorkflow.match(/npm install -g (corepack@\d+\.\d+\.\d+)/)?.[1];
+  assert.ok(ciCorepack, 'ci.yml must pin a Corepack version for the documented build to match');
+  assert.ok(
+    readDoc('../docs/release-process.md').includes(
+      `\`npm install -g ${ciCorepack} && corepack enable && bash scripts/install-all.sh --immutable\``,
+    ),
+    'docs/release-process.md must give the Render build the Corepack pin ci.yml installs and the builtin immutable installs, because a package.json script cannot run on a fresh checkout',
+  );
+  for (const doc of ['../README.md', '../DEVELOPER_GUIDE.md']) {
+    const text = readDoc(doc);
+    const pins = [...text.matchAll(/npm install -g (corepack@\S+)/g)].map((match) => match[1]);
+    assert.ok(pins.length > 0, `${doc} must tell contributors to install Corepack`);
+    for (const pin of pins) {
+      assert.equal(pin, ciCorepack, `${doc} must install the Corepack version ci.yml pins`);
+    }
+    assert.match(
+      text,
+      /^bash scripts\/install-all\.sh$/m,
+      `${doc} must give the builtin installer as the first install`,
+    );
+  }
+});
+
+const runInstallAll = (args) => {
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'install-all-yarn-'));
+  const log = path.join(stubDir, 'yarn.log');
+  fs.writeFileSync(
+    path.join(stubDir, 'yarn'),
+    '#!/usr/bin/env bash\necho "$PWD|$*" >> "$YARN_STUB_LOG"\n',
+    { mode: 0o755 },
+  );
+  return runScript(
+    './install-all.sh',
+    { PATH: `${stubDir}${path.delimiter}${process.env.PATH}`, YARN_STUB_LOG: log },
+    args,
+  )
+    .then((result) => ({
+      ...result,
+      calls: fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : [],
+    }))
+    .finally(() => fs.rmSync(stubDir, { recursive: true, force: true }));
+};
+
+test('the first-install entry point runs only yarn install builtins', async () => {
+  const repoRoot = fs.realpathSync(fileURLToPath(new URL('..', import.meta.url)));
+  const expectedCalls = (flag) =>
+    ['install', '--cwd server install', '--cwd client install'].map(
+      (argv) => `${repoRoot}|${argv}${flag}`,
+    );
+
+  const plain = await runInstallAll([]);
+  assert.equal(plain.code, 0, plain.output);
+  assert.deepEqual(plain.calls, expectedCalls(''));
+
+  const immutable = await runInstallAll(['--immutable']);
+  assert.equal(immutable.code, 0, immutable.output);
+  assert.deepEqual(immutable.calls, expectedCalls(' --immutable'));
+
+  const unknown = await runInstallAll(['--frozen']);
+  assert.notEqual(unknown.code, 0, 'an unknown flag must fail rather than install');
+  assert.deepEqual(unknown.calls, []);
+});
+
+test('workflows pin Corepack instead of installing whatever is latest', () => {
+  for (const [file, workflow] of parsedWorkflows()) {
+    const steps = workflowSteps(workflow);
+    const enableIndex = steps.findIndex((step) => runsCommand(step, 'corepack', 'enable'));
+    if (enableIndex === -1) continue;
+    const installs = steps
+      .slice(0, enableIndex)
+      .flatMap((step) => step.run?.trim().split(/\s+/) ?? [])
+      .filter((token) => token.startsWith('corepack@'));
+    assert.equal(
+      installs.length,
+      1,
+      `${file} must install Corepack exactly once before enabling it`,
+    );
+    assert.match(
+      installs[0],
+      /^corepack@\d+\.\d+\.\d+$/,
+      `${file} must pin the Corepack version: an unpinned install lets a new release change the tool that selects Yarn between two runs of the same commit (ylabs#3915)`,
+    );
+  }
+});
+
+test('every workflow job bounds its runtime', () => {
+  for (const [file, workflow] of parsedWorkflows()) {
+    const jobs = Object.entries(workflow.jobs ?? {});
+    assert.ok(jobs.length > 0, `${file} must declare at least one job`);
+    for (const [jobId, job] of jobs) {
+      assert.ok(
+        Number.isInteger(job['timeout-minutes']) && job['timeout-minutes'] > 0,
+        `${file} job ${jobId} must set timeout-minutes: the 360-minute default holds a required check pending for six hours before it fails (ylabs#3916)`,
+      );
+    }
+  }
+});
+
+test('the required checks also run on the commit that lands on beta', () => {
+  // The beta ruleset does not require branches to be up to date (#3425), so a
+  // pull request is tested against the base it last saw. The push run is the
+  // only test of the squash commit that actually reaches beta (#1151, #1153).
+  for (const [file, workflowSource] of [
+    ['ci.yml', ciWorkflow],
+    ['e2e-smoke.yml', e2eSmokeWorkflow],
+  ]) {
+    const workflow = yaml.load(workflowSource);
+    assert.deepEqual(
+      workflow.on.push?.branches,
+      ['beta'],
+      `${file} must run on pushes to beta so the merged result is tested (ylabs#3913)`,
+    );
+    assert.deepEqual(
+      workflow.on.pull_request?.branches,
+      ['main', 'beta'],
+      `${file} must keep its pull request trigger so the required context still reports`,
+    );
+    // A cancelled or queued pull request run delays or fails a required
+    // context, so only push runs share a concurrency group.
+    assert.deepEqual(
+      workflow.concurrency,
+      {
+        group:
+          "${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}",
+        'cancel-in-progress': true,
+      },
+      `${file} must share a concurrency group between push runs only`,
+    );
+  }
+});
+
+test('third-party actions stay SHA-pinned beside the version comment Dependabot rewrites', () => {
+  const workflowDir = new URL('../.github/workflows/', import.meta.url);
+  let pins = 0;
+  for (const file of fs.readdirSync(workflowDir)) {
+    const source = fs.readFileSync(new URL(file, workflowDir), 'utf8');
+    const workflow = yaml.load(source);
+    const references = Object.values(workflow.jobs ?? {}).flatMap((job) => [
+      ...(job.uses ? [job.uses] : []),
+      ...(job.steps ?? []).flatMap((step) => (step.uses ? [step.uses] : [])),
+    ]);
+    for (const reference of references) {
+      pins += 1;
+      assert.match(
+        reference,
+        /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/,
+        `${file} pins ${reference} by name: a mutable tag lets an upstream force-push change what runs here`,
+      );
+      // The same-line `# vX` comment is the text contract Dependabot reads and
+      // rewrites alongside the SHA, and YAML drops comments, so this one check
+      // reads the source line. A pin without it gets no update proposal (ylabs#3914).
+      const pinLines = source.split('\n').filter((line) => line.includes(`uses: ${reference}`));
+      assert.ok(pinLines.length > 0, `${file} must declare ${reference} on a single uses line`);
+      for (const line of pinLines) {
+        assert.match(
+          line,
+          /@[0-9a-f]{40}\s+#\s*v\d+(\.\d+)*\s*$/,
+          `${file} must name the release beside ${reference} so the pin stays maintainable`,
+        );
+      }
+    }
+  }
+  assert.ok(pins > 0, 'the workflows must still use at least one pinned action');
+});
+
+test('a Dependabot updater keeps the action pins from freezing', () => {
+  const config = yaml.load(
+    fs.readFileSync(new URL('../.github/dependabot.yml', import.meta.url), 'utf8'),
+  );
+  assert.equal(config.version, 2);
+  const actionUpdaters = (config.updates ?? []).filter(
+    (update) => update['package-ecosystem'] === 'github-actions',
+  );
+  assert.equal(
+    actionUpdaters.length,
+    1,
+    'a SHA pin never updates itself, so an updater is what keeps it from freezing on a deprecated runtime (ylabs#3914)',
+  );
+  const [updater] = actionUpdaters;
+  assert.equal(updater.directory, '/', 'the workflows live at the repository root');
+  assert.equal(
+    updater['target-branch'],
+    'beta',
+    'pull requests are based on beta here, so an updater left on the default target would open against the production branch',
+  );
+  assert.equal(updater.schedule?.interval, 'weekly');
+  const groupPatterns = Object.values(updater.groups ?? {}).flatMap(
+    (group) => group.patterns ?? [],
+  );
+  assert.ok(
+    groupPatterns.includes('*'),
+    'a group matching every action keeps a bump to one pull request rather than one per action',
+  );
 });
 
 // The live-prod smoke now runs only on a promotion, so post-promotion-verify is
@@ -917,22 +2000,22 @@ test('deployed runtime emits HSTS independent of proxy request shape', () => {
 
 test('served browser assets do not expose source maps or hidden static files', () => {
   const appSource = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
-  const tsupSource = fs.readFileSync(new URL('../server/tsup.config.ts', import.meta.url), 'utf8');
+  const staticSource = fs.readFileSync(
+    new URL('../server/src/middleware/clientStaticAssets.ts', import.meta.url),
+    'utf8',
+  );
 
   assert.match(
-    appSource,
+    staticSource,
     /function blockSourceMapAssetRequests\(\s*req: express\.Request,\s*res: express\.Response,\s*next: express\.NextFunction,?\s*\)/,
   );
-  assert.match(appSource, /req\.path\.endsWith\('\.map'\)/);
-  assert.match(appSource, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
-  assert.match(appSource, /res\.status\(404\)\.type\('text\/plain'\)\.send\('Not found'\)/);
-  assert.match(appSource, /app\.use\(blockSourceMapAssetRequests\);[\s\S]*express\.static/);
-  assert.match(
-    appSource,
-    /express\.static\(path\.join\(__dirname, '\.\.\/\.\.\/client\/dist'\), \{/,
-  );
-  assert.match(appSource, /dotfiles: 'ignore'/);
-  assert.match(appSource, /index: false/);
+  assert.match(staticSource, /req\.path\.endsWith\('\.map'\)/);
+  assert.match(staticSource, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
+  assert.match(staticSource, /res\.status\(404\)\.type\('text\/plain'\)\.send\('Not found'\)/);
+  assert.match(staticSource, /router\.use\(blockSourceMapAssetRequests\);[\s\S]*express\.static/);
+  assert.match(staticSource, /express\.static\(clientDistPath, \{/);
+  assert.match(staticSource, /dotfiles: 'ignore'/);
+  assert.match(staticSource, /index: false/);
   assert.match(appSource, /function shouldServeSpaFallback\(req: express\.Request\): boolean/);
   assert.match(appSource, /segments\.some\(\(segment\) => segment\.startsWith\('\.'\)\)/);
   assert.match(appSource, /path\.extname\(lastSegment\)/);
@@ -942,8 +2025,6 @@ test('served browser assets do not expose source maps or hidden static files', (
     appSource,
     /app\.use\(express\.static\(path\.join\(__dirname, '\.\.\/\.\.\/client\/dist'\)\)\)/,
   );
-  assert.match(tsupSource, /sourcemap: false/);
-  assert.doesNotMatch(tsupSource, /sourcemap: true/);
 });
 
 test('server start refuses stale build artifacts', () => {
@@ -957,21 +2038,15 @@ test('server start refuses stale build artifacts', () => {
 
   assert.equal(
     packageJson.scripts.start,
-    'node ../scripts/ensure-server-build-fresh.mjs && node build/index.js',
+    'node ../scripts/ensure-server-build-fresh.mjs && node --enable-source-maps build/index.js',
   );
   assert.match(
     guardSource,
     /const buildEntrypoint = path\.join\(serverRoot, 'build', 'index\.js'\)/,
   );
-  assert.match(
-    guardSource,
-    /const forbiddenBuildArtifacts = \[path\.join\(buildDir, 'index\.js\.map'\)\]/,
-  );
   assert.match(guardSource, /path\.join\(serverRoot, 'src'\)/);
   assert.match(guardSource, /path\.join\(serverRoot, 'tsup\.config\.ts'\)/);
   assert.match(guardSource, /fs\.existsSync\(buildEntrypoint\)/);
-  assert.match(guardSource, /for \(const artifact of forbiddenBuildArtifacts\)/);
-  assert.match(guardSource, /server build contains source-map artifacts/);
   assert.match(guardSource, /sourceMtimeMs > buildMtimeMs \+ 1000/);
   assert.match(guardSource, /Run `yarn build:server` before start/);
 });
@@ -1118,9 +2193,6 @@ test('analytics route error responses do not trust thrown message prefixes', () 
     'utf8',
   );
 
-  assert.match(source, /class AnalyticsRequestError extends Error/);
-  assert.match(source, /error instanceof AnalyticsRequestError/);
-  assert.match(source, /throw new AnalyticsRequestError\('Invalid analytics request'\)/);
   assert.doesNotMatch(source, /error instanceof Error \? error\.message/);
   assert.doesNotMatch(source, /message\.startsWith\('Invalid'\)/);
   assert.doesNotMatch(source, /json\(\{ error: error\.message \}\)/);
@@ -1330,44 +2402,6 @@ test('API responses default to private no-store cache headers', () => {
   );
 });
 
-test('OAuth callback assets are served with no-store cache headers', () => {
-  const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
-  const callbackHtmlSource = fs.readFileSync(
-    new URL('../client/public/oauth-callback.html', import.meta.url),
-    'utf8',
-  );
-  const callbackHtmlDistUrl = new URL('../client/dist/oauth-callback.html', import.meta.url);
-  // dist/ is a build output; enforce the dist copy only when a build exists.
-  const callbackHtmlDistSource = fs.existsSync(callbackHtmlDistUrl)
-    ? fs.readFileSync(callbackHtmlDistUrl, 'utf8')
-    : null;
-
-  assert.match(source, /function setOAuthCallbackAssetCacheHeaders\(/);
-  assert.match(
-    source,
-    /req\.path === '\/oauth-callback\.html' \|\| req\.path === '\/oauth-callback\.js'/,
-  );
-  assert.match(source, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
-  assert.match(source, /res\.setHeader\('Pragma', 'no-cache'\)/);
-  assert.match(source, /res\.setHeader\('Surrogate-Control', 'no-store'\)/);
-  assert.match(source, /res\.setHeader\('Expires', '0'\)/);
-  assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
-  assert.match(
-    source,
-    /app\.use\(blockSourceMapAssetRequests\);\s*app\.use\(setOAuthCallbackAssetCacheHeaders\);\s*app\.use\(\s*express\.static/,
-  );
-  for (const html of [callbackHtmlSource, callbackHtmlDistSource].filter(Boolean)) {
-    assert.match(html, /<meta name="referrer" content="no-referrer">/);
-    assert.match(html, /http-equiv="Content-Security-Policy"/);
-    assert.match(html, /default-src 'none'/);
-    assert.match(html, /script-src 'self'/);
-    assert.match(html, /connect-src 'none'/);
-    assert.match(html, /form-action 'none'/);
-    assert.match(html, /<script src="\/oauth-callback\.js"><\/script>/);
-    assert.doesNotMatch(html, /<script>[\s\S]*access_token/);
-  }
-});
-
 test('mounted API routes sanitize caught errors before logging', () => {
   const routeFiles = [
     '../server/src/routes/admin.ts',
@@ -1375,7 +2409,6 @@ test('mounted API routes sanitize caught errors before logging', () => {
     '../server/src/routes/config.ts',
     '../server/src/routes/fellowships.ts',
     '../server/src/routes/programs.ts',
-    '../server/src/routes/researchAreas.ts',
     '../server/src/routes/users.ts',
   ];
 
@@ -1897,7 +2930,6 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
     ['claim gate', '../server/src/scripts/claimGate.ts'],
     ['launch trust contract', '../server/src/scripts/launchTrustContract.ts'],
     ['launch review exceptions', '../server/src/scripts/launchReviewExceptions.ts'],
-    ['beta seed environment', '../server/src/scripts/betaSeedEnvironment.ts'],
     ['beta data quality', '../server/src/scripts/betaDataQualityCore.ts'],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -1936,13 +2968,6 @@ test('beta launch gate report paths are constrained to safe JSON artifact roots'
   );
   assert.match(launchReviewExceptions, /fs\.readFileSync\(safeInputPath, 'utf8'\)/);
   assert.doesNotMatch(launchReviewExceptions, /fs\.readFileSync\(inputPath, 'utf8'\)/);
-
-  const betaSeedEnvironment = fs.readFileSync(
-    new URL('../server/src/scripts/betaSeedEnvironment.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(betaSeedEnvironment, /function resolveSafeArtifactDir/);
-  assert.match(betaSeedEnvironment, /path\.join\(parsed, 'artifact-root\.json'\)/);
 
   const betaDataQualityCore = fs.readFileSync(
     new URL('../server/src/scripts/betaDataQualityCore.ts', import.meta.url),
@@ -1989,7 +3014,6 @@ test('local process execution remains shell-free', () => {
   for (const [name, file] of [
     ['rendered fetch bridge', '../server/src/scrapers/renderedFetch.ts'],
     ['gate scorecard refresh', '../server/src/scripts/refreshGateScorecards.ts'],
-    ['beta seed environment', '../server/src/scripts/betaSeedEnvironment.ts'],
     ['gate refresh scheduler', '../server/src/scripts/gateRefreshScheduler.ts'],
     ['secret scanner', '../scripts/check-no-secrets.mjs'],
   ]) {
@@ -2030,9 +3054,10 @@ test('research entity browse-rank service ids use safe serialization for map key
     source,
     /const browseRankDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
-  assert.match(source, /const key = browseRankDocumentId\(signal\.researchEntityId\)/);
+  assert.match(source, /const key = browseRankDocumentId\(relationship\.sourceResearchEntityId\)/);
   assert.match(source, /const id = browseRankDocumentId\(entity\._id\)/);
   assert.doesNotMatch(source, /String\(signal\.researchEntityId/);
+  assert.doesNotMatch(source, /String\(relationship\.sourceResearchEntityId/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
 });
 
@@ -2099,7 +3124,6 @@ test('launch acquisition report record ids are normalized before entity fan-out'
   assert.match(source, /if \(serialized\) return serialized\.trim\(\)/);
   assert.match(source, /const safeId = normalizeLaunchAcquisitionObjectId\(id\)/);
   assert.match(source, /ResearchEntity\.findById\(safeId\)/);
-  assert.match(source, /researchEntityId: safeId/);
   assert.doesNotMatch(source, /ResearchEntity\.findById\(id\)/);
   assert.doesNotMatch(source, /researchEntityId: id/);
   assert.doesNotMatch(source, /typeof \(value as any\)\.toHexString === 'function'/);
@@ -2284,39 +3308,6 @@ test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
       );
     }
   }
-});
-
-test('archived artifact repair plan ids are primitive-normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/repairArchivedEntityArtifacts.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /ARCHIVED_ARTIFACT_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeArchivedArtifactObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(
-    source,
-    /function objectId\(value: unknown\): mongoose\.Types\.ObjectId \| undefined/,
-  );
-  assert.match(source, /const itemObjectId = objectId\(item\.id\)/);
-  assert.match(source, /const canonicalObjectId = objectId\(item\.canonicalResearchEntityId\)/);
-  assert.match(source, /const duplicateObjectId = objectId\(item\.duplicateId\)/);
-  assert.match(
-    source,
-    /function stringId\(value: unknown\): string \{\s*return serializedDocumentId\(value\) \|\| '';\s*\}/,
-  );
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(value\)/);
-  assert.doesNotMatch(
-    source,
-    /typeof \(value as \{ toHexString\?: \(\) => string \}\)\.toHexString === 'function'/,
-  );
-  assert.doesNotMatch(source, /\(value as \{ toHexString: \(\) => string \}\)\.toHexString\(\)/);
-  assert.doesNotMatch(source, /return String\(value\)/);
 });
 
 test('duplicate access signal repair ids are primitive-normalized', () => {
@@ -2660,33 +3651,67 @@ test('Phase 0 complementary audits enforce fail-closed summary-only output', () 
 });
 
 test('Mongo sanitizer rejects operator-shaped requests and bounds recursive traversal', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/middleware/sanitizeMongo.ts', import.meta.url),
-    'utf8',
-  );
+  const deep = (depth) => (depth === 0 ? 'leaf' : { child: deep(depth - 1) });
+  const wideObject = (count) =>
+    Object.fromEntries(Array.from({ length: count }, (_, i) => [`k${i}`, i]));
+  const rejected = { status: 400, body: { error: 'Invalid request payload' }, nextCalled: false };
+  const cases = [
+    [{ body: { $where: 'sleep(1)' } }, rejected],
+    [{ body: { filter: { $gt: '' } } }, rejected],
+    [{ body: { 'profile.role': 'admin' } }, rejected],
+    [{ body: { 'items[0]': 'x' } }, rejected],
+    [{ body: { 'items]': 'x' } }, rejected],
+    [{ body: JSON.parse('{"__proto__":{"admin":true}}') }, rejected],
+    [{ body: { constructor: { prototype: { admin: true } } } }, rejected],
+    [{ body: { prototype: 'x' } }, rejected],
+    [{ query: { $ne: 'x' } }, rejected],
+    [{ body: { list: [{ $or: [] }] } }, rejected],
+    [{ body: { list: Array.from({ length: 201 }, () => 1) } }, rejected],
+    [{ body: wideObject(201) }, rejected],
+    [{ body: deep(33) }, rejected],
+  ];
+  const accepted = [
+    { body: { name: 'safe', tags: ['a', 'b'], nested: { ok: 1 } } },
+    { body: { list: Array.from({ length: 200 }, () => 1) } },
+    { body: wideObject(200) },
+    { body: deep(32) },
+    { query: { q: 'machine learning' } },
+  ];
+  const evaluate = [
+    'return input.map((request) => {',
+    '  const outcome = { status: undefined, body: undefined, nextCalled: false };',
+    '  const res = { status(code) { outcome.status = code; return res; }, json(payload) { outcome.body = payload; return res; } };',
+    '  const req = { body: request.body, query: request.query ?? {} };',
+    '  guard.sanitizeMongo(req, res, () => { outcome.nextCalled = true; });',
+    '  return { ...outcome, cleaned: req.body };',
+    '});',
+  ].join(' ');
 
-  assert.match(source, /const MAX_SANITIZE_DEPTH = 32/);
-  assert.match(source, /const MAX_SANITIZE_ARRAY_ITEMS = 200/);
-  assert.match(source, /const MAX_SANITIZE_OBJECT_KEYS = 200/);
-  assert.match(source, /if \(depth > MAX_SANITIZE_DEPTH\) return undefined/);
-  assert.match(source, /value\.slice\(0, MAX_SANITIZE_ARRAY_ITEMS\)\.map/);
-  assert.match(source, /Object\.keys\(value\)\.slice\(0, MAX_SANITIZE_OBJECT_KEYS\)/);
-  assert.match(source, /key\.startsWith\('\$'\)/);
-  assert.match(source, /key\.includes\('\.'\)/);
-  assert.match(source, /key\.includes\('\['\)/);
-  assert.match(source, /key\.includes\('\]'\)/);
-  assert.match(source, /PROTOTYPE_POLLUTION_KEYS\.has\(key\)/);
-  assert.match(source, /const hasUnsafeMongoShape = \(value: unknown, depth = 0\): boolean => \{/);
-  assert.match(source, /if \(value\.length > MAX_SANITIZE_ARRAY_ITEMS\) return true/);
-  assert.match(source, /if \(keys\.length > MAX_SANITIZE_OBJECT_KEYS\) return true/);
-  assert.match(source, /keys\.some\(\(key\) => isUnsafeMongoKey\(key\) \|\| hasUnsafeMongoShape/);
-  assert.match(
-    source,
-    /if \(hasUnsafeMongoShape\(req\.body\) \|\| hasUnsafeMongoShape\(req\.query\)\)/,
+  const rejectedOutputs = runServerGuard(
+    'src/middleware/sanitizeMongo.ts',
+    evaluate,
+    cases.map(([request]) => request),
   );
-  assert.match(source, /return res\.status\(400\)\.json\(\{ error: 'Invalid request payload' \}\)/);
-  assert.match(source, /const cleaned = scrub\(val, depth \+ 1\)/);
-  assert.match(source, /if \(cleaned !== undefined\) out\[key\] = cleaned/);
+  cases.forEach(([request, expected], index) => {
+    const { status, body, nextCalled } = rejectedOutputs[index];
+    assert.deepEqual(
+      { status, body, nextCalled },
+      expected,
+      `sanitizeMongo let through: ${JSON.stringify(request).slice(0, 120)}`,
+    );
+  });
+
+  const acceptedOutputs = runServerGuard('src/middleware/sanitizeMongo.ts', evaluate, accepted);
+  accepted.forEach((request, index) => {
+    const outcome = acceptedOutputs[index];
+    assert.equal(
+      outcome.nextCalled,
+      true,
+      `sanitizeMongo rejected: ${JSON.stringify(request).slice(0, 120)}`,
+    );
+    assert.equal(outcome.status, undefined);
+    if (request.body) assert.deepEqual(outcome.cleaned, request.body);
+  });
 });
 
 test('required body field validation ignores inherited prototype properties', () => {
@@ -2754,10 +3779,15 @@ test('client logout navigation uses the safe API URL builder', () => {
     assert.match(source, /window\.location\.href = buildApiUrl\('\/logout'\)/);
     assert.doesNotMatch(source, /axios\.defaults\.baseURL \+ '\/logout'/);
   }
-  assert.match(signInButton, /const MAX_CAS_RETURN_PATH_LENGTH = 2048/);
-  assert.match(signInButton, /trimmed\.length > MAX_CAS_RETURN_PATH_LENGTH/);
-  assert.match(signInButton, /const url = new URL\(trimmed, window\.location\.origin\)/);
-  assert.match(signInButton, /url\.origin !== window\.location\.origin/);
+  const returnPathUtil = fs.readFileSync(
+    new URL('../client/src/utils/returnPath.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(signInButton, /import \{ normalizeReturnPath \} from '\.\.\/utils\/returnPath'/);
+  assert.match(returnPathUtil, /const MAX_RETURN_PATH_LENGTH = 2048/);
+  assert.match(returnPathUtil, /trimmed\.length > MAX_RETURN_PATH_LENGTH/);
+  assert.match(returnPathUtil, /const url = new URL\(trimmed, window\.location\.origin\)/);
+  assert.match(returnPathUtil, /url\.origin !== window\.location\.origin/);
   assert.match(signInButton, /buildApiUrl\(`\/cas\$\{redirectParam\}`\)/);
 });
 
@@ -2817,7 +3847,8 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /value\.slice\(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS\)/);
   assert.match(fellowshipService, /ids\s*\.slice\(0, MAX_FELLOWSHIP_ID_READS\)/);
   assert.match(fellowshipService, /PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS/);
-  assert.match(fellowshipService, /const safeQuery = boundedSearchQuery\(query\)/);
+  assert.match(fellowshipService, /const typedQuery = boundedSearchQuery\(query\)/);
+  assert.match(fellowshipService, /const safeQuery = boundedSearchQuery\(spelling\.query\)/);
   assert.match(
     fellowshipService,
     /const safeYearOfStudy = boundedSearchFilterValues\(yearOfStudy\)/,
@@ -2825,7 +3856,7 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /const querySubjects = resolveTopicSubjects\(\[safeQuery\]\)/);
   assert.match(
     fellowshipService,
-    /const searchTerms = \[safeQuery, \.\.\.queryTopicAliases\]\.filter\(Boolean\)/,
+    /const searchTerms = \[\s*safeQuery,\s*\.\.\.queryTopicAliases,\s*\.\.\.yearOfStudyAliasesForQuery\(safeQuery\),?\s*\]\.filter\(Boolean\)/,
   );
   assert.match(fellowshipService, /filter\.\$text = \{ \$search: searchTerms\.join\(' '\) \}/);
   assert.match(
@@ -2921,7 +3952,7 @@ test('rendered scraper fetch blocks cross-origin redirect content', () => {
 
   assert.match(
     source,
-    /import \{ assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents \} from '\.\/\.\.\/utils\/ssrfGuard'/,
+    /import \{\s*assertPublicHttpUrl,\s*SsrfBlockedError,\s*ssrfSafeAgents,\s*stripIpv6Brackets,\s*\} from '\.\/\.\.\/utils\/ssrfGuard'/,
   );
   assert.match(source, /const defaultRenderedSeedRedirectCheck = \(/);
   assert.match(source, /method: 'GET'/);
@@ -2945,6 +3976,131 @@ test('rendered scraper fetch blocks cross-origin redirect content', () => {
   assert.doesNotMatch(
     source,
     /url:\s*parsed\.url \|\| request\.url,\s*html:\s*parsed\.html \|\| ''/,
+  );
+});
+
+test('server code never sends a non-constant URL outside the shared SSRF guard', () => {
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const files = listOutboundFetchScanFiles(repoRoot);
+  assert.ok(files.length > 100, `expected to scan the server tree, found ${files.length} files`);
+
+  const unreviewed = [];
+  const exemptionsStillNeeded = new Set();
+  for (const file of files) {
+    const relative = path.relative(repoRoot, file).split(path.sep).join('/');
+    const findings = findUnguardedOutboundFetches(fs.readFileSync(file, 'utf8'));
+    if (findings.length === 0) continue;
+    if (REVIEWED_OUTBOUND_FETCHES.has(relative)) exemptionsStillNeeded.add(relative);
+    for (const finding of unreviewedOutboundFetches(relative, findings)) {
+      unreviewed.push(`${relative}:${finding.line} ${finding.kind}(${finding.argument})`);
+    }
+  }
+
+  assert.deepEqual(
+    unreviewed,
+    [],
+    'route these through fetchPublicHttpUrl (server/src/scrapers/utils/httpFetch.ts), or assertPublicHttpUrl plus ssrfSafeAgents, so neither the first host nor any redirect hop can be private',
+  );
+  assert.deepEqual(
+    [...REVIEWED_OUTBOUND_FETCHES.keys()].filter((file) => !exemptionsStillNeeded.has(file)),
+    [],
+    'a reviewed exemption no longer matches any call; remove it',
+  );
+});
+
+test('the unguarded-fetch scan flags a deliberately unguarded fixture', () => {
+  const unguardedFixture = [
+    "import axios from 'axios';",
+    'export async function probe(url: string) {',
+    "  const response = await fetch(url, { redirect: 'follow' });",
+    '  const page = await axios.get(row.websiteUrl, { maxRedirects: 5 });',
+    '  http.get(target, (res) => res.resume());',
+    '  return response.status + page.status;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(unguardedFixture).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@3', 'axios@4', 'node http@5'],
+  );
+});
+
+test('the unguarded-fetch scan passes constant hosts, guarded agents, comments and shadowed fetch', () => {
+  const guardedFixture = [
+    "const INDEX_URL = 'https://example.edu/index';",
+    '// fetch(url) inside a comment is not a call',
+    "const note = 'fetch(url) inside a string is not a call';",
+    'await fetch(INDEX_URL);',
+    "await fetch('https://api.example.com/search', { method: 'POST' });",
+    'await fetch(`https://api.example.com/v1/${id}`);',
+    'const agents = ssrfSafeAgents();',
+    'await axios.get(url, { httpAgent: agents.httpAgent, httpsAgent: agents.httpsAgent });',
+    'http.request(url, { agent: agents.httpAgent });',
+  ].join('\n');
+  const shadowedFixture = [
+    'export async function each(items: string[], fetch: (item: string) => Promise<void>) {',
+    '  for (const item of items) await fetch(item);',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(findUnguardedOutboundFetches(guardedFixture), []);
+  assert.deepEqual(findUnguardedOutboundFetches(shadowedFixture), []);
+});
+
+test('the unguarded-fetch scan exempts only the reviewed number of calls in an exempt file', () => {
+  const [exemptFile, { calls }] = [...REVIEWED_OUTBOUND_FETCHES][0];
+  const reviewedCall = { kind: 'global fetch', line: 3, argument: 'url' };
+  const addedCall = { kind: 'global fetch', line: 9, argument: 'row.websiteUrl' };
+  const reviewed = Array.from({ length: calls }, () => reviewedCall);
+
+  assert.deepEqual(unreviewedOutboundFetches(exemptFile, reviewed), []);
+  assert.deepEqual(unreviewedOutboundFetches(exemptFile, [...reviewed, addedCall]), [
+    ...reviewed,
+    addedCall,
+  ]);
+  assert.deepEqual(unreviewedOutboundFetches('server/src/other.ts', [reviewedCall]), [
+    reviewedCall,
+  ]);
+});
+
+test('the unguarded-fetch scan still checks global fetch in a file that passes fetch as an argument', () => {
+  const passesGlobalFetchFixture = [
+    'export async function probe(url: string) {',
+    '  const client = createClient(url, fetch);',
+    '  return fetch(url);',
+    '}',
+  ].join('\n');
+  const declaresFetchFixture = [
+    'export async function probe(url: string, fetch?: typeof globalThis.fetch) {',
+    '  return fetch?.(url);',
+    '}',
+    'function fetch(url: string) {',
+    '  return url;',
+    '}',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(passesGlobalFetchFixture).map(
+      ({ kind, line }) => `${kind}@${line}`,
+    ),
+    ['global fetch@3'],
+  );
+  assert.deepEqual(findUnguardedOutboundFetches(declaresFetchFixture), []);
+});
+
+test('the unguarded-fetch scan counts agents as guarded only when they come from ssrfSafeAgents', () => {
+  const plainAgentsFixture = [
+    "import http from 'node:http';",
+    "import https from 'node:https';",
+    'const httpAgent = new http.Agent();',
+    'const httpsAgent = new https.Agent();',
+    'await axios.get(url, { httpAgent, httpsAgent });',
+    'http.request(url, { agent: httpAgent });',
+  ].join('\n');
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(plainAgentsFixture).map(({ kind, line }) => `${kind}@${line}`),
+    ['axios@5', 'node http@6'],
   );
 });
 
@@ -3026,19 +4182,23 @@ test('Yale College fellowships scraper fetches configurable catalog pages throug
     'utf8',
   );
 
+  // The live fetch goes through the shared fetch policy, whose SSRF-safe agents are pinned by
+  // the shared-fetch-policy test, so a benchmark capture can freeze it (#4132).
+  assert.match(source, /import \{ assertPublicHttpUrl \} from '\.\.\/\.\.\/utils\/ssrfGuard'/);
+  assert.match(source, /const safeUrlText = \(await assertPublicHttpUrl\(url\)\)\.toString\(\)/);
+  assert.match(source, /const cacheKey = `page:\$\{safeUrlText\}`/);
+  assert.match(source, /await fetchPageWithPolicy\(safeUrlText, \{/);
+  assert.match(source, /maxRedirects: 5/);
   assert.match(
     source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
+    /import \{ fetchPageWithPolicy, fetchPublicHttpUrl \} from '\.\.\/utils\/httpFetch'/,
   );
-  assert.match(source, /const safeUrl = await assertPublicHttpUrl\(url\)/);
-  assert.match(source, /const safeUrlText = safeUrl\.toString\(\)/);
-  assert.match(source, /const cacheKey = `page:\$\{safeUrlText\}`/);
-  assert.match(source, /const agents = ssrfSafeAgents\(\)/);
-  assert.match(source, /axios\.get\(safeUrlText, \{/);
-  assert.match(source, /maxRedirects: 5/);
-  assert.match(source, /httpAgent: agents\.httpAgent/);
-  assert.match(source, /httpsAgent: agents\.httpsAgent/);
-  assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
+  assert.match(source, /await fetchPublicHttpUrl\(shortLink, \{\n\s+maxRedirects: 0,/);
+  assert.doesNotMatch(source, /(?<![\w.$])fetch\(/);
+  assert.doesNotMatch(source, /axios\.get\(/);
+  assert.doesNotMatch(source, /fetchPageWithPolicy\(url\b/);
+  assert.doesNotMatch(source, /\bassertUrl:/);
+  assert.doesNotMatch(source, /\brequest:\s*[a-zA-Z(]/);
   assert.doesNotMatch(source, /const cacheKey = `page:\$\{url\}`/);
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });
@@ -3196,26 +4356,30 @@ test('undergraduate fellowship recipient scraper fetches configured recipient pa
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });
 
-test('LLM and profile fetchers use the normalized SSRF-safe URL for axios requests', () => {
+test('LLM center fetchers fetch pages through the SSRF-guarded policy fetch', () => {
   const fetcherFiles = [
     '../server/src/scrapers/sources/centerDirectorLLMExtractor.ts',
     '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
+    '../server/src/scrapers/sources/researchAreaSourceExtractor.ts',
   ];
 
   for (const file of fetcherFiles) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
 
-    assert.match(source, /assertPublicHttpUrl/);
-    assert.match(source, /ssrfSafeAgents/);
-    assert.match(source, /const safeUrl = await assertPublicHttpUrl\(url\)/);
-    assert.match(source, /const safeUrlText = safeUrl\.toString\(\)/);
-    assert.match(source, /axios\.get\(safeUrlText, \{/);
+    assert.match(source, /import \{ fetchPageWithPolicy \} from '\.\.\/utils\/httpFetch'/);
+    assert.match(source, /await fetchPageWithPolicy\(url, \{/);
     assert.match(source, /maxRedirects: 5/);
-    assert.match(source, /httpAgent: agents\.httpAgent/);
-    assert.match(source, /httpsAgent: agents\.httpsAgent/);
-    assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
+    assert.doesNotMatch(source, /axios\.get\(/);
     assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
   }
+
+  const policyFetch = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(policyFetch, /const assertUrl = options\.assertUrl \?\? assertPublicHttpUrl/);
+  assert.match(policyFetch, /httpAgent: agents\.httpAgent/);
+  assert.match(policyFetch, /httpsAgent: agents\.httpsAgent/);
 });
 
 test('shared microsite fetch policy enforces the SSRF guard before requesting untrusted URLs', () => {
@@ -3234,6 +4398,39 @@ test('shared microsite fetch policy enforces the SSRF guard before requesting un
   assert.match(source, /httpAgent: agents\.httpAgent/);
   assert.match(source, /httpsAgent: agents\.httpsAgent/);
   assert.match(source, /request\(safeUrl, config\)/);
+  assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
+});
+
+test('shared form post goes through the same SSRF guard, agents, and host limiter as the page fetch', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/httpFetch.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /export async function postFormWithPolicy\([\s\S]*?\n\): Promise<FetchedHttpPage> \{\n {2}if \(isBenchmarkReplayActive\(\)\) refuseBenchmarkReplayNetwork\(\);\n {2}return fetchPageLive\(url, options, \{ method: 'POST', body: form\.toString\(\) \}\);\n\}/,
+  );
+  assert.match(
+    source,
+    /await axios\.request\(\{\n\s+url,\n\s+method: 'POST',[^}]*?httpAgent: agents\.httpAgent,\n\s+httpsAgent: agents\.httpsAgent,/,
+  );
+  assert.match(source, /result = await limiter\.run\(host, \(\) => request\(safeUrl, config\)\)/);
+});
+
+test('student grants fund search enumerates only through the SSRF-guarded shared fetch policy', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/utils/communityForceFundSearch.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /\} from '\.\/httpFetch';/);
+  assert.match(source, /fetchPageWithPolicy\(options\.searchUrl, policy\(\)\)/);
+  assert.match(source, /postFormWithPolicy\(options\.searchUrl, allFundsForm, policy\(\)\)/);
+  assert.match(source, /postFormWithPolicy\(options\.searchUrl, postback, policy\(\)\)/);
+  assert.match(source, /fetchPublicHttpUrl\(fund\.shortLink, \{\n\s+maxRedirects: 0,/);
+  assert.doesNotMatch(source, /\baxios\b/);
+  assert.doesNotMatch(source, /(?<![\w.$])fetch\(/);
   assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
 });
 
@@ -3417,7 +4614,15 @@ test('the resolver circuit breaker counts distinct hosts and trips open', () => 
     'utf8',
   );
   // Checked BEFORE the next probe, so a tripped breaker records nothing further.
-  assert.match(wiring, /deps\.resolverBreaker\?\.assertHealthy\(\);/);
+  // `settle` waits out a pending control check and then asserts health (#4865).
+  assert.match(wiring, /await deps\.resolverBreaker\?\.settle\(\);/);
+  assert.match(
+    source,
+    /async settle\(\): Promise<void> \{[\s\S]*?\n {4}this\.assertHealthy\(\);\n {2}\}/,
+  );
+  // A failing control is what trips a breaker that has one; it must never be read
+  // as a reason to keep going.
+  assert.match(source, /if \(!outcome\.healthy\) \{\s*this\.trip\(\);\s*return;/);
   assert.match(wiring, /if \(error instanceof ResolverUnhealthyError\) throw error;/);
   assert.match(wiring, /deps\.resolverBreaker\?\.recordFailure\(hostOf\(url\)\);/);
   assert.match(wiring, /deps\.resolverBreaker\?\.recordSuccess\(hostOf\(url\)\);/);
@@ -3494,8 +4699,7 @@ const SCRAPER_SOURCE_DIRECTORY = '../server/src/scrapers/sources';
 // scraper that grows a dynamic fetch fails here rather than silently opting out.
 const FIXED_ENDPOINT_SCRAPER_HOSTS = new Map([
   ['doeOstiGrantScraper', 'https://www.osti.gov'],
-  ['federalAwardScraper', 'https://api.usaspending.gov'],
-  ['nehGrantScraper', 'https://apps.neh.gov'],
+  ['nehGrantScraper', 'https://awardsearch.neh.gov'],
   ['nihReporterScraper', 'https://api.reporter.nih.gov'],
   ['nsfAwardScraper', 'https://api.nsf.gov'],
   ['yaleDirectoryScraper', 'https://api.yalies.io'],
@@ -3590,7 +4794,7 @@ test('no state-changing route is reachable without authentication', () => {
     'utf8',
   );
 
-  assert.ok(routeFiles.length >= 8, `expected the routes directory, found ${routeFiles.length}`);
+  assert.ok(routeFiles.length >= 7, `expected the routes directory, found ${routeFiles.length}`);
 
   // Balanced-paren extraction, not a regex over the whole call. A lazy
   // `[\s\S]*?` up to `\n);` runs past the end of a one-line route into the next
@@ -3717,23 +4921,6 @@ test('unified research search audit constrains env-driven URLs and output paths'
   assert.doesNotMatch(source, /const outDir = process\.env\.OUT_DIR/);
 });
 
-test('shared research-area creation normalizes labels and rejects direct contact info', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/routes/researchAreas.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(source, /const normalizeResearchAreaLabel = \(value: string\): string =>/);
-  assert.match(source, /replaceAsciiControls\(value, ' '\)/);
-  assert.match(
-    source,
-    /const hasDirectContactInfo = \(value: string\): boolean => redactDirectContactInfo\(value\) !== value/,
-  );
-  assert.match(source, /const trimmedName = normalizeResearchAreaLabel\(name\)/);
-  assert.match(source, /Research area name cannot include contact information/);
-});
-
 test('public pathway search omits persistence timestamp metadata', () => {
   const clientTypeSource = fs.readFileSync(
     new URL('../client/src/types/pathway.ts', import.meta.url),
@@ -3806,7 +4993,7 @@ test('public research Meilisearch service bounds direct search inputs', () => {
     /const safeFilters = sanitizeResearchGroupSearchFilters\(filters \|\| \{\}\)/,
   );
   assert.match(source, /const safeOptions = sanitizeResearchGroupSearchOptions\(options\)/);
-  assert.match(source, /const trimmedQuery = boundedResearchSearchQuery\(query\)/);
+  assert.match(source, /const raw = boundedResearchSearchQuery\(value\)/);
   assert.match(
     source,
     /const visibilityScopedFilters = applyVisibilityScopeToFilters\(\s*safeFilters,\s*safeOptions\.includeNonPublic,?\s*\)/,
@@ -3833,7 +5020,6 @@ test('legacy research group public DTO ids use safe serialization', () => {
   assert.match(source, /_id: researchGroupDocumentId\(entity\._id\)/);
   assert.match(source, /leadMembersByEntityId\.get\(researchGroupDocumentId\(entity\._id\)\)/);
   assert.match(source, /\[researchGroupDocumentId\(entity\._id\), entity\]/);
-  assert.match(source, /visibleEntitiesById\.has\(researchGroupDocumentId\(id\)\)/);
   assert.match(source, /identityKey: researchGroupDocumentId\(entry\.personId\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
@@ -3856,7 +5042,8 @@ test('public research detail bounds slug input before service and Mongo work', (
 
   assert.match(controller, /normalizeResearchDetailSlug/);
   assert.match(controller, /return response\.status\(400\)\.json\(\{ error: 'Invalid slug' \}\)/);
-  assert.match(controller, /const detail = await getResearchGroupDetail\(slug\)/);
+  assert.match(controller, /const detail = await getResearchGroupDetail\(slug, \{/);
+  assert.match(controller, /includeWithheldForOperator: hasAdminAuthority,/);
   assert.match(service, /MAX_RESEARCH_DETAIL_SLUG_LENGTH = 160/);
   assert.match(service, /RESEARCH_DETAIL_SLUG_PATTERN = \/\^\[a-z0-9\]\[a-z0-9_-\]\{0,159\}\$\/i/);
   assert.match(
@@ -3896,11 +5083,8 @@ test('analytics user drilldown sanitizes legacy event fields before response', (
     /const fellowshipId = normalizeAnalyticsStoredObjectIdString\(event\?\.fellowshipId\)/,
   );
   assert.doesNotMatch(source, /event\?\.listingId/);
-  assert.match(source, /const searchQuery = sanitizeAnalyticsText\(event\?\.searchQuery\)/);
-  assert.match(
-    source,
-    /const searchDepartments = sanitizeAnalyticsStringArray\(event\?\.searchDepartments\)/,
-  );
+  assert.doesNotMatch(source, /event\?\.searchQuery/);
+  assert.doesNotMatch(source, /event\?\.searchDepartments/);
   assert.match(source, /const metadata = sanitizeAnalyticsMetadata\(event\?\.metadata\)/);
   assert.match(source, /const publicEvents = events\.map\(publicAnalyticsUserEvent\)/);
   assert.match(source, /const enrichedEvents = publicEvents\.map\(/);
@@ -3919,7 +5103,11 @@ test('analytics search-query report uses the validated date-range helper', () =>
 
   assert.match(
     source,
-    /export const getSearchQueryAnalytics[\s\S]*eventType: AnalyticsEventType\.SEARCH,[\s\S]*\.\.\.buildRangeTimestampMatch\(range\)/,
+    /export const getSearchQueryAnalytics[\s\S]*eventType: AnalyticsEventType\.SEARCH,[\s\S]*\.\.\.\(await buildUsageMatch\(range\)\)/,
+  );
+  assert.match(
+    source,
+    /const buildUsageMatch = async \(range[^)]*\)[^=]*=> \(\{\s*\.\.\.buildRangeTimestampMatch\(range\),/,
   );
   assert.doesNotMatch(
     source,
@@ -3955,39 +5143,6 @@ test('analytics event storage redacts user-entered contact details', () => {
   );
 
   assert.match(source, /redactDirectContactInfo/);
-  assert.match(source, /MAX_ANALYTICS_TEXT_LENGTH/);
-  assert.match(source, /MAX_ANALYTICS_ARRAY_ITEMS/);
-  assert.match(source, /MAX_ANALYTICS_OBJECT_KEYS/);
-  assert.match(source, /MAX_ANALYTICS_USER_TYPE_LENGTH = 40/);
-  assert.match(source, /ANALYTICS_METADATA_KEY_RE = \/\^\[A-Za-z0-9_-\]\{1,80\}\$\//);
-  assert.match(source, /ANALYTICS_OBJECT_ID_RE = \/\^\[a-fA-F0-9\]\{24\}\$\//);
-  assert.match(
-    source,
-    /ANALYTICS_EVENT_TYPES = new Set<AnalyticsEventType>\(Object\.values\(AnalyticsEventType\)\)/,
-  );
-  assert.match(
-    source,
-    /const sanitizeAnalyticsEventType = \(value: unknown\): AnalyticsEventType \| undefined =>/,
-  );
-  assert.match(source, /const eventType = sanitizeAnalyticsEventType\(params\.eventType\)/);
-  assert.match(source, /if \(!eventType\) \{\s*return;\s*\}/);
-  assert.match(source, /ANALYTICS_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\//);
-  assert.match(source, /ANALYTICS_NON_USER_NETIDS = new Set\(\['anonymous', 'unknown'\]\)/);
-  assert.match(source, /const netid = normalizeAnalyticsEventNetid\(params\.netid\)/);
-  assert.match(source, /const userType = sanitizeAnalyticsUserType\(params\.userType\)/);
-  assert.match(
-    source,
-    /const sanitizeAnalyticsObjectId = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /sanitizeAnalyticsMetadataKey/);
-  assert.match(
-    source,
-    /trimmed === '__proto__'\s*\|\|\s*trimmed === 'constructor'\s*\|\|\s*trimmed === 'prototype'/,
-  );
-  assert.match(source, /trimmed\.length > MAX_ANALYTICS_METADATA_KEY_LENGTH/);
-  assert.match(source, /!ANALYTICS_METADATA_KEY_RE\.test\(trimmed\)/);
-  assert.doesNotMatch(source, /replace\(\/\^\\\$\+\/, '_'\)\.replace\(\/\\\.\/g, '_'\)/);
-  assert.match(source, /sanitizeAnalyticsMetadata/);
   assert.match(source, /searchQuery:\s*sanitizeAnalyticsText\(params\.searchQuery\)/);
   assert.match(
     source,
@@ -3996,9 +5151,47 @@ test('analytics event storage redacts user-entered contact details', () => {
   assert.match(source, /metadata:\s*sanitizeAnalyticsMetadata\(params\.metadata\)/);
   assert.match(source, /const fellowshipId = sanitizeAnalyticsObjectId\(params\.fellowshipId\)/);
   assert.doesNotMatch(source, /eventType:\s*normalizedParams\.eventType/);
-  assert.match(source, /if \(fellowshipId\) eventPayload\.fellowshipId = fellowshipId/);
   assert.doesNotMatch(source, /params\.listingId/);
   assert.doesNotMatch(source, /eventPayload\.listingId/);
+
+  const reportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-analytics-'));
+  const reportFile = path.join(reportDirectory, 'report.json');
+  try {
+    spawnSync(
+      path.join(serverDirectory, 'node_modules', '.bin', 'vitest'),
+      [
+        'run',
+        'src/services/__tests__/analyticsService.test.ts',
+        '--reporter=json',
+        `--outputFile=${reportFile}`,
+      ],
+      { cwd: serverDirectory, encoding: 'utf8' },
+    );
+    const report = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+    const statusByTitle = new Map(
+      report.testResults
+        .flatMap((file) => file.assertionResults)
+        .map((result) => [result.title, result.status]),
+    );
+    for (const behaviouralCase of [
+      'redacts direct contact details before persisting analytics text and metadata',
+      'bounds analytics text and metadata before persistence',
+      'drops over-long metadata keys and bounds the stored user type',
+      'rejects malformed analytics actor netids before persistence',
+      'rejects malformed analytics event types before persistence',
+      'sanitizes analytics actor fields before persistence and skips non-user buckets for user updates',
+      'drops malformed analytics entity ids before persistence',
+      'reports a malformed event type or actor as invalid rather than failed',
+    ]) {
+      assert.equal(
+        statusByTitle.get(behaviouralCase),
+        'passed',
+        `analytics storage behaviour did not pass: ${behaviouralCase}`,
+      );
+    }
+  } finally {
+    fs.rmSync(reportDirectory, { recursive: true, force: true });
+  }
 });
 
 test('public ResearchEntity DTO recursively redacts direct-contact text', () => {
@@ -4030,7 +5223,15 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
     source,
     /displayName:\s*group\.displayName === undefined\s*\?\s*undefined\s*:\s*servedPersonScopedDisplayName\(group, served\.displayName\)/,
   );
-  assert.match(source, /researchAreas:\s*publicResearchAreaArray\(served\.researchAreas\)/);
+  assert.match(
+    source,
+    /applyServedResearchAreaStage\(\s*sanitized,\s*'publicResearchAreaArray',\s*publicResearchAreaArray,\s*\)/,
+  );
+  assert.match(
+    source,
+    /const \{ served, topics \} = servedCopyAndTopics\(group, options\.leadMemberNames\);/,
+  );
+  assert.match(source, /researchAreas:\s*topics\.served,/);
   assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
   assert.match(
     source,
@@ -4099,7 +5300,7 @@ test('Yalies API client uses bounded requests and credential-free errors', () =>
   assert.match(source, /const yaliesRequestError = \(error: unknown\): Error =>/);
   assert.match(source, /const normalizeYaliesNetid = \(value: unknown\): string \| undefined =>/);
   assert.match(source, /const normalizedNetid = normalizeYaliesNetid\(netid\);/);
-  assert.match(source, /if \(!normalizedNetid\) return null;/);
+  assert.match(source, /if \(!normalizedNetid\) return NOT_FOUND;/);
   assert.match(source, /axios\.isAxiosError\(error\)/);
   assert.match(source, /new Error\(`Yalies API request failed\$\{suffix\}`\)/);
   assert.match(source, /timeout: YALIES_API_TIMEOUT_MS/);
@@ -4187,14 +5388,12 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/scraperIntegrityGate.ts',
     '../server/src/scripts/claimGate.ts',
     '../server/src/scripts/migrateMongoNaming.ts',
-    '../server/src/scripts/betaSeedEnvironment.ts',
     '../server/src/scripts/backfillBrowseRank.ts',
     '../server/src/scripts/auditProgramResearchRelevance.ts',
     '../server/src/scripts/launchTrustContract.ts',
     '../server/src/scripts/repairArchivedEntityArtifacts.ts',
     '../server/src/scripts/acceptFormalizationReviewExceptions.ts',
     '../server/src/scripts/betaRepairQueue.ts',
-    '../server/src/scripts/backfillProgramClassifications.ts',
     '../server/src/scripts/dedupeResearchEntitiesByPi.ts',
     '../server/src/scripts/launchAcquisitionReport.ts',
     '../server/src/scripts/launchReviewExceptions.ts',
@@ -4289,10 +5488,6 @@ test('auth callback, check, and logout responses are private no-store', () => {
     /const testUser = await ensureDevLoginUser\(req\.query\?\.userType\)/,
   );
   assert.doesNotMatch(passportSource, /ensureDevLoginUser\(String\(req\.query\?\.userType/);
-  assert.match(
-    passportSource,
-    /return res\.status\(500\)\.json\(\{ error: 'Dev login failed' \}\)/,
-  );
   assert.doesNotMatch(
     passportSource,
     /return res\.status\(500\)\.json\(\{ error: err\.message \}\)/,
@@ -4351,27 +5546,40 @@ test('client CAS return state is path-only before redirect query construction', 
     'utf8',
   );
 
-  assert.match(signInButtonSource, /const MAX_CAS_RETURN_PATH_LENGTH = 2048/);
-  assert.match(
-    signInButtonSource,
-    /const normalizeReturnPath = \(value\?: string \| null\): string => \{/,
+  const returnPathSource = fs.readFileSync(
+    new URL('../client/src/utils/returnPath.ts', import.meta.url),
+    'utf8',
   );
-  assert.match(signInButtonSource, /if \(url\.origin !== window\.location\.origin\) return ''/);
+  const loginSource = fs.readFileSync(
+    new URL('../client/src/pages/login.tsx', import.meta.url),
+    'utf8',
+  );
+
+  for (const source of [signInButtonSource, loginSource]) {
+    assert.match(source, /import \{ normalizeReturnPath \} from '\.\.\/utils\/returnPath'/);
+  }
+  assert.match(loginSource, /const returnPath = normalizeReturnPath\(locationState\?\.from\)/);
+  assert.match(returnPathSource, /const MAX_RETURN_PATH_LENGTH = 2048/);
   assert.match(
-    signInButtonSource,
+    returnPathSource,
+    /export const normalizeReturnPath = \(value: unknown\): string => \{/,
+  );
+  assert.match(returnPathSource, /if \(typeof value !== 'string'\) return ''/);
+  assert.match(returnPathSource, /if \(url\.origin !== window\.location\.origin\) return ''/);
+  assert.match(
+    returnPathSource,
     /const path = `\$\{url\.pathname\}\$\{url\.search\}\$\{url\.hash\}`/,
   );
+  assert.match(returnPathSource, /path\.startsWith\('\/\/'\)/);
   assert.match(
     signInButtonSource,
-    /setRedirectParam\(returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''\)/,
+    /const redirectParam = returnPath \? `\?redirect=\$\{encodeURIComponent\(returnPath\)\}` : ''/,
   );
+  assert.match(signInButtonSource, /const returnPath = normalizeReturnPath\(/);
+  assert.match(signInButtonSource, /savedPath: sessionStorage\.getItem\('logoutReturnPath'\)/);
   assert.match(
     signInButtonSource,
-    /const savedPath = sessionStorage\.getItem\('logoutReturnPath'\)/,
-  );
-  assert.match(
-    signInButtonSource,
-    /if \(savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
+    /if \(mountReturn\.savedPath\) sessionStorage\.removeItem\('logoutReturnPath'\)/,
   );
   assert.match(signInButtonSource, /localStorage\.removeItem\('logoutReturnPath'\)/);
   assert.doesNotMatch(signInButtonSource, /localStorage\.getItem\('logoutReturnPath'\)/);
@@ -4438,14 +5646,20 @@ test('auth principals are normalized before user lookup and session hydration', 
   assert.match(passportSource, /const principal = publicAuthSessionUser\(user\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(source\.netId\)/);
   assert.match(passportSource, /done\(new Error\('Invalid authentication principal'\)\)/);
-  assert.match(passportSource, /done\(null, principal\)/);
+  assert.match(
+    passportSource,
+    /done\(null, \{ \.\.\.principal, \.\.\.mintSessionClaim\(account\?\.sessionVersion\) \}\)/,
+  );
   assert.match(passportSource, /function coerceStoredSessionPrincipal\(stored: unknown\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(stored\)/);
   assert.match(
     passportSource,
     /const account = await withMongoReconnect\(\(\) => validateAccount\(principal\.netId\)\)/,
   );
-  assert.match(passportSource, /if \(!account \|\| account\.archived\)/);
+  assert.match(
+    passportSource,
+    /if \(!account \|\| account\.archived \|\| !isSessionClaimLive\(claim, account\.sessionVersion\)\)/,
+  );
   assert.match(passportSource, /done\(null, null\)/);
   assert.doesNotMatch(passportSource, /done\(null, user\.netId\)/);
   assert.doesNotMatch(
@@ -4520,7 +5734,6 @@ test('CORS origin headers are bounded before allowlist comparison', () => {
   assert.match(source, /parsed\.username \|\| parsed\.password/);
   assert.match(source, /parsed\.origin !== origin/);
   assert.match(source, /const normalizedOrigin = normalizeCorsOrigin\(origin\)/);
-  assert.match(source, /return bypassCors \|\| allowedOrigins\.has\(normalizedOrigin\)/);
   assert.doesNotMatch(source, /allowedOrigins\.has\(origin\)/);
 });
 
@@ -5034,16 +6247,10 @@ test('scraper materializer logs sanitize untrusted exception values', () => {
   assert.doesNotMatch(source, /\(err as Error\)\?\.message \|\| err/);
 });
 
-// The heartbeat lives in scrapeJobLock.ts, which every writer shares, rather than
-// in cronRunner.ts where it used to be duplicated (#2498). Both files are still
-// pinned, because cronRunner keeps its own sanitized logging for the lead reclaim.
+// The heartbeat lives in scrapeJobLock.ts, which every writer shares (#2498).
 test('scrape job lock heartbeat logs sanitize lock exceptions', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scrapers/scrapeJobLock.ts', import.meta.url),
-    'utf8',
-  );
-  const cronSource = fs.readFileSync(
-    new URL('../server/src/scrapers/cronRunner.ts', import.meta.url),
     'utf8',
   );
 
@@ -5055,12 +6262,6 @@ test('scrape job lock heartbeat logs sanitize lock exceptions', () => {
   assert.match(source, /sanitizeLogValue\(error\)/);
   assert.doesNotMatch(source, /error instanceof Error \? error\.message : error/);
   assert.doesNotMatch(source, /console\.error\([^;]*error\.message[^;]*\)/);
-
-  // cronRunner must not log a raw lock exception either; where its heartbeat
-  // comes from is a structural question the unit suite owns behaviorally.
-  assert.match(cronSource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-  assert.doesNotMatch(cronSource, /error instanceof Error \? error\.message : error/);
-  assert.doesNotMatch(cronSource, /console\.error\([^;]*error\.message[^;]*\)/);
 });
 
 test('scraper run failure records and reports sanitize persisted errors', () => {
@@ -5073,20 +6274,33 @@ test('scraper run failure records and reports sanitize persisted errors', () => 
     'utf8',
   );
 
+  // Matched by what is imported from the module rather than by the whole import
+  // statement, so adding a sibling import cannot fail this for a reason that has
+  // nothing to do with sanitization (#3891).
   assert.match(
     orchestratorSource,
-    /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/,
+    /import \{[^}]*\bsanitizeLogValue\b[^}]*\} from '\.\.\/utils\/logSanitizer'/,
   );
   assert.match(
     orchestratorSource,
-    /const errorMessage = sanitizeLogValue\(err instanceof Error \? err\.message : err\)/,
+    /import \{[^}]*\bsanitizeErrorForLog\b[^}]*\} from '\.\.\/utils\/logSanitizer'/,
   );
+  // A thrown Error goes through the sanitizer that redacts BOTH its message and its
+  // stack; a thrown non-Error is sanitized as a value and carries no stack.
+  assert.match(orchestratorSource, /\? sanitizeErrorForLog\(err\)/);
+  assert.match(orchestratorSource, /: \{ message: sanitizeLogValue\(err\), stack: undefined \}/);
+  assert.match(orchestratorSource, /const errorMessage = sanitized\.message/);
+  assert.match(orchestratorSource, /message: errorMessage \|\| 'Unknown scrape error'/);
   assert.match(
     orchestratorSource,
-    /\{ message: errorMessage \|\| 'Unknown scrape error', at: new Date\(\) \}/,
+    /\.\.\.\(sanitized\.stack \? \{ stack: sanitized\.stack \} : \{\}\)/,
   );
   assert.doesNotMatch(orchestratorSource, /message: err\?\.message/);
   assert.doesNotMatch(orchestratorSource, /stack: err\?\.stack/);
+  // The persisted stack is the sanitized one. Storing the raw stack would leak every
+  // credential, token and address the sanitizer exists to remove.
+  assert.doesNotMatch(orchestratorSource, /stack: err\.stack/);
+  assert.doesNotMatch(orchestratorSource, /stack: \(err as Error\)\.stack/);
 
   assert.match(reportSource, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
   assert.match(reportSource, /const reportErrorMessage = \(message: unknown\): string =>/);
@@ -5147,7 +6361,7 @@ test('user account routes set full private no-store response headers', () => {
 });
 
 test('authenticated research-area routes set full private no-store response headers', () => {
-  const routeFiles = ['../server/src/routes/researchAreas.ts'];
+  const routeFiles = ['../server/src/routes/admin.ts'];
 
   for (const file of routeFiles) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -5164,10 +6378,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
     new URL('../server/src/scripts/auditProgramResearchRelevance.ts', import.meta.url),
     'utf8',
   );
-  const programClassifications = fs.readFileSync(
-    new URL('../server/src/scripts/backfillProgramClassifications.ts', import.meta.url),
-    'utf8',
-  );
   const programOfficialSources = fs.readFileSync(
     new URL('../server/src/scripts/backfillProgramOfficialSources.ts', import.meta.url),
     'utf8',
@@ -5175,7 +6385,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
 
   for (const [name, source] of [
     ['program research relevance audit', programResearchRelevance],
-    ['program classification backfill', programClassifications],
     ['program official source backfill', programOfficialSources],
   ]) {
     assert.match(
@@ -5217,14 +6426,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
   assert.match(programResearchRelevance, /recordId: serializedDocumentId\(program\._id\) \|\| ''/);
   assert.doesNotMatch(programResearchRelevance, /recordId: String\(program\._id\)/);
   assert.doesNotMatch(programResearchRelevance, /String\(program\._id\)/);
-  assert.match(
-    programClassifications,
-    /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(programClassifications, /serializedId: serializedDocumentId\(row\._id\) \|\| ''/);
-  assert.match(programClassifications, /id: item\.serializedId/);
-  assert.doesNotMatch(programClassifications, /id: String\(row\._id\)/);
-  assert.doesNotMatch(programClassifications, /String\(row\._id\)/);
 });
 
 test('Meilisearch rebuild artifacts use safe JSON output paths', () => {
@@ -5724,69 +6925,72 @@ test('scraper tests do not contain known real profile fixture identifiers', () =
   const source = files
     .map((file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8'))
     .join('\n');
-  const realFixtureIdentifiers = [
-    'joseph-santos-sacchi',
-    'drew-small',
-    'jacob-hacker',
-    'paul-freedman',
-    'allen-bale',
-    'sara-sanchez-alonso',
-    'rajiv-radhakrishnan',
-    'michael-cappello',
-    'kei-cheung',
-    'daniel-wiznia',
-    'annie-harper',
-    'berna-sozen',
-    'elizabeth-connors',
-    'dana-peters',
-    'deb-vargas',
-    'fatima-el-tayeb',
-    'robert-kerns',
-    'ania-jastreboff',
-    'catherine-buck',
-    'rohan-khera',
-    'leonard-kaczmarek',
-    'morgan-lemma',
-    'mika-hampson',
-    'ari-escamilla',
-    'abhishek-bhattacharjee',
-    'gerald-shulman',
-    'julia-adams',
-    'abraham-silberschatz',
-    'richard-bribiescas',
-    'david-cameron',
-    'joanne-brown',
-    'Abhishek Bhattacharjee',
-    'Jacob Hacker',
-    'Paul Freedman',
-    'Allen Bale',
-    'Sara Sanchez Alonso',
-    'Rajiv Radhakrishnan',
-    'Michael Cappello',
-    'Kei Cheung',
-    'Daniel Wiznia',
-    'Annie Harper',
-    'Berna Sozen',
-    'Elizabeth Connors',
-    'Dana Peters',
-    'Deb Vargas',
-    'Fatima El-Tayeb',
-    'Robert Kerns',
-    'Ania Jastreboff',
-    'Catherine Buck',
-    'Rohan Khera',
-    'Leonard Kaczmarek',
-    'Morgan Lemma',
-    'Mika Hampson',
-    'Ari Escamilla',
-    'Drew Small',
-    'Gerald Shulman',
-    'Julia Adams',
-  ];
+  const deniedDigests = new Set([
+    '06d9805305ce2f3c269beadb2fd179f32cfeeac63f3a8b0aecf861ced2260094',
+    '06ef54159ecdb11c5cb6e0c2212a933f68935d3c8dcfe5e7098101952e37e3d7',
+    '120dbb6aa090fbefd54e51b043cec727a76620535719d518b1373b6d7a9d580d',
+    '12d498aa448ffcc14222d415548d2669f1edb79848ece97d504b67f19dc4d41d',
+    '12ff6dfcffca651d47ac4ae7da92ce139f2e4537b15c27cc13733156a507fd62',
+    '1d9c8c48a43cdf19af7441ec1b0fa6d833e7e6fd1e240d55117306d90eb81cd8',
+    '1ee70049e2380085f675a7ec99f0fb59b7acafd7acdd6efde40f961136a46d28',
+    '22cb546ed4488a6618dbc671101cfc1b01c620f3d464d1046eaed37bd6cafbe0',
+    '2511d6a93cd19a3a7fec5affbff413bd62ec0827bc0912807e840b1aff829a34',
+    '275872698ac278b12ecbfc6e8149ad7ea805b62d467ca50bb50ce627dfc6ac1d',
+    '29d37a4b9bc48492eb088e98aca0983dd3bc160cc31220a773eab01e15b30d10',
+    '37eb4b8d6a9b957d8abe6a44ac2c686e36e5156fdde8457092a9790f845ab691',
+    '3ba4cb518fbe101fc1a43f31a7769b702af7afa57f53356ca8fcc07e26f09c1e',
+    '40de2d169a6393e164af2773815676f9c18b22f1c44a266ea19d61f4846a6f8c',
+    '422c17e8df4738f01e97c32f750590421e4034e788eef706734d2806a5003471',
+    '436ba88c70c53b78e1085326af1db60210b122e8038f5d086267eaf0d9a11d69',
+    '43ff5aa4e90916232a63830dbfd55c4ebadd75e925620cc746782753c540b94f',
+    '45c69465aa989319d6db893b25afdd54c5507922aa7d2e93e0a1f63913b0e22f',
+    '4ae1fca78aeeaa95dc5eeb193ae69e4a043793b75dc02a41efb72b9c4a5ef085',
+    '4df356ed494343949c4ca83b41c690fff3e7885042fc630f12c1eb21c84f7563',
+    '5a5977ef469b8bf0a1990d5506cfbcf213a8a6ba8a8ce1a58717b3fb9d5aef71',
+    '5a613b0b9255ca235ee7b40c138566a73cb719b01700137cfd70e7cb41eaf6c3',
+    '62afd3c58e3020e667ef3a7656a31a50c0857ddea0115f57c4425b848fcd952a',
+    '647a289e52c572e291dfbbb1c05c402880252b122ca4d5db8bf21a9929c6c677',
+    '694ba4413453d8b9c268f1b1b74315b8e7b51941e984d5c08c5415f258ef3451',
+    '6c645f5aa4e0df57ed1d87e5eca4ccf6e8bc563a5242daab4421322e85cf360c',
+    '78faefd0144061a2e06e7296158a309d37bbcb9761b4f6167e3b47b16047a005',
+    '84ddd8df4e00bbc5dbe31dcd68521473b74f63c892c872eab6a86276ddebc765',
+    '850179c8594dd079ba7f336f21bc7908bddec869d76f76912478f0005936ab43',
+    '867d2208f6c07a0fb0c3404bed58b6c262e97012a1868020f8032cd878e39990',
+    '87e8d7b675e2a277729b55a4f275aad484061750b1ea640c9cbc2b5b33c6e246',
+    '90a7e5eb036a137e6093932fdd6d90aa6839994f7bdcecc1f7ef8414caa480d6',
+    '92f438e873df20eee62a9a55001b2e49f470914f01a4bf1b5d224186a04dbfb9',
+    '96770af25d2d63b143f14b8deaa715ec17a92f19675d7204fed74b4709d4efbc',
+    '9b002454452b291989a527c8307467042b44643fc29b066c4ced1dcee25bf24e',
+    'a8505ce781baadcd50659e6036db1731a6e50e2b504c475fa82ec804d7e965c3',
+    'a96c683af71c4e64cbb0e00a811978765529ad105bb608864c174acf716631e5',
+    'adf8f3154475b4b7389c5b491edd8bf544039ead0b5054aeb2aaf535f238d58e',
+    'b0b9a672927004cd20ebfab21dc062ba689001e960b61df6a55d5580efaebb61',
+    'b2536216e3af1863fd19abb07751fec354a2820f2ee3b03e6ebf7d63192385c5',
+    'b44ee22f43805f8682ffe80d97fdacda12f50086f8d27d8722cce833b0b4ffb3',
+    'b7be98ea28c30679a16c769c9d787f08d7b2a5fcc2cf216d34fe9a7ed0fd31e5',
+    'b88c9289c2e9345f2aa1ac55d39cc99d474c6342ac2b2ea4eac139aeb2c49833',
+    'bc305846f0e39c79c2c9ba67dfe293067d6f56934baee225b863bf054b495639',
+    'c208261930c08d8f582865f828cafe5b3888e32295794ba67461e79830a282cc',
+    'c29be31652486069f5b029ff0a807505532d0fa03a0dfa673fb4094fe51d2412',
+    'c7f9d3cca6f9c5d4618b91d91afdeaabd2ab8cb0435022fe8bc41da05002d12c',
+    'cb0f71f74d19384bb9b6e905660e125ca2c1c6194119c3d829f114c8cce4ebb5',
+    'd00566f8104d4170118dec433264d08b9b5ebb613c886adb530d794b452ff7f8',
+    'd24e37350a0a8f46bbf223fb5d15727a5484d0fdf4cada52087b2f3807771a81',
+    'daa2e63041b878b422def98530d341698a9ae8f1db2589137b80d525d9b4cf41',
+    'dbafb4a38ad2cd2505e44de2b7e52a2a2caa885dba8bc1ab3bdfc78b845f4d04',
+    'df0161d111991e47d60b6d41a06bda37e293c1b1e5412d5658dd8ea7773f8fc7',
+    'e3e82c8a36050b3dac48a5d88942b4db1710a91e4e35087ad53b23a3efa2f9b4',
+    'eb956d7d11007fb3001c14e157deac8609a14e8bf26fa1d88c14112fa544df37',
+    'f977e0b4bd556018f7b3f10b8b1acf5098513db7db14c210d9c11c99449a2727',
+    'fbff79ffe9925aab0f74c4855297c8a6ed84dd45b7a0876839c9a8ce982beda0',
+  ]);
 
-  for (const identifier of realFixtureIdentifiers) {
-    assert.doesNotMatch(source, new RegExp(identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  }
+  const deniedSpans = deniedIdentifierSpans(source, deniedDigests);
+  assert.deepEqual(
+    deniedSpans,
+    [],
+    `scraper tests contain a denylisted real profile identifier at offsets ${deniedSpans.join(', ')}`,
+  );
 });
 
 test('source-acquisition report errors sanitize raw exception messages', () => {

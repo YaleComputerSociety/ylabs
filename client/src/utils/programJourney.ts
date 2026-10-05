@@ -1,124 +1,56 @@
 import { Fellowship } from '../types/types';
-import { getFellowshipCycleStatus } from './fellowshipCycle';
+import { isLikelyUnavailableSourceLink } from './researchDetailSources';
+import { safeHttpUrl } from './url';
 
-export type ProgramJourneyCategory =
-  | 'applyNow'
-  | 'openingSoon'
-  | 'structured'
-  | 'fundingAfterMentor'
-  | 'nextCycle'
-  | 'archive';
-
-export interface ProgramJourneyStatus {
-  category: ProgramJourneyCategory;
-  label: string;
-  description: string;
-}
-
-export const PROGRAM_JOURNEY_CATEGORIES: ProgramJourneyCategory[] = [
-  'applyNow',
-  'openingSoon',
-  'structured',
-  'fundingAfterMentor',
-  'nextCycle',
-  'archive',
-];
-
-export type ProgramJourneySummary = Record<ProgramJourneyCategory, number>;
-
-export const emptyProgramJourneySummary: ProgramJourneySummary = {
-  applyNow: 0,
-  openingSoon: 0,
-  structured: 0,
-  fundingAfterMentor: 0,
-  nextCycle: 0,
-  archive: 0,
-};
-
-const STRUCTURED_KINDS = new Set([
+// Mirrors `programRoleForKind` in server/src/services/programClassifier.ts, for a record
+// served before its derived `programRole` was written. Changing one requires the other.
+const STARTS_RESEARCH_KINDS = new Set([
   'STRUCTURED_PROGRAM',
   'CENTER_INTERNSHIP',
   'RA_PROGRAM',
   'MENTOR_MATCHING',
+  'DEPARTMENT_RESEARCH_GUIDE',
 ]);
 
-const FUNDING_KINDS = new Set([
+const FUNDS_RESEARCH_KINDS = new Set([
   'FELLOWSHIP_FUNDING',
   'TRAVEL_RESEARCH_GRANT',
   'SENIOR_THESIS_FUNDING',
 ]);
 
-export function getProgramJourneyStatus(
-  fellowship: Fellowship,
-  now: Date = new Date(),
-): ProgramJourneyStatus {
-  const cycle = getFellowshipCycleStatus(fellowship, now);
-
-  if (cycle.category === 'open' || cycle.category === 'closingSoon') {
-    return {
-      category: 'applyNow',
-      label: 'Apply now',
-      description: 'Current application windows and deadlines.',
-    };
-  }
-
-  if (cycle.category === 'openingSoon' || cycle.category === 'projectedNextCycle') {
-    return {
-      category: 'openingSoon',
-      label: 'Opening Soon',
-      description: 'Upcoming application windows, including projected next-cycle dates.',
-    };
-  }
-
-  if (fellowship.studentFacingCategory === 'Archive / review') {
-    return {
-      category: 'archive',
-      label: 'Archive / Review',
-      description: 'Records that need eligibility review.',
-    };
-  }
-
-  if (STRUCTURED_KINDS.has(fellowship.programKind)) {
-    return {
-      category: 'structured',
-      label: 'Structured Research Programs',
-      description: 'Programs, internships, RA routes, or mentor-matching experiences.',
-    };
-  }
-
-  if (FUNDING_KINDS.has(fellowship.programKind) || fellowship.requiresMentorBeforeApply) {
-    return {
-      category: 'fundingAfterMentor',
-      label: 'Funding After You Have a Mentor',
-      description:
-        'Funding records that usually require a research plan, adviser, or lab fit first.',
-    };
-  }
-
-  if (cycle.category === 'nextCycle') {
-    return {
-      category: 'nextCycle',
-      label: 'Plan Next Cycle',
-      description: 'Official past cycles that look recurring.',
-    };
-  }
-
-  return {
-    category: 'archive',
-    label: 'Archive / Review',
-    description: 'Retained records that should not be treated as active opportunities.',
-  };
+export function programRoleOf(fellowship: Fellowship): string {
+  if (fellowship.programRole) return fellowship.programRole;
+  if (STARTS_RESEARCH_KINDS.has(fellowship.programKind)) return 'STARTS_RESEARCH';
+  if (FUNDS_RESEARCH_KINDS.has(fellowship.programKind)) return 'FUNDS_RESEARCH';
+  if (fellowship.programKind === 'RESEARCH_AWARD') return 'RECOGNIZES_RESEARCH';
+  return 'UNCLASSIFIED';
 }
 
-export function summarizeProgramJourney(
-  fellowships: Fellowship[],
-  now: Date = new Date(),
-): ProgramJourneySummary {
-  const summary: ProgramJourneySummary = { ...emptyProgramJourneySummary };
-  for (const fellowship of fellowships) {
-    summary[getProgramJourneyStatus(fellowship, now).category] += 1;
-  }
-  return summary;
+// The server serves the gate's own predicate (server/src/services/departmentResearchGuidance.ts)
+// rather than the kind alone, because a locked or stale kind can sit on a row admitted as an
+// application; every caller drops its application affordances on this answer.
+export function isDepartmentResearchGuidance(
+  fellowship: Pick<Fellowship, 'departmentResearchGuidance'>,
+): boolean {
+  return fellowship.departmentResearchGuidance === true;
+}
+
+export const DEPARTMENT_RESEARCH_GUIDANCE_LABEL = 'Department research guidance';
+
+export const DEPARTMENT_RESEARCH_GUIDANCE_ACTION = "Read the department's guidance";
+
+export const DEPARTMENT_RESEARCH_GUIDANCE_STATUS = 'Not an application';
+
+export const DEPARTMENT_RESEARCH_GUIDANCE_BADGE = 'Department guidance';
+
+export const DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS =
+  'border border-line-brand bg-brand-soft text-brand';
+
+export function departmentResearchGuidanceHref(
+  fellowship: Pick<Fellowship, 'sourceUrl' | 'sourceLinkHealth'>,
+): string | undefined {
+  if (isLikelyUnavailableSourceLink(fellowship.sourceLinkHealth)) return undefined;
+  return safeHttpUrl(fellowship.sourceUrl) || undefined;
 }
 
 export function programKindLabel(kind: string): string {
@@ -130,6 +62,8 @@ export function programKindLabel(kind: string): string {
     FELLOWSHIP_FUNDING: 'Fellowship funding',
     TRAVEL_RESEARCH_GRANT: 'Research travel grant',
     SENIOR_THESIS_FUNDING: 'Senior research funding',
+    DEPARTMENT_RESEARCH_GUIDE: DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+    RESEARCH_AWARD: 'Research award',
     OTHER: 'Program record',
   };
   return labels[kind] || kind.replace(/_/g, ' ').toLowerCase();
@@ -142,6 +76,7 @@ export function entryModeLabel(mode: string): string {
     SECURE_MENTOR_THEN_APPLY: 'Find mentor first',
     DIRECT_FACULTY_MATCHING: 'Faculty matching',
     TRACK_NEXT_CYCLE: 'Track next cycle',
+    CONTACT_FACULTY: 'Contact faculty',
     UNKNOWN: 'Review source',
   };
   return labels[mode] || mode.replace(/_/g, ' ').toLowerCase();

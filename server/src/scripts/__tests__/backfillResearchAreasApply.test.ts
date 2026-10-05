@@ -26,7 +26,7 @@ describe('applyResearchAreaChanges', () => {
     });
     const syncBatch = vi.fn(async (ids: string[]) => {
       order.push(`sync:${ids.join(',')}`);
-      return ids.length;
+      return { resynced: ids.length, indexSyncFailures: 0 };
     });
 
     const rows = [
@@ -37,7 +37,7 @@ describe('applyResearchAreaChanges', () => {
 
     const result = await applyResearchAreaChanges(rows, 2, { persistBatch, syncBatch });
 
-    expect(result).toEqual({ persisted: 3, synced: 3 });
+    expect(result).toEqual({ persisted: 3, synced: 3, indexSyncFailures: 0 });
     expect(persistBatch).toHaveBeenCalledTimes(2);
     expect(syncBatch).toHaveBeenCalledTimes(2);
     expect(order).toEqual(['persist:a,b', 'sync:a,b', 'persist:c', 'sync:c']);
@@ -54,7 +54,7 @@ describe('applyResearchAreaChanges', () => {
         persistBatch: async () => {},
         syncBatch: async (ids) => {
           syncedIds.push(...ids);
-          return ids.length;
+          return { resynced: ids.length, indexSyncFailures: 0 };
         },
       },
     );
@@ -65,11 +65,11 @@ describe('applyResearchAreaChanges', () => {
 
   it('does not persist or sync when there are no changed rows', async () => {
     const persistBatch = vi.fn(async () => {});
-    const syncBatch = vi.fn(async () => 0);
+    const syncBatch = vi.fn(async () => ({ resynced: 0, indexSyncFailures: 0 }));
 
     const result = await applyResearchAreaChanges([], 200, { persistBatch, syncBatch });
 
-    expect(result).toEqual({ persisted: 0, synced: 0 });
+    expect(result).toEqual({ persisted: 0, synced: 0, indexSyncFailures: 0 });
     expect(persistBatch).not.toHaveBeenCalled();
     expect(syncBatch).not.toHaveBeenCalled();
   });
@@ -80,12 +80,25 @@ describe('applyResearchAreaChanges', () => {
       200,
       {
         persistBatch: async () => {},
-        syncBatch: async (ids) => ids.length - 1,
+        syncBatch: async (ids) => ({ resynced: ids.length - 1, indexSyncFailures: 0 }),
       },
     );
 
     expect(result.persisted).toBe(2);
     expect(result.synced).toBe(1);
+  });
+
+  it('reports a batch the index refused as failed rather than synced (#3726)', async () => {
+    const result = await applyResearchAreaChanges(
+      [changedRow('a', ['Immunology']), changedRow('b', ['Diagnostics'])],
+      1,
+      {
+        persistBatch: async () => {},
+        syncBatch: async (ids) => ({ resynced: 0, indexSyncFailures: ids.length }),
+      },
+    );
+
+    expect(result).toEqual({ persisted: 2, synced: 0, indexSyncFailures: 2 });
   });
 });
 

@@ -15,11 +15,11 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
     await mongoose.connection
       .db!.collection('research_plans')
       .createIndex({ accountId: 1, 'target.kind': 1, 'target.id': 1 }, { unique: true });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -29,7 +29,7 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
     }
   });
 
-  it('moves saved plans to the canonical entity and archives conflicting duplicates', async () => {
+  it('moves saved plans to the canonical entity and folds a conflicting duplicate plan into the survivor plan', async () => {
     const db = mongoose.connection.db!;
     const canonicalId = oid();
     const duplicateId = oid();
@@ -89,7 +89,8 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
     const conflictDuplicate = await db
       .collection('research_plans')
       .findOne({ _id: planConflictDuplicate });
-    expect(conflictDuplicate?.archived).toBe(true);
+    expect(conflictDuplicate).toBeNull();
+    expect(await db.collection('research_plans').countDocuments({ archived: true })).toBe(0);
 
     const activePlansForConflictAccount = await db
       .collection('research_plans')
@@ -104,7 +105,7 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
   beforeAll(async () => {
     replSet2 = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet2.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
@@ -115,7 +116,7 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
     await mongoose.connection.db!.collection('research_entities').deleteMany({});
   });
 
-  it('writes the carried best website and fullest description onto the canonical entity', async () => {
+  it('writes the carried best website but keeps the canonical its own description', async () => {
     const db = mongoose.connection.db!;
     const canonicalId = new mongoose.Types.ObjectId();
     const duplicateId = new mongoose.Types.ObjectId();
@@ -139,6 +140,31 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
 
     const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
     expect(canonical?.websiteUrl).toBe('https://example-lab.research.yale.edu/');
+    expect(canonical?.fullDescription).toBe('thin');
+  });
+
+  it('writes the carried fullest description onto a canonical that states none', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'yse-faculty-example', archived: false, fullDescription: '' },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: false, fullDescription: 'X'.repeat(400) },
+    ]);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+        canonicalFullDescription: 'X'.repeat(400),
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
     expect(canonical?.fullDescription).toBe('X'.repeat(400));
   });
 
@@ -197,7 +223,7 @@ describe('org-name dedupe archives the shell twin and redirects it to the surviv
     await mongoose.connection
       .db!.collection('research_plans')
       .createIndex({ accountId: 1, 'target.kind': 1, 'target.id': 1 }, { unique: true });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

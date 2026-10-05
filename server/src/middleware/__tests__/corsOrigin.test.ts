@@ -8,8 +8,11 @@ type HandlerResult = {
   callbackAllow: boolean | undefined;
 };
 
-const runOriginHandler = (origin: string | undefined, bypassCors: boolean): HandlerResult => {
-  const handler = createCorsOriginHandler(allowedOrigins, bypassCors);
+const runOriginHandler = (
+  origin: string | undefined,
+  allowLoopbackOrigins: boolean,
+): HandlerResult => {
+  const handler = createCorsOriginHandler(allowedOrigins, allowLoopbackOrigins);
   let callbackError: Error | null = null;
   let callbackAllow: boolean | undefined;
 
@@ -26,7 +29,7 @@ describe('corsOrigin', () => {
     expect(
       isAllowedCorsOrigin({
         allowedOrigins,
-        bypassCors: false,
+        allowLoopbackOrigins: false,
         origin: 'https://yalelabs.io',
       }),
     ).toBe(true);
@@ -41,7 +44,7 @@ describe('corsOrigin', () => {
     expect(
       isAllowedCorsOrigin({
         allowedOrigins,
-        bypassCors: false,
+        allowLoopbackOrigins: false,
         origin: undefined,
       }),
     ).toBe(false);
@@ -52,11 +55,61 @@ describe('corsOrigin', () => {
     });
   });
 
-  it('allows local and test bypass traffic without an origin header', () => {
+  it('allows local and test traffic without an origin header', () => {
     expect(runOriginHandler(undefined, true)).toEqual({
       callbackError: null,
       callbackAllow: true,
     });
+  });
+
+  it('allows the local client dev server on any loopback port in development', () => {
+    for (const origin of [
+      'http://localhost:3000',
+      'http://localhost:3010',
+      'http://127.0.0.1:5173',
+    ]) {
+      expect(isAllowedCorsOrigin({ allowedOrigins, allowLoopbackOrigins: true, origin })).toBe(
+        true,
+      );
+      expect(runOriginHandler(origin, true)).toEqual({
+        callbackError: null,
+        callbackAllow: true,
+      });
+    }
+  });
+
+  it('refuses a non-loopback caller in development instead of reflecting its origin', () => {
+    for (const origin of [
+      'https://evil.example',
+      'http://evil.example',
+      'https://localhost.evil.example',
+      'http://203.0.113.5:3000',
+    ]) {
+      expect(isAllowedCorsOrigin({ allowedOrigins, allowLoopbackOrigins: true, origin })).toBe(
+        false,
+      );
+
+      const { callbackError, callbackAllow } = runOriginHandler(origin, true);
+      expect(callbackAllow).toBeUndefined();
+      expect(callbackError).toBeInstanceOf(CorsOriginError);
+    }
+  });
+
+  it('keeps the deployed allowlist unchanged when loopback origins are not allowed', () => {
+    expect(
+      isAllowedCorsOrigin({
+        allowedOrigins,
+        allowLoopbackOrigins: false,
+        origin: 'http://localhost:3000',
+      }),
+    ).toBe(false);
+    expect(
+      isAllowedCorsOrigin({
+        allowedOrigins,
+        allowLoopbackOrigins: false,
+        origin: 'https://yalelabs.io',
+      }),
+    ).toBe(true);
   });
 
   it('rejects untrusted origins with a 403-tagged error', () => {
@@ -76,7 +129,7 @@ describe('corsOrigin', () => {
     expect(
       isAllowedCorsOrigin({
         allowedOrigins,
-        bypassCors: true,
+        allowLoopbackOrigins: true,
         origin: oversizedOrigin,
       }),
     ).toBe(false);
@@ -95,7 +148,7 @@ describe('corsOrigin', () => {
       expect(
         isAllowedCorsOrigin({
           allowedOrigins,
-          bypassCors: true,
+          allowLoopbackOrigins: true,
           origin,
         }),
       ).toBe(false);

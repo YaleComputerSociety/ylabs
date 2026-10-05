@@ -90,26 +90,39 @@ const normalizeSummary = (summary?: AdminAuditSummary): AdminAuditSummary | unde
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 };
 
+const unrecordedEventLabel = (action: string, targetType: string): string =>
+  sanitizeLogValue(`${action || '(invalid action)'} on ${targetType || '(no target type)'}`);
+
 export const recordAdminAuditEvent = async (input: RecordAdminAuditEventInput): Promise<void> => {
+  const action = boundedString(input.action, MAX_AUDIT_ACTION_LENGTH).toLowerCase();
+  const targetType = boundedString(input.targetType, MAX_AUDIT_TARGET_TYPE_LENGTH);
+
   try {
     const actorNetid = normalizeNetid(input.actorNetid);
-    const action = boundedString(input.action, MAX_AUDIT_ACTION_LENGTH).toLowerCase();
 
     if (!NETID_RE.test(actorNetid) || !ACTION_RE.test(action)) {
+      console.warn(
+        'Admin audit: refused an event with an invalid actor or action:',
+        unrecordedEventLabel(ACTION_RE.test(action) ? action : '', targetType),
+      );
       return;
     }
 
     await AdminAuditEvent.create({
       actorNetid,
       action,
-      targetType: boundedString(input.targetType, MAX_AUDIT_TARGET_TYPE_LENGTH) || undefined,
+      targetType: targetType || undefined,
       targetId: boundedString(input.targetId, MAX_AUDIT_TARGET_ID_LENGTH) || undefined,
       summary: normalizeSummary(input.summary),
       metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : undefined,
       timestamp: new Date(),
     });
   } catch (error) {
-    console.error('Admin audit: failed to record event:', sanitizeLogValue(error));
+    console.error(
+      'Admin audit: failed to record event:',
+      unrecordedEventLabel(action, targetType),
+      sanitizeLogValue(error),
+    );
   }
 };
 

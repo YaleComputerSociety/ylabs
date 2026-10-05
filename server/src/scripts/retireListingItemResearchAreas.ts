@@ -15,7 +15,7 @@ import {
 } from '../scrapers/sources/researchAreaSourceExtractor';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -27,7 +27,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-areas:retire-listing-item-harvests';
 export const CONFIRM_FLAG = '--confirm-retire-listing-item-areas';
@@ -98,6 +98,38 @@ export function newestObservationPerEntity(
     if (!current || row.observedAt > current.observedAt) newest.set(key, row);
   }
   return newest;
+}
+
+export interface TouchedEntityRegate {
+  visibilityTierChanges: number;
+  resyncedEntities: number;
+  indexSyncFailures: number;
+}
+
+const NOTHING_REGATED: TouchedEntityRegate = {
+  visibilityTierChanges: 0,
+  resyncedEntities: 0,
+  indexSyncFailures: 0,
+};
+
+export async function regateAndResyncTouchedEntities(
+  touchedIds: string[],
+): Promise<TouchedEntityRegate> {
+  if (touchedIds.length === 0) return NOTHING_REGATED;
+  const gate = await runStudentVisibilityGate({
+    collection: 'research',
+    mode: 'apply',
+    recordIds: touchedIds,
+  });
+  const fresh = await ResearchEntity.find({
+    _id: { $in: touchedIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  }).lean();
+  const sync = await syncResearchEntitiesWithOutcome(fresh);
+  return {
+    visibilityTierChanges: gate.counts.changed,
+    resyncedEntities: sync.resynced,
+    indexSyncFailures: sync.indexSyncFailures,
+  };
 }
 
 async function main(): Promise<void> {
@@ -279,21 +311,9 @@ async function main(): Promise<void> {
     }
   }
 
-  let visibilityTierChanges = 0;
-  let resyncedEntities = 0;
-  if (!options.dryRun && touchedIds.length > 0) {
-    const gate = await runStudentVisibilityGate({
-      collection: 'research',
-      mode: 'apply',
-      recordIds: touchedIds,
-    });
-    visibilityTierChanges = gate.counts.changed;
-    const fresh = await ResearchEntity.find({
-      _id: { $in: touchedIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    }).lean();
-    await syncEntities('researchEntity', fresh);
-    resyncedEntities = fresh.length;
-  }
+  const { visibilityTierChanges, resyncedEntities, indexSyncFailures } = options.dryRun
+    ? NOTHING_REGATED
+    : await regateAndResyncTouchedEntities(touchedIds);
 
   const report = {
     script: SCRIPT_NAME,
@@ -311,6 +331,7 @@ async function main(): Promise<void> {
     rematerializedEntities,
     visibilityTierChanges,
     resyncedEntities,
+    indexSyncFailures,
     withdrawals: plan.decisions
       .filter((decision) => decision.withdrawnAreas.length > 0)
       .map((decision) => ({

@@ -1,19 +1,23 @@
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { isPersonScopedResearchEntityShape } from '../../models/storedVocabularies';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { SCHOOL_OF_MEDICINE_NAME } from '../orgUnitCanonicalization';
 import { getCached, setCached } from '../snapshotCache';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
+import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescriptors';
 import { slugify } from '../utils/scraperHelpers';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
@@ -58,6 +62,8 @@ export interface YsmMeshCandidateEntity {
   slug?: string;
   name: string;
   contactName?: string;
+  entityType?: string;
+  kind?: string;
   profileUrls: string[];
   manuallyLockedFields?: string[];
 }
@@ -68,6 +74,8 @@ export interface YsmMeshCandidateEntityDoc {
   name?: string;
   displayName?: string;
   contactName?: string;
+  entityType?: string;
+  kind?: string;
   websiteUrl?: string;
   website?: string;
   sourceUrls?: string[];
@@ -285,11 +293,13 @@ export function parseYsmProfileResearch(
     .find((section) => section.sectionType === 'research');
   if (!research) return null;
   const meshKeywords = Array.isArray(research.meshKeywords) ? research.meshKeywords : [];
-  const meshTerms = uniqueStrings(
-    meshKeywords.map((entry) => {
-      const record = (entry || {}) as Record<string, unknown>;
-      return textValue(record.name) || textValue(record.text);
-    }),
+  const meshTerms = withoutMeshNonSubjectDescriptors(
+    uniqueStrings(
+      meshKeywords.map((entry) => {
+        const record = (entry || {}) as Record<string, unknown>;
+        return textValue(record.name) || textValue(record.text);
+      }),
+    ),
   );
   if (meshTerms.length === 0) return null;
   const fullName = textValue(model.fullName) || textValue(research.fullName);
@@ -335,6 +345,8 @@ export function candidateEntityFromDoc(doc: YsmMeshCandidateEntityDoc): YsmMeshC
     slug: doc.slug,
     name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
     contactName: textValue(doc.contactName),
+    entityType: textValue(doc.entityType) || undefined,
+    kind: textValue(doc.kind) || undefined,
     profileUrls,
     manuallyLockedFields: doc.manuallyLockedFields || [],
   };
@@ -344,13 +356,15 @@ async function defaultFetchPage(url: string): Promise<FetchedYsmPage | null> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 20_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrlText, {
+      timeout: 20_000,
+      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   return { url: res.request?.res?.responseUrl || safeUrlText, html: String(res.data || '') };
 }
 
@@ -382,7 +396,7 @@ async function defaultDirectoryLoader(
       : Math.min(keywords.length, ctx.options.limit);
   let cappedFacultyCount = 0;
   for (const keyword of keywords.slice(0, cappedTermCount)) {
-    let page: FetchedYsmPage | null = null;
+    let page: FetchedYsmPage | null;
     try {
       page = await fetchCachedPage(fetchPage, resultsPageUrl(keyword.meshId), ctx.options.useCache);
     } catch (error) {
@@ -435,8 +449,8 @@ export function buildYsmMeshCandidateMatch(
   const ysmProfileUrlClause = { $regex: YSM_PROFILE_URL_MONGO_REGEX, $options: 'i' };
   const ysmFilter = {
     $or: [
-      { school: 'Yale School of Medicine' },
-      { schools: 'Yale School of Medicine' },
+      { school: SCHOOL_OF_MEDICINE_NAME },
+      { schools: SCHOOL_OF_MEDICINE_NAME },
       { slug: /^ysm-/i },
       { profileUrls: ysmProfileUrlClause },
       { sourceUrls: ysmProfileUrlClause },
@@ -461,6 +475,8 @@ async function defaultEntityFinder(
     name: 1,
     displayName: 1,
     contactName: 1,
+    entityType: 1,
+    kind: 1,
     websiteUrl: 1,
     website: 1,
     sourceUrls: 1,
@@ -596,6 +612,7 @@ export class YsmMeshKeywordScraper implements IScraper {
     let observationCount = 0;
     let entitiesObserved = 0;
     let profilesResolved = 0;
+    let organizationRowsSkipped = 0;
     const workPlannerPolicy = ctx.options.ignoreWorkPlanner
       ? undefined
       : getWorkPlannerSourcePolicy(this.name);
@@ -608,6 +625,10 @@ export class YsmMeshKeywordScraper implements IScraper {
 
     await mapWithConcurrency(candidates, concurrency, async (entity) => {
       try {
+        if (!isPersonScopedResearchEntityShape(entity)) {
+          organizationRowsSkipped += 1;
+          return;
+        }
         if (workPlannerPolicy) {
           if (!idValue(entity._id) && !entity.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
@@ -660,6 +681,7 @@ export class YsmMeshKeywordScraper implements IScraper {
       notes:
         `Attached governed MeSH research areas to ${entitiesObserved} YSM entities ` +
         `(${profilesResolved} resolved to an individual profile of ${candidates.length} scanned; ` +
+        `${organizationRowsSkipped} organization rows skipped because a profile describes one person; ` +
         `${keywordsEnumerated} MeSH keywords enumerated).`,
       metrics: { workPlanner: workPlannerMetrics },
     };

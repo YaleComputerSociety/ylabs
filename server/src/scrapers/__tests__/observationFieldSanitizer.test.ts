@@ -101,11 +101,83 @@ describe('sanitizeObservationField', () => {
       });
     });
 
+    it('keeps a lab or program name that runs on site menu words (#4046)', () => {
+      for (const name of [
+        'Digital Humanities Research Resources Collections Lab',
+        'Global Health Research Outreach Opportunities Program',
+      ]) {
+        expect(sanitizeObservationField('researchEntity', 'name', name)).toEqual({
+          value: name,
+          rejected: false,
+        });
+      }
+    });
+
     it('does not treat a plain user name as a research-home name', () => {
       expect(sanitizeObservationField('user', 'name', 'Ada Lovelace')).toEqual({
         value: 'Ada Lovelace',
         rejected: false,
       });
+    });
+  });
+
+  // `methods` is a chip list this sanitizer did not cover at all: the only two places
+  // that cleaned a method chip were the serve-time DTO and one lane's grounding helper,
+  // so a chip from any other lane was hidden on the way out and stored dirty (#3612).
+  describe('method chip list', () => {
+    it('drops a chip that is a whole sentence and trims a chip that ends on a stop', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'Cryo-electron microscopy',
+        'We use single-cell RNA sequencing to profile immune populations.',
+        'Patch-clamp electrophysiology.',
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Cryo-electron microscopy', 'Patch-clamp electrophysiology']);
+    });
+
+    it('rejects the observation when every chip is sentence-shaped, rather than storing an empty list', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'We combine imaging and sequencing to study how cells divide.',
+      ]);
+      expect(result.rejected).toBe(true);
+      expect(result.reason).toBe('method-chip-not-a-method');
+    });
+
+    it('drops activity and publication labels from a method list', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'Flow cytometry',
+        'teaching',
+        'Peer-Reviewed Publications',
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Flow cytometry']);
+    });
+
+    it('rejects a method list that names only activities', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'teaching',
+        'outreach',
+      ]);
+      expect(result.rejected).toBe(true);
+      expect(result.reason).toBe('method-chip-not-a-method');
+    });
+
+    it('leaves a clean method list untouched', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', [
+        'Mass spectrometry',
+        'X-ray crystallography',
+      ]);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Mass spectrometry', 'X-ray crystallography']);
+    });
+
+    // The research-area arm also filters topic-vocabulary leakage and section labels,
+    // which say nothing about a method, so the two arms stay separate rather than one
+    // routing through the other.
+    it('does not apply the research-area leakage filter to a method chip', () => {
+      const result = sanitizeObservationField('researchEntity', 'methods', ['Research Areas']);
+      expect(result.rejected).toBe(false);
+      expect(result.value).toEqual(['Research Areas']);
     });
   });
 
@@ -525,5 +597,34 @@ describe('every lane that asserts kind pairs it with entityType', () => {
       if (typeEmissions < kindEmissions) unpaired.push(file);
     }
     expect(unpaired).toEqual([]);
+  });
+});
+
+describe('the size bound on observed fellowship prose (#4572)', () => {
+  const runaway = 'A synthetic sentence about the award repeats here. '.repeat(40_000);
+
+  it('bounds a runaway page so one observation cannot hold megabytes', () => {
+    for (const field of ['eligibility', 'applicationInformation', 'fullSourceDescription']) {
+      const value = sanitizeObservationField('fellowship', field, runaway).value as string;
+      expect(runaway.length).toBeGreaterThan(1_000_000);
+      expect(value.length, field).toBeLessThanOrEqual(20_000);
+      expect(value.length, field).toBeGreaterThan(10_000);
+    }
+  });
+
+  it('keeps prose within the bound exactly as observed', () => {
+    const value = 'Open to juniors.\nApply by the posted date.';
+    expect(sanitizeObservationField('fellowship', 'eligibility', value)).toEqual({
+      value,
+      rejected: false,
+    });
+  });
+});
+
+describe('a research heading set in capitals by its source', () => {
+  it('is recased when a lane records it', () => {
+    expect(
+      sanitizeObservationField('researchEntity', 'name', 'ROBIN Q. FIXTURE Faculty Research').value,
+    ).toBe('Robin Q. Fixture Faculty Research');
   });
 });

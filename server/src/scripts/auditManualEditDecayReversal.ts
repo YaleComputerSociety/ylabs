@@ -14,7 +14,7 @@ function serialize(value: unknown): string {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const OLD_DECAY_SOURCE_ALIAS = 'manual-admin-edit__pre-fix-decay-simulated';
 

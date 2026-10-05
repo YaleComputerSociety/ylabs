@@ -29,11 +29,11 @@ describe('materializer writes cannot disagree with the schema enums', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri(), { autoIndex: false });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -77,7 +77,7 @@ describe('materializer writes cannot disagree with the schema enums', () => {
       kind: 'center',
       entityType: RETIRED_ENTITY_TYPE,
       studentVisibilityTier: 'operator_review',
-      archived: true,
+      archived: false,
       manuallyLockedFields: [],
     });
     await seedObservation('name', 'Enum Drift Center Renamed');
@@ -100,7 +100,7 @@ describe('materializer writes cannot disagree with the schema enums', () => {
       kind: 'center',
       entityType: RETIRED_ENTITY_TYPE,
       studentVisibilityTier: 'operator_review',
-      archived: true,
+      archived: false,
       manuallyLockedFields: [],
     });
     await seedObservation('name', 'Enum Drift Center Renamed');

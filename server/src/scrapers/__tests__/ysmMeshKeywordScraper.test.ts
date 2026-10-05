@@ -355,7 +355,8 @@ describe('buildYsmMeshCandidateMatch', () => {
 
   it('still matches the school and ysm- slug seeds', () => {
     const or = clauses(buildYsmMeshCandidateMatch([]));
-    expect(or).toContainEqual({ school: 'Yale School of Medicine' });
+    expect(or).toContainEqual({ school: 'School of Medicine' });
+    expect(or).toContainEqual({ schools: 'School of Medicine' });
     expect(or.some((clause) => (clause as { slug?: RegExp }).slug instanceof RegExp)).toBe(true);
   });
 
@@ -390,6 +391,7 @@ describe('YsmMeshKeywordScraper.run', () => {
     slug: 'ysm-riverstone',
     name: 'Riverstone Lab',
     contactName: 'Marlow Riverstone',
+    entityType: 'LAB',
     profileUrls: [profileUrl],
   };
 
@@ -450,6 +452,39 @@ describe('YsmMeshKeywordScraper.run', () => {
     await scraper.run(ctx);
     expect(emitted).toHaveLength(1);
     expect(emitted[0].sourceUrl).toBe(profileUrl);
+  });
+
+  it.each(['CENTER', 'INITIATIVE', 'CORE_FACILITY'])(
+    "emits nothing for a %s row, even one citing its director's profile (#4032)",
+    async (entityType) => {
+      const fetched: string[] = [];
+      const scraper = new YsmMeshKeywordScraper({
+        directoryLoader: async () => ({
+          keywords: [],
+          profileUrlByNameKey: new Map([[facultyNameMatchKey('Marlow Riverstone'), profileUrl]]),
+        }),
+        entityFinder: async () => [{ ...entity, entityType, name: 'Riverstone Center' }],
+        leadProfileUrlLoader: async () => [profileUrl],
+        fetchPage: async (url) => {
+          fetched.push(url);
+          return {
+            url,
+            html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms'] }),
+          };
+        },
+      });
+      const { ctx, emitted } = makeContext();
+      const result = await scraper.run(ctx);
+      expect(emitted).toEqual([]);
+      expect(fetched).toEqual([]);
+      expect(result.entitiesObserved).toBe(0);
+    },
+  );
+
+  it('reads the entity type off the stored row', () => {
+    expect(
+      candidateEntityFromDoc({ slug: 'x', entityType: 'CENTER', kind: 'center' }),
+    ).toMatchObject({ entityType: 'CENTER', kind: 'center' });
   });
 
   it('does not emit when a profile carries no MeSH keywords', async () => {

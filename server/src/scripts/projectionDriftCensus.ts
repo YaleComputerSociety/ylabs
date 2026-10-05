@@ -14,6 +14,7 @@ import {
 } from './rematerializeResearchEntitiesCore';
 import {
   classifyEntityProjectionDrift,
+  loadProjectionDriftCensusRows,
   parseProjectionDriftCensusArgs,
   projectionDriftReportsForUnloadedSlugs,
   projectionDriftSkipReasonForResult,
@@ -23,24 +24,11 @@ import {
 } from './projectionDriftCensusCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
-async function loadCensusRows(sample: number, slugs: string[], includeArchived: boolean) {
-  if (slugs.length > 0) {
-    // The archived filter stays out of the slug query so a requested archived row
-    // loads and reports `skipped: archived-entity` rather than vanishing from the
-    // report with nothing saying it was asked for.
-    return ResearchEntity.find({ slug: { $in: slugs } }).lean<Array<Record<string, unknown>>>();
-  }
-  return ResearchEntity.aggregate<Record<string, unknown>>([
-    { $match: includeArchived ? {} : { archived: { $ne: true } } },
-    { $sample: { size: sample } },
-  ]);
-}
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 async function censusRow(
   stored: Record<string, unknown>,
@@ -88,10 +76,12 @@ async function main() {
   const corpusRows = await ResearchEntity.countDocuments(
     args.includeArchived ? {} : { archived: { $ne: true } },
   );
-  const rows = await loadCensusRows(args.sample, args.slugs, args.includeArchived);
-
   const entities: ProjectionDriftEntityReport[] = [];
-  for (const row of rows) {
+  for await (const row of loadProjectionDriftCensusRows(args, {
+    aggregateIds: (pipeline, options) =>
+      ResearchEntity.aggregate<{ _id: unknown }>(pipeline, options),
+    findRows: (filter) => ResearchEntity.find(filter).lean<Array<Record<string, unknown>>>(),
+  })) {
     try {
       entities.push(await censusRow(row, args.includeArchived));
     } catch (error) {

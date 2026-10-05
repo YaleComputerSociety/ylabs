@@ -15,7 +15,7 @@ import {
 } from './retiredCollectionDropCore';
 import '../models';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
 type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy' | 'drop-retired-populated';
@@ -65,7 +65,7 @@ const EMPTY_LEGACY_COLLECTIONS = [
 // Indexes left behind by retired schema fields. Mongoose never drops an index
 // it has stopped declaring, so removing the field alone leaves the physical
 // index maintained on every write and used by nothing.
-const RETIRED_INDEXES = [
+export const RETIRED_INDEXES = [
   {
     collection: 'taxonomy_terms',
     name: 'parentTermId_1_kind_1_status_1_archived_1',
@@ -77,6 +77,48 @@ const RETIRED_INDEXES = [
     name: 'archived_1_hasDocumentedWayIn_1',
     key: { archived: 1, hasDocumentedWayIn: 1 },
     retiredField: 'hasDocumentedWayIn',
+  },
+  {
+    collection: 'research_entities',
+    name: 'departmentIds_1',
+    key: { departmentIds: 1 },
+    retiredField: 'departmentIds',
+  },
+  {
+    collection: 'research_entities',
+    name: 'researchAreaIds_1',
+    key: { researchAreaIds: 1 },
+    retiredField: 'researchAreaIds',
+  },
+  {
+    collection: 'research_entities',
+    name: 'recentPaperCount_-1',
+    key: { recentPaperCount: -1 },
+    retiredField: 'recentPaperCount',
+  },
+  {
+    collection: 'research_entities',
+    name: 'archived_1_accessAcceptanceLevel_1',
+    key: { archived: 1, accessAcceptanceLevel: 1 },
+    retiredField: 'accessAcceptanceLevel',
+  },
+  {
+    collection: 'signals',
+    name: 'review.status_1',
+    key: { 'review.status': 1 },
+    retiredField: 'review.status',
+  },
+  {
+    collection: 'signals',
+    name: 'researchEntityId_1_review.status_1_review.reviewedAt_-1',
+    key: { researchEntityId: 1, 'review.status': 1, 'review.reviewedAt': -1 },
+    retiredField: 'review.status',
+  },
+  {
+    collection: 'analytics_events',
+    name: 'listingId_1',
+    key: { listingId: 1 },
+    retiredField: 'listingId',
   },
 ] as const;
 

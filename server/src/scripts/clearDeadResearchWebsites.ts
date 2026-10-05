@@ -14,14 +14,17 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  normalizeWebsiteUrl,
+  countWebsiteUrlOwnerRows,
   planDeadResearchWebsiteClears,
+  planDeadWebsiteClearWrite,
+  planDeadWebsiteRefusalWithdrawals,
+  planDeadWebsiteRefusalWithdrawalWrite,
   reportDeadWebsiteRefusals,
   type DeadWebsiteRow,
 } from './clearDeadResearchWebsitesCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:clear-dead-research-websites';
 export const CONFIRM_FLAG = '--confirm-clear-dead-research-websites';
@@ -71,7 +74,7 @@ async function readServed(slugs: readonly string[]): Promise<Served[]> {
 
   const out: Served[] = [];
   for (const slug of slugs) {
-    let detail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null = null;
+    let detail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
     try {
       detail = await getResearchGroupDetail(slug);
     } catch {
@@ -110,18 +113,12 @@ async function main(): Promise<void> {
 
   const all = (await ResearchEntity.find({ archived: { $ne: true } })
     .select(
-      'slug name displayName entityType websiteUrl website sourceLinkHealth sourceUrls studentVisibilityTier manuallyLockedFields',
+      'slug name displayName entityType websiteUrl website sourceLinkHealth sourceUrls studentVisibilityTier manuallyLockedFields fieldValueRefusals',
     )
     .lean()) as unknown as Array<Record<string, any>>;
 
-  const ownerCount = new Map<string, number>();
-  for (const row of all) {
-    for (const url of [text(row.websiteUrl), text(row.website)]) {
-      if (!url) continue;
-      const key = normalizeWebsiteUrl(url);
-      ownerCount.set(key, (ownerCount.get(key) ?? 0) + 1);
-    }
-  }
+  const ownerCount = countWebsiteUrlOwnerRows(all);
+  const withdrawals = planDeadWebsiteRefusalWithdrawals(all as DeadWebsiteRow[]);
 
   const served = all.filter((row) => text(row.studentVisibilityTier) === 'student_ready');
   const outcome = planDeadResearchWebsiteClears(
@@ -146,9 +143,10 @@ async function main(): Promise<void> {
   let stoppedAfter = 'planned';
   let completed = false;
 
-  const slugs = outcome.plans.map((plan) => plan.slug);
+  const slugs = [...new Set(outcome.plans.map((plan) => plan.slug))];
   const before = await readServed(slugs);
   let cleared = 0;
+  let refusalsWithdrawn = 0;
   let gateChangedSlugs: string[] = [];
   let after: Served[] = [];
   let collateral: Served[] = [];
@@ -161,8 +159,10 @@ async function main(): Promise<void> {
       stoppedAfter,
       servedRowsScanned: served.length,
       plannedClears: outcome.plans.length,
+      plannedRefusalWithdrawals: withdrawals.length,
       ...reportDeadWebsiteRefusals(outcome.refused),
       cleared,
+      refusalsWithdrawn,
       gateChangedRows: gateChangedSlugs.length,
       demotedRepairedRows: after.filter(
         (row, index) =>
@@ -185,16 +185,41 @@ async function main(): Promise<void> {
   };
 
   try {
-    if (!options.dryRun && outcome.plans.length > 0) {
-      for (const plan of outcome.plans) {
-        // Cleared, never locked. #3191 measured a repair that froze a cleared field whose
-        // value was correct and withheld working research links, so the field stays open
-        // for a later source to fill.
-        const result = await ResearchEntity.updateOne(
-          { slug: plan.slug },
-          { $set: { [plan.field]: '' } },
+    if (!options.dryRun && withdrawals.length > 0) {
+      const bySlug = new Map(all.map((row) => [text(row.slug), row as DeadWebsiteRow]));
+      for (const slug of new Set(withdrawals.map((withdrawal) => withdrawal.slug))) {
+        const row = bySlug.get(slug);
+        if (!row) continue;
+        const own = withdrawals.filter((withdrawal) => withdrawal.slug === slug);
+        await ResearchEntity.updateOne(
+          { slug },
+          { $set: planDeadWebsiteRefusalWithdrawalWrite(row, own, new Date()) },
         );
-        cleared += result.modifiedCount || 0;
+        refusalsWithdrawn += own.length;
+      }
+      stoppedAfter = 'withdrawing';
+    }
+    if (!options.dryRun && outcome.plans.length > 0) {
+      const bySlug = new Map(served.map((row) => [text(row.slug), row as DeadWebsiteRow]));
+      for (const slug of slugs) {
+        const row = bySlug.get(slug);
+        if (!row) continue;
+        const own = outcome.plans.filter((plan) => plan.slug === slug);
+        const current = withdrawals.some((withdrawal) => withdrawal.slug === slug)
+          ? {
+              ...row,
+              fieldValueRefusals: (
+                (await ResearchEntity.findOne({ slug }).select('fieldValueRefusals').lean()) as {
+                  fieldValueRefusals?: unknown;
+                } | null
+              )?.fieldValueRefusals,
+            }
+          : row;
+        const result = await ResearchEntity.updateOne(
+          { slug },
+          { $set: planDeadWebsiteClearWrite(current, own, new Date()) },
+        );
+        if (result.modifiedCount) cleared += own.length;
         stoppedAfter = 'clearing';
       }
 

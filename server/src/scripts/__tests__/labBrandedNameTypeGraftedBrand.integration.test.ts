@@ -148,11 +148,11 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -216,6 +216,16 @@ describe('lab-branded name backfill over a brand a dedupe grafted forward (#2446
       .toArray();
     expect(retracted).toHaveLength(3);
     expect(retracted.every((doc) => doc.superseded === true)).toBe(true);
+  });
+
+  it('reports every row the index refused as a sync failure, not as synced (#3726)', async () => {
+    meiliMocks.syncEntities.mockResolvedValueOnce(0 as never).mockResolvedValueOnce(0 as never);
+
+    const result = await runLabBrandedNameTypeBackfill({ dryRun: false });
+
+    expect(meiliMocks.syncEntities).toHaveBeenCalledTimes(2);
+    expect(result.synced).toBe(0);
+    expect(result.indexSyncFailures).toBe(2);
   });
 
   it('retracts the brand under both anchors, so the shell-keyed twin cannot keep serving it', async () => {

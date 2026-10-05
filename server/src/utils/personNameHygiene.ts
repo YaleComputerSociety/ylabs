@@ -160,11 +160,18 @@ const UNDERSCORE_SLUG_RE = /_/;
 
 const DOTTED_LOWERCASE_LOCAL_PART_RE = /^[a-z][a-z0-9'-]*(?:\.[a-z][a-z0-9'-]*)+$/;
 
+// Only inside a caption: there "Dean" is the alt text's title for the person, while a
+// bare "Dean Karlan" is a given name, so this list must never run outside the wrapper.
+const CAPTION_HONORIFIC_LEAD_IN = /^(?:dean|dr\.?|prof\.?|professor)\s+(?=\S+\s+\S)/i;
+
 export function stripPersonNameCaptionWrapper(value: string): string {
   const trimmed = value.trim();
   const match = trimmed.match(CAPTION_LEAD_IN);
   if (!match) return trimmed;
-  const inner = match[1].replace(/\s*\.\s*$/, '').trim();
+  const inner = match[1]
+    .replace(/\s*\.\s*$/, '')
+    .replace(CAPTION_HONORIFIC_LEAD_IN, '')
+    .trim();
   return inner || trimmed;
 }
 
@@ -395,6 +402,25 @@ export function personNameNoiseShapes(value: string | null | undefined): PersonN
   if (afterFormerName !== afterCredentials) shapes.push('former-name-annotation');
   if (normalizeNameCasing(afterFormerName) !== afterFormerName) shapes.push('shouty-casing');
   return shapes;
+}
+
+const CAPTION_GIVEN_NAME_HONORIFIC_LEAD_IN = /^(?:dean|dr\.?|prof\.?|professor)\s+(?=\S)/i;
+
+/**
+ * A given-name field split from a caption ("Photo of Dean Robin", with the surname in
+ * the family-name field) cannot see the surname the full-name rule counts on, so a title
+ * in front of at least one given name is dropped here. A caption whose given name IS the
+ * word ("Photo of Dean") keeps it, as does any given name outside a caption.
+ */
+export function sanitizePersonGivenName(value: string | null | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  const caption = collapsed.match(CAPTION_LEAD_IN);
+  if (!caption) return sanitizePersonName(collapsed);
+  const given = caption[1]
+    .replace(/\s*\.\s*$/, '')
+    .replace(CAPTION_GIVEN_NAME_HONORIFIC_LEAD_IN, '');
+  return sanitizePersonName(given || caption[1]);
 }
 
 /**

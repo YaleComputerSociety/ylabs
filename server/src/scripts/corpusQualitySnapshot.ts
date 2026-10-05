@@ -21,7 +21,7 @@ import {
 } from './operatorDatabaseEnvironment';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 interface CorpusQualitySnapshotOptions {
   environment: string;
@@ -68,6 +68,12 @@ async function main(): Promise<void> {
   );
   console.log(
     `  generic Faculty Research name ${formatRatio(report.description.nameIsGenericFacultyResearchTitle)}`,
+  );
+  console.log(
+    `  browse card cut mid-sentence ${formatRatio(report.description.browseCardCutMidSentence)}`,
+  );
+  console.log(
+    `  browse card six words or fewer ${formatRatio(report.description.browseCardSixWordsOrFewer)}`,
   );
   console.log(
     `  invariant fails          ${formatRatio(report.integrity.publicDescriptionInvariantFails)}`,

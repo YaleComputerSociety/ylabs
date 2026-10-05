@@ -9,6 +9,7 @@
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { createHash } from 'crypto';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
@@ -40,12 +41,7 @@ export interface ExtractedOfficialRosterMember {
 }
 
 export type OfficialRosterRole =
-  | 'postdoc'
-  | 'grad-student'
-  | 'undergrad'
-  | 'staff'
-  | 'core-faculty'
-  | 'affiliate';
+  'postdoc' | 'grad-student' | 'undergrad' | 'staff' | 'core-faculty' | 'affiliate';
 
 export interface ExtractedOfficialRoster {
   state: 'current' | 'partial' | 'empty' | 'withheld' | 'stale';
@@ -362,13 +358,15 @@ async function fetchRosterPage(url: string, useCache: boolean): Promise<string> 
     if (cached) return cached;
   }
   const agents = ssrfSafeAgents();
-  const response = await axios.get(safeUrl.toString(), {
-    timeout: 30_000,
-    maxRedirects: 5,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const response = await retryOnRetryableStatus(() =>
+    axios.get(safeUrl.toString(), {
+      timeout: 30_000,
+      maxRedirects: 5,
+      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(response.data || '');
   if (useCache) await setCached(OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE, cacheKey, html);
   return html;
@@ -399,7 +397,7 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
     let withheld = 0;
 
     for (const config of selected) {
-      const observedAt = new Date();
+      const observedAt = context.options.referenceDate ?? new Date();
       try {
         const html = await this.fetchPage(config.url, context.options.useCache);
         const roster = extractOfficialResearchHomeRoster(html, config, observedAt);
@@ -418,6 +416,12 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
         failed += 1;
         context.log(`${config.researchEntityKey}: optional roster fetch failed`);
       }
+    }
+
+    if (selected.length > 0 && failed === selected.length) {
+      throw new Error(
+        `Every attempted official roster fetch failed (${failed} of ${selected.length}); the run read no roster and is a failure, not a success`,
+      );
     }
 
     return {

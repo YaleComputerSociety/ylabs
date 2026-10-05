@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  recaseAllCapsResearchEntityName,
   collapseDuplicateResearchHomeSuffix,
   hasDuplicateResearchHomeSuffix,
   hasResearchHomeNamePersonCredentials,
@@ -11,6 +12,7 @@ import {
   stripLeadingMicrositeBannerPrefix,
   stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
+  stripResearchHomeNameCaptionWrapper,
 } from '../researchEntityNameNormalization';
 
 describe('normalizeResearchEntityNameDashes', () => {
@@ -279,5 +281,60 @@ describe('stripLeadingMicrositeBannerPrefix', () => {
     expect(stripLeadingMicrositeBannerPrefix('CNCL @ Yale Publications and Teaching')).toBe(
       'CNCL @ Yale Publications and Teaching',
     );
+  });
+});
+
+describe('stripResearchHomeNameCaptionWrapper', () => {
+  it('cleans the person half of a heading composed from a headshot caption', () => {
+    expect(stripResearchHomeNameCaptionWrapper('Photo of Robin Fixture. Faculty Research')).toBe(
+      'Robin Fixture Faculty Research',
+    );
+    expect(
+      stripResearchHomeNameCaptionWrapper('Photo of Dean Robin Fixture. Faculty Research'),
+    ).toBe('Robin Fixture Faculty Research');
+    expect(stripResearchHomeNameCaptionWrapper('Portrait of Robin Fixture. Lab')).toBe(
+      'Robin Fixture Lab',
+    );
+  });
+
+  it('leaves a heading with no caption lead-in, including a generational suffix', () => {
+    expect(stripResearchHomeNameCaptionWrapper('Robin Fixture, Jr. Faculty Research')).toBe(
+      'Robin Fixture, Jr. Faculty Research',
+    );
+    expect(stripResearchHomeNameCaptionWrapper('Photonics of Matter Lab')).toBe(
+      'Photonics of Matter Lab',
+    );
+  });
+});
+
+describe('recaseAllCapsResearchEntityName', () => {
+  it.each([
+    ['ROBIN Q. FIXTURE Faculty Research', 'Robin Q. Fixture Faculty Research'],
+    ['THE FIXTURE LABORATORY', 'The Fixture Laboratory'],
+    ['FIXTURE LAB', 'Fixture Lab'],
+    ['ROBIN FIXTURE FACULTY RESEARCH', 'Robin Fixture Faculty Research'],
+    ['ANA DE LA FIXTURE Lab', 'Ana de la Fixture Lab'],
+    ["ROBIN MCFIXTURE-O'TEST Lab", "Robin McFixture-O'Test Lab"],
+    ['MUÑOZ FIXTURE LAB', 'Muñoz Fixture Lab'],
+    ['ROBIN LE LAB', 'Robin Le Lab'],
+    ['ROBIN DU Lab', 'Robin Du Lab'],
+    ['ROBIN NG LAB', 'Robin Ng Lab'],
+  ])('recases an all-caps heading: %s', (input, expected) => {
+    expect(recaseAllCapsResearchEntityName(input)).toBe(expected);
+  });
+
+  it.each([
+    'Robin Fixture Faculty Research',
+    'CCMI Electron Microscopy Lab',
+    'HAPPY Initiative',
+    'FIXTURE',
+    'AI LAB',
+    'YALE MRI CENTER',
+    'AIDS RESEARCH PROGRAM',
+    'FIXTURE LAB AT YALE',
+    'FIXT Lab',
+    'FIXTURE Lab',
+  ])('leaves a heading that is not an all-caps run alone: %s', (input) => {
+    expect(recaseAllCapsResearchEntityName(input)).toBe(input);
   });
 });

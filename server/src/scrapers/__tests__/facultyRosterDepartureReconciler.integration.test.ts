@@ -1,3 +1,5 @@
+import { gzipSync } from 'zlib';
+import axios, { type AxiosAdapter } from 'axios';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,9 +15,13 @@ import { OrgUnit } from '../../models/orgUnit';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { ScrapeRun } from '../../models/scrapeRun';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
+import { attachSweepPageReuse } from '../utils/sweepPageReuse';
+import { SweepPageStore } from '../utils/sweepPageStore';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
+  ROSTER_ABSENCE_MARKER_CUTOFF,
   reconcileFacultyRosterDeparturesFromRun,
 } from '../facultyRosterDepartureReconciler';
 
@@ -40,11 +46,11 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -59,6 +65,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       'org_units',
       'researchers',
       'role_assignments',
+      'scrape_runs',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -119,7 +126,12 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     readAt: '2026-08-27T00:00:00.000Z',
   };
 
-  const seedDeptHealth = (runId: string, value: Record<string, unknown>, deptName = 'Physics') =>
+  const seedDeptHealth = (
+    runId: string,
+    value: Record<string, unknown>,
+    deptName = 'Physics',
+    observedAt = new Date('2026-08-27T00:00:00.000Z'),
+  ) =>
     Observation.create({
       entityType: 'departmentRosterHealth',
       entityKey: 'physics',
@@ -135,14 +147,65 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       sourceName: 'dept-faculty-roster',
       confidence: 0.9,
       scrapeRunId: new mongoose.Types.ObjectId(runId),
-      observedAt: new Date('2026-08-27T00:00:00.000Z'),
+      observedAt,
     });
+
+  const LISTED_AT = new Date('2026-08-01T00:00:00.000Z');
+  const MARKER_READ_AT = new Date('2026-08-13T00:00:00.000Z');
+  const AFTER_THE_3661_FIX = new Date(
+    ROSTER_ABSENCE_MARKER_CUTOFF.fixMergedAt.getTime() + 3_600_000,
+  );
+
+  const seedPriorListing = (listed: string[], deptName = 'Physics') =>
+    seedDeptHealth(
+      new mongoose.Types.ObjectId().toString(),
+      { discoveredEntityKeys: listed, discoveredCount: listed.length },
+      deptName,
+      LISTED_AT,
+    );
+
+  const seedRosterRun = (runId: string, startedAt: Date) =>
+    ScrapeRun.create({
+      _id: new mongoose.Types.ObjectId(runId),
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      startedAt,
+      status: 'success',
+    });
+
+  // A standing marker completes a departure only when its own run, re-read under the
+  // current rules, had the row absent from the same department that listed it before
+  // (#3702), so a fixture expecting a suppression has to seed that history.
+  // The marker run is judged against its own department's earlier read, so a fixture
+  // department has to list enough people that one departure is not a regression.
+  const COLLEAGUES = ['colleague-a', 'colleague-b', 'colleague-c'];
+  const rosterRead = (present: string[]) => ({
+    discoveredEntityKeys: [...present, ...COLLEAGUES],
+    discoveredCount: present.length + COLLEAGUES.length,
+  });
+
+  const seedPriorRunThatReadAbsent = async (
+    listed: string[],
+    present: string[],
+    deptName = 'Physics',
+    markerRead: Record<string, unknown> = {},
+  ) => {
+    await seedPriorListing([...listed, ...COLLEAGUES], deptName);
+    await seedDeptHealth(
+      priorRun,
+      { ...rosterRead(present), ...markerRead },
+      deptName,
+      MARKER_READ_AT,
+    );
+    await seedRosterRun(priorRun, AFTER_THE_3661_FIX);
+  };
 
   it('suppresses a sustained-absent entity whose Yale profile asserts absence (both signals)', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -154,6 +217,64 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(gone?.yaleStatusReasonCache).toBe('departed');
     const present = await readEntity('lab-present');
     expect(present?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('suppresses on a roster read reused within the sweep, and reads the profile live', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    await seedDeptHealth(run, {
+      ...rosterRead(['lab-present']),
+      read: { ...FETCHED_READ, pagesReusedWithinSweep: 1 },
+    });
+    const profileUrl = TOMBSTONE.url;
+    const store = new SweepPageStore(1024 * 1024, ['physics.yale.edu']);
+    store.put(profileUrl, false, {
+      finalUrl: profileUrl,
+      contentType: 'text/html',
+      fetchedAt: '2026-08-26T00:00:00.000Z',
+      gzipBase64: gzipSync(LIVE_PROFILE.html).toString('base64'),
+    });
+    const instance = axios.create();
+    const reuse = attachSweepPageReuse(instance, {
+      source: {
+        lookup: async (key) => (key ? store.get(key) : null),
+        offer: () => {},
+      },
+      hosts: ['physics.yale.edu'],
+    });
+    let liveReads = 0;
+    const liveTombstone: AxiosAdapter = async (config) => {
+      liveReads += 1;
+      return {
+        data: TOMBSTONE.html,
+        status: 200,
+        statusText: 'OK',
+        headers: { 'content-type': 'text/html' },
+        config,
+        request: { res: { responseUrl: profileUrl } },
+      };
+    };
+    const readProfile = async (url: string) => {
+      const response = await instance.get(url, { adapter: liveTombstone });
+      return { status: response.status, url, html: String(response.data) };
+    };
+    fetchPage.mockImplementation(readProfile);
+
+    try {
+      expect((await readProfile(profileUrl)).html).toBe(LIVE_PROFILE.html);
+      expect(liveReads).toBe(0);
+
+      const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+      expect(result.evidenceFreshness.readProvenance['reused-within-sweep']).toBe(1);
+      expect(result.suppressed).toBe(1);
+      expect(liveReads).toBeGreaterThan(0);
+      expect((await readEntity('lab-gone'))?.activeAtYaleCache).toBe(false);
+    } finally {
+      reuse.detach();
+    }
   });
 
   // Writing the Yale-status fields is not the same as removing the row from the
@@ -174,7 +295,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       studentVisibilityTier: 'student_ready',
       studentVisibilityComputedTier: 'student_ready',
     });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -194,7 +316,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(LIVE_PROFILE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -237,7 +360,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       confidence: 0.7,
       archived: false,
     });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-relocated'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -259,13 +383,166 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       sourceUrls: ['https://somebody.example.com/'],
       absentFromRosterSinceRunId: priorRun,
     });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-no-yale-page'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(fetchPage).not.toHaveBeenCalled();
     expect(result.suppressed).toBe(0);
     expect(result.held).toBe(1);
+  });
+
+  it('refuses a marker whose own run read the department only partially', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedPriorRunThatReadAbsent(['lab-gone'], ['lab-present'], 'Physics', {
+      status: 'partial-read',
+      complete: false,
+    });
+    await seedDeptHealth(run, rosterRead(['lab-present']));
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.planned.suppress_departed).toBe(0);
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(await readEntity('lab-gone')).toMatchObject({ absentFromRosterSinceRunId: run });
+    expect((await readEntity('lab-gone'))?.activeAtYaleCache).not.toBe(false);
+  });
+
+  it('refuses a marker recorded against a department the row is no longer read under', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present', departments: ['Economics'] });
+    await seedEntity({
+      slug: 'lab-moved',
+      departments: ['Economics'],
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedPriorListing(['lab-moved'], 'Economics');
+    await seedPriorRunThatReadAbsent(
+      ['lab-moved', 'lab-other'],
+      ['lab-other'],
+      'Political Science',
+    );
+    await seedDeptHealth(run, rosterRead(['lab-present']), 'Economics');
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.planned.suppress_departed).toBe(0);
+    expect(result.plannedRows.find((row) => row.entityKey === 'lab-moved')).toMatchObject({
+      action: 'record_first_absence',
+      absenceRestsOnRunId: run,
+    });
+    expect((await readEntity('lab-moved'))?.yaleStatusReasonCache).toBeFalsy();
+  });
+
+  it('refuses a stale marker written by code that predates the partial-read fix', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedPriorListing(['lab-present', 'lab-gone']);
+    await seedDeptHealth(
+      priorRun,
+      { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 },
+      'Physics',
+      MARKER_READ_AT,
+    );
+    await seedRosterRun(
+      priorRun,
+      new Date(ROSTER_ABSENCE_MARKER_CUTOFF.fixMergedAt.getTime() - 3_600_000),
+    );
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.planned.suppress_departed).toBe(0);
+    expect(await readEntity('lab-gone')).toMatchObject({ absentFromRosterSinceRunId: run });
+  });
+
+  it('judges a marker run against the read before it, not a later read that grew', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    const newcomers = ['newcomer-a', 'newcomer-b', 'newcomer-c', 'newcomer-d', 'newcomer-e'];
+    await seedDeptHealth(run, rosterRead(['lab-present', ...newcomers]));
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.regressedDepartments).toBe(0);
+    expect(result.plannedRows.find((row) => row.entityKey === 'lab-gone')).toMatchObject({
+      action: 'suppress_departed',
+      absenceRestsOnRunId: priorRun,
+    });
+  });
+
+  it('refuses a marker whose run left no record at all', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
+    await seedPriorListing(['lab-gone']);
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.planned).toMatchObject({ suppress_departed: 0, record_first_absence: 1 });
+  });
+
+  it('records no absence for a row its department roster has never listed', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-tagged-elsewhere' });
+    await seedPriorListing(['lab-present']);
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.planned).toMatchObject({ refresh_present: 1, record_first_absence: 0 });
+    expect((await readEntity('lab-tagged-elsewhere'))?.absentFromRosterSinceRunId).toBeFalsy();
+  });
+
+  it('counts a row listed on another roster page of the same run as present', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedEntity({ slug: 'lab-present-too' });
+    await seedEntity({ slug: 'lab-cross-listed', absentFromRosterSinceRunId: priorRun });
+    await seedEntity({ slug: 'lab-on-a-tab' });
+    await seedPriorRunThatReadAbsent(
+      ['lab-cross-listed', 'lab-on-a-tab'],
+      ['lab-present', 'lab-present-too'],
+    );
+    await seedDeptHealth(run, rosterRead(['lab-present', 'lab-present-too']));
+    await seedDeptHealth(
+      run,
+      { discoveredEntityKeys: ['lab-cross-listed'], discoveredCount: 1 },
+      'Statistics',
+    );
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: 'lab-on-a-tab',
+      field: 'name',
+      value: 'Fixture Research Entity',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.8,
+      scrapeRunId: new mongoose.Types.ObjectId(run),
+      observedAt: new Date('2026-08-27T00:00:00.000Z'),
+    });
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.planned).toMatchObject({
+      refresh_present: 4,
+      record_first_absence: 0,
+      suppress_departed: 0,
+    });
+    expect((await readEntity('lab-cross-listed'))?.absentFromRosterSinceRunId).toBe('');
+    expect((await readEntity('lab-on-a-tab'))?.absentFromRosterSinceRunId).toBeFalsy();
   });
 
   it('freezes a department whose discovered count collapses below the drop guard', async () => {
@@ -333,6 +610,123 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(gone?.activeAtYaleCache).not.toBe(false);
   });
 
+  it('measures each lane against its own previous read rather than a sibling lane', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    const earlier = new mongoose.Types.ObjectId().toString();
+    const physicsOnly = ['lab-a', 'lab-b'];
+    const shared = ['lab-c', 'lab-d'];
+    const wrightOnly = ['lab-e', 'lab-f', 'lab-g', 'lab-h'];
+    for (const slug of [...physicsOnly, ...shared, ...wrightOnly]) await seedEntity({ slug });
+    const seedLane = (runId: string, entityKey: string, keys: string[], observedAt: string) =>
+      Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status: 'ok',
+          complete: true,
+          discoveredEntityKeys: keys,
+          discoveredCount: keys.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(runId),
+        observedAt: new Date(observedAt),
+      });
+    const physicsKeys = [...physicsOnly, ...shared];
+    const wrightKeys = [...shared, ...wrightOnly];
+    await seedLane(earlier, 'physics', physicsKeys, '2026-08-20T00:00:00.000Z');
+    await seedLane(earlier, 'wright-lab', wrightKeys, '2026-08-20T00:01:00.000Z');
+    await seedLane(run, 'physics', physicsKeys, '2026-08-27T00:00:00.000Z');
+    await seedLane(run, 'wright-lab', wrightKeys, '2026-08-27T00:01:00.000Z');
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.regressedDepartments).toBe(0);
+    expect(result.governedDepartments).toEqual(['Physics']);
+    expect(result.planned.record_first_absence).toBe(0);
+  });
+
+  it('does not let a sibling lane govern alone when the other lane regressed', async () => {
+    // A regressed read is distrusted exactly like a truncated one, so the people only
+    // that lane lists cannot be concluded absent from the sibling lane's read (#3647).
+    const run = new mongoose.Types.ObjectId().toString();
+    const earlier = new mongoose.Types.ObjectId().toString();
+    const physicsKeys = ['lab-a', 'lab-b', 'lab-g', 'lab-h'];
+    const wrightEarlier = ['lab-c', 'lab-d'];
+    for (const slug of [...physicsKeys, ...wrightEarlier]) await seedEntity({ slug });
+    const seedLane = (runId: string, entityKey: string, keys: string[], observedAt: string) =>
+      Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status: 'ok',
+          complete: true,
+          discoveredEntityKeys: keys,
+          discoveredCount: keys.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(runId),
+        observedAt: new Date(observedAt),
+      });
+    await seedLane(earlier, 'physics', physicsKeys, '2026-08-20T00:00:00.000Z');
+    await seedLane(earlier, 'wright-lab', wrightEarlier, '2026-08-20T00:01:00.000Z');
+    await seedLane(run, 'physics', physicsKeys, '2026-08-27T00:00:00.000Z');
+    await seedLane(run, 'wright-lab', ['lab-c'], '2026-08-27T00:01:00.000Z');
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.regressedDepartments).toBe(1);
+    expect(result.frozenDepartments).toBe(0);
+    expect(result.governedDepartments).toEqual([]);
+    expect(result.planned.record_first_absence).toBe(0);
+  });
+
+  it('does not let a governing sibling lane record absence for people a frozen lane lists', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    const physicsKeys = ['lab-a', 'lab-b', 'lab-c', 'lab-d', 'lab-e', 'lab-f'];
+    const wrightKeys = ['lab-g', 'lab-h'];
+    for (const slug of [...physicsKeys, ...wrightKeys]) await seedEntity({ slug });
+    const seedLane = (entityKey: string, keys: string[], observedAt: string) =>
+      Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey,
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status: 'ok',
+          complete: true,
+          discoveredEntityKeys: keys,
+          discoveredCount: keys.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(run),
+        observedAt: new Date(observedAt),
+      });
+    await seedLane('physics', physicsKeys, '2026-08-27T00:00:00.000Z');
+    await seedLane('wright-lab', wrightKeys, '2026-08-27T00:01:00.000Z');
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.frozenDepartments).toBe(1);
+    expect(result.governedDepartments).toEqual(['Physics']);
+    expect(result.planned.record_first_absence).toBe(0);
+  });
+
   it('refuses to suppress on a snapshot whose run recorded no read of the page', async () => {
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
@@ -350,6 +744,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     expect(result.suppressed).toBe(0);
     expect(result.evidenceFreshness.readProvenance).toEqual({
       fetched: 0,
+      'reused-within-sweep': 0,
       'cache-permitted': 0,
       'not-read': 0,
       unrecorded: 1,
@@ -373,6 +768,74 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
 
     expect(result.suppressed).toBe(0);
     expect(result.evidenceFreshness.readProvenance['not-read']).toBe(1);
+  });
+
+  it.each<[string, string[]]>([
+    ['partial-read', ['lab-present']],
+    ['empty', []],
+  ])(
+    'does not govern a department when a sibling lane in the run recorded %s',
+    async (status, siblingDiscovered) => {
+      // Two configs can resolve to one canonical department. A lane that did not read its
+      // whole roster cannot have failed to find anybody on the pages it never saw, so its
+      // department's absence is not concluded from the other lane alone (#3647).
+      const run = new mongoose.Types.ObjectId().toString();
+      await seedEntity({ slug: 'lab-present' });
+      await seedEntity({ slug: 'lab-unread', absentFromRosterSinceRunId: priorRun });
+      await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+      await Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey: 'wright-lab',
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        value: {
+          deptName: 'Physics',
+          status,
+          complete: false,
+          discoveredEntityKeys: siblingDiscovered,
+          discoveredCount: siblingDiscovered.length,
+          read: FETCHED_READ,
+        },
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        confidence: 0.9,
+        scrapeRunId: new mongoose.Types.ObjectId(run),
+        observedAt: new Date('2026-08-27T00:00:00.000Z'),
+      });
+      fetchPage.mockResolvedValue(TOMBSTONE);
+
+      const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+      expect(result.suppressed).toBe(0);
+      expect(result.planned.suppress_departed).toBe(0);
+      expect(result.planned.record_first_absence).toBe(0);
+      expect(result.governedDepartments).toEqual([]);
+      expect(result.incompleteReadDepartments).toBe(1);
+      const unread = await readEntity('lab-unread');
+      expect(unread?.activeAtYaleCache).not.toBe(false);
+    },
+  );
+
+  it('does not count a department no lane admitted as withheld by an incomplete read', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await seedEntity({ slug: 'lab-present' });
+    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedDeptHealth(
+      run,
+      {
+        status: 'js-rendered-skip',
+        complete: false,
+        discoveredEntityKeys: [],
+        discoveredCount: 0,
+        read: { pagesRead: 0, readMode: 'none', cacheAllowed: false, readAt: null },
+      },
+      'Chemistry',
+    );
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.governedDepartments).toEqual(['Physics']);
+    expect(result.incompleteReadDepartments).toBe(0);
   });
 
   it('dates a row from its own department rather than the last snapshot read', async () => {
@@ -440,6 +903,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       frozenDepartments: 0,
       departmentsGoverningNothing: 0,
       regressedDepartments: 0,
+      incompleteReadDepartments: 0,
       regatedEntities: 0,
       planned: {
         refresh_present: 0,
@@ -456,10 +920,17 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
         snapshotsRead: 0,
         distinctSnapshotObservedAt: 0,
         planningRunFetchesSucceeded: 0,
-        readProvenance: { fetched: 0, 'cache-permitted': 0, 'not-read': 0, unrecorded: 0 },
+        readProvenance: {
+          fetched: 0,
+          'reused-within-sweep': 0,
+          'cache-permitted': 0,
+          'not-read': 0,
+          unrecorded: 0,
+        },
       },
       governedDepartments: [],
       unresolvedDepartments: [],
+      undeclaredUnresolvedDepartments: [],
     });
     const gone = await readEntity('lab-gone');
     expect(gone?.lastSeenInCompleteRosterAt).toBeUndefined();
@@ -473,7 +944,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
@@ -504,6 +976,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-newly-absent' });
+    await seedPriorListing(['lab-newly-absent']);
     await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
     fetchPage.mockResolvedValue(TOMBSTONE);
 
@@ -541,7 +1014,8 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const run = new mongoose.Types.ObjectId().toString();
     await seedEntity({ slug: 'lab-present' });
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present']);
+    await seedDeptHealth(run, rosterRead(['lab-present']));
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -579,12 +1053,9 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
       departments: ['English Language and Literature'],
       absentFromRosterSinceRunId: priorRun,
     });
+    await seedPriorRunThatReadAbsent(['lab-present', 'lab-gone'], ['lab-present'], 'English');
     // The snapshot records the raw roster-config spelling, which no entity carries.
-    await seedDeptHealth(
-      run,
-      { discoveredEntityKeys: ['lab-present'], discoveredCount: 1 },
-      'English',
-    );
+    await seedDeptHealth(run, rosterRead(['lab-present']), 'English');
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
@@ -615,6 +1086,7 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.unresolvedDepartments).toEqual(['Ministry of Magic']);
+    expect(result.undeclaredUnresolvedDepartments).toEqual(['Ministry of Magic']);
     expect(result.governedDepartments).toEqual([]);
     expect(result.outcome).toBe('no-authoritative-departments');
     expect(result.suppressed).toBe(0);
@@ -638,12 +1110,73 @@ describe('reconcileFacultyRosterDeparturesFromRun (corroborated departure)', () 
     });
     resetOrgUnitCanonicalizerCache();
     await seedEntity({ slug: 'lab-gone', absentFromRosterSinceRunId: priorRun });
-    await seedDeptHealth(run, { discoveredEntityKeys: [], discoveredCount: 0 }, 'Divinity');
+    await seedDeptHealth(
+      run,
+      { deptKey: 'divinity', discoveredEntityKeys: [], discoveredCount: 0 },
+      'Divinity',
+    );
     fetchPage.mockResolvedValue(TOMBSTONE);
 
     const result = await reconcileFacultyRosterDeparturesFromRun(run);
 
     expect(result.unresolvedDepartments).toEqual(['Divinity']);
+    expect(result.undeclaredUnresolvedDepartments).toEqual([]);
     expect(result.suppressed).toBe(0);
+  });
+
+  it('does not govern a declared roster even when an OrgUnit names its department', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'Stem Cell Center',
+      slug: 'stem-cell-center',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedEntity({ slug: 'lab-present', departments: ['Stem Cell Center'] });
+    await seedEntity({
+      slug: 'lab-gone',
+      departments: ['Stem Cell Center'],
+      absentFromRosterSinceRunId: priorRun,
+    });
+    await seedPriorRunThatReadAbsent(
+      ['lab-present', 'lab-gone'],
+      ['lab-present'],
+      'Stem Cell Center',
+    );
+    await seedDeptHealth(
+      run,
+      { deptKey: 'stem-cell-center', ...rosterRead(['lab-present']) },
+      'Stem Cell Center',
+    );
+    fetchPage.mockResolvedValue(TOMBSTONE);
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run);
+
+    expect(result.governedDepartments).toEqual([]);
+    expect(result.undeclaredUnresolvedDepartments).toEqual([]);
+    expect(result.suppressed).toBe(0);
+    expect(await readEntity('lab-gone')).toMatchObject({ archived: false });
+  });
+
+  it('keeps reporting an unresolved roster department whose key nobody declared', async () => {
+    const run = new mongoose.Types.ObjectId().toString();
+    await OrgUnit.create({
+      name: 'Physics',
+      slug: 'physics',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+    });
+    resetOrgUnitCanonicalizerCache();
+    await seedDeptHealth(
+      run,
+      { deptKey: 'not-a-declared-roster-key', discoveredEntityKeys: [], discoveredCount: 0 },
+      'Stem Cell Center',
+    );
+
+    const result = await reconcileFacultyRosterDeparturesFromRun(run, { dryRun: true });
+
+    expect(result.unresolvedDepartments).toEqual(['Stem Cell Center']);
+    expect(result.undeclaredUnresolvedDepartments).toEqual(['Stem Cell Center']);
   });
 });

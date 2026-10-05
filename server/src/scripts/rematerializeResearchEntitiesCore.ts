@@ -1,10 +1,25 @@
+import { fieldProvenanceEntries } from '../models/fieldProvenanceBacking';
+import {
+  RESEARCH_ENTITY_CONTACT_FIELDS,
+  observationIsKeyedToRow,
+} from '../scrapers/rowKeyedContactEvidence';
+import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import type { UnbackedResearchAreaOutcome } from '../scrapers/entityMaterializer';
+import { fieldProvenanceEntryIsUnbacked } from '../scrapers/neverBackedFieldProvenance';
+import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
 
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
   apply: boolean;
   confirmRematerialize: boolean;
   reclaimStrandedField?: string;
+  unbackedProvenance: boolean;
+  foreignContact: boolean;
+  unbackedResearchAreas: boolean;
+  accessSignals: boolean;
+  resynthesizeCutCards: boolean;
+  cardModel?: string;
   onlyFields: string[];
   includeArchived: boolean;
   output?: string;
@@ -61,6 +76,7 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'researchAreas',
   'methods',
   'websiteUrl',
+  'website',
   'contactUrl',
   'sourceUrls',
   'inferredPiUserId',
@@ -70,7 +86,13 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'schools',
   'departments',
   'orgAffiliationLabels',
+  'undergradEvidenceQuote',
+  'currentUndergradCount',
   'studentVisibilityTier',
+  'recentGrants',
+  'recentGrantPeriods',
+  'recentGrantCount',
+  'fundingAgencies',
 ] as const;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
@@ -110,6 +132,11 @@ export function parseRematerializeResearchEntitiesArgs(
     slugs: [],
     apply: false,
     confirmRematerialize: false,
+    unbackedProvenance: false,
+    foreignContact: false,
+    unbackedResearchAreas: false,
+    accessSignals: false,
+    resynthesizeCutCards: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -131,6 +158,32 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--include-archived') {
       args.includeArchived = true;
+      continue;
+    }
+    if (arg === '--unbacked-provenance') {
+      args.unbackedProvenance = true;
+      continue;
+    }
+    if (arg === '--foreign-contact') {
+      args.foreignContact = true;
+      continue;
+    }
+    if (arg === '--unbacked-research-areas') {
+      args.unbackedResearchAreas = true;
+      continue;
+    }
+    if (arg === '--access-signals') {
+      args.accessSignals = true;
+      continue;
+    }
+    if (arg === '--resynthesize-cut-cards') {
+      args.resynthesizeCutCards = true;
+      continue;
+    }
+    if (arg.startsWith('--card-model=')) {
+      const model = arg.slice('--card-model='.length).trim();
+      if (!model) throw new Error('--card-model needs a model name.');
+      args.cardModel = model;
       continue;
     }
     if (arg.startsWith('--slugs=')) {
@@ -176,8 +229,42 @@ export function parseRematerializeResearchEntitiesArgs(
     throw new Error(`Unknown rematerialize argument: ${arg}`);
   }
 
-  if (!slugsProvided && !args.reclaimStrandedField) {
-    throw new Error('--slugs or --reclaim-stranded is required');
+  if (
+    !slugsProvided &&
+    !args.reclaimStrandedField &&
+    !args.unbackedProvenance &&
+    !args.foreignContact &&
+    !args.unbackedResearchAreas &&
+    !args.accessSignals
+  ) {
+    throw new Error(
+      '--slugs, --reclaim-stranded, --unbacked-provenance, --foreign-contact, --unbacked-research-areas or --access-signals is required',
+    );
+  }
+  if (
+    args.accessSignals &&
+    (args.unbackedProvenance ||
+      args.foreignContact ||
+      args.unbackedResearchAreas ||
+      args.reclaimStrandedField ||
+      args.onlyFields.length > 0)
+  ) {
+    throw new Error('--access-signals writes access signals only, so it runs on its own');
+  }
+  if (
+    args.unbackedResearchAreas &&
+    (args.unbackedProvenance || args.foreignContact || args.reclaimStrandedField)
+  ) {
+    throw new Error('--unbacked-research-areas writes research areas only, so it runs on its own');
+  }
+  if (args.unbackedProvenance && args.reclaimStrandedField) {
+    throw new Error('--unbacked-provenance writes provenance only, so it cannot reclaim a field');
+  }
+  if (args.foreignContact && (args.unbackedProvenance || args.reclaimStrandedField)) {
+    throw new Error('--foreign-contact writes contact fields only, so it runs on its own');
+  }
+  if (args.foreignContact && args.onlyFields.length > 0) {
+    throw new Error('--foreign-contact is already scoped to the contact fields');
   }
   // A reclaim run selects its cohort by one field being empty, and an unscoped
   // rematerialize over that cohort rewrites every tracked field - which is how a
@@ -185,6 +272,9 @@ export function parseRematerializeResearchEntitiesArgs(
   // field being reclaimed unless the operator asked for a wider scope.
   if (args.reclaimStrandedField && args.onlyFields.length === 0) {
     args.onlyFields = [args.reclaimStrandedField];
+  }
+  if (args.unbackedResearchAreas && args.onlyFields.length === 0) {
+    args.onlyFields = ['researchAreas'];
   }
   return args;
 }
@@ -210,9 +300,24 @@ export interface RematerializeFieldChange {
   after: unknown;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+// Mongoose re-mints a subdocument `_id` on every write, so it carries no content.
+function withoutSubdocumentId(entry: unknown): unknown {
+  if (!isPlainObject(entry)) return entry;
+  const { _id: _ignored, ...content } = entry;
+  return Object.fromEntries(Object.entries(content).sort(([a], [b]) => a.localeCompare(b)));
+}
+
 function normalizeForComparison(value: unknown): unknown {
   if (value === undefined || value === null) return null;
-  if (Array.isArray(value)) return value.map((entry) => normalizeForComparison(entry));
+  if (Array.isArray(value)) {
+    return value.map((entry) => withoutSubdocumentId(normalizeForComparison(entry)));
+  }
   return value;
 }
 
@@ -220,6 +325,103 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   return (
     JSON.stringify(normalizeForComparison(left)) === JSON.stringify(normalizeForComparison(right))
   );
+}
+
+/**
+ * A contact value is withheld from every served payload, and this report is written to
+ * files an operator pastes around, so a contact change is recorded by field name and
+ * direction and never by value.
+ */
+export interface RematerializeWithheldFieldChange {
+  field: string;
+  withheld: 'set' | 'replaced' | 'cleared';
+}
+
+export type RematerializeReportedChange =
+  RematerializeFieldChange | RematerializeWithheldFieldChange;
+
+export function isWithheldChange(
+  change: RematerializeReportedChange,
+): change is RematerializeWithheldFieldChange {
+  return 'withheld' in change;
+}
+
+/**
+ * Every field the run may write, so a write outside the tracked list cannot read as no
+ * change (#3822). The contact fields are always compared because an unscoped pass can
+ * write them too; their values never reach the report.
+ */
+export function rematerializeComparedFields(writeOnlyFields: readonly string[]): string[] {
+  return Array.from(
+    new Set([
+      ...REMATERIALIZE_TRACKED_FIELDS,
+      ...writeOnlyFields,
+      ...RESEARCH_ENTITY_CONTACT_FIELDS,
+    ]),
+  );
+}
+
+function plannedValuesAsStored(
+  plannedSet: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const planned = Object.fromEntries(
+    fields
+      .filter((field) => Object.prototype.hasOwnProperty.call(plannedSet, field))
+      .map((field) => [field, plannedSet[field]]),
+  );
+  const stored = new ResearchEntity(planned).toObject() as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(planned).map(([field, value]) => [field, stored[field] ?? value]),
+  );
+}
+
+/**
+ * The row a dry run's plan would leave, in the same shape an apply re-reads, so the
+ * two modes diff the same way. A re-read omits an unset field, which is why the apply
+ * side must not fall back to the stored value for an absent key, and carries the
+ * schema's subdocument defaults, which is why the plan is cast through the schema.
+ */
+export function rematerializeStateAfterPlan(
+  before: Record<string, unknown>,
+  plannedSet: Record<string, unknown>,
+  plannedUnset: Record<string, unknown>,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const plannedAsStored = plannedValuesAsStored(plannedSet, fields);
+  const after: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(plannedUnset, field)) continue;
+    const value = Object.prototype.hasOwnProperty.call(plannedAsStored, field)
+      ? plannedAsStored[field]
+      : before[field];
+    if (value !== undefined) after[field] = value;
+  }
+  return after;
+}
+
+export function rematerializeReportedChanges(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  fields: readonly string[],
+): RematerializeReportedChange[] {
+  const changes: RematerializeReportedChange[] = [];
+  for (const field of fields) {
+    const beforeValue = before[field];
+    const afterValue = after[field];
+    if (valuesEqual(beforeValue, afterValue)) continue;
+    if (RESEARCH_ENTITY_CONTACT_FIELDS.includes(field)) {
+      const withheld = researchEntityFieldIsStranded(afterValue)
+        ? 'cleared'
+        : researchEntityFieldIsStranded(beforeValue)
+          ? 'set'
+          : 'replaced';
+      changes.push({ field, withheld });
+      continue;
+    }
+    changes.push({ field, before: beforeValue, after: afterValue });
+  }
+  return changes;
 }
 
 export function buildRematerializeFieldChanges(
@@ -246,8 +448,118 @@ export function buildRematerializeFieldChanges(
   return changes;
 }
 
+export interface ForeignContactCandidateRow {
+  _id?: unknown;
+  slug?: unknown;
+  manuallyLockedFields?: unknown;
+  [field: string]: unknown;
+}
+
+/**
+ * The rows `--foreign-contact` reaches: a live row storing an unlocked contact field
+ * that no live observation keyed to the row states (#3609). Returns field names only,
+ * never a value, because the report is pasted around.
+ */
+export function foreignContactFieldsByRow(
+  rows: readonly ForeignContactCandidateRow[],
+  liveContactObservations: ReadonlyArray<{
+    entityId?: unknown;
+    entityKey?: unknown;
+    field?: unknown;
+    value?: unknown;
+  }>,
+): Map<string, string[]> {
+  const statement = (field: unknown, value: unknown) =>
+    `${String(field)}\u0000${typeof value === 'string' ? value.trim() : ''}`;
+  const byRow = new Map<string, string[]>();
+  for (const row of rows) {
+    if (typeof row.slug !== 'string' || !row.slug) continue;
+    const isLocked = (field: string) =>
+      Array.isArray(row.manuallyLockedFields) && row.manuallyLockedFields.includes(field);
+    const statedByRow = new Set(
+      liveContactObservations
+        .filter((observation) => observationIsKeyedToRow(observation, row))
+        .map((observation) => statement(observation.field, observation.value)),
+    );
+    const foreign = RESEARCH_ENTITY_CONTACT_FIELDS.filter(
+      (field) =>
+        typeof row[field] === 'string' &&
+        (row[field] as string).trim().length > 0 &&
+        !isLocked(field) &&
+        !statedByRow.has(statement(field, row[field])),
+    );
+    if (foreign.length > 0) byRow.set(row.slug, foreign);
+  }
+  return byRow;
+}
+
+export function slugsCarryingUnbackedProvenance(
+  rows: ReadonlyArray<{ slug?: unknown; fieldProvenance?: unknown }>,
+): string[] {
+  const slugs = new Set<string>();
+  for (const row of rows) {
+    if (typeof row.slug !== 'string' || !row.slug) continue;
+    const unbacked = fieldProvenanceEntries(row.fieldProvenance).some(([field, entry]) =>
+      fieldProvenanceEntryIsUnbacked(field, entry),
+    );
+    if (unbacked) slugs.add(row.slug);
+  }
+  return Array.from(slugs).sort();
+}
+
+function recordedObservationId(entry: unknown): string | undefined {
+  const observationId = (entry as { observationId?: unknown } | null)?.observationId;
+  return observationId === undefined || observationId === null || String(observationId) === ''
+    ? undefined
+    : String(observationId);
+}
+
+/**
+ * One change per entry that named a lane without evidence before the pass and was either
+ * retired (`after` undefined) or relinked to the observation it cites (`after` names it).
+ */
+export function provenanceReconciliationChanges(
+  before: unknown,
+  after: unknown,
+): RematerializeFieldChange[] {
+  const remaining = new Map(fieldProvenanceEntries(after));
+  const changes: RematerializeFieldChange[] = [];
+  for (const [field, entry] of fieldProvenanceEntries(before)) {
+    if (!fieldProvenanceEntryIsUnbacked(field, entry)) continue;
+    const sourceName = (entry as { sourceName?: unknown } | null)?.sourceName ?? null;
+    if (!remaining.has(field)) {
+      changes.push({ field: `fieldProvenance.${field}`, before: sourceName, after: undefined });
+      continue;
+    }
+    const observationId = recordedObservationId(remaining.get(field));
+    if (observationId && observationId !== recordedObservationId(entry)) {
+      changes.push({
+        field: `fieldProvenance.${field}`,
+        before: sourceName,
+        after: { sourceName, observationId },
+      });
+    }
+  }
+  return changes;
+}
+
+export function countProvenanceReconciliation(
+  entities: ReadonlyArray<{ changes: RematerializeReportedChange[] }>,
+): { retired: number; relinked: number } {
+  let retired = 0;
+  let relinked = 0;
+  for (const entity of entities) {
+    for (const change of entity.changes) {
+      if (isWithheldChange(change) || !change.field.startsWith('fieldProvenance.')) continue;
+      if (change.after === undefined) retired += 1;
+      else relinked += 1;
+    }
+  }
+  return { retired, relinked };
+}
+
 export function rematerializeChangeAffectsVisibilityGate(
-  changes: RematerializeFieldChange[],
+  changes: RematerializeReportedChange[],
 ): boolean {
   return changes.some((change) => change.field !== 'studentVisibilityTier');
 }
@@ -258,10 +570,109 @@ export interface RematerializeEntityReport {
   entityId?: string;
   studentVisibilityTierBefore?: unknown;
   fieldsWritten?: number;
+  materializerFieldsWritten?: number;
   conflicts?: number;
-  changes: RematerializeFieldChange[];
+  changes: RematerializeReportedChange[];
+  clearedContactFields?: string[];
+  unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  accessSignalChanges?: AccessSignalChangePlan;
   skipped?: string;
   error?: string;
+}
+
+/**
+ * `fieldsWritten` and `clearedContactFields` are read off `changes`, the same list
+ * `entitiesChanged` counts, so the three cannot disagree. The materializer's own count
+ * is kept apart because it also counts a planned value equal to the stored one.
+ */
+export function rematerializeEntityReportFromChanges(input: {
+  slug: string;
+  entityId?: string;
+  studentVisibilityTierBefore?: unknown;
+  materializerFieldsWritten?: number;
+  conflicts?: number;
+  changes: RematerializeReportedChange[];
+  foreignContact: boolean;
+  unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  skipped?: string;
+}): RematerializeEntityReport {
+  return {
+    slug: input.slug,
+    found: true,
+    entityId: input.entityId,
+    studentVisibilityTierBefore: input.studentVisibilityTierBefore,
+    fieldsWritten: input.changes.length,
+    materializerFieldsWritten: input.materializerFieldsWritten,
+    conflicts: input.conflicts,
+    changes: input.changes,
+    ...(input.foreignContact
+      ? {
+          clearedContactFields: input.changes
+            .filter((change) => isWithheldChange(change) && change.withheld === 'cleared')
+            .map((change) => change.field),
+        }
+      : {}),
+    ...(input.unbackedResearchAreas ? { unbackedResearchAreas: input.unbackedResearchAreas } : {}),
+    skipped: input.skipped,
+  };
+}
+
+function researchAreaChipList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((area): area is string => typeof area === 'string')
+    : [];
+}
+
+export function countResearchAreaChipChanges(changes: readonly RematerializeReportedChange[]): {
+  added: number;
+  removed: number;
+} {
+  let added = 0;
+  let removed = 0;
+  for (const change of changes) {
+    if (change.field !== 'researchAreas' || isWithheldChange(change)) continue;
+    const before = researchAreaChipList(change.before);
+    const after = researchAreaChipList(change.after);
+    added += after.filter((area) => !before.includes(area)).length;
+    removed += before.filter((area) => !after.includes(area)).length;
+  }
+  return { added, removed };
+}
+
+export function summarizeRematerializeEntities(
+  entities: readonly RematerializeEntityReport[],
+  options: { foreignContact: boolean },
+): {
+  entitiesChanged: number;
+  fieldsWritten: number;
+  clearedContactFields?: number;
+  unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>>;
+  researchAreaChips: { added: number; removed: number };
+} {
+  let entitiesChanged = 0;
+  let fieldsWritten = 0;
+  let clearedContactFields = 0;
+  const unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
+  const researchAreaChips = { added: 0, removed: 0 };
+  for (const entity of entities) {
+    const chips = countResearchAreaChipChanges(entity.changes);
+    researchAreaChips.added += chips.added;
+    researchAreaChips.removed += chips.removed;
+    if (entity.changes.length > 0) entitiesChanged += 1;
+    fieldsWritten += entity.changes.length;
+    clearedContactFields += entity.clearedContactFields?.length ?? 0;
+    if (entity.unbackedResearchAreas) {
+      unbackedResearchAreas[entity.unbackedResearchAreas] =
+        (unbackedResearchAreas[entity.unbackedResearchAreas] ?? 0) + 1;
+    }
+  }
+  return {
+    entitiesChanged,
+    fieldsWritten,
+    ...(options.foreignContact ? { clearedContactFields } : {}),
+    unbackedResearchAreas,
+    researchAreaChips,
+  };
 }
 
 /**
@@ -318,7 +729,33 @@ export interface RematerializeRegateCandidate {
   entityId?: string;
   found: boolean;
   skipped?: string;
-  changes: RematerializeFieldChange[];
+  changes: RematerializeReportedChange[];
+  accessSignalChanges?: AccessSignalChangePlan;
+}
+
+function accessSignalsChanged(changes: AccessSignalChangePlan | undefined): boolean {
+  return Boolean(changes && changes.retired.length + changes.revived.length > 0);
+}
+
+export function summarizeAccessSignalChanges(reports: readonly RematerializeRegateCandidate[]): {
+  entitiesChanged: number;
+  retiredByKey: Record<string, number>;
+  revivedByKey: Record<string, number>;
+} {
+  const retiredByKey: Record<string, number> = {};
+  const revivedByKey: Record<string, number> = {};
+  let entitiesChanged = 0;
+  for (const report of reports) {
+    if (!accessSignalsChanged(report.accessSignalChanges)) continue;
+    entitiesChanged += 1;
+    for (const change of report.accessSignalChanges?.retired ?? []) {
+      retiredByKey[change.derivationKey] = (retiredByKey[change.derivationKey] ?? 0) + 1;
+    }
+    for (const change of report.accessSignalChanges?.revived ?? []) {
+      revivedByKey[change.derivationKey] = (revivedByKey[change.derivationKey] ?? 0) + 1;
+    }
+  }
+  return { entitiesChanged, retiredByKey, revivedByKey };
 }
 
 export function selectRematerializeRegateEntityIds(
@@ -327,7 +764,12 @@ export function selectRematerializeRegateEntityIds(
   const entityIds = new Set<string>();
   for (const report of reports) {
     if (!report.found || report.skipped || !report.entityId) continue;
-    if (rematerializeChangeAffectsVisibilityGate(report.changes)) entityIds.add(report.entityId);
+    if (
+      rematerializeChangeAffectsVisibilityGate(report.changes) ||
+      accessSignalsChanged(report.accessSignalChanges)
+    ) {
+      entityIds.add(report.entityId);
+    }
   }
   return Array.from(entityIds);
 }

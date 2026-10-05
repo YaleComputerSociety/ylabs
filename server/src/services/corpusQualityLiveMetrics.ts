@@ -3,7 +3,8 @@
  *
  * Measured on 3,120 served Development rows: this returns byte-identical counts
  * to the roster-resolved representation pass for every metric it covers, in
- * ~150ms against ~13,000ms. So routing these through the representation bought
+ * ~150ms against ~13,000ms before #4093 memoized the repeated field-quality
+ * scoring. So routing these through the representation bought
  * nothing and cost a live answer. The three metrics NOT here - lead sentence,
  * card-summary echo, and the public-description invariant - genuinely need the
  * representation and its quality rules, and stay snapshot-backed.
@@ -39,10 +40,7 @@ export interface CorpusQualityLiveMetrics {
   };
   richness: {
     hasResearchWebsite: CorpusQualityRatio;
-    hasTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    topicTotal: CorpusQualityRatio;
-    noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
@@ -50,7 +48,6 @@ export interface CorpusQualityLiveMetrics {
 }
 
 const hasText = (field: string) => ({ $gt: [{ $strLenCP: { $ifNull: [field, ''] } }, 0] });
-const topicCount = { $size: { $ifNull: ['$researchAreas', []] } };
 const sourceUrlCount = { $size: { $ifNull: ['$sourceUrls', []] } };
 const countWhen = (condition: unknown) => ({ $sum: { $cond: [condition, 1, 0] } });
 
@@ -95,12 +92,7 @@ export async function readCorpusQualityLiveMetrics(
               _id: null,
               studentReady: { $sum: 1 },
               hasResearchWebsite: countWhen(hasWebsite),
-              hasTopic: countWhen({ $gt: [topicCount, 0] }),
               hasSourceUrl: countWhen({ $gt: [sourceUrlCount, 0] }),
-              topicTotal: { $sum: topicCount },
-              noResearchWebsiteAndNoTopics: countWhen({
-                $and: [{ $not: hasWebsite }, { $eq: [topicCount, 0] }],
-              }),
               nameIsGenericFacultyResearchTitle: countWhen({
                 $regexMatch: {
                   input: { $ifNull: ['$name', ''] },
@@ -118,10 +110,7 @@ export async function readCorpusQualityLiveMetrics(
   const served = facet?.served?.[0] || {
     studentReady: 0,
     hasResearchWebsite: 0,
-    hasTopic: 0,
     hasSourceUrl: 0,
-    topicTotal: 0,
-    noResearchWebsiteAndNoTopics: 0,
     nameIsGenericFacultyResearchTitle: 0,
   };
   const of = served.studentReady;
@@ -140,10 +129,7 @@ export async function readCorpusQualityLiveMetrics(
     },
     richness: {
       hasResearchWebsite: ratio(served.hasResearchWebsite),
-      hasTopic: ratio(served.hasTopic),
       hasSourceUrl: ratio(served.hasSourceUrl),
-      topicTotal: ratio(served.topicTotal),
-      noResearchWebsiteAndNoTopics: ratio(served.noResearchWebsiteAndNoTopics),
     },
     description: {
       nameIsGenericFacultyResearchTitle: ratio(served.nameIsGenericFacultyResearchTitle),

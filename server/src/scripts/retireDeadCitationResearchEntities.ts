@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { archivedEntityUpdate } from '../models/entityArchival';
+import {
+  archiveResearchEntities,
+  emptyRoleEdgeSettlementOutcome,
+} from '../services/archivedResearchEntityRoleEdges';
+import { emptyAccessSignalSettlementOutcome } from '../services/archivedResearchEntityAccessSignals';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -18,9 +22,9 @@ import {
   type DeadCitationCandidate,
 } from './retireDeadCitationResearchEntitiesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:retire-dead-citation-entities';
 const DEFAULT_MAX_APPLY = 100;
@@ -126,6 +130,8 @@ async function main(): Promise<void> {
   const toApply = plan.toArchive.slice(0, args.maxApply);
 
   let archived = 0;
+  let roleEdges = emptyRoleEdgeSettlementOutcome();
+  let accessSignals = emptyAccessSignalSettlementOutcome();
   let search: { requested: number; deleted: boolean; error?: string } = {
     requested: 0,
     deleted: false,
@@ -136,11 +142,10 @@ async function main(): Promise<void> {
       .map((entry) => entry.id)
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
-    const result = await ResearchEntity.updateMany(
-      { _id: { $in: objectIds }, archived: { $ne: true } },
-      archivedEntityUpdate(SCRIPT_NAME),
-    );
-    archived = result.modifiedCount ?? 0;
+    const result = await archiveResearchEntities({ ids: objectIds, archivedReason: SCRIPT_NAME });
+    archived = result.archived;
+    roleEdges = result.roleEdges;
+    accessSignals = result.accessSignals;
     search = await deleteSearchDocuments(
       toApply.map((entry) => entry.id),
       getMeiliIndex,
@@ -157,6 +162,8 @@ async function main(): Promise<void> {
     refusedByReason: summarizeDeadCitationRefusals(plan.refused),
     appliedLimit: args.maxApply,
     archived,
+    roleEdges,
+    accessSignals,
     search: {
       ...search,
       rebuildGuidance:

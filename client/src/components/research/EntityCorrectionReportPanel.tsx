@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import useModalDialog from '../../hooks/useModalDialog';
 import axios from '../../utils/axios';
 
 type ReportStatus = 'unreviewed' | 'accepted' | 'dismissed';
@@ -57,6 +58,14 @@ export default function EntityCorrectionReportPanel({
   const [reports, setReports] = useState<CorrectionReport[]>([]);
   const [feedback, setFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const closeDialog = useCallback(() => setOpen(false), []);
+  const { overlayRef, dialogRef, initialFocusRef, handleDialogKeyDown } =
+    useModalDialog<HTMLSelectElement>(open, closeDialog);
+
+  const openDialog = () => {
+    setFeedback('');
+    setOpen(true);
+  };
 
   const loadHistory = useCallback(() => {
     axios
@@ -94,16 +103,14 @@ export default function EntityCorrectionReportPanel({
 
   return (
     <section className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-        See something wrong?
-      </h2>
+      <h2 className="yr-kicker">See something wrong?</h2>
       <p className="mt-2 text-sm text-ink-soft">
         This page is assembled from public sources and may be inaccurate. Signed-in members can flag
         an issue for our team to review.
       </p>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         className="yr-focus-ring mt-3 min-h-11 rounded-control border border-line px-4 py-2 text-sm font-semibold text-brand"
       >
         Report an issue with this page
@@ -127,74 +134,76 @@ export default function EntityCorrectionReportPanel({
       )}
       {open && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="report-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setOpen(false);
-          }}
+          ref={overlayRef}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
         >
-          <form
-            onSubmit={(event) => void submit(event)}
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-title"
+            onKeyDown={handleDialogKeyDown}
             className="w-full max-w-lg rounded-overlay bg-white p-6 shadow-yr-modal"
           >
-            <h2 id="report-title" className="text-lg font-semibold text-ink">
-              Report an issue
-            </h2>
-            <p className="mt-1 text-sm text-muted">{entityName}</p>
-            <label className="mt-4 block text-sm font-medium text-ink" htmlFor="report-category">
-              What is wrong?
-            </label>
-            <select
-              id="report-category"
-              value={category}
-              onChange={(event) => setCategory(event.target.value as ReportCategory)}
-              className="mt-1 min-h-11 w-full rounded-control border border-line-strong px-3"
-            >
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <label className="mt-4 block text-sm font-medium text-ink" htmlFor="report-note">
-              Add details (optional)
-            </label>
-            <textarea
-              id="report-note"
-              maxLength={MAX_NOTE_LENGTH}
-              rows={5}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              className="mt-1 w-full rounded-card border border-line-strong p-3"
-            />
-            <p className="mt-2 text-xs text-muted">
-              Your netid is included so our team can follow up. Reports are reviewed by a person and
-              never publish content directly.
-            </p>
-            {feedback && (
-              <p role="status" className="mt-3 text-sm text-ink">
-                {feedback}
+            <form onSubmit={(event) => void submit(event)}>
+              <h2 id="report-title" className="text-lg font-semibold text-ink">
+                Report an issue
+              </h2>
+              <p className="mt-1 text-sm text-muted">{entityName}</p>
+              <label className="mt-4 block text-sm font-medium text-ink" htmlFor="report-category">
+                What is wrong?
+              </label>
+              <select
+                ref={initialFocusRef}
+                id="report-category"
+                value={category}
+                onChange={(event) => setCategory(event.target.value as ReportCategory)}
+                className="mt-1 min-h-11 w-full rounded-control border border-line-control px-3"
+              >
+                {CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <label className="mt-4 block text-sm font-medium text-ink" htmlFor="report-note">
+                Add details (optional)
+              </label>
+              <textarea
+                id="report-note"
+                maxLength={MAX_NOTE_LENGTH}
+                rows={5}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                className="mt-1 w-full rounded-card border border-line-control p-3"
+              />
+              <p className="mt-2 text-xs text-muted">
+                Your netid is included so our team can follow up. Reports are reviewed by a person
+                and never publish content directly.
               </p>
-            )}
-            <div className="mt-5 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="min-h-11 px-4 text-sm font-semibold text-ink-soft yr-focus-ring"
-              >
-                Close
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="min-h-11 rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
-              >
-                {submitting ? 'Submitting...' : 'Submit report'}
-              </button>
-            </div>
-          </form>
+              {feedback && (
+                <p role="status" className="mt-3 text-sm text-ink">
+                  {feedback}
+                </p>
+              )}
+              <div className="mt-5 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeDialog}
+                  className="min-h-11 px-4 text-sm font-semibold text-ink-soft yr-focus-ring"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="min-h-11 rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 yr-focus-ring"
+                >
+                  {submitting ? 'Submitting…' : 'Submit report'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </section>

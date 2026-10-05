@@ -5,11 +5,20 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { archivedEntityUpdate } from '../models/entityArchival';
+import {
+  archiveResearchEntities,
+  emptyRoleEdgeSettlementOutcome,
+  type RoleEdgeSettlementOutcome,
+} from '../services/archivedResearchEntityRoleEdges';
+import {
+  emptyAccessSignalSettlementOutcome,
+  type AccessSignalSettlementOutcome,
+} from '../services/archivedResearchEntityAccessSignals';
 import { Fellowship } from '../models/fellowship';
 import { Signal } from '../models/signal';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -21,7 +30,7 @@ import {
   type RetireProgramResearchEntitiesPlan,
 } from './retireProgramResearchEntitiesCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const SCRIPT_NAME = 'research-entity:retire-program-entities';
@@ -159,7 +168,9 @@ async function loadProgramResearchEntityCandidates(): Promise<ProgramResearchEnt
     } else if (fellowshipTitles.has(normalizeFellowshipTitle(name || slug))) {
       fellowshipMatchKey = 'title';
     }
-    const signalCount = await Signal.countDocuments({ researchEntityId: entity._id });
+    const signalCount = await Signal.countDocuments({
+      researchEntityId: entity._id as mongoose.Types.ObjectId,
+    });
     candidates.push({
       id,
       ...(slug ? { slug } : {}),
@@ -191,7 +202,12 @@ async function deleteProgramSearchDocuments(
   if (ids.length === 0) return { requested: 0, deleted: false };
   try {
     const index = await getIndex(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-    await index.deleteDocuments(ids);
+    await assertMeiliTaskSucceeded(
+      index,
+      await index.deleteDocuments(ids),
+      'deleteDocuments',
+      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    );
     return { requested: ids.length, deleted: true };
   } catch (error) {
     return { requested: ids.length, deleted: false, error: String(sanitizeLogValue(error)) };
@@ -202,6 +218,8 @@ export interface RetireProgramResearchEntitiesResult {
   mode: 'dry-run' | 'apply';
   plan: RetireProgramResearchEntitiesPlan;
   archivedResearchEntities: number;
+  roleEdges: RoleEdgeSettlementOutcome;
+  accessSignals: AccessSignalSettlementOutcome;
   search: ProgramSearchDocumentRemoval;
 }
 
@@ -222,17 +240,18 @@ export async function retireProgramResearchEntities(options: {
   });
 
   let archivedResearchEntities = 0;
+  let roleEdges = emptyRoleEdgeSettlementOutcome();
+  let accessSignals = emptyAccessSignalSettlementOutcome();
   let search: ProgramSearchDocumentRemoval = { requested: 0, deleted: false };
 
   if (options.apply && plan.toArchive.length > 0) {
     const objectIds = plan.toArchive
       .filter((id) => mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
-    const result = await ResearchEntity.updateMany(
-      { _id: { $in: objectIds } },
-      archivedEntityUpdate(SCRIPT_NAME),
-    );
-    archivedResearchEntities = result.modifiedCount || 0;
+    const result = await archiveResearchEntities({ ids: objectIds, archivedReason: SCRIPT_NAME });
+    archivedResearchEntities = result.archived;
+    roleEdges = result.roleEdges;
+    accessSignals = result.accessSignals;
     search = {
       ...(await deleteProgramSearchDocuments(plan.toArchive, options.getIndex || getMeiliIndex)),
       rebuildGuidance:
@@ -244,6 +263,8 @@ export async function retireProgramResearchEntities(options: {
     mode: options.apply ? 'apply' : 'dry-run',
     plan,
     archivedResearchEntities,
+    roleEdges,
+    accessSignals,
     search,
   };
 }

@@ -3,7 +3,7 @@
  */
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
@@ -85,7 +85,7 @@ const AdminDepartments = () => {
     } catch {
       console.error('Error fetching departments.');
       dispatch({ type: 'FETCH_FAILURE' });
-      void swal({ text: 'Failed to fetch departments', icon: 'error' });
+      void showAlert({ text: 'Failed to fetch departments', tone: 'error' });
     }
   };
 
@@ -95,7 +95,7 @@ const AdminDepartments = () => {
 
   const handleAdd = async () => {
     if (!newDraft.abbr.trim() || !newDraft.name.trim()) {
-      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void showAlert({ text: 'Abbreviation and name are required', tone: 'warning' });
       return;
     }
 
@@ -112,15 +112,18 @@ const AdminDepartments = () => {
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
       void fetchDepartments();
-      void swal({ text: 'Department added', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Department added', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to add department'), icon: 'error' });
+      void showAlert({
+        text: clientErrorMessage(error, 'Failed to add department'),
+        tone: 'error',
+      });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.abbr.trim() || !editDraft.name.trim()) {
-      void swal({ text: 'Abbreviation and name are required', icon: 'warning' });
+      void showAlert({ text: 'Abbreviation and name are required', tone: 'warning' });
       return;
     }
 
@@ -139,19 +142,22 @@ const AdminDepartments = () => {
       );
       dispatch({ type: 'CANCEL_EDIT' });
       void fetchDepartments();
-      void swal({ text: 'Department updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Department updated', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to update department'), icon: 'error' });
+      void showAlert({
+        text: clientErrorMessage(error, 'Failed to update department'),
+        tone: 'error',
+      });
     }
   };
 
   const handleDelete = async (dept: DepartmentDoc) => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Department',
       text: `Delete "${dept.displayName}"? This cannot be undone. Listings referencing this department will NOT be automatically updated.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
 
     if (!confirmed) return;
@@ -159,9 +165,9 @@ const AdminDepartments = () => {
     try {
       await axios.delete(`/admin/departments/${dept._id}`, { withCredentials: true });
       void fetchDepartments();
-      void swal({ text: 'Department deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Department deleted', tone: 'success', autoCloseMs: 1500 });
     } catch {
-      void swal({ text: 'Failed to delete department', icon: 'error' });
+      void showAlert({ text: 'Failed to delete department', tone: 'error' });
     }
   };
 
@@ -189,41 +195,41 @@ const AdminDepartments = () => {
   return (
     <div>
       <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Department</h3>
+        <h3 className="text-sm font-semibold text-ink-soft mb-3">Add New Department</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="w-28">
-            <label className="block text-xs text-gray-500 mb-1">Abbreviation</label>
+            <label className="block text-xs text-muted mb-1">Abbreviation</label>
             <input
               value={newDraft.abbr}
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { abbr: e.target.value } })
               }
               placeholder="e.g. CPSC"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring uppercase"
+              className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring uppercase"
             />
           </div>
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Full Name</label>
+            <label className="block text-xs text-muted mb-1">Full Name</label>
             <input
               value={newDraft.name}
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
               }
               placeholder="e.g. Computer Science"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
+              className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleAdd();
               }}
             />
           </div>
           <div className="min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Category</label>
+            <label className="block text-xs text-muted mb-1">Category</label>
             <select
               value={newDraft.category}
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { category: e.target.value } })
               }
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
+              className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring"
             >
               {DEPARTMENT_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -245,8 +251,8 @@ const AdminDepartments = () => {
         <input
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          placeholder="Filter departments..."
-          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
+          placeholder="Filter departments…"
+          className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
         <div className="text-xs text-muted mt-1">{filtered.length} departments</div>
       </div>
@@ -256,24 +262,24 @@ const AdminDepartments = () => {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-[var(--yr-panel-muted)] border-b">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Abbr</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Display Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Category</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Active</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Abbr</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Display Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Category</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Active</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500">
-                    Loading...
+                  <td colSpan={6} className="text-center py-8 text-muted">
+                    Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-8 text-gray-500">
+                  <td colSpan={6} className="text-center py-8 text-muted">
                     No departments found
                   </td>
                 </tr>
@@ -287,7 +293,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { abbr: e.target.value } })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-20 uppercase yr-focus-ring"
+                          className="min-h-[44px] border border-[var(--yr-line-control)] rounded px-2 py-1 text-sm w-20 uppercase yr-focus-ring"
                           autoFocus
                         />
                       ) : (
@@ -301,7 +307,7 @@ const AdminDepartments = () => {
                           onChange={(e) =>
                             dispatch({ type: 'SET_EDIT_DRAFT', payload: { name: e.target.value } })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
+                          className="min-h-[44px] border border-[var(--yr-line-control)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') void handleUpdate(dept._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
@@ -311,7 +317,7 @@ const AdminDepartments = () => {
                         dept.name
                       )}
                     </td>
-                    <td className="py-2 px-4 text-xs text-gray-500">{dept.displayName}</td>
+                    <td className="py-2 px-4 text-xs text-muted">{dept.displayName}</td>
                     <td className="py-2 px-4">
                       {editingId === dept._id && editDraft ? (
                         <select
@@ -322,7 +328,7 @@ const AdminDepartments = () => {
                               payload: { category: e.target.value },
                             })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm yr-focus-ring"
+                          className="min-h-[44px] border border-[var(--yr-line-control)] rounded px-2 py-1 text-sm yr-focus-ring"
                         >
                           {DEPARTMENT_CATEGORIES.map((c) => (
                             <option key={c} value={c}>
@@ -334,7 +340,7 @@ const AdminDepartments = () => {
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
                             CATEGORY_COLORS[dept.primaryCategory] ||
-                            'bg-[var(--yr-panel-muted)] text-gray-700'
+                            'bg-[var(--yr-panel-muted)] text-ink-soft'
                           }`}
                         >
                           {dept.primaryCategory}
@@ -375,7 +381,7 @@ const AdminDepartments = () => {
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
+                              className="yr-secondary-action min-h-[44px] rounded px-2 py-1 text-xs yr-focus-ring"
                             >
                               Cancel
                             </button>

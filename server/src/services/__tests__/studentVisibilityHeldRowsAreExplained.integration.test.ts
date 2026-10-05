@@ -131,7 +131,7 @@ describe('every held research row records why it is held (#2818)', () => {
     await mongoose.connection.db!.collection('fellowships').insertMany(seedPrograms() as any[]);
     plans = await planStudentVisibilityGate({ collection: 'research', mode: 'dry-run' });
     allPlans = await planStudentVisibilityGate({ collection: 'all', mode: 'dry-run' });
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();

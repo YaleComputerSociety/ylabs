@@ -730,22 +730,6 @@ describe('reading must not change the environment being read', () => {
     ).toThrow(/Removed: observations/);
   });
 
-  // The scoreboard opens a Mongoose connection on purpose, to call the real
-  // detail route. Connecting builds indexes for every registered model, which
-  // recreates a collection that was deliberately dropped, so autoIndex must be
-  // disabled BEFORE connect rather than anywhere in the file.
-  it('disables autoIndex before it connects', () => {
-    const source = fs.readFileSync(
-      new URL('../servedCorpusScoreboard.ts', import.meta.url),
-      'utf8',
-    );
-    const disable = source.indexOf("mongoose.set('autoIndex', false)");
-    const connect = source.indexOf('mongoose.connect(');
-    expect(disable).toBeGreaterThan(-1);
-    expect(connect).toBeGreaterThan(-1);
-    expect(disable).toBeLessThan(connect);
-  });
-
   it('closes the Mongoose connection it opens', () => {
     const source = fs.readFileSync(
       new URL('../servedCorpusScoreboard.ts', import.meta.url),

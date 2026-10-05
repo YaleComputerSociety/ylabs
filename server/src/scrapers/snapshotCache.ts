@@ -6,6 +6,11 @@
  */
 import { ScrapeSnapshot } from '../models/scrapeSnapshot';
 import { escapeRegex } from '../utils/regex';
+import {
+  benchmarkCacheRead,
+  benchmarkCacheWrite,
+  isLiveModelReplayActive,
+} from './snapshotBenchmarkMode';
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_REQUEST_KEY_PREFIX_LENGTH = 512;
@@ -14,6 +19,8 @@ export async function getCached<T = unknown>(
   sourceName: string,
   requestKey: string,
 ): Promise<T | null> {
+  const benchmark = benchmarkCacheRead(sourceName, requestKey);
+  if (benchmark.handled) return benchmark.payload as T | null;
   const row = await ScrapeSnapshot.findOne({ sourceName, requestKey }).lean();
   if (!row) return null;
   if ((row as any).expiresAt && new Date((row as any).expiresAt).getTime() < Date.now()) {
@@ -23,12 +30,25 @@ export async function getCached<T = unknown>(
   return (row as any).payload as T;
 }
 
+/**
+ * A lane's own cache of a model's answer. A live-model replay reads past it, because serving
+ * the frozen answer would measure the capture's model run rather than a new one.
+ */
+export async function getCachedModelAnswer<T = unknown>(
+  sourceName: string,
+  requestKey: string,
+): Promise<T | null> {
+  if (isLiveModelReplayActive()) return null;
+  return getCached<T>(sourceName, requestKey);
+}
+
 export async function setCached<T = unknown>(
   sourceName: string,
   requestKey: string,
   payload: T,
   ttlMs: number = DEFAULT_TTL_MS,
 ): Promise<void> {
+  if (benchmarkCacheWrite(sourceName, requestKey, payload)) return;
   const expiresAt = new Date(Date.now() + ttlMs);
   await ScrapeSnapshot.updateOne(
     { sourceName, requestKey },

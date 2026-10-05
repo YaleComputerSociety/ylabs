@@ -21,7 +21,10 @@ export enum AnalyticsEventType {
   // source inspection and planning activity can never be mistaken for access
   // conversion.
   RESEARCH_SEARCH = 'research_search',
+  // Retired per-entity impression rows. Kept so stored rows stay valid until the
+  // TTL expires them; clients now send one RESEARCH_RESULTS_VIEW per result page.
   RESEARCH_ENTITY_IMPRESSION = 'research_entity_impression',
+  RESEARCH_RESULTS_VIEW = 'research_results_view',
   RESEARCH_PROFILE_OPEN = 'research_profile_open',
   RESEARCH_SOURCE_REVIEW = 'research_source_review',
   RESEARCH_FILTER_CHANGE = 'research_filter_change',
@@ -65,6 +68,10 @@ const analyticsEventSchema = new mongoose.Schema(
     entityId: {
       type: String,
       index: true,
+    },
+    entityIds: {
+      type: [String],
+      default: undefined,
     },
     searchQuery: {
       type: String,

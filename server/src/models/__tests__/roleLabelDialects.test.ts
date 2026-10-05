@@ -136,8 +136,7 @@ describe('leadVerification judgements store canonical values', () => {
    */
   it('either carries no enum or carries the canonical one', () => {
     const judgementRole = ResearchEntity.schema.path('leadVerification.leads.role') as
-      | { enumValues?: string[] }
-      | undefined;
+      { enumValues?: string[] } | undefined;
     const enumValues = judgementRole?.enumValues;
     if (!enumValues || enumValues.length === 0) return;
     for (const canonical of LEAD_ROLE_CANONICAL_VALUES) {

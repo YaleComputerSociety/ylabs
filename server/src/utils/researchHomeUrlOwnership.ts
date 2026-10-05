@@ -8,10 +8,7 @@
  * asks the corpus instead, and abstains rather than guessing.
  */
 export type ResearchHomeUrlOwnershipBasis =
-  | 'index_authority'
-  | 'name_matches_url_label'
-  | 'joint_label_abstained'
-  | 'undecidable';
+  'index_authority' | 'name_matches_url_label' | 'joint_label_abstained' | 'undecidable';
 
 export interface ResearchHomeUrlOwnershipCandidate {
   id: string;

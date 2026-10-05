@@ -12,11 +12,18 @@ import {
   isNonSelfContainedShortDescription,
   isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
+  isResearchInterestsSentence,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   isStudiesTemplateGlueMalformed,
   stripLeadingRoleTitleHeaderSentences,
 } from './descriptionHygiene';
+import { pressFeatureDescriptionShape } from './descriptionPressFeatureShape';
+import {
+  isPracticeBiographyWithoutResearch,
+  nonResearchBodyShape,
+} from './descriptionNonResearchBodyShape';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -24,6 +31,7 @@ import {
   isResearchEntitySourceChromeText,
   isRoleOnlyTitleFragment,
   isSyntheticResearchHomeMetadataDescription,
+  namesResearchTopics,
   publicResearchEntityDescriptionText,
 } from './researchEntityDescriptionText';
 
@@ -57,6 +65,10 @@ export type DescriptionQualityFlag =
   | 'ungrounded-topic-short'
   | 'grant-significance-boilerplate'
   | 'fundraising-appeal'
+  | 'role-biography'
+  | 'third-party-page'
+  | 'instruction-offering'
+  | 'practice-biography'
   | 'full-not-useful';
 
 export interface ResearchEntityDescriptionQualityInput {
@@ -76,6 +88,62 @@ export interface FieldQuality {
   flags: DescriptionQualityFlag[];
 }
 
+/**
+ * One derivation's field-quality verdicts, reused within that derivation.
+ *
+ * `shortDescriptionQuality` re-scores the body it is compared against, and the card
+ * synthesis templates score one candidate after another against that same body, so a
+ * single row used to score its body once per candidate. Measured on a Development
+ * browse page of 24 rows, 146 body scores and 116 card scores covered 28 and 26
+ * distinct inputs.
+ *
+ * The scope is one synchronous derivation rather than the process, because a verdict
+ * must not outlive the inputs the research-area checks read. An async callback
+ * therefore memoizes nothing at all: the scope closes at the first suspension point,
+ * which loses the reuse rather than sharing a verdict between requests.
+ */
+let activeFieldQualityVerdicts: Map<string, FieldQuality> | null = null;
+
+export function withMemoizedDescriptionQuality<T>(derive: () => T): T {
+  if (activeFieldQualityVerdicts) return derive();
+  activeFieldQualityVerdicts = new Map();
+  try {
+    return derive();
+  } finally {
+    activeFieldQualityVerdicts = null;
+  }
+}
+
+// A fresh verdict per call, so a caller that mutates the flag list it is handed
+// cannot reach the verdict a later call in the same derivation is served.
+const copyOfFieldQuality = (quality: FieldQuality): FieldQuality => ({
+  ...quality,
+  flags: [...quality.flags],
+});
+
+const fieldQualityMemoKey = (kind: string, args: readonly unknown[]): string | null => {
+  try {
+    return `${kind}\u0000${JSON.stringify(args)}`;
+  } catch {
+    return null;
+  }
+};
+
+const memoizedFieldQuality = (
+  kind: string,
+  args: readonly unknown[],
+  compute: () => FieldQuality,
+): FieldQuality => {
+  const verdicts = activeFieldQualityVerdicts;
+  const key = verdicts ? fieldQualityMemoKey(kind, args) : null;
+  if (!verdicts || key === null) return compute();
+  const cached = verdicts.get(key);
+  if (cached) return copyOfFieldQuality(cached);
+  const computed = compute();
+  verdicts.set(key, computed);
+  return copyOfFieldQuality(computed);
+};
+
 export interface ResearchEntityDescriptionQuality {
   full: FieldQuality;
   short: FieldQuality;
@@ -88,19 +156,32 @@ const textValue = (value: unknown): string =>
 
 const INITIAL_DOT_TOKEN = '<initialdot>';
 
-const sentenceList = (value: string): string[] => {
-  const protectedText = textValue(value)
+const protectAbbreviationDots = (value: string): string =>
+  textValue(value)
     .replace(/(\d)\.(?=\d)/g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\bU\.S\./g, `U${INITIAL_DOT_TOKEN}S${INITIAL_DOT_TOKEN}`)
     .replace(/\bPh\.D\./g, `Ph${INITIAL_DOT_TOKEN}D${INITIAL_DOT_TOKEN}`)
     .replace(/\b(Dr|Prof|Mr|Mrs|Ms|St)\./g, `$1${INITIAL_DOT_TOKEN}`)
     .replace(/\b([A-Z])\.(?=\s+[A-Z][A-Za-z.'-]+)/g, `$1${INITIAL_DOT_TOKEN}`);
-  return (
-    protectedText
-      .match(/[^.!?]+[.!?]+(?:\s|$|(?=[A-Z]))|[^.!?]+$/g)
-      ?.map((sentence) => sentence.split(INITIAL_DOT_TOKEN).join('.').trim()) || []
+
+const splitProtectedSentences = (protectedText: string): string[] =>
+  protectedText
+    .match(/[^.!?]+[.!?]+(?:\s|$|(?=[A-Z]))|[^.!?]+$/g)
+    ?.map((sentence) => sentence.split(INITIAL_DOT_TOKEN).join('.').trim()) || [];
+
+const sentenceList = (value: string): string[] =>
+  splitProtectedSentences(protectAbbreviationDots(value));
+
+// Scoped to the program card until the wider splitter is measured: on Development it
+// re-splits 189 of 8033 research descriptions ("C. elegans", "D.Phil."), which feed
+// stored-description guards as well as cards (#4586).
+const programCardSentenceList = (value: string): string[] =>
+  splitProtectedSentences(
+    protectAbbreviationDots(value).replace(
+      /\b([A-Z])\.(?=[A-Za-z]|\s+[^\sA-Z])/g,
+      `$1${INITIAL_DOT_TOKEN}`,
+    ),
   );
-};
 
 const wordCount = (value: string): number => textValue(value).split(/\s+/).filter(Boolean).length;
 
@@ -253,9 +334,15 @@ const hasPaperFragment = (value: string): boolean =>
 const DEGREE_LEVEL_STUDIES_PROGRAM =
   /\b(?:Graduate|Undergraduate|Postgraduate|Doctoral|Professional)\s+Studies\b/g;
 
+// The same noun in a career narrative names a stage of training, not a subject:
+// "During my Ph.D. studies, I was awarded ..." read as a research verb and let an
+// award sentence pass as a card that states research.
+const DEGREE_STAGE_STUDIES_NOUN =
+  /\b(?:Ph\.?\s?D\.?|doctoral|graduate|undergraduate|postgraduate|postdoctoral|master['’]?s)\s+studies\b/gi;
+
 const hasResearchDescriptionVerb = (value: string): boolean =>
   /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
-    value.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' '),
+    value.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' ').replace(DEGREE_STAGE_STUDIES_NOUN, ' '),
   );
 
 // A plural-subject research clause ("his scholarship and teaching examine the
@@ -285,6 +372,19 @@ const hasResearchFocusPhrase = (rawValue: string): boolean => {
       value,
     ) ||
     /\bI\s+study\b/i.test(value) ||
+    // The progressive is how a lab's own page states its work as often as the simple
+    // present ("In the Yale Faboratory, we are developing intelligent materials"), and
+    // without it the page's research paragraph failed this test while a meta blurb passed
+    // on an unrelated phrase (#4809).
+    /\b(?:we|lab|laboratory|group|team|center|centre)\s+(?:is|are)\s+(?:currently\s+|actively\s+)?(?:developing|studying|investigating|exploring|examining|working\s+(?:on|towards?)|building|designing|discovering|engineering|pursuing|seeking\s+to|trying\s+to\s+understand)\b/i.test(
+      value,
+    ) ||
+    /\bfocuses\s+(?:its\s+)?(?:research|work)(?:,\s*[a-z]+)*,?\s+(?:and\s+[a-z]+\s+)?on\b/i.test(
+      value,
+    ) ||
+    /\b(?:applies|combines)\b[^.]{0,160}\bto\s+(?:study|understand|investigate|examine|explore|model|measure)\b/i.test(
+      value,
+    ) ||
     /\b(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/i.test(value) ||
     /\binterested\s+in\b/i.test(value) ||
     /\blab['’]s\s+mission\s+is\s+to\b/i.test(value) ||
@@ -448,14 +548,26 @@ function isBareTopicLabelListText(value: string): boolean {
   );
 }
 
+const LABEL_LIST_ROLE_NOUN_PATTERN =
+  /^(?:theorists?|experimentalists?|clinicians?|professors?|lecturers?|directors?|chairs?|faculty|researchers?|scientists?|scholars?)$/i;
+const STUDIES_INCLUDING_GLUED_CLAUSE =
+  /^Studies\s+[^,]+,\s+including\s+[^,.;]*\b(?:is|are|was|were|has|have)\s+(?:currently\s+)?\w+/i;
+
+const listsARoleOrAffiliationAsATopic = (text: string): boolean =>
+  Boolean(
+    parseLabelListFields(text)?.some(
+      (field) =>
+        LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field) ||
+        LABEL_LIST_ROLE_NOUN_PATTERN.test(field.trim()),
+    ),
+  );
+
 /**
  * A `Studies <tags>.` / `<Name>'s research fields include <tags>.` short is
  * not a faithful compression of its own fullDescription (#1616) when there is
  * no real fullDescription prose to compress in the first place - full is
- * blank, full is itself just the same bare label-list shape, or short and
- * full are the literal same text (a short is supposed to be a distinct
- * summary, so contributing zero delta over the full is substantively empty) -
- * or when a listed item names an affiliation rather than a topic (Schmidt
+ * blank, or full is itself just the same bare label-list shape - or when a
+ * listed item names an affiliation rather than a topic (Schmidt
  * Camacho's short serves her Council/Program affiliations as things she
  * "studies", which is incoherent - you can be affiliated with a Council, but
  * you cannot study one).
@@ -474,9 +586,18 @@ function isBareTopicLabelListText(value: string): boolean {
  */
 function isUngroundedTopicLabelListShort(text: string, full: string): boolean {
   if (!LABEL_LIST_SHORT_PATTERN.test(text)) return false;
-  if (!full || text.toLowerCase() === full.toLowerCase() || isBareTopicLabelListText(full)) {
-    return true;
+  // A card identical to its body is the row's whole description, which the owner
+  // serves when it is thin but accurate (2026-10-04), so identity alone is not empty;
+  // a role or affiliation listed as a topic, a clause glued onto "including", or a
+  // model's rationale for guessing the topic, is.
+  if (full && text.toLowerCase() === full.toLowerCase()) {
+    return (
+      listsARoleOrAffiliationAsATopic(text) ||
+      STUDIES_INCLUDING_GLUED_CLAUSE.test(text) ||
+      EVIDENCE_RATIONALE_PATTERN.test(text)
+    );
   }
+  if (!full || isBareTopicLabelListText(full)) return true;
   const fields = parseLabelListFields(text);
   return Boolean(fields?.some((field) => LABEL_LIST_AFFILIATION_NOUN_PATTERN.test(field)));
 }
@@ -740,6 +861,10 @@ const endsWithCardCompletionMarker = (value: string): boolean =>
 const isTruncatedCardCopy = (value: string): boolean =>
   !endsWithCardCompletionMarker(value) && !isConciseSpecificResearchDescription(value);
 
+// Only the shortest window is scanned: a repeated longer window begins with a repeated
+// window of this length at the same positions, so longer passes cannot change the answer (#3955).
+const DUPLICATED_FRAGMENT_MIN_WORDS = 10;
+
 function hasDuplicatedLongFragment(value: string): boolean {
   const sentences = sentenceList(value)
     .map((sentence) =>
@@ -753,14 +878,12 @@ function hasDuplicatedLongFragment(value: string): boolean {
   if (new Set(sentences).size !== sentences.length) return true;
 
   const words = value.toLowerCase().match(/[a-z0-9]+/g) || [];
-  for (let size = 10; size <= 18; size += 1) {
-    const seen = new Map<string, number>();
-    for (let index = 0; index <= words.length - size; index += 1) {
-      const key = words.slice(index, index + size).join(' ');
-      const previous = seen.get(key);
-      if (previous !== undefined && index - previous >= size) return true;
-      seen.set(key, index);
-    }
+  const seen = new Map<string, number>();
+  for (let index = 0; index <= words.length - DUPLICATED_FRAGMENT_MIN_WORDS; index += 1) {
+    const key = words.slice(index, index + DUPLICATED_FRAGMENT_MIN_WORDS).join(' ');
+    const previous = seen.get(key);
+    if (previous !== undefined && index - previous >= DUPLICATED_FRAGMENT_MIN_WORDS) return true;
+    seen.set(key, index);
   }
   return false;
 }
@@ -1286,6 +1409,7 @@ const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown
     ? researchAreas.filter((area): area is string => typeof area === 'string')
     : [];
   if (areas.length === 0) return false;
+  if (isResearchInterestsSentence(value)) return false;
   const areaTokens = areaEchoFallbackContentTokens(areas.join(' '));
   const textTokens = areaEchoFallbackContentTokens(stripAreaEchoSubjectClause(value));
   if (textTokens.size === 0) return false;
@@ -1299,6 +1423,7 @@ const isAppointmentOnly = (value: string): boolean => {
   if (isUndergraduateResearchProgramDescription(value)) return false;
   if (hasLaterResearchFocusSentence(value)) return false;
   if (hasExplicitProfileResearchFocus(value)) return false;
+  if (namesResearchTopics(value)) return false;
   return (
     isAcademicAppointmentDescription(value) ||
     /^(?:I am|I'm)\s+(?:an?\s+)?(?:assistant|associate|full|adjunct|clinical|visiting)?\s*professor\b/i.test(
@@ -1364,7 +1489,23 @@ export function fullDescriptionWouldMaterialize(
   return fullDescriptionQuality(materialized, researchAreas, entityType).isUseful;
 }
 
-export function fullDescriptionQuality(
+function pressFeatureShapeFlag(text: string): DescriptionQualityFlag | null {
+  const shape = pressFeatureDescriptionShape(text);
+  if (!shape) return null;
+  return shape === 'publication-list' ? 'paper-fragment' : 'source-news-fragment';
+}
+
+// A lab homepage's news column copied into the body: talks given, preprints posted,
+// papers accepted. Two such items mean the body is the page, not a description.
+const ANNOUNCEMENT_ITEM =
+  /\b(?:lightning\s+talk|invited\s+talk|keynote\s+(?:talk|address)|(?:is|are)\s+(?:now\s+)?(?:available|out)\s+on\s+(?:arxiv|biorxiv|medrxiv)|preprint\s+(?:is\s+)?(?:available|posted|out)|(?:paper|work|article)\s+(?:was\s+|has\s+been\s+)?accepted\s+(?:at|to|in))\b/i;
+const MIN_ANNOUNCEMENT_ITEMS = 2;
+const countsAnnouncementItems = (text: string): number =>
+  text.split(/(?<=[.!?])\s+/).filter((sentence) => ANNOUNCEMENT_ITEM.test(sentence)).length;
+const isAnnouncementColumn = (text: string): boolean =>
+  countsAnnouncementItems(text) >= MIN_ANNOUNCEMENT_ITEMS;
+
+function computeFullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
   entityType?: ResearchEntityType,
@@ -1389,6 +1530,7 @@ export function fullDescriptionQuality(
   if (
     text &&
     isTopicLabelListEligibleEntityType(entityType) &&
+    !isResearchInterestsSentence(text) &&
     isBareLabelOrTopicEnumerationText(text)
   ) {
     flags.push('topic-label-list');
@@ -1426,6 +1568,21 @@ export function fullDescriptionQuality(
     !/\bthesis\s+work\b.{0,180}\bfocused\s+on\b/i.test(text)
   ) {
     flags.push('paper-fragment');
+  }
+  const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
+  if (pressFeatureFlag) flags.push(pressFeatureFlag);
+  if (
+    text &&
+    isAnnouncementColumn(text) &&
+    !isConciseSpecificResearchDescription(text) &&
+    !hasExplicitProfileResearchFocus(text)
+  ) {
+    flags.push('source-news-fragment');
+  }
+  const nonResearchShape = text ? nonResearchBodyShape(text, entityType) : null;
+  if (nonResearchShape) flags.push(nonResearchShape);
+  if (!nonResearchShape && text && isPracticeBiographyWithoutResearch(text)) {
+    flags.push('practice-biography');
   }
   if (
     text &&
@@ -1470,14 +1627,7 @@ export function fullDescriptionQuality(
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
   if (text && isGenericStudentProjectRecruitmentTemplate(text)) flags.push('generic-lead');
-  if (
-    text &&
-    !isConciseSpecificResearchDescription(text) &&
-    !publicResearchEntityDescriptionText(text) &&
-    !hasExplicitProfileResearchFocus(text) &&
-    !/\bresearch\s+aims?\s+at\s+understanding\b/i.test(text) &&
-    !/\bthesis\s+work\b.{0,180}\bfocused\s+on\b/i.test(text)
-  ) {
+  if (text && lacksResearchStatement(text)) {
     if (flags.length === 0) flags.push('synthetic-placeholder');
   }
 
@@ -1486,6 +1636,131 @@ export function fullDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+const lacksResearchStatement = (text: string): boolean =>
+  !isConciseSpecificResearchDescription(text) &&
+  !publicResearchEntityDescriptionText(text) &&
+  !hasExplicitProfileResearchFocus(text) &&
+  !/\bresearch\s+aims?\s+at\s+understanding\b/i.test(text) &&
+  !/\bthesis\s+work\b.{0,180}\bfocused\s+on\b/i.test(text);
+
+// A body that is short, or that restates the row's own topics, is thin but not
+// wrong, and the owner decided such a row is shown rather than held (2026-10-04).
+// The write paths keep the strict verdict so a lane still prefers richer prose;
+// only the visibility gate and the served page read this.
+const THIN_BODY_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'too-short',
+  'area-echo-fallback',
+]);
+const MIN_THIN_BODY_WORDS = 6;
+
+// Shapes that read as a page fragment rather than prose. The thin flags used to
+// hold them incidentally, so they are named here instead.
+const COLON_BEFORE_TERMINAL_PATTERN = /:\s*[.!?]?\s*$/;
+const LABEL_CAPTION_LEAD_PATTERN =
+  /^(?:(?:Medical\s+)?Research\s+Interests?|Areas?\s+of\s+(?:Interest|Expertise|Research)|Interests|Perspectives|Keywords?|Specialt(?:y|ies)|Expertise)\b\s*:?\s*(?=[A-Z])/;
+const DEGREE_RECEIPT_ONLY_PATTERN =
+  /^[^.!?]{0,80}\b(?:earned|received|obtained|completed|holds)\s+(?:(?:his|her|their|a|an)\s+)?(?:Ph\.?\s?D\.?|doctorate|M\.?D\.?|J\.?D\.?|M\.?A\.?|B\.?A\.?|B\.?S\.?|M\.?S\.?|degree)\b[^.!?]*[.!?]?$/i;
+const EVIDENCE_RATIONALE_PATTERN =
+  /\bas\s+(?:evidenced|indicated|reflected|suggested)\s+by\s+(?:(?:its|his|her|their|the)\s+)?(?:inclusion|listing|mention|appearance|prior\s+work)\b/i;
+
+const TOPIC_STATEMENT_PATTERN =
+  /^(?:(?:Clinical|Basic|Translational|Epidemiological|Experimental|Theoretical)(?:\s+and\s+\w+)?\s+)*research\s+(?:in|on)\s|^Scholar\s+of\s|\bsubject\s+areas?\s+(?:are|include)\s/i;
+
+const RESEARCH_STATEMENT_SUBJECT =
+  "(?:I|We|He|She|They|The\\s+faculty\\s+member|(?:(?:Dr|Prof|Professor)\\.?\\s+)?\\p{Lu}[\\p{L}'’-]*(?:\\s+\\p{Lu}[\\p{L}'’-]*){0,3})";
+const RESEARCH_STATEMENT_POSSESSIVE =
+  "(?:My|Our|His|Her|Their|(?:(?:Dr|Prof|Professor)\\.?\\s+)?\\p{Lu}[\\p{L}'’-]*(?:\\s+\\p{Lu}[\\p{L}'’-]*){0,3}['’]s?)";
+
+const RESEARCH_STATEMENT_LEAD_PATTERNS: readonly RegExp[] = [
+  new RegExp(
+    `^${RESEARCH_STATEMENT_SUBJECT}\\s+(?:do|does|conducts?)\\s+research\\s+(?:in|on)\\s`,
+    'u',
+  ),
+  new RegExp(
+    `^${RESEARCH_STATEMENT_POSSESSIVE}\\s+(?:current\\s+|primary\\s+|main\\s+)?research(?:\\s+interests?)?\\s+(?:includes?|has\\s+been\\s+in|is\\s+in|lies?\\s+in)\\s`,
+    'u',
+  ),
+  new RegExp(
+    `^${RESEARCH_STATEMENT_SUBJECT}\\s+works?\\s+(?:broadly\\s+)?on\\s+topics\\s+in\\s`,
+    'u',
+  ),
+  new RegExp(
+    `^${RESEARCH_STATEMENT_SUBJECT}\\s+works?\\s+to\\s+(?:improve|understand|develop|advance|reduce|prevent)\\s`,
+    'u',
+  ),
+  /^\p{Lu}[^,.!?:;]{3,120},\s+focusing\s+on\s/u,
+];
+
+const leadsWithResearchStatement = (text: string): boolean =>
+  RESEARCH_STATEMENT_LEAD_PATTERNS.some((pattern) => pattern.test(text));
+
+const OWN_TOPICS_STUDIES_SENTENCE_PATTERN = /^Studies\s[^.!?]+\.$/;
+const MIN_OWN_TOPICS_STUDIES_WORDS = 2;
+
+const readsAsPageFragment = (text: string): boolean =>
+  COLON_BEFORE_TERMINAL_PATTERN.test(text) ||
+  !/[.!?]\s*$/.test(text) ||
+  LABEL_CAPTION_LEAD_PATTERN.test(text) ||
+  DEGREE_RECEIPT_ONLY_PATTERN.test(text) ||
+  EVIDENCE_RATIONALE_PATTERN.test(text);
+
+/**
+ * The single "Studies <topics>." sentence the pipeline writes from the row's own
+ * topics. It says nothing beyond the chips, but it is true, so under the owner's
+ * thin-but-accurate decision it is shown rather than held.
+ */
+export function isOwnTopicsStudiesSentence(quality: FieldQuality): boolean {
+  const { text, flags } = quality;
+  if (!text || !flags.includes('research-area-echo')) return false;
+  if (!OWN_TOPICS_STUDIES_SENTENCE_PATTERN.test(text)) return false;
+  if (isStudiesSentenceNestingTopicsUnderTheFirst(text)) return false;
+  if (wordCount(text) < MIN_OWN_TOPICS_STUDIES_WORDS) return false;
+  if (!flags.every((flag) => flag === 'research-area-echo' || THIN_BODY_FLAGS.has(flag))) {
+    return false;
+  }
+  return !readsAsPageFragment(text);
+}
+
+/**
+ * A body the strict bar refuses only for being thin: short (at least six words) or a
+ * restatement of the row's own topics, carrying a research-focus phrase, and not a
+ * page fragment. A sentence that leads with a research statement may also list its
+ * topics, because those topics were read from the sentence itself. A staff or
+ * appointment profile states no research and stays held.
+ */
+export function isThinButAccurateBody(quality: FieldQuality): boolean {
+  const { text, flags } = quality;
+  if (quality.isUseful || !text || flags.length === 0) return false;
+  if (isOwnTopicsStudiesSentence(quality)) return true;
+  const researchStatementLead = leadsWithResearchStatement(text);
+  if (
+    !flags.every(
+      (flag) => THIN_BODY_FLAGS.has(flag) || (researchStatementLead && flag === 'topic-label-list'),
+    )
+  ) {
+    return false;
+  }
+  if (wordCount(text) < MIN_THIN_BODY_WORDS) return false;
+  if (readsAsPageFragment(text)) return false;
+  if (researchStatementLead) return true;
+  return (
+    (hasResearchFocusPhrase(text) || TOPIC_STATEMENT_PATTERN.test(text)) &&
+    !lacksResearchStatement(text)
+  );
+}
+
+export function fullDescriptionQuality(
+  value: unknown,
+  researchAreas?: unknown,
+  entityType?: ResearchEntityType,
+): FieldQuality {
+  return memoizedFieldQuality(
+    'full',
+    [value ?? null, researchAreas ?? null, entityType ?? null],
+    () => computeFullDescriptionQuality(value, researchAreas, entityType),
+  );
 }
 
 const FULL_DESCRIPTION_LEAD_CLAUSE_RE =
@@ -1686,7 +1961,7 @@ const isPastCardLengthCeiling = (text: string): boolean =>
   text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
   wordCount(text) > MAX_CARD_SHORT_DESCRIPTION_WORDS;
 
-export function shortDescriptionQuality(
+function computeShortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
   researchAreas?: unknown,
@@ -1754,6 +2029,10 @@ export function shortDescriptionQuality(
   ) {
     flags.push('paper-fragment');
   }
+  const pressFeatureFlag = text ? pressFeatureShapeFlag(text) : null;
+  if (pressFeatureFlag) flags.push(pressFeatureFlag);
+  const nonResearchShape = text ? nonResearchBodyShape(text, options?.entityType) : null;
+  if (nonResearchShape) flags.push(nonResearchShape);
   if (
     text &&
     isBrokenResearchEntityDescriptionFragment(text) &&
@@ -1825,6 +2104,19 @@ export function shortDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+export function shortDescriptionQuality(
+  value: unknown,
+  fullDescription: unknown,
+  researchAreas?: unknown,
+  options?: { entityType?: ResearchEntityType },
+): FieldQuality {
+  return memoizedFieldQuality(
+    'short',
+    [value ?? null, fullDescription ?? null, researchAreas ?? null, options?.entityType ?? null],
+    () => computeShortDescriptionQuality(value, fullDescription, researchAreas, options),
+  );
 }
 
 /**
@@ -1920,6 +2212,71 @@ const relativizeStaleAbsoluteYearSeasonPhrase = (value: string): string =>
 const normalizeProgramCardCandidateSentence = (value: string): string =>
   relativizeStaleAbsoluteYearSeasonPhrase(stripStrayFootnoteMarks(textValue(value)));
 
+// A catalog row whose only line is "<Program> Deadline: Friday, February 6, 2026 at 11:00pm
+// ET." announces a date rather than describing the program, and the card already shows the
+// deadline beside it (#3904).
+const PROGRAM_CARD_DEADLINE_ANNOUNCEMENT =
+  /\bdeadline\s*:\s*(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day,?\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i;
+
+const PROGRAM_CARD_ADMINISTRATIVE_NOTE_PATTERNS: readonly RegExp[] = [
+  /^(?:please\s+)?note\b[^:]{0,20}:/i,
+  /^application\s+(?:process|instructions|requirements|procedures?)\s*:/i,
+  /\bdeadlines?\b/i,
+  /\b(?:is|are)\s+due\s+(?:by|on|before)\b/i,
+  /\b(?:nominat(?:e|ed|es|ing|ion|ions)|endors(?:e|ed|es|ing|ement|ements))\b/i,
+  /\b(?:program|project|application)\s+dates?\s*:|\binfo(?:rmation)?\s+sessions?\b/i,
+  /\b(?:applications?|apply)\b[^.]{0,80}\b(?:via|through|using)\s+(?:the\s+)?[^.]{0,80}\b(?:application|portal|form|system)\b/i,
+  /\bapplications?\s+(?:will\s+be|are)\s+(?:accepted|received|reviewed)\s+(?:on\s+a\s+rolling\s+basis|from|until|via|through)\b/i,
+  /\bapplications?\s+(?:will\s+(?:open|close|be\s+(?:open|closed))|(?:opens?|closes?)\s+(?:on|in)|(?:is|are)\s+(?:now\s+)?(?:open|closed))\b/i,
+  /\bclick\s+(?:through|here|on|the)\b/i,
+  /\bgenerously\s+(?:provided|funded|given|supported)\b|\b(?:is|are|was|were)\s+made\s+possible\s+(?:through|by)\b/i,
+  /^(?:he|she|his|her)\b/i,
+];
+
+const isProgramCardAdministrativeNote = (value: string): boolean =>
+  PROGRAM_CARD_ADMINISTRATIVE_NOTE_PATTERNS.some((pattern) => pattern.test(value));
+
+const PROGRAM_CARD_COMMA_CLAUSE_OPENER =
+  '(?:which|who|whose|where|including|such\\s+as|as\\s+well\\s+as|especially|particularly|with\\s+(?:a|an|the)\\s+(?:focus|emphasis)\\b|(?:undertaken|administered|offered|sponsored|supported|funded|focused|led)\\b)';
+const PROGRAM_CARD_CLAUSE_BOUNDARY = new RegExp(
+  `;\\s|,\\s+${PROGRAM_CARD_COMMA_CLAUSE_OPENER}|\\s+(?:including|such\\s+as|as\\s+well\\s+as|who|that|during|throughout)\\s|\\s\\(`,
+  'gi',
+);
+const PROGRAM_CARD_SUBORDINATE_SEGMENT = new RegExp(
+  `,\\s+${PROGRAM_CARD_COMMA_CLAUSE_OPENER}[^,]*|\\([^)]*\\)`,
+  'gi',
+);
+const PROGRAM_CARD_DANGLING_TAIL =
+  /\b(?:a|an|the|and|or|but|nor|of|to|for|with|in|on|at|by|from|into|that|which|who|whose|as|than|its|their|our|this|these|those|so|such|now|ensures?|believes?|means|shows?|requires?|asks?|states?|notes?|finds?|knows?|hopes?|expects?)$/i;
+const PROGRAM_CARD_FINITE_VERB =
+  /\b(?:is|are|was|were|provides?|supports?|funds?|offers?|awards?|enables?|allows?|affords?|helps?|gives?|seeks?|invites?|aims?|brings?|sponsors?|covers?|grants?|recognizes?|honors?|promotes?|encourages?|serves?|connects?|introduces?|trains?|places?|pairs?|matches?|engages?|exposes?|prepares?|announces?|facilitates?|assists?|underwrites?|has|have)\b/i;
+const MIN_PROGRAM_CARD_CLAUSE_WORDS = 10;
+const MIN_PROGRAM_CARD_TRAILING_PHRASE_WORDS = 4;
+
+const endsOnAShortTrailingPhrase = (head: string): boolean => {
+  const lastComma = head.lastIndexOf(',');
+  return (
+    lastComma >= 0 && wordCount(head.slice(lastComma + 1)) < MIN_PROGRAM_CARD_TRAILING_PHRASE_WORDS
+  );
+};
+
+const cutProgramCardSentenceAtClauseBoundary = (sentence: string): string => {
+  const cuts: string[] = [];
+  for (const match of sentence.matchAll(PROGRAM_CARD_CLAUSE_BOUNDARY)) {
+    const head = sentence
+      .slice(0, match.index)
+      .replace(/[\s,;:]+$/, '')
+      .trim();
+    if (!head || PROGRAM_CARD_DANGLING_TAIL.test(head) || endsOnAShortTrailingPhrase(head))
+      continue;
+    if (wordCount(head) < MIN_PROGRAM_CARD_CLAUSE_WORDS) continue;
+    if (!PROGRAM_CARD_FINITE_VERB.test(head.replace(PROGRAM_CARD_SUBORDINATE_SEGMENT, '')))
+      continue;
+    cuts.push(`${head}.`);
+  }
+  return cuts.reverse().find((cut) => !isPastCardLengthCeiling(cut)) ?? '';
+};
+
 /**
  * Program-typed research entities (fellowships, RA programs) describe what
  * they offer and how to apply, not a lab-style "Studies X" research focus, so
@@ -1970,6 +2327,8 @@ export function programCardShortDescriptionQuality(
   if (text && isNonOfferProgramCardClause(text)) flags.push('non-offer-clause');
   if (text && isProgramCardAdministrativeAnnouncementChrome(text))
     flags.push('administrative-chrome');
+  if (text && PROGRAM_CARD_DEADLINE_ANNOUNCEMENT.test(text)) flags.push('administrative-chrome');
+  if (text && isProgramCardAdministrativeNote(text)) flags.push('administrative-chrome');
   if (text && isGrantSignificanceBoilerplateShort(text))
     flags.push('grant-significance-boilerplate');
   if (!full) flags.push('full-not-useful');
@@ -1991,17 +2350,20 @@ export function programCardShortDescriptionQuality(
 export function deriveProgramCardShortDescription(fullDescription: unknown): string {
   const full = textValue(fullDescription);
   if (!full) return '';
-  const sentences = sentenceList(full);
+  const sentences = programCardSentenceList(full);
   if (sentences.length === 0) return '';
-  if (sentences.length === 1) {
-    const candidate = normalizeProgramCardCandidateSentence(full);
-    return programCardShortDescriptionQuality(candidate, full).isUseful ? candidate : '';
-  }
-  for (const sentence of sentences) {
-    const candidate = normalizeProgramCardCandidateSentence(sentence);
-    if (programCardShortDescriptionQuality(candidate, full).isUseful) return candidate;
-  }
-  return '';
+  const candidates = (sentences.length === 1 ? [full] : sentences).map(
+    normalizeProgramCardCandidateSentence,
+  );
+  const isUsefulCard = (candidate: string) =>
+    programCardShortDescriptionQuality(candidate, full).isUseful;
+  const wholeSentence = candidates.find(isUsefulCard);
+  if (wholeSentence) return wholeSentence;
+  const [leadSentence] = candidates;
+  const leadFlags = programCardShortDescriptionQuality(leadSentence, full).flags;
+  if (leadFlags.length !== 1 || leadFlags[0] !== 'too-long') return '';
+  const cut = cutProgramCardSentenceAtClauseBoundary(leadSentence);
+  return cut && isUsefulCard(cut) ? cut : '';
 }
 
 /**
@@ -2019,15 +2381,23 @@ export function deriveProgramCardShortDescription(fullDescription: unknown): str
  * because dropping a card line lost more than keeping it (#1878). A body-less
  * program therefore keeps its stored line: `full-not-useful` asks whether a
  * derived card is grounded, which is not a defect in a source-asserted summary.
+ * The exception is a line that announces a deadline, which says nothing the
+ * card's deadline does not, so it fails closed to empty (#3904).
  */
 export function programLikeCardShortDescription(input: {
   shortDescription: unknown;
   fullDescription: unknown;
 }): string {
   const stored = typeof input.shortDescription === 'string' ? input.shortDescription : '';
-  if (!textValue(stored)) return stored;
+  if (!textValue(stored)) return deriveProgramCardShortDescription(input.fullDescription);
   if (programCardShortDescriptionQuality(stored, input.fullDescription).isUseful) return stored;
-  return deriveProgramCardShortDescription(input.fullDescription) || stored;
+  const derived = deriveProgramCardShortDescription(input.fullDescription);
+  if (derived) return derived;
+  if (PROGRAM_CARD_DEADLINE_ANNOUNCEMENT.test(stored)) return '';
+  const leadSentence = programCardSentenceList(textValue(stored))[0] ?? '';
+  return isProgramCardAdministrativeNote(leadSentence)
+    ? deriveProgramCardShortDescription(stored)
+    : stored;
 }
 
 export function describesResearchFocus(value: unknown): boolean {
@@ -2633,6 +3003,7 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
   if (startsWithPersonNameSubjectPredicate(first)) return '';
+  if (isResearchInterestsSentence(first)) return '';
   if (
     hasResearchDescriptionVerb(first) ||
     /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)
@@ -3344,4 +3715,39 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     if (shortened && shortDescriptionQuality(shortened, rawFull).isUseful) return shortened;
   }
   return '';
+}
+
+const LEADING_DATELINE_PATTERN =
+  /^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}(?=[A-Z\s:|-])/;
+const PARENTHESIZED_YEAR_PATTERN = /\((?:19|20)\d{2}\)/g;
+const DISCIPLINE_OF =
+  '(?:history|philosophy|sociology|anthropology|economics|politics|ethics|law|psychology|literature)\\s+of\\s+';
+
+const escapeForPattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// "Studies medicine, ..." over a body that only says "history of medicine".
+function dropsTheDisciplineOfItsTopic(card: string, full: string): boolean {
+  const topic = card.match(/^Studies\s+([a-z][a-z-]+)\b/)?.[1];
+  if (!topic || !full) return false;
+  const withDiscipline = new RegExp(`\\b${DISCIPLINE_OF}${escapeForPattern(topic)}\\b`, 'gi');
+  if (!withDiscipline.test(full)) return false;
+  return !new RegExp(`\\b${escapeForPattern(topic)}\\b`, 'i').test(
+    full.replace(withDiscipline, ''),
+  );
+}
+
+/**
+ * A card that is a page fragment rather than a summary: a dateline glued to a
+ * headline, a list of dated titles, the model's evidence rationale, or a topic whose
+ * discipline was cut off.
+ */
+export function isCardPageFragment(card: unknown, fullDescription: unknown): boolean {
+  const text = textValue(card);
+  if (!text) return false;
+  return (
+    LEADING_DATELINE_PATTERN.test(text) ||
+    (text.match(PARENTHESIZED_YEAR_PATTERN) || []).length >= 2 ||
+    EVIDENCE_RATIONALE_PATTERN.test(text) ||
+    dropsTheDisciplineOfItsTopic(text, textValue(fullDescription))
+  );
 }

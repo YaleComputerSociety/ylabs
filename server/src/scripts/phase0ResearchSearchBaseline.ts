@@ -36,7 +36,7 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 }
 
 const protectedSearchProfileSpecs = {
@@ -326,7 +326,9 @@ export function sourceCommit(
     ) {
       throw error;
     }
-    throw new Error('Unable to verify a clean source commit for the search baseline.');
+    throw new Error('Unable to verify a clean source commit for the search baseline.', {
+      cause: error,
+    });
   }
 }
 

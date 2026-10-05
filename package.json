@@ -1,8 +1,11 @@
 {
-  "name": "rdb",
+  "name": "ylabs",
   "version": "1.0.0",
   "main": "index.js",
-  "repository": "git@github.com:JulianLee123/RDB.git",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YaleComputerSociety/ylabs.git"
+  },
   "author": "lee-julian",
   "license": "MIT",
   "scripts": {
@@ -10,13 +13,16 @@
     "build:client": "cd client && yarn build",
     "build:server": "cd server && yarn build",
     "clean:all": "rm -rf node_modules && cd server && rm -rf node_modules && cd ../client && rm -rf node_modules",
-    "install:all": "yarn && cd server && yarn && cd ../client && yarn",
-    "install:all:immutable": "yarn install --immutable && cd server && yarn install --immutable && cd ../client && yarn install --immutable",
+    "install:all": "bash scripts/install-all.sh",
+    "install:all:immutable": "bash scripts/install-all.sh --immutable",
     "install:client": "cd client && yarn",
     "install:server": "cd server && yarn",
     "dev:client": "cd client && yarn dev",
     "research-entity:audit-duplicate-action-links": "yarn --cwd server research-entity:dump-action-link-inputs && cd client && npx vitest run src/audits/__tests__/duplicateActionLinkAudit.test.ts",
     "dev:server": "node scripts/run-data-profile.mjs development -- yarn --cwd server dev",
+    "dev:server:local": "node scripts/run-data-profile.mjs local -- yarn --cwd server dev",
+    "local:setup": "node scripts/setup-local-env.mjs && docker compose up -d --wait mongodb meilisearch && yarn local:seed",
+    "local:seed": "node scripts/run-data-profile.mjs local -- yarn --cwd server db:build-indexes --apply && node scripts/run-data-profile.mjs local -- yarn --cwd server e2e:seed-smoke && node scripts/run-data-profile.mjs local -- yarn --cwd server meili:seed",
     "dev:infra:up": "docker compose up -d meilisearch",
     "dev:infra:down": "docker compose stop meilisearch",
     "dev:infra:logs": "docker compose logs -f meilisearch",
@@ -28,7 +34,6 @@
     "profile:development": "node scripts/run-data-profile.mjs development --",
     "profile:development:write": "node scripts/run-data-profile.mjs development --write --",
     "profile:beta": "node scripts/run-data-profile.mjs beta-operator --",
-    "profile:beta:write": "node scripts/run-data-profile.mjs beta-operator --write --",
     "scrape:development": "node scripts/run-data-profile.mjs development -- yarn --cwd server scrape",
     "scrape:development:write": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape",
     "scrape:development:all:plan": "node scripts/run-data-profile.mjs development -- yarn --cwd server scrape:sweep --mode=development-plan",
@@ -36,15 +41,14 @@
     "scrape:development:all:full": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape:sweep --mode=development-full --confirm-development-full-sweep",
     "scrape:development:all:incremental": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape:sweep --mode=development-incremental --confirm-development-incremental-sweep",
     "scrape:development:fellowships:full": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server scrape:sweep --mode=fellowship-development-full --confirm-fellowship-sweep",
-    "scrape:beta": "node scripts/run-data-profile.mjs beta-operator -- yarn --cwd server scrape",
-    "scrape:beta:write": "node scripts/run-data-profile.mjs beta-operator --write -- yarn --cwd server scrape",
-    "scrape:beta:all:plan": "node scripts/run-data-profile.mjs beta-operator -- yarn --cwd server scrape:sweep --mode=beta-plan",
-    "scrape:beta:all:fetch": "node scripts/run-data-profile.mjs beta-operator --write -- yarn --cwd server scrape:sweep --mode=beta-fetch --confirm-beta-release-candidate",
     "development:refresh-from-beta:plan": "yarn --cwd server development:refresh-from-beta --clear-development-non-mirror-data --output /tmp/ylabs-beta-to-development-plan.json",
     "development:refresh-from-beta:apply": "yarn --cwd server development:refresh-from-beta --apply --confirm-beta-to-development --confirm-overwrite-atlas-development --clear-development-non-mirror-data --output /tmp/ylabs-beta-to-development-result.json",
     "beta:refresh-from-development:plan": "yarn --cwd server beta:refresh-from-development --output /tmp/ylabs-development-to-beta-plan.json",
     "beta:refresh-from-development:apply": "yarn --cwd server beta:refresh-from-development --apply --confirm-development-to-beta --output /tmp/ylabs-development-to-beta-result.json",
-    "development:search:rebuild": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild",
+    "promote:beta": "yarn --cwd server promote:beta",
+    "promote:production": "yarn --cwd server promote:production",
+    "development:search:rebuild": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild && yarn development:search:check",
+    "development:search:check": "node scripts/run-data-profile.mjs development -- yarn --cwd server journey:eval --case=sorted-browse-keeps-order,title-sorted-browse-follows-card-title --fail-on-inconclusive",
     "migrate:mongo-naming": "yarn --cwd server migrate:mongo-naming",
     "model-refactor:search-baseline": "yarn --cwd server model-refactor:search-baseline",
     "model-refactor:search-baseline:beta": "node scripts/run-search-baseline-profile.mjs beta-inventory",
@@ -76,8 +80,10 @@
     "test": "yarn test:server && yarn test:client",
     "test:server": "yarn --cwd server test",
     "test:client": "yarn --cwd client test:ci",
+    "test:changed": "yarn --cwd server test --changed origin/beta --passWithNoTests && yarn --cwd client test:ci --changed origin/beta --passWithNoTests",
     "test:data-profiles": "node --test scripts/run-data-profile.test.mjs",
-    "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/person-identifier-scan-workflow.test.mjs",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "security:policy": "node --test scripts/security-preflight.test.mjs scripts/dependency-audit.test.mjs scripts/check-no-secrets.test.mjs scripts/check-no-person-identifiers.test.mjs scripts/gh-identifier-guard.test.mjs",
     "security:secrets": "node scripts/check-no-secrets.mjs",
     "security:identifiers": "node scripts/check-no-person-identifiers.mjs",
     "security:identifiers:body": "node scripts/check-no-person-identifiers.mjs --body-file",
@@ -90,38 +96,34 @@
     "lint:fix": "eslint --fix --cache --cache-location .eslintcache \"client/src/**/*.ts\" \"client/src/**/*.tsx\" \"server/src/**/*.ts\" \"scripts/**/*.mjs\" \"client/scripts/**/*.mjs\"",
     "format": "prettier --write \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
     "format:check": "prettier --check \"client/src/**/*.{ts,tsx,css}\" \"server/src/**/*.ts\"",
-    "verify:fast": "yarn format:check && yarn lint && npx tsc --noEmit -p server/tsconfig.json && npx tsc --noEmit -p client/tsconfig.json",
-    "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn --cwd client test:ci && yarn security:preflight"
+    "verify:fast": "yarn format:check && yarn lint && npx tsc --noEmit -p server/tsconfig.json && npx tsc --noEmit -p client/tsconfig.json && yarn --cwd server test:guards",
+    "verify": "yarn verify:fast && yarn --cwd server test && yarn model-refactor:inventory:test-operator-tools && yarn test:data-profiles && yarn test:scripts && yarn --cwd client test:ci && yarn security:preflight"
   },
   "dependencies": {
-    "concurrently": "^9.2.1",
-    "dotenv": "^16.3.1",
-    "mongoose": "^8.24.0"
+    "concurrently": "^10.0.5",
+    "dotenv": "^18.0.5",
+    "mongoose": "^9.10.3"
   },
   "resolutions": {
-    "form-data": "4.0.6",
-    "mongoose": "8.24.1",
-    "undici": "6.28.0",
-    "axios": "1.18.1",
-    "underscore": "1.13.8",
-    "path-to-regexp": "0.1.13",
-    "uuid": "11.1.1",
-    "xml2js": "0.6.2",
+    "mongoose": "9.10.3",
     "shell-quote": "1.10.0",
-    "brace-expansion": "5.0.9",
-    "js-yaml": "4.3.2",
-    "tar": "7.5.22"
+    "brace-expansion@npm:^5.0.5": "5.0.12",
+    "js-yaml": "5.4.2"
   },
   "devDependencies": {
-    "eslint": "^9.18.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-react": "^7.37.4",
-    "eslint-plugin-react-hooks": "^5.1.0",
-    "globals": "^15.14.0",
-    "playwright": "^1.60.0",
-    "prettier": "3.8.3",
-    "typescript": "^5.3.0",
-    "typescript-eslint": "^8.20.0"
+    "@eslint/js": "10.0.1",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "js-yaml": "5.4.2",
+    "playwright": "^1.63.0",
+    "prettier": "3.9.9",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0"
   },
-  "packageManager": "yarn@4.15.0"
+  "engines": {
+    "node": ">=26 <27"
+  },
+  "packageManager": "yarn@4.18.1"
 }

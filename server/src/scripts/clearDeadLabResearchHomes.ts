@@ -16,13 +16,17 @@ import {
   isCredibleIndex,
   labSegment,
   parseIndexSegments,
+  SSRF_REFUSED_PROBE,
   YSM_LAB_HOME,
   type DeadLabHomeVerdict,
+  type LabHomeProbeStatus,
 } from './clearDeadLabResearchHomesCore';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:clear-dead-lab-homes';
 const INDEX_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
@@ -55,29 +59,24 @@ export function parseArgs(argv: string[]): Args {
   return args;
 }
 
-async function httpStatus(url: string): Promise<number | undefined> {
+export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
   try {
-    const response = await fetch(url, {
-      redirect: 'follow',
-      headers: { 'user-agent': UA },
-      signal: AbortSignal.timeout(25000),
-    });
+    const response = await fetchPublicHttpUrl(url, { headers: { 'user-agent': UA } });
     return response.status;
-  } catch {
-    return undefined;
+  } catch (error) {
+    return isSsrfGuardRefusal(error) ? SSRF_REFUSED_PROBE : undefined;
   }
 }
 
 async function loadIndexSegments(): Promise<Set<string>> {
-  const response = await fetch(INDEX_URL, {
-    redirect: 'follow',
+  const response = await fetchPublicHttpUrl(INDEX_URL, {
     headers: { 'user-agent': UA },
-    signal: AbortSignal.timeout(30000),
+    timeoutMs: 30_000,
   });
   if (response.status !== 200) {
     throw new Error(`A-Z index returned ${response.status}; refusing to run without it`);
   }
-  const segments = parseIndexSegments(await response.text());
+  const segments = parseIndexSegments(response.body);
   if (!isCredibleIndex(segments)) {
     throw new Error(
       `A-Z index yielded only ${segments.size} lab segments, below the credibility floor; refusing to run`,
@@ -109,7 +108,7 @@ async function main() {
     entityType?: string;
     studentVisibilityTier?: string;
     segment: string;
-    httpStatus?: number;
+    httpStatus?: LabHomeProbeStatus;
     verdict: DeadLabHomeVerdict;
   }> = [];
 
@@ -173,6 +172,7 @@ async function main() {
     examined: rows.length,
     inIndex: tally('in-index'),
     liveNotInIndex: tally('live-not-in-index'),
+    addressRefused: tally('address-refused'),
     plannedClears: toClear.length,
     plannedClearsServed: toClear.filter((row) => row.studentVisibilityTier === 'student_ready')
       .length,

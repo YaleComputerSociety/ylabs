@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  BBS_REFUSED_PROFILE_RETRY_PAUSE_MS,
   BBS_TRACKS,
   BbsResearchTrackScraper,
   bbsGraftObservations,
-  bbsMintObservations,
   bbsProfileSlugFromUrl,
-  bbsTrackResearchAreaLabel,
+  bbsTrackResearchAreaLabels,
   buildBbsMatchIndex,
   normalizeMatchUrl,
   parseBbsProfileLinks,
@@ -14,6 +14,15 @@ import {
   type BbsCandidateEntity,
   type BbsProfileLinks,
 } from '../sources/bbsResearchTrackScraper';
+import {
+  centerRosterReadAdmissibility,
+  CENTER_ROSTER_HEALTH_FIELD,
+} from '../centerRosterRetirement';
+import {
+  BARREN_RUN_STREAK_FAILURE_THRESHOLD,
+  resolveBarrenUnitStreakFailures,
+} from '../sourceYieldGuard';
+import { aggregateBbsTrackReads } from '../bbsTrackRosterRetirement';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const IMMUNOLOGY_URL = 'https://medicine.yale.edu/bbs/people/immunology/';
@@ -28,6 +37,26 @@ function trackListingHtml(rows: Array<{ slug: string; label: string }>, extraLin
     )
     .join('');
   return `<html><body><ul class="link-items-list">${items}</ul>${extraLinks}</body></html>`;
+}
+
+/**
+ * The other shape the CMS serves: a plain two-column table, with no `link-items-list` wrapper,
+ * no `hyperlink` class, and the name as "First Last" rather than "Last, First". Read off the live
+ * `plantmolbio` page, which parsed to zero faculty for three runs under the list-only selector
+ * (#3833).
+ */
+function trackTableListingHtml(rows: Array<{ slug: string; label: string }>): string {
+  const body = rows
+    .map(
+      (row) =>
+        `<tr><td><a href="https://medicine.yale.edu/bbs/profile/${row.slug}/">${row.label}</a></td>` +
+        `<td>Professor</td></tr>`,
+    )
+    .join('');
+  return (
+    `<html><body><nav><a href="/bbs/profile/navigation_only/">Nav link</a></nav>` +
+    `<table><tr><th>Name</th><th>Title</th></tr>${body}</table></body></html>`
+  );
 }
 
 function bbsProfileHtml(options: { canonicalSlug: string; labUrls?: string[] }): string {
@@ -69,21 +98,56 @@ function makeContext(options: Partial<ScraperContext['options']> = {}): {
 }
 
 describe('BBS track slug to research-area mapping', () => {
-  it('maps all nine track slugs to a concise label', () => {
+  it('maps all nine track slugs to at least one chip', () => {
     expect(BBS_TRACKS).toHaveLength(9);
     for (const track of BBS_TRACKS) {
-      expect(bbsTrackResearchAreaLabel(track.slug)).toBe(track.researchArea);
-      expect(track.researchArea.length).toBeGreaterThan(0);
+      expect(bbsTrackResearchAreaLabels(track.slug)).toEqual(track.researchAreas);
+      expect(track.researchAreas.length).toBeGreaterThan(0);
     }
-    expect(bbsTrackResearchAreaLabel('cbb')).toBe('Computational Biology & Bioinformatics');
-    expect(bbsTrackResearchAreaLabel('mcbgd')).toBe(
-      'Molecular Cell Biology, Genetics & Development',
-    );
   });
 
-  it('is case-insensitive and returns undefined for an unknown slug', () => {
-    expect(bbsTrackResearchAreaLabel('IMMUNOLOGY')).toBe('Immunology');
-    expect(bbsTrackResearchAreaLabel('not-a-track')).toBeUndefined();
+  it('is case-insensitive and returns nothing for an unknown slug', () => {
+    expect(bbsTrackResearchAreaLabels('IMMUNOLOGY')).toEqual(['Immunology']);
+    expect(bbsTrackResearchAreaLabels('not-a-track')).toEqual([]);
+  });
+
+  /**
+   * A programme name is not a topic. For 38 served rows one of these three was the whole of
+   * "Best fit for", so a student read "a fit for one of these four fields" without being told
+   * which (#3806). Each now names fields a student can read, which asserts no more than the
+   * single-field tracks already do on the same evidence.
+   */
+  it('names the several fields a multi-field track spans, never the programme', () => {
+    expect(bbsTrackResearchAreaLabels('m2p2')).toEqual([
+      'Molecular Medicine',
+      'Pharmacology',
+      'Physiology',
+    ]);
+    expect(bbsTrackResearchAreaLabels('mcbgd')).toEqual([
+      'Molecular Cell Biology',
+      'Genetics',
+      'Developmental Biology',
+    ]);
+    expect(bbsTrackResearchAreaLabels('bbsb')).toEqual([
+      'Biochemistry',
+      'Quantitative Biology',
+      'Biophysics',
+      'Structural Biology',
+    ]);
+  });
+
+  /**
+   * The shape rule behind the three above, pinned so a tenth track cannot reintroduce it: a
+   * chip that lists several fields with a comma or an ampersand is a programme name.
+   * "Computational Biology & Bioinformatics" is the one allowed conjunction, because it names
+   * one field under two conventional names rather than two fields.
+   */
+  it('grafts no chip that reads as a programme name', () => {
+    const conjoined = BBS_TRACKS.flatMap((track) => track.researchAreas).filter(
+      (chip) => /,/.test(chip) || /\s&\s/.test(chip),
+    );
+
+    expect(conjoined).toEqual(['Computational Biology & Bioinformatics']);
   });
 });
 
@@ -111,6 +175,29 @@ describe('parseBbsTrackFaculty', () => {
         profileUrl: 'https://medicine.yale.edu/bbs/profile/morgan-lee/',
       },
     ]);
+  });
+
+  it('extracts faculty from a table listing, which is the other shape the CMS serves (#3833)', () => {
+    const faculty = parseBbsTrackFaculty(
+      trackTableListingHtml([
+        { slug: 'gary_brudvig', label: 'Gary Brudvig' },
+        { slug: 'vivian_irish', label: 'Vivian Irish' },
+      ]),
+      'https://medicine.yale.edu/bbs/people/plantmolbio/',
+    );
+    expect(faculty.map((entry) => entry.profileSlug)).toEqual(['gary_brudvig', 'vivian_irish']);
+    // "First Last" needs no second name rule, since the comma form falls through unchanged.
+    expect(faculty[0].name).toBe('Gary Brudvig');
+  });
+
+  // The selector matches roster containers rather than every profile link on the page, because a
+  // track page also links profiles from navigation and related-content blocks.
+  it('ignores a profile link that is in neither a roster list item nor a table row', () => {
+    const faculty = parseBbsTrackFaculty(
+      trackTableListingHtml([{ slug: 'gary_brudvig', label: 'Gary Brudvig' }]),
+      'https://medicine.yale.edu/bbs/people/plantmolbio/',
+    );
+    expect(faculty.map((entry) => entry.profileSlug)).toEqual(['gary_brudvig']);
   });
 
   it('derives the profile slug from a BBS profile URL', () => {
@@ -214,6 +301,56 @@ describe('resolveBbsResearchHome', () => {
   });
 });
 
+describe("resolveBbsResearchHome on the lane's own pre-#3561 key (#3834)", () => {
+  const profileLinks: BbsProfileLinks = {
+    canonicalProfileUrl: 'https://medicine.yale.edu/profile/alex-rivera/',
+    labUrls: [],
+  };
+
+  it("re-reaches a row keyed by the lane's own profile slug when nothing else resolves", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+    ]);
+    expect(resolveBbsResearchHome(profileLinks, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'matched',
+      entityId: '121212121212121212121212',
+    });
+  });
+
+  it("still resolves to the canonical row when the lane's own row also exists", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+      candidate({ _id: '343434343434343434343434', slug: 'ysm-faculty-alex-rivera', nameKey: 'x' }),
+    ]);
+    expect(resolveBbsResearchHome(profileLinks, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'matched',
+      entityId: '343434343434343434343434',
+    });
+  });
+
+  it("does not fall back to the lane's own row when the profile could not be read", () => {
+    const index = buildBbsMatchIndex([
+      candidate({
+        _id: '121212121212121212121212',
+        slug: 'bbs-a-rivera',
+        nameKey: 'alex-rivera-faculty-research',
+      }),
+      candidate({ _id: '343434343434343434343434', slug: 'ysm-faculty-alex-rivera', nameKey: 'x' }),
+    ]);
+    expect(resolveBbsResearchHome(NO_LINKS, 'alex-rivera', index, 'a-rivera')).toEqual({
+      status: 'unmatched',
+    });
+  });
+});
+
 describe('observation shaping', () => {
   it('grafts research areas onto an existing home keyed by entity id', () => {
     const obs = bbsGraftObservations(
@@ -232,48 +369,40 @@ describe('observation shaping', () => {
       },
     ]);
   });
-
-  it('mints a FACULTY_RESEARCH_AREA home on the ysm-faculty namespace with track areas', () => {
-    const obs = bbsMintObservations(
-      {
-        name: 'Alex B. Rivera',
-        profileSlug: 'alex-rivera-bbs',
-        profileUrl: 'https://medicine.yale.edu/bbs/profile/alex-rivera-bbs/',
-        researchAreas: ['Immunology'],
-      },
-      {
-        canonicalProfileUrl: 'https://medicine.yale.edu/profile/alex-rivera/',
-        labUrls: [],
-      },
-    );
-    const entityObs = obs.filter((o) => o.entityType === 'researchEntity');
-    const bySlug = entityObs.find((o) => o.field === 'slug');
-    expect(bySlug?.entityKey).toBe('ysm-faculty-alex-rivera');
-    expect(bySlug?.value).toBe('ysm-faculty-alex-rivera');
-    expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe('FACULTY_RESEARCH_AREA');
-    expect(entityObs.find((o) => o.field === 'school')?.value).toBe('Yale School of Medicine');
-    expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual(['Immunology']);
-    const userObs = obs.filter((o) => o.entityType === 'user');
-    expect(userObs.find((o) => o.field === 'lname')?.value).toBe('Rivera');
-    expect(userObs.every((o) => o.entityKey === 'bbs:alex-rivera')).toBe(true);
-  });
-
-  it('keys a mint by the BBS slug when the profile exposes no canonical YSM URL', () => {
-    const obs = bbsMintObservations(
-      {
-        name: 'Morgan Lee',
-        profileSlug: 'morgan-lee',
-        profileUrl: 'https://medicine.yale.edu/bbs/profile/morgan-lee/',
-        researchAreas: ['Neuroscience'],
-      },
-      NO_LINKS,
-    );
-    expect(obs.find((o) => o.field === 'slug')?.value).toBe('bbs-morgan-lee');
-  });
 });
 
 describe('BbsResearchTrackScraper.run', () => {
-  it('grafts onto an existing home, mints a net-new one, and holds an ambiguous PI', async () => {
+  it('names the grafted row by key as well as id, so the graft supersedes a claim stored under either form (#3834)', async () => {
+    const pages: Record<string, string> = {
+      'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+        { slug: 'a-rivera', label: 'Rivera, Alex' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/a-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '121212121212121212121212',
+          slug: 'bbs-a-rivera',
+          nameKey: 'alex-rivera-faculty-research',
+        }),
+      ],
+    });
+
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    await scraper.run(ctx);
+
+    expect(emitted.find((o) => o.field === 'researchAreas')).toMatchObject({
+      entityId: '121212121212121212121212',
+      entityKey: 'bbs-a-rivera',
+      value: ['Immunology'],
+    });
+  });
+
+  it('grafts onto an existing row and mints nothing for an absent or ambiguous one', async () => {
     const pages: Record<string, string> = {
       'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
         { slug: 'alex-rivera', label: 'Rivera, Alex' },
@@ -307,18 +436,56 @@ describe('BbsResearchTrackScraper.run', () => {
     const { ctx, emitted } = makeContext({ only: ['immunology'] });
     const result = await scraper.run(ctx);
 
-    expect(result.entitiesObserved).toBe(2);
+    expect(result.entitiesObserved).toBe(1);
 
     const graft = emitted.find(
       (o) => o.entityId === '111111111111111111111111' && o.field === 'researchAreas',
     );
     expect(graft?.value).toEqual(['Immunology']);
 
-    const mintedSlug = emitted.find((o) => o.entityType === 'researchEntity' && o.field === 'slug');
-    expect(mintedSlug?.value).toBe('ysm-faculty-morgan-lee');
-
+    // Counted by field rather than in total, because the lane also emits one roster-health
+    // snapshot per track it read (#3852). The claim under test is the graft.
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toHaveLength(1);
+    expect(emitted.filter((o) => o.field === CENTER_ROSTER_HEALTH_FIELD)).toHaveLength(1);
+    expect(emitted.some((o) => o.entityType === 'user')).toBe(false);
+    expect(emitted.some((o) => o.field === 'slug')).toBe(false);
     expect(emitted.some((o) => o.entityId?.startsWith('aaaaaaaaaaaaaaaaaaaaaaa'))).toBe(false);
-    expect(result.notes).toMatch(/1 PIs held/);
+    expect(result.notes).toMatch(/rows enriched: 1 of 3 track PIs/);
+    expect(result.notes).toMatch(/1 have no existing research row/);
+    expect(result.notes).toMatch(/1 ambiguous row/);
+  });
+
+  it('counts a row reached only through a lab URL naming someone else apart from an absent row', async () => {
+    const labUrl = 'https://medicine.yale.edu/lab/quokka/';
+    const pages: Record<string, string> = {
+      'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/alex-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+        labUrls: [labUrl],
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '222222222222222222222222',
+          slug: 'ysm-faculty-kaya-lindgren',
+          name: 'Kaya Lindgren Faculty Research',
+          matchUrls: [labUrl],
+          nameKey: 'kaya-lindgren',
+        }),
+      ],
+    });
+
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === CENTER_ROSTER_HEALTH_FIELD)).toHaveLength(1);
+    expect(result.notes).toMatch(/0 have no existing research row/);
+    expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
   });
 
   it('unions track areas for a PI listed under more than one track', async () => {
@@ -376,7 +543,7 @@ describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
       }),
     ]);
 
-    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('unmatched');
+    expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), '', index).status).toBe('refused');
   });
 
   it('keeps a lab URL match when the row names the same person', () => {
@@ -445,7 +612,7 @@ describe('resolveBbsResearchHome on a borrowed URL (#3342)', () => {
     ]);
 
     expect(resolveBbsResearchHome(linksWithLab('alex-rivera'), 'alex-rivera', index).status).toBe(
-      'unmatched',
+      'refused',
     );
   });
 
@@ -507,5 +674,386 @@ describe('resolveBbsResearchHome netid conflict on the profile arm (#3342)', () 
       status: 'matched',
       entityId: '999999999999999999999999',
     });
+  });
+});
+
+/**
+ * #3833's loudness contract, agreed with the manager: every empty track warns, and a track that
+ * has listed PIs before also fails this lane's stage, naming the track. The failure travels as a
+ * `partialFailures` entry, which the orchestrator turns into a run error and the CLI turns into a
+ * non-zero exit for this source's own subprocess, so the rest of the sweep still runs.
+ */
+describe('an empty track listing', () => {
+  const emptyPages = {
+    'https://medicine.yale.edu/bbs/people/immunology/': '<html><body><ul></ul></body></html>',
+  } as Record<string, string>;
+
+  it('warns but does not fail the stage when the track has never listed anybody', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => emptyPages[url] ?? '',
+      entityFinder: async () => [],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(true);
+    expect(result.partialFailures ?? []).toEqual([]);
+  });
+
+  it('fails the stage and names the track when it has listed PIs before', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => emptyPages[url] ?? '',
+      entityFinder: async () => [],
+      trackEverListedPis: async () => true,
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(true);
+    expect(result.partialFailures).toHaveLength(1);
+    expect(result.partialFailures?.[0]).toContain('immunology');
+    expect(result.partialFailures?.[0]).toMatch(/listed no faculty but has listed PIs before/);
+  });
+
+  it('reports nothing when the track lists faculty', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) =>
+        url.endsWith('/people/immunology/')
+          ? trackListingHtml([{ slug: 'alex-rivera', label: 'Rivera, Alex' }])
+          : bbsProfileHtml({ canonicalSlug: 'alex-rivera' }),
+      entityFinder: async () => [],
+      trackEverListedPis: async () => true,
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(logs.some((line) => /WARNING: this track listed no faculty/.test(line))).toBe(false);
+    expect(result.partialFailures ?? []).toEqual([]);
+  });
+});
+
+/**
+ * #3876. The lane's own empty-track check fires on the first barren run for a track that has
+ * listed PIs before; the general per-unit barren-streak check in `sourceYieldGuard` needs a
+ * per-track count in `metrics.unitYields` to compare across runs. These pin the reporting
+ * contract at this lane's boundary, because the guard's own tests prove the rule and say nothing
+ * about whether any lane feeds it.
+ */
+describe('per-track counts for the per-unit barren-streak check', () => {
+  const runTracks = async (pages: Record<string, string | null>, only: string[]) => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url in pages) {
+          const page = pages[url];
+          if (page === null) throw new Error('fixture fetch failure');
+          return page;
+        }
+        return bbsProfileHtml({ canonicalSlug: 'alex-rivera' });
+      },
+      entityFinder: async () => [],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx } = makeContext({ only });
+    return scraper.run(ctx);
+  };
+
+  it('reports a count for each track it parsed, including the ones that listed nobody', async () => {
+    const result = await runTracks(
+      {
+        'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+          { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        ]),
+        'https://medicine.yale.edu/bbs/people/plantmolbio/': '<html><body><ul></ul></body></html>',
+      },
+      ['immunology', 'plantmolbio'],
+    );
+    expect(result.metrics?.unitYields).toEqual({ immunology: 1, plantmolbio: 0 });
+  });
+
+  it('omits a track whose page it never read, so the guard reads it as inconclusive', async () => {
+    const result = await runTracks(
+      {
+        'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+          { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        ]),
+        'https://medicine.yale.edu/bbs/people/plantmolbio/': null,
+      },
+      ['immunology', 'plantmolbio'],
+    );
+    expect(result.metrics?.unitYields).toEqual({ immunology: 1 });
+  });
+
+  it('feeds the guard: three such runs fail the lane on that track while the lane stays productive', async () => {
+    const barrenForPlantmolbio = await runTracks(
+      {
+        'https://medicine.yale.edu/bbs/people/immunology/': trackListingHtml([
+          { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        ]),
+        'https://medicine.yale.edu/bbs/people/plantmolbio/': '<html><body><ul></ul></body></html>',
+      },
+      ['immunology', 'plantmolbio'],
+    );
+    const asRun = {
+      status: 'success',
+      observationCount: 431,
+      metrics: barrenForPlantmolbio.metrics,
+    };
+    const failures = resolveBarrenUnitStreakFailures({
+      sourceName: 'bbs-research-track',
+      source: { coverage: { tier: 'THIRD_PARTY_ENRICHMENT' } },
+      currentRun: asRun,
+      priorRunsNewestFirst: Array.from(
+        { length: BARREN_RUN_STREAK_FAILURE_THRESHOLD - 1 },
+        () => asRun,
+      ),
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0].message).toContain('"plantmolbio"');
+  });
+});
+
+/**
+ * #3852 step one. The retirement mechanism from #3781 is driven by a health snapshot, and this
+ * lane emitted none, so an omission could never be told from a page nobody read. These pin the
+ * admissibility contract at this lane's boundary: only a complete, off-the-wire read that listed
+ * at least one PI may ever retire anybody.
+ */
+describe('per-track roster-health snapshot', () => {
+  const snapshotFor = (emitted: ObservationInput[], trackSlug: string) =>
+    emitted.find((o) => o.field === CENTER_ROSTER_HEALTH_FIELD && o.entityKey === trackSlug);
+
+  const runTrack = async (options: {
+    html: string | null;
+    useCache?: boolean;
+  }): Promise<ObservationInput[]> => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) =>
+        url.endsWith('/people/immunology/')
+          ? options.html
+          : bbsProfileHtml({ canonicalSlug: 'alex-rivera' }),
+      entityFinder: async () => [],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx, emitted } = makeContext({
+      only: ['immunology'],
+      ...(options.useCache === undefined ? {} : { useCache: options.useCache }),
+    });
+    await scraper.run(ctx);
+    return emitted;
+  };
+
+  it('is admissible for a complete off-the-wire read that listed a PI', async () => {
+    const emitted = await runTrack({
+      html: trackListingHtml([{ slug: 'alex-rivera', label: 'Rivera, Alex' }]),
+    });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(snapshot).toBeDefined();
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('read-listed-members');
+  });
+
+  // The plantmolbio protection: a zero-PI parse must retire nobody.
+  it('is inadmissible when the read listed nobody, so an empty track retires no one', async () => {
+    const emitted = await runTrack({ html: '<html><body><ul></ul></body></html>' });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(snapshot).toBeDefined();
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('read-listed-nobody');
+  });
+
+  it('is inadmissible when the page could not be read at all', async () => {
+    const emitted = await runTrack({ html: null });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(snapshot).toBeDefined();
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('not-read');
+  });
+
+  // Two runs inside the snapshot cache's lifetime replay one fetch, so a cache-permitted read
+  // must never satisfy the two-read rule on its own.
+  it('is inadmissible when the run permitted the cache', async () => {
+    const emitted = await runTrack({
+      html: trackListingHtml([{ slug: 'alex-rivera', label: 'Rivera, Alex' }]),
+      useCache: true,
+    });
+    const snapshot = snapshotFor(emitted, 'immunology');
+    expect(centerRosterReadAdmissibility(snapshot?.value as never)).toBe('cache-permitted');
+  });
+
+  it('names every PI it listed, which is what a later absence is measured against', async () => {
+    const emitted = await runTrack({
+      html: trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        { slug: 'morgan-lee', label: 'Lee, Morgan' },
+      ]),
+    });
+    const value = snapshotFor(emitted, 'immunology')?.value as {
+      members?: Array<{ memberKey: string }>;
+    };
+    expect((value.members ?? []).map((m) => m.memberKey)).toEqual(['alex-rivera', 'morgan-lee']);
+  });
+  it('names the row each resolved PI claims on, and no row for one that did not resolve', async () => {
+    const labUrl = 'https://medicine.yale.edu/lab/quokka/';
+    const pages: Record<string, string> = {
+      [IMMUNOLOGY_URL]: trackListingHtml([
+        { slug: 'alex-rivera', label: 'Rivera, Alex' },
+        { slug: 'morgan-lee', label: 'Lee, Morgan' },
+        { slug: 'sam-carter', label: 'Carter, Sam' },
+        { slug: 'jo-park', label: 'Park, Jo' },
+      ]),
+      'https://medicine.yale.edu/bbs/profile/alex-rivera/': bbsProfileHtml({
+        canonicalSlug: 'alex-rivera',
+      }),
+      'https://medicine.yale.edu/bbs/profile/morgan-lee/': bbsProfileHtml({
+        canonicalSlug: 'morgan-lee',
+      }),
+      'https://medicine.yale.edu/bbs/profile/sam-carter/': bbsProfileHtml({
+        canonicalSlug: 'sam-carter',
+      }),
+      'https://medicine.yale.edu/bbs/profile/jo-park/': bbsProfileHtml({
+        canonicalSlug: 'jo-park',
+        labUrls: [labUrl],
+      }),
+    };
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => pages[url] ?? '',
+      entityFinder: async () => [
+        candidate({
+          _id: '111111111111111111111111',
+          slug: 'rivera-lab',
+          matchUrls: ['https://medicine.yale.edu/profile/alex-rivera/'],
+          nameKey: 'alex-rivera',
+        }),
+        candidate({ _id: 'aaaaaaaaaaaaaaaaaaaaaaa1', slug: 'sam-a', nameKey: 'sam-carter' }),
+        candidate({ _id: 'aaaaaaaaaaaaaaaaaaaaaaa2', slug: 'sam-b', nameKey: 'sam-carter' }),
+        candidate({
+          _id: '222222222222222222222222',
+          slug: 'ysm-faculty-kaya-lindgren',
+          name: 'Kaya Lindgren Faculty Research',
+          matchUrls: [labUrl],
+          nameKey: 'kaya-lindgren',
+        }),
+      ],
+      trackEverListedPis: async () => false,
+    });
+    const { ctx, emitted } = makeContext({ only: ['immunology'] });
+    const result = await scraper.run(ctx);
+    expect(result.notes).toMatch(/1 have no existing research row/);
+    expect(result.notes).toMatch(/1 ambiguous row/);
+    expect(result.notes).toMatch(/1 cite a lab URL only on a row naming someone else/);
+
+    const snapshot = snapshotFor(emitted, 'immunology');
+    const value = snapshot?.value as {
+      claimEntityKeysRecorded?: unknown;
+      members?: Array<{ memberKey: string; claimEntityKey?: string }>;
+    };
+    expect(value.claimEntityKeysRecorded).toBe(true);
+    expect(
+      Object.fromEntries((value.members ?? []).map((m) => [m.memberKey, m.claimEntityKey])),
+    ).toEqual({
+      'alex-rivera': '111111111111111111111111',
+      'jo-park': undefined,
+      'morgan-lee': undefined,
+      'sam-carter': undefined,
+    });
+
+    const { reads } = aggregateBbsTrackReads(
+      [{ ...snapshot, scrapeRunId: 'test-run', observedAt: '2026-09-10T00:00:00Z' }],
+      ['immunology'],
+    );
+    expect([...reads[0].claimEntityKeys]).toEqual(['111111111111111111111111']);
+
+    const citedUrls = Object.fromEntries(
+      ((value.members ?? []) as Array<{ memberKey: string; citedProfileUrl?: string }>).map((m) => [
+        m.memberKey,
+        m.citedProfileUrl,
+      ]),
+    );
+    const graft = emitted.find(
+      (observation) =>
+        observation.field === 'researchAreas' &&
+        String(observation.entityId) === '111111111111111111111111',
+    );
+    expect(citedUrls['alex-rivera']).toBe(graft?.sourceUrl);
+    expect(citedUrls['morgan-lee']).toBe('https://medicine.yale.edu/profile/morgan-lee/');
+    expect([...reads[0].unresolvedMemberKeys].sort()).toEqual([
+      'jo-park',
+      'morgan-lee',
+      'sam-carter',
+    ]);
+  });
+});
+
+describe('profile reads honour source concurrency and record refusals (#3835)', () => {
+  const roster = Array.from({ length: 6 }, (_v, i) => ({
+    slug: `fixture-pi-${i}`,
+    label: `Pi${i}, Fixture`,
+  }));
+  const profileUrl = (slug: string) => `https://medicine.yale.edu/bbs/profile/${slug}/`;
+  const refusal = (status: number) => Object.assign(new Error('refused'), { response: { status } });
+
+  it('reads profiles in parallel up to --source-concurrency', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url === IMMUNOLOGY_URL) return trackListingHtml(roster);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return bbsProfileHtml({ canonicalSlug: 'unused' });
+      },
+      entityFinder: async () => [],
+    });
+    const { ctx, logs } = makeContext({ only: ['immunology'], sourceConcurrency: 3 });
+
+    const result = await scraper.run(ctx);
+
+    expect(peak).toBe(3);
+    expect(logs).toContain('Reading 6 PI profile(s) at source concurrency 3');
+    expect(result.notes).toMatch(/profiles at concurrency 3: 6 of 6 read/);
+  });
+
+  it('retries a refused profile once after a pause and counts it as recovered', async () => {
+    const attempts = new Map<string, number>();
+    const pause = vi.fn(async () => undefined);
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url === IMMUNOLOGY_URL) return trackListingHtml(roster);
+        const seen = (attempts.get(url) ?? 0) + 1;
+        attempts.set(url, seen);
+        if (url === profileUrl('fixture-pi-1') && seen === 1) throw refusal(403);
+        return bbsProfileHtml({ canonicalSlug: 'unused' });
+      },
+      entityFinder: async () => [],
+      pause,
+    });
+    const { ctx } = makeContext({ only: ['immunology'] });
+
+    const result = await scraper.run(ctx);
+
+    expect(pause).toHaveBeenCalledWith(BBS_REFUSED_PROFILE_RETRY_PAUSE_MS);
+    expect(attempts.get(profileUrl('fixture-pi-1'))).toBe(2);
+    expect(result.notes).toMatch(/1 refused with HTTP 403\/429 \(1 recovered on a retry, 0 lost\)/);
+    expect(result.partialFailures).toBeUndefined();
+  });
+
+  it('reports a profile refused twice as a partial failure rather than dropping it', async () => {
+    const scraper = new BbsResearchTrackScraper({
+      fetchPage: async (url) => {
+        if (url === IMMUNOLOGY_URL) return trackListingHtml(roster);
+        if (url === profileUrl('fixture-pi-2')) throw refusal(403);
+        if (url === profileUrl('fixture-pi-3')) throw refusal(404);
+        return bbsProfileHtml({ canonicalSlug: 'unused' });
+      },
+      entityFinder: async () => [],
+      pause: async () => undefined,
+    });
+    const { ctx } = makeContext({ only: ['immunology'] });
+
+    const result = await scraper.run(ctx);
+
+    expect(result.notes).toMatch(/4 of 6 read/);
+    expect(result.notes).toMatch(/1 refused with HTTP 403\/429 \(0 recovered on a retry, 1 lost\)/);
+    expect(result.notes).toMatch(/1 failed otherwise/);
+    expect(result.partialFailures).toEqual([
+      expect.stringMatching(/^1 BBS profile page\(s\) stayed refused or unreadable after a retry/),
+    ]);
   });
 });

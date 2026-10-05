@@ -13,17 +13,16 @@ import {
 
 const LAUNCH_PROSE = `${STALE_LAUNCH_SUPPRESSION_PROSE_PREFIX} source-backed description exists, but no official student action route, pathway, contact route, posted role, or access signal has been verified.`;
 
+const OFFICIAL_URL = 'https://medicine.yale.edu/lab/example-synthetic/';
+
 const staleRow = (overrides: Record<string, unknown> = {}) => ({
   archived: false,
   entityType: 'LAB',
+  websiteUrl: OFFICIAL_URL,
   studentVisibilityOverrideTier: 'suppressed',
   studentVisibilityComputedTier: 'student_ready',
   studentVisibilityTier: 'suppressed',
-  studentVisibilityReasons: [
-    'source_backed_description',
-    'concrete_next_step',
-    'operator_override',
-  ],
+  studentVisibilityReasons: ['source_backed_description', 'operator_override'],
   studentVisibilitySuppressionReason: LAUNCH_PROSE,
   ...overrides,
 });
@@ -34,7 +33,7 @@ describe('planStaleLaunchSuppressionOverrideRetirement', () => {
     expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
     expect(plan).toMatchObject({
       computedTier: 'student_ready',
-      softReasons: ['concrete_next_step', 'source_backed_description'],
+      softReasons: ['source_backed_description'],
     });
   });
 
@@ -42,11 +41,7 @@ describe('planStaleLaunchSuppressionOverrideRetirement', () => {
     const plan = planStaleLaunchSuppressionOverrideRetirement(
       staleRow({
         studentVisibilityReasons: [],
-        studentVisibilityComputedReasons: [
-          'source_backed_description',
-          'concrete_next_step',
-          'operator_override',
-        ],
+        studentVisibilityComputedReasons: ['source_backed_description', 'operator_override'],
       }),
     );
     expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
@@ -167,44 +162,60 @@ describe('retire-stale-launch-overrides apply guard', () => {
 
 describe('an override is stale only when the row records a route in', () => {
   /**
-   * The override claims a student has no way in, so a row that records none is a
-   * row the override still describes correctly, whatever its entityType.
+   * The override claims a student has no way in, so a row with no official page a
+   * student can open is a row the override still describes correctly.
    */
-  it('refuses a row with no route in, for every entity type', () => {
+  it('refuses a row with no official non-grant URL, for every entity type', () => {
     for (const entityType of ['CORE_FACILITY', 'INITIATIVE', 'LAB', 'FACULTY_RESEARCH_AREA']) {
       const plan = planStaleLaunchSuppressionOverrideRetirement(
-        staleRow({
-          entityType,
-          studentVisibilityReasons: [
-            'source_backed_description',
-            'missing_action_evidence',
-            'operator_override',
-          ],
-        }),
+        staleRow({ entityType, websiteUrl: undefined }),
       );
       expect(plan).toMatchObject({ refusedBecause: expect.stringContaining('no route in') });
     }
   });
 
-  it('retires a row that records one, for every entity type', () => {
+  it('retires a row with an official non-grant URL, for every entity type', () => {
     for (const entityType of ['CORE_FACILITY', 'INITIATIVE', 'LAB', 'FACULTY_RESEARCH_AREA']) {
       const plan = planStaleLaunchSuppressionOverrideRetirement(staleRow({ entityType }));
       expect(isStaleLaunchOverrideRefusal(plan)).toBe(false);
     }
   });
 
-  it('reads a route in positively, so silent reasons hold the override', () => {
+  it('reads the route in from the row URL, not from any recorded reason', () => {
     expect(recordsARouteIn(staleRow())).toBe(true);
     expect(
       recordsARouteIn(
         staleRow({ studentVisibilityReasons: [], studentVisibilityComputedReasons: [] }),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
-      planStaleLaunchSuppressionOverrideRetirement(
-        staleRow({ studentVisibilityReasons: [], studentVisibilityComputedReasons: [] }),
+      recordsARouteIn(
+        staleRow({ studentVisibilityReasons: ['concrete_next_step'], websiteUrl: undefined }),
       ),
-    ).toMatchObject({ refusedBecause: expect.stringContaining('no route in') });
+    ).toBe(false);
+  });
+
+  it('does not count a grant-only URL as a route in', () => {
+    expect(
+      recordsARouteIn(
+        staleRow({
+          websiteUrl: undefined,
+          sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not count a URL the corpus knows is dead as a route in', () => {
+    expect(
+      recordsARouteIn(
+        staleRow({
+          sourceLinkHealth: [
+            { url: OFFICIAL_URL, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+          ],
+        }),
+      ),
+    ).toBe(false);
   });
 });
 

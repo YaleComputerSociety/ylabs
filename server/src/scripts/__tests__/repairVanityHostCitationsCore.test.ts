@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MAX_VANITY_REDIRECT_HOPS,
-  VANITY_REPAIR_LOCKED_BY,
-  VANITY_REPAIR_LOCK_NOTE,
+  VANITY_REPAIR_REFUSED_BY,
+  VANITY_REPAIR_REFUSAL_NOTE,
   decideVanityRepair,
   planVanityRepairRow,
 } from '../repairVanityHostCitationsCore';
-import { isRevisitableFieldLock } from '../../utils/researchEntityFieldLocks';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const VANITY = 'https://www.mood.yale.edu/';
 const CANONICAL = 'https://medicine.yale.edu/psychiatry/research/mood/';
@@ -92,44 +92,75 @@ describe('planVanityRepairRow', () => {
     expect(change?.changedFields).toEqual(['sourceUrls']);
   });
 
-  // resolveBackfillWebsiteUrl clears a profile page precisely because the row cites
-  // it, so an unlocked websiteUrl rewrite is undone by the next materialize.
-  it('locks websiteUrl when it rewrites it, so the next materialize cannot undo the repair', () => {
+  // resolveBackfillWebsiteUrl re-derives the vanity url precisely because the row cites
+  // it, so a bare websiteUrl rewrite is undone by the next materialize.
+  it('refuses the vanity value when it rewrites websiteUrl, so the next materialize cannot undo the repair', () => {
     const change = planVanityRepairRow({ websiteUrl: VANITY }, VANITY, CANONICAL);
     expect(change?.websiteUrl).toBe(CANONICAL);
-    expect(change?.fieldLockUpdate?.manuallyLockedFields).toEqual(['websiteUrl']);
-  });
-
-  // A lock with no recorded reason reads as `unknown`, which `isRevisitableFieldLock`
-  // never re-opens, so it would freeze this row's websiteUrl for good (#2612).
-  it('records the lock as an engine_gap_workaround so it can be re-opened', () => {
-    const change = planVanityRepairRow({ websiteUrl: VANITY }, VANITY, CANONICAL);
-    const provenance = change?.fieldLockUpdate?.['fieldLockProvenance.websiteUrl'] as {
-      reason?: string;
-      lockedBy?: string;
+    const refusals = change?.fieldValueRefusalUpdate?.['fieldValueRefusals.websiteUrl'] as Array<{
+      valueKey?: string;
+      rule?: string;
+      refusedBy?: string;
       note?: string;
-      lockedAt?: Date;
-    };
-    expect(provenance?.reason).toBe('engine_gap_workaround');
-    expect(provenance?.lockedBy).toBe(VANITY_REPAIR_LOCKED_BY);
-    expect(provenance?.note).toBe(VANITY_REPAIR_LOCK_NOTE);
-    expect(provenance?.lockedAt).toBeInstanceOf(Date);
-    expect(isRevisitableFieldLock({ websiteUrl: provenance }, 'websiteUrl')).toBe(true);
+      refusedAt?: Date;
+      evidenceUrl?: string;
+    }>;
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]?.valueKey).toBe(fieldValueRefusalKey('websiteUrl', VANITY));
+    expect(refusals[0]?.rule).toBe('superseded_by_better_source');
+    expect(refusals[0]?.refusedBy).toBe(VANITY_REPAIR_REFUSED_BY);
+    expect(refusals[0]?.note).toBe(VANITY_REPAIR_REFUSAL_NOTE);
+    expect(refusals[0]?.evidenceUrl).toBe(CANONICAL);
+    expect(refusals[0]?.refusedAt).toBeInstanceOf(Date);
+    expect(change?.changedFields).toEqual(['websiteUrl', 'fieldValueRefusals']);
   });
 
-  it('does not duplicate an existing lock', () => {
+  // The whole reason for refusing rather than locking: a lock removes the field from
+  // derivation forever, so the row could never take a better research home again.
+  it('names one value rather than the field, so the field stays under derivation', () => {
+    const change = planVanityRepairRow({ websiteUrl: VANITY }, VANITY, CANONICAL);
+    expect(change?.fieldValueRefusalUpdate?.manuallyLockedFields).toBeUndefined();
+    expect(Object.keys(change?.fieldValueRefusalUpdate ?? {})).toEqual([
+      'fieldValueRefusals.websiteUrl',
+    ]);
+  });
+
+  it('does not write over an operator lock, which is a standing instruction', () => {
     const change = planVanityRepairRow(
       { websiteUrl: VANITY, manuallyLockedFields: ['websiteUrl', 'shortDescription'] },
       VANITY,
       CANONICAL,
     );
-    expect(change?.fieldLockUpdate).toBeUndefined();
+    expect(change?.fieldValueRefusalUpdate).toBeUndefined();
     expect(change?.changedFields).toEqual(['websiteUrl']);
   });
 
-  it('does not lock when only sourceUrls changed', () => {
+  it('does not duplicate a refusal it already recorded, so a second run is a no-op', () => {
+    const change = planVanityRepairRow(
+      {
+        websiteUrl: VANITY,
+        fieldValueRefusals: {
+          websiteUrl: [
+            {
+              valueKey: fieldValueRefusalKey('websiteUrl', VANITY),
+              rule: 'superseded_by_better_source',
+              refusedBy: VANITY_REPAIR_REFUSED_BY,
+              refusedAt: new Date('2020-01-01T00:00:00.000Z'),
+              note: 'already refused',
+            },
+          ],
+        },
+      },
+      VANITY,
+      CANONICAL,
+    );
+    expect(change?.fieldValueRefusalUpdate).toBeUndefined();
+    expect(change?.changedFields).toEqual(['websiteUrl']);
+  });
+
+  it('does not refuse anything when only sourceUrls changed', () => {
     const change = planVanityRepairRow({ sourceUrls: [VANITY] }, VANITY, CANONICAL);
-    expect(change?.fieldLockUpdate).toBeUndefined();
+    expect(change?.fieldValueRefusalUpdate).toBeUndefined();
   });
 
   it('rewrites the website field, which is the third fallback the DTO renders', () => {

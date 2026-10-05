@@ -16,7 +16,7 @@ import {
   sourceLinkHealthKey,
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
-import { planFieldLock } from '../utils/researchEntityFieldLocks';
+import { planFieldValueRefusal, valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import { isDecisivelyLiveProbe } from './verifyOfficialProfileLinksCore';
 
 export type WebsiteUrlRepairAction = 'restore' | 'clear';
@@ -60,11 +60,13 @@ export interface WebsiteUrlRepairEntity {
   websiteUrl?: unknown;
   sourceUrls?: unknown;
   manuallyLockedFields?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export type WebsiteUrlRepairSkipReason =
   | 'entity_missing'
   | 'website_url_manually_locked'
+  | 'website_url_value_already_refused'
   | 'current_value_unexpected'
   | 'intended_url_not_cited'
   | 'intended_url_not_reachable'
@@ -79,11 +81,12 @@ export interface WebsiteUrlRepairPlan {
   currentWebsiteUrl?: string;
   nextWebsiteUrl?: string;
   /**
-   * The `$set` fragment that locks `websiteUrl` and records why, from
-   * `planFieldLock`. One value rather than a bare field list, so the reason cannot
-   * be dropped on the way to the write or omitted from the report.
+   * The `$set` fragment that refuses the REGRESSED value at `websiteUrl` and records
+   * why, from `planFieldValueRefusal`. One value rather than a bare field name, so the
+   * rule and the reason cannot be dropped on the way to the write or omitted from the
+   * report.
    */
-  nextFieldLockUpdate?: Record<string, unknown>;
+  nextFieldValueRefusalUpdate?: Record<string, unknown>;
   requiresVisibilityRegate: boolean;
   skipped?: WebsiteUrlRepairSkipReason;
 }
@@ -112,16 +115,28 @@ export function isSameWebsiteUrlDestination(left: unknown, right: unknown): bool
  * Locking the field is what makes this per-row operator judgement durable, and it
  * is the same mechanism the materializer and the gate already honour.
  *
- * What forces the lock is the engine's inability to be told a cited value is
- * wrong, not a standing operator preference for these URLs, so it is recorded as
- * `engine_gap_workaround` and stays revisitable once #2542 lands (#2612).
+ * What forced the lock was "the engine's inability to be told a cited value is wrong",
+ * and `fieldValueRefusals` is exactly that capability, so the durability now comes from
+ * refusing the REGRESSED value rather than from freezing the field. That is strictly
+ * better and not merely equivalent: a lock removed `websiteUrl` from derivation for good,
+ * so the row could never take a better research home, and the lane was blinded by its own
+ * locks - measured 0 planned with all 3 of its rows skipped as
+ * `website_url_manually_locked`. A refusal names one value, survives re-observation
+ * because it is keyed on the value, and can be withdrawn with a reason.
+ *
+ * The rule differs by arm, because the evidence does. A `restore` refuses the regressed
+ * value as `superseded_by_better_source`, which is what the intended cited URL is. A
+ * `clear` records `operator_judgement` with the link-health verdict in the note, and
+ * deliberately NOT `confirmed_dead_page`: that rule means an explicit 404 or 410, while
+ * this lane's `dead` comes from `isLikelyUnavailableSourceLink` over stored
+ * `sourceLinkHealth`, so claiming it would overstate the evidence.
  */
-export const WEBSITE_URL_REPAIR_LOCK_FIELD = 'websiteUrl';
+export const WEBSITE_URL_REPAIR_FIELD = 'websiteUrl';
 
-export const WEBSITE_URL_REPAIR_LOCKED_BY = 'repair-promotion-regressed-website-urls';
+export const WEBSITE_URL_REPAIR_REFUSED_BY = 'repair-promotion-regressed-website-urls';
 
-export const WEBSITE_URL_REPAIR_LOCK_NOTE =
-  'websiteUrl is re-derived from evidence the row still cites, so a plain write is undone on the next scrape; revisit once the engine can retract a field it no longer has evidence for (#2542).';
+export const WEBSITE_URL_REPAIR_REFUSAL_NOTE =
+  'websiteUrl is re-derived from evidence the row still cites, so a plain write is undone on the next scrape; refusing the regressed VALUE holds without freezing the field, so the row can still take a better research home (#2542, #3167).';
 
 /** A live probe, narrowed to the three verdicts a repair may act on. */
 export type WebsiteUrlProbeVerdict = 'live' | 'dead' | 'inconclusive';
@@ -165,18 +180,28 @@ export function planWebsiteUrlRepair(
   const locked = asStringList(entity.manuallyLockedFields);
   const withCurrent = { ...base, currentWebsiteUrl };
 
-  if (locked.includes(WEBSITE_URL_REPAIR_LOCK_FIELD)) {
+  if (locked.includes(WEBSITE_URL_REPAIR_FIELD)) {
     return { ...withCurrent, skipped: 'website_url_manually_locked' };
   }
   if (!isSameWebsiteUrlDestination(currentWebsiteUrl, decision.expectedCurrentWebsiteUrl)) {
     return { ...withCurrent, skipped: 'current_value_unexpected' };
   }
-  const nextFieldLockUpdate = planFieldLock(locked, {
-    field: WEBSITE_URL_REPAIR_LOCK_FIELD,
-    reason: 'engine_gap_workaround',
-    lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
-    note: WEBSITE_URL_REPAIR_LOCK_NOTE,
-  });
+  if (valueIsRefused(entity.fieldValueRefusals, WEBSITE_URL_REPAIR_FIELD, currentWebsiteUrl)) {
+    return { ...withCurrent, skipped: 'website_url_value_already_refused' };
+  }
+  const refusalUpdateFor = (
+    rule: 'superseded_by_better_source' | 'operator_judgement',
+    note: string,
+    evidenceUrl?: string,
+  ): Record<string, unknown> =>
+    planFieldValueRefusal(entity.fieldValueRefusals, {
+      field: WEBSITE_URL_REPAIR_FIELD,
+      value: decision.expectedCurrentWebsiteUrl,
+      rule,
+      refusedBy: WEBSITE_URL_REPAIR_REFUSED_BY,
+      note,
+      ...(evidenceUrl ? { evidenceUrl } : {}),
+    });
 
   if (decision.action === 'clear') {
     const verdict = probe(decision.expectedCurrentWebsiteUrl);
@@ -187,7 +212,10 @@ export function planWebsiteUrlRepair(
     return {
       ...withCurrent,
       nextWebsiteUrl: '',
-      nextFieldLockUpdate,
+      nextFieldValueRefusalUpdate: refusalUpdateFor(
+        'operator_judgement',
+        `${WEBSITE_URL_REPAIR_REFUSAL_NOTE} The value probed unavailable through stored sourceLinkHealth rather than through an explicit 404 or 410, which is why this is not recorded as confirmed_dead_page.`,
+      ),
       requiresVisibilityRegate: true,
     };
   }
@@ -203,7 +231,11 @@ export function planWebsiteUrlRepair(
   return {
     ...withCurrent,
     nextWebsiteUrl: intended,
-    nextFieldLockUpdate,
+    nextFieldValueRefusalUpdate: refusalUpdateFor(
+      'superseded_by_better_source',
+      WEBSITE_URL_REPAIR_REFUSAL_NOTE,
+      intended,
+    ),
     requiresVisibilityRegate: false,
   };
 }
@@ -222,17 +254,17 @@ export function planWebsiteUrlRepair(
 export function planWebsiteUrlRepairUpdate(
   plan: WebsiteUrlRepairPlan,
 ): Record<string, unknown> | undefined {
-  if (plan.skipped || plan.nextWebsiteUrl === undefined || !plan.nextFieldLockUpdate) {
+  if (plan.skipped || plan.nextWebsiteUrl === undefined || !plan.nextFieldValueRefusalUpdate) {
     return undefined;
   }
   if (plan.nextWebsiteUrl === '') {
     return {
-      $set: plan.nextFieldLockUpdate,
+      $set: plan.nextFieldValueRefusalUpdate,
       $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
     };
   }
   return {
-    $set: { websiteUrl: plan.nextWebsiteUrl, ...plan.nextFieldLockUpdate },
+    $set: { websiteUrl: plan.nextWebsiteUrl, ...plan.nextFieldValueRefusalUpdate },
     $unset: { 'fieldProvenance.websiteUrl': '' },
   };
 }

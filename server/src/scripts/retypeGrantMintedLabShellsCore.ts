@@ -1,3 +1,4 @@
+import { GRANT_LANE_SOURCE_NAMES } from '../scrapers/grantLaneSourceNames';
 import { grantShellResearchRecordName } from '../scrapers/utils/grantShellIdentity';
 import { slugify } from '../scrapers/utils/scraperHelpers';
 
@@ -19,13 +20,6 @@ import { slugify } from '../scrapers/utils/scraperHelpers';
  * than guessed at, and so is one that reduces to a person the shell key does not name.
  */
 export const GRANT_SHELL_SLUG_RE = /^(?:nih|nsf|federal|doe|neh)-pi-/i;
-export const GRANT_LANE_SOURCE_NAMES = [
-  'nih-reporter',
-  'nsf-award-search',
-  'doe-osti',
-  'federal-award-search',
-  'neh-grants',
-] as const;
 const LAB_NAME_SUFFIX_RE = /\s+(?:Lab|Laboratory)$/i;
 
 export type GrantShellRetypeRefusal =

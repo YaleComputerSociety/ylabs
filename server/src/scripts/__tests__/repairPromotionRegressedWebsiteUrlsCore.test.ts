@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS,
-  WEBSITE_URL_REPAIR_LOCKED_BY,
-  WEBSITE_URL_REPAIR_LOCK_NOTE,
+  WEBSITE_URL_REPAIR_REFUSED_BY,
+  WEBSITE_URL_REPAIR_REFUSAL_NOTE,
   isSameWebsiteUrlDestination,
   planWebsiteUrlRepair,
   planWebsiteUrlRepairUpdate,
@@ -11,6 +11,7 @@ import {
   type WebsiteUrlProbeVerdict,
   type WebsiteUrlRepairDecision,
 } from '../repairPromotionRegressedWebsiteUrlsCore';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const restoreDecision: WebsiteUrlRepairDecision = {
   slug: 'watts-dwatts',
@@ -54,47 +55,64 @@ describe('planWebsiteUrlRepair restore', () => {
     ).toMatchObject({
       slug: 'watts-dwatts',
       nextWebsiteUrl: 'https://anthropology.yale.edu/profile/david-watts',
-      nextFieldLockUpdate: { manuallyLockedFields: ['websiteUrl'] },
       requiresVisibilityRegate: false,
     });
   });
 
-  it('records the lock as an engine-gap workaround, not as an operator decision', () => {
+  it('refuses the REGRESSED value as superseded, naming the intended url as evidence', () => {
     const update = planWebsiteUrlRepair(
       restoreDecision,
       entity,
       live('https://anthropology.yale.edu/profile/david-watts'),
-    ).nextFieldLockUpdate;
-    expect(update?.['fieldLockProvenance.websiteUrl']).toMatchObject({
-      reason: 'engine_gap_workaround',
-      lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY,
-      note: WEBSITE_URL_REPAIR_LOCK_NOTE,
+    ).nextFieldValueRefusalUpdate;
+    const refusals = update?.['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toMatchObject({
+      valueKey: fieldValueRefusalKey('websiteUrl', restoreDecision.expectedCurrentWebsiteUrl),
+      rule: 'superseded_by_better_source',
+      refusedBy: WEBSITE_URL_REPAIR_REFUSED_BY,
+      note: WEBSITE_URL_REPAIR_REFUSAL_NOTE,
+      evidenceUrl: 'https://anthropology.yale.edu/profile/david-watts',
     });
-    expect(
-      (update?.['fieldLockProvenance.websiteUrl'] as { lockedAt?: unknown }).lockedAt,
-    ).toBeInstanceOf(Date);
+    expect(refusals[0].refusedAt).toBeInstanceOf(Date);
   });
 
-  it('writes the lock reason under a per-field path, so sibling fields keep theirs', () => {
+  // The whole reason for refusing rather than locking: a lock removed the field from
+  // derivation for good, and it blinded this very lane, which measured 0 planned with
+  // all 3 of its rows skipped as `website_url_manually_locked`.
+  it('names one value and never touches manuallyLockedFields', () => {
     const update = planWebsiteUrlRepair(
       restoreDecision,
       entity,
       live('https://anthropology.yale.edu/profile/david-watts'),
-    ).nextFieldLockUpdate;
-    expect(Object.keys(update ?? {})).toEqual([
-      'manuallyLockedFields',
-      'fieldLockProvenance.websiteUrl',
-    ]);
+    ).nextFieldValueRefusalUpdate;
+    expect(Object.keys(update ?? {})).toEqual(['fieldValueRefusals.websiteUrl']);
   });
 
-  it('keeps any locks the row already carries when it adds its own', () => {
+  it('plans nothing when it has already refused the value it was about to refuse', () => {
     expect(
       planWebsiteUrlRepair(
         restoreDecision,
-        { ...entity, manuallyLockedFields: ['fullDescription'] },
+        {
+          ...entity,
+          fieldValueRefusals: {
+            websiteUrl: [
+              {
+                valueKey: fieldValueRefusalKey(
+                  'websiteUrl',
+                  restoreDecision.expectedCurrentWebsiteUrl,
+                ),
+                rule: 'superseded_by_better_source',
+                refusedBy: WEBSITE_URL_REPAIR_REFUSED_BY,
+                refusedAt: new Date('2020-01-01T00:00:00.000Z'),
+                note: 'already refused',
+              },
+            ],
+          },
+        },
         live('https://anthropology.yale.edu/profile/david-watts'),
-      ).nextFieldLockUpdate?.manuallyLockedFields,
-    ).toEqual(['fullDescription', 'websiteUrl']);
+      ).skipped,
+    ).toBe('website_url_value_already_refused');
   });
 
   it('refuses to mint a value the row does not already cite', () => {
@@ -173,20 +191,30 @@ describe('planWebsiteUrlRepair clear', () => {
     sourceUrls: ['https://medicine.yale.edu/profile/shrikant-mane/'],
   };
 
-  it('clears a dead value, locks the field, and flags the row for a visibility re-gate', () => {
-    expect(planWebsiteUrlRepair(clearDecision, entity, allDead)).toMatchObject({
-      nextWebsiteUrl: '',
-      nextFieldLockUpdate: { manuallyLockedFields: ['websiteUrl'] },
-      requiresVisibilityRegate: true,
-    });
+  it('clears a dead value, refuses it, and flags the row for a visibility re-gate', () => {
+    const plan = planWebsiteUrlRepair(clearDecision, entity, allDead);
+    expect(plan).toMatchObject({ nextWebsiteUrl: '', requiresVisibilityRegate: true });
+    expect(Object.keys(plan.nextFieldValueRefusalUpdate ?? {})).toEqual([
+      'fieldValueRefusals.websiteUrl',
+    ]);
   });
 
-  it('records the clear-arm lock as an engine-gap workaround too', () => {
-    expect(
-      planWebsiteUrlRepair(clearDecision, entity, allDead).nextFieldLockUpdate?.[
-        'fieldLockProvenance.websiteUrl'
-      ],
-    ).toMatchObject({ reason: 'engine_gap_workaround', lockedBy: WEBSITE_URL_REPAIR_LOCKED_BY });
+  // Deliberately NOT `confirmed_dead_page`: that rule means an explicit 404 or 410, and
+  // this arm's `dead` comes from `isLikelyUnavailableSourceLink` over stored
+  // `sourceLinkHealth`, so claiming it would overstate the evidence. The note carries the
+  // distinction so a later reader can re-derive what was actually known.
+  it('records the clear arm as an operator judgement, not as a confirmed dead page', () => {
+    const refusals = planWebsiteUrlRepair(clearDecision, entity, allDead)
+      .nextFieldValueRefusalUpdate?.['fieldValueRefusals.websiteUrl'] as Array<
+      Record<string, unknown>
+    >;
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toMatchObject({
+      rule: 'operator_judgement',
+      refusedBy: WEBSITE_URL_REPAIR_REFUSED_BY,
+    });
+    expect(String(refusals[0].note)).toContain('rather than through an explicit 404 or 410');
+    expect(refusals[0].evidenceUrl).toBeUndefined();
   });
 
   it('refuses to clear a value that turns out to still resolve', () => {
@@ -214,18 +242,19 @@ describe('planWebsiteUrlRepairUpdate', () => {
       live('https://anthropology.yale.edu/profile/david-watts'),
     );
 
-  it('writes the value, its lock, and the lock reason in one update', () => {
-    expect(planWebsiteUrlRepairUpdate(restorePlan())).toMatchObject({
+  it('writes the value and the refusal that makes it durable in one update', () => {
+    const update = planWebsiteUrlRepairUpdate(restorePlan());
+    expect(update).toMatchObject({
       $set: {
         websiteUrl: 'https://anthropology.yale.edu/profile/david-watts',
-        manuallyLockedFields: ['websiteUrl'],
-        'fieldLockProvenance.websiteUrl': { reason: 'engine_gap_workaround' },
+        'fieldValueRefusals.websiteUrl': [{ rule: 'superseded_by_better_source' }],
       },
       $unset: { 'fieldProvenance.websiteUrl': '' },
     });
+    expect(update?.$set).not.toHaveProperty('manuallyLockedFields');
   });
 
-  it('unsets the value on the clear arm while still recording the lock reason', () => {
+  it('unsets the value on the clear arm while still recording the refusal', () => {
     const update = planWebsiteUrlRepairUpdate(
       planWebsiteUrlRepair(
         clearDecision,
@@ -234,17 +263,18 @@ describe('planWebsiteUrlRepairUpdate', () => {
       ),
     );
     expect(update).toMatchObject({
-      $set: { 'fieldLockProvenance.websiteUrl': { reason: 'engine_gap_workaround' } },
+      $set: { 'fieldValueRefusals.websiteUrl': [{ rule: 'operator_judgement' }] },
       $unset: { websiteUrl: '', 'fieldProvenance.websiteUrl': '' },
     });
+    expect(update?.$set).not.toHaveProperty('manuallyLockedFields');
   });
 
-  it('refuses to write a value whose lock carries no recorded reason', () => {
-    const { nextFieldLockUpdate: _dropped, ...unattributed } = restorePlan();
+  it('refuses to write a value whose refusal record was dropped on the way', () => {
+    const { nextFieldValueRefusalUpdate: _dropped, ...unattributed } = restorePlan();
     expect(planWebsiteUrlRepairUpdate(unattributed)).toBeUndefined();
   });
 
-  it('refuses to write a lock without the value it makes durable', () => {
+  it('refuses to write a refusal without the value it makes durable', () => {
     expect(
       planWebsiteUrlRepairUpdate({ ...restorePlan(), nextWebsiteUrl: undefined }),
     ).toBeUndefined();

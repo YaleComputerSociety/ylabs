@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useCallback, useReducer } from 'react';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import {
   adminFellowshipsTableReducer,
   createInitialAdminFellowshipsTableState,
@@ -13,6 +13,10 @@ import {
   createInitialAdminFellowshipFormState,
 } from '../../reducers/adminFellowshipFormReducer';
 import { getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
+import useLatestRequest from '../../hooks/useLatestRequest';
+import { CloseIcon } from '../shared/icons';
+import ProgramDateFields from './ProgramDateFields';
+import { editedProgramDateValue, programDatePatch } from '../../utils/programDateDraft';
 
 interface FellowshipLink {
   label: string;
@@ -84,8 +88,10 @@ const AdminFellowshipsTable = () => {
   } = state;
   const archivedFilter = filters.archived;
   const auditedFilter = filters.audited;
+  const fellowshipsRequest = useLatestRequest();
 
   const fetchFellowships = useCallback(async () => {
+    const request = fellowshipsRequest.begin();
     dispatch({ type: 'FETCH_START' });
     try {
       const params: any = {
@@ -98,7 +104,12 @@ const AdminFellowshipsTable = () => {
       if (archivedFilter) params.archived = archivedFilter;
       if (auditedFilter) params.audited = auditedFilter;
 
-      const response = await axios.get('/admin/fellowships', { params, withCredentials: true });
+      const response = await axios.get('/admin/fellowships', {
+        params,
+        withCredentials: true,
+        signal: request.signal,
+      });
+      if (!request.isCurrent()) return;
       dispatch({
         type: 'FETCH_SUCCESS',
         items: response.data.fellowships,
@@ -106,11 +117,21 @@ const AdminFellowshipsTable = () => {
         totalPages: response.data.totalPages,
       });
     } catch {
+      if (!request.isCurrent()) return;
       console.error('Error fetching admin fellowships.');
-      void swal({ text: 'Failed to fetch fellowships', icon: 'error' });
+      void showAlert({ text: 'Failed to fetch fellowships', tone: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
-  }, [search, sortBy, sortOrder, page, pageSize, archivedFilter, auditedFilter]);
+  }, [
+    fellowshipsRequest,
+    search,
+    sortBy,
+    sortOrder,
+    page,
+    pageSize,
+    archivedFilter,
+    auditedFilter,
+  ]);
 
   useEffect(() => {
     const debounce = setTimeout(
@@ -123,23 +144,23 @@ const AdminFellowshipsTable = () => {
   }, [fetchFellowships, search]);
 
   const handleDelete = async (fellowship: AdminFellowship) => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Fellowship',
       text: `Are you sure you want to permanently delete "${fellowship.title}"? This cannot be undone.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
 
     if (!confirmed) return;
 
     try {
       await axios.delete(`/admin/fellowships/${fellowship._id}`, { withCredentials: true });
-      void swal({ text: 'Fellowship deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Fellowship deleted', tone: 'success', autoCloseMs: 1500 });
       void fetchFellowships();
     } catch {
       console.error('Error deleting fellowship.');
-      void swal({ text: 'Failed to delete fellowship', icon: 'error' });
+      void showAlert({ text: 'Failed to delete fellowship', tone: 'error' });
     }
   };
 
@@ -151,11 +172,11 @@ const AdminFellowshipsTable = () => {
         {},
         { withCredentials: true },
       );
-      void swal({ text: `Fellowship ${action}d`, icon: 'success', timer: 1500 });
+      void showAlert({ text: `Fellowship ${action}d`, tone: 'success', autoCloseMs: 1500 });
       void fetchFellowships();
     } catch {
       console.error(`Error ${action}ing fellowship.`);
-      void swal({ text: `Failed to ${action} fellowship`, icon: 'error' });
+      void showAlert({ text: `Failed to ${action} fellowship`, tone: 'error' });
     }
   };
 
@@ -168,12 +189,12 @@ const AdminFellowshipsTable = () => {
         { data: updatedData },
         { withCredentials: true },
       );
-      void swal({ text: 'Fellowship updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Fellowship updated', tone: 'success', autoCloseMs: 1500 });
       dispatch({ type: 'CLOSE_EDIT' });
       void fetchFellowships();
     } catch {
       console.error('Error updating fellowship.');
-      void swal({ text: 'Failed to update fellowship', icon: 'error' });
+      void showAlert({ text: 'Failed to update fellowship', tone: 'error' });
     }
   };
 
@@ -194,10 +215,10 @@ const AdminFellowshipsTable = () => {
       <div className="flex flex-wrap gap-4 items-center">
         <input
           type="text"
-          placeholder="Search fellowships..."
+          placeholder="Search fellowships…"
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring w-64"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring w-64"
         />
 
         <select
@@ -205,7 +226,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'archived', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring"
         >
           <option value="">All</option>
           <option value="false">Active</option>
@@ -217,7 +238,7 @@ const AdminFellowshipsTable = () => {
           onChange={(e) =>
             dispatch({ type: 'SET_FILTER', filter: 'audited', value: e.target.value })
           }
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring"
         >
           <option value="">All (Audit)</option>
           <option value="true">Audited</option>
@@ -227,7 +248,7 @@ const AdminFellowshipsTable = () => {
         <select
           value={pageSize}
           onChange={(e) => dispatch({ type: 'SET_PAGE_SIZE', payload: Number(e.target.value) })}
-          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg yr-focus-ring"
+          className="min-h-[44px] px-3 py-2 border border-[var(--yr-line-control)] rounded-lg yr-focus-ring"
         >
           {PAGE_SIZES.map((size) => (
             <option key={size} value={size}>
@@ -236,7 +257,7 @@ const AdminFellowshipsTable = () => {
           ))}
         </select>
 
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-muted">
           {total} fellowship{total !== 1 ? 's' : ''} total
         </span>
       </div>
@@ -249,7 +270,7 @@ const AdminFellowshipsTable = () => {
                 <th
                   key={col.value}
                   onClick={() => handleSort(col.value)}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-[var(--yr-panel-muted)]"
+                  className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider cursor-pointer hover:bg-[var(--yr-panel-muted)]"
                 >
                   <div className="flex items-center gap-1">
                     {col.label}
@@ -257,10 +278,10 @@ const AdminFellowshipsTable = () => {
                   </div>
                 </th>
               ))}
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase tracking-wider">
                 Audit
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -268,19 +289,13 @@ const AdminFellowshipsTable = () => {
           <tbody className="bg-[var(--yr-panel)] divide-y divide-[var(--yr-line)]">
             {isLoading ? (
               <tr>
-                <td
-                  colSpan={TABLE_COLUMNS.length + 2}
-                  className="px-4 py-8 text-center text-gray-500"
-                >
-                  Loading...
+                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-muted">
+                  Loading…
                 </td>
               </tr>
             ) : fellowships.length === 0 ? (
               <tr>
-                <td
-                  colSpan={TABLE_COLUMNS.length + 2}
-                  className="px-4 py-8 text-center text-gray-500"
-                >
+                <td colSpan={TABLE_COLUMNS.length + 2} className="px-4 py-8 text-center text-muted">
                   No fellowships found
                 </td>
               </tr>
@@ -292,26 +307,21 @@ const AdminFellowshipsTable = () => {
                 >
                   <td className="px-4 py-3">
                     <div className="max-w-xs">
-                      <p
-                        className="text-sm font-medium text-gray-900 truncate"
-                        title={fellowship.title}
-                      >
+                      <p className="text-sm font-medium text-ink truncate" title={fellowship.title}>
                         {fellowship.title}
                       </p>
                       {fellowship.archived && (
                         <span className="text-xs text-red-600">(Archived)</span>
                       )}
-                      <span className="block text-xs text-gray-500">
-                        {formatStatus(fellowship)}
-                      </span>
+                      <span className="block text-xs text-muted">{formatStatus(fellowship)}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
+                  <td className="px-4 py-3 text-sm text-muted">
                     {formatDate(fellowship.deadline)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{fellowship.views}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{fellowship.favorites}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
+                  <td className="px-4 py-3 text-sm text-muted">{fellowship.views}</td>
+                  <td className="px-4 py-3 text-sm text-muted">{fellowship.favorites}</td>
+                  <td className="px-4 py-3 text-sm text-muted">
                     {formatDate(fellowship.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -354,7 +364,7 @@ const AdminFellowshipsTable = () => {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-muted">
             Page {page} of {totalPages}
           </div>
           <div className="flex gap-2">
@@ -416,7 +426,7 @@ const ArrayFieldEditor = ({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-ink-soft mb-1">{label}</label>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {values.map((value) => (
           <span
@@ -427,9 +437,10 @@ const ArrayFieldEditor = ({
             <button
               type="button"
               onClick={() => handleRemove(value)}
+              aria-label={`Remove ${value} from ${label}`}
               className="ml-1.5 text-muted hover:text-brand yr-focus-ring"
             >
-              &times;
+              <CloseIcon size={10} />
             </button>
           </span>
         ))}
@@ -446,7 +457,7 @@ const ArrayFieldEditor = ({
             }
           }}
           placeholder={placeholder || `Add ${label.toLowerCase()}...`}
-          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
+          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-control)] rounded-lg text-sm"
         />
         <button
           type="button"
@@ -484,7 +495,7 @@ const LinksEditor = ({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
+      <label className="block text-sm font-medium text-ink-soft mb-1">
         Links to Additional Information
       </label>
       {links.length > 0 && (
@@ -499,9 +510,10 @@ const LinksEditor = ({
               <button
                 type="button"
                 onClick={() => handleRemove(i)}
+                aria-label={`Remove link ${link.label}`}
                 className="ml-auto text-muted hover:text-brand flex-shrink-0 yr-focus-ring"
               >
-                &times;
+                <CloseIcon size={10} />
               </button>
             </div>
           ))}
@@ -513,7 +525,7 @@ const LinksEditor = ({
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
           placeholder="Label (optional)"
-          className="w-1/3 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
+          className="w-1/3 px-3 py-1.5 border border-[var(--yr-line-control)] rounded-lg text-sm"
         />
         <input
           type="text"
@@ -526,7 +538,7 @@ const LinksEditor = ({
             }
           }}
           placeholder="URL"
-          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-strong)] rounded-lg text-sm"
+          className="flex-1 px-3 py-1.5 border border-[var(--yr-line-control)] rounded-lg text-sm"
         />
         <button
           type="button"
@@ -583,8 +595,12 @@ const FellowshipEditModal = ({
   } = formState;
   const statusPreview = getFellowshipApplicationStatus({
     isAcceptingApplications,
-    applicationOpenDate: applicationOpenDate || null,
-    deadline: deadline || null,
+    applicationOpenDate: editedProgramDateValue(
+      fellowship.applicationOpenDate,
+      applicationOpenDate,
+      'opens',
+    ),
+    deadline: editedProgramDateValue(fellowship.deadline, deadline, 'deadline'),
     eligibility,
     yearOfStudy,
     termOfAward,
@@ -612,8 +628,13 @@ const FellowshipEditModal = ({
       contactPhone,
       contactOffice,
       isAcceptingApplications,
-      applicationOpenDate: applicationOpenDate || null,
-      deadline: deadline || null,
+      ...programDatePatch(
+        'applicationOpenDate',
+        fellowship.applicationOpenDate,
+        applicationOpenDate,
+        'opens',
+      ),
+      ...programDatePatch('deadline', fellowship.deadline, deadline, 'deadline'),
       yearOfStudy,
       termOfAward,
       purpose,
@@ -625,32 +646,32 @@ const FellowshipEditModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim">
       <div className="bg-[var(--yr-panel)] rounded-overlay shadow-yr-modal max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
         <h3 className="text-lg font-semibold mb-4">Edit Fellowship</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Title</label>
             <input
               value={title}
               onChange={(e) => formDispatch({ type: 'SET_TITLE', payload: e.target.value })}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Competition Type</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Competition Type</label>
             <input
               value={competitionType}
               onChange={(e) =>
                 formDispatch({ type: 'SET_COMPETITION_TYPE', payload: e.target.value })
               }
               placeholder="e.g. Application/Funded Research"
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
 
           <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-card p-3">
-            <p className="text-xs text-gray-500 mb-1">
+            <p className="text-xs text-muted mb-1">
               <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
               <code className="bg-[var(--yr-panel-muted)] px-1 rounded-card">
                 [link text](https://url)
@@ -659,27 +680,27 @@ const FellowshipEditModal = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Brief Description
             </label>
             <textarea
               value={summary}
               onChange={(e) => formDispatch({ type: 'SET_SUMMARY', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Description</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Full Description</label>
             <textarea
               value={description}
               onChange={(e) => formDispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
               rows={6}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Application Information
             </label>
             <textarea
@@ -688,19 +709,19 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_APPLICATION_INFORMATION', payload: e.target.value })
               }
               rows={4}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
               placeholder="How to apply, required documents, etc."
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Special Eligibility Requirements
             </label>
             <textarea
               value={eligibility}
               onChange={(e) => formDispatch({ type: 'SET_ELIGIBILITY', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
             {statusPreview.needsEligibilityReview && (
               <p className="mt-1 text-xs text-amber-700">
@@ -709,19 +730,19 @@ const FellowshipEditModal = ({
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Restrictions to Use of Award
             </label>
             <textarea
               value={restrictionsToUseOfAward}
               onChange={(e) => formDispatch({ type: 'SET_RESTRICTIONS', payload: e.target.value })}
               rows={3}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
-              placeholder="Any restrictions on how funds can be used..."
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
+              placeholder="Any restrictions on how funds can be used…"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-ink-soft mb-1">
               Additional Information
             </label>
             <textarea
@@ -730,27 +751,27 @@ const FellowshipEditModal = ({
                 formDispatch({ type: 'SET_ADDITIONAL_INFORMATION', payload: e.target.value })
               }
               rows={4}
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
-              placeholder="Any other relevant details..."
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
+              placeholder="Any other relevant details…"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Application Link</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Application Link</label>
             <input
               value={applicationLink}
               onChange={(e) =>
                 formDispatch({ type: 'SET_APPLICATION_LINK', payload: e.target.value })
               }
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Award Amount</label>
+            <label className="block text-sm font-medium text-ink-soft mb-1">Award Amount</label>
             <input
               value={awardAmount}
               onChange={(e) => formDispatch({ type: 'SET_AWARD_AMOUNT', payload: e.target.value })}
               placeholder="e.g. $5,000"
-              className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+              className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
             />
           </div>
 
@@ -762,21 +783,21 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Contact Information</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Contact Information</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+                <label className="block text-sm font-medium text-ink-soft mb-1">Contact Name</label>
                 <input
                   value={contactName}
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_NAME', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                   placeholder="e.g. John Smith"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Contact Email
                 </label>
                 <input
@@ -784,11 +805,11 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_EMAIL', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Contact Phone
                 </label>
                 <input
@@ -796,12 +817,12 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_PHONE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                   placeholder="e.g. (203) 432-1234"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Contact Office
                 </label>
                 <input
@@ -809,7 +830,7 @@ const FellowshipEditModal = ({
                   onChange={(e) =>
                     formDispatch({ type: 'SET_CONTACT_OFFICE', payload: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                   placeholder="e.g. 55 Whitney Ave, Room 200"
                 />
               </div>
@@ -817,10 +838,10 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Status & Dates</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <h4 className="text-sm font-semibold text-ink mb-3">Status & Dates</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-ink-soft mb-1">
                   Accepting Applications
                 </label>
                 <select
@@ -831,36 +852,30 @@ const FellowshipEditModal = ({
                       payload: e.target.value === 'true',
                     })
                   }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
+                  className="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg"
                 >
                   <option value="true">Yes</option>
                   <option value="false">No</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Application Open Date & Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={applicationOpenDate}
-                  onChange={(e) =>
-                    formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Deadline Date & Time
-                </label>
-                <input
-                  type="datetime-local"
-                  value={deadline}
-                  onChange={(e) => formDispatch({ type: 'SET_DEADLINE', payload: e.target.value })}
-                  className="w-full px-3 py-2 border border-[var(--yr-line-strong)] rounded-lg"
-                />
-              </div>
+              <ProgramDateFields
+                label="Application Open Date & Time"
+                boundary="opens"
+                draft={applicationOpenDate}
+                onChange={(draft) =>
+                  formDispatch({ type: 'SET_APPLICATION_OPEN_DATE', payload: draft })
+                }
+                labelClassName="block text-sm font-medium text-ink-soft mb-1"
+                inputClassName="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg disabled:bg-[var(--yr-panel-muted)]"
+              />
+              <ProgramDateFields
+                label="Deadline Date & Time"
+                boundary="deadline"
+                draft={deadline}
+                onChange={(draft) => formDispatch({ type: 'SET_DEADLINE', payload: draft })}
+                labelClassName="block text-sm font-medium text-ink-soft mb-1"
+                inputClassName="w-full px-3 py-2 border border-[var(--yr-line-control)] rounded-lg disabled:bg-[var(--yr-panel-muted)]"
+              />
             </div>
             <div
               className={`mt-3 rounded-lg border p-3 text-sm ${
@@ -880,7 +895,7 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Admin Flags</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Admin Flags</h4>
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm">
                 <input
@@ -906,37 +921,37 @@ const FellowshipEditModal = ({
           </div>
 
           <div className="border-t pt-4 mt-4">
-            <h4 className="text-sm font-semibold text-gray-800 mb-3">Categories & Filters</h4>
+            <h4 className="text-sm font-semibold text-ink mb-3">Categories & Filters</h4>
             <div className="space-y-4">
               <ArrayFieldEditor
                 label="Year of Study"
                 values={yearOfStudy}
                 onChange={(v) => formDispatch({ type: 'SET_YEAR_OF_STUDY', payload: v })}
-                placeholder="e.g. Freshman, Sophomore..."
+                placeholder="e.g. Freshman, Sophomore…"
               />
               <ArrayFieldEditor
                 label="Term of Award"
                 values={termOfAward}
                 onChange={(v) => formDispatch({ type: 'SET_TERM_OF_AWARD', payload: v })}
-                placeholder="e.g. Fall, Spring, Summer..."
+                placeholder="e.g. Fall, Spring, Summer…"
               />
               <ArrayFieldEditor
                 label="Purpose"
                 values={purpose}
                 onChange={(v) => formDispatch({ type: 'SET_PURPOSE', payload: v })}
-                placeholder="e.g. Research, Study Abroad..."
+                placeholder="e.g. Research, Study Abroad…"
               />
               <ArrayFieldEditor
                 label="Global Regions"
                 values={globalRegions}
                 onChange={(v) => formDispatch({ type: 'SET_GLOBAL_REGIONS', payload: v })}
-                placeholder="e.g. North America, Europe..."
+                placeholder="e.g. North America, Europe…"
               />
               <ArrayFieldEditor
                 label="Citizenship Status"
                 values={citizenshipStatus}
                 onChange={(v) => formDispatch({ type: 'SET_CITIZENSHIP_STATUS', payload: v })}
-                placeholder="e.g. US Citizen, International..."
+                placeholder="e.g. US Citizen, International…"
               />
             </div>
           </div>

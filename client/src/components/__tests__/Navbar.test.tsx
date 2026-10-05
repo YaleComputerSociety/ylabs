@@ -47,12 +47,12 @@ const renderNavbar = (user: any = { userType: 'student' }) => {
   );
 };
 
-const renderGuestNavbar = (initialPath = '/research') =>
+const renderGuestNavbar = (initialPath = '/research', isLoading = false) =>
   render(
     <MemoryRouter initialEntries={[initialPath]}>
       <UserContext.Provider
         value={{
-          isLoading: false,
+          isLoading,
           isAuthenticated: false,
           user: undefined,
           checkContext: vi.fn(),
@@ -76,6 +76,15 @@ afterEach(() => {
 });
 
 describe('Navbar', () => {
+  it('keeps the guest sign-in cluster hidden until the session check resolves', () => {
+    const { unmount } = renderGuestNavbar('/research', true);
+    expect(screen.queryByRole('link', { name: /sign in/i })).toBeNull();
+    unmount();
+
+    renderGuestNavbar('/research', false);
+    expect(screen.getAllByRole('link', { name: /sign in/i }).length).toBeGreaterThan(0);
+  });
+
   it('keeps desktop primary navigation in the toolbar flow without fellowship browse controls', () => {
     renderNavbar();
 
@@ -158,5 +167,19 @@ describe('Navbar', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close menu' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Research' })).toBeTruthy();
+  });
+
+  it.each([
+    ['signed-in', () => renderNavbar()],
+    ['signed-out', () => renderGuestNavbar()],
+  ])('names the mobile navigation drawer dialog for %s visitors', (_state, renderView) => {
+    mockIsMobile = true;
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Main menu' });
+    expect(drawer.id).toBe('primary-mobile-menu');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
   });
 });

@@ -240,7 +240,7 @@ export function urlCarriesEponym(url: string, surnames: string[]): boolean {
     });
 
   if (PERSONAL_PUBLISHING_HOST.test(host)) {
-    let segments: string[] = [];
+    let segments: string[];
     try {
       segments = new URL(url).pathname.split('/').filter(Boolean);
     } catch {

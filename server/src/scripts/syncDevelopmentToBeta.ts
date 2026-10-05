@@ -6,9 +6,13 @@ import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { summarizeAccountCarry } from './accountSwapCarry';
+import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
 import {
   applySync,
   buildPlan,
+  previewSyncAccountCarry,
+  syncCountMismatches,
   collectionsForOptions,
   parseMongoTarget,
   researchPersonAccountIds,
@@ -16,7 +20,7 @@ import {
 } from './syncBetaToDevelopment';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
+dotenv.config({ path: path.join(SERVER_ROOT, '.env'), quiet: true });
 const developmentUrl = process.env.MONGODBURL || '';
 const betaProfilePath = path.join(SERVER_ROOT, '.env.beta-operator');
 const betaProfile = fs.existsSync(betaProfilePath)
@@ -67,10 +71,11 @@ export function parseDevelopmentToBetaOptions(
 export function assertSafeDevelopmentToBetaOptions(options: DevelopmentToBetaOptions): void {
   const source = parseMongoTarget(options.developmentUrl);
   const target = parseMongoTarget(options.betaUrl);
-  if (source.database !== 'Development' || source.local) {
+  const allowedPair = DATABASE_COPY_PAIRS['development-to-beta'];
+  if (source.database !== allowedPair.source || source.local) {
     throw new Error('Source must be a remote MongoDB database named Development');
   }
-  if (target.database !== 'Beta' || target.local) {
+  if (target.database !== allowedPair.target || target.local) {
     throw new Error('Target must be a remote MongoDB database named Beta');
   }
   if (options.developmentUrl === options.betaUrl) throw new Error('Source and target must differ');
@@ -110,6 +115,9 @@ async function main(): Promise<void> {
       includesObservations: options.includeObservations,
       collections: before,
       preservedBetaOperationalCollections: true,
+      accountCarry: summarizeAccountCarry(
+        await previewSyncAccountCarry(sourceDb, targetDb, collections),
+      ),
       userCopyPolicy:
         'Preserve accounts reachable from a Researcher; pseudonymize every other account and remove account activity fields.',
       observationPolicy: options.includeObservations
@@ -121,16 +129,16 @@ async function main(): Promise<void> {
       writeOutput(report, options.output);
       return;
     }
-    await applySync(sourceDb, targetDb, collections, [], async () => {
+    const accountCarry = await applySync(sourceDb, targetDb, collections, [], async (carry) => {
       after = await buildPlan(sourceDb, targetDb, collections);
-      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
+      const mismatches = syncCountMismatches(after, carry);
       if (mismatches.length) {
         throw new Error(
           `Post-sync count verification failed: ${mismatches.map((row) => row.name).join(', ')}`,
         );
       }
     });
-    const result = { ...report, status: 'applied', collections: after };
+    const result = { ...report, accountCarry, status: 'applied', collections: after };
     console.log(JSON.stringify(result, null, 2));
     writeOutput(result, options.output);
   } finally {

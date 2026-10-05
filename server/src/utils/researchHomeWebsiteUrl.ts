@@ -1,5 +1,6 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 const URL_MAXLENGTH = 2048;
 
@@ -483,39 +484,15 @@ export interface ResearchEntityHostOwnerIdentity {
   kind?: unknown;
 }
 
-// Entity shapes whose identity is a person or a person's lab. Restated here rather
-// than imported from `researchHomeNameIdentityAuthority.ts`, the name-identity
-// authority, because importing it back would make the two mutually dependent.
-//
-// Deliberately WIDER than that module's `PERSON_SCOPED_ENTITY_TYPES`, which omits
-// `FACULTY_RESEARCH`: both retired types persist wherever
-// `research-entity:consolidate-faculty-type` has not run, and omitting either leaves
-// this refusal unreachable on exactly those stored rows. Widening the name-identity
-// set instead would change served `displayName` on legacy rows, which is a different
-// decision from this one and needs its own measurement (Development holds 0 rows of
-// either retired type today, so neither set is load-bearing there).
-const PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-  'FACULTY_PROJECT',
-]);
-
-const PERSON_SCOPED_HOST_TENANT_KINDS = new Set(['lab', 'individual', 'solo']);
-
 /**
- * The single definition of "this row is one person's research rather than the
- * collective that publishes the page". Every refusal scoped by who cites a URL shares
- * it, because two definitions of person scope let the serve-time gate and the
+ * "This row is one person's research rather than the collective that publishes the
+ * page", as owned by `isPersonScopedResearchEntityShape` in models/storedVocabularies.ts.
+ * Every refusal scoped by who cites a URL shares it, because two definitions of person scope let the serve-time gate and the
  * promotion path disagree about the same stored field, and a row the DTO hides is then
  * re-promoted on the next materialization (#2579).
  */
-export const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean => {
-  const entityType = textValue(entity?.entityType).toUpperCase();
-  if (entityType) return PERSON_SCOPED_HOST_TENANT_ENTITY_TYPES.has(entityType);
-  return PERSON_SCOPED_HOST_TENANT_KINDS.has(textValue(entity?.kind).toLowerCase());
-};
+export const isPersonScopedHostTenant = (entity?: ResearchEntityHostOwnerIdentity): boolean =>
+  isPersonScopedResearchEntityShape({ entityType: entity?.entityType, kind: entity?.kind });
 
 /**
  * A departmental undergraduate-research page is plausible evidence for an
@@ -556,10 +533,20 @@ export function isDisallowedResearchEntitySourceUrl(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
+  return isListingOrIndexUrl(value) || isDisallowedNonListingResearchEntitySourceUrl(value, entity);
+}
+
+/**
+ * Every arm of `isDisallowedResearchEntitySourceUrl` except the listing one, for a citation
+ * whose claim is about the people a lab's own roster page lists (#4430).
+ */
+export function isDisallowedNonListingResearchEntitySourceUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
   return (
     isSelfReferentialUrl(value) ||
     isEphemeralDeployHostUrl(value) ||
-    isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
     isInstitutionalAdvancementUrl(value) ||
     isMapOrDirectionsUrl(value) ||
@@ -921,6 +908,27 @@ export function isUmbrellaPageCitedByPerson(
   );
 }
 
+/**
+ * A department's audience-recruitment, hiring or programme page, which describes what
+ * the department offers rather than one lab or person, so it is never the source of a
+ * row's description. A research group's own host, its `/lab/` path on a shared school
+ * host, or a personal-site path is exempt: its openings page is the group writing about
+ * itself.
+ */
+export function isDepartmentCollectivePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = hostnameWithoutWwwAlias(url);
+  if (RESEARCH_GROUP_HOST_LABEL_TOKEN.test(host.split('.')[0])) return false;
+  if (/(?:^|\.)campuspress\.yale\.edu$/i.test(host)) return false;
+  if (url.pathname.split('/').some((segment) => /^labs?$/i.test(segment))) return false;
+  return (
+    isDepartmentAudiencePageUrl(value) ||
+    isDepartmentHiringPageUrl(value) ||
+    isDepartmentProgrammePageUrl(value)
+  );
+}
+
 // Organization shapes whose identity is the collective that publishes a site rather
 // than a tenant of it, so the site the collective's name designates is its own
 // research home. Deliberately an ALLOWLIST and not the negation of
@@ -1183,6 +1191,15 @@ export function isRecordSpecificApplicationPortalUrl(value: unknown): boolean {
   return hasPath && hasQuery;
 }
 
+export function recordSpecificApplicationPortalIdentity(value: unknown): string {
+  const url = parseHttpUrl(value);
+  if (!url || !isRecordSpecificApplicationPortalUrl(url.toString())) return '';
+  const params = Array.from(url.searchParams.entries())
+    .map(([key, paramValue]) => `${key.toLowerCase()}=${paramValue}`)
+    .sort();
+  return `${url.pathname.toLowerCase()}?${params.join('&')}`;
+}
+
 const PROGRAM_DETAIL_PATH_KEYWORD_PATTERN =
   /(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|research-internship-program|tobin-ra)/i;
 
@@ -1382,6 +1399,41 @@ export function customYaleResearchHomeSubdomainRefusal(
   return trailingLabels.every(sharedTrailingHostLabel) ? null : 'unshared-trailing-label';
 }
 
+const SCHOOL_SECTION_SEGMENT =
+  /^(?:research|our-research|opportunities(?:-[0-9]+)?|employment-opportunities|jobs|careers|about|about-us|who-we-are|programs?|departments?|centers?|faculty|education|academics|admissions|undergraduate|graduate|resources|initiatives|overview|home|contact|index\.html?)$/i;
+
+function isSchoolOrDepartmentHost(url: URL): boolean {
+  const hostname = url.hostname.toLowerCase();
+  if (!hostname.endsWith('.yale.edu')) return false;
+  return genericYaleWebsiteSubdomains.has(
+    hostname.replace(/\.yale\.edu$/, '').replace(/^www\./, ''),
+  );
+}
+
+/**
+ * A school or department host's own section page (`medicine.yale.edu/research/`,
+ * `www.art.yale.edu/opportunities`): every path segment is a generic section word, so
+ * the page belongs to the school rather than to one lab or person. Unlike the
+ * non-blocking `yale-path-vocabulary` arm, this shape is never a research home, which is
+ * why it blocks a write and clears a stored value. Measured on Development before this
+ * arm: 7 rows carried such a website, every one a different lead's row, and none of the
+ * pages named its row's lab or person. `www.<school>` is covered here because the
+ * `department-opportunities-path` arm reads the bare subdomain and missed it.
+ */
+function isSchoolSectionPage(url: URL): boolean {
+  if (!isSchoolOrDepartmentHost(url)) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.length > 0 && segments.every((segment) => SCHOOL_SECTION_SEGMENT.test(segment));
+}
+
+export function isSchoolSectionPageUrl(value: unknown): boolean {
+  try {
+    return isSchoolSectionPage(new URL(textValue(value)));
+  } catch {
+    return false;
+  }
+}
+
 export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
   return customYaleResearchHomeSubdomainRefusal(url) === null;
 }
@@ -1451,6 +1503,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'institutional-publicity-page'
   | 'institutional-advancement'
   | 'department-opportunities-path'
+  | 'school-section-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1501,6 +1554,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   // script. 6 live rows carried one, 5 of them served (#3461).
   'institutional-advancement',
   'department-opportunities-path',
+  'school-section-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1628,6 +1682,7 @@ export function researchHomeWebsiteUrlDecision(
     ) {
       return refuse('department-opportunities-path');
     }
+    if (isSchoolSectionPage(url)) return refuse('school-section-page');
     const isDirectPersonalSite =
       /(?:^|\.)campuspress\.yale\.edu$/i.test(url.hostname) ||
       /github\.io$/i.test(url.hostname) ||

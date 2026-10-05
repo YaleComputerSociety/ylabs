@@ -4,10 +4,11 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { resolveMongoDatabaseName, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { operatorEnvironmentForDatabaseName } from './operatorDatabaseEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export const E2E_SMOKE_SLUG_PREFIX = 'e2e-smoke-';
 /**
@@ -32,6 +33,9 @@ interface SmokeEntitySeed {
   departments: string[];
   school: string;
   browseRankScore: number;
+  kind?: 'lab' | 'center';
+  entityType?: 'LAB' | 'CENTER';
+  studentVisibilityTier?: 'student_ready' | 'operator_review' | 'suppressed';
 }
 
 export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
@@ -113,6 +117,67 @@ export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
     school: 'School of Invented Sciences',
     browseRankScore: 50,
   },
+  {
+    slug: `${E2E_SMOKE_SLUG_PREFIX}tidepool-observatory-center`,
+    name: 'Tidepool Observatory Center',
+    shortDescription:
+      'Coordinates shared field stations for long-term monitoring of rocky intertidal habitats.',
+    fullDescription:
+      'The Tidepool Observatory Center runs shared field stations that monitor rocky intertidal habitats over many seasons. Students help maintain sensor arrays, curate the long-term dataset, and join cross-lab survey expeditions.',
+    researchAreas: ['intertidal ecology', 'environmental monitoring', 'long-term datasets'],
+    methods: ['sensor arrays', 'field surveys'],
+    departments: ['Department of Invented Earth Science'],
+    school: 'School of Invented Sciences',
+    browseRankScore: 40,
+    kind: 'center',
+    entityType: 'CENTER',
+  },
+];
+
+export const E2E_SMOKE_CONTACT_EMAIL = 'quokka.coordinator@example.invalid';
+export const E2E_SMOKE_CONTACT_PHONE = '203-555-0147';
+
+export const E2E_SMOKE_CONTACT_ENTITY: SmokeEntitySeed = {
+  slug: `${E2E_SMOKE_SLUG_PREFIX}quokka-burrow-acoustics-lab`,
+  name: 'Quokka Burrow Acoustics Lab',
+  shortDescription:
+    'Records and classifies the vocalizations small marsupials make inside shared burrows.',
+  fullDescription: `The Quokka Burrow Acoustics Lab records the vocalizations small marsupials make inside shared burrows and builds classifiers for them. Prospective students can write to ${E2E_SMOKE_CONTACT_EMAIL} or call ${E2E_SMOKE_CONTACT_PHONE} to ask about field recording work. Undergraduates help annotate recordings and evaluate acoustic models.`,
+  researchAreas: ['bioacoustics', 'animal communication'],
+  methods: ['acoustic recording', 'audio classification'],
+  departments: ['Department of Fictional Biology'],
+  school: 'School of Invented Sciences',
+  browseRankScore: 30,
+};
+
+export const E2E_SMOKE_WITHHELD_ENTITIES: SmokeEntitySeed[] = [
+  {
+    slug: `${E2E_SMOKE_SLUG_PREFIX}withheld-review-quokka-lab`,
+    name: 'Quokka Pending Review Lab',
+    shortDescription:
+      'Awaits operator review before it may reach students, despite studying quokkas.',
+    fullDescription:
+      'The Quokka Pending Review Lab is a synthetic row held for operator review. Its quokka research copy must never appear in student browse, search, or detail.',
+    researchAreas: ['animal cognition'],
+    methods: ['behavioral experiments'],
+    departments: ['Department of Fictional Biology'],
+    school: 'School of Invented Sciences',
+    browseRankScore: 1000,
+    studentVisibilityTier: 'operator_review',
+  },
+  {
+    slug: `${E2E_SMOKE_SLUG_PREFIX}withheld-suppressed-quokka-lab`,
+    name: 'Quokka Suppressed Record Lab',
+    shortDescription: 'Is suppressed from students, although it names quokkas throughout.',
+    fullDescription:
+      'The Quokka Suppressed Record Lab is a synthetic suppressed row. Its quokka research copy must never appear in student browse, search, or detail.',
+    researchAreas: ['spatial memory'],
+    methods: ['movement tracking'],
+    departments: ['Department of Fictional Biology'],
+    school: 'School of Invented Sciences',
+    browseRankScore: 1000,
+    studentVisibilityTier: 'suppressed',
+  },
 ];
 
 function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
@@ -121,8 +186,8 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
     slug: seed.slug,
     name: seed.name,
     displayName: seed.name,
-    kind: 'lab',
-    entityType: 'LAB',
+    kind: seed.kind ?? 'lab',
+    entityType: seed.entityType ?? 'LAB',
     shortDescription: seed.shortDescription,
     fullDescription: seed.fullDescription,
     researchAreas: seed.researchAreas,
@@ -135,17 +200,44 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
     browseRankScore: seed.browseRankScore,
     lastObservedAt: new Date(nowIso),
     archived: false,
-    studentVisibilityTier: 'student_ready',
-    studentVisibilityComputedTier: 'student_ready',
+    studentVisibilityTier: seed.studentVisibilityTier ?? 'student_ready',
+    studentVisibilityComputedTier: seed.studentVisibilityTier ?? 'student_ready',
     studentVisibilityReasons: ['e2e-smoke-seed'],
   };
 }
 
-export function assertSeedTargetIsNotProduction(mongoUrl: string | undefined): void {
+const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+function mongoHostname(mongoUrl: string): string | undefined {
+  try {
+    return new URL(mongoUrl).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+export function assertSmokeSeedTarget(
+  mongoUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!mongoUrl) throw new Error('MONGODBURL is required to seed E2E smoke data.');
   const dbLabel = summarizeMongoUrl(mongoUrl);
-  if (/\/(prod|production)$/i.test(dbLabel)) {
+  const databaseName = resolveMongoDatabaseName(mongoUrl);
+  if (!databaseName) {
     throw new Error(
-      `Refusing to seed E2E smoke data into a production-looking database (${dbLabel}).`,
+      `Refusing to seed E2E smoke data without an explicit database name (${dbLabel}).`,
+    );
+  }
+  const environment = operatorEnvironmentForDatabaseName(databaseName);
+  if (environment && environment !== 'test') {
+    throw new Error(
+      `Refusing to seed E2E smoke data into the ${environment} operator database (${dbLabel}). Seed a local database such as ylabs_local with yarn local:seed.`,
+    );
+  }
+  const hostname = mongoHostname(mongoUrl);
+  if (!(hostname && LOCAL_MONGO_HOSTS.has(hostname)) && env.ALLOW_REMOTE_E2E_SEED !== 'true') {
+    throw new Error(
+      `Refusing to seed E2E smoke data into a non-local MongoDB host (${dbLabel}). Set ALLOW_REMOTE_E2E_SEED=true only for a disposable remote database.`,
     );
   }
 }
@@ -159,7 +251,11 @@ export async function seedE2eSmokeData(): Promise<{
   const removal = await ResearchEntity.deleteMany({
     slug: { $regex: `^${E2E_SMOKE_SLUG_PREFIX}` },
   });
-  const documents = E2E_SMOKE_ENTITIES.map(toEntityDocument);
+  const documents = [
+    ...E2E_SMOKE_ENTITIES,
+    E2E_SMOKE_CONTACT_ENTITY,
+    ...E2E_SMOKE_WITHHELD_ENTITIES,
+  ].map(toEntityDocument);
   const inserted = await ResearchEntity.insertMany(documents, { ordered: true });
 
   const survivor = inserted.find(
@@ -197,7 +293,7 @@ export async function seedE2eSmokeData(): Promise<{
 }
 
 async function main(): Promise<void> {
-  assertSeedTargetIsNotProduction(process.env.MONGODBURL);
+  assertSmokeSeedTarget(process.env.MONGODBURL);
   await initializeConnections();
   const result = await seedE2eSmokeData();
   console.log(

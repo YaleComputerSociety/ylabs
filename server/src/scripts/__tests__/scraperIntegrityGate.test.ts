@@ -92,9 +92,17 @@ describe('scraperIntegrityGate CLI helpers', () => {
             duplicatePeople: 0,
             duplicateCurrentMembers: 0,
             currentMembersOnArchivedEntities: 0,
-            duplicateExploratoryContactPathways: 0,
             duplicateAccessSignals: 0,
             activeArtifactsOnArchivedEntities: 0,
+          },
+          countLabels: {
+            samePiSameNameResearchEntities: '1',
+            officialLabUrlResearchEntities: '0',
+            duplicatePeople: '0',
+            duplicateCurrentMembers: '0',
+            currentMembersOnArchivedEntities: '0',
+            duplicateAccessSignals: '0',
+            activeArtifactsOnArchivedEntities: '0',
           },
           failureNames: ['samePiSameNameResearchEntities'],
           samples: {
@@ -103,7 +111,6 @@ describe('scraperIntegrityGate CLI helpers', () => {
             duplicatePeople: [],
             duplicateCurrentMembers: [],
             currentMembersOnArchivedEntities: [],
-            duplicateExploratoryContactPathways: [],
             duplicateAccessSignals: [],
             activeArtifactsOnArchivedEntities: [],
           },
@@ -151,7 +158,7 @@ describe('scraperIntegrityGate CLI helpers', () => {
     expect(summary.status).toBe('failure');
     expect(summary.failureNames).toEqual(['samePiSameNameResearchEntities']);
     expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
+      'SCRAPER_ENV=development yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
     );
     expect(summary.recommendedCommands).not.toContain(
       'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --apply',
@@ -173,11 +180,11 @@ describe('scraperIntegrityGate CLI helpers', () => {
 
     expect(summary.failureNames).toEqual(['duplicateAccessSignals']);
     expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
+      'SCRAPER_ENV=development yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
     );
   });
 
-  it('targets duplicate-person warning handoff commands at Beta', () => {
+  it('targets duplicate-person warning handoff commands at the measured environment', () => {
     const summary = buildPostMaterializationIntegritySummary({
       warnings: [
         {
@@ -192,11 +199,91 @@ describe('scraperIntegrityGate CLI helpers', () => {
       classification: 'must_fix_before_promotion',
       owner: 'identity/account operator',
       nextCommand:
-        'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
+        'SCRAPER_ENV=development yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     });
     expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
+      'SCRAPER_ENV=development yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     );
+  });
+
+  it('prefixes every recommended command with the environment the gate measured', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      commandEnvironment: 'beta',
+      currentMembersOnArchivedEntities: [
+        { researchEntityId: 'entity-1', memberId: 'member-1', role: 'pi', canonicalGroupId: null },
+      ],
+      warnings: [
+        {
+          name: 'deadEndTombstoneChains',
+          count: 1,
+          message: 'Dead-end tombstone chains need repair.',
+        },
+      ],
+    });
+
+    expect(summary.recommendedCommands.length).toBeGreaterThan(0);
+    for (const command of summary.recommendedCommands) {
+      expect(command.startsWith('SCRAPER_ENV=beta yarn --cwd server ')).toBe(true);
+    }
+    expect(summary.warnings[0].nextCommand).toBe(
+      'SCRAPER_ENV=beta yarn --cwd server research-entity:repair-dead-end-tombstones',
+    );
+  });
+
+  it('points recommended commands at Development when no environment is given', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      currentMembersOnArchivedEntities: [
+        { researchEntityId: 'entity-1', memberId: 'member-1', role: 'pi', canonicalGroupId: null },
+      ],
+    });
+
+    expect(summary.recommendedCommands).toEqual([
+      'SCRAPER_ENV=development yarn --cwd server research-entity:repair-archived-artifacts --artifact-type=role-assignment --limit=5000 --output /tmp/ylabs-archived-entity-artifact-repair.json',
+    ]);
+  });
+
+  it('labels a count as a lower bound only when its check reports truncation', () => {
+    const cappedRows = Array.from({ length: 25 }, (_, index) => ({
+      officialLabUrl: `https://medicine.yale.edu/lab/synthetic-${index}/`,
+      entityIds: [`entity-${index}-a`, `entity-${index}-b`],
+    }));
+    const summary = buildPostMaterializationIntegritySummary({
+      officialLabUrlDuplicateGroups: cappedRows,
+      duplicateAccessSignalGroups: [
+        {
+          researchEntityId: 'entity-1',
+          signalType: 'UNDERGRAD_RESEARCH',
+          identityField: 'derivationKey',
+          identityValue: 'entity-1:undergrad',
+          signalIds: ['signal-a', 'signal-b'],
+        },
+      ],
+      truncatedChecks: ['officialLabUrlResearchEntities'],
+    });
+
+    expect(summary.counts.officialLabUrlResearchEntities).toBe(25);
+    expect(summary.countLabels.officialLabUrlResearchEntities).toBe('at least 25');
+    expect(summary.countLabels.duplicateAccessSignals).toBe('1');
+  });
+
+  it('reports a measured population instead of the capped sample length', () => {
+    const summary = buildPostMaterializationIntegritySummary({
+      currentMembersOnArchivedEntities: Array.from({ length: 25 }, (_, index) => ({
+        researchEntityId: `archived-${index}`,
+        memberId: `member-${index}`,
+      })),
+      populationCounts: {
+        currentMembersOnArchivedEntities: 1391,
+        activeArtifactsOnArchivedEntities: 0,
+      },
+      truncatedChecks: ['currentMembersOnArchivedEntities'],
+    });
+
+    expect(summary.counts.currentMembersOnArchivedEntities).toBe(1391);
+    expect(summary.countLabels.currentMembersOnArchivedEntities).toBe('1391 (sample of 25)');
+    expect(summary.samples.currentMembersOnArchivedEntities).toHaveLength(25);
+    expect(summary.counts.activeArtifactsOnArchivedEntities).toBe(0);
+    expect(summary.failureNames).toEqual(['currentMembersOnArchivedEntities']);
   });
 
   it('builds duplicate access-signal groups from repeated signal identities', () => {

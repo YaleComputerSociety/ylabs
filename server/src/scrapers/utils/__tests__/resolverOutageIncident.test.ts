@@ -75,4 +75,54 @@ describe('a resolver outage during a corpus pass (#2775 replay)', () => {
     expect(result.halted).toBe(false);
     expect(result.failing).toEqual([deadHosts[0]]);
   });
+
+  describe('with a control probe (#4865)', () => {
+    const runControlledPass = async (
+      hosts: string[],
+      resolverBroken: () => boolean,
+      isDead: (host: string) => boolean = (host) => deadHosts.includes(host),
+    ): Promise<{ recordedDead: string[]; halted: boolean; controlChecks: number }> => {
+      const breaker = new ResolverCircuitBreaker({
+        threshold: 5,
+        windowMs: 60_000,
+        sleep: async () => undefined,
+        controlProbe: async () => ({ healthy: !resolverBroken(), detail: 'control' }),
+      });
+      const recordedDead: string[] = [];
+      try {
+        for (const host of hosts) {
+          await breaker.settle();
+          if (resolverBroken() || isDead(host)) {
+            breaker.recordFailure(host);
+            recordedDead.push(host);
+          } else {
+            breaker.recordSuccess(host);
+          }
+        }
+        await breaker.settle();
+      } catch (error) {
+        if (!(error instanceof ResolverUnhealthyError)) throw error;
+        return { recordedDead, halted: true, controlChecks: breaker.stats.controlChecks };
+      }
+      return { recordedDead, halted: false, controlChecks: breaker.stats.controlChecks };
+    };
+
+    it('still halts a real outage before it records more than the threshold', async () => {
+      const result = await runControlledPass(corpus, () => true);
+      expect(result.halted).toBe(true);
+      expect(result.recordedDead.length).toBeLessThanOrEqual(5);
+    });
+
+    it('finishes a pass made only of dead links while the control answers', async () => {
+      const allDead = Array.from({ length: 40 }, (_, i) => `gone-${i}.example.edu`);
+      const result = await runControlledPass(
+        allDead,
+        () => false,
+        () => true,
+      );
+      expect(result.halted).toBe(false);
+      expect(result.recordedDead).toEqual(allDead);
+      expect(result.controlChecks).toBe(8);
+    });
+  });
 });

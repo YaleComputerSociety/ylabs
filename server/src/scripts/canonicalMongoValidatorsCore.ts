@@ -76,9 +76,7 @@ export interface CanonicalMongoValidatorRollbackItem {
 }
 
 export type CanonicalValidatorPresenceState =
-  | 'collection-missing'
-  | 'validator-absent'
-  | 'validator-drifted';
+  'collection-missing' | 'validator-absent' | 'validator-drifted';
 
 export interface CanonicalValidatorDriftFinding {
   collectionName: string;
@@ -86,9 +84,15 @@ export interface CanonicalValidatorDriftFinding {
   reasons: CanonicalMongoValidatorPlanReason[];
 }
 
-function storesJsonSchemaValidator(current: CurrentMongoCollectionValidation | undefined): boolean {
-  const validator = current?.validator;
-  if (!validator || typeof validator !== 'object') return false;
+/**
+ * The one definition of "this collection carries a canonical validator", shared
+ * so the drift assert and the strict-readiness report cannot disagree about the
+ * same `options.validator`. A `collMod` that disables a validator leaves `{}`
+ * behind, and an unrelated query filter is not a canonical validator, so only a
+ * stored `$jsonSchema` counts.
+ */
+export function storesJsonSchemaValidator(validator: unknown): boolean {
+  if (!validator || typeof validator !== 'object' || Array.isArray(validator)) return false;
   return Object.hasOwn(validator as Record<string, unknown>, '$jsonSchema');
 }
 
@@ -112,7 +116,7 @@ export function findCanonicalValidatorDrift(
       const current = currentByName.get(item.collectionName);
       const state: CanonicalValidatorPresenceState = !current?.exists
         ? 'collection-missing'
-        : storesJsonSchemaValidator(current)
+        : storesJsonSchemaValidator(current.validator)
           ? 'validator-drifted'
           : 'validator-absent';
       return { collectionName: item.collectionName, state, reasons: [...item.reasons] };

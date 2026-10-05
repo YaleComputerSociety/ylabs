@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -7,23 +6,24 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
-import { buildRematerializeFieldChanges } from './rematerializeResearchEntitiesCore';
 import {
   MERGE_REMATERIALIZE_AUDITED_FIELDS,
   assertMergeRematerializeApplyAllowed,
-  classifyMergeRematerializeChanges,
+  mergeRematerializeDryRunChanges,
+  mergeRematerializeFilledChanges,
   parseMergeRematerializeDriftArgs,
   summarizeMergeRematerializeDrift,
+  writeMergeRematerializeDriftReport,
   type MergeRematerializeEntityReport,
 } from './mergeRematerializeDriftCore';
 import { rematerializeMergeCanonicalFillOnly } from '../services/researchEntityMergeRematerializeService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SELECT_FIELDS = ['slug', ...MERGE_REMATERIALIZE_AUDITED_FIELDS].join(' ');
 
@@ -69,13 +69,7 @@ async function auditSurvivor(
       archivedTwinCount,
       skipped: filled.skipped,
       filledFields: filled.filledFields,
-      changes: classifyMergeRematerializeChanges(
-        (filled.filledFields || []).map((field) => ({
-          field,
-          before: survivor[field],
-          after: undefined,
-        })),
-      ).map((change) => ({ ...change, kind: 'recovered' as const })),
+      changes: mergeRematerializeFilledChanges(survivor, filled.filledFields || []),
     };
   }
   const result = await materializeEntity('researchEntity', { entityId }, { dryRun: true });
@@ -88,17 +82,15 @@ async function auditSurvivor(
       changes: [],
     };
   }
-  const changes = buildRematerializeFieldChanges(
-    survivor,
-    result.plannedSet || {},
-    result.plannedUnset || {},
-    MERGE_REMATERIALIZE_AUDITED_FIELDS,
-  );
   return {
     entityId,
     slug: survivor.slug,
     archivedTwinCount,
-    changes: classifyMergeRematerializeChanges(changes),
+    changes: mergeRematerializeDryRunChanges(
+      survivor,
+      result.plannedSet || {},
+      result.plannedUnset || {},
+    ),
   };
 }
 
@@ -135,8 +127,7 @@ async function main() {
 
   console.log(JSON.stringify({ ...report, entities: undefined }, null, 2));
   if (args.output) {
-    fs.mkdirSync(path.dirname(args.output), { recursive: true });
-    fs.writeFileSync(args.output, `${JSON.stringify(report, null, 2)}\n`);
+    writeMergeRematerializeDriftReport(args.output, report);
     console.log(`Wrote ${args.output}`);
   }
 }

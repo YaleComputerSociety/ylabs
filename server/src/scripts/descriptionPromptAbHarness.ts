@@ -71,8 +71,10 @@ import {
 } from '../utils/researchSubjectSpecificity';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 /**
  * Arm A mirrors production exactly: the live system prompt plus the live
@@ -483,7 +485,7 @@ async function main(): Promise<void> {
     ? resolveSafeJsonReportOutputPath(argValue('--output') as string)
     : '';
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const sample = await buildSample(randomCount);
   console.log(`sample size: ${sample.length} (model ${model})`);
 
@@ -491,15 +493,16 @@ async function main(): Promise<void> {
   const pairs: Array<{ entity: SampleEntity; outcomes: ArmOutcome[] }> = [];
 
   for (const entity of sample) {
-    let pageText = '';
+    let pageText: string;
     try {
-      const response = await axios.get(entity.pageUrl, {
-        timeout: 20_000,
-        maxRedirects: 5,
-        responseType: 'text',
+      const response = await fetchPublicHttpUrl(entity.pageUrl, {
+        timeoutMs: 20_000,
         headers: { 'User-Agent': 'ylabs-description-ab/1.0' },
       });
-      pageText = htmlToText(String(response.data ?? '')).slice(0, MAX_PROMPT_CHARS);
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`page answered ${response.status}`);
+      }
+      pageText = htmlToText(response.body).slice(0, MAX_PROMPT_CHARS);
     } catch {
       console.log(`SKIP (fetch failed) ${entity.slug}`);
       continue;

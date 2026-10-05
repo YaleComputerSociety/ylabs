@@ -15,6 +15,7 @@ import {
   resolveServedShortDescription,
   resolveServedShortDescriptionOutcome,
   synthesizeGroundedCardDescription,
+  opensOnDependentClause,
 } from '../groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
@@ -22,6 +23,10 @@ import {
   shortDescriptionQuality,
 } from '../researchEntityDescriptionQuality';
 import { sanitizeServedResearchEntityCopyFields } from '../researchEntityDescriptionText';
+import {
+  servedResearchEntityCardDescription,
+  servedResearchEntityCardWithoutLastResort,
+} from '../../services/servedResearchEntityCard';
 
 const RICH_FIRST_PERSON_FULL =
   'Our lab is broadly interested in the biology of aging and the ways that metabolism shapes lifespan across species. Over the past decade we have built a range of experimental systems, from yeast to zebrafish, and we continue to expand these tools while training the next generation of scientists.';
@@ -921,5 +926,68 @@ describe('researchAreasGroundedInFullDescription', () => {
 
   it('returns chips unfiltered when the row has no body to ground against', () => {
     expect(researchAreasGroundedInFullDescription(['Hormones'], '')).toEqual(['Hormones']);
+  });
+});
+
+describe('resolveServedShortDescription over a research-interests sentence body (#4361)', () => {
+  it('serves the topics as the card rather than prefixing the whole named sentence', () => {
+    const resolved = resolveServedShortDescription({
+      shortDescription: 'Studies learning theory, optimization, game theory, and mechanism design.',
+      fullDescription:
+        "Sample Person's research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.",
+      researchAreas: ['Learning Theory', 'Optimization', 'Game Theory', 'Mechanism Design'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+    });
+    expect(resolved).toBe(
+      'Studies Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+    );
+  });
+});
+
+describe('a derived card never opens on a dependent clause', () => {
+  it.each([
+    'And, using these algorithms, the group develops interfaces.',
+    'When direct computation is not feasible, this research uses approximation.',
+    'Before joining the faculty, she was a professor elsewhere.',
+  ])('recognises a dependent opener: %s', (card) => {
+    expect(opensOnDependentClause(card)).toBe(true);
+  });
+
+  it('does not treat a role opener as dependent', () => {
+    expect(
+      opensOnDependentClause('As a physician scientist, her research focuses on malaria.'),
+    ).toBe(false);
+  });
+
+  it('keeps a stored card that opens on a dependent clause', () => {
+    const stored =
+      'While most work studies single glaciers, this research compares ice sheets across regions.';
+    expect(
+      resolveServedShortDescription({
+        shortDescription: stored,
+        fullDescription: `${stored} It combines satellite records with field measurements of meltwater routing and calving.`,
+        researchAreas: [],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe(stored);
+  });
+
+  it('refuses a dependent-clause derivation on the resolver and on both served card paths', () => {
+    const body =
+      'When direct field measurement is not feasible, the group models how coastal wetlands buffer storm surge, combining sensor networks with hydrodynamic simulations of tidal marshes. Fieldwork in three estuaries feeds a simulation suite that projects marsh response under sea-level rise scenarios.';
+    const row = {
+      shortDescription: 'Studies Photonics.',
+      fullDescription: body,
+      researchAreas: ['Photonics', 'Coastal Ecology'],
+      entityType: 'LAB' as const,
+      kind: 'lab',
+    };
+    expect(opensOnDependentClause(deriveShortDescriptionFromFullDescription(body))).toBe(true);
+
+    expect(gateAcceptedDerivedCardSubstitute(row)).toBe('');
+    expect(opensOnDependentClause(resolveServedShortDescription(row))).toBe(false);
+    expect(servedResearchEntityCardDescription(row, 'LAB')).toBe(row.shortDescription);
+    expect(servedResearchEntityCardWithoutLastResort(row, 'LAB')).toBe(row.shortDescription);
   });
 });

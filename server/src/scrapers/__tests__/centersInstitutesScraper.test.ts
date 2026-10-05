@@ -14,11 +14,16 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
   assertPublicHttpUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
 }));
 
+vi.mock('../centerConfigKeyResolution', () => ({
+  resolveCenterConfigKey: vi.fn(async () => ({ kind: 'live' })),
+}));
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CentersInstitutesScraper,
   DEFAULT_CENTER_CONFIGS,
+  centerHomeUrlWriteRefusal,
   nodeTeaserPersonExtractor,
   wuTsaiExtractor,
   yaleCancerCenterExtractor,
@@ -30,6 +35,8 @@ import {
   profileGridLeadershipExtractor,
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
+  yqiMemberReferenceCardExtractor,
+  directoryListingLeadershipExtractor,
   naturalCarbonCaptureExtractor,
   customCardLabsExtractor,
   contentSpotlightFacultyExtractor,
@@ -532,6 +539,64 @@ const MSI_FIXTURE = readFileSync(
   'utf8',
 );
 
+const referenceCard = (name: string, href: string, title: string, categories: string[]) => `
+  <div class="reference-card">
+    <ul class="taxonomy-list taxonomy-list--categories">
+      ${categories.map((category) => `<li class="taxonomy-list__item">${category}</li>`).join('')}
+    </ul>
+    <h2 class="reference-card__heading"><a class="reference-card__heading-link" href="${href}">${name}</a></h2>
+    <div class="reference-card__subheading">${title}</div>
+  </div>`;
+
+const directoryCard = (name: string, href: string, title: string) => `
+  <li class="directory-listing-card">
+    <h3 class="directory-listing-card__heading"><a class="directory-listing-card__heading-link" href="${href}">${name}</a></h3>
+    <div class="directory-listing-card__subheading"><div>${title}</div></div>
+  </li>`;
+
+describe('yqiMemberReferenceCardExtractor (#3787)', () => {
+  const html = `<main>
+    ${referenceCard('Avery Example', 'https://shared-lab.example.yale.edu/', 'Professor of Physics', ['Faculty', 'YQI Member'])}
+    ${referenceCard('Blake Example', 'https://shared-lab.example.yale.edu/', 'Research Scientist in Applied Physics', ['Staff', 'YQI Member'])}
+    ${referenceCard('Casey Example', 'https://admin.example.yale.edu/', 'Institute Managing Director', ['Executive Board', 'Staff'])}
+    ${referenceCard('Devon Example', '/profile/devon-example', 'Events Coordinator', ['Staff'])}
+  </main>`;
+  const members = yqiMemberReferenceCardExtractor(html, {
+    pageUrl: 'https://quantuminstitute.yale.edu/our-mission/our-members',
+  }).members;
+
+  it('reads only cards tagged as institute members, so staff never become leads', () => {
+    expect(members.map((member) => member.name)).toEqual(['Avery Example', 'Blake Example']);
+    expect(members.every((member) => member.role === 'core-faculty')).toBe(true);
+  });
+
+  it('keeps two members who link the same lab site', () => {
+    expect(members.map((member) => member.profileUrl)).toEqual([
+      'https://shared-lab.example.yale.edu/',
+      'https://shared-lab.example.yale.edu/',
+    ]);
+  });
+});
+
+describe('directoryListingLeadershipExtractor (#3787)', () => {
+  it('reads the directors of a leadership-and-staff page and drops deputy and admin staff', () => {
+    const html = `<ul>
+      ${directoryCard('Avery Example', '/profile/avery-example', 'Deputy Director')}
+      ${directoryCard('Blake Example', '/profile/blake-example', 'Operations Manager')}
+      ${directoryCard('Casey Example', '/profile/casey-example', 'Director')}
+      ${directoryCard('Devon Example', '/profile/devon-example', 'Senior Administrative Assistant')}
+    </ul>`;
+
+    const members = directoryListingLeadershipExtractor(html, {
+      pageUrl: 'https://whc.yale.edu/leadership-and-staff',
+    }).members;
+
+    expect(members.map((member) => [member.name, member.role])).toEqual([
+      ['Casey Example', 'director'],
+    ]);
+  });
+});
+
 describe('directoryListingCardExtractor', () => {
   it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
     const out = directoryListingCardExtractor(QBIO_FIXTURE, {
@@ -617,6 +682,64 @@ describe('fdsUsersGridExtractor', () => {
     expect(out.members.find((m) => m.name === 'Alex Sample')?.role).toBe('director');
     expect(out.members.find((m) => m.name === 'Bailey Example')?.role).toBe('director');
     expect(out.members.find((m) => m.name === 'Dana Testcase')?.role).toBe('core-faculty');
+  });
+});
+
+describe('a title-derived role is scoped to the center being read (#4475)', () => {
+  const FIXTURE_UNIT = 'Fixture Institute for Synthetic Data';
+  const gridCard = (slug: string, name: string, jobTitle: string) =>
+    `<div class="grid__user"><a class="grid__user__link" href="/people/${slug}/"><h3 class="grid__user__title">${name}</h3></a><p class="grid__user__job-title">${jobTitle}</p></div>`;
+  const grid = [
+    gridCard('aa', 'Avery Synthetic', 'Executive Director'),
+    gridCard('bb', 'Blair Synthetic', 'Professor of Fixtures; Director of Undergraduate Studies'),
+    gridCard('cc', 'Casey Synthetic', 'Director, Institution for Synthetic Policy Studies'),
+    gridCard('dd', 'Devon Synthetic', 'Co-Director, Fixture Institute for Synthetic Data'),
+    gridCard(
+      'ee',
+      'Emery Synthetic',
+      'Professor; Co-Director, Yale Center for Placeholder Studies',
+    ),
+    gridCard('ff', 'Gale Synthetic', 'Professor of Fixtures; Director of the Institute'),
+    gridCard('gg', 'Harper Synthetic', 'Director of Research'),
+  ].join('');
+  const roles = (centerName?: string) =>
+    Object.fromEntries(
+      fdsUsersGridExtractor(`<html><body>${grid}</body></html>`, {
+        pageUrl: 'https://fixture.example.edu/people/',
+        centerName,
+      }).members.map((member) => [member.name, member.role]),
+    );
+
+  it('keeps a lead title that names no unit or names this center', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({
+      'Avery Synthetic': 'director',
+      'Devon Synthetic': 'co-director',
+    });
+  });
+
+  it('reads a directorship of the generically named center as this center', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({ 'Gale Synthetic': 'director' });
+  });
+
+  it('keeps a functional directorate of the center a roster member', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({ 'Harper Synthetic': 'core-faculty' });
+  });
+
+  it('reads a directorship of another unit as membership', () => {
+    expect(roles(FIXTURE_UNIT)).toMatchObject({
+      'Blair Synthetic': 'core-faculty',
+      'Casey Synthetic': 'core-faculty',
+      'Emery Synthetic': 'core-faculty',
+    });
+  });
+
+  it('applies to the listing extractors that carry no profile link too', () => {
+    const html = `<html><body><div class="teaser__content"><h2 class="teaser__heading">Finley Synthetic</h2><p class="teaser__text">Director of Graduate Studies, Fixture Department</p></div></body></html>`;
+    const [member] = wuTsaiExtractor(html, {
+      pageUrl: 'https://fixture.example.edu/people/',
+      centerName: FIXTURE_UNIT,
+    }).members;
+    expect(member.role).toBe('core-faculty');
   });
 });
 
@@ -761,6 +884,7 @@ describe('centerToGroupObservations', () => {
       kind: 'institute',
       departments: ['Neuroscience', 'Psychology'],
       url: 'https://wti.yale.edu/humans/faculty',
+      homeUrl: 'https://wti.yale.edu/',
       extractor: wuTsaiExtractor,
     };
     const members: CenterMember[] = [{ name: 'Ian Abraham' }, { name: 'Amy Arnsten' }];
@@ -912,7 +1036,7 @@ describe('entityKey override', () => {
     );
   });
 
-  it('emits the config url as websiteUrl only when no override is set', () => {
+  it('never emits a roster crawl url as websiteUrl, even with no override set', () => {
     const plain: CenterConfig = { ...config, entityKey: undefined };
     const { entityKey, observations } = centerToGroupObservations(
       plain,
@@ -920,8 +1044,23 @@ describe('entityKey override', () => {
       'https://naturalcarboncapture.yale.edu/people',
     );
     expect(entityKey).toBe('center-natural-carbon-capture');
-    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+    expect(centerHomeUrlWriteRefusal(plain)).not.toBeNull();
+    expect(observations.find((o) => o.field === 'websiteUrl')).toBeUndefined();
+  });
+
+  it('emits a declared landing page as websiteUrl when no override is set', () => {
+    const plain: CenterConfig = {
+      ...config,
+      entityKey: undefined,
+      homeUrl: 'https://naturalcarboncapture.yale.edu/',
+    };
+    const { observations } = centerToGroupObservations(
+      plain,
+      [],
       'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+      'https://naturalcarboncapture.yale.edu/',
     );
   });
 });
@@ -1038,24 +1177,20 @@ function makeContext(overrides: Partial<ScraperContext['options']> = {}) {
 
 describe('CentersInstitutesScraper.run', () => {
   it('orchestrates extractors across canned configs and emits group + member obs', async () => {
-    const cowlesExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [
-          {
-            name: 'Jane Doe',
-            title: 'Director and Sterling Professor of Economics',
-            profileUrl: 'https://egc.yale.edu/people/jane-doe',
-            role: 'director',
-          },
-          { name: 'Bob Smith', title: 'Professor', role: 'core-faculty' },
-        ],
-      }),
-    );
-    const wuTsaiExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [{ name: 'Ian Abraham', title: 'Faculty Member, Engineering' }],
-      }),
-    );
+    const cowlesExt = vi.fn((): ExtractorResult => ({
+      members: [
+        {
+          name: 'Jane Doe',
+          title: 'Director and Sterling Professor of Economics',
+          profileUrl: 'https://egc.yale.edu/people/jane-doe',
+          role: 'director',
+        },
+        { name: 'Bob Smith', title: 'Professor', role: 'core-faculty' },
+      ],
+    }));
+    const wuTsaiExt = vi.fn((): ExtractorResult => ({
+      members: [{ name: 'Ian Abraham', title: 'Faculty Member, Engineering' }],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'cowles',
@@ -1063,6 +1198,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: 'FAS',
         kind: 'center',
         url: 'https://example.invalid/cowles',
+        homeUrl: 'https://example.invalid/',
         extractor: cowlesExt,
       },
       {
@@ -1071,6 +1207,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://example.invalid/wti',
+        homeUrl: 'https://example.invalid/',
         extractor: wuTsaiExt,
       },
     ];
@@ -1121,6 +1258,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: 'FAS',
         kind: 'center',
         url: 'https://example.invalid/a',
+        homeUrl: 'https://example.invalid/',
         extractor: a,
       },
       {
@@ -1129,6 +1267,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://example.invalid/b',
+        homeUrl: 'https://example.invalid/',
         extractor: b,
       },
     ];
@@ -1153,6 +1292,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/a',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
       {
@@ -1161,6 +1301,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/b',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
       {
@@ -1169,6 +1310,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/c',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
     ];
@@ -1190,6 +1332,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://x/a',
+        homeUrl: 'https://x/',
         extractor: ext,
       },
     ];
@@ -1214,6 +1357,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://will-fail.invalid/page',
+        homeUrl: 'https://will-fail.invalid/',
         extractor: failing,
       },
       {
@@ -1222,6 +1366,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://example.invalid/working',
+        homeUrl: 'https://example.invalid/',
         extractor: working,
       },
     ];
@@ -1256,6 +1401,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: stubExt,
         jsRenderedSkip: true,
         skipReason: 'CAS-only behind login',
@@ -1266,6 +1412,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://open.invalid/people',
+        homeUrl: 'https://open.invalid/',
         extractor: liveExt,
       },
     ];
@@ -1286,17 +1433,15 @@ describe('CentersInstitutesScraper.run', () => {
     const staticExt = vi.fn((): ExtractorResult => {
       throw new Error('should not use the static extractor for rendered pages');
     });
-    const renderedExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [
-          {
-            name: 'Ada Lovelace',
-            profileUrl: 'https://gated.invalid/people/ada/',
-            role: 'director',
-          },
-        ],
-      }),
-    );
+    const renderedExt = vi.fn((): ExtractorResult => ({
+      members: [
+        {
+          name: 'Ada Lovelace',
+          profileUrl: 'https://gated.invalid/people/ada/',
+          role: 'director',
+        },
+      ],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'gated',
@@ -1304,6 +1449,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: staticExt,
         renderedExtractor: renderedExt,
         renderWaitSelector: '.grid__user',
@@ -1329,6 +1475,7 @@ describe('CentersInstitutesScraper.run', () => {
     });
     expect(renderedExt).toHaveBeenCalledWith('<html><body>hydrated cards</body></html>', {
       pageUrl: 'https://gated.invalid/people#rendered',
+      centerName: 'Gated Institute',
     });
     expect(staticExt).not.toHaveBeenCalled();
     expect(getSpy).not.toHaveBeenCalled();
@@ -1342,6 +1489,40 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('reports a blocked rendered page as unavailable instead of extracting from it', async () => {
+    const staticExt = vi.fn();
+    const renderedExt = vi.fn((): ExtractorResult => ({ members: [] }));
+    const configs: CenterConfig[] = [
+      {
+        centerKey: 'gated',
+        centerName: 'Gated Institute',
+        schoolName: '',
+        kind: 'institute',
+        url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
+        extractor: staticExt,
+        renderedExtractor: renderedExt,
+        jsRenderedSkip: true,
+      },
+    ];
+    const renderedFetcher = vi.fn().mockResolvedValue({
+      url: 'https://gated.invalid/people',
+      html: '<html><body>Access denied</body></html>',
+      statusCode: 403,
+      blocked: true,
+      blockedReason: 'http-403',
+      fetchMode: 'scrapling',
+    });
+
+    const scraper = new CentersInstitutesScraper(configs, renderedFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(renderedExt).not.toHaveBeenCalled();
+    expect(result.notes).toContain('gated=rendered-unavailable');
+    expect(emitted).toHaveLength(0);
+  });
+
   it('skips JS-rendered configs when no rendered fetcher is available', async () => {
     const staticExt = vi.fn();
     const renderedExt = vi.fn();
@@ -1352,6 +1533,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'institute',
         url: 'https://gated.invalid/people',
+        homeUrl: 'https://gated.invalid/',
         extractor: staticExt,
         renderedExtractor: renderedExt,
         jsRenderedSkip: true,
@@ -1376,23 +1558,21 @@ describe('CentersInstitutesScraper.run', () => {
   });
 
   it('emits child-center ResearchGroup observations from a meta-index extractor', async () => {
-    const metaExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [],
-        childCenters: [
-          {
-            name: 'Schmidt Program',
-            url: 'https://jackson.yale.edu/centers-initiatives/schmidt-program/',
-            kind: 'program',
-          },
-          {
-            name: 'Blue Center',
-            url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
-            kind: 'center',
-          },
-        ],
-      }),
-    );
+    const metaExt = vi.fn((): ExtractorResult => ({
+      members: [],
+      childCenters: [
+        {
+          name: 'Schmidt Program',
+          url: 'https://jackson.yale.edu/centers-initiatives/schmidt-program/',
+          kind: 'program',
+        },
+        {
+          name: 'Blue Center',
+          url: 'https://jackson.yale.edu/centers-initiatives/blue-center/',
+          kind: 'center',
+        },
+      ],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'jackson-centers',
@@ -1400,6 +1580,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: 'Jackson School of Global Affairs',
         kind: 'center',
         url: 'https://jackson.yale.edu/centers-initiatives/',
+        homeUrl: 'https://jackson.yale.edu/',
         extractor: metaExt,
       },
     ];
@@ -1422,15 +1603,13 @@ describe('CentersInstitutesScraper.run', () => {
     getSpy.mockRestore();
   });
 
-  it('stops paginating a repeat-page roster after the first page that adds no new members', async () => {
-    const repeatExt = vi.fn(
-      (): ExtractorResult => ({
-        members: [
-          { name: 'Jane Doe', role: 'core-faculty' },
-          { name: 'Bob Smith', role: 'core-faculty' },
-        ],
-      }),
-    );
+  it('stops paginating a repeat-page roster after two consecutive pages that add no new members', async () => {
+    const repeatExt = vi.fn((): ExtractorResult => ({
+      members: [
+        { name: 'Jane Doe', role: 'core-faculty' },
+        { name: 'Bob Smith', role: 'core-faculty' },
+      ],
+    }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'repeat-council',
@@ -1438,6 +1617,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://example.invalid/repeat/people',
+        homeUrl: 'https://example.invalid/',
         paginated: true,
         extractor: repeatExt,
       },
@@ -1449,8 +1629,7 @@ describe('CentersInstitutesScraper.run', () => {
     const { ctx, emitted } = makeContext();
     await scraper.run(ctx);
 
-    // Page 0 yields the members; page 1 repeats them (no new) and terminates.
-    expect(repeatExt).toHaveBeenCalledTimes(2);
+    expect(repeatExt).toHaveBeenCalledTimes(3);
     const memberKeys = emitted
       .filter((o) => o.entityType === 'researchGroupMember' && o.field === 'role')
       .map((o) => o.entityKey);
@@ -1477,6 +1656,7 @@ describe('CentersInstitutesScraper.run', () => {
         schoolName: '',
         kind: 'center',
         url: 'https://example.invalid/paged/people',
+        homeUrl: 'https://example.invalid/',
         paginated: true,
         extractor: pagedExt,
       },
@@ -1615,6 +1795,7 @@ describe('CentersInstitutesScraper.run child crawl', () => {
     schoolName: 'Jackson School of Global Affairs',
     kind: 'center',
     url: 'https://jackson.yale.edu/centers-initiatives/',
+    homeUrl: 'https://jackson.yale.edu/',
     extractor: (): ExtractorResult => ({
       members: [],
       childCenters: [
@@ -1693,6 +1874,58 @@ describe('CentersInstitutesScraper.run child crawl', () => {
       childCenterEntityKey(jacksonConfig, { name: 'Blue Center', url: 'x', kind: 'center' }),
     ).toBe('center-jackson-centers-blue-center');
     expect(emitted.some((o) => o.entityType === 'researchGroupMember')).toBe(false);
+  });
+});
+
+describe('CentersInstitutesScraper member identity evidence (#3802)', () => {
+  const rosterUrl = 'https://fixture-center.example.edu/people';
+  const profileUrl = (slug: string) => `https://fixture-center.yale.edu/profile/${slug}/`;
+  const members = ['avery', 'blair', 'casey'].map((slug) => ({
+    name: `${slug[0].toUpperCase()}${slug.slice(1)} Synthetic`,
+    profileUrl: profileUrl(slug),
+  }));
+  const evidenceConfig: CenterConfig = {
+    centerKey: 'fixture-evidence',
+    centerName: 'Fixture Evidence Center',
+    schoolName: '',
+    kind: 'center',
+    url: rosterUrl,
+    homeUrl: 'https://fixture-center.example.edu/',
+    extractor: () => ({
+      members: [...members, { name: 'Devon Synthetic', profileUrl: 'https://lab.example.org/' }],
+    }),
+  };
+  const fetcher = vi.fn(async (url: string) =>
+    url === rosterUrl
+      ? '<html></html>'
+      : '<html><head><link rel="canonical" href="https://fixture-dept.yale.edu/profile/x/"></head></html>',
+  );
+
+  it("emits what each member's Yale profile page states, and follows no off-Yale link", async () => {
+    fetcher.mockClear();
+    const { ctx, emitted } = makeContext();
+    await new CentersInstitutesScraper([evidenceConfig], null, fetcher, (url) => fetcher(url)).run(
+      ctx,
+    );
+
+    const evidence = emitted.filter((o) => o.field === 'profileIdentityEvidence');
+    expect(evidence).toHaveLength(3);
+    expect(evidence[0].value).toMatchObject({
+      pageUrl: profileUrl('avery'),
+      linkedProfileUrls: [profileUrl('avery'), 'https://fixture-dept.yale.edu/profile/x/'],
+    });
+    expect(fetcher.mock.calls.map(([url]) => url)).not.toContain('https://lab.example.org/');
+  });
+
+  it('reads no more member pages per roster than a bounded run allows', async () => {
+    fetcher.mockClear();
+    const { ctx, emitted } = makeContext({ limit: 1 });
+    await new CentersInstitutesScraper([evidenceConfig], null, fetcher, (url) => fetcher(url)).run(
+      ctx,
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(emitted.filter((o) => o.field === 'profileIdentityEvidence')).toHaveLength(1);
   });
 });
 
@@ -1812,5 +2045,29 @@ describe('profileGridLeadershipExtractor', () => {
       'https://medicine.yale.edu/internal-medicine/genmed/eric/',
       'https://medicine.yale.edu/internal-medicine/genmed/eric/about/',
     ]);
+  });
+});
+
+describe('DEFAULT_CENTER_CONFIGS websiteUrl', () => {
+  it('emits every declared landing page, so none is silently dropped by the write gate', () => {
+    const dropped = DEFAULT_CENTER_CONFIGS.filter(
+      (config) => config.homeUrl && config.homeUrl !== config.url && !config.entityKey,
+    ).flatMap((config) => {
+      const { observations } = centerToGroupObservations(config, [], config.url);
+      const emitted = observations.find((o) => o.field === 'websiteUrl')?.value;
+      return emitted === config.homeUrl
+        ? []
+        : [`${config.centerKey}: ${centerHomeUrlWriteRefusal(config)}`];
+    });
+    expect(dropped).toEqual([]);
+  });
+
+  it('keeps emitting a website for most configs, so the guard is not vacuous', () => {
+    const emitting = DEFAULT_CENTER_CONFIGS.filter((config) =>
+      centerToGroupObservations(config, [], config.url).observations.some(
+        (o) => o.field === 'websiteUrl',
+      ),
+    );
+    expect(emitting.length).toBeGreaterThanOrEqual(30);
   });
 });

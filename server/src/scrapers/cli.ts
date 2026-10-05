@@ -4,7 +4,6 @@
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
  *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts cron --source nih-reporter --release
  *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
@@ -12,7 +11,7 @@
  * Flags for `run`:
  *   --dry-run       Don't write Observations (just log what would be inserted)
  *   --use-cache     Memoize external fetches in ScrapeSnapshot collection (dev only)
- *   --release       Production mode (cache off, errors surface)
+ *   --release       Release mode (caches off, errors surface)
  *   --limit <n>     Cap the number of entities the scraper processes
  *   --offset <n>    Skip the first n entities after source-specific ordering
  *   --only <keys>   Comma-separated source-specific keys/netids to process
@@ -28,6 +27,9 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
 import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
+import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
+import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
+import { installSweepPageReuse } from './utils/sweepPageReuse';
 import { materializeFromRun } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
@@ -37,13 +39,12 @@ import {
   summarizeMongoUrl,
   type ScraperEnvironment,
 } from './scraperEnvironment';
-import { createCronRunnerDependencies, runScraperCron } from './cronRunner';
 import {
   createScrapeJobLockOwnerId,
   findHeldScrapeJobLock,
   withScrapeJobLock,
 } from './scrapeJobLock';
-import { markSourceCrawled } from './sourceCrawlStamp';
+import { stampSourceCrawlIfEarned } from './sourceCrawlStamp';
 import {
   observationReferenceCoverageWarning,
   pruneSupersededObservations,
@@ -51,41 +52,48 @@ import {
 import { writeOptionalJsonOutput } from './scraperCliOutput';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  buildCronOutputPayload,
   buildMaterializeOutputPayload,
   buildScraperCliOutputPayload,
   buildScraperCliPreflight,
   parseArgs,
+  scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
+  type ScrapeCliCompletionOutcome,
   type ScraperCliPreflight,
 } from './cliHelpers';
 
 export {
-  buildCronOutputPayload,
   buildMaterializeOutputPayload,
   buildScraperCliOutputPayload,
   buildScraperCliPreflight,
   parseArgs,
   parseIntegerFlag,
   parseScraperOptions,
+  scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 // What a guarded CLI write reports back to the lock: the reason the lock row
-// records and the run it belongs to, so a CLI holder's provenance matches what
-// `cronRunner` already stores.
+// records and the run it belongs to.
 interface ScrapeCliLockedOutcome {
   runId?: string;
   failed?: boolean;
 }
 
-// Every CLI write to a source runs inside that source's job lock, which is what
-// `cronRunner` already did and the CLI did not, so two operators or two agents
-// could write one source concurrently with nothing objecting (#2498).
+function reportScrapeCliCompletion(outcome: ScrapeCliCompletionOutcome): void {
+  for (const warning of outcome.warnings) console.warn(`\nWARNING: ${warning}`);
+  for (const error of outcome.errors) console.error(`\nERROR: ${error}`);
+  if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode;
+}
+
+// Every CLI write to a source runs inside that source's job lock; before #2498 the
+// CLI took none, so two operators or two agents could write one source concurrently
+// with nothing objecting.
 //
 // Refusing is reported rather than thrown so the caller can print an operator
 // message and set an exit code; returning `true` means the work did not complete
@@ -95,20 +103,21 @@ async function runUnderScrapeJobLock(input: {
   sourceName: string;
   ownerLabel: string;
   refusal: string;
-  run: () => Promise<ScrapeCliLockedOutcome>;
+  run: (lockOwnerId: string) => Promise<ScrapeCliLockedOutcome>;
 }): Promise<boolean> {
+  const ownerId = createScrapeJobLockOwnerId(input.ownerLabel);
   const guarded = await withScrapeJobLock<ScrapeCliLockedOutcome>(
     {
       environment: input.environment,
       sourceName: input.sourceName,
-      ownerId: createScrapeJobLockOwnerId(input.ownerLabel),
+      ownerId,
       label: 'scrape cli',
       describeRelease: (outcome) => ({
         releaseReason: outcome.failed ? 'failure' : 'success',
         lastRunId: outcome.runId,
       }),
     },
-    input.run,
+    () => input.run(ownerId),
   );
 
   if (guarded.acquired) {
@@ -167,8 +176,14 @@ async function warnWhenSourceIsBeingWritten(
 }
 
 export async function main(): Promise<void> {
-  installScraperHostConcurrencyInterceptor();
+  installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
   const { command, flags } = parseArgs(process.argv);
+  if (!flags.release) {
+    installScraperHttpValidatorCache();
+    // Must stay last: axios runs request interceptors in reverse, so a reused page is answered
+    // before the host slot and validator interceptors run.
+    installSweepPageReuse();
+  }
 
   if (command === 'help' || command === '--help' || command === '-h') {
     console.log(`
@@ -176,7 +191,6 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [flags]                Run a scraper
-  cron --source <name> --release             Run a production cron-safe scraper job
   materialize --run <runId> [--output <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
@@ -185,7 +199,7 @@ ylabs scraper CLI
 Run flags:
   --dry-run            Skip Observation writes (preview only)
   --use-cache          Cache external fetches in ScrapeSnapshot (dev)
-  --release            Production mode
+  --release            Release mode (caches off, errors surface)
   --limit <n>          Cap entities processed
   --offset <n>         Skip first n ordered entities
   --only <keys>        Comma-separated source-specific keys/netids
@@ -206,10 +220,6 @@ Run flags:
   --auto-materialize   Materialize immediately after a successful run
   --output <path>      Save the ScrapeRun report JSON
 
-Cron flags:
-  --force-disabled     Run a disabled source only for manual recovery
-  --output <path>      Save the cron result and ScrapeRun report JSON
-
 Materialize flags:
   --dry-run            Preview materialization without writing derived records
   --confirm-materialize
@@ -229,8 +239,10 @@ Prune flags:
 
 Environment guardrails:
   SCRAPER_ENV=development|beta|production
-  Non-production runs default to --dry-run and disable --auto-materialize.
-  Production writes require --release and CONFIRM_PROD_SCRAPE=true.
+  Development runs default to --dry-run and disable --auto-materialize;
+  set ALLOW_NON_PROD_SCRAPER_WRITES=true to write.
+  Beta and Production refuse run and materialize writes: they receive
+  data only through promotion (docs/data-refresh-runbook.md).
 
 Concurrency:
   A writing "run" or "materialize" takes that source's ScrapeJobLock and is
@@ -259,7 +271,7 @@ Concurrency:
 
   const preflight = buildScraperCliPreflight(command, flags, url);
 
-  await mongoose.connect(url);
+  await connectScriptMongo(url);
 
   try {
     const connectedDbLabel = (): string =>
@@ -275,22 +287,18 @@ Concurrency:
         `Running scraper "${sourceName}" with options:`,
         JSON.stringify(guard.options, null, 2),
       );
-      const performRun = async (): Promise<ScrapeCliLockedOutcome> => {
-        const { runId, result, explainedObservations, explainTruncated } = await orchestrator.run(
-          sourceName,
-          guard.options,
-        );
+      const performRun = async (lockOwnerId?: string): Promise<ScrapeCliLockedOutcome> => {
+        const { runId, status, result, explainedObservations, explainTruncated } =
+          await orchestrator.run(sourceName, guard.options, { lockOwnerId });
         console.log(`\nScrapeRun ${runId} finished:`);
         console.log(JSON.stringify(result, null, 2));
 
-        if (!guard.options.dryRun) {
-          await markSourceCrawled(sourceName, new Date());
-        }
-
+        let materializationErrors: number | undefined;
         if (guard.autoMaterialize && !guard.options.dryRun) {
           console.log(`\nMaterializing observations from run ${runId}...`);
           const matResult = await materializeFromRun(runId, { dryRun: false });
           console.log(JSON.stringify(matResult, null, 2));
+          materializationErrors = matResult.errors;
           if (matResult.errors === 0) {
             console.log(`\nRunning student visibility gate for source ${sourceName}...`);
             console.log(
@@ -305,6 +313,18 @@ Concurrency:
               ),
             );
           }
+        }
+        const crawlStamped = await stampSourceCrawlIfEarned(sourceName, {
+          dryRun: Boolean(guard.options.dryRun),
+          runStatus: status,
+          materializationErrors,
+        });
+        if (!guard.options.dryRun && !crawlStamped) {
+          console.warn(
+            `\nWARNING: ${sourceName} lastCrawledAt left unchanged because run ${runId} ended ${status}${
+              materializationErrors ? ` with ${materializationErrors} materialization errors` : ''
+            }.`,
+          );
         }
         const report = await getScrapeRunReport(runId);
         const deferredMaterialization = unmaterializedWriteRunWarning({
@@ -345,7 +365,14 @@ Concurrency:
           console.log(JSON.stringify(report, null, 2));
         }
         const runStatus = (report as { run?: { status?: string } }).run?.status;
-        return { runId, failed: runStatus === 'failure' };
+        const completion = scrapeCliCompletionOutcome({
+          runId,
+          runStatus,
+          materializationErrors,
+          visibilityGateSkipped: (materializationErrors ?? 0) > 0,
+        });
+        reportScrapeCliCompletion(completion);
+        return { runId, failed: completion.exitCode !== 0 };
       };
 
       // A dry run writes no Observations, so it does not contend for the lock.
@@ -367,52 +394,6 @@ Concurrency:
         run: performRun,
       });
       if (runRefusal) process.exitCode = 1;
-      return;
-    }
-
-    if (command === 'cron') {
-      if (preflight.command !== 'cron') throw new Error('Invalid cron preflight state.');
-      const cronPreflight = preflight as Extract<ScraperCliPreflight, { command: 'cron' }>;
-      const { sourceName, guard } = cronPreflight;
-      for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
-      console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
-      const result = await runScraperCron(
-        {
-          sourceName,
-          environment: guard.environment,
-          options: guard.options,
-          forceDisabled: cronPreflight.forceDisabled,
-        },
-        createCronRunnerDependencies(orchestrator),
-      );
-
-      const { report, ...summary } = result as any;
-      console.log(`\nCron scrape result for "${sourceName}":`);
-      console.log(JSON.stringify(summary, null, 2));
-      const cronOutput = await writeOptionalJsonOutput({
-        outputPath: flags.output,
-        payload: buildScraperCliOutputPayload(buildCronOutputPayload(result), {
-          command: 'cron',
-          environment: guard.environment,
-          db: connectedDbLabel(),
-          options: {
-            sourceName,
-            ...guard.options,
-            forceDisabled: cronPreflight.forceDisabled,
-            output: typeof flags.output === 'string' ? flags.output : undefined,
-          },
-        }),
-        label: 'cron scrape report',
-      });
-      if (report) {
-        if (!cronOutput.saved) {
-          console.log(
-            `\nRun report for ${result.status === 'completed' ? result.runId : sourceName}:`,
-          );
-          console.log(JSON.stringify(report, null, 2));
-        }
-      }
-      if (result.exitCode !== 0) process.exitCode = result.exitCode;
       return;
     }
 
@@ -472,7 +453,13 @@ Concurrency:
           console.log(`\nRun report for ${runId}:`);
           console.log(JSON.stringify(report, null, 2));
         }
-        return { runId, failed: result.errors > 0 };
+        const completion = scrapeCliCompletionOutcome({
+          runId,
+          materializationErrors: result.errors,
+          visibilityGateSkipped: !guard.options.dryRun && result.errors > 0,
+        });
+        reportScrapeCliCompletion(completion);
+        return { runId, failed: completion.exitCode !== 0 };
       };
 
       // Guarding `run` alone would leave a hole: a standalone materialize writes

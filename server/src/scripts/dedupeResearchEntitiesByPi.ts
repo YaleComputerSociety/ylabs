@@ -4,7 +4,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { archivedEntityUpdate, PI_DEDUPE_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  archivedEntityUpdate,
+  attributedArchiveSet,
+  PI_DEDUPE_ARCHIVE_REASON,
+  PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON,
+} from '../models/entityArchival';
 import {
   rematerializeMergeCanonicalFillOnly,
   type MergeCanonicalRematerialization,
@@ -15,36 +20,43 @@ import {
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildMultiPersonEntityQuarantine,
   buildOrgNameResearchEntityDedupePlan,
+  buildNameAgreedSharedPersonResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
+  explainSpecificProfileLabUrlRefusals,
   buildWebsiteUrlResearchEntityDedupePlan,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
   personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
-  isLowTrustAreaShellSlug,
   MERGE_RELINKABLE_OBSERVATION_FIELDS,
   planStrandedFundingObservationRelink,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
+  type ProfileLabUrlCandidateRefusalRow,
   type OrgNameDedupeEntity,
   type ResearchEntityPiDedupeRow,
   type SameNameDifferentPersonQuarantine,
   type WebsiteUrlDedupeRow,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
+  type UrlIdentityLaneName,
+  type UrlIdentityLaneVerdict,
 } from './researchEntityPiDedupeCore';
+import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import {
   buildArchivedEntityArtifactRepairPlan,
   type ArchivedEntityArtifact,
   type ArchivedEntityArtifactType,
+  type ArchivedEntityDisposition,
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
-import { deleteFromIndex, syncEntities } from '../services/meiliSyncService';
+import { deleteFromIndex } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import {
   repairMergeSurvivorVisibility,
@@ -55,19 +67,31 @@ import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
+import {
+  addResearchPlanCarryReports,
+  carryResearchPlansToSurvivor,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+  type ResearchPlanCarryReport,
+} from '../services/researchPlanMergeCarry';
 import { buildGateLeadRow } from './retireForeignLeadGraftsCore';
+import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
 import {
   fullDescriptionQuality,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
+import {
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEAD_ROLE_LEGACY_LABELS,
+} from '../models/canonicalRoleMapping';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 }
 
 const REVIEW_DECISION_APPLY_STATUS =
@@ -93,9 +117,7 @@ export interface ResearchEntityDedupeMergeGroup {
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
-  | 'merge_into_canonical'
-  | 'mark_distinct_homes'
-  | 'defer_review';
+  'merge_into_canonical' | 'mark_distinct_homes' | 'defer_review';
 
 /**
  * A merge that lowers the survivor's tier is an operator decision each time, so it takes
@@ -117,6 +139,7 @@ export interface ResearchEntityPiDedupeArgs {
   websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
+  requireNameAgreement: boolean;
   rematerializeCanonical: boolean;
   confirmDemotingMerge: boolean;
   limit: number;
@@ -197,6 +220,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
+    requireNameAgreement: false,
     rematerializeCanonical: false,
     confirmDemotingMerge: false,
     limit: 10000,
@@ -257,6 +281,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--shared-person-id') {
       args.sharedPersonId = true;
+      continue;
+    }
+    if (arg === '--require-name-agreement') {
+      args.requireNameAgreement = true;
       continue;
     }
     if (arg === DEMOTING_MERGE_CONFIRM_FLAG) {
@@ -353,6 +381,9 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     throw new Error(`Unknown research-entity:dedupe-by-pi argument: ${arg}`);
   }
 
+  if (args.requireNameAgreement && !args.sharedPersonId) {
+    throw new Error('--require-name-agreement only narrows --shared-person-id');
+  }
   return args;
 }
 
@@ -469,7 +500,17 @@ export interface UrlIdentityDedupeStageDelta {
   quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
   maxApply: number;
+  refusedCandidatesByReason?: Record<string, number>;
+}
+
+export function countProfileLabUrlRefusalsByReason(
+  refusals: readonly ProfileLabUrlCandidateRefusalRow[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const refusal of refusals) counts[refusal.reason] = (counts[refusal.reason] ?? 0) + 1;
+  return counts;
 }
 
 /**
@@ -510,7 +551,9 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   quarantinedConflatedPersonProfileGroups: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
+  canonicalIndexSyncFailures: number;
   maxApply: number;
+  refusedCandidatesByReason?: Record<string, number>;
 }): UrlIdentityDedupeStageDelta {
   const deferrals = countResearchEntityDedupeApplyDeferrals(input.applied);
   const sumApplied = (read: (result: (typeof input.applied)[number]) => unknown): number =>
@@ -529,7 +572,11 @@ export function buildUrlIdentityDedupeStageDelta(input: {
     quarantinedConflatedPersonProfileGroups: input.quarantinedConflatedPersonProfileGroups,
     visibilityRecomputed: input.visibilityRecomputed,
     canonicalEntitiesResynced: input.canonicalEntitiesResynced,
+    canonicalIndexSyncFailures: input.canonicalIndexSyncFailures,
     maxApply: input.maxApply,
+    ...(input.refusedCandidatesByReason
+      ? { refusedCandidatesByReason: input.refusedCandidatesByReason }
+      : {}),
   };
 }
 
@@ -967,13 +1014,14 @@ const SCALAR_REFERENCE_SPECS: Array<{
   },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchEntity' } },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchGroup' } },
-  {
-    collection: 'research_plans',
-    field: 'target.id',
-    filter: { 'target.kind': 'RESEARCH_ENTITY' },
-    archiveOnConflict: true,
-  },
 ];
+
+const RESEARCH_PLAN_REFERENCE_SPEC = {
+  collection: 'research_plans',
+  field: 'target.id',
+  filter: { 'target.kind': 'RESEARCH_ENTITY' },
+  archiveOnConflict: true,
+};
 
 const ARRAY_REFERENCE_SPECS: Array<{
   collection: string;
@@ -1423,10 +1471,46 @@ async function loadSpecificProfileLabUrlCandidateRows(
     }
   }
 
-  return Array.from(byKey.values())
+  const candidates = Array.from(byKey.values())
     .filter((row) => row.entities.length > 1)
     .sort((a, b) => a.url.localeCompare(b.url))
     .slice(0, limit);
+  return attachLeadPersonIds(candidates);
+}
+
+async function attachLeadPersonIds(
+  rows: OfficialLabUrlDedupeRow[],
+): Promise<OfficialLabUrlDedupeRow[]> {
+  const entityIds = Array.from(
+    new Set(rows.flatMap((row) => row.entities.map((entity) => entity.id))),
+  )
+    .map((id) => objectId(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  if (entityIds.length === 0) return rows;
+  const edges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
+    role: { $in: [...LEAD_ROLE_CANONICAL_VALUES] },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+    personId: { $exists: true, $ne: null },
+  })
+    .select('target.id personId')
+    .lean()) as unknown as Array<{ target?: { id?: unknown }; personId?: unknown }>;
+  const leadsByEntity = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    const entityId = String(edge.target?.id ?? '');
+    const leads = leadsByEntity.get(entityId) ?? new Set<string>();
+    leads.add(String(edge.personId));
+    leadsByEntity.set(entityId, leads);
+  }
+  return rows.map((row) => ({
+    ...row,
+    entities: row.entities.map((entity) => ({
+      ...entity,
+      leadPersonIds: Array.from(leadsByEntity.get(entity.id) ?? []).sort(),
+    })),
+  }));
 }
 
 async function loadOrgNameCandidateRows(limit: number): Promise<OrgNameDedupeEntity[]> {
@@ -1618,6 +1702,23 @@ function stringId(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+function mergeDispositionsForDuplicates(
+  duplicateIds: mongoose.Types.ObjectId[],
+  canonicalId: mongoose.Types.ObjectId,
+): Map<string, ArchivedEntityDisposition> {
+  return new Map(
+    duplicateIds.map((duplicateId) => [
+      stringId(duplicateId),
+      {
+        archivedEntityId: stringId(duplicateId),
+        repairClass: 'merge-survivor',
+        survivorId: stringId(canonicalId),
+        archivedReason: PI_DEDUPE_ARCHIVE_REASON,
+      },
+    ]),
+  );
+}
+
 async function loadArtifactsForDeleteMode(args: {
   canonicalId: mongoose.Types.ObjectId;
   duplicateIds: mongoose.Types.ObjectId[];
@@ -1667,10 +1768,8 @@ async function loadArtifactsForDeleteMode(args: {
         artifactType: spec.artifactType,
         id: stringId(row._id),
         researchEntityId: stringId(row.researchEntityId),
-        canonicalResearchEntityId: stringId(args.canonicalId),
         derivationKey: stringId(row.derivationKey),
         signalType: stringId(row.type),
-        entryPathwayId: stringId(row.entryPathwayId),
       });
     }
     for (const row of canonicalRows) {
@@ -1678,10 +1777,8 @@ async function loadArtifactsForDeleteMode(args: {
         artifactType: spec.artifactType,
         id: stringId(row._id),
         researchEntityId: stringId(row.researchEntityId),
-        canonicalResearchEntityId: stringId(row.researchEntityId),
         derivationKey: stringId(row.derivationKey),
         signalType: stringId(row.type),
-        entryPathwayId: stringId(row.entryPathwayId),
       });
     }
   }
@@ -1737,6 +1834,7 @@ async function archiveOrDeleteDuplicateDocument(args: {
       if (outcome === 'blocked') {
         throw new Error(
           `Archiving ${args.collectionName} ${args.id} hit a duplicate key; archive-mode dedupe will not delete conflict rows.`,
+          { cause: error },
         );
       }
       const result = await collection.deleteOne({ _id: id });
@@ -1766,7 +1864,11 @@ async function applyDeleteModeArtifactPlan(args: {
   if (!db) return counts;
 
   const { artifacts, canonicalArtifacts } = await loadArtifactsForDeleteMode(args);
-  const plan = buildArchivedEntityArtifactRepairPlan({ artifacts, canonicalArtifacts });
+  const plan = buildArchivedEntityArtifactRepairPlan({
+    artifacts,
+    canonicalArtifacts,
+    dispositions: mergeDispositionsForDuplicates(args.duplicateIds, args.canonicalId),
+  });
 
   for (const item of plan.relink) {
     const spec = ARTIFACT_SPECS.find((candidate) => candidate.artifactType === item.artifactType);
@@ -1939,6 +2041,7 @@ async function relinkScalarReferences(args: {
             `Relinking ${spec.collection}.${spec.field} hit a duplicate key for ${
               serializedDocumentId(row._id) || ''
             }; archive-mode dedupe will not delete reference rows.`,
+            { cause: error },
           );
         }
         const outcome =
@@ -1960,7 +2063,36 @@ async function relinkScalarReferences(args: {
     }
   }
 
+  const selfRelationshipsArchived = await archiveSurvivorSelfRelationships({
+    canonicalId: args.canonicalId,
+    now: args.now,
+  });
+  if (selfRelationshipsArchived > 0) {
+    counts['research_entity_relationships.selfRelationship.archived'] = selfRelationshipsArchived;
+  }
+
   return counts;
+}
+
+async function archiveSurvivorSelfRelationships(args: {
+  canonicalId: mongoose.Types.ObjectId;
+  now: Date;
+}): Promise<number> {
+  const db = mongoose.connection.db;
+  if (!db || !(await collectionExists('research_entity_relationships'))) return 0;
+  const result = await db.collection('research_entity_relationships').updateMany(
+    {
+      sourceResearchEntityId: args.canonicalId,
+      targetResearchEntityId: args.canonicalId,
+      archived: { $ne: true },
+    },
+    {
+      $set: attributedArchiveSet(PI_DEDUPE_SELF_RELATIONSHIP_ARCHIVE_REASON, {
+        updatedAt: args.now,
+      }),
+    },
+  );
+  return result.modifiedCount || 0;
 }
 
 async function relinkArrayReferences(args: {
@@ -2015,6 +2147,7 @@ async function countRemainingDuplicateReferences(
     archiveOnConflict?: boolean;
   }> = [
     ...SCALAR_REFERENCE_SPECS,
+    RESEARCH_PLAN_REFERENCE_SPEC,
     ...ARTIFACT_SPECS.map((item) => ({
       collection: item.collection,
       field: 'researchEntityId',
@@ -2043,6 +2176,54 @@ async function countRemainingDuplicateReferences(
   }
 
   return counts;
+}
+
+export const URL_IDENTITY_LANE_VERDICT_ROW_LIMIT = 10000;
+
+const urlIdentityLaneGroupSlugs = (
+  groups: ReadonlyArray<{ canonicalSlug?: string; duplicateSlugs: string[] }>,
+): string[] =>
+  groups.flatMap((group) => [group.canonicalSlug ?? '', ...group.duplicateSlugs]).filter(Boolean);
+
+function urlIdentityLaneVerdict<
+  T extends Parameters<typeof partitionPlanByPersonProfileConflation>[0][number] & {
+    duplicateEntityIds: string[];
+  },
+>(lane: UrlIdentityLaneName, candidateRows: number, groups: T[]): UrlIdentityLaneVerdict {
+  const { plan, quarantine } = partitionPlanByPersonProfileConflation(dedupePlannedGroups(groups));
+  return {
+    lane,
+    candidateRows,
+    rowLimit: URL_IDENTITY_LANE_VERDICT_ROW_LIMIT,
+    plannedGroups: plan.length,
+    quarantinedGroups: quarantine.length,
+    plannedSlugs: urlIdentityLaneGroupSlugs(plan),
+    quarantinedSlugs: urlIdentityLaneGroupSlugs(quarantine),
+  };
+}
+
+export async function planUrlIdentityLaneVerdicts(): Promise<UrlIdentityLaneVerdict[]> {
+  const limit = URL_IDENTITY_LANE_VERDICT_ROW_LIMIT;
+  const officialLabUrlRows = await loadOfficialLabUrlCandidateRows(limit);
+  const profileLabUrlRows = await loadSpecificProfileLabUrlCandidateRows(limit);
+  const websiteUrlRows = await loadWebsiteUrlCandidateRows(limit);
+  return [
+    urlIdentityLaneVerdict(
+      'official-lab-url',
+      officialLabUrlRows.length,
+      buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows),
+    ),
+    urlIdentityLaneVerdict(
+      'profile-lab-url',
+      profileLabUrlRows.length,
+      buildSpecificProfileLabUrlResearchEntityDedupePlan(profileLabUrlRows),
+    ),
+    urlIdentityLaneVerdict(
+      'website-url',
+      websiteUrlRows.length,
+      buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows),
+    ),
+  ];
 }
 
 export const SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES_ENV =
@@ -2097,6 +2278,16 @@ function pickBestUsefulText(values: string[], isUseful: (value: string) => boole
   const useful = cleaned.filter(isUseful);
   const pool = useful.length > 0 ? useful : cleaned;
   return pool.sort((a, b) => b.length - a.length)[0] || '';
+}
+
+const MERGE_SURVIVOR_PROSE_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
+
+// Mirrors the materializer's merged-survivor prose rule (#3584, #4742): a merged-in
+// row's prose fills a survivor only when the survivor states none of its own, so a
+// merge that wrote a twin's paragraph over the survivor's would serve text no
+// resolve re-derives, credited to the survivor's page.
+export function mergeSurvivorHoldsOwnProse(doc: Record<string, any> | null | undefined): boolean {
+  return MERGE_SURVIVOR_PROSE_FIELDS.some((field) => String(doc?.[field] ?? '').trim().length > 0);
 }
 
 /**
@@ -2169,12 +2360,20 @@ export interface NonDemotingMergeResolution {
   simulatedTier: string;
 }
 
+export type PlannedMergeCarry = Pick<
+  ResearchEntityDedupeMergeGroup,
+  'mergedDepartments' | 'mergedResearchAreas' | 'mergedSourceUrls'
+>;
+
+const carriedStrings = (values: unknown): string[] =>
+  Array.isArray(values) ? values.map((value) => String(value)).filter(Boolean) : [];
+
 /**
  * A merge keeps one survivor and archives the rest, so keeping a survivor that
  * is less student-visible than one of its twins silently drops a lab from
  * student view (the #2060 regression). This resolves the survivor by
  * hydrate-then-verify: hydrate a candidate canonical with the best card + the
- * union of leads/areas/urls across all twins, simulate the served tier with the
+ * leads plus the areas/urls the merge carries, simulate the served tier with the
  * pure `computeResearchEntityStudentVisibility` gate, and accept the candidate
  * only when it does not demote below the best input twin. The preferred
  * (identity-consistent) canonical is tried first; if it would demote, higher-tier
@@ -2184,6 +2383,7 @@ export interface NonDemotingMergeResolution {
 export async function resolveNonDemotingMerge(
   preferredCanonicalId: mongoose.Types.ObjectId,
   duplicateIds: mongoose.Types.ObjectId[],
+  plannedCarry?: PlannedMergeCarry,
 ): Promise<NonDemotingMergeResolution> {
   const allIds = [preferredCanonicalId, ...duplicateIds];
   const docs = await ResearchEntity.find({ _id: { $in: allIds } }).lean<
@@ -2193,27 +2393,38 @@ export async function resolveNonDemotingMerge(
   const bestInputRank = Math.max(
     ...allIds.map((id) => mergeTierRank(docById.get(String(id))?.studentVisibilityTier)),
   );
-  const unionStrings = (field: string): string[] =>
-    Array.from(
-      new Set(
-        docs
-          .flatMap((doc) => (Array.isArray(doc[field]) ? doc[field] : []))
-          .map((value) => String(value))
-          .filter(Boolean),
-      ),
-    );
-  const unionAreas = unionStrings('researchAreas');
-  const unionSourceUrls = unionStrings('sourceUrls');
-  const unionDepartments = unionStrings('departments');
+  const describableDocs = describableMergeTwins(docs);
+  const carriedByMerge = {
+    researchAreas: plannedCarry
+      ? carriedStrings(plannedCarry.mergedResearchAreas)
+      : describableDocs.flatMap((doc) => carriedStrings(doc.researchAreas)),
+    sourceUrls: plannedCarry
+      ? carriedStrings(plannedCarry.mergedSourceUrls)
+      : docs.flatMap((doc) => carriedStrings(doc.sourceUrls)),
+    departments: plannedCarry
+      ? carriedStrings(plannedCarry.mergedDepartments)
+      : docs.flatMap((doc) => carriedStrings(doc.departments)),
+  };
+  const storedAfterMerge = (
+    survivor: Record<string, any>,
+    field: keyof typeof carriedByMerge,
+  ): string[] =>
+    Array.from(new Set([...carriedStrings(survivor[field]), ...carriedByMerge[field]]));
   const { fullDescription: bestFull, shortDescription: bestShort } = bestMergeDescriptions(
-    describableMergeTwins(docs),
-    unionAreas,
+    describableDocs,
+    Array.from(new Set(describableDocs.flatMap((doc) => carriedStrings(doc.researchAreas)))),
   );
 
   const rosterMap = await getResearchEntityRosterByEntityId(allIds);
   const allLeads = allIds.flatMap((id) =>
     renderLeadMembersFromRoster(rosterMap.get(String(id)) || [], id),
   );
+  // The same surname roster the gate judges names against. Simulating without it read
+  // an uncorroborated foreign eponym as usable while the stored tier - computed WITH
+  // the roster - already held the row, so the non-demoting guard compared an
+  // optimistic hypothetical against a real verdict and could archive a student_ready
+  // twin for a survivor the next gate pass demotes (#2060).
+  const knownPersonSurnames = await loadKnownPersonSurnameRoster();
 
   const candidateOrder = [
     preferredCanonicalId,
@@ -2229,13 +2440,14 @@ export async function resolveNonDemotingMerge(
   for (const candidateId of candidateOrder) {
     const doc = docById.get(String(candidateId));
     if (!doc) continue;
+    const keepsOwnProse = mergeSurvivorHoldsOwnProse(doc);
     const hypothetical = {
       ...doc,
-      fullDescription: bestFull || doc.fullDescription,
-      shortDescription: bestShort || doc.shortDescription,
-      researchAreas: unionAreas,
-      sourceUrls: unionSourceUrls,
-      departments: unionDepartments,
+      fullDescription: keepsOwnProse ? doc.fullDescription : bestFull || doc.fullDescription,
+      shortDescription: keepsOwnProse ? doc.shortDescription : bestShort || doc.shortDescription,
+      researchAreas: storedAfterMerge(doc, 'researchAreas'),
+      sourceUrls: storedAfterMerge(doc, 'sourceUrls'),
+      departments: storedAfterMerge(doc, 'departments'),
     };
     const leadMembers = allLeads.map((lead) => ({ ...lead, researchEntityId: candidateId }));
     const simulated = computeResearchEntityStudentVisibility({
@@ -2243,6 +2455,7 @@ export async function resolveNonDemotingMerge(
       leadMembers,
       duplicateRisk: false,
       exactUrlDuplicateRisk: false,
+      knownPersonSurnames,
     });
     if (mergeTierRank(simulated.tier) >= bestInputRank) {
       return {
@@ -2266,6 +2479,23 @@ export async function resolveNonDemotingMerge(
     bestInputTier: STUDENT_VISIBILITY_RANK_TIER[bestInputRank],
     simulatedTier: STUDENT_VISIBILITY_RANK_TIER[0],
   };
+}
+
+export async function previewResearchPlanCarryForMergeGroups(
+  groups: ReadonlyArray<{ canonicalEntityId: string; duplicateEntityIds: string[] }>,
+): Promise<ResearchPlanCarryReport> {
+  let total = emptyResearchPlanCarryReport();
+  for (const group of groups) {
+    total = addResearchPlanCarryReports(
+      total,
+      await carryResearchPlansToSurvivor({
+        survivorId: group.canonicalEntityId,
+        duplicateIds: group.duplicateEntityIds,
+        apply: false,
+      }),
+    );
+  }
+  return total;
 }
 
 export async function applyResearchEntityDedupeMergeGroup(
@@ -2293,6 +2523,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkedMembers: 0,
     artifactRelink: {},
     scalarRelink: {},
+    researchPlanCarry: emptyResearchPlanCarryReport(),
     arrayRelink: {},
     fundingObservationRelink: {},
     remainingReferencesBeforeDelete: {},
@@ -2315,7 +2546,11 @@ export async function applyResearchEntityDedupeMergeGroup(
   let hydratedFullDescription: string | undefined;
   let hydratedShortDescription: string | undefined;
   if (options.neverDemote) {
-    const resolution = await resolveNonDemotingMerge(requestedCanonicalId, requestedDuplicateIds);
+    const resolution = await resolveNonDemotingMerge(
+      requestedCanonicalId,
+      requestedDuplicateIds,
+      group,
+    );
     if (resolution.defer) {
       return {
         ...zeroedResult(),
@@ -2371,8 +2606,13 @@ export async function applyResearchEntityDedupeMergeGroup(
     (hydratedFullDescription || '').trim() || String(group.canonicalFullDescription || '').trim();
   const carriedShortDescription =
     (hydratedShortDescription || '').trim() || String(group.canonicalShortDescription || '').trim();
-  if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
-  if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
+  const survivorProse = await ResearchEntity.findById(canonicalId)
+    .select(MERGE_SURVIVOR_PROSE_FIELDS.join(' '))
+    .lean<Record<string, unknown>>();
+  if (!mergeSurvivorHoldsOwnProse(survivorProse)) {
+    if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
+    if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
+  }
   if (group.mergedRecentGrants && group.mergedRecentGrants.length > 0) {
     canonicalIdentitySet.recentGrants = group.mergedRecentGrants;
   }
@@ -2409,21 +2649,35 @@ export async function applyResearchEntityDedupeMergeGroup(
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: duplicateIds },
   })
-    .select('_id personId role')
+    .select('_id personId role state archived')
     .lean();
+  // Scoped to the canonical's LIVE edges: a HISTORICAL or archived edge for the same
+  // person and role is a past appointment, not a rival, so retiring the duplicate's
+  // live edge against it leaves the survivor with no current membership at all and the
+  // gate reads `missing_lead` on a row whose lead is known. `role_assignments` carries
+  // no unique index on (personId, target, role), so the repointed live edge coexists
+  // with the historical one, which is what a past plus a current appointment is.
   const canonicalMemberKeys = new Set(
     (
       await RoleAssignment.find({
         'target.kind': 'RESEARCH_ENTITY',
         'target.id': canonicalId,
         personId: { $in: duplicateMembers.map((member) => member.personId).filter(Boolean) },
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
       })
         .select('personId role')
         .lean()
     ).map((member) => `${String(member.personId)}:${member.role || ''}`),
   );
+  const heldMemberKeys = new Set(canonicalMemberKeys);
   const conflictingMemberIds = duplicateMembers
-    .filter((member) => canonicalMemberKeys.has(`${String(member.personId)}:${member.role || ''}`))
+    .filter((member) => {
+      const key = `${String(member.personId)}:${member.role || ''}`;
+      if (heldMemberKeys.has(key)) return true;
+      if (member.state !== 'HISTORICAL' && member.archived !== true) heldMemberKeys.add(key);
+      return false;
+    })
     .map((member) => member._id);
 
   const retiredConflictingMembers =
@@ -2452,6 +2706,13 @@ export async function applyResearchEntityDedupeMergeGroup(
     },
     { $set: { 'target.id': canonicalId } },
   );
+
+  const researchPlanCarry = await carryResearchPlansToSurvivor({
+    survivorId: canonicalId,
+    duplicateIds,
+    apply: true,
+    now,
+  });
 
   const shouldRelinkReferences = options.deleteDuplicates || options.relinkReferences;
   const artifactRelink = shouldRelinkReferences
@@ -2530,6 +2791,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     relinkedMembers: members.modifiedCount || 0,
     artifactRelink,
     scalarRelink,
+    researchPlanCarry,
     arrayRelink,
     fundingObservationRelink,
     remainingReferencesBeforeDelete,
@@ -2545,8 +2807,8 @@ async function resyncMergeSurvivorSearchDocument(
 ): Promise<boolean> {
   const survivor = await ResearchEntity.findById(survivorId).lean();
   if (!survivor || (survivor as { archived?: boolean }).archived === true) return false;
-  await syncEntities('researchEntity', [survivor]);
-  return true;
+  const outcome = await syncResearchEntitiesWithOutcome([survivor]);
+  return outcome.indexSyncFailures === 0 && !outcome.indexSyncDeferred;
 }
 
 async function retireDuplicateCurrentMembers(
@@ -2614,6 +2876,7 @@ async function main() {
     slug,
     reviewedProfileAreaOnly,
     sharedPersonId,
+    requireNameAgreement,
     rematerializeCanonical,
     confirmDemotingMerge,
     acceptedDecisions,
@@ -2632,10 +2895,11 @@ async function main() {
     scriptName: 'research-entity:dedupe-by-pi',
     mongoUrl: process.env.MONGODBURL,
   });
-  await mongoose.connect(process.env.MONGODBURL);
+  await connectScriptMongo(process.env.MONGODBURL);
 
   const usesNonPiLane = officialLabUrlOnly || profileLabUrlOnly || orgNameOnly || websiteUrlOnly;
-  const unattendedUrlIdentityLane = profileLabUrlOnly || websiteUrlOnly;
+  const unattendedUrlIdentityLane =
+    profileLabUrlOnly || websiteUrlOnly || (sharedPersonId && requireNameAgreement);
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
@@ -2665,6 +2929,9 @@ async function main() {
         : websiteUrlOnly
           ? websiteUrlRows
           : piRows;
+  const profileLabUrlRefusals = profileLabUrlOnly
+    ? explainSpecificProfileLabUrlRefusals(profileLabUrlRows)
+    : [];
   const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
     ? buildSameNameDifferentPersonQuarantine(piRows)
     : [];
@@ -2683,7 +2950,9 @@ async function main() {
               : websiteUrlOnly
                 ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
                 : sharedPersonId
-                  ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+                  ? requireNameAgreement
+                    ? buildNameAgreedSharedPersonResearchEntityDedupePlan(piRows)
+                    : buildSharedPersonIdResearchEntityDedupePlan(piRows)
                   : fundingOnly
                     ? buildFundingResearchEntityDedupePlan(piRows)
                     : buildResearchEntityPiDedupePlan(piRows),
@@ -2714,8 +2983,7 @@ async function main() {
   const duplicateCurrentMembers =
     acceptedDecisions ||
     orgNameOnly ||
-    websiteUrlOnly ||
-    profileLabUrlOnly ||
+    unattendedUrlIdentityLane ||
     !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
       ? []
       : await loadDuplicateCurrentMemberRows(limit);
@@ -2770,7 +3038,7 @@ async function main() {
               .map((id) => objectId(id))
               .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
             if (!canonicalId || duplicateIds.length === 0) return null;
-            const resolution = await resolveNonDemotingMerge(canonicalId, duplicateIds);
+            const resolution = await resolveNonDemotingMerge(canonicalId, duplicateIds, group);
             if (!resolution.defer) return null;
             return {
               canonicalSlug: group.canonicalSlug,
@@ -2781,6 +3049,17 @@ async function main() {
           }),
         )
       ).filter(Boolean);
+
+  const researchPlanCarryPreview = apply
+    ? emptyResearchPlanCarryReport()
+    : await previewResearchPlanCarryForMergeGroups(cappedPlan);
+  const researchPlanCarryApplied = applied.reduce(
+    (total: ResearchPlanCarryReport, result: any) =>
+      result?.researchPlanCarry
+        ? addResearchPlanCarryReports(total, result.researchPlanCarry)
+        : total,
+    emptyResearchPlanCarryReport(),
+  );
 
   const retiredDuplicateCurrentMembers = apply
     ? await retireDuplicateCurrentMembers(duplicateCurrentMembers)
@@ -2794,6 +3073,7 @@ async function main() {
   // or stale member/lead names after a dedupe.
   let visibilityRecomputed = 0;
   let canonicalEntitiesResynced = 0;
+  let canonicalIndexSyncFailures = 0;
   if (apply) {
     const canonicalIds = Array.from(
       new Set(
@@ -2805,6 +3085,7 @@ async function main() {
     const repair = await recomputeVisibilityAndResyncCanonicals(canonicalIds);
     visibilityRecomputed = repair.visibilityRecomputed;
     canonicalEntitiesResynced = repair.canonicalEntitiesResynced;
+    canonicalIndexSyncFailures = repair.canonicalIndexSyncFailures;
   }
 
   writeResearchEntityPiDedupeDecisionTemplate(
@@ -2844,6 +3125,12 @@ async function main() {
     ),
     conflatedPersonProfileQuarantine,
     quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+    ...(profileLabUrlOnly
+      ? {
+          refusedCandidatesByReason: countProfileLabUrlRefusalsByReason(profileLabUrlRefusals),
+          refusedCandidates: profileLabUrlRefusals,
+        }
+      : {}),
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),
@@ -2854,9 +3141,14 @@ async function main() {
     demotingMergeConfirmed: confirmDemotingMerge,
     wouldDemoteOnConfirm: demotionPreview.length,
     demotionPreview,
+    researchPlanCarry: apply ? researchPlanCarryApplied : researchPlanCarryPreview,
+    researchPlansThatWouldMove: researchPlansThatWouldMove(
+      apply ? researchPlanCarryApplied : researchPlanCarryPreview,
+    ),
     retiredDuplicateCurrentMembers,
     visibilityRecomputed,
     canonicalEntitiesResynced,
+    canonicalIndexSyncFailures,
     ...(unattendedUrlIdentityLane
       ? {
           urlIdentityDedupeDelta: buildUrlIdentityDedupeStageDelta({
@@ -2875,7 +3167,14 @@ async function main() {
             quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
+            canonicalIndexSyncFailures,
             maxApply,
+            ...(profileLabUrlOnly
+              ? {
+                  refusedCandidatesByReason:
+                    countProfileLabUrlRefusalsByReason(profileLabUrlRefusals),
+                }
+              : {}),
           }),
         }
       : {}),

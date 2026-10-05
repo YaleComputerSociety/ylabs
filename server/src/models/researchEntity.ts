@@ -7,6 +7,7 @@ import {
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
 import { archiveAttributionFields } from './entityArchival';
+import { registerFieldProvenanceBackingGuard } from './fieldProvenanceBacking';
 import {
   fieldLockProvenanceSchema,
   fieldProvenanceSchema,
@@ -90,6 +91,24 @@ const sourceLinkHealthSchema = new mongoose.Schema(
      */
     privateAddressHost: {
       type: Boolean,
+      required: false,
+    },
+    /**
+     * The server answered but its certificate failed verification, so a browser
+     * stops a student at a security warning. Independent of `healthStatus`, which
+     * stays `UNKNOWN`: a certificate is not evidence the page is gone (#2751, #4080).
+     */
+    tlsVerificationFailed: {
+      type: Boolean,
+      required: false,
+    },
+    /**
+     * The `https:` page a plain-HTTP request was redirected to by its own host, kept
+     * only on a `HEALTHY` verdict that preserved host and path. Serve time offers it in
+     * place of the `http:` spelling (#4649).
+     */
+    httpsLandingUrl: {
+      type: String,
       required: false,
     },
     checkedAt: {
@@ -210,10 +229,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: String,
       default: '',
     },
-    location: {
-      type: String,
-      default: '',
-    },
     departments: {
       type: [String],
       default: [],
@@ -315,27 +330,39 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ],
       default: [],
     },
+    recentGrantPeriods: {
+      type: [
+        {
+          _id: false,
+          id: { type: String },
+          agency: { type: String },
+          startDate: { type: Date },
+          endDate: { type: Date },
+        },
+      ],
+      default: undefined,
+    },
     recentGrantCount: {
       type: Number,
       default: 0,
+    },
+    leadHonors: {
+      type: [
+        {
+          _id: false,
+          key: { type: String },
+          label: { type: String },
+          kind: { type: String, enum: ['fellowship', 'prize', 'membership'] },
+          year: { type: Number },
+        },
+      ],
+      default: undefined,
     },
     fundingAgencies: {
       type: [String],
       default: [],
     },
     typicalUndergradRoles: {
-      type: [String],
-      default: [],
-    },
-    prerequisiteCourses: {
-      type: [String],
-      default: [],
-    },
-    creditOptions: {
-      type: [String],
-      default: [],
-    },
-    fundingPrograms: {
       type: [String],
       default: [],
     },
@@ -381,6 +408,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           required: true,
         },
         checkedUrl: { type: String, default: '' },
+        requestedUrl: { type: String, required: false },
         httpStatusCode: { type: Number, min: 100, max: 599, required: false },
         pagesRead: { type: Number, min: 0, default: 0 },
         confirmedCount: { type: Number, min: 0, default: 0 },
@@ -393,13 +421,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
         observedAt: { type: Date, required: true },
       },
       required: false,
-      default: undefined,
-    },
-    timeCommitmentHoursPerWeek: {
-      type: {
-        min: { type: Number },
-        max: { type: Number },
-      },
       default: undefined,
     },
     contactEmail: {
@@ -440,6 +461,17 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: [],
     },
     /**
+     * The names the row's own website gives itself on a page crediting the row's lead as
+     * its Principal Investigator, re-derived by the materializer on every resolve from the
+     * live lab-microsite name observations. The name authority reads it at every serve
+     * path, which judges the stored row without observations, so an umbrella-headed lab
+     * name such as "Computational Psychiatry Unit" is admitted everywhere or nowhere.
+     */
+    siteDeclaredOwnNames: {
+      type: [String],
+      default: undefined,
+    },
+    /**
      * Why each `manuallyLockedFields` entry was locked, keyed by field name. A
      * field locked without an entry here reads as `unknown`, which is the
      * conservative reading: a lock is never revisited on the strength of a
@@ -472,6 +504,13 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: 0,
     },
     /**
+     * `BROWSE_RANK_SCORER_VERSION` of the scorer that wrote `browseRankScore`. A writer
+     * whose version is older leaves the score alone (#4642).
+     */
+    browseRankScorerVersion: {
+      type: Number,
+    },
+    /**
      * True when the entity carries an undergrad-specific hosting/supervision
      * access signal (PAST_UNDERGRADS / CURRENT_UNDERGRADS /
      * FACULTY_SUPERVISES_STUDENT_PROJECTS), as opposed to a generic
@@ -488,11 +527,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       default: false,
     },
     ...archiveAttributionFields,
-    embedding: {
-      type: [Number],
-      required: false,
-      select: false,
-    },
     ...studentVisibilityFields,
   },
   {
@@ -522,6 +556,8 @@ researchEntitySchema.index({ offersIndependentStudy: 1 });
 researchEntitySchema.index({ studentVisibilityTier: 1, archived: 1 });
 researchEntitySchema.index({ studentVisibilityComputedAt: -1 });
 researchEntitySchema.index({ studentVisibilityEvaluatedAt: -1 });
+
+registerFieldProvenanceBackingGuard(researchEntitySchema);
 
 export const ResearchEntity =
   mongoose.models.ResearchEntity ||

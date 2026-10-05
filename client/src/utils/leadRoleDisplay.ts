@@ -1,7 +1,7 @@
 import { LabMember, LabMemberRole } from '../types/labDetail';
 
 const TRAINEE_TITLE_PATTERN =
-  /\b(post-?doctoral|post-?doc|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
+  /\b(post-?doctoral|post-?doc|postgraduate (?:associate|fellow)|research assistant|(?:ph\.?\s?d|doctoral|graduate|undergraduate|masters?|m\.?s)\.?\s+(?:student|candidate)|intern|pre-?doctoral|trainee)\b/i;
 // A bare "Student", "MA Student" or "IDE Alumni" carries no degree qualifier, so the
 // alternatives above never reach it. Two anchors keep the widening safe: the noun must
 // end its clause, separating a rank ("IDE Student") from a modifier ("International
@@ -59,12 +59,18 @@ export const leadRoleFamily = (member: LabMember): LeadRoleFamily => {
   return 'other';
 };
 
-export const leadSectionHeading = (members: LabMember[]): string => {
-  if (members.length === 0) return 'Principal Investigator';
+export const leadSectionHeading = (
+  members: LabMember[],
+  principalInvestigatorLabel?: string,
+): string => {
+  if (members.length === 0) return principalInvestigatorLabel ?? 'Principal Investigator';
   const families = new Set(members.map(leadRoleFamily));
   if (families.size === 1) {
     if (families.has('pi')) {
-      return members.length > 1 ? 'Principal Investigators' : 'Principal Investigator';
+      return (
+        principalInvestigatorLabel ??
+        (members.length > 1 ? 'Principal Investigators' : 'Principal Investigator')
+      );
     }
     if (families.has('director')) {
       return members.length > 1 ? 'Directors' : 'Director';

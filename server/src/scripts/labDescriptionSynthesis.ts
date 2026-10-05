@@ -3,6 +3,7 @@ import {
   assessResearchEntityDescriptionQuality,
   fullDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
+import { asResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
@@ -17,14 +18,14 @@ export const MIN_SYNTHESIS_GROUNDING = 0.5;
 const MAX_SOURCE_CHARS = 12_000;
 const MAX_NAME_CHARS = 240;
 
-const PERSON_ENTITY_TYPES = new Set([
+const NON_LAB_PERSON_SCOPED_ENTITY_TYPES = new Set([
   'FACULTY_RESEARCH_AREA',
   'FACULTY_PROJECT',
   'INDIVIDUAL_RESEARCH',
 ]);
 
-export function isPersonResearchEntityType(entityType?: string): boolean {
-  return PERSON_ENTITY_TYPES.has(String(entityType || '').toUpperCase());
+export function isNonLabPersonScopedEntityType(entityType?: string): boolean {
+  return NON_LAB_PERSON_SCOPED_ENTITY_TYPES.has(String(entityType || '').toUpperCase());
 }
 
 const SHARED_SYNTHESIS_RULES = [
@@ -53,7 +54,7 @@ const PERSON_SYNTHESIS_SYSTEM_PROMPT = [
 ].join(' ');
 
 export function synthesisSystemPromptFor(entityType?: string): string {
-  return isPersonResearchEntityType(entityType)
+  return isNonLabPersonScopedEntityType(entityType)
     ? PERSON_SYNTHESIS_SYSTEM_PROMPT
     : LAB_SYNTHESIS_SYSTEM_PROMPT;
 }
@@ -199,14 +200,14 @@ export interface LabSynthesisOutput {
 export type LabDescriptionSynthesizer = (input: LabSynthesisInput) => Promise<LabSynthesisOutput>;
 
 export function synthesisSubjectName(input: { name: string; entityType?: string }): string {
-  if (!isPersonResearchEntityType(input.entityType)) return input.name;
+  if (!isNonLabPersonScopedEntityType(input.entityType)) return input.name;
   return stripFacultyResearchAreaNameTemplateSuffix(input.name) || input.name;
 }
 
 export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async (input) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
-  const isPerson = isPersonResearchEntityType(input.entityType);
+  const isPerson = isNonLabPersonScopedEntityType(input.entityType);
   const safeName = redactDirectContactInfo(synthesisSubjectName(input)).slice(0, MAX_NAME_CHARS);
   const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
   const subjectLabel = isPerson ? 'Researcher' : 'Research home';
@@ -255,22 +256,20 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
 
 export interface SynthesisCandidateFields extends LabSynthesisSourceFields {
   shortDescription?: unknown;
+  entityType?: unknown;
 }
 
 export function isSynthesisCandidate(entity: SynthesisCandidateFields): boolean {
   const full = sanitizeDescriptionText(entity.fullDescription).text;
   const short = sanitizeDescriptionText(entity.shortDescription).text;
-  const fullClass = classifyFullDescription(full);
+  const fullClass = classifyFullDescription(full, asResearchEntityType(entity.entityType));
   const shortEqualsFull =
     short.length > 0 && full.length > 0 && short.toLowerCase() === full.toLowerCase();
   return fullClass !== 'genuine' || shortEqualsFull;
 }
 
 export type SynthesisRejectReason =
-  | 'empty-output'
-  | 'ungrounded'
-  | 'low-quality'
-  | 'not-lab-focused';
+  'empty-output' | 'ungrounded' | 'low-quality' | 'not-lab-focused';
 
 export interface SynthesisAcceptance {
   accepted: boolean;

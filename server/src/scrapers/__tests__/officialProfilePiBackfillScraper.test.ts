@@ -12,6 +12,7 @@ import {
   identityToResearchEntityPiObservations,
   identityToUserObservations,
   isInstitutionalHomeMismatchedWithPersonScopedShell,
+  profileLinkedHomeRefusal,
   generatedOfficialProfileUrlCandidatesForPerson,
   leadDirectResearchHomeUrlsForEntity,
   leadDirectResearchHomeUrlsForUser,
@@ -19,8 +20,16 @@ import {
   OfficialProfilePiBackfillScraper,
   officialProfileUrlsForEntity,
   preferredOfficialProfileUrl,
+  profileAttestsItsLabWebsiteIsGone,
+  websiteUrlOwnedByAnotherEntity,
+  emptyLabWebsiteSlotObservation,
+  rankedOfficialProfileFetchCandidates,
+  isEponymousResearchGroupLinkText,
+  refusedResearchHomeWebsiteObservation,
+  profileTextStatesLeadershipOf,
   PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD,
   resolveExistingUserForIdentity,
+  selectVisibleProfileBioTargets,
   shouldQueueEntityForPiBackfill,
   sourceUrlResearchHomeUrlsForEntity,
   websiteDuplicateLookupUrls,
@@ -1344,6 +1353,35 @@ const profileLinkedBioImageProjectWebsiteHtml = `
   </html>
 `;
 
+const profileLinkedSurnamePrefixLabWebsiteHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/quinn-mcfixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Quinn McFixture",
+            "email": "quinn.fixture@yale.edu",
+            "jobTitle": "Professor",
+            "description": "Quinn McFixture studies synthetic circuits."
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <h1>Quinn McFixture</h1>
+        <div>
+          <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>McFixture and DiSample LabsSynthetic Circuits GroupMcSample Unit
+          <a href="https://mcfixturelab.example.org/">View Lab Website</a>
+        </div>
+      </main>
+    </body>
+  </html>
+`;
+
 const profileLinkedSquirrelLabWebsiteHtml = `
   <html>
     <head>
@@ -1693,13 +1731,541 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(shouldQueueEntityForPiBackfill(entity)).toBe(true);
   });
 
-  it('prefers Medicine profile URLs when multiple official profiles are available', () => {
+  it("prefers the lead's recorded official profile over a cross-listed school directory profile", () => {
+    const candidates = [
+      'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+      'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+    ];
+    expect(
+      rankedOfficialProfileFetchCandidates(candidates, {
+        school: 'School of Medicine',
+        schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+        leadOfficialProfileUrls: [
+          'https://anthropology.yale.edu/profile/riley-anthropology-fixture',
+        ],
+      }),
+    ).toEqual([
+      'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+      'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+    ]);
+  });
+
+  it('demotes a school directory profile from a school the row does not list', () => {
+    expect(
+      preferredOfficialProfileUrl(
+        [
+          'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+          'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+        ],
+        { schools: ['Faculty of Arts and Sciences'] },
+      ),
+    ).toBe('https://anthropology.yale.edu/profile/riley-anthropology-fixture/');
+  });
+
+  it('keeps caller order when nothing distinguishes the candidates', () => {
     expect(
       preferredOfficialProfileUrl([
-        'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
         'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+        'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
       ]),
     ).toBe('https://medicine.yale.edu/profile/riley-anthropology-fixture/');
+  });
+
+  it('ranks without promoting a candidate whose host the row lists as a source', () => {
+    expect(
+      preferredOfficialProfileUrl(
+        [
+          'https://anthropology.yale.edu/profile/riley-anthropology-fixture/',
+          'https://medicine.yale.edu/profile/riley-anthropology-fixture/',
+        ],
+        { sourceUrls: ['https://medicine.yale.edu/anthropology/people'] },
+      ),
+    ).toBe('https://anthropology.yale.edu/profile/riley-anthropology-fixture/');
+  });
+
+  it("fetches a visible-bio researcher's recorded official profile before a mirrored website", async () => {
+    const mirrorUrl = 'https://medicine.yale.edu/profile/riley-anthropology-fixture/';
+    const departmentUrl = 'https://anthropology.yale.edu/profile/riley-anthropology-fixture/';
+    vi.spyOn(ResearchEntity, 'find').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    } as any);
+    vi.spyOn(Researcher, 'find').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      sort: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([
+        {
+          _id: 'res-riley',
+          accountId: 'acc-riley',
+          displayName: 'Riley Anthropology-Fixture',
+          profile: { websiteUrl: mirrorUrl },
+          profileLinks: [{ kind: 'YALE_OFFICIAL', url: departmentUrl }],
+          identifiers: {},
+        },
+      ]),
+    } as any);
+    vi.spyOn(Account, 'find').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi
+        .fn()
+        .mockResolvedValue([{ _id: 'acc-riley', netid: 'raf1', email: 'riley.fixture@yale.edu' }]),
+    } as any);
+    const targets = await selectVisibleProfileBioTargets(5);
+    expect(targets).toHaveLength(1);
+
+    const fetchedUrls: string[] = [];
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async (url: string) => {
+        fetchedUrls.push(url);
+        throw new Error('fixture fetch');
+      }),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => targets),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      0,
+    );
+    await scraper.run(visibleBioContextFor([]));
+
+    expect(fetchedUrls[0]).toBe(departmentUrl);
+    expect(fetchedUrls).toContain(mirrorUrl);
+  });
+
+  describe('who owns a website for the ownership refusal', () => {
+    const findOneReturning = (owner: unknown) => {
+      const filters: any[] = [];
+      vi.spyOn(ResearchEntity, 'findOne').mockImplementation(((filter: any) => {
+        filters.push(filter);
+        return { select: vi.fn().mockReturnThis(), lean: vi.fn().mockResolvedValue(owner) };
+      }) as any);
+      return filters;
+    };
+    const row = { _id: '0123456789abcdef01234567', websiteUrl: 'https://fixturelab.example.org/' };
+
+    it('counts only a student-visible holder when the row already serves the link', async () => {
+      const filters = findOneReturning(null);
+      await expect(
+        websiteUrlOwnedByAnotherEntity('https://fixturelab.example.org/', row),
+      ).resolves.toBe(false);
+      expect(filters[0].studentVisibilityTier).toEqual({ $in: ['student_ready'] });
+      expect(filters[0]._id).toEqual({ $ne: row._id });
+    });
+
+    it('keeps any live holder blocking adoption onto a row without the link', async () => {
+      const filters = findOneReturning({ _id: '76543210fedcba9876543210' });
+      await expect(
+        websiteUrlOwnedByAnotherEntity('https://fixturelab.example.org/', {
+          _id: row._id,
+          websiteUrl: '',
+        }),
+      ).resolves.toBe(true);
+      expect(filters[0].studentVisibilityTier).toBeUndefined();
+    });
+  });
+
+  describe('attesting that a re-read profile no longer links the stored website', () => {
+    const profileUrl = 'https://medicine.yale.edu/profile/quinn-marlowfixture/';
+    const storedWebsite = 'https://marlowfixturelab.example.org/';
+    const entity = {
+      _id: '0123456789abcdef01234567',
+      slug: 'ysm-faculty-quinn-marlowfixture',
+      websiteUrl: storedWebsite,
+      fieldProvenance: {
+        websiteUrl: { sourceName: 'official-profile-pi-backfill', sourceUrl: profileUrl },
+      },
+    };
+    const page = (body: string) =>
+      `<html><body><main><h1>Quinn Marlowfixture</h1>${body}</main></body></html>`;
+
+    it('attests when the same profile carries no lab slot and no stored link', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<p>Professor of medicine.</p>'),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(true);
+    });
+
+    it('attests when the only JSON-LD affiliation is a department', () => {
+      const jsonLd = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Person',
+        name: 'Quinn Marlowfixture',
+        affiliation: [
+          {
+            '@type': 'Organization',
+            name: 'Internal Medicine',
+            url: 'https://medicine.yale.edu/internal-medicine/',
+          },
+        ],
+      });
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          `<html><head><script type="application/ld+json">${jsonLd}</script></head><body><main><h1>Quinn Marlowfixture</h1><p>Professor of medicine.</p></main></body></html>`,
+          profileUrl,
+          entity,
+        ),
+      ).toBe(true);
+    });
+
+    it('does not attest while a JSON-LD affiliation names a research home or the stored link', () => {
+      const withAffiliation = (affiliation: Record<string, string>) =>
+        `<html><head><script type="application/ld+json">${JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'Person',
+          name: 'Quinn Marlowfixture',
+          affiliation: [{ '@type': 'Organization', ...affiliation }],
+        })}</script></head><body><main><h1>Quinn Marlowfixture</h1></main></body></html>`;
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          withAffiliation({
+            name: 'Marlowfixture Laboratory',
+            url: 'https://medicine.yale.edu/lab/marlowfixture/',
+          }),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          withAffiliation({ name: 'Fixture Group', url: storedWebsite }),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest while the page still links the stored legacy website', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<p><a href="https://legacyfixture.example.org/">Our group</a></p>'),
+          profileUrl,
+          { ...entity, website: 'https://legacyfixture.example.org/' },
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest while the page still links the stored website anywhere', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page(`<footer><a href="${storedWebsite}">Our lab</a></footer>`),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest while the page still carries a lab-website slot', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page(
+            '<article><a href="https://other.example.org/"><span>View Lab Website</span></a></article>',
+          ),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<a class="cta" href="https://moved.example.org/">Marlowfixture Group</a>'),
+          profileUrl,
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest from a different profile than the one the website came from', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(
+          page('<p>Professor of chemistry.</p>'),
+          'https://chem.yale.edu/profile/quinn-marlowfixture/',
+          entity,
+        ),
+      ).toBe(false);
+    });
+
+    it('does not attest for a website another lane supplied', () => {
+      expect(
+        profileAttestsItsLabWebsiteIsGone(page('<p>Professor of medicine.</p>'), profileUrl, {
+          ...entity,
+          fieldProvenance: {
+            websiteUrl: { sourceName: 'dept-faculty-roster', sourceUrl: profileUrl },
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it('states the absence on a sourceUrls witness for the profile', () => {
+      expect(emptyLabWebsiteSlotObservation(entity, profileUrl)).toMatchObject({
+        entityType: 'researchEntity',
+        entityKey: entity.slug,
+        field: 'sourceUrls',
+        value: [profileUrl],
+        assertsNoValueFor: ['websiteUrl', 'website'],
+      });
+    });
+  });
+
+  describe('a lab-website card whose name and link carry no type word', () => {
+    const cardHtml = (cardTitle: string, cardUrl: string) => `
+      <html><body><main>
+        <h1>Quinn Marlowfixture</h1>
+        <section class="profile-body"><p>Quinn Marlowfixture leads ${cardTitle}.</p></section>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">${cardTitle}</h3>
+          <a href="${cardUrl}"><span>View Lab Website</span></a>
+        </article>
+      </main></body></html>
+    `;
+    const cardProfileUrl = 'https://medicine.yale.edu/profile/quinn-marlowfixture/';
+
+    it('reads a program-shaped name as an initiative, not a lab', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml(
+          'Fixture Arts and Health Practice at Yale',
+          'https://ysph.yale.edu/fixturehealth/',
+        ),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ kind: 'initiative', entityType: 'INITIATIVE' });
+    });
+
+    it('still adopts the untyped home onto a shell keyed only to that person', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ entityType: 'INITIATIVE' });
+      for (const slug of ['ysm-faculty-quinn-marlowfixture', 'nih-pi-quinn-marlowfixture']) {
+        expect(profileLinkedHomeRefusal({ slug }, home, 'Quinn Marlowfixture')).toBeNull();
+      }
+    });
+
+    it('keeps a research team named as a group a lab', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Marlowfixture Research Group', 'https://marlowfixture.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ kind: 'lab', entityType: 'LAB' });
+    });
+  });
+
+  describe('a lab-website card that links an affiliated organization', () => {
+    const cardProfileHtml = (cardTitle: string, cardUrl: string, bio: string) => `
+      <html><body><main>
+        <h1>Quinn Marlowfixture</h1>
+        <section class="profile-body"><p>${bio}</p></section>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">${cardTitle}</h3>
+          <a href="${cardUrl}"><span>View Lab Website</span></a>
+        </article>
+      </main></body></html>
+    `;
+    const profileUrl = 'https://medicine.yale.edu/profile/quinn-marlowfixture/';
+    const shell = { slug: 'ysm-faculty-quinn-marlowfixture' };
+
+    it('refuses an office the profile does not say the person leads', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Office of Fixture Excellence',
+          'https://medicine.yale.edu/fixture-excellence/',
+          'Quinn Marlowfixture is a professor of medicine.',
+        ),
+        profileUrl,
+      );
+      expect(home.leadershipEvidenced).toBe(false);
+      expect(profileLinkedHomeRefusal(shell, home, 'Quinn Marlowfixture')).toBe(
+        'affiliated-organization-without-leadership',
+      );
+    });
+
+    it('admits a unit the profile says the person directs', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Fixture Computational Unit',
+          'https://fixtureunit.example.org/',
+          'Quinn Marlowfixture is Director of the Fixture Computational Unit.',
+        ),
+        profileUrl,
+      );
+      expect(home.leadershipEvidenced).toBe(true);
+      expect(profileLinkedHomeRefusal(shell, home, 'Quinn Marlowfixture')).not.toBe(
+        'affiliated-organization-without-leadership',
+      );
+    });
+
+    it("leaves the person's own named lab alone without any leadership phrase", () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Marlowfixture Lab',
+          'https://medicine.yale.edu/lab/marlowfixture/',
+          'Quinn Marlowfixture is a professor of medicine.',
+        ),
+        profileUrl,
+      );
+      expect(profileLinkedHomeRefusal(shell, home, 'Quinn Marlowfixture')).toBeNull();
+    });
+
+    it('reads leadership stated with a trailing place, an ampersand, or a verb', () => {
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Director of the Fixture Psychiatry Unit at Yale School of Medicine.',
+          'Fixture Psychiatry Unit',
+        ),
+      ).toBe(true);
+      expect(
+        profileTextStatesLeadershipOf(
+          'Additional Titles Director, Center for Fixture and Repair Research Learn more',
+          'Center for Fixture & Repair Research',
+        ),
+      ).toBe(true);
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn directs the Collaborative Center for Fixture Science that coordinates trials.',
+          'Collaborative Center for Fixture Science',
+        ),
+      ).toBe(true);
+    });
+
+    it('does not read membership or a deputy title as leadership', () => {
+      expect(
+        profileTextStatesLeadershipOf('Quinn is a member of the Fixture Unit.', 'Fixture Unit'),
+      ).toBe(false);
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Deputy Director of the Fixture Unit.',
+          'Fixture Unit',
+        ),
+      ).toBe(false);
+    });
+
+    it('does not read a qualified deputy or assistant title as leadership', () => {
+      for (const title of [
+        'Deputy Co-Director of the Fixture Unit',
+        'Deputy Associate Director of the Fixture Unit',
+        'Assistant Director of the Fixture Unit',
+        'Assistant Co-Director of the Fixture Unit',
+      ]) {
+        expect(profileTextStatesLeadershipOf(`Quinn is ${title}.`, 'Fixture Unit')).toBe(false);
+      }
+      expect(
+        profileTextStatesLeadershipOf(
+          'Quinn is Associate Director of the Fixture Unit.',
+          'Fixture Unit',
+        ),
+      ).toBe(true);
+    });
+
+    it('emits the refusal from a run only for a row that serves the refused link', async () => {
+      vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        lean: vi.fn().mockResolvedValue(null),
+      } as any);
+      const officeUrl = 'https://medicine.yale.edu/fixture-excellence/';
+      const html = `
+        <html><head>
+          <link rel="canonical" href="${profileUrl}" />
+          <script type="application/ld+json" data-schema="ProfilePage">
+            {"@type": "ProfilePage", "mainEntity": {"@type": "Person",
+              "name": "Quinn Marlowfixture", "email": "quinn.example@yale.edu",
+              "jobTitle": "Professor"}}
+          </script>
+        </head>${cardProfileHtml(
+          'Office of Fixture Excellence',
+          officeUrl,
+          'Quinn Marlowfixture is a professor of medicine.',
+        ).replace(/<\/?html>/g, '')}</html>`;
+      const row = (slug: string, websiteUrl: string) => ({
+        _id: `entity-${slug}`,
+        name: 'Quinn Marlowfixture Research',
+        slug,
+        websiteUrl,
+        sourceUrls: [profileUrl],
+        leadUserProfileUrls: [profileUrl],
+        leadUsers: [{ fname: 'Quinn', lname: 'Marlowfixture', email: 'quinn.example@yale.edu' }],
+      });
+      const emitted: ObservationInput[] = [];
+      const scraper = new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => html),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => []),
+        vi.fn(async () => [
+          row('serves-the-office', officeUrl),
+          row('serves-its-own-lab', 'https://marlowfixturelab.example.org/'),
+        ]),
+      );
+
+      const result = await scraper.run(profileResearchHomeContextFor(emitted));
+
+      expect(result.notes).toContain('affiliated-organization-without-leadership=2');
+      expect(emitted).toEqual([
+        expect.objectContaining({
+          entityKey: 'serves-the-office',
+          field: 'refusedWebsiteUrl',
+          value: officeUrl,
+        }),
+      ]);
+    });
+
+    it('states the refusal as a refusedWebsiteUrl observation for the link', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardProfileHtml(
+          'Office of Fixture Excellence',
+          'https://medicine.yale.edu/fixture-excellence/',
+          'Quinn Marlowfixture is a professor of medicine.',
+        ),
+        profileUrl,
+      );
+      expect(
+        refusedResearchHomeWebsiteObservation(
+          { _id: '0123456789abcdef01234567', slug: shell.slug },
+          home,
+          profileUrl,
+        ),
+      ).toMatchObject({
+        entityType: 'researchEntity',
+        entityKey: shell.slug,
+        field: 'refusedWebsiteUrl',
+        value: 'https://medicine.yale.edu/fixture-excellence/',
+        sourceUrl: profileUrl,
+      });
+    });
+  });
+
+  it("admits a department profile's eponymous group button as the lab website", () => {
+    const html = `
+      <html><body><main>
+        <h1>Quinn Marlowfixture</h1>
+        <div class="cta-group">
+          <a class="cta" href="https://marlowfixturelab.yale.edu">Marlowfixture Group</a>
+        </div>
+        <div class="cta-group">
+          <a class="cta" href="https://otherfixturelab.yale.edu">Otherfixture Group</a>
+        </div>
+      </main></body></html>
+    `;
+    expect(
+      extractOfficialProfileResearchHomes(
+        html,
+        'https://chem.yale.edu/profile/quinn-marlowfixture/',
+      ).map((home) => [home.name, home.url]),
+    ).toEqual([['Marlowfixture Group', 'https://marlowfixturelab.yale.edu/']]);
+  });
+
+  it('matches eponymous group link text only on the profile surname', () => {
+    expect(isEponymousResearchGroupLinkText('The Marlowfixture Lab', 'Marlowfixture')).toBe(true);
+    expect(isEponymousResearchGroupLinkText('Marlowfixture Research Group', 'Marlowfixture')).toBe(
+      true,
+    );
+    expect(isEponymousResearchGroupLinkText('Marlowfixture Group News', 'Marlowfixture')).toBe(
+      false,
+    );
+    expect(isEponymousResearchGroupLinkText('Otherfixture Group', 'Marlowfixture')).toBe(false);
+    expect(isEponymousResearchGroupLinkText('Marlowfixture Group', '')).toBe(false);
   });
 
   it('selects direct lead research-home URLs while rejecting profile pages and documents', () => {
@@ -3838,6 +4404,50 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted).toHaveLength(0);
   });
 
+  it('keeps the PI evidence of a default run when the profile-linked home is refused', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const shell = {
+      _id: 'entity-1',
+      name: 'Morgan Fixture Lab',
+      slug: 'nih-pi-morgan-fixture',
+      sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => [shell]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [shell]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: { dryRun: true, useCache: false, release: false, only: [] },
+    });
+
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchEntity',
+          entityKey: 'nih-pi-morgan-fixture',
+          field: 'inferredPiUserKey',
+          value: 'morgan.fixture',
+        }),
+      ]),
+    );
+    expect(emitted.map((o) => o.field)).not.toContain('entityType');
+    expect(emitted.map((o) => o.value)).not.toContain(
+      'https://medicine.yale.edu/internal-medicine/livercenter/',
+    );
+  });
+
   it('still attaches a lab-classified profile-linked home to a grant-derived PI shell', async () => {
     vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
       select: vi.fn().mockReturnThis(),
@@ -3866,6 +4476,42 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
     expect(emitted.find((o) => o.field === 'entityType')?.value).toBe('LAB');
     expect(emitted.find((o) => o.field === 'name')?.value).toBe('Hayden Fixture Lab');
+    expect(result.notes).toContain('adopted 1 profile-linked research homes');
+    expect(result.notes).toContain('refused none');
+  });
+
+  // A refusal that emits nothing is indistinguishable from a profile that linked nothing
+  // contentious, so absence in the observation log is evidence about the corpus rather
+  // than about the guard. The run has to say which arm fired (#3537).
+  it('reports which arm withheld a profile-linked research home', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const shell = {
+      _id: 'entity-1',
+      name: 'Morgan Fixture Lab',
+      slug: 'nih-pi-morgan-fixture',
+      sourceUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUserProfileUrls: ['https://medicine.yale.edu/profile/morgan-fixture/'],
+      leadUsers: [{ fname: 'Morgan', lname: 'Fixture', email: 'morgan.fixture@yale.edu' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => yalePrefixedLeadershipProfileHtml),
+      vi.fn(async () => [shell]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [shell]),
+    );
+
+    const result = await scraper.run({
+      ...contextFor(emitted),
+      options: { dryRun: true, useCache: false, release: false, only: [] },
+    });
+
+    expect(result.notes).toContain('adopted 0 profile-linked research homes');
+    expect(result.notes).toContain('institutional-home-on-a-grant-shell=1');
   });
 
   it('does not promote navigation programs when the profile only names an unlinked lab', () => {
@@ -4209,9 +4855,20 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(homes[0]).toMatchObject({
       name: 'BioImage Suite Project',
       url: 'https://bioimagesuiteweb.github.io/webapp/',
-      kind: 'lab',
-      entityType: 'LAB',
+      kind: 'initiative',
+      entityType: 'INITIATIVE',
     });
+  });
+
+  it('keeps a surname prefix joined while splitting run-together label words', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedSurnamePrefixLabWebsiteHtml,
+      'https://medicine.yale.edu/profile/quinn-mcfixture/',
+    );
+
+    expect(homes[0]?.name).toContain('McFixture and DiSample Labs Synthetic');
+    expect(homes[0]?.name).toContain('Group McSample Unit');
+    expect(homes.map((home) => home.name).join(' ')).not.toMatch(/\b(?:Mc|Di) [A-Z]/);
   });
 
   it('extracts a synthetic squirrel-lab profile-card label', () => {
@@ -4352,6 +5009,7 @@ describe('officialProfilePiBackfillScraper', () => {
       kind: 'initiative' as const,
       entityType: 'INITIATIVE' as const,
       score: 1,
+      leadershipEvidenced: true,
     };
     const ownLab = {
       ...centre,
@@ -4396,6 +5054,100 @@ describe('officialProfilePiBackfillScraper', () => {
         isInstitutionalHomeMismatchedWithPersonScopedShell(
           { slug: 'center-program-in-addiction-medicine' },
           centre,
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    // The `LAB` early return was an assumption rather than a test: a profile links a
+    // colleague's lab as readily as its own, and this lane asserts `name` at 0.96, above
+    // every roster lane, so the adopted value wins the resolve outright (#3529).
+    const anotherPersonsLab = {
+      ...centre,
+      name: 'Quimby Lab',
+      rawName: 'The Quimby Lab',
+      url: 'https://medicine.yale.edu/lab/quimby/',
+      entityType: 'LAB' as const,
+      kind: 'lab' as const,
+    };
+
+    it('refuses a lab home whose eponym its own url says is another person', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          anotherPersonsLab,
+          'David Fiellin',
+        ),
+      ).toBe(true);
+    });
+
+    it('still adopts the profile person own eponymous lab', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Fiellin Lab',
+            url: 'https://medicine.yale.edu/lab/fiellin/',
+          },
+          'David Fiellin',
+        ),
+      ).toBe(false);
+    });
+
+    it('adopts a lab home when the entity key names the person and the profile name is absent', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Fiellin Lab',
+            url: 'https://medicine.yale.edu/lab/fiellin/',
+          },
+          undefined,
+        ),
+      ).toBe(false);
+    });
+
+    // The three arms answer three different questions, so each names itself. Pinned
+    // because a single "refused" label is what made the earlier version unable to say
+    // which one fired (#3537).
+    it('names which arm refused the home', () => {
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'ysm-faculty-david-fiellin' },
+          anotherPersonsLab,
+          'David Fiellin',
+        ),
+      ).toBe('names-another-persons-lab');
+      expect(profileLinkedHomeRefusal({ slug: 'nih-pi-david-fiellin' }, centre, undefined)).toBe(
+        'institutional-home-on-a-grant-shell',
+      );
+      expect(
+        profileLinkedHomeRefusal({ slug: 'ysm-faculty-david-fiellin' }, centre, 'David Fiellin'),
+      ).toBe('institutional-home-on-a-person-keyed-shell');
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'center-program-in-addiction-medicine' },
+          centre,
+          'David Fiellin',
+        ),
+      ).toBeNull();
+    });
+
+    // A topical lab name carries no eponym for a url path to corroborate, so there is
+    // nothing to refuse and the home is adopted. Stated as a test because the opposite
+    // reading - refusing whatever the identity tokens do not match - would condemn every
+    // lab that is not named after its own PI.
+    it('adopts a topical lab home no url path contradicts', () => {
+      expect(
+        isInstitutionalHomeMismatchedWithPersonScopedShell(
+          { slug: 'ysm-faculty-david-fiellin' },
+          {
+            ...anotherPersonsLab,
+            name: 'Vascular Biology and Therapeutics Lab',
+            url: 'https://medicine.yale.edu/lab/vascular-biology/',
+          },
           'David Fiellin',
         ),
       ).toBe(false);
@@ -4608,5 +5360,107 @@ describe('officialProfilePiBackfillScraper', () => {
         }),
       ]),
     );
+  });
+});
+
+describe('OfficialProfilePiBackfillScraper.run profile prefetch (#3568)', () => {
+  const secondProfileHtml = profileHtml
+    .replace(/Jules Fixture/g, 'Second Person')
+    .replace(/jules\.fixture@yale\.edu/g, 'second.fixture@yale.edu')
+    .replace(/jules-fixture/g, 'second-fixture');
+  const users = [
+    {
+      _id: 'user-1',
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+      name: 'Jules Fixture',
+      slug: 'jules-fixture',
+      websiteUrl: 'https://medicine.yale.edu/profile/jules-fixture/',
+    },
+    {
+      _id: 'user-3',
+      netid: 'fixture303',
+      email: 'gone.fixture@yale.edu',
+      name: 'Gone Fixture',
+      slug: 'gone-fixture',
+      websiteUrl: 'https://medicine.yale.edu/profile/gone-fixture/',
+    },
+    {
+      _id: 'user-2',
+      netid: 'sp123',
+      email: 'second.fixture@yale.edu',
+      name: 'Second Person',
+      slug: 'second-fixture',
+      websiteUrl: 'https://medicine.yale.edu/profile/second-fixture/',
+    },
+  ];
+
+  function scraperOver(
+    selected: typeof users,
+    fetcher: (url: string) => Promise<string>,
+    delay: (ms: number) => Promise<void> = async () => undefined,
+  ) {
+    return new OfficialProfilePiBackfillScraper(
+      fetcher,
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => selected),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      25,
+      delay,
+    );
+  }
+
+  const pageFor = async (url: string): Promise<string> => {
+    if (url.includes('gone-fixture')) throw new Error('Request failed with status code 404');
+    return url.includes('second-fixture') ? secondProfileHtml : profileHtml;
+  };
+
+  it('fetches ahead but emits exactly what one-entity-at-a-time runs emit, in selection order', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, url.includes('jules-fixture') ? 40 : 5));
+      inFlight -= 1;
+      return pageFor(url);
+    });
+    const delay = vi.fn(async () => undefined);
+    const emitted: ObservationInput[] = [];
+    const ctx = visibleBioContextFor(emitted);
+
+    const result = await scraperOver(users, fetcher, delay).run(ctx);
+
+    const serial: ObservationInput[] = [];
+    for (const user of users) {
+      await scraperOver([user], pageFor).run(visibleBioContextFor(serial));
+    }
+    expect(maxInFlight).toBe(3);
+    expect(emitted).toEqual(serial);
+    expect(result.entitiesObserved).toBe(2);
+    expect(delay).toHaveBeenCalledTimes(2);
+    expect(ctx.log).toHaveBeenCalledWith(
+      'Profile fetch failed',
+      expect.objectContaining({ profileUrl: 'https://medicine.yale.edu/profile/gone-fixture/' }),
+    );
+  });
+
+  it('spaces fetch starts by the lane throttle even while fetches overlap', async () => {
+    const started: number[] = [];
+    let clock = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      started.push(clock);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return pageFor(url);
+    });
+    const delay = vi.fn(async (ms: number) => {
+      clock += ms;
+    });
+
+    await scraperOver(users, fetcher, delay).run(visibleBioContextFor([]));
+
+    expect(started).toEqual([0, 25, 50]);
   });
 });

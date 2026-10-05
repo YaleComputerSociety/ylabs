@@ -72,7 +72,7 @@ describe('assertReindexMeiliEnvironment', () => {
           MONGODBURL: 'mongodb+srv://user:pass@cluster.example.net/Production',
         },
       }),
-    ).toThrow('requires Mongo database "Beta"');
+    ).toThrow('does not match Mongo database "Production"');
   });
 
   it('accepts a coherent production target', () => {
@@ -104,12 +104,13 @@ describe('assertReindexMeiliEnvironment', () => {
 });
 
 describe('planIndexReconcile', () => {
-  it('keeps the model index, retires listings/papers, reports unknown', () => {
+  it('keeps the model index, retires listings/papers/pathways, reports unknown', () => {
     const plan = planIndexReconcile({
       allIndexUids: [
         'prod_researchentities',
         'prod_listings',
         'prod_papers',
+        'prod_pathways',
         'prod_legacyquux',
         'beta_researchentities',
       ],
@@ -117,8 +118,45 @@ describe('planIndexReconcile', () => {
     });
 
     expect(plan.keep).toEqual(['prod_researchentities']);
-    expect(plan.retire).toEqual(['prod_listings', 'prod_papers']);
+    expect(plan.retire).toEqual(['prod_listings', 'prod_papers', 'prod_pathways']);
     expect(plan.unknown).toEqual(['prod_legacyquux']);
+  });
+
+  it('retires the pathways index rather than reporting it as unknown forever', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: ['beta_researchentities', 'beta_pathways'],
+      prefix: 'beta',
+    });
+
+    expect(plan.retire).toEqual(['beta_pathways']);
+    expect(plan.unknown).toEqual([]);
+  });
+
+  it('retires the researchers index the removed person search left behind (#3946)', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: ['prod_researchentities', 'prod_researchers', 'beta_researchers'],
+      prefix: 'prod',
+    });
+
+    expect(plan.retire).toEqual(['prod_researchers']);
+    expect(plan.unknown).toEqual([]);
+    expect(plan.keep).toEqual(['prod_researchentities']);
+  });
+
+  it('recognises the staging index a swap rebuild builds into and never retires it', () => {
+    const plan = planIndexReconcile({
+      allIndexUids: [
+        'prod_researchentities',
+        'prod_researchentities_next',
+        'beta_researchentities_next',
+      ],
+      prefix: 'prod',
+    });
+
+    expect(plan.keep).toEqual(['prod_researchentities']);
+    expect(plan.staging).toEqual(['prod_researchentities_next']);
+    expect(plan.retire).toEqual([]);
+    expect(plan.unknown).toEqual([]);
   });
 
   it('only touches indexes carrying the exact prefix, never a nested prefix', () => {

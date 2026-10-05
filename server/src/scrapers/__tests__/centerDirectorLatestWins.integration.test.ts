@@ -185,11 +185,11 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -234,15 +234,19 @@ describe('a center-director-llm rephrasing supersedes its predecessor instead of
 
   it('collapses director rows already stored with value-bearing fingerprints', async () => {
     await scrapeRun(firstRunValues, '2026-05-01T00:00:00.000Z');
-    await Observation.updateMany({ field: { $in: DIRECTOR_FIELDS } }, [
-      {
-        $set: {
-          observationFingerprint: {
-            $concat: ['$observationFingerprint', '-legacy-value-bearing'],
+    await Observation.updateMany(
+      { field: { $in: DIRECTOR_FIELDS } },
+      [
+        {
+          $set: {
+            observationFingerprint: {
+              $concat: ['$observationFingerprint', '-legacy-value-bearing'],
+            },
           },
         },
-      },
-    ]);
+      ],
+      { updatePipeline: true },
+    );
 
     await scrapeRun(rephrasedRunValues, '2026-05-08T00:00:00.000Z');
 
@@ -338,11 +342,11 @@ describe('a named director with no profile URL resolves by name when the name is
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

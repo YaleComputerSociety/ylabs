@@ -1,5 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fetchPageWithPolicy, HostRateLimiter, type HttpRequestFn } from '../httpFetch';
+import {
+  fetchPageWithPolicy,
+  HostRateLimiter,
+  postFormWithPolicy,
+  POLICY_FETCH_BENCHMARK_NAMESPACE,
+  type HttpRequestFn,
+} from '../httpFetch';
+import {
+  BenchmarkReplayNetworkError,
+  beginBenchmarkCapture,
+  beginBenchmarkReplay,
+  finishBenchmarkCapture,
+  finishBenchmarkReplay,
+} from '../../snapshotBenchmarkMode';
+import { fetchDescriptionPageWithTlsFallback } from '../../sources/labMicrositeDescriptionLLMExtractor';
+import { isTlsVerificationError } from '../../../utils/tlsVerificationErrors';
 
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 const noSleep = vi.fn(async () => {});
@@ -221,5 +236,209 @@ describe('fetchPageWithPolicy', () => {
       fetchPageWithPolicy('https://lab.example.edu/x', { ...base, request, maxRetries: 1 }),
     ).rejects.toThrow('ETIMEDOUT');
     expect(request).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('fetchPageWithPolicy under a benchmark', () => {
+  const options = (request: HttpRequestFn) => ({
+    assertUrl: passthroughAssert,
+    request,
+    sleep: noSleep,
+    jitter: noJitter,
+  });
+
+  it('records a page during capture and serves it on replay without a request', async () => {
+    beginBenchmarkCapture();
+    const live = vi.fn(() => ok('<html>frozen</html>'));
+    await fetchPageWithPolicy('https://lab.example.edu/x', options(live));
+    const pages = finishBenchmarkCapture();
+    expect(pages.map((page) => page.sourceName)).toEqual([POLICY_FETCH_BENCHMARK_NAMESPACE]);
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok('<html>live</html>'));
+    try {
+      const page = await fetchPageWithPolicy('https://lab.example.edu/x', options(replayRequest));
+      expect(page.html).toBe('<html>frozen</html>');
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 1, pagesMissed: 0 });
+    }
+  });
+
+  it('freezes a failed status during capture and replays the same failure as a served page', async () => {
+    beginBenchmarkCapture();
+    const live = vi.fn(() => Promise.resolve({ status: 404, data: '', finalUrl: '' }));
+    await expect(
+      fetchPageWithPolicy('https://lab.example.edu/people', options(live)),
+    ).rejects.toThrow('Request failed with status code 404');
+    const pages = finishBenchmarkCapture();
+    expect(pages).toHaveLength(1);
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok());
+    try {
+      await expect(
+        fetchPageWithPolicy('https://lab.example.edu/people', options(replayRequest)),
+      ).rejects.toThrow('Request failed with status code 404');
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({
+        pagesServed: 1,
+        pagesMissed: 0,
+        networkBlocks: 0,
+      });
+    }
+  });
+
+  it('freezes a certificate failure during capture and replays the same failure', async () => {
+    const certificateFailure = () =>
+      Promise.reject(
+        Object.assign(new Error('certificate has expired'), { code: 'CERT_HAS_EXPIRED' }),
+      );
+    beginBenchmarkCapture();
+    await expect(
+      fetchPageWithPolicy('https://lab.example.edu/statement', options(vi.fn(certificateFailure))),
+    ).rejects.toMatchObject({ code: 'CERT_HAS_EXPIRED' });
+    const pages = finishBenchmarkCapture();
+    expect(pages).toHaveLength(1);
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok());
+    try {
+      const replayed = await fetchPageWithPolicy(
+        'https://lab.example.edu/statement',
+        options(replayRequest),
+      ).catch((error: unknown) => error);
+      expect(isTlsVerificationError(replayed)).toBe(true);
+      expect(replayed).not.toBeInstanceOf(BenchmarkReplayNetworkError);
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({
+        pagesServed: 1,
+        pagesMissed: 0,
+        networkBlocks: 0,
+      });
+    }
+  });
+
+  it('replays the plain-HTTP fallback a certificate failure took during capture', async () => {
+    const statement = 'https://lab.example.edu/statement';
+    const live: HttpRequestFn = vi.fn((url: string) =>
+      url.startsWith('https:')
+        ? Promise.reject(Object.assign(new Error('expired'), { code: 'CERT_HAS_EXPIRED' }))
+        : ok('<html>statement</html>', url),
+    );
+    const fetchPage = (url: string) =>
+      fetchPageWithPolicy(url, options(live)).then((page) => ({ url: page.url, html: page.html }));
+    beginBenchmarkCapture();
+    const captured = await fetchDescriptionPageWithTlsFallback(statement, fetchPage);
+    const pages = finishBenchmarkCapture();
+    expect(captured?.html).toBe('<html>statement</html>');
+
+    beginBenchmarkReplay(pages);
+    const replayRequest = vi.fn(() => ok('<html>live</html>'));
+    try {
+      const replayed = await fetchDescriptionPageWithTlsFallback(statement, (url) =>
+        fetchPageWithPolicy(url, options(replayRequest)).then((page) => ({
+          url: page.url,
+          html: page.html,
+        })),
+      );
+      expect(replayed).toEqual(captured);
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 2, pagesMissed: 0 });
+    }
+  });
+
+  it('does not freeze a failure that is neither a status nor a certificate failure', async () => {
+    beginBenchmarkCapture();
+    await expect(
+      fetchPageWithPolicy(
+        'https://lab.example.edu/reset',
+        options(
+          vi.fn(() => Promise.reject(Object.assign(new Error('reset'), { code: 'ECONNRESET' }))),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'ECONNRESET' });
+    expect(finishBenchmarkCapture()).toHaveLength(0);
+  });
+
+  it('refuses a page the capture never saw instead of fetching it', async () => {
+    beginBenchmarkReplay([]);
+    const replayRequest = vi.fn(() => ok());
+    try {
+      await expect(
+        fetchPageWithPolicy('https://lab.example.edu/unseen', options(replayRequest)),
+      ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
+      expect(replayRequest).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ pagesServed: 0, pagesMissed: 1 });
+    }
+  });
+});
+
+describe('postFormWithPolicy', () => {
+  const options = (request: HttpRequestFn) => ({
+    assertUrl: passthroughAssert,
+    request,
+    sleep: noSleep,
+    jitter: noJitter,
+  });
+
+  it('posts the url-encoded form through the guarded request and returns its cookies', async () => {
+    const assertUrl = vi.fn(passthroughAssert);
+    const request: HttpRequestFn = vi.fn(async (url) => ({
+      status: 200,
+      data: '<html>grid</html>',
+      finalUrl: url,
+      setCookies: ['Session=fixture; path=/'],
+    }));
+    const form = new URLSearchParams([
+      ['__VIEWSTATE', 'state'],
+      ['button', 'View all'],
+    ]);
+
+    const page = await postFormWithPolicy('https://portal.example.edu/search', form, {
+      ...options(request),
+      assertUrl,
+      headers: { 'User-Agent': 'fixture-agent', Cookie: 'Session=old' },
+    });
+
+    expect(assertUrl).toHaveBeenCalledWith('https://portal.example.edu/search');
+    expect(request).toHaveBeenCalledWith('https://portal.example.edu/search', {
+      timeoutMs: 10_000,
+      maxRedirects: 5,
+      method: 'POST',
+      body: '__VIEWSTATE=state&button=View+all',
+      headers: {
+        'User-Agent': 'fixture-agent',
+        Cookie: 'Session=old',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+    expect(page).toEqual({
+      url: 'https://portal.example.edu/search',
+      html: '<html>grid</html>',
+      status: 200,
+      setCookies: ['Session=fixture; path=/'],
+    });
+  });
+
+  it('refuses to post during a benchmark replay', async () => {
+    beginBenchmarkReplay([]);
+    const request = vi.fn(() => ok());
+    try {
+      await expect(
+        postFormWithPolicy(
+          'https://portal.example.edu/search',
+          new URLSearchParams(),
+          options(request),
+        ),
+      ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      expect(finishBenchmarkReplay()).toMatchObject({ networkBlocks: 1 });
+    }
   });
 });

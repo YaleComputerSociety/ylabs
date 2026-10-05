@@ -8,6 +8,18 @@ import {
 } from '../researchEntityEvidenceCoverage';
 
 describe('assessResearchEntityEvidenceCoverage', () => {
+  it('reads no retired next-step text as action evidence (#4581)', () => {
+    const assessment = assessResearchEntityEvidenceCoverage({
+      entity: { name: 'Fixture Lab' },
+      members: [{ role: 'pi', userId: 'fixture-user' }],
+      accessSignals: [{ signalType: 'POSTED_OPENING', bestNextStep: 'Email the lab.' }],
+      contactRoutes: [],
+      observations: [],
+    });
+
+    expect(assessment.claimStates.action).toBe('missing');
+  });
+
   it('rejects publication blurbs as description evidence but keeps them as topic support', () => {
     const assessment = assessResearchEntityEvidenceCoverage({
       entity: {

@@ -223,6 +223,23 @@ export function givenNamesAgree(a: string, b: string): boolean {
   return givenNameTokensAgree(a, b) || givenNamesEquivalent(a, b);
 }
 
+// Read deliberately wider than `givenNamesAgree`: a caller asks this to decide that
+// two records are different people, so an initial, a short form outside both tables,
+// or a middle name used as a first name must all keep the pair a possible match.
+export function givenNamesCouldNameOnePerson(a: string, b: string): boolean {
+  const left = givenTokens(a);
+  const right = givenTokens(b);
+  if (left.length === 0 || right.length === 0) return true;
+  return left.some((x) => right.some((y) => givenNameTokensCouldMatch(x, y)));
+}
+
+function givenNameTokensCouldMatch(x: string, y: string): boolean {
+  if (x.length === 1 || y.length === 1) return x[0] === y[0];
+  return (
+    x.startsWith(y) || y.startsWith(x) || x.endsWith(y) || y.endsWith(x) || givenNamesAgree(x, y)
+  );
+}
+
 export function givenNameVariants(first: string): string[] {
   const key = foldToken(first);
   if (!key) return [];
@@ -261,11 +278,47 @@ export function surnameCoreKey(surname: string | undefined | null): string {
 
 export const SURNAME_FETCH_LIMIT = 200;
 
+const COMBINING_MARKS = '[\u0300-\u036f]*';
+
+const FOLDED_LETTER_VARIANTS: ReadonlyMap<string, string> = buildFoldedLetterVariants([
+  [0x00c0, 0x024f],
+  [0x1e00, 0x1eff],
+]);
+
+function buildFoldedLetterVariants(ranges: Array<[number, number]>): Map<string, string> {
+  const variants = new Map<string, string>();
+  for (const [from, to] of ranges) {
+    for (let code = from; code <= to; code += 1) {
+      const letter = String.fromCodePoint(code);
+      const [base] = surnameTokens(letter);
+      if (!base || base.length !== 1 || base === letter) continue;
+      variants.set(base, (variants.get(base) ?? '') + letter);
+    }
+  }
+  return variants;
+}
+
+function storedSpellingPattern(foldedKey: string): string {
+  return [...foldedKey]
+    .map((letter) => {
+      const escaped = letter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const variants = FOLDED_LETTER_VARIANTS.get(letter);
+      return `${variants ? `[${letter}${variants}]` : escaped}${COMBINING_MARKS}`;
+    })
+    .join('');
+}
+
+/**
+ * The key is folded (accents stripped, an apostrophe read as a token break) but the query
+ * runs against the stored `displayName`, which keeps both. Matching the folded key literally
+ * found nobody for an accented or apostrophe surname, so the resolver answered `absent` for a
+ * researcher it had just minted and the next pass minted the same person again: 9 accented
+ * or apostrophe surnames had accumulated 3 to 15 identical records each on Development.
+ */
 export function surnameFetchRegex(surname: string | undefined | null): RegExp | null {
   const key = surnameCoreKey(surname);
   if (!key) return null;
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^|[\\s-])${escaped}$`, 'i');
+  return new RegExp(`(?:^|[\\s\\-'\u2018\u2019])${storedSpellingPattern(key)}$`, 'i');
 }
 
 export function surnamesCompatible(

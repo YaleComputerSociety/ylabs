@@ -1,26 +1,38 @@
 /**
  * Detail modal for viewing full fellowship information.
  */
-import React, { useContext, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useContext } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import {
+  STALE_DEADLINE_MESSAGE,
   formatFellowshipDate,
   getFellowshipApplicationStatus,
   getStructuredEligibilityDetails,
+  programAudienceLabel,
 } from '../../utils/fellowshipStatus';
-import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
+import {
+  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
+  DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+  departmentResearchGuidanceHref,
+  entryModeLabel,
+  isDepartmentResearchGuidance,
+  programKindLabel,
+} from '../../utils/programJourney';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
   labelizeResearchDetailValue,
 } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
+import useModalDialog from '../../hooks/useModalDialog';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
+import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
 
 interface FellowshipModalProps {
   fellowship: Fellowship;
@@ -86,13 +98,7 @@ const RichTextBlock = ({ text, className }: { text: string; className?: string }
   );
 };
 
-const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
-  void trackResearchEvent({
-    eventType: 'source_link_click',
-    entityType: 'fellowship',
-    entityId: fellowshipId,
-    payload: { sourceCategory: 'external', url: href },
-  });
+const trackFellowshipApplyClick = (fellowshipId: string) => {
   void trackResearchEvent({
     eventType: 'ways_in_click',
     entityType: 'fellowship',
@@ -100,6 +106,17 @@ const trackFellowshipApplyClick = (fellowshipId: string, href: string) => {
     payload: { waysInKind: 'apply', label: 'Apply' },
   });
 };
+
+const trackGuidanceClick = (fellowshipId: string, url: string) => {
+  void trackResearchEvent({
+    eventType: 'source_link_click',
+    entityType: 'fellowship',
+    entityId: fellowshipId,
+    payload: { sourceCategory: 'external', url },
+  });
+};
+
+const PROGRAMS_PATH = '/programs';
 
 const sectionHeadingClass = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted';
 
@@ -111,6 +128,7 @@ const FellowshipModal = ({
   toggleFavorite,
 }: FellowshipModalProps) => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const {
     setSelectedYearOfStudy,
     setSelectedTermOfAward,
@@ -118,94 +136,30 @@ const FellowshipModal = ({
     setSelectedRegions,
     setSelectedCitizenship,
     setQueryString,
+    resetProgramFilters,
   } = useContext(FellowshipSearchContext);
 
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCloseRef.current();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    returnFocusRef.current = document.activeElement as HTMLElement | null;
-    const inerted: Array<{ element: HTMLElement; inert: boolean; ariaHidden: string | null }> = [];
-    let branch: HTMLElement | null = overlayRef.current;
-
-    while (branch?.parentElement) {
-      Array.from(branch.parentElement.children).forEach((sibling) => {
-        if (sibling === branch || !(sibling instanceof HTMLElement)) return;
-        inerted.push({
-          element: sibling,
-          inert: sibling.inert,
-          ariaHidden: sibling.getAttribute('aria-hidden'),
-        });
-        sibling.inert = true;
-        sibling.setAttribute('aria-hidden', 'true');
-      });
-      branch = branch.parentElement;
-      if (branch === document.body) break;
-    }
-
-    titleRef.current?.focus();
-
-    return () => {
-      inerted.forEach(({ element, inert, ariaHidden }) => {
-        element.inert = inert;
-        if (ariaHidden === null) element.removeAttribute('aria-hidden');
-        else element.setAttribute('aria-hidden', ariaHidden);
-      });
-      returnFocusRef.current?.focus();
-    };
-  }, [isOpen]);
-
-  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab' || !dialogRef.current) return;
-
-    const focusable = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
-    if (focusable.length === 0) {
-      event.preventDefault();
-      titleRef.current?.focus();
-      return;
-    }
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (
-      event.shiftKey &&
-      (document.activeElement === first || document.activeElement === titleRef.current)
-    ) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
+  const {
+    overlayRef,
+    dialogRef,
+    initialFocusRef: titleRef,
+    handleDialogKeyDown,
+  } = useModalDialog<HTMLHeadingElement>(isOpen, onClose);
 
   if (!isOpen || !fellowship) return null;
+  const guidance = isDepartmentResearchGuidance(fellowship);
+  const guidanceHref = guidance ? departmentResearchGuidanceHref(fellowship) : undefined;
   const cycleStatus = getFellowshipCycleStatus(fellowship);
+  const statusBadge = guidance
+    ? {
+        label: DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+        className: DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
+      }
+    : cycleStatus;
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
+  const deadlineStale = applicationStatus.kind === 'staleDeadline';
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
+  const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
     ? 'Yes, secure a mentor before applying'
     : fellowship.mentorMatching
@@ -217,11 +171,7 @@ const FellowshipModal = ({
     value: string,
   ) => {
     setQueryString('');
-    setSelectedYearOfStudy([]);
-    setSelectedTermOfAward([]);
-    setSelectedPurpose([]);
-    setSelectedRegions([]);
-    setSelectedCitizenship([]);
+    resetProgramFilters();
 
     switch (filterType) {
       case 'yearOfStudy':
@@ -248,7 +198,9 @@ const FellowshipModal = ({
       payload: { waysInKind: 'best_next_step', label: filterType },
     });
     onClose();
-    void navigate('/programs');
+    if (pathname !== PROGRAMS_PATH) {
+      void navigate(PROGRAMS_PATH);
+    }
   };
 
   const hasContactInfo =
@@ -259,13 +211,15 @@ const FellowshipModal = ({
   const iconActionClass =
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-brand yr-focus-ring';
   const filterChipClass =
-    'inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 yr-focus-ring';
+    'inline-flex min-h-[44px] items-center rounded-control px-3 py-2 text-xs [transition-property:box-shadow] hover:ring-2 hover:ring-offset-1 yr-focus-ring';
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';
   const sourceLinkUnavailable = isLikelyUnavailableSourceLink(fellowship.sourceLinkHealth);
   const sourceHref = sourceLinkUnavailable ? undefined : safeHttpUrl(fellowship.sourceUrl);
-  const applicationHref = safeHttpUrl(fellowship.applicationLink) || sourceHref;
+  const applicationHref = guidance
+    ? undefined
+    : safeHttpUrl(fellowship.applicationLink) || sourceHref;
   const sourceLabel =
     typeof fellowship.sourceName === 'string' && fellowship.sourceName.trim()
       ? labelizeResearchDetailValue(fellowship.sourceName)
@@ -285,7 +239,7 @@ const FellowshipModal = ({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
+      className="fixed inset-0 bg-scrim z-[1200] flex items-center justify-center overflow-y-auto p-4 pt-20"
       onClick={onClose}
     >
       <div
@@ -301,7 +255,10 @@ const FellowshipModal = ({
         <div className="flex-shrink-0 border-b border-[var(--yr-line)]">
           <div
             className="h-1 w-full"
-            style={{ background: 'linear-gradient(90deg, #0055A4 0%, #3b82f6 50%, #93c5fd 100%)' }}
+            style={{
+              background:
+                'linear-gradient(90deg, var(--yr-navy) 0%, var(--yr-blue) 50%, var(--yr-blue-soft) 100%)',
+            }}
           />
           <div className="px-6 py-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -318,9 +275,9 @@ const FellowshipModal = ({
                     </span>
                   )}
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${cycleStatus.className}`}
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge.className}`}
                   >
-                    {cycleStatus.label}
+                    {statusBadge.label}
                   </span>
                 </div>
 
@@ -328,16 +285,34 @@ const FellowshipModal = ({
                   ref={titleRef}
                   id="program-detail-title"
                   tabIndex={-1}
-                  className="text-xl font-bold text-ink leading-tight focus:outline-none"
+                  className="text-xl font-semibold text-ink leading-tight focus:outline-hidden"
                 >
                   {fellowship.title}
                 </h2>
                 <p id="program-detail-description" className="sr-only">
-                  Program details, eligibility, deadlines, and application actions.
+                  {guidance
+                    ? "Department research guidance, which is not an application, and a link to the department's page."
+                    : 'Program details, eligibility, deadlines, and application actions.'}
                 </p>
               </div>
 
               <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
+                {guidanceHref && (
+                  <a
+                    href={guidanceHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      trackGuidanceClick(fellowship.id, guidanceHref);
+                    }}
+                    className={iconActionClass}
+                    aria-label={DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                    title={DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                  >
+                    <ExternalLinkIcon size={18} />
+                  </a>
+                )}
                 {applicationHref && (
                   <a
                     href={applicationHref}
@@ -345,27 +320,13 @@ const FellowshipModal = ({
                     rel="noopener noreferrer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      trackFellowshipApplyClick(fellowship.id, applicationHref);
+                      trackFellowshipApplyClick(fellowship.id);
                     }}
                     className={iconActionClass}
                     aria-label={applicationActionLabel}
                     title={applicationActionLabel}
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
-                    </svg>
+                    <ExternalLinkIcon size={18} />
                   </a>
                 )}
                 {contactEmailHref && (
@@ -383,20 +344,7 @@ const FellowshipModal = ({
                     className={iconActionClass}
                     title="Email contact"
                   >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="2" y="4" width="20" height="16" rx="2" />
-                      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                    </svg>
+                    <MailIcon size={18} />
                   </a>
                 )}
                 <FavoriteButton
@@ -412,20 +360,7 @@ const FellowshipModal = ({
                   className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft yr-focus-ring"
                   aria-label="Close"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
+                  <CloseIcon className="h-5 w-5" />
                 </button>
               </div>
             </div>
@@ -438,7 +373,7 @@ const FellowshipModal = ({
               <div className="col-span-1 space-y-6">
                 {fellowship.awardAmount && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Award Amount</h3>
+                    <h3 className={sectionHeadingClass}>Award amount</h3>
                     <div className="bg-emerald-50 rounded-card p-3">
                       <p className="text-sm font-semibold text-emerald-800">
                         {fellowship.awardAmount}
@@ -447,81 +382,113 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                <section>
-                  <h3 className={sectionHeadingClass}>Program Route</h3>
-                  <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
-                    <div>
-                      <span className="text-xs text-muted">What this is</span>
+                {guidance ? (
+                  <section>
+                    <h3 className={sectionHeadingClass}>What this is</h3>
+                    <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
                       <p className="text-sm font-medium text-ink">
-                        {fellowship.studentFacingCategory ||
-                          programKindLabel(fellowship.programKind)}
+                        {DEPARTMENT_RESEARCH_GUIDANCE_LABEL}
                       </p>
-                    </div>
-                    {(fellowship.undergraduateOnly === false ||
-                      fellowship.undergraduateOnly === true ||
-                      fellowship.yaleCollegeOnly === true) && (
-                      <div>
-                        <span className="text-xs text-muted">Audience</span>
-                        <p className="text-sm font-medium text-ink">
-                          {fellowship.undergraduateOnly === false
-                            ? 'Graduate students'
-                            : 'Undergraduate students'}
-                        </p>
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-xs text-muted">Entry mode</span>
-                      <p className="text-sm font-medium text-ink">
-                        {entryModeLabel(fellowship.entryMode)}
+                      <p className="text-sm leading-relaxed text-ink-soft">
+                        The department's own advice on finding a faculty mentor and getting started
+                        in research. It is a guide, not an application.
                       </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted">Do you need a mentor first?</span>
-                      <p className="text-sm font-medium text-ink">{mentorFirstAnswer}</p>
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className={sectionHeadingClass}>Key Dates</h3>
-                  <div className="bg-[var(--yr-blue-soft)] rounded-card p-3 space-y-3">
-                    <div>
-                      <span className="text-xs text-brand">Current Status</span>
-                      <p className="text-sm font-semibold text-brand-navy">
-                        {applicationStatus.label}
-                      </p>
-                      <p className="text-xs text-brand">{applicationStatus.detail}</p>
-                    </div>
-                    {cycleStatus.category === 'nextCycle' && (
-                      <div className="rounded-card bg-[var(--yr-panel)]/70 border border-sky-100 px-2.5 py-2">
-                        <p className="text-xs font-medium text-sky-800">
-                          Past cycle, useful for next-cycle planning.
-                        </p>
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-xs text-brand">Application Opens</span>
-                      <p className="text-sm font-medium text-brand-navy">
-                        {formatFellowshipDate(fellowship.applicationOpenDate)}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-brand">
-                        {fellowship.deadlineProjectedNextCycle
-                          ? 'Estimated Next Deadline'
-                          : 'Deadline'}
-                      </span>
-                      <p className="text-sm font-medium text-brand-navy">
-                        {formatFellowshipDate(fellowship.deadline)}
-                      </p>
-                      {fellowship.deadlineProjectedNextCycle && (
-                        <p className="text-xs text-brand">
-                          Projected from the last cycle - unconfirmed, verify at source.
-                        </p>
+                      {audienceLabel && (
+                        <div>
+                          <span className="text-xs text-muted">Audience</span>
+                          <p className="text-sm font-medium text-ink">{audienceLabel}</p>
+                        </div>
                       )}
                     </div>
-                  </div>
-                </section>
+                  </section>
+                ) : (
+                  <section>
+                    <h3 className={sectionHeadingClass}>How it works</h3>
+                    <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+                      <div>
+                        <span className="text-xs text-muted">What this is</span>
+                        <p className="text-sm font-medium text-ink">
+                          {fellowship.studentFacingCategory ||
+                            programKindLabel(fellowship.programKind)}
+                        </p>
+                      </div>
+                      {audienceLabel && (
+                        <div>
+                          <span className="text-xs text-muted">Audience</span>
+                          <p className="text-sm font-medium text-ink">{audienceLabel}</p>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-xs text-muted">How you apply</span>
+                        <p className="text-sm font-medium text-ink">
+                          {entryModeLabel(fellowship.entryMode)}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-muted">Do you need a mentor first?</span>
+                        <p className="text-sm font-medium text-ink">{mentorFirstAnswer}</p>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {!guidance && (
+                  <section>
+                    <h3 className={sectionHeadingClass}>Key dates</h3>
+                    <div className="bg-[var(--yr-blue-soft)] rounded-card p-3 space-y-3">
+                      <div>
+                        <span className="text-xs text-brand">Current status</span>
+                        <p className="text-sm font-semibold text-brand-navy">
+                          {applicationStatus.label}
+                        </p>
+                        {deadlineStale && sourceHref ? (
+                          <a
+                            href={sourceHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control text-xs"
+                          >
+                            {applicationStatus.detail}
+                          </a>
+                        ) : (
+                          <p className="text-xs text-brand">{applicationStatus.detail}</p>
+                        )}
+                      </div>
+                      {cycleStatus.category === 'nextCycle' && (
+                        <div className="rounded-card bg-panel border border-sky-100 px-2.5 py-2">
+                          <p className="text-xs font-medium text-sky-800">
+                            Past cycle, useful for next-cycle planning.
+                          </p>
+                        </div>
+                      )}
+                      {!deadlineStale && (
+                        <>
+                          <div>
+                            <span className="text-xs text-brand">Application opens</span>
+                            <p className="text-sm font-medium text-brand-navy">
+                              {formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-brand">
+                              {fellowship.deadlineProjectedNextCycle
+                                ? 'Estimated next deadline'
+                                : 'Deadline'}
+                            </span>
+                            <p className="text-sm font-medium text-brand-navy">
+                              {formatFellowshipDate(fellowship.deadline, 'deadline')}
+                            </p>
+                            {fellowship.deadlineProjectedNextCycle && (
+                              <p className="text-xs text-brand">
+                                Projected from the last cycle - unconfirmed, verify at source.
+                              </p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </section>
+                )}
 
                 {hasContactInfo && (
                   <section>
@@ -543,21 +510,7 @@ const FellowshipModal = ({
                           }
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="flex-shrink-0"
-                          >
-                            <rect x="2" y="4" width="20" height="16" rx="2" />
-                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                          </svg>
+                          <MailIcon className="flex-shrink-0" size={14} />
                           <span className="truncate">{fellowship.contactEmail}</span>
                         </a>
                       )}
@@ -575,7 +528,7 @@ const FellowshipModal = ({
                   fellowship.hoursPerWeek ||
                   fellowship.programDates) && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Time & Funding</h3>
+                    <h3 className={sectionHeadingClass}>Time & funding</h3>
                     <div className="space-y-2 rounded-card bg-emerald-50 p-3 text-sm text-emerald-900">
                       {fellowship.compensationSummary && <p>{fellowship.compensationSummary}</p>}
                       {fellowship.hoursPerWeek && <p>{fellowship.hoursPerWeek} hours/week</p>}
@@ -606,22 +559,7 @@ const FellowshipModal = ({
                           }}
                           className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-control px-2 text-sm text-brand hover:text-brand-navy hover:underline yr-focus-ring"
                         >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="flex-shrink-0"
-                          >
-                            <circle cx="12" cy="12" r="10" />
-                            <line x1="2" y1="12" x2="22" y2="12" />
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                          </svg>
+                          <GlobeIcon className="flex-shrink-0" size={14} />
                           <span className="truncate">{link.label || link.url}</span>
                         </a>
                       ))}
@@ -629,99 +567,101 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                <section>
-                  <h3 className={sectionHeadingClass}>Eligibility Filters</h3>
-                  <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
-                  <div className="space-y-3">
-                    {fellowship.yearOfStudy.length > 0 && (
-                      <div>
-                        <span className="text-xs text-muted">Year of Study</span>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {fellowship.yearOfStudy.map((year) => (
-                            <button
-                              key={year}
-                              onClick={() => handleFilterClick('yearOfStudy', year)}
-                              className={`${filterChipClass} bg-[var(--yr-blue-soft)] text-blue-800`}
-                            >
-                              {year}
-                            </button>
-                          ))}
+                {!guidance && (
+                  <section>
+                    <h3 className={sectionHeadingClass}>Eligibility filters</h3>
+                    <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
+                    <div className="space-y-3">
+                      {fellowship.yearOfStudy.length > 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Year of study</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {fellowship.yearOfStudy.map((year) => (
+                              <button
+                                key={year}
+                                onClick={() => handleFilterClick('yearOfStudy', year)}
+                                className={`${filterChipClass} bg-[var(--yr-blue-soft)] text-blue-800`}
+                              >
+                                {year}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {fellowship.termOfAward.length > 0 && (
-                      <div>
-                        <span className="text-xs text-muted">Term of Award</span>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {fellowship.termOfAward.map((term) => (
-                            <button
-                              key={term}
-                              onClick={() => handleFilterClick('termOfAward', term)}
-                              className={`${filterChipClass} bg-yellow-100 text-yellow-800`}
-                            >
-                              {term}
-                            </button>
-                          ))}
+                      )}
+                      {fellowship.termOfAward.length > 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Term of award</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {fellowship.termOfAward.map((term) => (
+                              <button
+                                key={term}
+                                onClick={() => handleFilterClick('termOfAward', term)}
+                                className={`${filterChipClass} bg-yellow-100 text-yellow-800`}
+                              >
+                                {term}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {fellowship.purpose.length > 0 && (
-                      <div>
-                        <span className="text-xs text-muted">Purpose</span>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {fellowship.purpose.map((p) => (
-                            <button
-                              key={p}
-                              onClick={() => handleFilterClick('purpose', p)}
-                              className={`${filterChipClass} bg-purple-100 text-purple-800`}
-                            >
-                              {p}
-                            </button>
-                          ))}
+                      )}
+                      {fellowship.purpose.length > 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Purpose</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {fellowship.purpose.map((p) => (
+                              <button
+                                key={p}
+                                onClick={() => handleFilterClick('purpose', p)}
+                                className={`${filterChipClass} bg-purple-100 text-purple-800`}
+                              >
+                                {p}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {fellowship.globalRegions.length > 0 && (
-                      <div>
-                        <span className="text-xs text-muted">Global Regions</span>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {fellowship.globalRegions.map((region) => (
-                            <button
-                              key={region}
-                              onClick={() => handleFilterClick('globalRegions', region)}
-                              className={`${filterChipClass} bg-green-100 text-green-800`}
-                            >
-                              {region}
-                            </button>
-                          ))}
+                      )}
+                      {fellowship.globalRegions.length > 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Global regions</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {fellowship.globalRegions.map((region) => (
+                              <button
+                                key={region}
+                                onClick={() => handleFilterClick('globalRegions', region)}
+                                className={`${filterChipClass} bg-green-100 text-green-800`}
+                              >
+                                {region}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {fellowship.citizenshipStatus.length > 0 && (
-                      <div>
-                        <span className="text-xs text-muted">Citizenship Status</span>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {fellowship.citizenshipStatus.map((status) => (
-                            <button
-                              key={status}
-                              onClick={() => handleFilterClick('citizenshipStatus', status)}
-                              className={`${filterChipClass} bg-orange-100 text-orange-800`}
-                            >
-                              {status}
-                            </button>
-                          ))}
+                      )}
+                      {fellowship.citizenshipStatus.length > 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Citizenship status</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {fellowship.citizenshipStatus.map((status) => (
+                              <button
+                                key={status}
+                                onClick={() => handleFilterClick('citizenshipStatus', status)}
+                                className={`${filterChipClass} bg-orange-100 text-orange-800`}
+                              >
+                                {status}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                </section>
+                      )}
+                    </div>
+                  </section>
+                )}
               </div>
 
               <div className="col-span-1 md:col-span-2 space-y-6">
                 {fellowship.bestNextStep && (
                   <section>
-                    <h3 className={sectionHeadingClass}>What To Do Next</h3>
-                    <p className="rounded-card border border-line-brand bg-brand-soft/70 p-4 text-sm leading-relaxed text-brand-navy">
+                    <h3 className={sectionHeadingClass}>What to do next</h3>
+                    <p className="rounded-card border border-line-brand bg-brand-soft p-4 text-sm leading-relaxed text-brand-navy">
                       {fellowship.bestNextStep}
                     </p>
                   </section>
@@ -729,7 +669,7 @@ const FellowshipModal = ({
 
                 {fellowship.prepSteps.length > 0 && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Prep Steps</h3>
+                    <h3 className={sectionHeadingClass}>Prep steps</h3>
                     <div className="flex flex-wrap gap-2">
                       {fellowship.prepSteps.map((step) => (
                         <span
@@ -743,55 +683,56 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {(fellowship.applicationInformation || applicationMaterials.length > 0) && (
-                  <section>
-                    <h3 className={sectionHeadingClass}>Application Process</h3>
-                    <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft/50 p-4">
-                      {applicationMaterials.length > 0 && (
-                        <div>
-                          <p className="mb-2 text-xs font-semibold text-brand-navy">
-                            Materials listed by the official source
-                          </p>
-                          <ul className="grid gap-2 sm:grid-cols-2">
-                            {applicationMaterials.map((material) => (
-                              <li
-                                key={material}
-                                className="flex items-start gap-2 text-sm text-ink-soft"
-                              >
-                                <span aria-hidden="true" className="mt-0.5 text-brand">
-                                  ✓
-                                </span>
-                                <span>{material}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {fellowship.applicationInformation && (
-                        <RichTextBlock
-                          text={fellowship.applicationInformation}
-                          className="text-sm leading-relaxed text-ink-soft"
-                        />
-                      )}
-                      {applicationHref && (
-                        <a
-                          href={applicationHref}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
-                          className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
-                        >
-                          Open official application
-                        </a>
-                      )}
-                    </div>
-                  </section>
-                )}
+                {!guidance &&
+                  (fellowship.applicationInformation || applicationMaterials.length > 0) && (
+                    <section>
+                      <h3 className={sectionHeadingClass}>Application process</h3>
+                      <div className="space-y-3 rounded-card border border-line-brand bg-brand-soft p-4">
+                        {applicationMaterials.length > 0 && (
+                          <div>
+                            <p className="mb-2 text-xs font-semibold text-brand-navy">
+                              Materials listed by the official source
+                            </p>
+                            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {applicationMaterials.map((material) => (
+                                <li
+                                  key={material}
+                                  className="flex items-start gap-2 text-sm text-ink-soft"
+                                >
+                                  <span aria-hidden="true" className="mt-0.5 text-brand">
+                                    ✓
+                                  </span>
+                                  <span>{material}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {fellowship.applicationInformation && (
+                          <RichTextBlock
+                            text={fellowship.applicationInformation}
+                            className="text-sm leading-relaxed text-ink-soft"
+                          />
+                        )}
+                        {applicationHref && (
+                          <a
+                            href={applicationHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => trackFellowshipApplyClick(fellowship.id)}
+                            className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-navy yr-focus-ring"
+                          >
+                            Open official application
+                          </a>
+                        )}
+                      </div>
+                    </section>
+                  )}
 
                 {hasDistinctSummaryAndDescription ? (
                   <>
                     <section>
-                      <h3 className={sectionHeadingClass}>Brief Description</h3>
+                      <h3 className={sectionHeadingClass}>Brief description</h3>
                       <RichTextBlock
                         text={summaryText}
                         className="text-sm text-ink-soft leading-relaxed"
@@ -799,7 +740,7 @@ const FellowshipModal = ({
                     </section>
 
                     <section>
-                      <h3 className={sectionHeadingClass}>Full Description</h3>
+                      <h3 className={sectionHeadingClass}>Full description</h3>
                       <RichTextBlock
                         text={descriptionText}
                         className="text-sm text-ink-soft leading-relaxed"
@@ -820,7 +761,7 @@ const FellowshipModal = ({
 
                 {fellowship.eligibility && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
+                    <h3 className={sectionHeadingClass}>Eligibility requirements</h3>
                     <RichTextBlock
                       text={fellowship.eligibility}
                       className="text-sm text-ink-soft leading-relaxed"
@@ -828,9 +769,9 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {!fellowship.eligibility && (
+                {!fellowship.eligibility && !guidance && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Eligibility Requirements</h3>
+                    <h3 className={sectionHeadingClass}>Eligibility requirements</h3>
                     {structuredEligibilityDetails.length > 0 ? (
                       <dl className="space-y-1.5">
                         {structuredEligibilityDetails.map((detail) => (
@@ -860,7 +801,7 @@ const FellowshipModal = ({
 
                 {fellowship.additionalInformation && (
                   <section>
-                    <h3 className={sectionHeadingClass}>Additional Information</h3>
+                    <h3 className={sectionHeadingClass}>Additional information</h3>
                     <RichTextBlock
                       text={fellowship.additionalInformation}
                       className="text-sm text-ink-soft leading-relaxed"
@@ -873,15 +814,17 @@ const FellowshipModal = ({
                     {!applicationStatus.isApplicationWindowOpen && (
                       <p className="mb-3 rounded-card border border-line-brand bg-brand-soft p-3 text-sm text-brand">
                         {applicationStatus.kind === 'notOpenYet'
-                          ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate)}.`
-                          : 'This application window is not currently open. Use the source to verify the next cycle.'}
+                          ? `Applications are not open yet. They open ${formatFellowshipDate(fellowship.applicationOpenDate, 'opens')}.`
+                          : deadlineStale
+                            ? `${STALE_DEADLINE_MESSAGE}.`
+                            : 'This application window is not currently open. Use the source to verify the next cycle.'}
                       </p>
                     )}
                     <a
                       href={applicationHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
+                      onClick={() => trackFellowshipApplyClick(fellowship.id)}
                       className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
                         applicationStatus.isApplicationWindowOpen
                           ? 'bg-brand hover:bg-brand-navy'
@@ -889,24 +832,28 @@ const FellowshipModal = ({
                       }`}
                     >
                       {applicationStatus.isApplicationWindowOpen
-                        ? 'Apply Now'
+                        ? 'Apply now'
                         : applicationStatus.kind === 'notOpenYet'
-                          ? 'Track Opening Date'
-                          : 'Open Fellowship Source'}
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        className="ml-2"
-                      >
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                        <polyline points="15 3 21 3 21 9" />
-                        <line x1="10" y1="14" x2="21" y2="3" />
-                      </svg>
+                          ? 'Track the opening date'
+                          : deadlineStale
+                            ? 'Open the official page'
+                            : 'Open the fellowship source'}
+                      <ExternalLinkIcon className="ml-2" size={16} />
+                    </a>
+                  </div>
+                )}
+
+                {guidanceHref && (
+                  <div className="pt-4 border-t border-[var(--yr-line)]">
+                    <a
+                      href={guidanceHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => trackGuidanceClick(fellowship.id, guidanceHref)}
+                      className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    >
+                      {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                      <ExternalLinkIcon className="ml-2" size={16} />
                     </a>
                   </div>
                 )}
@@ -919,7 +866,7 @@ const FellowshipModal = ({
                         href={sourceHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-brand hover:underline yr-focus-ring"
+                        className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control"
                       >
                         {sourceLabel || 'Official source'}
                       </a>

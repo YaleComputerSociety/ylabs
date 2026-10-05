@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { CLEARED_RESEARCH_ENTITY_YALE_STATUS } from '../utils/researchEntityYaleStatus';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -20,7 +24,7 @@ import {
 } from './backfillYaleStatusCacheCore';
 
 if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
-  dotenv.config();
+  dotenv.config({ quiet: true });
 }
 
 const SCRIPT_NAME = 'research:backfill-yale-status-cache';
@@ -82,7 +86,7 @@ export function parseBackfillYaleStatusCacheArgs(
 }
 
 export function assertDevelopmentTarget(mongoUrl: string | undefined): void {
-  let database = '';
+  let database: string;
   try {
     database = new URL(mongoUrl || '').pathname.replace(/^\//, '');
   } catch {
@@ -117,15 +121,10 @@ export function assertBackfillYaleStatusCacheApplyAllowed(
   return assertScriptApplyAllowed({ apply: options.apply, scriptName: SCRIPT_NAME, mongoUrl, env });
 }
 
-async function main() {
-  const options = parseBackfillYaleStatusCacheArgs(process.argv.slice(2));
-  const guard = assertBackfillYaleStatusCacheApplyAllowed(
-    options,
-    process.env,
-    process.env.MONGODBURL,
-  );
-  await initializeConnections();
-
+export async function runYaleStatusCacheBackfill(
+  options: BackfillYaleStatusCacheCliOptions,
+  guard: Pick<ScriptApplyGuardResult, 'environment' | 'dbLabel'>,
+) {
   // No `.sort()`: sorting 4,756 whole documents on an unindexed `name` exceeded
   // Mongo's 32MB in-memory sort limit, so every invocation of this command failed
   // before reading a row, which is why the one row #2684 found stayed unrepaired.
@@ -162,6 +161,7 @@ async function main() {
   const writes = plannedWrites.slice(0, writeBudget);
   const updatesById = new Map(plan.toUpdate.map((target) => [target.id, target]));
 
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (options.apply) {
     for (const write of writes) {
       const target = updatesById.get(write.id);
@@ -192,11 +192,11 @@ async function main() {
     const touchedIds = writes.map((write) => write.id);
     if (touchedIds.length > 0) {
       const updatedDocs = await ResearchEntity.find({ _id: { $in: touchedIds } }).lean();
-      await syncEntities('researchEntity', updatedDocs);
+      indexSync = await syncResearchEntitiesWithOutcome(updatedDocs);
     }
   }
 
-  const report = {
+  return {
     mode: options.apply ? 'apply' : 'dry-run',
     environment: guard.environment,
     db: guard.dbLabel,
@@ -211,6 +211,8 @@ async function main() {
     ).length,
     plannedWrites: plannedWrites.length,
     writtenThisRun: options.apply ? writes.length : 0,
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
     deferredByWriteLimit: plannedWrites.length - writes.length,
     nextStep:
       plan.toHeal.length > 0
@@ -220,6 +222,18 @@ async function main() {
     healSample: plan.toHeal.slice(0, 50),
     options,
   };
+}
+
+async function main() {
+  const options = parseBackfillYaleStatusCacheArgs(process.argv.slice(2));
+  const guard = assertBackfillYaleStatusCacheApplyAllowed(
+    options,
+    process.env,
+    process.env.MONGODBURL,
+  );
+  await initializeConnections();
+
+  const report = await runYaleStatusCacheBackfill(options, guard);
 
   console.log(JSON.stringify(report, null, 2));
   if (options.output) {

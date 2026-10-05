@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Fellowship } from '../models/fellowship';
-import { mongoOptions } from '../db/connections';
+import { connectScriptMongo } from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -16,7 +16,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface RepairDuplicateFellowshipSourceKeysOptions {
   apply: boolean;
@@ -108,7 +108,7 @@ async function main(): Promise<void> {
     }`,
   );
 
-  await mongoose.connect(process.env.MONGODBURL as string, mongoOptions);
+  await connectScriptMongo(process.env.MONGODBURL as string);
   try {
     const result = await runRepairDuplicateFellowshipSourceKeys({ apply: options.apply });
     const payload = {

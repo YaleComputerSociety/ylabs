@@ -14,6 +14,8 @@
  * as ambiguous whenever two lanes read it for different people, which is a fact about
  * the page rather than about this edge.
  */
+import { GRANT_LANE_SOURCE_NAMES as SHARED_GRANT_LANE_SOURCE_NAMES } from '../scrapers/grantLaneSourceNames';
+
 export const NON_OWNER_LEAD_RETIREMENT_NOTE_PATTERN =
   /^Retired as a lead claim on someone whose title cannot (?:own a research home|host a student)/;
 
@@ -31,13 +33,7 @@ export type NonOwnerLeadEdgeExclusion =
  * the asserting source does not satisfy it, and queueing it would invite a reviewer to
  * restore a lead on funding evidence. Grants enrich a row; they never mint one.
  */
-const GRANT_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set([
-  'nih-reporter',
-  'nsf-award-search',
-  'doe-osti',
-  'federal-award-search',
-  'neh-grants',
-]);
+const GRANT_LANE_SOURCE_NAMES: ReadonlySet<string> = new Set(SHARED_GRANT_LANE_SOURCE_NAMES);
 
 export interface NonOwnerLeadEdgeCandidate {
   edgeId: string;

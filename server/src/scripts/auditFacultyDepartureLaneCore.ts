@@ -34,8 +34,10 @@ export interface FacultyDepartureLaneFacts {
   plan?: FacultyRosterDeparturePlan;
   governedDepartments: number;
   unresolvedDepartments: number;
+  undeclaredUnresolvedDepartments?: number;
   frozenDepartments: number;
   regressedDepartments?: number;
+  incompleteReadDepartments?: number;
   liveEntities: number;
   /** Rows the lane has ever recorded as present in a complete roster. */
   entitiesWithLastSeen: number;
@@ -46,8 +48,8 @@ export interface FacultyDepartureLaneFacts {
   /**
    * How many of the planning run's snapshots recorded reading their department's
    * page. Read this before believing the plan: a snapshot counted `unrecorded` or
-   * `not-read` governs nothing, so the plan rests on the `fetched` and
-   * `cache-permitted` ones alone (#3251).
+   * `not-read` governs nothing, so the plan rests on the `fetched`,
+   * `reused-within-sweep` and `cache-permitted` ones alone (#3251, #3568).
    */
   readProvenance?: Record<RosterHealthReadProvenance, number>;
   /** Age in whole hours of the newest read the planning run recorded. */
@@ -105,7 +107,11 @@ export function blockingDepartureLaneGate(
 export function snapshotsRecordingARead(facts: FacultyDepartureLaneFacts): number {
   const provenance = facts.readProvenance;
   if (!provenance) return 0;
-  return (provenance.fetched ?? 0) + (provenance['cache-permitted'] ?? 0);
+  return (
+    (provenance.fetched ?? 0) +
+    (provenance['reused-within-sweep'] ?? 0) +
+    (provenance['cache-permitted'] ?? 0)
+  );
 }
 
 export function summarizeFacultyDepartureLaneAudit(
@@ -229,5 +235,54 @@ export function summarizeStandingRosterFreezes(
       byDepartment.size - departmentsWithAnyAuthoritativeSnapshot,
     standingFreezes,
     longestStandingFreezeDays: standingFreezes[0]?.standingForDays ?? 0,
+  };
+}
+
+export interface RosterRunCandidate {
+  runId: string;
+  startedAt: Date | null;
+  status?: string;
+  invalidated?: boolean;
+  options?: Record<string, unknown> | null;
+}
+
+export interface DepartureAuditRunSelection {
+  runId: string;
+  startedAt: string | null;
+  scope: string[];
+  newerRunsSkipped: number;
+  reason: 'newest-unscoped-successful-run' | 'no-unscoped-successful-run';
+}
+
+const ROSTER_RUN_SCOPING_OPTIONS = ['only', 'limit'] as const;
+
+export function rosterRunScope(options: Record<string, unknown> | null | undefined): string[] {
+  if (!options) return [];
+  return ROSTER_RUN_SCOPING_OPTIONS.filter((key) => {
+    const value = options[key];
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+    if (typeof value === 'string') return value.trim().length > 0;
+    return value !== undefined && value !== null && value !== false;
+  });
+}
+
+export function selectDepartureAuditRun(
+  candidates: RosterRunCandidate[],
+): DepartureAuditRunSelection | undefined {
+  const live = candidates
+    .filter((candidate) => candidate.invalidated !== true)
+    .sort((left, right) => (right.startedAt?.getTime() ?? 0) - (left.startedAt?.getTime() ?? 0));
+  if (live.length === 0) return undefined;
+  const fullIndex = live.findIndex(
+    (candidate) => candidate.status === 'success' && rosterRunScope(candidate.options).length === 0,
+  );
+  const chosen = fullIndex >= 0 ? live[fullIndex] : live[0];
+  return {
+    runId: chosen.runId,
+    startedAt: chosen.startedAt ? chosen.startedAt.toISOString() : null,
+    scope: rosterRunScope(chosen.options),
+    newerRunsSkipped: fullIndex >= 0 ? fullIndex : 0,
+    reason: fullIndex >= 0 ? 'newest-unscoped-successful-run' : 'no-unscoped-successful-run',
   };
 }

@@ -1,19 +1,40 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
+import {
+  MongoClient,
+  type AnyBulkWriteOperation,
+  type Db,
+  type Document,
+  type ObjectId,
+} from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { reduceAccountToMirroredFields } from './mirroredAccountFields';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertDatabaseCopyPair,
+  assertDatabaseCopyPairUrls,
+  parseMongoTarget,
+  type ResolvedDatabaseCopyPair,
+} from './databaseCopyPairs';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  ACCOUNT_ID_REFERENCE_FIELDS,
+  accountCountChange,
+  applyAccountCarry,
+  loadAccountCarryPlan,
+  summarizeAccountCarry,
+  type AccountCarryPlan,
+} from './accountSwapCarry';
 import {
   applyStagedCollectionSwap,
   mirroredValidationOptions,
   stagedSwapCollectionExists,
 } from './stagedCollectionSwap';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 type Mode = 'dry-run' | 'apply';
 type PromotionCollectionCategory = 'research-discovery' | 'source-audit' | 'base-support';
@@ -22,6 +43,7 @@ interface PromotionCollection {
   name: string;
   category: PromotionCollectionCategory;
   filter?: Document;
+  transform?: (document: Document) => Document;
 }
 
 const DATASET_VERSION_PATTERN = /^prod-promote-\d{4}-\d{2}-\d{2}-lane-a-beta-copy$/;
@@ -103,11 +125,14 @@ export interface PromotionSummary {
   datasetVersion: string;
   betaTarget: string;
   productionTarget: string;
+  sourceDatabase: string;
+  targetDatabase: string;
   includesObservations: boolean;
   includesScrapeRuns: boolean;
   collections: CollectionPlan[];
   collectionCategories: CollectionCategorySummary[];
   excludedSyntheticUsers: number;
+  excludedBetaLoginAccounts: number;
   syntheticReferenceBlockersClear: boolean;
   emptySourceBlockersClear: boolean;
   runEvidenceBlockersClear: boolean;
@@ -116,12 +141,6 @@ export interface PromotionSummary {
   applyBlockers: string[];
   blockedSyntheticUserReferences: SyntheticUserReference[];
 }
-
-const ACCOUNT_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
-  { collection: 'researchers', field: 'accountId' },
-  { collection: 'research_entities', field: 'studentVisibilityReviewedByAccountId' },
-  { collection: 'fellowships', field: 'studentVisibilityReviewedByAccountId' },
-];
 
 const COLLECTION_CATEGORY_ORDER: PromotionCollectionCategory[] = [
   'research-discovery',
@@ -228,12 +247,17 @@ export function parsePromotionOptions(
   };
 }
 
-export function assertSafeOptions(options: PromotionOptions) {
+export function assertSafeOptions(options: PromotionOptions): ResolvedDatabaseCopyPair {
   if (!options.betaUrl) throw new Error('BETA_MONGODBURL is required');
   if (!options.productionUrl) throw new Error('PRODUCTION_MONGODBURL is required');
   if (options.betaUrl === options.productionUrl) {
     throw new Error('BETA_MONGODBURL and PRODUCTION_MONGODBURL must be different');
   }
+  const databases = assertDatabaseCopyPairUrls(
+    'beta-to-production',
+    options.betaUrl,
+    options.productionUrl,
+  );
   if (!DATASET_VERSION_PATTERN.test(options.datasetVersion)) {
     throw new Error(
       'A dataset version like prod-promote-YYYY-MM-DD-lane-a-beta-copy is required via --dataset-version or PROMOTION_DATASET_VERSION',
@@ -259,6 +283,7 @@ export function assertSafeOptions(options: PromotionOptions) {
       throw new Error('Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true');
     }
   }
+  return databases;
 }
 
 /**
@@ -324,6 +349,7 @@ export function buildPromotionSummary(
   plan: CollectionPlan[],
   blockedSyntheticUserReferences: SyntheticUserReference[],
   productionObservationCount = 0,
+  excludedBetaLoginAccounts = 0,
 ): PromotionSummary {
   const collectionCategories = COLLECTION_CATEGORY_ORDER.flatMap((category) => {
     const rows = plan.filter((row) => row.category === category);
@@ -358,11 +384,19 @@ export function buildPromotionSummary(
     datasetVersion: options.datasetVersion,
     betaTarget: summarizeMongoUrl(options.betaUrl),
     productionTarget: summarizeMongoUrl(options.productionUrl),
+    sourceDatabase: parseMongoTarget(options.betaUrl).database,
+    targetDatabase: parseMongoTarget(options.productionUrl).database,
     includesObservations: options.includeObservations,
     includesScrapeRuns: options.includeScrapeRuns,
     collections: plan,
     collectionCategories,
-    excludedSyntheticUsers: plan.find((row) => row.name === 'accounts')?.excludedCount || 0,
+    // The accounts row's excludedCount now covers both exclusions, so the
+    // synthetic count is what remains once the Beta logins are taken out.
+    excludedSyntheticUsers: Math.max(
+      (plan.find((row) => row.name === 'accounts')?.excludedCount || 0) - excludedBetaLoginAccounts,
+      0,
+    ),
+    excludedBetaLoginAccounts,
     syntheticReferenceBlockersClear: syntheticReferenceBlockers.length === 0,
     emptySourceBlockersClear: emptySourceBlockers.length === 0,
     runEvidenceBlockersClear: auditTrailBlockers.length === 0,
@@ -428,6 +462,110 @@ export function promotionCollectionNamesForOptions(options: PromotionOptions): s
   return promotionCollectionsForOptions(options).map((collection) => collection.name);
 }
 
+function collectionExists(db: Db, name: string): Promise<boolean> {
+  return db.listCollections({ name }, { nameOnly: true }).hasNext();
+}
+
+async function distinctReferenceKeys(
+  db: Db,
+  collectionName: string,
+  field: string,
+): Promise<string[]> {
+  if (!(await collectionExists(db, collectionName))) return [];
+  const values = await db.collection(collectionName).distinct(field);
+  return values.filter((value) => value != null).map(String);
+}
+
+/**
+ * Beta accounts that describe a Beta login rather than the identity spine.
+ *
+ * Since #4139 the Development-to-Beta sync carries Beta's own login accounts
+ * across the swap, so Beta holds real logins indefinitely. Production's accounts
+ * are authoritative for Production, and a Beta login is not one of them, so such
+ * a row must not cross: once promoted its Beta `lastLoginAt` makes it read as a
+ * Production login to the carry, which then re-carries it forever (#4244).
+ *
+ * Login evidence is the same predicate the carry uses - a `lastLoginAt`, or an
+ * owned `research_plans` row - read against Beta. Reachability is deliberately
+ * measured over the promoted collections only, so a row the promotion itself
+ * references is kept and no promoted reference is left dangling. `research_plans`
+ * is not promoted, which is why owning one is evidence of a login rather than of
+ * spine membership.
+ *
+ * Synthetic rows are read out under `SYNTHETIC_USER_FILTER` even though they are
+ * excluded anyway, so that this set and the synthetic exclusion stay disjoint:
+ * `excludedSyntheticUsers` is `excludedCount` minus this count, and an overlap
+ * would under-report it.
+ */
+export async function betaOnlyLoginAccountIds(
+  betaDb: Db,
+  promotedCollectionNames: readonly string[],
+): Promise<ObjectId[]> {
+  const planOwnerKeys = new Set(await distinctReferenceKeys(betaDb, 'research_plans', 'accountId'));
+  const accounts = await betaDb
+    .collection('accounts')
+    .find(SYNTHETIC_USER_FILTER, { projection: { _id: 1, lastLoginAt: 1 } })
+    .toArray();
+  const withLoginEvidence = accounts.filter(
+    (account) => account.lastLoginAt != null || planOwnerKeys.has(String(account._id)),
+  );
+  if (withLoginEvidence.length === 0) return [];
+
+  const promotedReferenceKeys = new Set<string>();
+  for (const { collection, field } of ACCOUNT_ID_REFERENCE_FIELDS) {
+    if (!promotedCollectionNames.includes(collection)) continue;
+    for (const key of await distinctReferenceKeys(betaDb, collection, field)) {
+      promotedReferenceKeys.add(key);
+    }
+  }
+
+  return withLoginEvidence
+    .filter((account) => !promotedReferenceKeys.has(String(account._id)))
+    .map((account) => account._id as ObjectId);
+}
+
+function accountsPromotionFilter(excludedBetaLoginIds: readonly ObjectId[]): Document {
+  if (excludedBetaLoginIds.length === 0) return SYNTHETIC_USER_FILTER;
+  return { $and: [SYNTHETIC_USER_FILTER, { _id: { $nin: excludedBetaLoginIds } }] };
+}
+
+export interface ResolvedPromotionManifest {
+  collections: PromotionCollection[];
+  excludedBetaLoginAccounts: number;
+}
+
+/**
+ * The promotion manifest with the `accounts` rule applied.
+ *
+ * Both halves belong to the same rule and must be resolved together: the filter
+ * drops Beta-only logins, and the transform reduces every row that does cross to
+ * the mirror allow-list so no `lastLoginAt` or student profile field leaves Beta.
+ * The filter has to be known at plan time rather than at insert time because the
+ * cutover verifies the promoted count against it.
+ */
+export async function resolvePromotionManifest(
+  betaDb: Db,
+  options: PromotionOptions,
+): Promise<ResolvedPromotionManifest> {
+  const collections = promotionCollectionsForOptions(options);
+  const excludedBetaLoginIds = await betaOnlyLoginAccountIds(
+    betaDb,
+    collections.map((collection) => collection.name),
+  );
+  return {
+    excludedBetaLoginAccounts: excludedBetaLoginIds.length,
+    collections: collections.map((collection) =>
+      collection.name === 'accounts'
+        ? {
+            ...collection,
+            filter: accountsPromotionFilter(excludedBetaLoginIds),
+            transform: reduceAccountToMirroredFields,
+          }
+        : collection,
+    ),
+  };
+}
+
 async function countCollection(db: Db, collection: PromotionCollection): Promise<CollectionPlan> {
   const exists = await db.listCollections({ name: collection.name }, { nameOnly: true }).hasNext();
   const targetPlaceholder = {
@@ -454,9 +592,8 @@ async function countCollection(db: Db, collection: PromotionCollection): Promise
 async function buildPlan(
   betaDb: Db,
   productionDb: Db,
-  options: PromotionOptions,
+  collections: readonly PromotionCollection[],
 ): Promise<CollectionPlan[]> {
-  const collections = promotionCollectionsForOptions(options);
   return Promise.all(
     collections.map(async (collection) => {
       const sourcePlan = await countCollection(betaDb, collection);
@@ -471,7 +608,7 @@ async function buildPlan(
   );
 }
 
-async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
+export async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
   const excludedUsers = await betaDb
     .collection('accounts')
     .find(SYNTHETIC_USER_MATCH, { projection: { _id: 1 } })
@@ -480,7 +617,9 @@ async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReferen
   if (excludedIds.length === 0) return [];
 
   const rows = await Promise.all(
-    ACCOUNT_REFERENCE_FIELDS.map(async ({ collection, field }) => {
+    ACCOUNT_ID_REFERENCE_FIELDS.filter(({ collection }) =>
+      COPY_COLLECTIONS.some((copied) => copied.name === collection),
+    ).map(async ({ collection, field }) => {
       const exists = await betaDb
         .listCollections({ name: collection }, { nameOnly: true })
         .hasNext();
@@ -550,7 +689,9 @@ async function stageCollection(
   try {
     await cursor.hasNext();
     for await (const doc of cursor) {
-      batch.push({ insertOne: { document: doc } });
+      batch.push({
+        insertOne: { document: collection.transform ? collection.transform(doc) : doc },
+      });
       if (batch.length >= BATCH_SIZE) {
         await staging.bulkWrite(batch, { ordered: false });
         batch = [];
@@ -617,13 +758,42 @@ async function recordScrapeRunsRetirement(
   });
 }
 
+function withCarriedAccounts(plan: CollectionPlan[], carriedAccounts: number): CollectionPlan[] {
+  return plan.map((row) =>
+    row.name === 'accounts'
+      ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedAccounts }
+      : row,
+  );
+}
+
+// Reads the accounts rule the apply will use, so the dry run's
+// `productionAccountCarry` describes the same promoted set the apply promotes.
+export async function previewAccountCarry(
+  betaDb: Db,
+  productionDb: Db,
+  manifest: ResolvedPromotionManifest,
+): Promise<AccountCarryPlan> {
+  const accounts = manifest.collections.find((collection) => collection.name === 'accounts');
+  return loadAccountCarryPlan({
+    targetDb: productionDb,
+    targetAccountsCollection: 'accounts',
+    loadPromotedAccounts: () =>
+      betaDb
+        .collection('accounts')
+        .find(accounts?.filter ?? SYNTHETIC_USER_FILTER)
+        .toArray(),
+  });
+}
+
 export async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
-  const collections = promotionCollectionsForOptions(options);
-  const plan = await buildPlan(betaDb, productionDb, options);
+  const { collections } = await resolvePromotionManifest(betaDb, options);
+  const plan = await buildPlan(betaDb, productionDb, collections);
   const retiring = Boolean(options.retireScrapeRunsActor);
   const retiredCount = retiring
     ? await productionDb.collection('scrape_runs').countDocuments({})
     : 0;
+
+  let carriedAccountCountChange = 0;
 
   await applyStagedCollectionSwap({
     targetDb: productionDb,
@@ -633,6 +803,18 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     label: 'Beta to Production promotion',
     stage: (collection, operationId) =>
       stageCollection(betaDb, productionDb, collection, operationId),
+    afterCutover: async (backups) => {
+      const productionAccounts = backups.get('accounts');
+      if (!productionAccounts) return;
+      const carry = await loadAccountCarryPlan({
+        targetDb: productionDb,
+        targetAccountsCollection: productionAccounts,
+        loadPromotedAccounts: () =>
+          productionDb.collection('accounts').find(SYNTHETIC_USER_FILTER).toArray(),
+      });
+      await applyAccountCarry(productionDb, carry);
+      carriedAccountCountChange = accountCountChange(summarizeAccountCarry(carry));
+    },
     verify: async () => {
       const actualCounts = new Map<string, number>();
       for (const collection of collections) {
@@ -642,7 +824,10 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
         );
       }
       const mismatches = buildPromotionCutoverMismatches(
-        plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+        withCarriedAccounts(
+          plan.filter((row) => collections.some((collection) => collection.name === row.name)),
+          carriedAccountCountChange,
+        ),
         actualCounts,
       );
       if (mismatches.length > 0) {
@@ -678,7 +863,9 @@ async function main() {
     await productionClient.connect();
     const betaDb = betaClient.db();
     const productionDb = productionClient.db();
-    const plan = await buildPlan(betaDb, productionDb, options);
+    assertDatabaseCopyPair('beta-to-production', betaDb.databaseName, productionDb.databaseName);
+    const manifest = await resolvePromotionManifest(betaDb, options);
+    const plan = await buildPlan(betaDb, productionDb, manifest.collections);
     const blockedSyntheticUserReferences = await syntheticUserReferences(betaDb);
     // Counted directly rather than read off the plan: observations is opt-in, so it
     // is usually absent from the plan entirely and the guard would read 0 and pass.
@@ -691,15 +878,26 @@ async function main() {
       plan,
       blockedSyntheticUserReferences,
       productionObservationCount,
+      manifest.excludedBetaLoginAccounts,
     );
 
-    console.log(JSON.stringify(summary, null, 2));
-    writePromotionOutput(summary, options.output);
+    const report = {
+      ...summary,
+      productionAccountCarry: summarizeAccountCarry(
+        await previewAccountCarry(betaDb, productionDb, manifest),
+      ),
+    };
+    console.log(JSON.stringify(report, null, 2));
+    writePromotionOutput(report, options.output);
 
     if (options.mode === 'apply') {
       assertPromotionSummaryCanApply(summary);
       await applyCopy(betaDb, productionDb, options);
-      const after = await buildPlan(betaDb, productionDb, options);
+      const after = await buildPlan(
+        betaDb,
+        productionDb,
+        (await resolvePromotionManifest(betaDb, options)).collections,
+      );
       console.log(
         JSON.stringify(
           {

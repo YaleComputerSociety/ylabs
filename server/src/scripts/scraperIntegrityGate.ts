@@ -12,10 +12,12 @@ import { buildClaimGateReport } from '../services/claimValidation/accessClaims';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { writeFileSync, mkdirSync } from 'fs';
+import { connectScriptMongo } from '../db/connections';
+import { resolveScraperEnvironment } from '../scrapers/scraperEnvironment';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface ScraperIntegrityGateCliOptions {
   includeSamples: boolean;
@@ -140,10 +142,13 @@ async function main(): Promise<void> {
   if (!mongoUrl) throw new Error('MONGODBURL is required');
 
   const options = parseScraperIntegrityGateArgs(process.argv.slice(2));
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   const result: PostMaterializationIntegritySummary & {
     claimGate?: ReturnType<typeof buildClaimGateReport>;
-  } = await runPostMaterializationIntegrityGate(options);
+  } = await runPostMaterializationIntegrityGate({
+    ...options,
+    commandEnvironment: resolveScraperEnvironment(),
+  });
   if (options.includeClaimGate) {
     const artifacts = await loadResearchAccessArtifacts(options.limit);
     result.claimGate = buildClaimGateReport({

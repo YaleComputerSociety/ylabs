@@ -1,5 +1,7 @@
 import {
+  useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -18,6 +20,7 @@ import {
   sanitizeResearchEntityCopy,
 } from '../../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
+import { formatTopicChipLabel } from '../../utils/displayText';
 import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
@@ -28,8 +31,10 @@ import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/ur
 import {
   createResearchAnalyticsInteractionId,
   researchCountBucket,
+  researchProfileOpenState,
   trackResearchEvent,
 } from '../../utils/researchAnalytics';
+import { CloseIcon } from '../shared/icons';
 
 export interface ComparableResearchHome {
   _id: string;
@@ -65,7 +70,7 @@ const dedupeByEntityId = (entities: ComparableResearchHome[]): ComparableResearc
 };
 
 const boundedDescription = (entity: ResearchEntity): string => {
-  const raw = (entity.shortDescription || entity.fullDescription || '').trim();
+  const raw = (entity.shortDescription || '').trim();
   const cleaned = sanitizeResearchEntityCopy(raw, entity).trim();
   if (cleaned.length <= MAX_COMPARE_DESCRIPTION_LENGTH) return cleaned;
   const bounded = cleaned.slice(0, MAX_COMPARE_DESCRIPTION_LENGTH);
@@ -98,6 +103,19 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
 
 const UnknownCell = () => <span className="text-xs italic text-muted">Unknown</span>;
 
+const LABEL_COLUMN_WIDTH = '10rem';
+const GUTTER_WIDTH = '1.5rem';
+const MIN_COMPARED_COLUMN_WIDTH = 160;
+
+const comparedColumnWidth = (columnCount: number) =>
+  `calc((100% - ${LABEL_COLUMN_WIDTH} - ${GUTTER_WIDTH}) / ${columnCount})`;
+
+const labelCellClassName =
+  'sticky left-0 z-[1] bg-[var(--yr-panel)] py-3 pl-6 pr-3 text-xs font-semibold uppercase tracking-wide text-muted';
+
+const comparedCellClassName =
+  'border-b border-[var(--yr-line)] p-3 last:pr-6 [overflow-wrap:anywhere]';
+
 const ResearchHomeComparison = ({
   entities,
   notesByEntityId,
@@ -109,12 +127,16 @@ const ResearchHomeComparison = ({
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeOnEscape = useEffectEvent(onClose);
 
   const [columns, setColumns] = useState<ComparisonColumn[]>(() =>
     uniqueEntities.map((base) => ({ status: 'loading', base })),
   );
+  const [columnsEntities, setColumnsEntities] = useState(uniqueEntities);
+  if (columnsEntities !== uniqueEntities) {
+    setColumnsEntities(uniqueEntities);
+    setColumns(uniqueEntities.map((base) => ({ status: 'loading', base })));
+  }
   const [includedNoteIds, setIncludedNoteIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -129,8 +151,6 @@ const ResearchHomeComparison = ({
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-
-    setColumns(uniqueEntities.map((base) => ({ status: 'loading', base })));
 
     uniqueEntities.forEach((base) => {
       axios
@@ -166,7 +186,7 @@ const ResearchHomeComparison = ({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onCloseRef.current();
+        closeOnEscape();
       }
     };
     document.addEventListener('keydown', handleEscape);
@@ -272,7 +292,7 @@ const ResearchHomeComparison = ({
               key={area}
               className="rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft"
             >
-              {area}
+              {formatTopicChipLabel(area)}
             </li>
           ))}
         </ul>
@@ -331,6 +351,25 @@ const ResearchHomeComparison = ({
     { key: 'links', label: 'Official links' },
   ];
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [hasColumnsPastEdge, setHasColumnsPastEdge] = useState(false);
+  const tableMinWidth = `calc(${LABEL_COLUMN_WIDTH} + ${GUTTER_WIDTH} + ${columns.length * MIN_COMPARED_COLUMN_WIDTH}px)`;
+
+  const readColumnsPastEdge = useCallback(() => {
+    const region = scrollRef.current;
+    if (!region) return;
+    setHasColumnsPastEdge(region.scrollWidth - region.clientWidth - region.scrollLeft > 1);
+  }, []);
+
+  useEffect(() => {
+    readColumnsPastEdge();
+    const region = scrollRef.current;
+    if (!region || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(readColumnsPastEdge);
+    observer.observe(region);
+    return () => observer.disconnect();
+  }, [columns.length, readColumnsPastEdge]);
+
   const columnHeaderTitle = (column: ComparisonColumn): string => {
     if (column.status === 'ready') return researchEntityTitle(column.entity);
     return researchEntityDisplayName(column.base) || column.base.name;
@@ -339,7 +378,7 @@ const ResearchHomeComparison = ({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[1200] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16"
+      className="fixed inset-0 z-[1200] flex items-start justify-center overflow-y-auto bg-scrim p-4 pt-16"
       onClick={onClose}
     >
       <div
@@ -357,7 +396,7 @@ const ResearchHomeComparison = ({
               ref={titleRef}
               id="compare-research-homes-title"
               tabIndex={-1}
-              className="text-lg font-bold leading-tight text-ink focus:outline-none"
+              className="text-lg font-semibold leading-tight text-ink focus:outline-hidden"
             >
               Compare saved research
             </h2>
@@ -372,39 +411,44 @@ const ResearchHomeComparison = ({
             aria-label="Close comparison"
             className="yr-focus-ring ml-4 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-card text-muted transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-ink-soft"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
+            <CloseIcon className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
-          <table className="w-full min-w-[640px] border-collapse text-left">
+        {hasColumnsPastEdge && (
+          <p className="flex-shrink-0 px-6 pt-4 text-xs text-muted" aria-hidden="true">
+            Scroll sideways to read every column.
+          </p>
+        )}
+
+        <div ref={scrollRef} onScroll={readColumnsPastEdge} className="flex-1 overflow-auto py-6">
+          <table
+            className="w-full border-collapse text-left"
+            style={{ minWidth: tableMinWidth, tableLayout: 'fixed' }}
+          >
+            <colgroup>
+              <col style={{ width: LABEL_COLUMN_WIDTH }} />
+              {columns.map((column) => (
+                <col key={column.base._id} style={{ width: comparedColumnWidth(columns.length) }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
-                <th scope="col" className="w-40 p-3 align-bottom text-xs font-semibold text-muted">
+                <th
+                  scope="col"
+                  className="sticky left-0 z-[1] bg-[var(--yr-panel)] py-3 pl-6 pr-3 align-bottom text-xs font-semibold text-muted"
+                >
                   <span className="sr-only">Field</span>
                 </th>
                 {columns.map((column) => (
                   <th
                     key={column.base._id}
                     scope="col"
-                    className="border-b border-[var(--yr-line)] p-3 align-bottom"
+                    className="border-b border-[var(--yr-line)] p-3 align-bottom last:pr-6 [overflow-wrap:anywhere]"
                   >
                     <Link
                       to={`/research/${safeRouteSegment(column.base.slug)}`}
+                      state={researchProfileOpenState('saved_plans')}
                       className="yr-link yr-focus-ring rounded-control text-sm font-semibold"
                     >
                       {columnHeaderTitle(column)}
@@ -427,14 +471,11 @@ const ResearchHomeComparison = ({
             <tbody>
               {fieldRows.map((row) => (
                 <tr key={row.key} className="align-top">
-                  <th
-                    scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
-                  >
+                  <th scope="row" className={labelCellClassName}>
                     {row.label}
                   </th>
                   {columns.map((column) => (
-                    <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
+                    <td key={column.base._id} className={comparedCellClassName}>
                       {renderCell(column, row.key)}
                     </td>
                   ))}
@@ -442,17 +483,14 @@ const ResearchHomeComparison = ({
               ))}
               {anyNoteIncluded && (
                 <tr className="align-top">
-                  <th
-                    scope="row"
-                    className="p-3 text-xs font-semibold uppercase tracking-wide text-muted"
-                  >
+                  <th scope="row" className={labelCellClassName}>
                     Your private note
                   </th>
                   {columns.map((column) => {
                     const note = (notesByEntityId[column.base._id] || '').trim();
                     const included = includedNoteIds.has(column.base._id) && note;
                     return (
-                      <td key={column.base._id} className="border-b border-[var(--yr-line)] p-3">
+                      <td key={column.base._id} className={comparedCellClassName}>
                         {included ? (
                           <p className="text-xs italic text-ink-soft">{note}</p>
                         ) : (

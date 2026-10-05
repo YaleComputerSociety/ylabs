@@ -1,11 +1,11 @@
-import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  type ResearchEntityPublicDescriptionRepresentation,
+} from './researchEntityPublicDescription';
 import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 
 export type ResearchEntityDescriptionState =
-  | 'source_backed'
-  | 'profile_synthesis'
-  | 'thin'
-  | 'missing';
+  'source_backed' | 'profile_synthesis' | 'thin' | 'missing';
 
 export type ResearchEntityLeadState = 'lead_attached' | 'lead_weak' | 'lead_missing';
 
@@ -29,6 +29,7 @@ export interface ResearchEntityQualitySummary {
 export interface ResearchEntityQualityInput {
   entity: Record<string, any>;
   leadMembers?: Array<Record<string, any>>;
+  publicDescription?: ResearchEntityPublicDescriptionRepresentation;
 }
 
 const textValue = (value: unknown): string =>
@@ -103,11 +104,8 @@ export function researchEntityLeadStateForMembers(
 export function buildResearchEntityQualitySummary({
   entity,
   leadMembers = [],
+  publicDescription = buildResearchEntityPublicDescriptionRepresentation({ entity, leadMembers }),
 }: ResearchEntityQualityInput): ResearchEntityQualitySummary {
-  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
-    entity,
-    leadMembers,
-  });
   const publicEntity = publicDescription.entity;
   const descriptionQuality = publicDescription.quality;
   const descriptionState = descriptionStateForEntity(publicEntity, descriptionQuality);

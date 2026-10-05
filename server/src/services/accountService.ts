@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Account, type AccountProfile } from '../models/account';
 import { Researcher } from '../models/researcher';
+import { normalizedSessionVersion } from '../utils/sessionClaim';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -10,6 +11,14 @@ export interface AccountLoginInput {
   email?: string;
   profile?: AccountProfile;
 }
+
+/**
+ * Paths a login used to persist that nothing ever read (#4162). They are off the schema
+ * now, so a login that resolves a Yalies record replaces `profile` wholesale and sheds
+ * them; a login whose lookup was unavailable writes no profile at all, and unsets them
+ * explicitly so an account that keeps signing in stops carrying them either way.
+ */
+const RETIRED_PROFILE_PATHS = ['profile.college', 'profile.year', 'profile.major'];
 
 const sanitizeLoginProfile = (profile?: AccountProfile): AccountProfile | undefined => {
   if (!profile) return undefined;
@@ -26,6 +35,7 @@ export interface AccountRecordView {
   status: string;
   archived: boolean;
   lastLoginAt?: Date;
+  sessionVersion: number;
 }
 
 const normalizeNetid = (value: unknown): string | null => {
@@ -47,6 +57,7 @@ const toAccountView = (account: any): AccountRecordView => ({
   status: String(account.status ?? 'ACTIVE'),
   archived: account.archived === true,
   lastLoginAt: account.lastLoginAt ? new Date(account.lastLoginAt) : undefined,
+  sessionVersion: normalizedSessionVersion(account.sessionVersion),
 });
 
 export const validateAccount = async (netid: unknown): Promise<AccountRecordView | null> => {
@@ -56,6 +67,22 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   return account ? toAccountView(account) : null;
 };
 
+export const revokeAccountSessions = async (netid: unknown): Promise<void> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!normalizedNetid) return;
+  await Account.updateOne({ netid: normalizedNetid }, { $inc: { sessionVersion: 1 } });
+};
+
+export const lastKnownAccountUserType = async (netid: unknown): Promise<string | undefined> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!normalizedNetid) return undefined;
+  const account = await Account.findOne({ netid: normalizedNetid })
+    .select('profile.userType')
+    .lean();
+  const userType = (account as { profile?: { userType?: unknown } } | null)?.profile?.userType;
+  return typeof userType === 'string' && userType.trim() ? userType.trim() : undefined;
+};
+
 export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.Types.ObjectId> => {
   const normalizedNetid = normalizeNetid(netid);
   if (!normalizedNetid) {
@@ -63,6 +90,10 @@ export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.
     error.status = 400;
     throw error;
   }
+  const existing = (await Account.findOne({ netid: normalizedNetid }).select('_id').lean()) as {
+    _id?: unknown;
+  } | null;
+  if (existing?._id) return new mongoose.Types.ObjectId(String(existing._id));
   const account = await Account.findOneAndUpdate(
     { netid: normalizedNetid },
     {
@@ -72,7 +103,7 @@ export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.
         status: 'ACTIVE',
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
+    { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true, runValidators: true },
   ).lean();
   return new mongoose.Types.ObjectId(String((account as { _id: unknown })._id));
 };
@@ -103,17 +134,27 @@ export const recordAccountLogin = async (input: AccountLoginInput): Promise<Acco
   }
 
   const profile = sanitizeLoginProfile(input.profile);
+  const unsetsRetiredProfilePaths = !profile;
   const account = await Account.findOneAndUpdate(
     { netid: normalizedNetid },
     {
       $set: { lastLoginAt: new Date(), ...(profile ? { profile } : {}) },
+      ...(unsetsRetiredProfilePaths
+        ? { $unset: Object.fromEntries(RETIRED_PROFILE_PATHS.map((path) => [path, ''])) }
+        : {}),
       $setOnInsert: {
         netid: normalizedNetid,
         email: normalizeLoginEmail(input.email, normalizedNetid),
         status: 'ACTIVE',
       },
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
+    {
+      returnDocument: 'after',
+      upsert: true,
+      setDefaultsOnInsert: true,
+      runValidators: true,
+      ...(unsetsRetiredProfilePaths ? { strict: false } : {}),
+    },
   ).lean();
 
   return toAccountView(account);

@@ -16,6 +16,7 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -67,6 +68,10 @@ describe('fellowshipSearchReducer', () => {
     expect(state.sortOrder).toBe(-1);
     expect(state.filterOptionsLoaded).toBe(false);
     expect(state.filterOptions.yearOfStudy).toEqual([]);
+  });
+
+  it('initial state is loading until the first search settles', () => {
+    expect(createInitialFellowshipSearchState().isLoading).toBe(true);
   });
 
   it('SET_QUERY_STRING updates the query', () => {
@@ -190,17 +195,11 @@ describe('fellowshipSearchReducer', () => {
     expect(next.searchExhausted).toBe(true);
   });
 
-  it('RESET_LIFECYCLE_FLAGS resets all loaded flags', () => {
+  it('RESET_LIFECYCLE_FLAGS marks the filter options as not loaded', () => {
     const state: FellowshipSearchState = createInitialFellowshipSearchState({
-      queryStringLoaded: true,
-      filtersLoaded: true,
-      initialSearchDone: true,
       filterOptionsLoaded: true,
     });
     const next = fellowshipSearchReducer(state, { type: 'RESET_LIFECYCLE_FLAGS' });
-    expect(next.queryStringLoaded).toBe(false);
-    expect(next.filtersLoaded).toBe(false);
-    expect(next.initialSearchDone).toBe(false);
     expect(next.filterOptionsLoaded).toBe(false);
   });
 
@@ -210,12 +209,36 @@ describe('fellowshipSearchReducer', () => {
       fellowships,
       selectedPurpose: ['Research'],
       queryString: 'keep me',
-      filtersLoaded: true,
+      filterOptionsLoaded: true,
     });
     const next = fellowshipSearchReducer(state, { type: 'RESET_LIFECYCLE_FLAGS' });
     expect(next.fellowships).toBe(fellowships);
     expect(next.selectedPurpose).toEqual(['Research']);
     expect(next.queryString).toBe('keep me');
+  });
+
+  it('RESET_PROGRAM_FILTERS clears every student-facing filter and the quick filter', () => {
+    const adminOnlyFilterKeys = ['selectedStudentVisibilityTier'];
+    const studentFilterKeys = Object.keys(createInitialFellowshipSearchState()).filter(
+      (key) => key.startsWith('selected') && !adminOnlyFilterKeys.includes(key),
+    );
+    const populatedFilters = Object.fromEntries(studentFilterKeys.map((key) => [key, ['set']]));
+    const state = createInitialFellowshipSearchState({
+      ...populatedFilters,
+      quickFilter: 'open',
+      selectedStudentVisibilityTier: ['operator_review'],
+      queryString: 'kept',
+    });
+
+    const next = fellowshipSearchReducer(state, { type: 'RESET_PROGRAM_FILTERS' });
+
+    expect(studentFilterKeys.length).toBeGreaterThanOrEqual(10);
+    for (const key of studentFilterKeys) {
+      expect({ key, value: next[key as keyof FellowshipSearchState] }).toEqual({ key, value: [] });
+    }
+    expect(next.quickFilter).toBeNull();
+    expect(next.selectedStudentVisibilityTier).toEqual(['operator_review']);
+    expect(next.queryString).toBe('kept');
   });
 
   it('does not mutate previous state', () => {
@@ -226,5 +249,80 @@ describe('fellowshipSearchReducer', () => {
     fellowshipSearchReducer(state, { type: 'SET_SELECTED_REGIONS', payload: ['Europe'] });
     fellowshipSearchReducer(state, { type: 'TOGGLE_SORT_DIRECTION' });
     expect(JSON.stringify(state)).toBe(snapshot);
+  });
+
+  it('SEARCH_FAILURE records the error and drops results that belong to the previous search', () => {
+    const loaded = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [makeFellowship()], total: 1, pageSize: 100, append: false },
+    });
+    const failed = fellowshipSearchReducer(
+      fellowshipSearchReducer(loaded, { type: 'SEARCH_REQUEST' }),
+      { type: 'SEARCH_FAILURE' },
+    );
+    expect(failed).toMatchObject({ loadError: true, isLoading: false, fellowships: [], total: 0 });
+  });
+
+  it('SEARCH_REQUEST clears a previous load error', () => {
+    const failed = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_FAILURE',
+    });
+    expect(fellowshipSearchReducer(failed, { type: 'SEARCH_REQUEST' }).loadError).toBe(false);
+  });
+
+  it('LOAD_MORE_FAILURE keeps the pages already loaded', () => {
+    const loaded = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [makeFellowship()], total: 2, pageSize: 1, append: false },
+    });
+    const failed = fellowshipSearchReducer(
+      fellowshipSearchReducer(loaded, { type: 'SEARCH_REQUEST' }),
+      { type: 'LOAD_MORE_FAILURE' },
+    );
+    expect(failed).toMatchObject({ loadError: false, isLoading: false, total: 2 });
+    expect(failed.fellowships).toHaveLength(1);
+  });
+});
+
+describe('fellowshipSearchReducer spelling correction (#4537)', () => {
+  const correction = { originalQuery: 'sophmore', correctedQuery: 'sophomore' };
+
+  it('keeps the first page correction while more pages append', () => {
+    const first = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_SUCCESS',
+      payload: {
+        fellowships: [],
+        total: 0,
+        pageSize: 20,
+        append: false,
+        queryCorrection: correction,
+      },
+    });
+    const appended = fellowshipSearchReducer(first, {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [], total: 0, pageSize: 20, append: true },
+    });
+
+    expect(first.queryCorrection).toEqual(correction);
+    expect(appended.queryCorrection).toEqual(correction);
+  });
+
+  it('searches the typed spelling until the student edits the query', () => {
+    const typed = fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+      type: 'SEARCH_TYPED_SPELLING',
+      payload: 'sophmore',
+    });
+    const unchanged = fellowshipSearchReducer(typed, {
+      type: 'SET_QUERY_STRING',
+      payload: 'sophmore',
+    });
+    const edited = fellowshipSearchReducer(typed, {
+      type: 'SET_QUERY_STRING',
+      payload: 'sophmore grant',
+    });
+
+    expect(typed).toMatchObject({ queryString: 'sophmore', exactSpelling: true });
+    expect(unchanged.exactSpelling).toBe(true);
+    expect(edited.exactSpelling).toBe(false);
   });
 });

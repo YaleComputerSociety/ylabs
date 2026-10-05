@@ -1,10 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import useFavorites from '../useFavorites';
 import axios from '../../utils/axios';
-import { flushResearchAnalytics } from '../../utils/researchAnalytics';
-import swal from 'sweetalert';
+import {
+  flushResearchAnalytics,
+  resetResearchAnalyticsDedupeForTests,
+  setResearchAnalyticsEnabled,
+} from '../../utils/researchAnalytics';
+import { showAlert } from '../../utils/appDialogs';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -15,9 +19,7 @@ vi.mock('../../utils/axios', () => ({
   },
 }));
 
-vi.mock('sweetalert', () => ({
-  default: vi.fn(),
-}));
+vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
@@ -26,11 +28,16 @@ const mockedAxios = axios as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
-const mockedSwal = swal as unknown as ReturnType<typeof vi.fn>;
+const mockedShowAlert = vi.mocked(showAlert);
+
+beforeEach(() => {
+  setResearchAnalyticsEnabled(true);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  resetResearchAnalyticsDedupeForTests();
 });
 
 describe('useFavorites', () => {
@@ -47,7 +54,7 @@ describe('useFavorites', () => {
     });
 
     expect(result.current.favIds).toEqual([]);
-    expect(mockedSwal).not.toHaveBeenCalled();
+    expect(mockedShowAlert).not.toHaveBeenCalled();
   });
 
   it('uses watched program endpoints for canonical program watching', async () => {
@@ -108,6 +115,29 @@ describe('useFavorites', () => {
     expect(batchCall?.[2]).toEqual({ withCredentials: true });
   });
 
+  it('records the surface a removal came from', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchEntityIds: ['entity-1'] } });
+    mockedAxios.delete.mockResolvedValueOnce({ data: { savedResearchEntityIds: [] } });
+    mockedAxios.post.mockResolvedValueOnce({ status: 202 });
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+    await waitFor(() => expect(result.current.favIds).toEqual(['entity-1']));
+
+    await act(async () => {
+      await result.current.setFavorite('entity-1', false, 'saved_plans');
+    });
+    await flushResearchAnalytics();
+
+    const events = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/analytics/research/batch')
+      .flatMap(([, body]) => (body as { events: unknown[] }).events);
+    expect(events).toEqual([
+      expect.objectContaining({
+        eventType: 'research_save',
+        payload: { operation: 'remove', surface: 'saved_plans' },
+      }),
+    ]);
+  });
+
   it('does not record a save when the canonical mutation fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchEntityIds: [] } });
@@ -123,7 +153,9 @@ describe('useFavorites', () => {
     expect(saved).toBe(false);
     expect(result.current.favIds).toEqual([]);
     expect(mockedAxios.get).toHaveBeenCalledTimes(2);
-    expect(mockedSwal).toHaveBeenCalledWith(expect.objectContaining({ icon: 'warning' }));
+    await waitFor(() =>
+      expect(mockedShowAlert).toHaveBeenCalledWith(expect.objectContaining({ tone: 'warning' })),
+    );
 
     await flushResearchAnalytics();
 

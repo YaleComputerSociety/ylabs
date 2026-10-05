@@ -78,6 +78,7 @@ describe('recordSiteSearch', () => {
   });
 
   it('stores the surface, the result count, and only the selected filters', async () => {
+    mocks.logEvent.mockResolvedValueOnce('recorded');
     await expect(
       recordSiteSearch(
         record({
@@ -155,6 +156,12 @@ describe('recordSiteSearch', () => {
     expect(mocks.logEvent).toHaveBeenCalledWith(
       expect.objectContaining({ occurredAt: requestArrivedAt }),
     );
+  });
+
+  it('reports a search the store failed to write as not recorded', async () => {
+    mocks.logEvent.mockResolvedValueOnce('failed');
+    await expect(recordSiteSearch(record())).resolves.toBe(false);
+    expect(mocks.logEvent).toHaveBeenCalledOnce();
   });
 
   it('writes nothing for a request that is not a search', async () => {

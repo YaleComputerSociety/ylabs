@@ -5,14 +5,19 @@ import {
   isInstitutionalCenterBlurbText,
   isStaleResearchAreaChipEnumeration,
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
+  stripLeadingProfileHeaderChrome,
 } from './descriptionHygiene';
+import { withoutUnbackedLabSelfDescription } from './unbackedLabSelfDescription';
 import { collapseDuplicateResearchHomeSuffix } from './researchEntityNameNormalization';
-import { normalizeResearchAreaList } from './researchAreaHygiene';
-import { sanitizeResearchAreaLabel } from './researchAreaLabelHygiene';
 import { filterProseResearchAreaChips } from './profileResearchTerms';
-import { dropDomainIncoherentUnsourcedResearchAreas } from './researchAreaDomainCoherence';
+import {
+  cleanServedResearchAreaChipLabels,
+  decideServedResearchAreas,
+  type ServedResearchAreaDecision,
+} from './servedResearchAreaGuards';
 import { isCareerFactSentence, splitDescriptionSentences } from './careerBiographyDescription';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
 import {
@@ -21,6 +26,7 @@ import {
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromLeadPersonName,
   personScopedResearchEntityNameFromPersonName,
+  servedResearchEntityNameWithoutPageFurniture,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   personSynthesisDescribesAnotherPerson,
 } from './researchHomeNameIdentityAuthority';
@@ -32,6 +38,7 @@ const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
 ] as const;
 
 const HYGIENE_FULL_DESCRIPTION_FIELDS = ['fullDescription', 'profileSynthesisDescription'] as const;
+
 // This is a curated allowlist, not a mechanical inflection table: some
 // inflections of a listed verb carry no research signal in bio prose
 // ("currently developing a new feature" in a filmmaker CV), so a missing
@@ -281,12 +288,57 @@ function namesEntityItself(candidate: string, entity?: FacultyResearchTextEntity
   );
 }
 
+const TITLED_PERSON_SUBJECT =
+  /(?:^|\s)(?:(?:Dr|Prof)\.?|Professor)\s+(?:(?:Dr|Prof)\.?\s+)?((?:[A-Z][\p{L}'’-]+\s+){0,2}[A-Z][\p{L}'’-]+)(?:['’]s)?\s+(?:directs|leads|heads|runs|founded|co-founded|is|was|has|studies|investigates|examines|explores|researches|research|works|focuses|conducts|oversees)\b/u;
+
+// "fixture's'", "fixture'sarchival" and "sample-fixture" each name the same person as
+// "fixture", while "o'fixture" must stay whole: a one-letter prefix is no surname.
+const nameTokenForms = (token: string): string[] =>
+  [token, token.replace(/'s'?$/, ''), token.split("'")[0], ...token.split('-')].filter(
+    (form) => form.length >= 2,
+  );
+
+/**
+ * Whether the opening sentence's subject is a titled person ("Professor <Surname>
+ * directs ...", "Dr. <Surname>'s research ...") who is none of the record's own
+ * leads and not the person the record is named for. Such a body describes someone
+ * else's work, however well it reads, so it is withheld rather than served under this
+ * lead. Only a person-scoped record is judged, because an organization's page names
+ * its staff in subject position as a matter of course. Any token of the titled name
+ * matching a lead or the record's own name keeps the body, because compound surnames
+ * and familiar given names are common. A lead
+ * named earlier in the sentence also keeps it, because the titled person is then a
+ * collaborator rather than the subject.
+ */
+function opensOnAnotherTitledPerson(
+  value: string,
+  leadMemberNames: readonly string[],
+  entity?: FacultyResearchTextEntity | null,
+): boolean {
+  if (!entity || !isPersonScopedResearchEntity(entity)) return false;
+  const [opening = ''] = splitDescriptionSentences(value);
+  const subject = TITLED_PERSON_SUBJECT.exec(opening);
+  if (!subject) return false;
+  const subjectTokens = normalizePersonNameTokens(subject[1]);
+  if (subjectTokens.length === 0) return false;
+  const ownTokens = new Set(
+    [...leadMemberNames, facultyResearchLabelBase(entity)]
+      .flatMap((name) => normalizePersonNameTokens(name))
+      .flatMap(nameTokenForms),
+  );
+  const namesOwnPerson = (tokens: string[]) =>
+    tokens.some((token) => nameTokenForms(token).some((form) => ownTokens.has(form)));
+  const precedingTokens = normalizePersonNameTokens(opening.slice(0, subject.index));
+  return !namesOwnPerson(subjectTokens) && !namesOwnPerson(precedingTokens);
+}
+
 function sanitizeLeadingMismatchedPersonNamePrefix(
   value: string,
   leadMemberNames: readonly string[] = [],
   entity?: FacultyResearchTextEntity | null,
 ): string {
   if (!leadMemberNames.length) return value;
+  if (opensOnAnotherTitledPerson(value, leadMemberNames, entity)) return '';
   const match = value.match(/^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4})['’]s\s+/u);
   if (!match) return value;
   if (RESEARCH_LEAD_VERB_PREFIX_TOKEN.test(match[1].split(/\s+/)[0])) return value;
@@ -376,10 +428,45 @@ export function isDirectoryIndexChromeText(value: unknown): boolean {
  * guard does not fire on a third-party attribution, so without this the copy
  * reaches the page (#2063 batch review).
  */
+const SOURCE_DOCUMENT_QUALIFIER =
+  '(?:yale|official|faculty|department|departmental|school|of|medicine|public|health|ysm|online|web|university|personal|directory|people|lab|group)';
+const SOURCE_DOCUMENT_NOUN = '(?:profile|page|web\\s?site|site|listing|entry|bio|biography)';
+const SOURCE_NARRATION_VERB =
+  '(?:lists|describes|links|identifies|presents|names|highlights|summarizes|summarises|notes|mentions|indicates)';
+const SOURCE_LISTING_VERB = '(?:lists|describes|mentions|summarizes|summarises)';
+const SOURCE_LISTING_NOUN = '(?:profile|page|web\\s?site|listing|bio|biography|entry)';
+const SOURCE_QUALIFIER_RUN_MAX = 6;
+const sourceQualifierRun = (min: number) =>
+  `(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){${min},${SOURCE_QUALIFIER_RUN_MAX}}`;
+
+/**
+ * The possessive and next-source shapes of the same failure (#4788): "Her Yale profile
+ * lists ...", "X's Yale School of Medicine profile describes ...", "The site presents ...",
+ * "the official next source for students to review".
+ *
+ * The qualifier words between the determiner and the noun are a closed list, because an
+ * open slot reads research prose as narration: "the tumor's expression profile identifies
+ * subtypes" and "the binding site presents a pocket" both have a determiner, a noun and a
+ * narration verb. A bare `the`/`this` lead is anchored to a sentence start for the same
+ * reason, while a possessive pronoun or name may sit anywhere. A bare noun after a `'s`
+ * possessor takes only a listing verb, because "a patient's profile indicates risk" is
+ * research prose. The run cap fits "Yale School of Public Health".
+ */
 const SOURCE_PAGE_NARRATION_PATTERNS = [
   /\b(?:the\s+|this\s+)?(?:faculty|directory|profile|department|departmental|listing|web)?\s*page\s+(?:lists|shows|displays|contains|includes|features|mentions|names|indicates|describes)\b/i,
   /\bthis\s+(?:page|site|directory|listing)\s+(?:lists|shows|displays|contains)\b/i,
   /\bthe\s+(?:directory|listing|roster|index)\s+(?:lists|shows|contains|names)\b/i,
+  new RegExp(
+    `\\b(?:(?:her|his|their)\\s+${sourceQualifierRun(0)}|[\\w.-]+['’]s\\s+${sourceQualifierRun(1)})${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
+    'i',
+  ),
+  new RegExp(`\\b[\\w.-]+['’]s\\s+${SOURCE_LISTING_NOUN}\\s+${SOURCE_LISTING_VERB}\\b`, 'i'),
+  new RegExp(
+    `(?:^|[.!?]\\s+)(?:the|this|that)\\s+${sourceQualifierRun(0)}${SOURCE_DOCUMENT_NOUN}\\s+${SOURCE_NARRATION_VERB}\\b`,
+    'i',
+  ),
+  /\b(?:official\s+next|next\s+official)\s+source\b/i,
+  /\bfor\s+(?:interested\s+)?students\s+to\s+(?:review|consult|check|read|visit)\b/i,
 ];
 
 export function isSourcePageNarrationDescription(value: unknown): boolean {
@@ -523,6 +610,31 @@ export function isResearchAreaPlaceholderDescription(value: unknown): boolean {
   return /^research areas?\s*(?::|include\b)/i.test(cleaned);
 }
 
+const RESEARCH_TOPIC_POSSESSIVE =
+  "(?:my|his|her|their|our|this|[\\p{L}.'’-]+(?:\\s+[\\p{L}.'’-]+){0,3}['’]s)";
+
+// An appointment line that goes on to name what the person studies is a thin but
+// accurate research description, not a title fragment (#4635). The inflected forms
+// matter: "studying <topics>" and "working on <topics>" were absent from the bare
+// verb list below, the same inflection gap #1456 recorded.
+const RESEARCH_TOPIC_CLAUSE_PATTERNS: readonly RegExp[] = [
+  /\b(?:studying|who\s+stud(?:y|ies)|working\s+on|who\s+works?\s+on)\s+(?!(?:at|in|under|with|for|abroad|toward|towards|behalf)\b)\p{L}/iu,
+  /\bwhose\s+research\s+(?:focuses|centers|centres|concentrates)\s+on\s+\p{L}/iu,
+  /\bwith\s+research\s+(?:in|on)\s+\p{L}/iu,
+  new RegExp(`\\b${RESEARCH_TOPIC_POSSESSIVE}\\s+research\\s+is\\s+in\\s+\\p{L}`, 'iu'),
+  new RegExp(
+    `\\b${RESEARCH_TOPIC_POSSESSIVE}\\s+subject\\s+areas?\\s+(?:are|is|include)\\s+\\p{L}`,
+    'iu',
+  ),
+];
+
+export function namesResearchTopics(value: unknown): boolean {
+  const cleaned = textValue(value);
+  return (
+    Boolean(cleaned) && RESEARCH_TOPIC_CLAUSE_PATTERNS.some((pattern) => pattern.test(cleaned))
+  );
+}
+
 export function isAcademicAppointmentDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   // The appointment patterns below identify a short title-only fragment ("X
@@ -538,7 +650,7 @@ export function isAcademicAppointmentDescription(value: unknown): boolean {
     /\b(studies|investigates|examines|explores|focuses on|works on|develops|uses|employs)\b/i.test(
       cleaned,
     );
-  if (hasResearchDescriptionVerb) return false;
+  if (hasResearchDescriptionVerb || namesResearchTopics(cleaned)) return false;
 
   return [
     /^Department Chair\b.*\bProfessor of\b/i,
@@ -702,9 +814,18 @@ const NAME_LEAD_TITLE_PATTERN = new RegExp(
 const GRADUATE_OF_LEAD_PATTERN =
   /\bDr\.\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s+a\s+graduate\s+of\b/iu;
 
+// Scoped to a whole body of one sentence: stripping that sentence leaves nothing, so
+// a thin but accurate description would be blanked (#4635). A longer body keeps the
+// opener strip, because there the stripper also removes the CV sentences that follow
+// the opener, and exempting the opener re-served them on 2 of 5 rows measured.
+function isSingleTopicNamingSentence(value: string): boolean {
+  return sentenceEndIndex(value, 0) >= value.trimEnd().length && namesResearchTopics(value);
+}
+
 export function isCredentialOrTitleLeadBiography(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
+  if (isSingleTopicNamingSentence(cleaned)) return false;
   const opening = cleaned.slice(0, 260);
   return NAME_LEAD_TITLE_PATTERN.test(opening) || GRADUATE_OF_LEAD_PATTERN.test(opening);
 }
@@ -951,7 +1072,8 @@ export function repairSubjectlessResearchLead(value: unknown): string {
   return text;
 }
 
-const GREETING_LEAD_PATTERN = /^welcome to\b/i;
+const GREETING_LEAD_PATTERN =
+  /^(?:welcome to\b|(?:here|on this (?:web)?(?:site|page))\b[^.!?]{0,40}?\byou(?:['’]ll| will| can| may)\s+find\b)/i;
 
 // A period ending a greeting sentence can itself belong to a title
 // abbreviation or initial inside the opener ("Welcome to Prof. Xia's lab.",
@@ -1177,6 +1299,29 @@ const FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION = [
   'now',
 ].join('|');
 
+/**
+ * A regular past-tense verb, matched by its own morphology rather than enumerated.
+ *
+ * The closed list reached 88 verbs and still missed the ones the corpus actually uses:
+ * a hand read of 45 served rows carrying unconverted first person found `identified`,
+ * `performed`, `validated`, `assessed`, `characterized`, `hypothesized`,
+ * `recapitulated`, `continued` and `obtained` in 29 of them, and none was listed
+ * (#3481). Enumerating research verbs is the losing side of that: the corpus can reach
+ * any verb in the language, which is the same reason
+ * `conjugateCoordinatedVerbToThirdPersonSingular` exists.
+ *
+ * Safe as morphology because a past form needs NO conjugation: "We performed" becomes
+ * "<Name> performed", the same token. That is the property the closed present-tense
+ * table exists to supply and a past form does not need.
+ *
+ * The denylist is the words that end in `ed` without being past tense. Without it
+ * "we need to" and "we proceed with" would be read as past and left mangled mid-sentence.
+ */
+const NOT_A_PAST_TENSE_ED_WORD =
+  /^(?:need|proceed|exceed|succeed|speed|feed|breed|heed|bleed|indeed|embed|seed|deed|creed|freed|agreed|decreed|guaranteed)$/i;
+
+const REGULAR_PAST_TENSE_VERB = '[a-z]{3,}ed';
+
 const FIRST_PERSON_VERB_ALTERNATION = [
   ...Object.keys(THIRD_PERSON_SINGULAR_PRESENT_VERB_FORMS),
   ...FIRST_PERSON_PAST_OR_MODAL_VERBS,
@@ -1368,6 +1513,32 @@ const firstPersonLeadRevoiceRules = (
     },
   ],
   /**
+   * The same subject conversion for a regular past-tense verb the closed table does not
+   * list. Runs after it, so a verb the table knows is still conjugated by the table and
+   * this rule only sees what was left over.
+   */
+  [
+    new RegExp(
+      `\\b(I|We)\\s+(?:(${FIRST_PERSON_SUBJECT_ADVERB_ALTERNATION})\\s+)?(${REGULAR_PAST_TENSE_VERB})\\b`,
+      'g',
+    ),
+    (
+      _match: string,
+      subject: string,
+      adverb: string | undefined,
+      verb: string,
+      offset: number,
+      full: string,
+    ) => {
+      if (NOT_A_PAST_TENSE_ED_WORD.test(verb)) return _match;
+      const atSentenceStart = isAtSentenceStart(offset, full);
+      const demonstrative = atSentenceStart ? 'This' : 'this';
+      const noun = subject === 'We' ? 'group' : 'researcher';
+      const subjectPhrase = nominativeLead(forms, atSentenceStart, `${demonstrative} ${noun}`);
+      return `${subjectPhrase} ${adverb ? `${adverb} ` : ''}${verb}`;
+    },
+  ],
+  /**
    * A possessive lead whose noun phrase is more than one word and is
    * immediately followed by a copula/auxiliary ("My research interests
    * are...", "Our career goals have been...") needs the demonstrative's
@@ -1377,11 +1548,17 @@ const firstPersonLeadRevoiceRules = (
    * interests are" was becoming "This research interests are" - "This"
    * agreeing with "research", a word the sentence's own verb never agreed
    * with in the first place).
+   *
+   * On a lab row a phrase led by a singular self noun ("Our lab is...") is left for the
+   * self-noun rule below, which names the row instead of serving "the <Lab>'s lab"
+   * (#4044). A plural self noun keeps the possessive, because collapsing it to the row
+   * name would pair a singular subject with the plural verb that follows.
    */
   [
     POSSESSIVE_HEAD_NOUN_AGREEMENT_PATTERN,
     (_match: string, lead: string, phrase: string, offset: number, full: string) => {
       const words = phrase.trim().split(/\s+/);
+      if (forms?.namesTheRow && isSingularEntitySelfNoun(words[0])) return _match;
       const headNoun = words[words.length - 1];
       const atSentenceStart = isAtSentenceStart(offset + lead.length, full);
       const subject = possessiveLead(
@@ -1391,6 +1568,44 @@ const firstPersonLeadRevoiceRules = (
       );
       return `${lead}${subject} ${phrase}`;
     },
+  ],
+  /**
+   * A possessive in front of a noun that names the row, wherever it sits. "Publications
+   * from our laboratory have been highlighted" is the position every anchored possessive
+   * rule missed: `our` is neither at a sentence start nor after a comma, so 712 served
+   * rows still addressed a student in the first person after the subject rules had run.
+   *
+   * Unanchored on purpose, which is safe only because the noun sets are closed.
+   *
+   * A person is not the group they run, so on a person-scoped row the object of a
+   * preposition keeps its noun and names the owner: "In our group, we build" serves
+   * "In Avery Quill's group" rather than "In Avery Quill". As a clause subject the
+   * collapse reads correctly ("In particular, Avery Quill studies") and stays, and
+   * so does a noun the source already possesses ("our lab's website").
+   */
+  [
+    new RegExp(`\\b(?:my|our)\\s+(${ENTITY_SELF_NOUN})\\b(?!['’])`, 'gi'),
+    (_match: string, noun: string, offset: number, full: string) => {
+      const atSentenceStart = isAtSentenceStart(offset, full);
+      if (forms && !forms.namesTheRow && PREPOSITION_BEFORE_PATTERN.test(full.slice(0, offset))) {
+        return `${possessiveLead(forms, atSentenceStart, _match)} ${noun}`;
+      }
+      return nominativeLead(forms, atSentenceStart, _match);
+    },
+  ],
+  [
+    new RegExp(`\\b(?:my|our)\\s+${ENTITY_SELF_NOUN}(?=['’])`, 'gi'),
+    (_match: string, offset: number, full: string) =>
+      nominativeLead(forms, isAtSentenceStart(offset, full), _match),
+  ],
+  [
+    new RegExp(`\\b(?:my|our)\\s+(${ENTITY_POSSESSED_NOUN})\\b`, 'gi'),
+    (_match: string, noun: string, offset: number, full: string) =>
+      `${possessiveLead(forms, isAtSentenceStart(offset, full), pluralAwareDemonstrative(noun, isAtSentenceStart(offset, full)))} ${noun}`,
+  ],
+  [
+    new RegExp(`\\b(${ENTITY_OBJECT_PRONOUN_VERB})\\s+(?:us|me)\\b`, 'gi'),
+    (_match: string, verb: string) => `${verb} ${nominativeLead(forms, false, 'this researcher')}`,
   ],
 ];
 
@@ -1422,15 +1637,17 @@ const NAME_ENDING_IN_AFFILIATION_PHRASE_PATTERN = /\s+at\s+\S/i;
  * style and, unlike a pronoun, infers nothing about the person: this corpus stores no
  * pronoun and a name does not imply one.
  *
- * A lab keeps its own name throughout ("the Pollard Lab"), never the stripped
- * surname. `stripFacultyResearchAreaNameTemplateSuffix` reduces "Pollard Lab" to
- * "Pollard", so the surname form is only ever right for a person.
+ * A lab is introduced by its own name ("the Pollard Lab") and then referred to as
+ * "the lab", never the stripped surname. `stripFacultyResearchAreaNameTemplateSuffix`
+ * reduces "Pollard Lab" to "Pollard", so the surname form is only ever right for a person.
  */
 interface LeadSubjectForms {
   first: string;
   later: string;
   lowerFirst: string;
   lowerLater: string;
+  namesTheRow: boolean;
+  alreadyNamedBy?: string;
 }
 
 const LEAD_DEFINITE_ARTICLE_PREFIX = /^the\s+/i;
@@ -1443,18 +1660,28 @@ function leadSubjectForms(entity?: FacultyResearchTextEntity | null): LeadSubjec
     const entityName = textValue(entity?.displayName || entity?.name).trim();
     if (!entityName) return undefined;
     const bare = entityName.replace(LEAD_DEFINITE_ARTICLE_PREFIX, '');
+    // Repeating a long formal name on every revoiced "our" reads as a copied
+    // fragment and fails the duplicated-fragment check, so later mentions are "the lab".
     return {
       first: `The ${bare}`,
-      later: `The ${bare}`,
+      later: 'The lab',
       lowerFirst: `the ${bare}`,
-      lowerLater: `the ${bare}`,
+      lowerLater: 'the lab',
+      namesTheRow: true,
+      alreadyNamedBy: bare,
     };
   }
   if (!isFacultyResearchTextEntity(entity)) return undefined;
 
   const words = baseName.split(/\s+/).filter(Boolean);
   const surname = words[words.length - 1] || baseName;
-  return { first: baseName, later: surname, lowerFirst: baseName, lowerLater: surname };
+  return {
+    first: baseName,
+    later: surname,
+    lowerFirst: baseName,
+    lowerLater: surname,
+    namesTheRow: false,
+  };
 }
 
 /**
@@ -1476,7 +1703,9 @@ const LEAD_MARKER_PATTERN = /\uE000[AaBb]\uE001/g;
 export const LEAD_SUBJECT_MARKER_PATTERN = LEAD_MARKER_PATTERN;
 
 function resolveLeadSubjectMarkers(text: string, forms: LeadSubjectForms): string {
-  let seen = false;
+  const firstMarker = text.search(LEAD_MARKER_PATTERN);
+  const prefix = firstMarker < 0 ? '' : text.slice(0, firstMarker).toLowerCase();
+  let seen = Boolean(forms.alreadyNamedBy) && prefix.includes(forms.alreadyNamedBy!.toLowerCase());
   return text.replace(LEAD_MARKER_PATTERN, (marker) => {
     const code = marker[1];
     const possessive = code === 'B' || code === 'b';
@@ -1505,11 +1734,54 @@ function possessiveLeadSubject(entity?: FacultyResearchTextEntity | null): strin
 
 const SINGULAR_NOUN_S_ENDING_EXCEPTIONS = /(?:ss|us|is|ics)$/i;
 
+function isPluralNoun(noun: string): boolean {
+  return /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun);
+}
+
 function pluralAwareDemonstrative(noun: string, capitalized: boolean): string {
-  const isPlural = /s$/i.test(noun) && !SINGULAR_NOUN_S_ENDING_EXCEPTIONS.test(noun);
-  const word = isPlural ? 'these' : 'this';
+  const word = isPluralNoun(noun) ? 'these' : 'this';
   return capitalized ? `${word[0].toUpperCase()}${word.slice(1)}` : word;
 }
+
+/**
+ * Nouns that ARE the row, so `our laboratory` collapses to the entity itself. Keeping
+ * the noun would serve "the Foxman Lab's laboratory", the doubling #1781 already had to
+ * strip once elsewhere.
+ */
+const ENTITY_SELF_NOUN =
+  '(?:lab|laboratory|labs|group|team|center|centre|program|programme|institute|facility|core)';
+
+const ENTITY_SELF_NOUN_WORD = new RegExp(`^${ENTITY_SELF_NOUN}$`, 'i');
+
+const PREPOSITION_BEFORE_PATTERN =
+  /\b(?:in|at|from|of|within|into|onto|to|with|by|for|on|upon|across|inside|outside|throughout|through|about|under|beyond|among|between|via|during|after|before|like|than|toward|towards|around|behind|alongside|near|including|join|joins|joined|joining)\s+$/i;
+
+function isSingularEntitySelfNoun(word: string): boolean {
+  return ENTITY_SELF_NOUN_WORD.test(word) && !isPluralNoun(word);
+}
+
+/**
+ * Nouns the row HAS, so the possessive is kept: `our methods` becomes "the Foxman Lab's
+ * methods". `department` belongs here and not above, because a row's department is not
+ * the row.
+ *
+ * These two lists are the guard, not a companion denylist. A collective "our" takes an
+ * abstract head noun - "our understanding", "our knowledge", "our ability" - and none of
+ * those is in either list, so an unanchored rule still cannot turn a sentence about the
+ * field into a sentence about the row. 52 served rows carry that collective shape and
+ * every one must survive untouched; widening these lists toward an abstraction is how
+ * they would stop (#3481).
+ */
+const ENTITY_POSSESSED_NOUN =
+  '(?:research|work|studies|study|project|projects|patient|patients|student|students|faculty|department|collaborator|collaborators|finding|findings|publication|publications|approach|effort|efforts|mission|goal|goals|focus|service|services|method|methods|modality|data|sample|samples|tool|tools|pipeline|interest|interests)';
+
+/**
+ * A first-person object pronoun whose verb names the row as the thing acted upon:
+ * "tools that allow us to undertake a systems biology approach". Scoped to this closed
+ * verb set because an unscoped `us` is as often the reader or the field ("tells us that
+ * ...") as it is the row.
+ */
+const ENTITY_OBJECT_PRONOUN_VERB = '(?:allow|allows|enable|enables|let|lets|permit|permits)';
 
 const GENERIC_POSSESSIVE_LEAD_PATTERN = /(^|[.!?]\s+|,\s+)(?:my|our)\s+(\w+)\b/gi;
 
@@ -1591,12 +1863,75 @@ const revoicePassOutsideQuotations = (
   });
 };
 
+const WORDS_A_SUBJECT_PRONOUN_FOLLOWS = [
+  'and',
+  'but',
+  'or',
+  'so',
+  'then',
+  'where',
+  'when',
+  'while',
+  'which',
+  'that',
+  'who',
+  'because',
+  'as',
+  'if',
+  'since',
+  'after',
+  'before',
+  'until',
+  'how',
+  'what',
+  'why',
+  'here',
+  'now',
+  'also',
+  'currently',
+  'recently',
+  'first',
+  'today',
+];
+
+// A capital I counts as a speaker only where a pronoun can stand, because a
+// numbered category ("type I interferon", "complex I") has an open-ended label
+// list that no exclusion list keeps up with.
+const SINGULAR_FIRST_PERSON_SUBJECT_PATTERN = new RegExp(
+  `(?<=(?:^\\s*|[.!?;:,]\\s+|["“‘(]\\s*|\\b(?:${WORDS_A_SUBJECT_PRONOUN_FOLLOWS.join('|')})\\s+))` +
+    `I(?:['’](?:m|ve|d|ll))?\\s+(?=[a-z])`,
+  'g',
+);
+
+/**
+ * Whether a person speaks in the body in the singular. On a lab row that voice
+ * belongs to the lead, not to the lab, so converting it names the lab as the one
+ * who grew up, earned the PhD, or is a biological anthropologist (#4809): 23 of 754
+ * served Development lab rows read that way on 2026-10-04. A lab speaks as "we",
+ * which still converts to the lab's name; a body in the lead's own first person
+ * converts to the unnamed "this researcher", as it did before #3368 named the subject.
+ */
+const UNNAMED_RESEARCHER_SUBJECT: FacultyResearchTextEntity = { kind: 'individual' };
+
+function hasSingularFirstPersonSubjectOutsideQuotation(text: string): boolean {
+  const ranges = directlyQuotedRanges(text);
+  const pattern = new RegExp(SINGULAR_FIRST_PERSON_SUBJECT_PATTERN.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+  }
+  return false;
+}
+
 export function revoiceFirstPersonResearchLead(
   value: unknown,
   entity?: FacultyResearchTextEntity | null,
 ): string {
   const text = typeof value === 'string' ? value : '';
   if (!text) return text;
+  if (isLabResearchTextEntity(entity) && hasSingularFirstPersonSubjectOutsideQuotation(text)) {
+    return revoiceFirstPersonResearchLead(text, UNNAMED_RESEARCHER_SUBJECT);
+  }
   let next = stripLeadingPersonalGreeting(text);
   const forms = leadSubjectForms(entity);
   const possessiveSubject = possessiveLeadSubject(entity);
@@ -1628,11 +1963,13 @@ export function revoiceFirstPersonResearchLead(
     (match: string, offset: number, full: string) =>
       sentenceHasConvertedFirstPersonSubject(offset, full) ? 'their' : match,
   );
-  const revoiced = forms ? resolveLeadSubjectMarkers(next, forms) : next;
-  return abandonsHalfConvertedVoice(revoiced) ? text : revoiced;
+  if (abandonsHalfConvertedVoice(next)) return text;
+  return forms ? resolveLeadSubjectMarkers(next, forms) : next;
 }
 
 const SURVIVING_FIRST_PERSON_SUBJECT = /(?:^|[.!?]\s+|["“”]\s*)(?:I|I['’]m|I['’]ve|My)\s/;
+
+const SURVIVING_FIRST_PERSON_OBJECT = /\b(?:me|myself)\b/;
 
 /**
  * Whether the passes above converted some first-person subjects and left others,
@@ -1658,10 +1995,18 @@ function abandonsHalfConvertedVoice(revoiced: string): boolean {
   // direct quotation in its speaker's own voice (#2974), so counting it here
   // abandoned every rewrite of a body that quotes anyone.
   const ranges = directlyQuotedRanges(revoiced);
-  const pattern = new RegExp(SURVIVING_FIRST_PERSON_SUBJECT.source, 'g');
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(revoiced))) {
-    if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+  // A singular first person left anywhere in a sentence, not only at its start,
+  // leaves two voices: "this researcher majored ... where I went" (#4809).
+  for (const source of [
+    SURVIVING_FIRST_PERSON_SUBJECT.source,
+    SINGULAR_FIRST_PERSON_SUBJECT_PATTERN.source,
+    SURVIVING_FIRST_PERSON_OBJECT.source,
+  ]) {
+    const pattern = new RegExp(source, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(revoiced))) {
+      if (!overlapsDirectQuotation(ranges, match.index, match[0].length)) return true;
+    }
   }
   return false;
 }
@@ -2089,6 +2434,17 @@ export function researchEntitySubjectPersonNames(
   return Array.from(new Set(names.map(textValue).filter(Boolean)));
 }
 
+/**
+ * A card that is the paper title of a citation stored as the body. The body
+ * sanitizer withholds the citation, and the extraction that stored it took its
+ * title as the card, so the card is a fragment of refused evidence (#4623).
+ */
+function isTitleOfCitationBody(shortDescription: unknown, fullDescription: unknown): boolean {
+  const card = textValue(shortDescription);
+  if (!card || typeof fullDescription !== 'string') return false;
+  return isCitationAuthorListDumpText(fullDescription) && fullDescription.includes(card);
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
@@ -2096,6 +2452,10 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   let changed = false;
   const next: Record<string, any> = { ...entity };
   const subjectNames = researchEntitySubjectPersonNames(next, leadMemberNames);
+  if (isTitleOfCitationBody(next.shortDescription, next.fullDescription)) {
+    next.shortDescription = '';
+    changed = true;
+  }
 
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
@@ -2111,6 +2471,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       const withoutRetiredVocabulary = stripRetiredResearchHomeVocabulary(next[field]);
       if (withoutRetiredVocabulary !== next[field]) {
         next[field] = withoutRetiredVocabulary;
+        changed = true;
+      }
+      const withoutProfileHeader = stripLeadingProfileHeaderChrome(next[field]);
+      if (withoutProfileHeader !== next[field]) {
+        next[field] = withoutProfileHeader;
         changed = true;
       }
       if ((HYGIENE_FULL_DESCRIPTION_FIELDS as readonly string[]).includes(field)) {
@@ -2132,7 +2497,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         // body in the source bio's voice on rows whose stored text never opened
         // with a pronoun at all, which is where most of #1871's rows came from.
         next[field] = revoicedThirdPersonBody(
-          revoicedFirstPersonBody(biographyRepair.value, next, field),
+          withoutUnbackedLabSelfDescription(
+            revoicedFirstPersonBody(biographyRepair.value, next, field),
+            next,
+            field,
+          ),
           next,
           field,
         );
@@ -2141,7 +2510,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
       }
       const withNavigationChromeStripped = stripTrailingNavigationChromeClause(next[field]);
       const withResearchLeadRepair = repairSubjectlessResearchLead(withNavigationChromeStripped);
-      const withFirstPersonReVoice = revoicedFirstPersonBody(withResearchLeadRepair, next, field);
+      const withFirstPersonReVoice = withoutUnbackedLabSelfDescription(
+        revoicedFirstPersonBody(withResearchLeadRepair, next, field),
+        next,
+        field,
+      );
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
         withFirstPersonReVoice,
         leadMemberNames,
@@ -2368,7 +2741,7 @@ export function stripSelfReferencePlaceholderNoun(value: string): string {
 
 /**
  * The relabels below exist to stop a person-scoped row claiming it is a laboratory, so they
- * rewrite `Laboratory` and `<Name> Lab` unconditionally. A research institution whose own
+ * rewrite the row's own `Laboratory` and `<Name> Lab`. A research institution whose own
  * legal name ends in "Laboratory" is not that claim, and rewriting it states something
  * false about a third party: a served row read "he joined the Los Alamos National research
  * program", and another placed an accelerator "at Brookhaven National research program".
@@ -2408,14 +2781,74 @@ export function sanitizeFacultyResearchEntityText(
   if (!isFacultyResearchTextEntity(entity)) return value;
   const baseName = facultyResearchLabelBase(entity || {});
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
+  const ownNameTokens = new Set(normalizePersonNameTokens(baseName).map(withoutPossessiveSuffix));
 
   return withInstitutionNamesProtected(value, (masked) =>
-    relabelFacultyResearchText(masked, possessive),
+    relabelFacultyResearchText(masked, possessive, ownNameTokens),
   );
 }
 
-function relabelFacultyResearchText(value: string, possessive: string): string {
-  const relabelled = value
+const withoutPossessiveSuffix = (token: string): string => token.replace(/'s?$/, '');
+
+function namesThisRow(nameWord: string, ownNameTokens: ReadonlySet<string>): boolean {
+  const lastToken = normalizePersonNameTokens(nameWord).map(withoutPossessiveSuffix).pop();
+  return Boolean(lastToken && lastToken.length > 1 && ownNameTokens.has(lastToken));
+}
+
+/**
+ * Nouns `laboratory` modifies rather than heads. "Our laboratory research focuses on" is
+ * about research, so rewriting it served "Our research program research focuses on" (#4432).
+ */
+const LABORATORY_AS_MODIFIER_NOUN =
+  '(?:research|work|experiments?|experimentation|techniques?|testing|findings|animals?|medicine|methods?|models|investigations?|data|results|science|skills|settings?|training|procedures|protocols|measures|values|analyses|assays|diagnosis|diagnostics|services|equipment|space|based)';
+
+const LABORATORY_SELF_ADJECTIVE = String.raw`(?:[A-Z][A-Z0-9]+|[\p{L}\d]+-[\p{L}\d-]+|independent|own|new|current)`;
+
+const LABORATORY_HEAD = String.raw`((?:${LABORATORY_SELF_ADJECTIVE}\s+){0,2})[Ll]aboratory\b(?!\s+(?:of|for)\b)(?![\s-]+${LABORATORY_AS_MODIFIER_NOUN}\b)`;
+
+const SELF_DETERMINER_LABORATORY = new RegExp(
+  String.raw`\b([Tt]he|[Tt]his|[Oo]ur|[Mm]y|[Hh]is|[Hh]er|[Tt]heir|[Yy]our)(\s+)${LABORATORY_HEAD}`,
+  'gu',
+);
+
+const NAMED_LABORATORY = new RegExp(String.raw`\b([A-Z][\p{L}.'’-]*)(\s+)${LABORATORY_HEAD}`, 'gu');
+
+/**
+ * Only the row's own laboratory is rewritten. The word is also a modifier ("human
+ * laboratory studies", "laboratory animal medicine"), a heading ("Laboratory research:")
+ * and somebody else's group ("the laboratory of" a mentor), and rewriting those served
+ * prose that no longer meant anything (#4432). A named laboratory counts as the row's own
+ * only when the name is one of the row's own name tokens.
+ */
+function relabelOwnLaboratory(value: string, ownNameTokens: ReadonlySet<string>): string {
+  return value
+    .replace(
+      NAMED_LABORATORY,
+      (match: string, nameWord: string, spacing: string, adjectives: string) =>
+        namesThisRow(nameWord, ownNameTokens)
+          ? `${nameWord}${spacing}${adjectives}research program`
+          : match,
+    )
+    .replace(SELF_DETERMINER_LABORATORY, '$1$2$3research program');
+}
+
+/**
+ * A `<Name> Lab` that is not the row's own is a third party's lab or a named unit ("the
+ * Yale Landscape Lab", a podcast, another faculty member's group), and calling it a
+ * research group renames somebody else (#4432).
+ */
+function relabelOwnNamedLab(value: string, ownNameTokens: ReadonlySet<string>): string {
+  return value.replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, (match: string, name: string) =>
+    namesThisRow(name, ownNameTokens) ? `${name} research group` : match,
+  );
+}
+
+function relabelFacultyResearchText(
+  value: string,
+  possessive: string,
+  ownNameTokens: ReadonlySet<string>,
+): string {
+  const beforeOwnLabs = value
     .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
@@ -2486,10 +2919,12 @@ function relabelFacultyResearchText(value: string, possessive: string): string {
       'These research $1 $2',
     )
     .replace(/\bthe\s+lab['’]s\s+research\b/gi, 'This research')
-    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work')
-    .replace(/\bLaboratory\b/g, 'research program')
-    .replace(/\blaboratory\b/g, 'research program')
-    .replace(/\b([A-Z][\p{L}.' -]{1,80}?)\s+Lab\b/gu, '$1 research group')
+    .replace(/\bthe\s+lab['’]s\s+work\b/gi, 'This work');
+  const withOwnLabsRelabelled = relabelOwnNamedLab(
+    relabelOwnLaboratory(beforeOwnLabs, ownNameTokens),
+    ownNameTokens,
+  );
+  const relabelled = withOwnLabsRelabelled
     .replace(/\blab site\b/gi, 'research website')
     .replace(/\blab website\b/gi, 'research website')
     // A lab named inside a prepositional phrase is a place or a body of people,
@@ -2704,6 +3139,16 @@ function withoutAnotherOrganizationsBody<T extends Record<string, any>>(
   };
 }
 
+// Symbol-keyed so it survives the spreads a serve path copies the entity through but never
+// serializes into a response: `withoutLeadGuardedCopy` blanks the prose a failed roster read
+// cannot guard, and the chip-coherence guard below still needs that prose as evidence.
+export const LEAD_GUARD_WITHHELD_PROSE = Symbol('leadGuardWithheldProse');
+
+export interface LeadGuardWithheldProse {
+  shortDescription: string;
+  fullDescription: string;
+}
+
 /**
  * Withholds a `profileSynthesisDescription` whose biographical subject is a
  * different person who shares a name with the record's own (#1922).
@@ -2773,24 +3218,9 @@ export function sanitizeServedResearchEntityName(value: unknown): string {
  * label-leak chips (#877/#1029/#867), dedupe, then drop prose-sentence chips
  * (#870). Idempotent, so a re-run over already-clean chips is a no-op.
  */
-const MAX_SERVED_RESEARCH_AREA_CHIPS = 200;
-
 export function sanitizeServedResearchAreaChips(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
-  const seen = new Set<string>();
-  const labels: string[] = [];
-  const boundedInput = values
-    .slice(0, MAX_SERVED_RESEARCH_AREA_CHIPS)
-    .filter((v): v is string => typeof v === 'string');
-  for (const raw of normalizeResearchAreaList(boundedInput)) {
-    const cleaned = sanitizeResearchAreaLabel(raw);
-    if (!cleaned) continue;
-    const key = cleaned.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    labels.push(cleaned);
-  }
-  return filterProseResearchAreaChips(labels);
+  return filterProseResearchAreaChips(cleanServedResearchAreaChipLabels(values));
 }
 
 /**
@@ -2820,10 +3250,14 @@ export function sanitizeServedResearchAreaChips(values: unknown): string[] {
  *     research-area chip hygiene (split/relabel/fail-close/prose-drop), so a
  *     serve path that never touched the DTO's per-field helpers still emits the
  *     same names and chips as every other surface;
- *  6. the unsourced research-area domain-coherence guard (#1407 second
- *     mechanism): a `researchAreas` chip with no `fieldProvenance.researchAreas`
- *     backing and zero vocabulary overlap with the entity's own sourced text is
- *     dropped, since there is no provenance trail to reconcile it against.
+ *  6. the served topic decision (`decideServedResearchAreas`), which runs the
+ *     `researchAreas` chip hygiene of step 5 and then the served topic guards and
+ *     names the guard that withheld each topic (#4317): a MeSH
+ *     geographic descriptor read from a MeSH-indexed profile is withheld (#3693),
+ *     then the unsourced research-area domain-coherence guard (#1407 second
+ *     mechanism) drops a `researchAreas` chip with no `fieldProvenance.researchAreas`
+ *     backing and zero vocabulary overlap with the entity's own sourced text, since
+ *     there is no provenance trail to reconcile it against.
  *  7. the name identity guard: a `displayName` that is filler rather than an
  *     identity ("n/a", "unknown"), or that names an umbrella organization the
  *     record merely belongs to or another person's lab, is withheld so every
@@ -2848,6 +3282,23 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
+  return sanitizeServedResearchEntityCopyFieldsWithTopicDecision(entity, leadMemberNames).entity;
+}
+
+export interface ServedResearchEntityCopyWithTopicDecision<T> {
+  entity: T;
+  researchAreaDecision: ServedResearchAreaDecision | null;
+}
+
+const sameAreas = (left: readonly unknown[], right: readonly unknown[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+
+export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
+  T extends Record<string, any>,
+>(
+  entity: T,
+  leadMemberNames: readonly string[] = [],
+): ServedResearchEntityCopyWithTopicDecision<T> {
   const ownSubject = withoutAnotherOrganizationsBody(entity, leadMemberNames);
   const ownBiography = withoutAnotherPersonsSynthesis(ownSubject.entity, leadMemberNames);
   const withTextGuards = sanitizeResearchHomeSelfReferenceCopyFields(
@@ -2859,11 +3310,28 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
   let changed = withTextGuards !== entity;
   const next: Record<string, any> = { ...withTextGuards };
 
+  const cleanedBodies = HYGIENE_FULL_DESCRIPTION_FIELDS.map((field, index) => {
+    if (typeof next[field] !== 'string') return undefined;
+    const cleaned = stripSelfReferencePlaceholderNoun(
+      sanitizeResearchEntityDescription(next[field]),
+    );
+    const echo = isStudiesResearchAreaEchoDescription(
+      cleaned,
+      next[SERVED_RESEARCH_AREA_FIELDS[index]],
+    );
+    return { cleaned, echo };
+  });
+  // A "Studies <topics>." echo is redundant beside other prose, but when it is the
+  // row's only body it is thin and accurate, which the owner shows (2026-10-04).
+  const hasNonEchoBody = cleanedBodies.some((body) => body && body.cleaned && !body.echo);
   HYGIENE_FULL_DESCRIPTION_FIELDS.forEach((field, index) => {
-    if (typeof next[field] !== 'string') return;
-    const areaField = SERVED_RESEARCH_AREA_FIELDS[index];
-    let cleaned = stripSelfReferencePlaceholderNoun(sanitizeResearchEntityDescription(next[field]));
-    if (isStudiesResearchAreaEchoDescription(cleaned, next[areaField])) cleaned = '';
+    const body = cleanedBodies[index];
+    if (!body) return;
+    const keepsOnlyBody =
+      field === 'fullDescription' &&
+      !hasNonEchoBody &&
+      !isStudiesSentenceNestingTopicsUnderTheFirst(body.cleaned);
+    const cleaned = body.echo && !keepsOnlyBody ? '' : body.cleaned;
     if (cleaned !== next[field]) {
       next[field] = cleaned;
       changed = true;
@@ -2887,6 +3355,19 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     const cleaned = sanitizeServedResearchEntityName(next[field]);
     if (cleaned !== next[field]) {
       next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  for (const field of SERVED_NAME_FIELDS) {
+    if (typeof next[field] !== 'string' || !next[field]) continue;
+    const withoutFurniture = servedResearchEntityNameWithoutPageFurniture({
+      candidateName: next[field],
+      entityType: next.entityType,
+      kind: next.kind,
+    });
+    if (withoutFurniture && withoutFurniture !== next[field]) {
+      next[field] = withoutFurniture;
       changed = true;
     }
   }
@@ -2927,6 +3408,7 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
       personName: leadPersonName,
       websiteUrl: next.fieldProvenance?.[field]?.sourceUrl || next.websiteUrl || next.website || '',
       recordCitedUrls: [next.websiteUrl, next.website, next.sourceUrls],
+      siteDeclaredOwnNames: next.siteDeclaredOwnNames,
     });
 
   // `name` is substituted and never cleared, because it is the heading every serve path
@@ -2958,24 +3440,23 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     changed = true;
   }
 
-  for (const field of SERVED_RESEARCH_AREA_FIELDS) {
-    if (!Array.isArray(next[field])) continue;
-    const cleaned = sanitizeServedResearchAreaChips(next[field]);
-    const current = next[field] as unknown[];
-    if (
-      cleaned.length !== current.length ||
-      cleaned.some((value, index) => value !== current[index])
-    ) {
-      next[field] = cleaned;
+  if (Array.isArray(next.profileResearchAreas)) {
+    const cleaned = sanitizeServedResearchAreaChips(next.profileResearchAreas);
+    if (!sameAreas(cleaned, next.profileResearchAreas)) {
+      next.profileResearchAreas = cleaned;
       changed = true;
     }
   }
 
+  let researchAreaDecision: ServedResearchAreaDecision | null = null;
   if (Array.isArray(next.researchAreas)) {
-    const coherent = dropDomainIncoherentUnsourcedResearchAreas(
-      next.researchAreas as string[],
-      next.fieldProvenance,
-      {
+    const leadGuardWithheld = (entity as Record<symbol, LeadGuardWithheldProse | undefined>)[
+      LEAD_GUARD_WITHHELD_PROSE
+    ];
+    researchAreaDecision = decideServedResearchAreas(next.researchAreas, {
+      surface: 'servedCopy',
+      fieldProvenance: next.fieldProvenance,
+      coherenceContext: {
         name: next.name,
         displayName: next.displayName,
         departments: next.departments,
@@ -2985,12 +3466,14 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
         // text: reading the blanked field instead cost 5 of the 32 withheld rows
         // every chip they had, and with the chips went the chips-derived card on 2
         // of them, so a student lost the topics as collateral on a body fix.
-        shortDescription: next.shortDescription || ownSubject.withheldCard,
-        fullDescription: next.fullDescription || ownSubject.withheldBody,
+        shortDescription:
+          next.shortDescription || ownSubject.withheldCard || leadGuardWithheld?.shortDescription,
+        fullDescription:
+          next.fullDescription || ownSubject.withheldBody || leadGuardWithheld?.fullDescription,
       },
-    );
-    if (coherent !== next.researchAreas) {
-      next.researchAreas = coherent;
+    });
+    if (!sameAreas(researchAreaDecision.served, next.researchAreas)) {
+      next.researchAreas = researchAreaDecision.served;
       changed = true;
     }
   }
@@ -3014,5 +3497,5 @@ export function sanitizeServedResearchEntityCopyFields<T extends Record<string, 
     changed = true;
   }
 
-  return changed ? (next as T) : entity;
+  return { entity: changed ? (next as T) : entity, researchAreaDecision };
 }

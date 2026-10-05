@@ -493,6 +493,7 @@ describe('programController search visibility', () => {
         user: { userType: 'student' },
       } as any,
       res as any,
+      vi.fn(),
     );
 
     const body = res.json.mock.calls[0][0];
@@ -510,6 +511,7 @@ describe('programController search visibility', () => {
         user: { netId: 'legacy1', userType: 'admin' },
       } as any,
       res as any,
+      vi.fn(),
     );
 
     expect(mocks.readProgram).toHaveBeenCalledWith(
@@ -521,9 +523,11 @@ describe('programController search visibility', () => {
     expectPublicProgram(body.fellowship);
   });
 
-  it('does not leak internal service errors from program detail failures', async () => {
+  it('forwards program detail failures to the global error handler', async () => {
     const res = response();
-    mocks.readProgram.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
+    const outage = new Error('mongodb://user:pass@example.invalid leaked');
+    mocks.readProgram.mockRejectedValue(outage);
+    const next = vi.fn();
 
     await getProgramById(
       {
@@ -531,10 +535,11 @@ describe('programController search visibility', () => {
         user: { userType: 'student' },
       } as any,
       res as any,
+      next,
     );
 
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch program' });
+    expect(next).toHaveBeenCalledWith(outage);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('does not leak internal not-found messages from program detail failures', async () => {
@@ -552,6 +557,7 @@ describe('programController search visibility', () => {
         user: { userType: 'student' },
       } as any,
       res as any,
+      vi.fn(),
     );
 
     expect(res.status).toHaveBeenCalledWith(404);

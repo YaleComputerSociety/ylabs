@@ -1,13 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Request } from 'express';
 
-import { captureServerError, captureStartupError, initializeErrorTracking } from '../errorTracking';
+import {
+  buildErrorTrackingOptions,
+  captureServerError,
+  captureStartupError,
+  initializeErrorTracking,
+} from '../errorTracking';
 import * as Sentry from '@sentry/node';
 
 vi.mock('@sentry/node', () => ({
   init: vi.fn(),
+  isInitialized: vi.fn(() => false),
   captureException: vi.fn(),
   flush: vi.fn(),
+  expressIntegration: vi.fn((options: unknown) => ({ name: 'Express', options })),
 }));
 
 const SYNTHETIC_NETID = 'zz9993';
@@ -48,11 +55,47 @@ describe('server errorTracking', () => {
       }),
     ).toBe(true);
 
-    expect(Sentry.init).toHaveBeenCalledWith({
-      dsn: 'https://public@example.com/1',
-      environment: 'production',
-      release: 'abc123',
+    expect(Sentry.init).toHaveBeenCalledWith(
+      buildErrorTrackingOptions({
+        dsn: 'https://public@example.com/1',
+        environment: 'production',
+        release: 'abc123',
+      }),
+    );
+  });
+
+  it('turns off every default collection that can carry request data or local values', () => {
+    expect(
+      buildErrorTrackingOptions({ dsn: 'https://public@example.com/1', environment: 'test' }),
+    ).toMatchObject({
+      includeLocalVariables: false,
+      dataCollection: {
+        userInfo: false,
+        cookies: false,
+        httpHeaders: { request: false, response: false },
+        httpBodies: [],
+        urlQueryParams: false,
+        graphQL: { document: false, variables: false },
+        genAI: { inputs: false, outputs: false },
+        databaseQueryData: false,
+        queues: false,
+        stackFrameVariables: false,
+      },
     });
+  });
+
+  it('leaves the global error handler as the only capture path for route errors', () => {
+    const options = buildErrorTrackingOptions({
+      dsn: 'https://public@example.com/1',
+      environment: 'test',
+    });
+
+    expect(Sentry.expressIntegration).toHaveBeenCalledWith({ shouldHandleError: false });
+    expect(options.integrations).toContainEqual({
+      name: 'Express',
+      options: { shouldHandleError: false },
+    });
+    expect(options.attachStacktrace).toBe(false);
   });
 
   it('captures request context without raw query strings', () => {
@@ -118,6 +161,34 @@ describe('server errorTracking', () => {
       },
       contexts: { request: { path: '/api/admin/admin-grants/:netid/revoke' } },
     });
+  });
+
+  it('recovers the static mount path after express has cleared baseUrl', () => {
+    process.env.SENTRY_DSN = 'https://public@example.com/1';
+
+    captureServerError(new Error('boom'), {
+      ...netidBearingRequest(),
+      baseUrl: '',
+    } as unknown as Request);
+
+    expect(capturedPayload()).toMatchObject({
+      tags: { path: '/api/admin/admin-grants/:netid/revoke' },
+    });
+    expect(JSON.stringify(capturedPayload())).not.toContain(SYNTHETIC_NETID);
+  });
+
+  it('reports only the template when it cannot count the template segments', () => {
+    process.env.SENTRY_DSN = 'https://public@example.com/1';
+
+    captureServerError(new Error('boom'), {
+      method: 'GET',
+      originalUrl: `/api/users/${SYNTHETIC_NETID}/extra`,
+      baseUrl: '',
+      route: { path: '/:netid/*' },
+    } as unknown as Request);
+
+    expect(capturedPayload()).toMatchObject({ tags: { path: '/:netid/*' } });
+    expect(JSON.stringify(capturedPayload())).not.toContain(SYNTHETIC_NETID);
   });
 
   it('reports an unmatched request without quoting its path', () => {

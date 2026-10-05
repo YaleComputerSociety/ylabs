@@ -43,11 +43,11 @@ describe("another organization's prose never reaches a person's card (#2915)", (
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const storedRow = (input: {
@@ -182,15 +182,7 @@ describe("another organization's prose never reaches a person's card (#2915)", (
     expect(served?.researchAreas).toEqual(CHIPS);
   }, 30000);
 
-  // #2911 accepted "a blank card line on a row that still serves a body" as the cost
-  // of refusing an organizational card. #3097 measured what that costs a student: the
-  // browse card is a name with nothing under it, and the repo's card invariant has
-  // always answered an empty card on a card-required row by not serving the row. The
-  // row's own body grounds no chip and derives no card, so nothing fills the slot;
-  // what changed is that the gate now sees the empty card instead of the refused
-  // organizational one, so it stops publishing the row rather than publishing a
-  // headline no surface renders.
-  it('stops serving a card-required row whose card is refused and derives nothing (#3097)', async () => {
+  it("serves a card-required row's own body in place of its refused organizational card (#3097)", async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     const stored = await db
@@ -198,14 +190,15 @@ describe("another organization's prose never reaches a person's card (#2915)", (
       .findOne({ slug: OWN_BODY_ORGANIZATION_CARD_SLUG });
 
     const servedCard = toPublicResearchEntityDto(stored as Record<string, any>).shortDescription;
-    expect(servedCard || '').toBe('');
+    expect(servedCard).toBe(OWN_BODY);
 
     const detail = await getResearchGroupDetail(OWN_BODY_ORGANIZATION_CARD_SLUG);
-    expect(detail).toBeNull();
+    expect(detail?.researchEntity?.shortDescription).toBe(OWN_BODY);
+    expect(JSON.stringify(detail)).not.toContain('Office of Health Equity Research');
     expect(
       buildResearchEntityPublicDescriptionRepresentation({ entity: stored as Record<string, any> })
         .invariant.reasons,
-    ).toContain('missing_public_card_description');
+    ).not.toContain('missing_public_card_description');
   }, 30000);
 
   it('keeps a first-person card that merely names the office the person co-directs', async () => {

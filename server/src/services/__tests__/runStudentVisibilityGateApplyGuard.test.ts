@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   queueFind: vi.fn(),
   resolveArchived: vi.fn(),
   clearArchivedVerdicts: vi.fn(async () => ({ modifiedCount: 0 })),
+  clearArchivedProgramVerdicts: vi.fn(async () => ({ modifiedCount: 0 })),
 }));
 
 vi.mock('../../models/researchEntity', async (importOriginal) => ({
@@ -19,6 +20,13 @@ vi.mock('../../models/researchEntity', async (importOriginal) => ({
     find: mocks.find,
     bulkWrite: mocks.bulkWrite,
     updateMany: mocks.clearArchivedVerdicts,
+  },
+}));
+
+vi.mock('../../models/fellowship', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../models/fellowship')>()),
+  Fellowship: {
+    updateMany: mocks.clearArchivedProgramVerdicts,
   },
 }));
 
@@ -43,6 +51,16 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 vi.mock('../researchEntityMembershipAccessor', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../researchEntityMembershipAccessor')>()),
   getResearchEntityRosterByEntityId: mocks.roster,
+}));
+
+// The corpus read the name-identity arm of the gate needs (#3499), stubbed on the same
+// terms as the model reads above: this suite mocks the persistence layer, so a real
+// `Researcher` query here buffers until it times out. Empty is the deliberately weaker
+// input the arm documents, and it is the right stub for a suite about the apply guard
+// rather than about naming.
+vi.mock('../../utils/researchHomeNameIdentityRoster', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/researchHomeNameIdentityRoster')>()),
+  loadKnownPersonSurnameRoster: async () => new Set<string>(),
 }));
 
 import { runStudentVisibilityGate } from '../studentVisibilityGateService';

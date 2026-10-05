@@ -1,4 +1,10 @@
-import type { ProgramCategory, ProgramEntryMode, ProgramKind } from '../models/fellowship';
+import type {
+  ProgramCategory,
+  ProgramEntryMode,
+  ProgramKind,
+  ProgramRole,
+} from '../models/fellowship';
+import { isDepartmentResearchGuidancePage } from './departmentResearchGuidance';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export interface ProgramClassificationInput {
@@ -9,14 +15,20 @@ export interface ProgramClassificationInput {
   applicationInformation?: string;
   eligibility?: string;
   additionalInformation?: string;
+  fullSourceDescription?: string;
   purpose?: string[];
   termOfAward?: string[];
   sourceUrl?: string;
+  sourcePageTitle?: string;
+  deadline?: unknown;
+  applicationOpenDate?: unknown;
+  isAcceptingApplications?: boolean;
 }
 
 export interface ProgramClassification {
   programCategory: ProgramCategory;
   programKind: ProgramKind;
+  programRole: ProgramRole;
   entryMode: ProgramEntryMode;
   studentFacingCategory: string;
   requiresMentorBeforeApply: boolean;
@@ -28,6 +40,29 @@ export interface ProgramClassification {
   programDates?: string;
   bestNextStep: string;
   prepSteps: string[];
+}
+
+type KindClassification = Omit<ProgramClassification, 'programRole'>;
+
+const STARTS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
+  'STRUCTURED_PROGRAM',
+  'CENTER_INTERNSHIP',
+  'RA_PROGRAM',
+  'MENTOR_MATCHING',
+  'DEPARTMENT_RESEARCH_GUIDE',
+]);
+
+const FUNDS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
+  'FELLOWSHIP_FUNDING',
+  'TRAVEL_RESEARCH_GRANT',
+  'SENIOR_THESIS_FUNDING',
+]);
+
+export function programRoleForKind(kind: ProgramKind): ProgramRole {
+  if (STARTS_RESEARCH_KINDS.has(kind)) return 'STARTS_RESEARCH';
+  if (FUNDS_RESEARCH_KINDS.has(kind)) return 'FUNDS_RESEARCH';
+  if (kind === 'RESEARCH_AWARD') return 'RECOGNIZES_RESEARCH';
+  return 'UNCLASSIFIED';
 }
 
 function normalizeText(value: string | undefined): string {
@@ -52,6 +87,52 @@ function textForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
+// `purpose` is a multi-select of permitted uses, so its "Senior Research Project or Senior
+// Essay" entry sits on awards open to first-years (#3904). A statement about who the award
+// is for has to come from the record's own prose.
+function proseForProgram(input: ProgramClassificationInput): string {
+  return [
+    input.title,
+    input.competitionType,
+    input.summary,
+    input.description,
+    input.applicationInformation,
+    input.eligibility,
+    input.additionalInformation,
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ');
+}
+
+const AWARD_INSTRUMENT_TITLE =
+  /\b(?:awards?|grants?|funds?|funding|scholarships?|prizes?|stipends?)\b/;
+
+const RESEARCH_AWARD_TITLE = /\b(?:scholarships?|prizes?)\b/;
+
+const RESEARCH_ASSISTANT_EXPENSE =
+  /\b(?:stipends?|salar(?:y|ies)|wages|pay(?:ing)?|hir(?:e|ing))\s+(?:for\s+)?(?:[a-z-]+\s+(?:or|and)\s+)?research assistants?\b/g;
+
+const RESEARCH_CAREER_AWARD_PROSE =
+  /\b(?:pursue|pursuing|intend(?:s|ing)? to pursue)\s+research careers?\b/;
+
+// A residential college or a fund's donor name says who administers the award, not what it
+// funds: every college Richter fellowship is open to first-years through juniors (#4218).
+const SENIOR_RESEARCH_NAME = /senior (?:research|essay)|senior project|mellon senior/;
+
+const SENIOR_RESEARCH_PROSE =
+  /([^.]{0,60})\b(?:fund(?:s|ing)?|support(?:s|ing)?|costs? associated with|off-?set)\b([^.]{0,80})\bsenior (?:research project|essay|thesis|project)s?\b/g;
+
+const SENIOR_RESEARCH_EXCLUSION =
+  /\b(?:not|cannot|can't|never|ineligible|exclud(?:e|es|ed|ing)|except)\b/;
+
+function proseFundsSeniorResearch(prose: string): boolean {
+  return [...prose.matchAll(SENIOR_RESEARCH_PROSE)].some(
+    ([, lead, between]) =>
+      !SENIOR_RESEARCH_EXCLUSION.test(lead) && !SENIOR_RESEARCH_EXCLUSION.test(between),
+  );
+}
+
 function identityTextForProgram(input: ProgramClassificationInput): string {
   return [input.title, input.competitionType, input.sourceUrl]
     .map(normalizeText)
@@ -59,7 +140,7 @@ function identityTextForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
-function baseFundingClassification(): ProgramClassification {
+function baseFundingClassification(): KindClassification {
   return {
     programCategory: 'FELLOWSHIP',
     programKind: 'FELLOWSHIP_FUNDING',
@@ -68,14 +149,85 @@ function baseFundingClassification(): ProgramClassification {
     requiresMentorBeforeApply: true,
     mentorMatching: false,
     bestNextStep:
-      'Identify a research home or mentor, then use this funding record to plan the application.',
+      'Find a faculty mentor or sponsor, then use this funding record to plan the application.',
     prepSteps: ['Research plan', 'Faculty mentor or sponsor', 'Official application'],
   };
 }
 
+const MENTOR_NOUN = '(?:mentor|sponsor|adviser|advisor|supervisor)s?';
+
+const MENTOR_ROLE = `(?:[\\w-]+ )?(?:faculty |research |project |thesis )?${MENTOR_NOUN}`;
+
+const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
+  [
+    `\\b(?:requires?|required|must (?:have|secure|identify|find|obtain|include)(?: as)?|needs? (?:to have )?) (?:a |an |the |your )?${MENTOR_ROLE}\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} (?:is|are|must be) (?:required|needed)\\b`,
+    `\\bmust have as (?:a |an )?${MENTOR_NOUN} (?:a )?(?:member of the )?faculty\\b`,
+    `\\bagreed to (?:be|serve as) (?:the |your |a )?${MENTOR_NOUN}\\b`,
+    `\\b(?:written )?commitment from (?:a |an |the )?(?:yale )?faculty member\\b`,
+    `\\bname of (?:your|the) (?:faculty )?${MENTOR_NOUN}\\b`,
+    `\\bdeveloped with (?:a |an )?(?:potential )?${MENTOR_ROLE}\\b`,
+    `\\b(?:signature|approval|endorsement) (?:of|from) (?:the applicant['’]s |your |a |an |the )?[^.]{0,60}?${MENTOR_NOUN}\\b[^.]{0,20}\\b(?:is |are )?required\\b`,
+    `\\b${MENTOR_NOUN}['’]s? (?:letter|statement|approval|endorsement|signature) (?:is |are )?required\\b`,
+    `\\bunder the (?:supervision|guidance|direction) of (?:a |an )?(?:yale )?faculty\\b`,
+    `\\bmust be supervised by (?:a |an )?(?:yale )?faculty\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} who (?:will|would) (?:supervise|oversee|advise)\\b`,
+    `\\b${MENTOR_NOUN}\\b[^.]{0,40}\\b(?:has |have )?agreed to (?:work with|supervise|advise|oversee)\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
+    `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
+  ].join('|'),
+  'i',
+);
+
+const MENTOR_NOT_REQUIRED_SENTENCE =
+  /\b(?:not (?:required|mandatory|necessary)|not required to|(?:is|are) not required|does not require|do not need|don['’]t need|no (?:faculty )?(?:mentor|sponsor|adviser|advisor) (?:is )?(?:required|needed))\b/i;
+
+/**
+ * Whether a funding record's own page says a mentor is required. This used to be assumed
+ * for every funding record no specific arm claimed, which told students to find a faculty
+ * mentor for internship, travel and event funds that ask for none (#4131). A recommendation
+ * letter alone is not a mentor requirement, but a letter from the applicant's own adviser
+ * approving the project is one, because it presupposes an adviser for that project (#4218). Each sentence is judged on its own, so "a
+ * faculty advisor is welcome but not required" cannot be cancelled or confirmed by a
+ * different sentence about a letter of reference.
+ */
+export function mentorRequirementSentence(input: ProgramClassificationInput): string | undefined {
+  return [proseForProgram(input), normalizeText(input.fullSourceDescription)]
+    .filter(Boolean)
+    .join(' ')
+    .split(/(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/)
+    .find(
+      (sentence) =>
+        MENTOR_REQUIREMENT_SENTENCE.test(sentence) && !MENTOR_NOT_REQUIRED_SENTENCE.test(sentence),
+    );
+}
+
+function statesMentorRequirement(input: ProgramClassificationInput): boolean {
+  return mentorRequirementSentence(input) !== undefined;
+}
+
+function fundingClassificationFromPage(input: ProgramClassificationInput): KindClassification {
+  if (statesMentorRequirement(input)) return baseFundingClassification();
+  return {
+    ...baseFundingClassification(),
+    entryMode: 'APPLY_TO_PROGRAM',
+    studentFacingCategory: 'Fellowship or grant',
+    requiresMentorBeforeApply: false,
+    bestNextStep:
+      'Check the eligibility and application requirements on the official page, then apply.',
+    prepSteps: ['Eligibility check', 'Official application'],
+  };
+}
+
+// A page titled only with award nouns ("Fellowships & Grants", "Undergraduate Grants and
+// Prizes") lists many awards rather than being one, so its prose mentions every use any of
+// them funds and would otherwise classify as whichever award it names first.
+const GENERIC_AWARD_HUB_TITLE =
+  /^(?:(?:student|undergraduate|graduate) )?(?:grants?|fellowships?|awards?|prizes?|funding)(?: (?:and|&) (?:grants?|fellowships?|awards?|prizes?|funding))*$/;
+
 export const ARCHIVE_REVIEW_STUDENT_FACING_CATEGORY = 'Archive / review';
 
-function archiveReviewClassification(): ProgramClassification {
+function archiveReviewClassification(): KindClassification {
   return {
     programCategory: 'FELLOWSHIP',
     programKind: 'OTHER',
@@ -104,8 +256,8 @@ const GRADUATE_TRAVEL_RESEARCH =
 const COLLECTIONS_RESEARCH_HOST =
   /\blibrar(?:y|ies)\b|\barchival\b|\barchives\b|special collections|\bmuseum\b|\bgallery\b|reading room|\bresidency\b/;
 
-function graduateResearchClassification(lower: string): ProgramClassification {
-  const base: ProgramClassification = {
+function graduateResearchClassification(lower: string): KindClassification {
+  const base: KindClassification = {
     programCategory: 'FELLOWSHIP',
     programKind: 'FELLOWSHIP_FUNDING',
     entryMode: 'SECURE_MENTOR_THEN_APPLY',
@@ -197,7 +349,24 @@ function namesInternshipProgram(input: ProgramClassificationInput): boolean {
   return !FUNDING_INSTRUMENT_NAME.test(normalizeText(input.title).toLowerCase());
 }
 
-function structuredProgram(overrides: Partial<ProgramClassification>): ProgramClassification {
+const DEPARTMENT_PAGE_PATH_SEGMENT = /^(?:departments|undergraduate-study)$/;
+
+function publishedOnDepartmentPage(input: ProgramClassificationInput): boolean {
+  const sourceUrl = normalizeText(input.sourceUrl);
+  if (!sourceUrl) return false;
+  let pathname: string;
+  try {
+    pathname = new URL(sourceUrl).pathname;
+  } catch {
+    return false;
+  }
+  return pathname
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => DEPARTMENT_PAGE_PATH_SEGMENT.test(segment));
+}
+
+function structuredProgram(overrides: Partial<KindClassification>): KindClassification {
   return {
     programCategory: 'RECURRING_PROGRAM',
     programKind: 'STRUCTURED_PROGRAM',
@@ -212,7 +381,7 @@ function structuredProgram(overrides: Partial<ProgramClassification>): ProgramCl
   };
 }
 
-export function classifyProgram(input: ProgramClassificationInput): ProgramClassification {
+function classifyProgramKind(input: ProgramClassificationInput): KindClassification {
   const title = normalizeText(input.title);
   const text = textForProgram(input);
   const lower = text.toLowerCase();
@@ -269,7 +438,33 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bstars\b/.test(identityLower) && /\bsummer research program\b/.test(lower)) {
+  const namesStars = /\bSTARS\b/.test(title) || /\/stars\//.test(identityLower);
+  if (
+    namesStars &&
+    /\bmentoring (?:and support )?program\b|\brather than a direct research placement\b/.test(lower)
+  ) {
+    return structuredProgram({
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'STEM mentoring program',
+      bestNextStep:
+        'Apply to the program for mentoring, advising, and community before you look for a lab.',
+      prepSteps: ['Eligibility check', 'Official application'],
+    });
+  }
+
+  if (namesStars && !/\bsummer research program\b/.test(lower) && /\bresearch\b/.test(lower)) {
+    return structuredProgram({
+      programKind: 'STRUCTURED_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Structured research program',
+      requiresMentorBeforeApply: true,
+      bestNextStep: 'Secure a Yale faculty research mentor before applying to the program.',
+      prepSteps: ['Faculty research mentor', 'Research proposal', 'Official application'],
+    });
+  }
+
+  if (namesStars && /\bsummer research program\b/.test(lower)) {
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
@@ -360,7 +555,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/mellon mays/.test(identityLower)) {
+  if (/mellon mays|\bbouchet\b/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
@@ -368,9 +563,48 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
       studentFacingCategory: 'Cohort research program',
       mentorMatching: true,
       compensationSummary: 'Academic-year and summer research support',
-      bestNextStep: 'Review Mellon Mays eligibility and prepare the cohort-program application.',
+      bestNextStep: 'Review the program eligibility and prepare the cohort-program application.',
       prepSteps: ['Faculty mentor fit', 'Research interests', 'Official application'],
     });
+  }
+
+  if (GENERIC_AWARD_HUB_TITLE.test(titleLower) || /\bfellowships in the news\b/.test(titleLower)) {
+    return archiveReviewClassification();
+  }
+
+  if (isDepartmentResearchGuidancePage(input)) {
+    return {
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Department research guidance',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      ...(/\bundergraduate\b/i.test(input.sourcePageTitle ?? '')
+        ? { undergraduateOnly: true }
+        : {}),
+      bestNextStep:
+        "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
+      prepSteps: ['Faculty research fit', 'Short introduction email'],
+    };
+  }
+
+  if (
+    RESEARCH_AWARD_TITLE.test(titleLower) &&
+    (RESEARCH_CAREER_AWARD_PROSE.test(proseForProgram(input).toLowerCase()) ||
+      /\b(?:essay|thesis|research) prizes?\b/.test(titleLower))
+  ) {
+    return {
+      programCategory: 'FELLOWSHIP',
+      programKind: 'RESEARCH_AWARD',
+      entryMode: 'APPLY_TO_PROGRAM',
+      studentFacingCategory: 'Research award',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      bestNextStep:
+        'Check the eligibility and the campus nomination deadline; this award recognizes research you have already done.',
+      prepSteps: ['Research record', 'Faculty recommendation', 'Campus nomination'],
+    };
   }
 
   if (/first[- ]year summer research fellowship/.test(identityLower)) {
@@ -412,24 +646,29 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
   }
 
   if (
-    /senior (?:research|essay)|senior project|mellon senior|residential college|richter/.test(
-      identityLower,
-    )
+    SENIOR_RESEARCH_NAME.test(identityLower) ||
+    proseFundsSeniorResearch(proseForProgram(input).toLowerCase())
   ) {
+    const funding = fundingClassificationFromPage(input);
     return {
-      ...baseFundingClassification(),
+      ...funding,
       programKind: 'SENIOR_THESIS_FUNDING',
       studentFacingCategory: 'Senior research funding',
       undergraduateOnly: true,
       yaleCollegeOnly: true,
-      bestNextStep: 'Use this record after you have a senior project, adviser, or research plan.',
-      prepSteps: ['Adviser or sponsor', 'Senior project plan', 'Budget or proposal'],
+      bestNextStep: funding.requiresMentorBeforeApply
+        ? 'Confirm your project and faculty adviser, then prepare the proposal and budget.'
+        : 'Prepare your senior project plan and budget, then apply.',
+      prepSteps: funding.requiresMentorBeforeApply
+        ? ['Faculty adviser', 'Senior project plan', 'Budget or proposal']
+        : ['Senior project plan', 'Budget or proposal'],
     };
   }
 
   const isReuOrSummerResearchProgram =
     /research experiences? for undergraduates|\bnsf reu\b|\breu\b/.test(lower) ||
-    /\bsummer (?:undergraduate )?research (?:program|scholars?(?:hip)?)\b/.test(lower);
+    /\bsummer (?:undergraduate )?research (?:program|scholars?(?:hip)?)\b/.test(lower) ||
+    /\bsummer scholars program\b/.test(lower);
   if (isReuOrSummerResearchProgram) {
     const mentorFirst =
       /(?:identify|secure|arrange|line up|obtain|find)[^.]{0,80}(?:faculty |research )?(?:mentor|adviser|advisor|sponsor)[^.]{0,80}(?:before|prior to|ahead of)\b/.test(
@@ -456,22 +695,28 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  const funding = baseFundingClassification();
+  const funding = fundingClassificationFromPage(input);
   if (/not for undergraduates|graduate students only|doctoral dissertation/.test(lower)) {
     return archiveReviewClassification();
   }
 
   if (namesInternshipProgram(input)) {
+    const runByDepartment = publishedOnDepartmentPage(input);
     return structuredProgram({
-      programCategory: 'CENTER_INTERNSHIP',
-      programKind: 'CENTER_INTERNSHIP',
+      programCategory: runByDepartment ? 'RECURRING_PROGRAM' : 'CENTER_INTERNSHIP',
+      programKind: runByDepartment ? 'STRUCTURED_PROGRAM' : 'CENTER_INTERNSHIP',
       studentFacingCategory: 'Internship program',
       bestNextStep: 'Review the official internship page and application requirements.',
       prepSteps: ['Eligibility check', 'Official application'],
     });
   }
 
-  if (/mentor match|matched with|faculty mentor|cohort|training program/.test(lower)) {
+  // An award that requires or funds work with a faculty mentor is still an award: the
+  // generic mentor wording otherwise filed research and travel awards as mentored programs.
+  if (
+    /mentor match|matched with|faculty mentor|cohort|training program/.test(lower) &&
+    !AWARD_INSTRUMENT_TITLE.test(titleLower)
+  ) {
     return structuredProgram({
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
@@ -482,7 +727,9 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/research assistant|ra program|ra\b/.test(lower)) {
+  if (
+    /research assistant|\bra program|\bra\b/.test(lower.replace(RESEARCH_ASSISTANT_EXPENSE, ''))
+  ) {
     return structuredProgram({
       programKind: 'RA_PROGRAM',
       entryMode: 'APPLY_TO_PROJECT',
@@ -492,12 +739,14 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/travel|abroad|field research/.test(lower)) {
+  if (/travel|abroad|field research/.test(lower) && /\bresearch|\bfieldwork\b/.test(lower)) {
     return {
       ...funding,
       programKind: 'TRAVEL_RESEARCH_GRANT',
       studentFacingCategory: 'Research travel funding',
-      prepSteps: ['Research plan', 'Budget', 'Faculty sponsor', 'Official application'],
+      prepSteps: funding.requiresMentorBeforeApply
+        ? ['Research plan', 'Budget', 'Faculty sponsor', 'Official application']
+        : ['Research plan', 'Budget', 'Official application'],
     };
   }
 
@@ -515,4 +764,9 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
   }
 
   return funding;
+}
+
+export function classifyProgram(input: ProgramClassificationInput): ProgramClassification {
+  const classification = classifyProgramKind(input);
+  return { ...classification, programRole: programRoleForKind(classification.programKind) };
 }

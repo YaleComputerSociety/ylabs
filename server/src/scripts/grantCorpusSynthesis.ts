@@ -6,10 +6,16 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import { getSourceByName } from '../scrapers/observationStore';
+import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
-  synthesizeCoverageDescription,
+  coverageSynthesisDecision,
+  coverageSynthesisSkipReason,
+  countCoverageSynthesisRefusals,
   defaultCoverageSynthesisLLM,
+  type CoverageSynthesisRefusal,
+  type CoverageSynthesisResult,
+  type SynthesizeCoverageInput,
 } from '../scrapers/coverageSynthesis';
 import { materializeEntity, materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -28,21 +34,44 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-interface GrantCorpusEntityReport {
+export interface GrantCorpusEntityReport {
   slug: string;
   grants: number;
   snippets: number;
   synthesized: boolean;
   written: boolean;
+  observationDropped?: boolean;
   gainedSchool: boolean;
   wouldPromoteToStudentReady: boolean;
   school?: string;
   description?: string;
   sourceUrls?: string[];
   skipped?: string;
+  synthesisRefusal?: CoverageSynthesisRefusal;
 }
+
+export async function synthesizeIntoGrantCorpusReport(
+  report: GrantCorpusEntityReport,
+  input: SynthesizeCoverageInput,
+): Promise<CoverageSynthesisResult | null> {
+  const decision = await coverageSynthesisDecision(input);
+  if (!decision.result) {
+    report.synthesisRefusal = decision.refusal ?? undefined;
+    report.skipped = decision.refusal
+      ? coverageSynthesisSkipReason(decision.refusal)
+      : 'synthesis-produced-no-result';
+    return null;
+  }
+  report.synthesized = true;
+  report.description = decision.result.description;
+  report.sourceUrls = decision.result.sourceUrls;
+  return decision.result;
+}
+
+export const summarizeGrantCorpusSynthesisRefusals = (reports: GrantCorpusEntityReport[]) =>
+  countCoverageSynthesisRefusals(reports.map((report) => report.synthesisRefusal));
 
 async function main() {
   const args = parseGrantCorpusSynthesisArgs(process.argv.slice(2));
@@ -86,6 +115,7 @@ async function main() {
   const beforeTierByEntityId = new Map<string, string>();
   const reportByEntityId = new Map<string, GrantCorpusEntityReport>();
   let written = 0;
+  let observationDropped = 0;
   let gainedSchool = 0;
 
   for (const entity of entities) {
@@ -136,7 +166,7 @@ async function main() {
       continue;
     }
 
-    const result = await synthesizeCoverageDescription({
+    const result = await synthesizeIntoGrantCorpusReport(report, {
       snippets,
       entityName: typeof entity.name === 'string' ? entity.name : '',
       entityType: entity.entityType,
@@ -144,26 +174,21 @@ async function main() {
       callLLM,
     });
     if (!result) {
-      report.skipped = 'synthesis-failed-quality-gate';
       reports.push(report);
       continue;
     }
-    report.synthesized = true;
-    report.description = result.description;
-    report.sourceUrls = result.sourceUrls;
 
     if (args.apply && source) {
-      await appendObservations(
-        [
-          {
-            entityType: 'researchEntity',
-            entityKey: entity.slug,
-            field: 'fullDescription',
-            value: result.description,
-            sourceUrl: result.sourceUrls[0],
-            confidenceOverride: GRANT_CORPUS_DESCRIPTION_CONFIDENCE,
-          },
-        ],
+      const stored = await appendSynthesizedDescription(
+        report,
+        {
+          entityType: 'researchEntity',
+          entityKey: entity.slug,
+          field: 'fullDescription',
+          value: result.description,
+          sourceUrl: result.sourceUrls[0],
+          confidenceOverride: GRANT_CORPUS_DESCRIPTION_CONFIDENCE,
+        },
         {
           scrapeRunId: runId,
           sourceId: source._id,
@@ -172,7 +197,11 @@ async function main() {
           dryRun: false,
         },
       );
-      report.written = true;
+      if (!stored) {
+        observationDropped += 1;
+        reports.push(report);
+        continue;
+      }
       written += 1;
 
       const beforeSchool = typeof entity.school === 'string' ? entity.school.trim() : '';
@@ -238,7 +267,9 @@ async function main() {
     limit: args.limit,
     scanned: reports.length,
     synthesized: reports.filter((r) => r.synthesized).length,
+    synthesisRefusals: summarizeGrantCorpusSynthesisRefusals(reports),
     written,
+    observationDropped,
     gainedSchool,
     wouldPromoteToStudentReady,
     entities: reports,

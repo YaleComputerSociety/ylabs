@@ -6,7 +6,7 @@ import {
   storedSourceLinkHealthByUrl,
 } from '../backfillSourceLinkHealthCore';
 
-const URL_A = 'https://medicine.yale.edu/a/b/';
+const URL_A = 'https://ysph.yale.edu/a/b/';
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 const EARLIER = new Date('2026-08-01T00:00:00.000Z');
 
@@ -179,6 +179,16 @@ describe('resolveSourceLinkHealthEntry routing axis', () => {
     expect(resolved.entry.privateAddressHost).toBe(true);
   });
 
+  it('drops the flag when public DNS maps the host to public space (#3903)', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', publicAddressHost: true },
+      { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry).toEqual({ url: URL_A, healthStatus: 'UNKNOWN', checkedAt: NOW });
+  });
+
   it('keeps a preserved decisive verdict and the fresh routing fact together', () => {
     const resolved = resolveSourceLinkHealthEntry(
       URL_A,
@@ -195,5 +205,87 @@ describe('resolveSourceLinkHealthEntry routing axis', () => {
       checkedAt: EARLIER,
       lastAttemptedAt: NOW,
     });
+  });
+});
+
+describe('resolveSourceLinkHealthEntry under a certificate failure (#4080)', () => {
+  const HTTPS = 'https://a.yale.edu/~x/';
+
+  it('replaces a stored HEALTHY for the same https url, because it contradicts it', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTPS,
+      { healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      { url: HTTPS, healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(false);
+    expect(resolved.entry).toEqual({
+      url: HTTPS,
+      healthStatus: 'UNKNOWN',
+      tlsVerificationFailed: true,
+      checkedAt: NOW,
+    });
+  });
+
+  it('keeps a stored UNAVAILABLE and records the certificate failure beside it', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTPS,
+      { healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      { url: HTTPS, healthStatus: 'UNAVAILABLE', httpStatusCode: 404, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry).toMatchObject({
+      healthStatus: 'UNAVAILABLE',
+      tlsVerificationFailed: true,
+    });
+  });
+});
+
+describe('resolveSourceLinkHealthEntry https landing (#4649)', () => {
+  const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
+  const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
+
+  it('stores the landing a fresh HEALTHY probe recorded', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING },
+      undefined,
+      NOW,
+    );
+    expect(resolved.entry).toEqual({
+      url: HTTP,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      httpsLandingUrl: LANDING,
+      checkedAt: NOW,
+    });
+  });
+
+  it('keeps the landing with a decisive verdict an inconclusive probe preserved', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'UNKNOWN', httpStatusCode: 503 },
+      {
+        url: HTTP,
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+        httpsLandingUrl: LANDING,
+        checkedAt: EARLIER,
+      },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry.httpsLandingUrl).toBe(LANDING);
+  });
+
+  it('drops the landing when a fresh decisive probe no longer records one', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      { url: HTTP, healthStatus: 'HEALTHY', httpsLandingUrl: LANDING, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.httpsLandingUrl).toBeUndefined();
   });
 });

@@ -272,11 +272,11 @@ describe('visibility:recoverability audits the withheld corpus end to end (issue
     const run = await runAndReadReport(mongoUrl);
     payload = run.payload;
     stdout = run.stdout;
-  }, 180_000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect().catch(() => {});
-    await mongod.stop();
+    await mongod?.stop();
   });
 
   it('scans only the withheld, non-archived corpus', () => {

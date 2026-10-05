@@ -14,7 +14,8 @@
  * keys to visit, never whether one deserves a researcher.
  */
 
-export type PiAttributedUserOutcome = 'minted' | 'would-mint' | 'enriched' | 'refused' | 'error';
+export type PiAttributedUserOutcome =
+  'minted' | 'would-mint' | 'enriched' | 'left-existing' | 'refused' | 'error';
 
 export interface PiAttributedUserRow {
   entityKey: string;
@@ -28,22 +29,29 @@ export interface PiAttributedUserRow {
 export interface MaterializePiAttributedUsersArgs {
   apply: boolean;
   confirmed: boolean;
+  mintOnly: boolean;
   limit?: number;
   output?: string;
 }
 
 export const PI_ATTRIBUTED_USERS_CONFIRM_FLAG = '--confirm-materialize-pi-attributed-users';
+export const PI_ATTRIBUTED_USERS_MINT_ONLY_FLAG = '--mint-only';
 export const PI_ATTRIBUTION_FIELDS = ['inferredPiUserKey', 'inferredPiUserId'] as const;
 
 export function parseMaterializePiAttributedUsersArgs(
   argv: readonly string[],
 ): MaterializePiAttributedUsersArgs {
-  const args: MaterializePiAttributedUsersArgs = { apply: false, confirmed: false };
+  const args: MaterializePiAttributedUsersArgs = {
+    apply: false,
+    confirmed: false,
+    mintOnly: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === PI_ATTRIBUTED_USERS_CONFIRM_FLAG) args.confirmed = true;
+    else if (arg === PI_ATTRIBUTED_USERS_MINT_ONLY_FLAG) args.mintOnly = true;
     else if (arg.startsWith('--limit='))
       args.limit = parsePositiveInteger(arg.slice('--limit='.length));
     else if (arg === '--limit') args.limit = parsePositiveInteger(argv[(index += 1)]);
@@ -81,11 +89,28 @@ export function classifyPiAttributedUserOutcome(result: {
   return 'enriched';
 }
 
+/**
+ * In mint-only mode a key is applied only when its dry-run probe would mint, so a sweep
+ * creates the researchers its PI attributions name without re-enriching every existing
+ * researcher the same candidates reach: on Development 3,209 of 3,699 candidates resolve to
+ * an existing record, and that write surface belongs to the scrape that observes them.
+ */
+export function shouldApplyAfterMintOnlyProbe(probeOutcome: PiAttributedUserOutcome): boolean {
+  return probeOutcome === 'would-mint';
+}
+
+export function mintOnlyOutcomeWithoutApply(
+  probeOutcome: PiAttributedUserOutcome,
+): PiAttributedUserOutcome {
+  return probeOutcome === 'enriched' ? 'left-existing' : probeOutcome;
+}
+
 export function summarizePiAttributedUserRows(rows: readonly PiAttributedUserRow[]): {
   examined: number;
   minted: number;
   wouldMint: number;
   enriched: number;
+  leftExisting: number;
   refused: number;
   errors: number;
   refusalReasons: Record<string, number>;
@@ -94,12 +119,14 @@ export function summarizePiAttributedUserRows(rows: readonly PiAttributedUserRow
   let minted = 0;
   let wouldMint = 0;
   let enriched = 0;
+  let leftExisting = 0;
   let refused = 0;
   let errors = 0;
   for (const row of rows) {
     if (row.outcome === 'minted') minted += 1;
     else if (row.outcome === 'would-mint') wouldMint += 1;
     else if (row.outcome === 'enriched') enriched += 1;
+    else if (row.outcome === 'left-existing') leftExisting += 1;
     else if (row.outcome === 'error') errors += 1;
     else {
       refused += 1;
@@ -107,5 +134,14 @@ export function summarizePiAttributedUserRows(rows: readonly PiAttributedUserRow
       refusalReasons[reason] = (refusalReasons[reason] ?? 0) + 1;
     }
   }
-  return { examined: rows.length, minted, wouldMint, enriched, refused, errors, refusalReasons };
+  return {
+    examined: rows.length,
+    minted,
+    wouldMint,
+    enriched,
+    leftExisting,
+    refused,
+    errors,
+    refusalReasons,
+  };
 }

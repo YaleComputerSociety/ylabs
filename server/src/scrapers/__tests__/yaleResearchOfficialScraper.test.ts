@@ -10,6 +10,7 @@ import {
   isMintableResearchYaleEntity,
   parseResearchYaleCenters,
   parseResearchYaleCoreFacilities,
+  canonicalResearchYaleUrl,
   slugifyResearchYaleEntity,
 } from '../sources/yaleResearchOfficialScraper';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -137,6 +138,27 @@ describe('yaleResearchOfficialScraper', () => {
     expect(isGenericTaxonomyBucketLabel('Research administration & collaboration')).toBe(true);
     expect(isGenericTaxonomyBucketLabel('Faculty resources')).toBe(true);
     expect(isGenericTaxonomyBucketLabel('Genomics')).toBe(false);
+  });
+
+  it('reads a front-controller core link as the clean core path (#4533)', () => {
+    const html = CORES_HTML.replace('href="/cores/acem"', 'href="/index%2ephp/cores/acem"');
+    expect(html).not.toBe(CORES_HTML);
+    const [entity] = parseResearchYaleCoreFacilities(
+      html,
+      'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+    );
+    expect(entity.url).toBe('https://research.yale.edu/cores/acem');
+  });
+
+  it('canonicalizes only research.yale.edu front-controller paths', () => {
+    const canonical = (url: string) => canonicalResearchYaleUrl(new URL(url)).toString();
+    expect(canonical('https://research.yale.edu/index%2Ephp/cores/mtaic')).toBe(
+      'https://research.yale.edu/cores/mtaic',
+    );
+    expect(canonical('https://research.yale.edu/a%2Fb')).toBe('https://research.yale.edu/a%2Fb');
+    expect(canonical('https://example.org/index%2ephp/x')).toBe(
+      'https://example.org/index%2ephp/x',
+    );
   });
 
   it('parses only core/facility rows from the filtered cores directory', () => {

@@ -40,7 +40,10 @@ import mongoose, { type AnyBulkWriteOperation } from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -52,7 +55,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 /**
  * Individually verified same-name-collision grafts from #1256 (the un-run #585
@@ -339,6 +342,11 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
+export async function reindexChangedSlugs(slugs: string[]): Promise<IndexSyncOutcome> {
+  const fresh = await ResearchEntity.find({ slug: { $in: slugs } }).lean();
+  return syncResearchEntitiesWithOutcome(fresh);
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -504,6 +512,7 @@ async function main() {
     observationRelinksPlanned: plannedRelinks.length,
     observationRelinksSkipped: relinkSkipped,
     reindexed: 0,
+    indexSyncFailures: 0,
   };
 
   if (options.apply && plannedRelinks.length > 0) {
@@ -536,10 +545,9 @@ async function main() {
     });
     await ResearchEntity.bulkWrite(operations, { ordered: false });
 
-    const changedSlugs = plannedUpdates.map((u) => u.slug);
-    const fresh = await ResearchEntity.find({ slug: { $in: changedSlugs } }).lean();
-    await syncEntities('researchEntity', fresh);
-    summary.reindexed = fresh.length;
+    const indexSync = await reindexChangedSlugs(plannedUpdates.map((u) => u.slug));
+    summary.reindexed = indexSync.resynced;
+    summary.indexSyncFailures = indexSync.indexSyncFailures;
   }
 
   const output = { summary, entries: plannedUpdates, observationRelinks: plannedRelinks };

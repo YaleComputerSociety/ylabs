@@ -26,11 +26,11 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
   beforeAll(async () => {
     server = await MongoMemoryServer.create();
     await mongoose.connect(server.getUri(), { autoIndex: false });
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {
@@ -211,11 +211,11 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     server = await MongoMemoryServer.create();
     await mongoose.connect(server.getUri(), { autoIndex: false });
     await Researcher.syncIndexes();
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await server.stop();
+    await server?.stop();
   });
 
   beforeEach(async () => {
@@ -255,6 +255,114 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const shell = await db.collection('researchers').findOne({ _id: orcidShell });
     expect(shell!.archived).toBe(true);
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
+  });
+
+  it('moves the shell ORCID link with its ORCID so neither row fails the schema (#4501)', async () => {
+    const orcid = '9999-9999-9999-9994';
+    const orcidLink = {
+      kind: 'ORCID',
+      purpose: 'SCHOLARLY',
+      url: `https://orcid.org/${orcid}`,
+      verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      healthStatus: 'UNKNOWN',
+    };
+    const canonicalOnly = new mongoose.Types.ObjectId();
+    const orcidShell = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: canonicalOnly,
+        displayName: 'Rosa Vega',
+        accountId: new mongoose.Types.ObjectId(),
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+      {
+        _id: orcidShell,
+        displayName: 'Rosa Vega',
+        archived: false,
+        identifiers: { orcid },
+        profileLinks: [orcidLink],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.byReason.MERGEABLE).toBe(1);
+
+    const canonical = await db.collection('researchers').findOne({ _id: canonicalOnly });
+    const shell = await db.collection('researchers').findOne({ _id: orcidShell });
+    expect(canonical!.identifiers).toMatchObject({ orcid });
+    expect(canonical!.profileLinks.map((link: { url: string }) => link.url)).toEqual([
+      orcidLink.url,
+    ]);
+    expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
+    expect(shell!.profileLinks).toEqual([]);
+    expect(Researcher.hydrate(canonical!).validateSync()).toBeUndefined();
+    expect(Researcher.hydrate(shell!).validateSync()).toBeUndefined();
+  });
+
+  it('folds an accountless-only group into the copy holding the live edge', async () => {
+    const survivor = new mongoose.Types.ObjectId();
+    const copyA = new mongoose.Types.ObjectId();
+    const copyB = new mongoose.Types.ObjectId();
+    const entity = new mongoose.Types.ObjectId();
+    const edge = new mongoose.Types.ObjectId();
+    const copyEdge = new mongoose.Types.ObjectId();
+    const verified = [
+      {
+        kind: 'YALE_OFFICIAL',
+        purpose: 'PRIMARY_IDENTITY',
+        url: 'https://dept.example.edu/p/2001',
+        verifiedAt: new Date(),
+        healthStatus: 'HEALTHY',
+      },
+    ];
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').deleteMany({});
+    await db.collection('role_assignments').deleteMany({});
+    await db.collection('researchers').insertMany(
+      [copyA, survivor, copyB].map((_id) => ({
+        _id,
+        displayName: 'Cara Copyset',
+        archived: false,
+        identifiers: {},
+        profileLinks: verified,
+      })),
+    );
+    await db.collection('role_assignments').insertMany([
+      {
+        _id: edge,
+        personId: survivor,
+        target: { kind: 'RESEARCH_ENTITY', id: entity },
+        role: 'PI',
+        archived: false,
+      },
+      {
+        _id: copyEdge,
+        personId: copyA,
+        target: { kind: 'RESEARCH_ENTITY', id: entity },
+        role: 'PI',
+        archived: false,
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(result.accountlessClusters).toMatchObject({ groups: 1, foldedGroups: 1, folds: 2 });
+
+    for (const copy of [copyA, copyB]) {
+      const row = await db.collection('researchers').findOne({ _id: copy });
+      expect(row!.archived).toBe(true);
+      expect(String(row!.dedupedIntoResearcherId)).toBe(String(survivor));
+    }
+    expect((await db.collection('researchers').findOne({ _id: survivor }))!.archived).toBe(false);
+    expect((await db.collection('role_assignments').findOne({ _id: copyEdge }))!.archived).toBe(
+      true,
+    );
+    expect((await db.collection('role_assignments').findOne({ _id: edge }))!.archived).toBe(false);
+
+    const again = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(again.accountlessClusters.folds).toBe(0);
   });
 
   it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {

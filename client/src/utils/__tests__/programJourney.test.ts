@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  PROGRAM_JOURNEY_CATEGORIES,
-  getProgramJourneyStatus,
-  summarizeProgramJourney,
-  programCategoryLabel,
-} from '../programJourney';
+import { programCategoryLabel, programRoleOf } from '../programJourney';
 import type { Fellowship } from '../../types/types';
+import { createFellowship } from '../createFellowship';
 
 const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   id: 'f1',
@@ -16,6 +12,7 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -60,92 +57,34 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   ...overrides,
 });
 
-const now = new Date('2026-05-14T00:00:00.000Z');
-const isoDaysFromNow = (days: number) =>
-  new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
-
-describe('summarizeProgramJourney', () => {
-  const fellowships: Fellowship[] = [
-    baseFellowship({
-      id: 'apply-now',
-      programKind: 'STRUCTURED_PROGRAM',
-      requiresMentorBeforeApply: false,
-      studentFacingCategory: 'Structured program',
-      isAcceptingApplications: true,
-      deadline: isoDaysFromNow(60),
-    }),
-    baseFellowship({
-      id: 'structured',
-      programKind: 'STRUCTURED_PROGRAM',
-      requiresMentorBeforeApply: false,
-      studentFacingCategory: 'Structured program',
-      isAcceptingApplications: false,
-      deadline: isoDaysFromNow(-40),
-    }),
-    baseFellowship({
-      id: 'funding-a',
-      isAcceptingApplications: false,
-      deadline: isoDaysFromNow(-40),
-    }),
-    baseFellowship({
-      id: 'funding-b',
-      isAcceptingApplications: false,
-      deadline: isoDaysFromNow(-90),
-    }),
-    baseFellowship({
-      id: 'archive',
-      programKind: 'OTHER',
-      entryMode: 'UNKNOWN',
-      studentFacingCategory: 'Archive / review',
-      requiresMentorBeforeApply: false,
-      links: [],
-      applicationLink: '',
-      isAcceptingApplications: false,
-      deadline: isoDaysFromNow(-40),
-    }),
-    baseFellowship({
-      id: 'projected-next-cycle',
-      programKind: 'OTHER',
-      requiresMentorBeforeApply: false,
-      isAcceptingApplications: false,
-      deadline: isoDaysFromNow(180),
-      deadlineProjectedNextCycle: true,
-    }),
-  ];
-
-  it('partitions the set so the buckets sum to the total record count', () => {
-    const summary = summarizeProgramJourney(fellowships, now);
-    const summed = PROGRAM_JOURNEY_CATEGORIES.reduce((sum, key) => sum + summary[key], 0);
-    expect(summed).toBe(fellowships.length);
+describe('programRoleOf (#3904)', () => {
+  it('prefers the served programRole over the kind', () => {
+    expect(
+      programRoleOf(
+        baseFellowship({ programKind: 'FELLOWSHIP_FUNDING', programRole: 'RECOGNIZES_RESEARCH' }),
+      ),
+    ).toBe('RECOGNIZES_RESEARCH');
   });
 
-  it('matches per-record getProgramJourneyStatus so tiles and sections cannot diverge', () => {
-    const summary = summarizeProgramJourney(fellowships, now);
-    const recomputed = PROGRAM_JOURNEY_CATEGORIES.reduce(
-      (acc, key) => ({ ...acc, [key]: 0 }),
-      {} as Record<(typeof PROGRAM_JOURNEY_CATEGORIES)[number], number>,
+  it('falls back to the kind for a record served before its role was written', () => {
+    expect(programRoleOf(baseFellowship({ programKind: 'DEPARTMENT_RESEARCH_GUIDE' }))).toBe(
+      'STARTS_RESEARCH',
     );
-    for (const fellowship of fellowships) {
-      recomputed[getProgramJourneyStatus(fellowship, now).category] += 1;
-    }
-    expect(summary).toEqual(recomputed);
-  });
-
-  it('counts the whole set rather than a single loaded page', () => {
-    const summary = summarizeProgramJourney(fellowships, now);
-    expect(summary.applyNow).toBe(1);
-    expect(summary.structured).toBe(1);
-    expect(summary.fundingAfterMentor).toBe(2);
-    expect(summary.archive).toBe(1);
-    expect(summary.openingSoon).toBe(1);
-  });
-
-  it('folds a server-projected next-cycle deadline into the opening-soon bucket', () => {
-    const status = getProgramJourneyStatus(
-      fellowships.find((f) => f.id === 'projected-next-cycle')!,
-      now,
+    expect(programRoleOf(baseFellowship({ programKind: 'RESEARCH_AWARD' }))).toBe(
+      'RECOGNIZES_RESEARCH',
     );
-    expect(status.category).toBe('openingSoon');
+    expect(programRoleOf(baseFellowship())).toBe('FUNDS_RESEARCH');
+    expect(programRoleOf(baseFellowship({ programKind: 'OTHER' }))).toBe('UNCLASSIFIED');
+  });
+
+  it('reads the served programRole through createFellowship', () => {
+    const served = createFellowship({
+      _id: 'served-award',
+      programKind: 'FELLOWSHIP_FUNDING',
+      programRole: 'RECOGNIZES_RESEARCH',
+      title: 'Synthetic Award',
+    });
+    expect(programRoleOf(served)).toBe('RECOGNIZES_RESEARCH');
   });
 });
 

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeInitialSpacing, normalizeName, slugify, splitName } from '../scraperHelpers';
+import {
+  isPhotoSceneDescription,
+  normalizeInitialSpacing,
+  normalizeName,
+  slugify,
+  splitName,
+} from '../scraperHelpers';
 
 describe('normalizeInitialSpacing', () => {
   it('keeps a single-letter initial followed by a period spaced from the surname', () => {
@@ -93,4 +99,21 @@ describe('invisible format characters in identity derivation (#2874)', () => {
   it('splits a soft-hyphenated name on its real word boundary', () => {
     expect(splitName(SOFT_HYPHENATED)).toEqual({ first: 'Robin', last: 'Reader' });
   });
+});
+
+describe('isPhotoSceneDescription', () => {
+  it.each([
+    'man in green suit holding guitar',
+    'a woman with glasses standing in front of a window',
+    'person sitting at a piano',
+  ])('flags a scene description: %s', (text) => {
+    expect(isPhotoSceneDescription(text)).toBe(true);
+  });
+
+  it.each(['Man Wah Fixture', 'Man', 'Rémi Lâsuit', 'Photo of Robin Fixture.', 'Jordan Stage'])(
+    'does not flag a name: %s',
+    (text) => {
+      expect(isPhotoSceneDescription(text)).toBe(false);
+    },
+  );
 });

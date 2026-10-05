@@ -12,9 +12,11 @@ import {
   type PlanAuditRow,
   type PlannedFieldChange,
 } from './auditPlansTheProjectionDeclinesCore';
-import { planLinkChromeNameRepair } from './repairLinkChromeEntityNamesCore';
 
-dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env') });
+dotenv.config({
+  path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env'),
+  quiet: true,
+});
 
 const MAX_ROWS_PER_SCRIPT = 40;
 
@@ -23,7 +25,7 @@ const MAX_ROWS_PER_SCRIPT = 40;
  * fetch. Anything else is an `unknown` with its reason, because a script the audit cannot
  * dry-run is not a pass.
  */
-interface AuditableScript {
+export interface AuditableScript {
   script: string;
   plan?: () => Promise<PlannedFieldChange[]>;
   unknownReason?: string;
@@ -35,38 +37,26 @@ const liveRows = () =>
     .lean();
 
 /**
- * The control for `reproduces`, and a real script rather than a fixture.
+ * Two absences, for two different reasons, and the state they leave.
  *
- * `repairLinkChromeEntityNames` strips link chrome from a name using the same
- * `stripResearchHomeNameLinkChrome` the projection applies, so the projection should reach
- * the same value. It is also the script `repairUnbackedLabNames` is meant to follow.
+ * `research-homes:backfill-names` went first: the audit reported it declining 41 of 41
+ * sampled changes and it was deleted for that reason, so it is no longer a script the audit
+ * can examine.
+ *
+ * `research-entity:repair-link-chrome-names` went second, and not because it was wrong. Its
+ * correction is applied at ingest - `observationFieldSanitizer` composes
+ * `stripResearchHomeNameLinkChrome` - and its planner found chrome on 0 of 4,601 live rows,
+ * so the entry contributed no examined change while making this instrument depend on a
+ * repair script to exist (#3691).
+ *
+ * So every entry below is now `unknown`, and that is the honest reading rather than a gap:
+ * with no repair both callable read-only and decidable without a write, this file is a
+ * registry of WHY each remaining repair cannot be dry-run, plus the live control below. Both
+ * arms of `comparePlannedFieldToProjection` keep their proof in the mutation-checked unit
+ * tests, which is the correct steady state once no repair is wrong. An entry gaining a
+ * `plan` again is the signal that a repair has become auditable, not that this file regressed.
  */
-async function planFromLinkChromeNames(): Promise<PlannedFieldChange[]> {
-  const rows = (await liveRows()) as Array<Record<string, unknown>>;
-  const changes: PlannedFieldChange[] = [];
-  for (const row of planLinkChromeNameRepair(rows as never)) {
-    if (row.outcome !== 'strip' || !row.repairedName) continue;
-    changes.push({ entityKey: row.slug, field: 'name', plannedValue: row.repairedName });
-    if (row.repairedDisplayName) {
-      changes.push({
-        entityKey: row.slug,
-        field: 'displayName',
-        plannedValue: row.repairedDisplayName,
-      });
-    }
-    if (changes.length >= MAX_ROWS_PER_SCRIPT) break;
-  }
-  return changes;
-}
-
-/**
- * `research-homes:backfill-names` is deliberately absent: the audit reported it declining 41
- * of 41 sampled changes and it was deleted for that reason, so it is no longer a script the
- * audit can examine. The `declines` arm keeps its proof in the mutation-checked unit tests
- * rather than in a live case, which is the correct steady state once no repair is wrong.
- */
-const SCRIPTS: AuditableScript[] = [
-  { script: 'research-entity:repair-link-chrome-names', plan: planFromLinkChromeNames },
+export const AUDITED_REPAIR_SCRIPTS: AuditableScript[] = [
   {
     // Auditable now that `loadLeadNamesBySlug` is exported (#3398), but still not DECIDABLE
     // read-only. It appends its corrected name as an observation before writing the field, so
@@ -90,28 +80,43 @@ const SCRIPTS: AuditableScript[] = [
     unknownReason: 'no exported pure planner, and the apply path probes pages over the network',
   },
   {
-    script: 'research-entity:lab-branded-name-type-backfill',
+    script: 'research-entity:backfill-lab-branded-name-type',
     unknownReason:
       'planner needs harvested brand candidates the audit cannot reconstruct read-only',
   },
   {
-    script: 'research-homes:retype-from-declared-page-type',
+    script: 'research-entity:retype-from-declared-page-type',
     unknownReason: 'planner input comes from a page-type probe, which is a network read',
   },
 ];
 
 /**
- * Proves the `reproduces` arm fires on live data.
+ * What the run can establish live, which is narrower than it used to claim.
  *
- * Neither currently-callable harmless repair has a non-empty plan on today's corpus, so no
- * real script yields `reproduces` and the arm would otherwise go unexercised. This takes the
- * projection's OWN planned value for a real row and feeds it back, which must report
- * reproduced. It is a control on the instrument, not a script, and it is reported as such.
+ * The previous control took the projection's OWN planned `name` for a row and fed it back
+ * to `comparePlannedFieldToProjection`, then reported that it reproduced. That is
+ * `JSON.stringify(x) === JSON.stringify(x)`: it exercises no branch the comparator's unit
+ * tests do not already cover, and labelling it a proof made the run read as having live
+ * coverage it did not have. Both comparator arms are proven where they belong, in
+ * `auditPlansTheProjectionDeclinesCore.test.ts`, which covers a field absent from the
+ * planned set, a field planned differently, a field planned identically including a list,
+ * and a planned null (#3691).
+ *
+ * It also depended on a repair script's planner to supply the live `reproduces` case, so
+ * the instrument could not outlive the scripts it audits. It now depends on none.
+ *
+ * What is worth checking live is a different question, and it is about this instrument
+ * rather than about the comparator: does the projection answer at all? Every verdict here
+ * is read off `plannedSet`, so if the projection planned no `name` for any row, each
+ * audited change would report `not-in-planned-set` and the run would read as "every repair
+ * is wrong" when the truth is that the instrument is blind. This counts the live rows the
+ * projection does plan a `name` for, so a zero is visible as an instrument failure instead
+ * of being distributed across the scripts as verdicts.
  */
-async function reproducesArmControl(): Promise<PlanAuditRow> {
+async function projectionAnswersControl(): Promise<PlanAuditRow> {
   const rows = (await liveRows()) as Array<Record<string, unknown>>;
-  let reproduced = 0;
-  let declined = 0;
+  let plansAName = 0;
+  let plansNoName = 0;
   for (const row of rows) {
     const key = String(row.slug ?? '');
     if (!key) continue;
@@ -121,22 +126,18 @@ async function reproducesArmControl(): Promise<PlanAuditRow> {
       { dryRun: true },
     );
     const planned = projection.plannedSet ?? {};
-    const field = Object.keys(planned).find((candidate) => candidate === 'name');
-    if (!field) continue;
-    const verdict = comparePlannedFieldToProjection(
-      { entityKey: key, field, plannedValue: planned[field] },
-      planned,
-    );
-    if (verdict.reproduced) reproduced += 1;
-    else declined += 1;
-    if (reproduced + declined >= 5) break;
+    if (Object.prototype.hasOwnProperty.call(planned, 'name')) plansAName += 1;
+    else plansNoName += 1;
+    if (plansAName + plansNoName >= MAX_ROWS_PER_SCRIPT) break;
   }
   return {
-    script: '(control) the projection agreeing with itself',
-    verdict: verdictForScript({ planned: reproduced + declined, declined }),
-    planned: reproduced + declined,
-    declined,
-    reproduced,
+    script: '(control) the projection plans a name for a live row',
+    // `declines` when the projection planned a name for none of the sampled rows, because
+    // then no verdict in this run is about a script.
+    verdict: plansAName > 0 ? 'reproduces' : 'declines',
+    planned: plansAName + plansNoName,
+    declined: plansNoName,
+    reproduced: plansAName,
   };
 }
 
@@ -147,7 +148,7 @@ export async function runPlanDeclineAudit(): Promise<{
   armControl: PlanAuditRow;
 }> {
   const rows: PlanAuditRow[] = [];
-  for (const entry of SCRIPTS) {
+  for (const entry of AUDITED_REPAIR_SCRIPTS) {
     if (!entry.plan) {
       rows.push({
         script: entry.script,
@@ -188,9 +189,9 @@ export async function runPlanDeclineAudit(): Promise<{
       ...(examples.length > 0 ? { examples } : {}),
     });
   }
-  const control = await reproducesArmControl();
+  const control = await projectionAnswersControl();
   return {
-    scriptsExamined: SCRIPTS.length,
+    scriptsExamined: AUDITED_REPAIR_SCRIPTS.length,
     summary: summarizePlanAudit(rows),
     rows,
     armControl: control,

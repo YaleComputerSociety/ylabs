@@ -1,21 +1,32 @@
 const PERSON_SLUG_PREFIXES = ['nih-pi-', 'nsf-pi-', 'ysm-faculty-', 'faculty-research-area-'];
 
+// The whole match is the enclosing hyphenated token, so the registered-name
+// allowance compares a full name; group 1 is the slug from the prefix onward.
 const PERSON_SLUG_RE = new RegExp(
-  `\\b(?:${PERSON_SLUG_PREFIXES.join('|')})[a-z0-9][a-z0-9+-]*`,
+  `\\b(?:[a-z0-9]+-)*((?:${PERSON_SLUG_PREFIXES.join('|')})[a-z0-9][a-z0-9+-]*)`,
   'gi',
 );
 
 /**
- * Registered scraper source names that collide with a person-slug prefix. A source
- * name identifies a scraper, so pairing it with a claim names no person, but the
- * prefixes cannot see the difference: `ysm-faculty-directory` reads as
- * `ysm-faculty-<surname>`.
+ * Registered scraper source names and server script names that contain a
+ * person-slug prefix. A source or script name identifies code, so pairing it with a
+ * claim names no person, but the prefixes cannot see the difference:
+ * `ysm-faculty-directory` reads as `ysm-faculty-<surname>`, and
+ * `nih-nsf-pi-center-lab-conflation-repair` contains `nsf-pi-center-...`.
  *
- * This is an exact-match allowance, not a token stoplist, so `ysm-faculty-directors`
- * or any longer slug that merely starts the same way is still flagged. The set is
- * pinned against `server/src/scrapers/seedSources.ts` by this script's test, so a
- * future source name that collides fails there rather than silently widening what
- * the gate ignores.
+ * This is an exact-match allowance on the whole hyphenated token, not a token
+ * stoplist, so `ysm-faculty-directors`, `legacy-ysm-faculty-directory`, or any other
+ * token that merely contains the same name is still flagged. The set is pinned by this
+ * script's test against three registries: the seed list in
+ * `server/src/scrapers/seedSources.ts`, `RETIRED_SOURCE_NAMES` in
+ * `server/src/scrapers/sourceDispatch.ts`, and the `server/package.json` script names.
+ * So a future name that collides fails there rather than silently widening what the gate
+ * ignores, and a name removed from all three has to stop being ignored.
+ *
+ * A RETIRED source name counts, because retiring a source does not stop it being
+ * discussed: the name stays in the codebase and stored `fieldProvenance` still cites it,
+ * so a body explaining why it was retired would otherwise be blocked by the gate for
+ * naming code (#3765).
  *
  * Without this, every pull request or issue body discussing the YSM directory
  * scraper is blocked, and the only way past is an `identifier-exempt:` line - which
@@ -23,10 +34,13 @@ const PERSON_SLUG_RE = new RegExp(
  * that has to be switched off to discuss ordinary work trains people to switch it
  * off, so a false positive here costs more than the match it catches.
  */
-const NON_PERSON_SOURCE_NAMES = new Set(['ysm-faculty-directory']);
+const REGISTERED_NON_PERSON_NAMES = new Set([
+  'ysm-faculty-directory',
+  'nih-nsf-pi-center-lab-conflation-repair',
+]);
 
-export const isRegisteredSourceName = (value) =>
-  NON_PERSON_SOURCE_NAMES.has(String(value || '').toLowerCase());
+export const isRegisteredName = (value) =>
+  REGISTERED_NON_PERSON_NAMES.has(String(value || '').toLowerCase());
 
 const PROFILE_PATH_RE =
   /\b[a-z0-9.-]*yale\.edu\/(?:profile|profiles|people|faculty)\/[A-Za-z0-9._%-]+/gi;
@@ -167,8 +181,12 @@ const NON_PERSON_TOKENS = new Set(
   ].map((token) => token.toLowerCase()),
 );
 
+// A leading capital pair covers plural acronyms (POSTs, IDs, URLs), which a
+// surname never opens with.
 const isAcronymOrCode = (token) =>
-  /\d/.test(token) || (token.length >= 2 && token === token.toUpperCase());
+  /\d/.test(token) ||
+  (token.length >= 2 && token === token.toUpperCase()) ||
+  /^[A-Z]{2}/.test(token);
 
 const isPersonShapedName = (candidate) =>
   candidate.split(/\s+/).every((token) => {
@@ -252,6 +270,90 @@ const slugSegment = (slug) => {
   return '';
 };
 
+// The invented people this script's own tests use. A body that discusses the
+// detector has to quote them, and the no-mistakes gate pastes its adversarial
+// fixtures into the pull request body, so the body scan lets them through while
+// the tests scan in strict mode to prove the same shapes are still flagged.
+// Changing this set also requires updating docs/person-identifier-convention.md.
+export const SYNTHETIC_FIXTURE_SURNAMES = Object.freeze(['marrowbane', 'fenwright']);
+
+const mentionsSyntheticFixture = (text) => {
+  const lowered = String(text || '').toLowerCase();
+  return SYNTHETIC_FIXTURE_SURNAMES.some((surname) => lowered.includes(surname));
+};
+
+// The fake netid shape the repository's fixtures already use. A real netid would
+// need both `zz` initials and a `99` digit prefix to pass, which the convention
+// doc records as the accepted limit.
+// Changing this shape also requires updating docs/person-identifier-convention.md.
+export const SYNTHETIC_NETID_RE = /^zz[a-z]?99\d*$/i;
+
+/**
+ * Reserved words that mark an invented person, recognised as the FINAL segment of a slug
+ * or of an address local part.
+ *
+ * The surname allowlist above cannot scale: it names the two invented people this
+ * script's own tests use, so a driver that invents a third fails the gate. The
+ * `no-mistakes` gate writes run output into a pull request body, and its drivers seed
+ * fixtures precisely to look like real rows, so two consecutive pull requests failed the
+ * scan on entirely synthetic data (#3540). A marker convention scales where an allowlist
+ * of names does not.
+ *
+ * Terminal position is the whole safety argument. `nih-pi-<given>-fixture` is a fixture;
+ * `nih-pi-fixture-<surname>` is a person whose slug happens to contain the word, and
+ * still flags. Same for an address: `<given>.fixture@yale.edu` is a fixture and
+ * `fixture.<surname>@yale.edu` is not.
+ *
+ * Measured against the live corpus before choosing the set: 0 of 9,119 research-entity
+ * slugs end in any of these markers, 0 contain one as a segment at all, and 0 of 11,155
+ * researcher addresses have a local part ending in one. `sample` and `example` are the
+ * only two that are attested surnames anywhere, so if either ever appears in the corpus
+ * the answer is to drop that word from this set rather than to special-case the row.
+ *
+ * Changing this set also requires updating docs/person-identifier-convention.md.
+ */
+export const SYNTHETIC_FIXTURE_MARKERS = Object.freeze([
+  'fixture',
+  'sample',
+  'synthetic',
+  'placeholder',
+  'example',
+]);
+
+const endsOnSyntheticMarker = (segments) => {
+  const last = segments.filter(Boolean).at(-1);
+  return last !== undefined && SYNTHETIC_FIXTURE_MARKERS.includes(last.toLowerCase());
+};
+
+// Requires something before the marker, so a bare `nih-pi-fixture` is judged by the
+// placeholder rule that already owns it rather than by this one.
+const isSyntheticFixtureSlug = (slug) => {
+  const segments = slugSegment(slug).split(/[+-]/).filter(Boolean);
+  return segments.length > 1 && endsOnSyntheticMarker(segments);
+};
+
+// The same rule on the third arm that carries a person's name: the final path segment of a
+// directory profile URL. `.../profile/<given>-fixture/` is invented; `.../profile/fixture-<surname>/`
+// is a person and still flags. Without this arm a driver's seeded profile URLs read as dump
+// shape, which is how one body reported 46 of them (#3540).
+const isSyntheticFixtureProfileUrl = (url) => {
+  const leaf = url.slice(url.lastIndexOf('/') + 1);
+  const parts = leaf.split(/[._-]/).filter(Boolean);
+  return parts.length > 1 && endsOnSyntheticMarker(parts);
+};
+
+const isSyntheticFixtureLocalPart = (localPart) => {
+  const segments = String(localPart || '')
+    .split('.')
+    .filter(Boolean);
+  return segments.length > 1 && endsOnSyntheticMarker(segments);
+};
+
+const isSyntheticFixtureName = (name) => {
+  const tokens = String(name || '').split(/\s+/);
+  return tokens.length === 2 && SYNTHETIC_FIXTURE_SURNAMES.includes(tokens[1].toLowerCase());
+};
+
 const isPlaceholderSlug = (slug) => {
   const segment = slugSegment(slug);
   if (!segment) return true;
@@ -306,6 +408,7 @@ const profileUrlFindings = (document) => {
     const index = match.index || 0;
     const claimed = CLAIM_RE.test(sentenceAt(spans, index));
     return {
+      matched: match[0],
       label: document.label,
       line: lineNumberForIndex(content, index),
       rule: 'personal-profile-url',
@@ -335,6 +438,7 @@ const personClaimFindings = (document) => {
       const start = match.index || 0;
       if (isQuotedTitle(span.text, start, start + match[0].length)) continue;
       findings.push({
+        matched: match[0],
         label: document.label,
         line: lineNumberForIndex(content, span.start + (match.index || 0)),
         rule: 'person-claim-pairing',
@@ -351,31 +455,47 @@ export function isExempt(content) {
   return EXEMPTION_RE.test(String(content || ''));
 }
 
-export function findPersonIdentifierFindings(documents) {
+export function findPersonIdentifierFindings(documents, { strict = false } = {}) {
   const findings = [];
+  const isSynthetic = (text) => !strict && mentionsSyntheticFixture(text);
+  const isSyntheticName = (name) => !strict && isSyntheticFixtureName(name);
+  // Gated on `!strict` like every other synthetic allowance: the tests scan strict, so the
+  // same shapes stay provably flagged there.
+  const isSyntheticMarkedSlug = (slug) => !strict && isSyntheticFixtureSlug(slug);
+  const isSyntheticMarkedLocalPart = (part) => !strict && isSyntheticFixtureLocalPart(part);
+  const isSyntheticMarkedProfileUrl = (url) => !strict && isSyntheticFixtureProfileUrl(url);
 
   for (const document of documents) {
     if (isExempt(document.content)) continue;
 
     findings.push(
       ...collect(document, PERSON_SLUG_RE, 'person-bearing-entity-slug', (match) =>
-        isPlaceholderSlug(match[0]) || isRegisteredSourceName(match[0])
+        isPlaceholderSlug(match[1]) ||
+        isRegisteredName(match[0]) ||
+        isSynthetic(match[1]) ||
+        isSyntheticMarkedSlug(match[1])
           ? null
           : 'a person-bearing slug prefix',
       ),
-      ...profileUrlFindings(document),
+      ...profileUrlFindings(document).filter(
+        (finding) => !isSynthetic(finding.matched) && !isSyntheticMarkedProfileUrl(finding.matched),
+      ),
       ...collect(document, YALE_EMAIL_RE, 'personal-yale-address', (match) => {
         const localPart = match[1] || '';
         if (isRoleAddress(localPart)) return null;
         if (isPlaceholderAddress(localPart)) return null;
+        if (isSynthetic(localPart)) return null;
+        if (isSyntheticMarkedLocalPart(localPart)) return null;
         return 'a personal yale.edu address';
       }),
-      ...collect(document, NETID_LABELLED_RE, 'yale-netid', () => 'a Yale netid'),
-      ...personClaimFindings(document),
+      ...collect(document, NETID_LABELLED_RE, 'yale-netid', (match) =>
+        !strict && SYNTHETIC_NETID_RE.test(match[1]) ? null : 'a Yale netid',
+      ),
+      ...personClaimFindings(document).filter((finding) => !isSyntheticName(finding.matched)),
     );
   }
 
-  return findings;
+  return findings.map(({ matched: _matched, ...finding }) => finding);
 }
 
 export function isFinding(entry) {
@@ -419,7 +539,7 @@ export function candidateIdentifierScanPaths(paths) {
   );
 }
 
-const DATA_FILE_RE = /\.(?:json|ndjson|csv|tsv)$/i;
+const DATA_FILE_RE = /\.(?:json|ndjson|csv|tsv|html?|xml|txt)$/i;
 const TEST_PATH_RE = /(?:^|\/)(?:__tests__|__fixtures__|fixtures|test|tests)(?:\/|$)/;
 
 export const DIRECTORY_DUMP_THRESHOLD = 5;
@@ -427,6 +547,41 @@ export const DIRECTORY_DUMP_THRESHOLD = 5;
 export function isDirectoryDumpCandidate(path) {
   const file = String(path || '');
   return DATA_FILE_RE.test(file) && !TEST_PATH_RE.test(file);
+}
+
+export function isFixtureAddressCandidate(path) {
+  const file = String(path || '');
+  return DATA_FILE_RE.test(file) && TEST_PATH_RE.test(file);
+}
+
+const isPersonalShapedAddress = (localPart) =>
+  !isRoleAddress(localPart) &&
+  !isPlaceholderAddress(localPart) &&
+  !isSyntheticFixtureLocalPart(localPart) &&
+  !mentionsSyntheticFixture(localPart);
+
+export function findFixtureAddressFindings(files) {
+  const findings = [];
+
+  for (const file of files) {
+    if (!isFixtureAddressCandidate(file.path)) continue;
+    if (isExempt(file.content)) continue;
+
+    const addresses = new Set();
+    YALE_EMAIL_RE.lastIndex = 0;
+    for (const match of String(file.content || '').matchAll(YALE_EMAIL_RE)) {
+      if (isPersonalShapedAddress(match[1] || '')) addresses.add(match[0].toLowerCase());
+    }
+    if (addresses.size === 0) continue;
+
+    findings.push({
+      path: file.path,
+      rule: 'fixture-personal-address',
+      distinctAddresses: addresses.size,
+    });
+  }
+
+  return findings;
 }
 
 export function findDirectoryDumpFindings(files, threshold = DIRECTORY_DUMP_THRESHOLD) {

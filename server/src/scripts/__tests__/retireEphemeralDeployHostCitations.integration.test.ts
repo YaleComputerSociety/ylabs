@@ -64,7 +64,7 @@ describe('deploy-host citations are refused, withheld, and retracted (#2805)', (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

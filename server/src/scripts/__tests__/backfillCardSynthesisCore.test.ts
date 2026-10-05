@@ -155,7 +155,7 @@ describe('planCardBackfillRow assesses the served card, not the stored one (#267
   // The public-description sanitizer empties the whole body, so no card can rescue the
   // row, yet the stored short reads perfectly well on its own.
   const TITLES_RUN_INTO_PROSE =
-    'Emeritus Professor of Surgery and of Cellular and Molecular Physiology Principal Investigator, Example Laboratory Editor-in-Chief, Journal of Example Science, Society for Example Surgery Dr. Rowan Tallis is a surgeon-scientist who harnesses the power of molecular biology to achieve a modern understanding of vascular disease, and then uses the basic science laboratory to ultimately benefit patients with vascular diseases. Dr. Tallis trained at three universities before an appointment to the faculty in 2001. Dr. Tallis focuses a clinical practice on teaching, and the laboratory studies the healing and function of blood vessels, fistulae and vessel patches used in patients having vascular surgery.';
+    'Emeritus Professor of Surgery and of Cellular and Molecular Physiology Principal Investigator, Example Laboratory Editor-in-Chief, Journal of Example Science, Society for Example Surgery Dr. Rowan Tallis is a surgeon-scientist who harnesses the power of molecular biology to achieve a modern understanding of vascular disease, and then uses the basic science laboratory to ultimately benefit patients with vascular diseases. Dr. Tallis trained at three universities before an appointment to the faculty in 2001. Alongside a clinical practice and teaching, the laboratory studies the healing and function of blood vessels, fistulae and vessel patches used in patients having vascular surgery.';
   const STORED_SHORT_THAT_READS_WELL =
     'Studies the healing and function of blood vessels, fistulae and vessel patches that are used in patients having vascular surgery.';
 
@@ -309,6 +309,12 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
     'Questions about measurement and questions about mechanism have driven the group for fifteen years, and the instrumentation built to answer the first has repeatedly reshaped what could be asked of the second, so the two threads are now inseparable in the work the group does.';
   const SYNTHESIZED_CARD =
     'Studies questions about measurement and mechanism, building instrumentation that reshapes what can be asked of the biology.';
+  // Grounded in DERIVABLE_RESEARCH_BODY, which the card above is not. The gate judges
+  // the served card, and the serve path surrenders a card whose distinctive tokens are
+  // absent from the row's own body, so a card synthesized for a different body is
+  // correctly refused rather than proposed (#3747).
+  const SYNTHESIZED_CARD_FOR_THE_DERIVABLE_BODY =
+    'Studies how microglia clear protein aggregates in the ageing brain, using imaging and sequencing to find the clearance pathways that fail earliest.';
   // A synthesized biography that is GROUNDED in the body, so it clears
   // shortDescriptionQuality and survives the serve sanitizers as a complete card.
   // That is the only shape the output refusal is load-bearing for: an ungrounded or
@@ -327,7 +333,7 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
   });
 
   it('no longer calls a served career-biography card short-ok', async () => {
-    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD_FOR_THE_DERIVABLE_BODY);
 
     const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
 
@@ -337,7 +343,7 @@ describe('planCardBackfillRow career-biography cards (#3098)', () => {
 
   it('refuses the body derivation on a row that already has a card', async () => {
     const derived = deriveShortDescriptionFromFullDescription(DERIVABLE_RESEARCH_BODY);
-    const synthesize = vi.fn(async () => SYNTHESIZED_CARD);
+    const synthesize = vi.fn(async () => SYNTHESIZED_CARD_FOR_THE_DERIVABLE_BODY);
 
     const row = await planCardBackfillRow(biographyRow(DERIVABLE_RESEARCH_BODY), synthesize);
 

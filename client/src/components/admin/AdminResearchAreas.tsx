@@ -3,7 +3,7 @@
  */
 import { useReducer, useEffect } from 'react';
 import axios from '../../utils/axios';
-import swal from 'sweetalert';
+import { showAlert, confirmAction } from '../../utils/appDialogs';
 import { clientErrorMessage } from '../../utils/clientErrorMessage';
 import {
   inlineCrudReducer,
@@ -76,7 +76,7 @@ const AdminResearchAreas = () => {
       dispatch({ type: 'FETCH_SUCCESS', items: response.data.researchAreas });
     } catch {
       console.error('Error fetching topics.');
-      void swal({ text: 'Failed to fetch topics', icon: 'error' });
+      void showAlert({ text: 'Failed to fetch topics', tone: 'error' });
       dispatch({ type: 'FETCH_FAILURE' });
     }
   };
@@ -87,27 +87,27 @@ const AdminResearchAreas = () => {
 
   const handleAdd = async () => {
     if (!newDraft.name.trim()) {
-      void swal({ text: 'Name is required', icon: 'warning' });
+      void showAlert({ text: 'Name is required', tone: 'warning' });
       return;
     }
 
     try {
       await axios.post(
-        '/research-areas',
+        '/admin/research-areas',
         { name: newDraft.name.trim(), field: newDraft.field },
         { withCredentials: true },
       );
       dispatch({ type: 'RESET_NEW_DRAFT', initial: INITIAL_NEW_DRAFT });
       void fetchAreas();
-      void swal({ text: 'Topic added', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Topic added', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to add'), icon: 'error' });
+      void showAlert({ text: clientErrorMessage(error, 'Failed to add'), tone: 'error' });
     }
   };
 
   const handleUpdate = async (id: string) => {
     if (!editDraft || !editDraft.name.trim()) {
-      void swal({ text: 'Name is required', icon: 'warning' });
+      void showAlert({ text: 'Name is required', tone: 'warning' });
       return;
     }
 
@@ -119,19 +119,19 @@ const AdminResearchAreas = () => {
       );
       dispatch({ type: 'CANCEL_EDIT' });
       void fetchAreas();
-      void swal({ text: 'Topic updated', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Topic updated', tone: 'success', autoCloseMs: 1500 });
     } catch (error: any) {
-      void swal({ text: clientErrorMessage(error, 'Failed to update'), icon: 'error' });
+      void showAlert({ text: clientErrorMessage(error, 'Failed to update'), tone: 'error' });
     }
   };
 
   const handleDelete = async (area: ResearchArea) => {
-    const confirmed = await swal({
+    const confirmed = await confirmAction({
       title: 'Delete Topic',
       text: `Delete "${area.name}"? This cannot be undone.`,
-      icon: 'warning',
-      buttons: ['Cancel', 'Delete'],
-      dangerMode: true,
+      tone: 'warning',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
 
     if (!confirmed) return;
@@ -139,9 +139,9 @@ const AdminResearchAreas = () => {
     try {
       await axios.delete(`/admin/research-areas/${area._id}`, { withCredentials: true });
       void fetchAreas();
-      void swal({ text: 'Topic deleted', icon: 'success', timer: 1500 });
+      void showAlert({ text: 'Topic deleted', tone: 'success', autoCloseMs: 1500 });
     } catch {
-      void swal({ text: 'Failed to delete', icon: 'error' });
+      void showAlert({ text: 'Failed to delete', tone: 'error' });
     }
   };
 
@@ -162,30 +162,30 @@ const AdminResearchAreas = () => {
   return (
     <div>
       <div className="bg-[var(--yr-panel)] rounded-card shadow-yr-raised p-4 border border-[var(--yr-line)] mb-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Add New Topic</h3>
+        <h3 className="text-sm font-semibold text-ink-soft mb-3">Add New Topic</h3>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Name</label>
+            <label className="block text-xs text-muted mb-1">Name</label>
             <input
               value={newDraft.name}
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { name: e.target.value } })
               }
               placeholder="e.g. Quantum Computing"
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
+              className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleAdd();
               }}
             />
           </div>
           <div className="min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Field</label>
+            <label className="block text-xs text-muted mb-1">Field</label>
             <select
               value={newDraft.field}
               onChange={(e) =>
                 dispatch({ type: 'SET_NEW_DRAFT', payload: { field: e.target.value } })
               }
-              className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
+              className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring"
             >
               {RESEARCH_FIELDS.map((f) => (
                 <option key={f} value={f}>
@@ -207,8 +207,8 @@ const AdminResearchAreas = () => {
         <input
           value={search}
           onChange={(e) => dispatch({ type: 'SET_SEARCH', payload: e.target.value })}
-          placeholder="Filter topics..."
-          className="min-h-[44px] w-full border border-[var(--yr-line-strong)] rounded px-3 py-2 text-sm yr-focus-ring"
+          placeholder="Filter topics…"
+          className="min-h-[44px] w-full border border-[var(--yr-line-control)] rounded px-3 py-2 text-sm yr-focus-ring"
         />
         <div className="text-xs text-muted mt-1">{filtered.length} topics</div>
       </div>
@@ -218,22 +218,22 @@ const AdminResearchAreas = () => {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-[var(--yr-panel-muted)] border-b">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Field</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Default</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Name</th>
+                <th className="text-left py-3 px-4 font-semibold text-ink-soft">Field</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Default</th>
+                <th className="text-center py-3 px-4 font-semibold text-ink-soft">Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-8 text-gray-500">
-                    Loading...
+                  <td colSpan={4} className="text-center py-8 text-muted">
+                    Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-8 text-gray-500">
+                  <td colSpan={4} className="text-center py-8 text-muted">
                     No topics found
                   </td>
                 </tr>
@@ -250,7 +250,7 @@ const AdminResearchAreas = () => {
                               payload: { name: e.target.value },
                             })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
+                          className="min-h-[44px] border border-[var(--yr-line-control)] rounded px-2 py-1 text-sm w-full yr-focus-ring"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') void handleUpdate(area._id);
                             if (e.key === 'Escape') dispatch({ type: 'CANCEL_EDIT' });
@@ -271,7 +271,7 @@ const AdminResearchAreas = () => {
                               payload: { field: e.target.value },
                             })
                           }
-                          className="min-h-[44px] border border-[var(--yr-line-strong)] rounded px-2 py-1 text-sm yr-focus-ring"
+                          className="min-h-[44px] border border-[var(--yr-line-control)] rounded px-2 py-1 text-sm yr-focus-ring"
                         >
                           {RESEARCH_FIELDS.map((f) => (
                             <option key={f} value={f}>
@@ -282,7 +282,7 @@ const AdminResearchAreas = () => {
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            FIELD_COLORS[area.field] || 'bg-[var(--yr-panel-muted)] text-gray-700'
+                            FIELD_COLORS[area.field] || 'bg-[var(--yr-panel-muted)] text-ink-soft'
                           }`}
                         >
                           {area.field}
@@ -308,7 +308,7 @@ const AdminResearchAreas = () => {
                             </button>
                             <button
                               onClick={() => dispatch({ type: 'CANCEL_EDIT' })}
-                              className="min-h-[44px] text-xs bg-gray-300 text-gray-700 px-2 py-1 rounded hover:bg-gray-400 yr-focus-ring"
+                              className="yr-secondary-action min-h-[44px] rounded px-2 py-1 text-xs yr-focus-ring"
                             >
                               Cancel
                             </button>

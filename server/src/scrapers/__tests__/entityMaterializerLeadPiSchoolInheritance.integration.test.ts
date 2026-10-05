@@ -16,10 +16,12 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
 });
 
+import { Observation } from '../../models/observation';
 import { OrgUnit } from '../../models/orgUnit';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { Source } from '../../models/source';
 import { LEAD_PI_SCHOOL_INHERITANCE_SOURCE, inheritSchoolFromLeadPi } from '../entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
 
@@ -29,12 +31,12 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     resetOrgUnitCanonicalizerCache();
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -50,6 +52,8 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
       'researchers',
       'role_assignments',
       'admin_access_review_projections',
+      'observations',
+      'sources',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -87,6 +91,11 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
       status: 'ACTIVE',
     });
     resetOrgUnitCanonicalizerCache();
+    await Source.create({
+      name: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+      displayName: 'Lead PI school inheritance',
+      defaultWeight: 0.6,
+    });
   });
 
   const seedShell = async (overrides: Record<string, unknown> = {}) =>
@@ -133,6 +142,46 @@ describe('inheritSchoolFromLeadPi (#2158)', () => {
     expect(after.departments).toEqual(['Genetics']);
     expect(after.confidenceByField?.school).toBeGreaterThan(0);
     expect(after.fieldProvenance?.school?.sourceName).toBe(LEAD_PI_SCHOOL_INHERITANCE_SOURCE);
+  });
+
+  it('cites the observation it asserted in every provenance entry it writes (#3769)', async () => {
+    const entity = await seedShell();
+    await seedLead(entity._id, 'Dept. of Genetics');
+
+    await inheritSchoolFromLeadPi(String(entity._id));
+
+    const after = await persisted(entity._id);
+    for (const field of ['school', 'departments']) {
+      const observation = await Observation.findById(
+        after.fieldProvenance?.[field]?.observationId,
+      ).lean<{
+        field?: string;
+        sourceName?: string;
+        superseded?: boolean;
+      }>();
+      expect(observation).toMatchObject({
+        field,
+        sourceName: LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+        superseded: false,
+      });
+      expect(String(after.fieldProvenance?.[field]?.sourceId)).toBe(
+        String((await Source.findOne({ name: LEAD_PI_SCHOOL_INHERITANCE_SOURCE }))?._id),
+      );
+    }
+  });
+
+  it('writes nothing when it cannot record the evidence, rather than an unbacked value (#3769)', async () => {
+    await Source.deleteMany({});
+    const entity = await seedShell();
+    await seedLead(entity._id, 'Dept. of Genetics');
+
+    const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+    expect(result).toEqual({ inherited: false, observationSkipped: 'source-not-registered' });
+    const after = await persisted(entity._id);
+    expect(after.school ?? '').toBe('');
+    expect(after.departments ?? []).toEqual([]);
+    expect(after.fieldProvenance ?? {}).toEqual({});
   });
 
   it("fails closed when the lead's department matches no OrgUnit, never writing a raw HR string", async () => {

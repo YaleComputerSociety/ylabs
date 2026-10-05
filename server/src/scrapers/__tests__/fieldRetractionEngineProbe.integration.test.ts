@@ -95,7 +95,10 @@ function profileHtml(options: {
   )}</script></body></html>`;
 }
 
-async function runDirectoryPass(labWebsite?: { name: string; url: string }): Promise<string> {
+async function runDirectoryPass(
+  labWebsite?: { name: string; url: string },
+  run: { startedAt?: Date; codeSha?: string } = {},
+): Promise<string> {
   const profile = extractProfile(profileHtml({ labWebsite }), RIVERS);
   if (!profile) throw new Error('probe fixture produced no profile');
   const observations = facultyToResearchEntityObservations(
@@ -105,13 +108,14 @@ async function runDirectoryPass(labWebsite?: { name: string; url: string }): Pro
   );
   expect(observations.length).toBeGreaterThan(0);
 
-  const run = await ScrapeRun.create({
+  const created = await ScrapeRun.create({
     sourceId: SOURCE_ID,
     sourceName: SOURCE_NAME,
     status: 'success',
-    startedAt: new Date(),
+    startedAt: run.startedAt ?? new Date(),
+    ...(run.codeSha ? { codeSha: run.codeSha } : {}),
   });
-  const scrapeRunId = String(run._id);
+  const scrapeRunId = String(created._id);
   const appended = await appendObservations(observations, {
     scrapeRunId,
     sourceId: String(SOURCE_ID),
@@ -145,12 +149,12 @@ describe('the observation engine can retract a field a source stopped asserting 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     process.env.SCRAPER_FIELD_RETRACTION = originalFlag;
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -229,13 +233,13 @@ describe('the observation engine can retract a field a source stopped asserting 
     await runDirectoryPass({ name: 'Yale Liver Center', url: AFFILIATED_ORG });
     await runDirectoryPass({ name: 'Yale Liver Center', url: AFFILIATED_ORG });
 
-    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+    expect(await storedWebsiteUrl()).toBe('');
 
     const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
     expect(result.counts.absenceNotWitnessed).toBe(1);
     expect(result.counts.retractedObservations).toBe(0);
 
-    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+    expect(await storedWebsiteUrl()).toBe('');
     expect(await liveWebsiteUrlObservations()).toHaveLength(1);
   }, 120000);
 
@@ -250,6 +254,43 @@ describe('the observation engine can retract a field a source stopped asserting 
     const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
     expect(result.counts.absenceNotWitnessed).toBe(0);
     expect(result.counts.retractedObservations).toBe(1);
+    expect(await storedWebsiteUrl()).toBeUndefined();
+  }, 120000);
+
+  // #3824. Before #3666 this lane asserted an empty lab slot on profiles it never
+  // read, so a claim from a run on that code is not evidence the page lost its link.
+  it('retracts nothing on empty-slot claims from runs that predate the absence-claim fix', async () => {
+    const beforeFix = new Date('2026-09-20T00:00:00Z');
+    await runDirectoryPass({ name: 'Duchamp Lab', url: OWN_LAB }, { startedAt: beforeFix });
+    await runDirectoryPass(undefined, { startedAt: new Date('2026-09-21T00:00:00Z') });
+    await runDirectoryPass(undefined, { startedAt: new Date('2026-09-22T00:00:00Z') });
+
+    const result = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
+    expect(result.counts.retractedObservations).toBe(0);
+    expect(result.counts.absenceNotWitnessed).toBe(1);
+    expect(result.counts.preFixAbsenceClaims).toEqual({
+      websiteUrl: { excludedClaims: 2, heldObservations: 1, heldEntities: 1 },
+    });
+    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+    expect(await liveWebsiteUrlObservations()).toHaveLength(1);
+  }, 120000);
+
+  it('needs two post-fix empty-slot claims, not one post-fix claim beside a pre-fix one', async () => {
+    await runDirectoryPass(
+      { name: 'Duchamp Lab', url: OWN_LAB },
+      { startedAt: new Date('2026-09-20T00:00:00Z') },
+    );
+    await runDirectoryPass(undefined, { startedAt: new Date('2026-09-21T00:00:00Z') });
+    await runDirectoryPass();
+
+    const awaiting = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
+    expect(awaiting.counts.awaitingSecondCompleteRead).toBe(1);
+    expect(awaiting.counts.retractedObservations).toBe(0);
+    expect(await storedWebsiteUrl()).toBe(OWN_LAB);
+
+    await runDirectoryPass();
+    const retracted = await reconcileFieldRetractions({ sourceName: SOURCE_NAME });
+    expect(retracted.counts.retractedObservations).toBe(1);
     expect(await storedWebsiteUrl()).toBeUndefined();
   }, 120000);
 

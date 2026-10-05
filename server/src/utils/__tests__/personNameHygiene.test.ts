@@ -7,6 +7,7 @@ import {
   stripPersonNameCaptionWrapper,
   stripPersonNameCredentialList,
   stripPersonNameFormerNameAnnotation,
+  sanitizePersonGivenName,
 } from '../personNameHygiene';
 
 describe('stripPersonNameCaptionWrapper', () => {
@@ -210,5 +211,29 @@ describe('personNameNoiseShapes', () => {
     expect(personNameNoiseShapes('Ada Byron')).toEqual([]);
     expect(personNameHasNoise('Ada Byron')).toBe(false);
     expect(personNameHasNoise('Ada Byron, PhD')).toBe(true);
+  });
+});
+
+describe('stripPersonNameCaptionWrapper drops a title only inside a caption', () => {
+  it('removes a title the caption puts in front of a full name', () => {
+    expect(stripPersonNameCaptionWrapper('Photo of Dean Robin Fixture.')).toBe('Robin Fixture');
+    expect(stripPersonNameCaptionWrapper('Photo of Dr. Robin Fixture')).toBe('Robin Fixture');
+  });
+
+  it('keeps a given name that reads like a title', () => {
+    expect(stripPersonNameCaptionWrapper('Photo of Dean Fixture.')).toBe('Dean Fixture');
+    expect(stripPersonNameCaptionWrapper('Dean Robin Fixture')).toBe('Dean Robin Fixture');
+  });
+});
+
+describe('sanitizePersonGivenName', () => {
+  it('drops a caption title in front of a given name split from its surname', () => {
+    expect(sanitizePersonGivenName('Photo of Dean Robin')).toBe('Robin');
+    expect(sanitizePersonGivenName('Photo of Robin')).toBe('Robin');
+  });
+
+  it('keeps a given name that is the title word, and any given name outside a caption', () => {
+    expect(sanitizePersonGivenName('Photo of Dean')).toBe('Dean');
+    expect(sanitizePersonGivenName('Dean Robin')).toBe('Dean Robin');
   });
 });

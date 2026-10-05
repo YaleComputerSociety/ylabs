@@ -7,10 +7,24 @@ const mocks = vi.hoisted(() => ({
   syncEntities: vi.fn(async () => {}),
   syncEntity: vi.fn(async () => {}),
   deleteFromIndex: vi.fn(async () => {}),
+  rosterReadFails: false,
 }));
 
+vi.mock('../researchEntityMembershipAccessor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../researchEntityMembershipAccessor')>();
+  return {
+    ...actual,
+    getResearchEntityRosterByEntityId: vi.fn(
+      (...args: Parameters<typeof actual.getResearchEntityRosterByEntityId>) =>
+        mocks.rosterReadFails
+          ? Promise.reject(new Error('roster read unavailable'))
+          : actual.getResearchEntityRosterByEntityId(...args),
+    ),
+  };
+});
+
 vi.mock('../../utils/meiliClient', () => ({
-  getMeiliIndex: vi.fn(async () => ({
+  getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     getEmbedders: vi.fn(async () => ({})),
   })),
@@ -53,7 +67,7 @@ interface SeedInput {
  * the detail path supplied the roster-derived lead names, so the mismatched-person-name
  * strip was a structural no-op on every card surface (#2240). The unit suites hand the
  * names in directly, so this exercises the part they cannot: a real roster read from
- * Mongo through the Meilisearch browse path, its Mongo fallback, and the detail route.
+ * Mongo through the Meilisearch browse path and the detail route.
  */
 describe('a browse card serves the same repaired copy as its own detail page (#2240)', () => {
   let replSet: MongoMemoryReplSet;
@@ -62,11 +76,11 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 120000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedEntity = async (input: SeedInput) => {
@@ -118,23 +132,21 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
     });
   };
 
-  const browseCardFor = async (slug: string, options: { meiliDown?: boolean } = {}) => {
+  const browseCardFor = async (slug: string) => {
     const entityId = entityIdBySlug.get(slug);
     if (!entityId) throw new Error(`no seeded entity for ${slug}`);
     mocks.search.mockReset();
-    if (options.meiliDown) {
-      mocks.search.mockRejectedValue(new Error('meilisearch unavailable'));
-    } else {
-      mocks.search.mockResolvedValue({
-        hits: [{ id: entityId.toString() }],
-        estimatedTotalHits: 1,
-        totalHits: 1,
-      });
-    }
+    mocks.search.mockResolvedValue({
+      hits: [{ id: entityId.toString() }],
+      estimatedTotalHits: 1,
+      totalHits: 1,
+    });
     const result = await searchResearchGroupsViaMeili('capillary barrier', {}, 1, 24);
-    return result.researchEntities.find((entity: any) => entity.slug === slug) as
-      | Record<string, any>
-      | undefined;
+    return {
+      card: result.researchEntities.find((entity: any) => entity.slug === slug) as
+        Record<string, any> | undefined,
+      degraded: result.degraded,
+    };
   };
 
   const detailCopyFor = async (slug: string) => {
@@ -145,6 +157,7 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
+    mocks.rosterReadFails = false;
     for (const name of ['research_entities', 'role_assignments', 'researchers', 'signals']) {
       await db.collection(name).deleteMany({});
     }
@@ -162,7 +175,7 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
   });
 
   it('strips a third-party possessive on the browse card, matching the detail page', async () => {
-    const card = await browseCardFor(GRAFT_SLUG);
+    const { card } = await browseCardFor(GRAFT_SLUG);
     const detail = await detailCopyFor(GRAFT_SLUG);
 
     expect(card?.shortDescription).toBe(REPAIRED_SHORT);
@@ -173,21 +186,23 @@ describe('a browse card serves the same repaired copy as its own detail page (#2
     expect(detail?.fullDescription).toBe(REPAIRED_FULL);
   }, 60000);
 
-  it('strips the same possessive on the degraded Mongo browse fallback', async () => {
-    const card = await browseCardFor(GRAFT_SLUG, { meiliDown: true });
-
-    expect(card?.shortDescription).toBe(REPAIRED_SHORT);
-    expect(card?.cardDescription?.text).toBe(REPAIRED_SHORT);
-    expect(JSON.stringify(card)).not.toContain('Marguerite Delacroix');
-  }, 60000);
-
   it("keeps a possessive naming the row's own lead on both surfaces", async () => {
-    const card = await browseCardFor(OWN_LEAD_SLUG);
+    const { card } = await browseCardFor(OWN_LEAD_SLUG);
     const detail = await detailCopyFor(OWN_LEAD_SLUG);
 
     expect(card?.shortDescription).toBe(OWN_LEAD_SHORT);
     expect(card?.cardDescription?.text).toBe(OWN_LEAD_SHORT);
     expect(detail?.shortDescription).toBe(card?.shortDescription);
     expect(detail?.fullDescription).toBe(OWN_LEAD_FULL);
+  }, 60000);
+  it('serves no unguarded copy and reports degraded when the lead-name read fails on the Meilisearch browse path', async () => {
+    mocks.rosterReadFails = true;
+    const { card, degraded } = await browseCardFor(GRAFT_SLUG);
+
+    expect(degraded).toBe(true);
+    expect(card).toBeDefined();
+    expect(card?.name).toBe('Quill Capillary Barrier Lab');
+    expect(JSON.stringify(card)).not.toContain('Marguerite Delacroix');
+    expect(JSON.stringify(card)).not.toContain('capillary barrier failure');
   }, 60000);
 });

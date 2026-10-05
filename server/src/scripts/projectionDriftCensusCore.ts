@@ -1,4 +1,8 @@
-import { MATERIALIZER_MANAGED_FIELDS } from '../scrapers/entityMaterializer';
+import type { PipelineStage } from 'mongoose';
+import {
+  MATERIALIZER_MANAGED_FIELDS,
+  materializerProjectionPathIsStorable,
+} from '../scrapers/entityMaterializer';
 import { researchEntityFieldIsStranded } from './rematerializeResearchEntitiesCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -58,17 +62,17 @@ export function isProjectionBookkeepingKey(field: string): boolean {
  * Storability is read from the live mongoose schema rather than a hand-kept list,
  * because a list would drift from the schema and reintroduce the very phantom
  * divergence this census exists to separate out.
+ *
+ * The engine answers the same question when it decides whether a projection is a
+ * no-op (#3869), so this defers to the engine's reader rather than restating it:
+ * two readers of the same schema would let the census report a divergence the
+ * engine had stopped counting, or the reverse.
  */
 export function researchEntityFieldIsStorable(
   schemaPaths: Iterable<string>,
   field: string,
 ): boolean {
-  const prefix = `${field}.`;
-  for (const schemaPath of schemaPaths) {
-    if (schemaPath === field) return true;
-    if (schemaPath.startsWith(prefix)) return true;
-  }
-  return false;
+  return materializerProjectionPathIsStorable(schemaPaths, field);
 }
 
 /**
@@ -305,6 +309,61 @@ export function parseProjectionDriftCensusArgs(argv: string[]): ProjectionDriftC
     throw new Error(`Unknown projection drift census argument: ${arg}`);
   }
   return args;
+}
+
+export const PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS = { allowDiskUse: true } as const;
+
+export const PROJECTION_DRIFT_CENSUS_LOAD_BATCH_SIZE = 200;
+
+export function projectionDriftCensusSamplePipeline(
+  sample: number,
+  includeArchived: boolean,
+): PipelineStage[] {
+  return [
+    { $match: includeArchived ? {} : { archived: { $ne: true } } },
+    { $project: { _id: 1 } },
+    { $sample: { size: sample } },
+  ];
+}
+
+export function chunkProjectionDriftCensusIds<T>(
+  ids: readonly T[],
+  size: number = PROJECTION_DRIFT_CENSUS_LOAD_BATCH_SIZE,
+): T[][] {
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error('batch size must be positive');
+  const batches: T[][] = [];
+  for (let start = 0; start < ids.length; start += size) {
+    batches.push(ids.slice(start, start + size));
+  }
+  return batches;
+}
+
+export interface ProjectionDriftCensusRowReads {
+  aggregateIds(
+    pipeline: PipelineStage[],
+    options: typeof PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  ): PromiseLike<Array<{ _id: unknown }>>;
+  findRows(filter: Record<string, unknown>): PromiseLike<Array<Record<string, unknown>>>;
+}
+
+export async function* loadProjectionDriftCensusRows(
+  { sample, slugs, includeArchived }: { sample: number; slugs: string[]; includeArchived: boolean },
+  reads: ProjectionDriftCensusRowReads,
+): AsyncGenerator<Record<string, unknown>> {
+  if (slugs.length > 0) {
+    // The archived filter stays out of the slug query so a requested archived row
+    // loads and reports `skipped: archived-entity` rather than vanishing from the
+    // report with nothing saying it was asked for.
+    yield* await reads.findRows({ slug: { $in: slugs } });
+    return;
+  }
+  const sampledIds = await reads.aggregateIds(
+    projectionDriftCensusSamplePipeline(sample, includeArchived),
+    PROJECTION_DRIFT_CENSUS_AGGREGATE_OPTIONS,
+  );
+  for (const batch of chunkProjectionDriftCensusIds(sampledIds.map((row) => row._id))) {
+    yield* await reads.findRows({ _id: { $in: batch } });
+  }
 }
 
 export function scaleProjectionDriftRowCount(

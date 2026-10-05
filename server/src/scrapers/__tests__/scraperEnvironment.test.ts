@@ -3,6 +3,7 @@ import {
   applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
   assertScraperEnvironmentMatchesMongoTarget,
+  promotionOnlyScraperWriteRefusal,
   resolveMongoDatabaseName,
   resolveScraperEnvironment,
   summarizeMongoUrl,
@@ -99,7 +100,7 @@ describe('assertScraperEnvironmentMatchesMongoTarget', () => {
         mongoUrl: 'mongodb://localhost/Development',
         env: { SCRAPER_ENV: 'beta' },
       }),
-    ).toThrow('requires Mongo database "Beta"');
+    ).toThrow('does not match Mongo database "Development"');
   });
 
   it('allows explicit custom database names', () => {
@@ -113,6 +114,107 @@ describe('assertScraperEnvironmentMatchesMongoTarget', () => {
         },
       }),
     ).not.toThrow();
+  });
+
+  it('accepts the real production database name, which is Prod', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Prod',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts Production too, so an environment named either way passes', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Production',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('blocks a production profile pointed at Beta', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Beta',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('does not match Mongo database "Beta"');
+  });
+
+  it('blocks a production profile pointed at the production copy', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/ProductionCopy',
+        env: { SCRAPER_ENV: 'production' },
+      }),
+    ).toThrow('does not match Mongo database "ProductionCopy"');
+  });
+
+  it('honours a production override and rejects Prod when one is declared', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'production',
+        mongoUrl: 'mongodb://localhost/Prod',
+        env: {
+          SCRAPER_ENV: 'production',
+          SCRAPER_PRODUCTION_DB_NAME: 'ProdRestore',
+        },
+      }),
+    ).toThrow('requires Mongo database "ProdRestore"');
+  });
+});
+
+describe('assertScraperEnvironmentMatchesMongoTarget with the target omitted (#4320)', () => {
+  const productionUrl = 'mongodb+srv://user:pass@example.mongodb.net/Prod';
+
+  it.each(['development', 'beta'] as const)(
+    'refuses a %s profile whose only target is a production MONGODBURL',
+    (environment) => {
+      expect(() =>
+        assertScraperEnvironmentMatchesMongoTarget({
+          environment,
+          env: { SCRAPER_ENV: environment, MONGODBURL: productionUrl },
+        }),
+      ).toThrow('does not match Mongo database "Prod"');
+    },
+  );
+
+  it('prefers an explicit target over MONGODBURL', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'development',
+        mongoUrl: 'mongodb://localhost/Development',
+        env: { SCRAPER_ENV: 'development', MONGODBURL: productionUrl },
+      }),
+    ).not.toThrow();
+  });
+
+  it('reports the environment target in the guard label instead of calling it missing', () => {
+    expect(
+      applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { dryRun: true, useCache: true, release: false },
+        autoMaterialize: false,
+        env: { SCRAPER_ENV: 'development', MONGODBURL: 'mongodb://localhost/Development' },
+      }).dbLabel,
+    ).toBe('localhost/Development');
+  });
+
+  it('applies the same check through the scraper command guard', () => {
+    expect(() =>
+      applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { dryRun: true, useCache: true, release: false },
+        autoMaterialize: false,
+        env: { SCRAPER_ENV: 'beta', MONGODBURL: productionUrl },
+      }),
+    ).toThrow('does not match Mongo database "Prod"');
   });
 });
 
@@ -160,68 +262,49 @@ describe('applyScraperEnvironmentGuards', () => {
     expect(guarded.warnings).toEqual([]);
   });
 
-  it('blocks production writes without --release', () => {
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'run',
-        options: { ...baseOptions, dryRun: false, release: false },
-        autoMaterialize: false,
-        env: {
-          SCRAPER_ENV: 'production',
-          CONFIRM_PROD_SCRAPE: 'true',
-        },
-      }),
-    ).toThrow('Production scraper writes require --release.');
+  it.each([
+    ['run', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
+    ['materialize', 'beta', 'Beta', { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }],
+    ['run', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
+    ['materialize', 'production', 'Prod', { CONFIRM_PROD_SCRAPE: 'true' }],
+  ] as const)(
+    'refuses a %s write against %s and points at the promotion path',
+    (command, environment, database, confirmations) => {
+      expect(() =>
+        applyScraperEnvironmentGuards({
+          command,
+          options: { ...baseOptions, dryRun: false, release: true },
+          autoMaterialize: true,
+          mongoUrl: `mongodb+srv://example.invalid/${database}`,
+          env: { SCRAPER_ENV: environment, ...confirmations },
+        }),
+      ).toThrow(promotionOnlyScraperWriteRefusal(environment));
+    },
+  );
+
+  it('names both promotion commands in the refusal', () => {
+    expect(promotionOnlyScraperWriteRefusal('beta')).toMatch(/beta:refresh-from-development:plan/);
+    expect(promotionOnlyScraperWriteRefusal('production')).toMatch(/production:promote-beta-copy/);
   });
 
-  it('blocks production writes without confirmation env var', () => {
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'run',
-        options: { ...baseOptions, dryRun: false, release: true },
-        autoMaterialize: false,
-        env: { SCRAPER_ENV: 'production' },
-      }),
-    ).toThrow('CONFIRM_PROD_SCRAPE=true');
-  });
-
-  it('allows confirmed production release writes and disables cache', () => {
-    const guarded = applyScraperEnvironmentGuards({
+  it('still allows read-only dry runs against Beta and Production', () => {
+    const beta = applyScraperEnvironmentGuards({
       command: 'run',
-      options: { ...baseOptions, dryRun: false, release: true, useCache: true },
-      autoMaterialize: true,
-      env: {
-        SCRAPER_ENV: 'production',
-        CONFIRM_PROD_SCRAPE: 'true',
-      },
+      options: { ...baseOptions, dryRun: true },
+      autoMaterialize: false,
+      mongoUrl: 'mongodb+srv://example.invalid/Beta',
+      env: { SCRAPER_ENV: 'beta', ALLOW_NON_PROD_SCRAPER_WRITES: 'true' },
     });
+    expect(beta.options.dryRun).toBe(true);
 
-    expect(guarded.options.dryRun).toBe(false);
-    expect(guarded.options.release).toBe(true);
-    expect(guarded.options.useCache).toBe(false);
-    expect(guarded.autoMaterialize).toBe(true);
-  });
-
-  it('treats cron as a confirmed production release write', () => {
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'cron',
-        options: { ...baseOptions, dryRun: false, release: false },
-        autoMaterialize: true,
-        env: {
-          SCRAPER_ENV: 'production',
-          CONFIRM_PROD_SCRAPE: 'true',
-        },
-      }),
-    ).toThrow('Production scraper writes require --release.');
-
-    expect(() =>
-      applyScraperEnvironmentGuards({
-        command: 'cron',
-        options: { ...baseOptions, dryRun: false, release: true },
-        autoMaterialize: true,
-        env: { SCRAPER_ENV: 'production' },
-      }),
-    ).toThrow('CONFIRM_PROD_SCRAPE=true');
+    const production = applyScraperEnvironmentGuards({
+      command: 'materialize',
+      options: { ...baseOptions, dryRun: true, useCache: true },
+      autoMaterialize: false,
+      mongoUrl: 'mongodb+srv://example.invalid/Prod',
+      env: { SCRAPER_ENV: 'production' },
+    });
+    expect(production.options.dryRun).toBe(true);
+    expect(production.options.useCache).toBe(false);
   });
 });

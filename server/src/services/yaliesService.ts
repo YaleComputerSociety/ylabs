@@ -3,9 +3,10 @@
  */
 import axios from 'axios';
 import dotenv from 'dotenv';
+import type { LoginSignalBucket } from '../models/storedVocabularies';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
 const YALIES_API_TIMEOUT_MS = 10_000;
@@ -34,13 +35,11 @@ export interface YaliesPerson {
   last_name?: string;
   preferred_name?: string;
   email?: string;
-  phone?: string;
   title?: string;
   school_code?: string;
   school_name?: string;
   school?: string;
   year?: string | number;
-  college?: string;
   major?: string | string[];
   image?: string;
   orcid?: string;
@@ -92,67 +91,144 @@ export interface YaliesIdentity {
   fname: string;
   lname: string;
   email: string;
-  college: string;
-  year: string | number;
   userType: 'undergraduate' | 'graduate';
   userConfirmed: boolean;
-  major: string[];
 }
 
-export const classifyYalieByNetid = async (netid: any): Promise<YaliesIdentity | null> => {
+export interface YaliesEmployee {
+  netid: string;
+  fname: string;
+  lname: string;
+  email: string;
+  title: string;
+  department: string;
+}
+
+export type StudentLoginSignal = Extract<
+  LoginSignalBucket,
+  `undergrad_${string}` | `grad_${string}`
+>;
+
+export type YaliesLookup =
+  | { kind: 'student'; identity: YaliesIdentity; signal: StudentLoginSignal }
+  | { kind: 'employee'; employee: YaliesEmployee }
+  | { kind: 'not_found' }
+  | { kind: 'unavailable' };
+
+const NOT_FOUND: YaliesLookup = { kind: 'not_found' };
+const UNAVAILABLE: YaliesLookup = { kind: 'unavailable' };
+
+type YaliesRecord = Record<string, unknown>;
+
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * The record's `college`, `year` and `major` are deliberately not carried out of here.
+ * Nothing reads them, and a login that copies them onto the account stores three more
+ * personal attributes against a netid for no product purpose (#4162). Enrolment is still
+ * classified from the raw record below, which needs `year` but does not keep it.
+ */
+function studentIdentity(record: YaliesRecord, netid: string): YaliesIdentity {
+  return {
+    netid,
+    fname: text(record.first_name),
+    lname: text(record.last_name),
+    email: text(record.email),
+    userType: record.school_code === 'YC' ? 'undergraduate' : 'graduate',
+    userConfirmed: true,
+  };
+}
+
+const firstText = (value: unknown): string =>
+  Array.isArray(value) ? value.map(text).find(Boolean) || '' : text(value);
+
+/**
+ * Only the bucket label leaves this module: the major and curriculum it reads stay here, so
+ * the #4162 property holds while the login tally (#4744) measures personalization reach.
+ */
+export function classifyStudentLoginSignal(record: YaliesRecord): StudentLoginSignal {
+  if (record.school_code !== 'YC') {
+    return firstText(record.curriculum) ? 'grad_with_curriculum' : 'grad_without_curriculum';
+  }
+  if (record.leave === true || record.visitor === true) return 'undergrad_leave_or_visitor';
+  const major = firstText(record.major);
+  if (!major) return 'undergrad_no_major';
+  if (major.toLowerCase() === 'undeclared') return 'undergrad_undeclared';
+  return 'undergrad_usable_major';
+}
+
+function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
+  return {
+    netid,
+    fname: text(record.first_name),
+    lname: text(record.last_name),
+    email: text(record.email),
+    title: text(record.title),
+    department:
+      text(record.unit_name) ||
+      text(record.primary_division_name) ||
+      text(record.organization_name) ||
+      text(record.primary_organization_name),
+  };
+}
+
+/**
+ * Classify a netid against Yalies, keeping "not in Yalies" apart from "Yalies
+ * could not answer". A caller that merges the two types a returning student
+ * `unknown` whenever the request times out (#4234).
+ *
+ * A record carrying `year` and `school_code` is a student. One carrying a
+ * `title` without them is an employee: Yalies lists faculty and staff with an
+ * appointment title and organization but no enrolment fields.
+ */
+export const lookupYalieByNetid = async (netid: unknown): Promise<YaliesLookup> => {
   try {
-    const normalizedNetid = normalizeYaliesNetid(netid);
-    if (!normalizedNetid) return null;
-
-    const apiKey = yaliesApiKey();
-    if (!apiKey) {
-      console.error('YALIES_API_KEY not set');
-      return null;
-    }
-
-    let yaliesResponse;
-    try {
-      yaliesResponse = await axios.post(
-        YALIES_API_URL,
-        { filters: { netid: [normalizedNetid] } },
-        { headers: { Authorization: `Bearer ${apiKey}` }, timeout: YALIES_API_TIMEOUT_MS },
-      );
-    } catch (error) {
-      console.error('Error fetching from Yalies API:', sanitizeLogValue(yaliesRequestError(error)));
-      return null;
-    }
-
-    const yaliesData = yaliesResponse.data;
-    if (!yaliesData || yaliesData.length === 0) {
-      return null;
-    }
-
-    const yalie = yaliesData[0];
-    const responseNetid = normalizeYaliesNetid(yalie.netid) || normalizedNetid;
-
-    if (
-      !yalie.first_name ||
-      !yalie.last_name ||
-      !yalie.email ||
-      !yalie.year ||
-      !yalie.school_code
-    ) {
-      return null;
-    }
-
-    return {
-      netid: responseNetid,
-      fname: yalie.first_name || '',
-      lname: yalie.last_name || '',
-      email: yalie.email,
-      college: yalie.college || '',
-      year: yalie.year,
-      userType: yalie.school_code === 'YC' ? 'undergraduate' : 'graduate',
-      userConfirmed: true,
-      major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [],
-    };
+    return await requestYalieByNetid(netid);
   } catch (error) {
     console.error('Error fetching user:', sanitizeLogValue(error));
-    return null;
+    return UNAVAILABLE;
   }
+};
+
+const requestYalieByNetid = async (netid: unknown): Promise<YaliesLookup> => {
+  const normalizedNetid = normalizeYaliesNetid(netid);
+  if (!normalizedNetid) return NOT_FOUND;
+
+  const apiKey = yaliesApiKey();
+  if (!apiKey) {
+    console.error('YALIES_API_KEY not set');
+    return UNAVAILABLE;
+  }
+
+  let records: unknown;
+  try {
+    const response = await axios.post(
+      YALIES_API_URL,
+      { filters: { netid: [normalizedNetid] } },
+      { headers: { Authorization: `Bearer ${apiKey}` }, timeout: YALIES_API_TIMEOUT_MS },
+    );
+    records = response.data;
+  } catch (error) {
+    console.error('Error fetching from Yalies API:', sanitizeLogValue(yaliesRequestError(error)));
+    return UNAVAILABLE;
+  }
+
+  const record = Array.isArray(records) ? (records[0] as YaliesRecord | undefined) : undefined;
+  if (!record || typeof record !== 'object') return NOT_FOUND;
+
+  const responseNetid = normalizeYaliesNetid(record.netid) || normalizedNetid;
+  const hasName = Boolean(text(record.first_name) && text(record.last_name));
+  if (!hasName || !text(record.email)) return NOT_FOUND;
+
+  if (record.year && record.school_code) {
+    return {
+      kind: 'student',
+      identity: studentIdentity(record, responseNetid),
+      signal: classifyStudentLoginSignal(record),
+    };
+  }
+  if (text(record.title)) {
+    return { kind: 'employee', employee: employeeRecord(record, responseNetid) };
+  }
+  return NOT_FOUND;
 };

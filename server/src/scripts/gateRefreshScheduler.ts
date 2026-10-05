@@ -13,12 +13,12 @@
  * build/, no tsx) should drive the refresh from an external scheduler instead.
  */
 import { spawn } from 'child_process';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import type { EventEmitter } from 'events';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { captureServerWarning } from '../utils/errorTracking';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
-const __filenameLocal = fileURLToPath(import.meta.url);
-const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
+const SERVER_ROOT = resolveServerPackageRoot(import.meta.url);
 const MIN_GATE_REFRESH_INTERVAL_MINUTES = 5;
 const MAX_GATE_REFRESH_INTERVAL_MINUTES = 24 * 60;
 
@@ -50,14 +50,34 @@ function triggerRefresh(): void {
     stdio: 'inherit',
     shell: false,
   });
-  child.on('close', (code) => {
+  watchGateRefreshCycle(child, () => {
     running = false;
+  });
+}
+
+export function watchGateRefreshCycle(child: EventEmitter, onSettled: () => void): void {
+  let failureReported = false;
+  const reportFailure = () => {
+    if (failureReported) return;
+    failureReported = true;
+    captureServerWarning('gate_refresh_failed');
+  };
+  child.on('close', (code) => {
+    onSettled();
     console.log(`[gate-refresh] cycle finished (exit ${code})`);
+    if (code !== 0) reportFailure();
   });
   child.on('error', (err) => {
-    running = false;
+    onSettled();
     console.error('[gate-refresh] failed to spawn gates:refresh:', sanitizeLogValue(err));
+    reportFailure();
   });
+}
+
+/** Stops the scheduler so a shutting-down process has no timer left to wake it. */
+export function stopGateRefreshScheduler(): void {
+  if (timer) clearInterval(timer);
+  timer = undefined;
 }
 
 /** Start the scheduler if enabled via env. Returns true if started. Safe to call once at boot. */

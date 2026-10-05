@@ -7,11 +7,20 @@ import {
   NotFoundError,
   ObjectIdError,
   IncorrectPermissionsError,
+  SearchUnavailableError,
 } from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
-import { triggerReconnect, isTopologyLostError } from '../db/connections';
-import { captureServerError } from '../utils/errorTracking';
+import { triggerReconnect, isMongoUnavailableError, isTopologyLostError } from '../db/connections';
+import {
+  captureServerError,
+  captureServerWarning,
+  errorReportRoute,
+  platformRequestId,
+} from '../utils/errorTracking';
+
+const MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
+const SEARCH_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
 
 const clientErrorStatus = (error: Error): number | null => {
   const status = (error as any).status ?? (error as any).statusCode;
@@ -31,13 +40,24 @@ const publicClientErrorMessage = (status: number): string => {
   return 'Request failed';
 };
 
+export const serverErrorLogLine = (req: Request, message: string): string => {
+  const rndrId = platformRequestId(req);
+  return JSON.stringify({
+    event: 'server_error',
+    method: req.method,
+    route: errorReportRoute(req),
+    ...(rndrId ? { rndrId } : {}),
+    message,
+  });
+};
+
 /**
  * Global error handler middleware
  * This should be added LAST in your middleware chain
  */
 export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction) => {
   const sanitizedError = sanitizeErrorForLog(error);
-  console.error('Error:', sanitizedError.message);
+  console.error(serverErrorLogLine(req, sanitizedError.message));
   if (!requiresDeployedRuntimeSecurity() && sanitizedError.stack) {
     console.error('Stack:', sanitizedError.stack);
   }
@@ -65,6 +85,12 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     });
   }
 
+  if (error instanceof SearchUnavailableError) {
+    captureServerError(error, req);
+    res.set('Retry-After', String(SEARCH_UNAVAILABLE_RETRY_AFTER_SECONDS));
+    return res.status(error.status).json({ error: 'Service temporarily unavailable' });
+  }
+
   const status = clientErrorStatus(error);
   if (status !== null) {
     return res.status(status).json({ error: publicClientErrorMessage(status) });
@@ -85,8 +111,17 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     return res.status(409).json({ error: 'Duplicate key error' });
   }
 
-  if (isTopologyLostError(error)) {
-    void triggerReconnect();
+  if (isMongoUnavailableError(error)) {
+    // Only a lost topology needs the forced reconnect: the driver recovers from a
+    // selection or socket timeout on its own, and reconnecting under it would
+    // close the pool the next request is about to use. The other arms stay in
+    // error tracking, because a socket timeout on a reachable database is a slow
+    // query rather than an outage.
+    if (isTopologyLostError(error)) {
+      void triggerReconnect();
+      captureServerWarning('mongo_topology_lost');
+    } else captureServerError(error, req);
+    res.set('Retry-After', String(MONGO_UNAVAILABLE_RETRY_AFTER_SECONDS));
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 
@@ -115,7 +150,8 @@ export const notFoundHandler = (req: Request, res: Response, _next: NextFunction
 type AsyncRequestHandler = (req: Request, res: Response, next: NextFunction) => Promise<unknown>;
 
 export const asyncHandler = (fn: AsyncRequestHandler) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  const forwardRejection = (req: Request, res: Response, next: NextFunction) => {
     void Promise.resolve(fn(req, res, next)).catch(next);
   };
+  return Object.defineProperty(forwardRejection, 'name', { value: fn.name });
 };

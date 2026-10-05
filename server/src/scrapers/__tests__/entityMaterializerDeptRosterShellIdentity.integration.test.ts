@@ -29,7 +29,9 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
 import { Account } from '../../models/account';
+import { Signal } from '../../models/signal';
 import { materializeEntity } from '../entityMaterializer';
+import { runPostMaterializationIntegrityGate } from '../integrityGate';
 
 describe('materializeEntity folds dept-roster shells into their canonical PI-linked home (#1364)', () => {
   let replSet: MongoMemoryReplSet;
@@ -37,11 +39,11 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   afterEach(() => {
@@ -57,6 +59,8 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
       'role_assignments',
       'researchers',
       'users',
+      'accounts',
+      'signals',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -91,7 +95,7 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     });
 
     const account = await Account.create({
-      netid: 'jane.smith',
+      netid: 'js1001',
       email: 'jane.smith@yale.edu',
       status: 'ACTIVE',
     });
@@ -142,6 +146,219 @@ describe('materializeEntity folds dept-roster shells into their canonical PI-lin
     );
 
     expect(await ResearchEntity.countDocuments({ archived: { $ne: true } })).toBe(1);
+  });
+
+  describe('when every PI-linked row is a cross-listed department roster row (#4371)', () => {
+    const crossListedRow = async (department: string, overrides: Record<string, unknown> = {}) =>
+      ResearchEntity.create({
+        slug: `dept-${department.toLowerCase()}-jane-smith`,
+        name: 'Jane Smith Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        studentVisibilityTier: 'operator_review',
+        departments: [department],
+        archived: false,
+        ...overrides,
+      });
+
+    const researcherNamed = async (netid: string) => {
+      const account = await Account.create({
+        netid,
+        email: `${netid}@yale.edu`,
+        status: 'ACTIVE',
+      });
+      return Researcher.create({ displayName: 'Jane Smith', accountId: account._id });
+    };
+
+    const piEdge = async (personId: unknown, entityId: unknown) =>
+      RoleAssignment.create({
+        personId,
+        target: { kind: 'RESEARCH_ENTITY', id: entityId },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+        archived: false,
+      });
+
+    const rematerialize = async (department: string) => {
+      const entityKey = `dept-${department.toLowerCase()}-jane-smith`;
+      await seedDeptRosterObservation({ entityKey, field: 'departments', value: [department] });
+      await materializeEntity('researchEntity', { entityKey }, {});
+    };
+
+    const liveRows = async () =>
+      ResearchEntity.find({ archived: { $ne: true } })
+        .select('slug departments')
+        .lean<Array<{ slug: string; departments?: string[] }>>();
+
+    it('folds every row into the one that serves, so the person is one row across departments', async () => {
+      const researcher = await researcherNamed('js1001');
+      const chemistry = await crossListedRow('Chemistry', {
+        createdAt: new Date('2026-09-10T00:00:00Z'),
+      });
+      const physics = await crossListedRow('Physics', {
+        studentVisibilityTier: 'student_ready',
+        createdAt: new Date('2026-09-12T00:00:00Z'),
+      });
+      const biology = await crossListedRow('Biology', {
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      });
+      for (const row of [chemistry, physics, biology]) await piEdge(researcher._id, row._id);
+
+      for (const department of ['Chemistry', 'Physics', 'Biology']) {
+        await rematerialize(department);
+      }
+
+      const live = await liveRows();
+      expect(live.map((row) => row.slug)).toEqual([physics.slug]);
+      expect(live[0].departments).toEqual(
+        expect.arrayContaining(['Chemistry', 'Physics', 'Biology']),
+      );
+      for (const folded of [chemistry, biology]) {
+        const stored = await ResearchEntity.findById(folded._id).lean<{
+          archived?: boolean;
+          canonicalGroupId?: unknown;
+        }>();
+        expect(stored?.archived).toBe(true);
+        expect(String(stored?.canonicalGroupId)).toBe(String(physics._id));
+      }
+
+      await rematerialize('Physics');
+      expect((await liveRows()).map((row) => row.slug)).toEqual([physics.slug]);
+    });
+
+    it('leaves no live role edge on a folded row, across a second materialize (#4752)', async () => {
+      const researcher = await researcherNamed('js1001');
+      const chemistry = await crossListedRow('Chemistry');
+      const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
+      for (const row of [chemistry, physics]) await piEdge(researcher._id, row._id);
+      const student = new mongoose.Types.ObjectId();
+      const studentEdge = await RoleAssignment.create({
+        personId: student,
+        target: { kind: 'RESEARCH_ENTITY', id: chemistry._id },
+        role: 'GRADUATE_STUDENT',
+        state: 'UNKNOWN',
+        confidence: 0.6,
+        archived: false,
+      });
+
+      const liveEdgesOn = async (entityId: unknown) =>
+        RoleAssignment.find({
+          'target.kind': 'RESEARCH_ENTITY',
+          'target.id': entityId,
+          archived: { $ne: true },
+          state: { $ne: 'HISTORICAL' },
+        })
+          .select('personId role')
+          .lean<Array<{ personId: mongoose.Types.ObjectId; role: string }>>();
+
+      for (let pass = 0; pass < 2; pass += 1) {
+        await rematerialize('Chemistry');
+
+        expect((await ResearchEntity.findById(chemistry._id).lean())?.archived).toBe(true);
+        expect(await liveEdgesOn(chemistry._id)).toEqual([]);
+        const survivorEdges = await liveEdgesOn(physics._id);
+        expect(survivorEdges.map((edge) => `${edge.role}:${String(edge.personId)}`).sort()).toEqual(
+          [`GRADUATE_STUDENT:${String(student)}`, `PI:${String(researcher._id)}`].sort(),
+        );
+      }
+      const moved = await RoleAssignment.findById(studentEdge._id).lean();
+      expect(String(moved?.target.id)).toBe(String(physics._id));
+      const foldedLead = await RoleAssignment.findOne({
+        personId: researcher._id,
+        'target.id': chemistry._id,
+      }).lean();
+      expect(foldedLead).toMatchObject({ state: 'HISTORICAL', archived: true });
+    });
+
+    it('leaves no live access signal on a folded row, across a second materialize (#4816)', async () => {
+      const researcher = await researcherNamed('js1001');
+      const chemistry = await crossListedRow('Chemistry');
+      const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
+      for (const row of [chemistry, physics]) await piEdge(researcher._id, row._id);
+      const accessSignal = (
+        researchEntityId: mongoose.Types.ObjectId,
+        type: 'CURRENT_UNDERGRADS' | 'APPLICATION_FORM_EXISTS',
+      ) =>
+        Signal.create({
+          researchEntityId,
+          type,
+          derivationKey: `signal:${type}`,
+          confidence: 'MEDIUM',
+          observedAt: new Date('2026-09-01T00:00:00Z'),
+          archived: false,
+        });
+      await accessSignal(physics._id, 'CURRENT_UNDERGRADS');
+      const duplicate = await accessSignal(chemistry._id, 'CURRENT_UNDERGRADS');
+      const joinPage = await accessSignal(chemistry._id, 'APPLICATION_FORM_EXISTS');
+
+      for (let pass = 0; pass < 2; pass += 1) {
+        await rematerialize('Chemistry');
+
+        expect((await ResearchEntity.findById(chemistry._id).lean())?.archived).toBe(true);
+        expect(
+          await Signal.countDocuments({ researchEntityId: chemistry._id, archived: { $ne: true } }),
+        ).toBe(0);
+        const counts = (await runPostMaterializationIntegrityGate({ includeSamples: false }))
+          .counts;
+        expect(counts.activeArtifactsOnArchivedEntities).toBe(0);
+        expect(counts.duplicateAccessSignals).toBe(0);
+      }
+      expect(await Signal.findById(duplicate._id).lean()).toMatchObject({ archived: true });
+      expect(String((await Signal.findById(joinPage._id).lean())?.researchEntityId)).toBe(
+        String(physics._id),
+      );
+    });
+
+    it('folds into the oldest row when none serves yet', async () => {
+      const researcher = await researcherNamed('js1001');
+      const chemistry = await crossListedRow('Chemistry', {
+        createdAt: new Date('2026-09-10T00:00:00Z'),
+      });
+      const biology = await crossListedRow('Biology', {
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+      });
+      for (const row of [chemistry, biology]) await piEdge(researcher._id, row._id);
+
+      await rematerialize('Chemistry');
+      await rematerialize('Biology');
+
+      expect((await liveRows()).map((row) => row.slug)).toEqual([biology.slug]);
+    });
+
+    it('folds nothing when the name belongs to two researchers', async () => {
+      const first = await researcherNamed('js1001');
+      await researcherNamed('js1002');
+      const chemistry = await crossListedRow('Chemistry');
+      const physics = await crossListedRow('Physics', { studentVisibilityTier: 'student_ready' });
+      for (const row of [chemistry, physics]) await piEdge(first._id, row._id);
+
+      await rematerialize('Chemistry');
+
+      expect((await liveRows()).map((row) => row.slug).sort()).toEqual(
+        [chemistry.slug, physics.slug].sort(),
+      );
+      expect(deleteFromIndexMock).not.toHaveBeenCalled();
+    });
+
+    it('folds no person row into an organization the person directs', async () => {
+      const researcher = await researcherNamed('js1001');
+      const chemistry = await crossListedRow('Chemistry');
+      const center = await crossListedRow('Physics', {
+        slug: 'dept-physics-jane-smith-center',
+        name: 'Jane Smith Center',
+        kind: 'center',
+        entityType: 'CENTER',
+        studentVisibilityTier: 'student_ready',
+      });
+      for (const row of [chemistry, center]) await piEdge(researcher._id, row._id);
+
+      await rematerialize('Chemistry');
+
+      expect((await liveRows()).map((row) => row.slug).sort()).toEqual(
+        [chemistry.slug, center.slug].sort(),
+      );
+    });
   });
 
   it('still mints a live shell when the person has no existing PI-linked research home', async () => {

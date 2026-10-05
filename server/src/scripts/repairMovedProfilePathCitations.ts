@@ -19,9 +19,9 @@ import {
   type StaleCitationObservation,
 } from './repairMovedProfilePathCitationsCore';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:repair-moved-profile-path-citations';
 const DEFAULT_MAX_APPLY = 1000;

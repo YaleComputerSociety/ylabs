@@ -80,12 +80,12 @@ describe('the card lane fails closed when its observation is refused (#3158)', (
     process.env.OPENAI_API_KEY = 'test-key-not-a-credential';
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     delete process.env.OPENAI_API_KEY;
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

@@ -3,9 +3,11 @@ import {
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
   resetOrgUnitCanonicalizerCache,
+  SCHOOL_PROFILE_HOSTS,
   setOrgUnitCanonicalizerForTesting,
 } from '../../scrapers/orgUnitCanonicalization';
 import {
+  DISJOINT_SCHOOLS,
   findMismatchedHostSchool,
   planSchoolHostMismatchRow,
   summarizeSchoolHostMismatch,
@@ -67,6 +69,31 @@ describe('findMismatchedHostSchool', () => {
     });
     expect(school).toBeNull();
   });
+});
+
+describe('DISJOINT_SCHOOLS', () => {
+  it('selects by the catalog spelling of each school, never a Yale-prefixed alias', () => {
+    const catalogSchools = new Set(Object.values(SCHOOL_PROFILE_HOSTS));
+    expect(DISJOINT_SCHOOLS.length).toBe(6);
+    for (const school of DISJOINT_SCHOOLS) {
+      expect(catalogSchools.has(school)).toBe(true);
+      expect(school.startsWith('Yale ')).toBe(false);
+    }
+  });
+
+  it.each(['School of Music', 'School of Architecture', 'School of Art'])(
+    'flags a stored %s row whose own evidence is a medicine host with biomedical content',
+    (school) => {
+      expect(
+        findMismatchedHostSchool({
+          id: 'synthetic-row',
+          school,
+          websiteUrl: 'https://medicine.yale.edu/profile/synthetic-person/',
+          researchAreas: ['Cancer Biology'],
+        }),
+      ).toBe('School of Medicine');
+    },
+  );
 });
 
 describe('planSchoolHostMismatchRow', () => {

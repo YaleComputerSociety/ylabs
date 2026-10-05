@@ -15,7 +15,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes:
-      'Reviewed official current-roster sections for allowlisted research homes. Disabled by default until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
+      'Reviewed official current-roster sections for allowlisted research homes. Manual-only and out of the sweep until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
   },
   'lab-site-lead-verification': {
     priority: 1,
@@ -62,6 +62,7 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS', 'METHODS'],
     defaultConfidence: 'MEDIUM',
+    producesModelText: true,
     notes:
       "Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind, so a person-scoped row cannot keep a faculty-research type while carrying a lab's name.",
   },
@@ -71,6 +72,7 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['LAB_WEBSITE'],
     defaultConfidence: 'HIGH',
+    producesModelText: true,
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
@@ -125,17 +127,9 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['Observation'],
     evidenceCategories: ['ENTITY_IDENTITY'],
     defaultConfidence: 'LOW',
+    producesModelText: true,
     notes:
-      "LLM synthesis over a research home's already-harvested evidence to fill a coverage gap it can support. Emits description fields only, never access, route or opportunity evidence.",
-  },
-  'nih-nsf-pi-center-lab-conflation-repair': {
-    priority: 3,
-    tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY'],
-    defaultConfidence: 'LOW',
-    notes:
-      'Separates a grant-derived shell that conflated a principal investigator, a centre and a laboratory into one row. Records the corrected identity it can support from the grant record itself.',
+      "The one writer of every live research row's description: a grounded LLM synthesis of 1 to 3 sentences from the row's already-harvested evidence, which outranks copied page text when it serves (#4788). Emits fullDescription only, never access, route or opportunity evidence.",
   },
   'visibility-repair-queue': {
     priority: 3,
@@ -179,6 +173,7 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['Observation'],
     evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
     defaultConfidence: 'MEDIUM',
+    producesModelText: true,
     notes:
       'Reads an official center/institute page and emits umbrella → faculty relationship observations for faculty explicitly named on the page. Relationship-only; the materializer resolves each name to an existing lab/faculty entity or skips it (never mints entities or member rows).',
   },
@@ -188,6 +183,7 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['Observation'],
     evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP'],
     defaultConfidence: 'MEDIUM',
+    producesModelText: true,
     notes:
       "Reads an organizational home's official site + leadership pages and emits an entity-level inferred-director observation. The materializer resolves the named director to a unique Yale User before promoting them to a `director` member (skips unresolved/ambiguous names; never mints a lead).",
   },
@@ -205,6 +201,7 @@ export const sourceCoverageRegistry = {
       'PAST_UNDERGRADS',
     ],
     defaultConfidence: 'MEDIUM',
+    producesModelText: true,
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs. A crawled sub-page is a crawl seed until it is shown to be about this entity: a paginated or multi-person index page, and a person page belonging to somebody else, are traversed but never cited as a description source for this row.',
   },
@@ -251,7 +248,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['POSTED_OPENING', 'APPLICATION_LINK'],
     defaultConfidence: 'HIGH',
     notes:
-      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry so it degrades out of the top-tier "Apply" state once the window closes. Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Disabled by default until an operator confirms each page is reliably public on Development.',
+      'Curated, public Yale undergraduate research posting/opportunity index pages. Emits a POSTED_OPENING access signal only for a fully-specified, apply-now posting: a title, a hiring research home resolvable to an existing ResearchEntity, an apply route, and a future-dated deadline (fail-closed on any missing field). Each signal carries the deadline as an expiry, and the detail page stops serving it once that expiry passes (#4628). Must not ingest auth-gated aggregators or infer an opening from a generic lab website (#1303/#1332/#1568). Manual-only and out of the sweep while no page is configured. No page is configured today, so the lane emits nothing and says so in its run notes (#3550).',
   },
   'official-profile-pi-backfill': {
     priority: 2,
@@ -312,7 +309,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['TOPICS'],
     defaultConfidence: 'HIGH',
     notes:
-      'Yale FAS science and quantitative department research-overview pages (physics.yale.edu/research, chem.yale.edu/research, mcdb.yale.edu/research, ...) as curated topical evidence for their faculty (the FAS analogue of bbs-research-track, #1703). Each curated research theme heading maps to a concise research-area label grafted onto the existing faculty/lab home of every faculty member listed under it, cited to that faculty member own profile URL; the research-overview page and the bare /people index are crawl seeds only, never recorded as a source. Grafts research-area topics only onto homes that uniquely resolve (fail-closed on ambiguous/unresolved names); never mints an entity, never emits contact, and must not imply undergraduate access without a more explicit source.',
+      'Yale FAS science department research-overview pages (physics.yale.edu/research, chem.yale.edu/research-areas, mcdb.yale.edu/research, astronomy.yale.edu/research) as curated topical evidence for their faculty (the FAS analogue of bbs-research-track, #1703). Each curated research theme heading maps to a concise research-area label grafted onto the existing faculty/lab home of every faculty member listed under it, either inline or on the same-host theme page the heading links to (read from its structured faculty listing, following pagination, #3532), cited to that faculty member own profile URL; the research-overview page, the theme pages and the bare /people index are crawl seeds only, never recorded as a source. Grafts research-area topics only onto homes that uniquely resolve (fail-closed on ambiguous/unresolved names); never mints an entity, never emits contact, and must not imply undergraduate access without a more explicit source.',
   },
   'yse-centers-index': {
     priority: 2,
@@ -402,7 +399,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'APPLICATION_LINK', 'OFFICIAL_CONTACT_ROUTE'],
     defaultConfidence: 'HIGH',
     notes:
-      "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Disabled by default until an operator confirms the rendered catalog is reliably public on Development.",
+      "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Runs in the fellowship sweep as an official Yale source.",
   },
   'nih-reporter': {
     priority: 6,
@@ -431,14 +428,14 @@ export const sourceCoverageRegistry = {
     notes:
       'Humanities/social-science funding analogue of the NIH/NSF lanes; enriches entity context but is not undergraduate-access evidence alone.',
   },
-  'federal-award-usaspending': {
+  'crossref-grants': {
     priority: 6,
     tier: 'THIRD_PARTY_ENRICHMENT',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['FUNDING_ACTIVITY'],
+    evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'DOE/NASA/DoD Yale awards from USAspending.gov, covering physical-science and mission-agency PIs the NSF/NIH fallbacks miss. USAspending exposes no structured PI field, so a PI is only harvested when the award description embeds one inline and resolves to a single existing Yale User; awards with no extractable/resolvable PI are skipped (fail-closed, never minting a person or lab from a free-text name). Emits additive grant activity (recentGrants, recentGrantCount, fundingAgencies, lastObservedAt) only; not undergraduate-access evidence alone.',
+      'Funder-registered Crossref grant records for private and international funders the federal lanes miss; resolved by ORCID first, facility-time records refused, fellowships attached only through an ORCID match. Enriches entity context but is not undergraduate-access evidence alone.',
   },
   'doe-osti': {
     priority: 6,
@@ -455,8 +452,9 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['Observation'],
     evidenceCategories: ['TOPICS', 'METHODS', 'FUNDING_ACTIVITY'],
     defaultConfidence: 'LOW',
+    producesModelText: true,
     notes:
-      'Grounded PI-level research description synthesized from the aggregated grant corpus already recorded on the entity (NIH/NSF/NEH/USASpending/DOE titles and abstracts). Derived from the funding lanes rather than an official page, so it ranks above the single-abstract grant fallback and below every official-profile source; fails closed when the output is not grounded in the grant text. Never creates access, route, opportunity, or contact evidence.',
+      'Grounded PI-level research description synthesized from the aggregated grant corpus already recorded on the entity (NIH/NSF/NEH/DOE titles and abstracts). Derived from the funding lanes rather than an official page, so it ranks above the single-abstract grant fallback and below every official-profile source; fails closed when the output is not grounded in the grant text. Never creates access, route, opportunity, or contact evidence.',
   },
   'fra-profile-research-synthesis': {
     priority: 7,
@@ -464,12 +462,40 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['Observation'],
     evidenceCategories: ['TOPICS', 'METHODS'],
     defaultConfidence: 'LOW',
+    producesModelText: true,
     notes:
       "Research description synthesized from the faculty member's own official Yale profile page, for FACULTY_RESEARCH_AREA entities currently serving a biography. Ranks above the grant-corpus synthesis lane and below every official-profile extraction source. Career, credential, and navigation text is stripped before synthesis, and the lane fails closed when the output is not grounded in the retained research prose or still reads as a person biography. Never creates access, route, opportunity, or contact evidence.",
+  },
+  'official-profile-honors': {
+    priority: 7,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Major fellowships, prizes and academy memberships stated on the lead's own official Yale profile page, read deterministically against a fixed catalog. Pages are selected as the FRA profile synthesis lane selects them, so an honor never comes from a page about someone else. A recognition signal for research that rarely holds multi-year grants; never undergraduate-access evidence.",
   },
 } satisfies Record<string, SourceCoverageMetadata>;
 
 export type SourceCoverageName = keyof typeof sourceCoverageRegistry;
+
+/**
+ * Retired lanes that wrote model text and are no longer registered, so the flag above
+ * cannot be read for them while their observations are still live.
+ */
+export const RETIRED_MODEL_TEXT_SOURCE_NAMES: ReadonlySet<string> = new Set([
+  'lab-microsite-llm',
+  'holdfix-second-opinion',
+  'holdfix-second-opinion-worker',
+]);
+
+export function isModelTextSource(name: unknown): boolean {
+  const sourceName = String(name ?? '');
+  return (
+    getSourceCoverage(sourceName)?.producesModelText === true ||
+    RETIRED_MODEL_TEXT_SOURCE_NAMES.has(sourceName)
+  );
+}
 
 export function getSourceCoverage(name: string): SourceCoverageMetadata | undefined {
   return sourceCoverageRegistry[name as SourceCoverageName];

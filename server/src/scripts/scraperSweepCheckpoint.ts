@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import type { SweepCodeDriftRefusal } from './sweepCodeIdentityCore';
 
 export type SweepStepStatus = 'pending' | 'running' | 'done' | 'failed';
 export type SweepStepKind = 'source' | 'stage' | 'prune';
@@ -11,6 +12,7 @@ export interface SweepCheckpointStep {
   kind: SweepStepKind;
   status: SweepStepStatus;
   exitCode?: number;
+  artifactPath?: string;
   startedAt?: string;
   finishedAt?: string;
 }
@@ -18,6 +20,8 @@ export interface SweepCheckpointStep {
 export interface SweepCheckpoint {
   mode: string;
   flags: string;
+  codeSha: string | null;
+  codeDrift: SweepCodeDriftRefusal[];
   outputDirectory: string;
   ownerPid: number;
   createdAt: string;
@@ -65,6 +69,7 @@ export function checkpointPathForMode(
 export function createSweepCheckpoint(input: {
   mode: string;
   flags?: string;
+  codeSha?: string | null;
   outputDirectory: string;
   now: Date;
 }): SweepCheckpoint {
@@ -72,6 +77,8 @@ export function createSweepCheckpoint(input: {
   return {
     mode: input.mode,
     flags: input.flags ?? '',
+    codeSha: input.codeSha ?? null,
+    codeDrift: [],
     outputDirectory: input.outputDirectory,
     ownerPid: process.pid,
     createdAt: iso,
@@ -94,6 +101,8 @@ export function readSweepCheckpoint(checkpointPath: string): SweepCheckpoint | u
     }
     if (typeof parsed.flags !== 'string') parsed.flags = '';
     if (typeof parsed.ownerPid !== 'number') parsed.ownerPid = 0;
+    if (typeof parsed.codeSha !== 'string') parsed.codeSha = null;
+    if (!Array.isArray(parsed.codeDrift)) parsed.codeDrift = [];
     if (!parsed.steps || typeof parsed.steps !== 'object') parsed.steps = {};
     return parsed;
   } catch {
@@ -149,6 +158,7 @@ export class SweepCheckpointStore {
   static start(input: {
     mode: string;
     flags?: string;
+    codeSha?: string | null;
     checkpointPath: string;
     outputDirectory: string;
     now: Date;
@@ -157,18 +167,28 @@ export class SweepCheckpointStore {
     const flags = input.flags ?? '';
     if (input.restart) removeSweepCheckpoint(input.checkpointPath);
     const existing = input.restart ? undefined : readSweepCheckpoint(input.checkpointPath);
+    const codeMoved = Boolean(
+      existing?.codeSha && input.codeSha && existing.codeSha !== input.codeSha,
+    );
     if (existing && existing.mode === input.mode && existing.flags === flags) {
       assertCheckpointNotOwnedByLiveSweep(existing, input.checkpointPath);
-      return { store: new SweepCheckpointStore(input.checkpointPath, existing), resumed: true };
+      if (!codeMoved) {
+        return { store: new SweepCheckpointStore(input.checkpointPath, existing), resumed: true };
+      }
     }
     if (existing && existing.mode === input.mode && existing.flags !== flags) {
       console.warn(
         `[checkpoint] not resuming ${input.mode}: checkpoint was recorded for flags "${existing.flags || '(none)'}" but this invocation uses "${flags || '(none)'}"`,
       );
+    } else if (existing && existing.mode === input.mode && codeMoved) {
+      console.warn(
+        `[checkpoint] not resuming ${input.mode}: checkpoint was recorded at ${existing.codeSha} but the checkout is at ${input.codeSha}, so this is a new sweep; to resume the earlier one, reset the checkout to ${existing.codeSha} and run again`,
+      );
     }
     const checkpoint = createSweepCheckpoint({
       mode: input.mode,
       flags,
+      codeSha: input.codeSha,
       outputDirectory: input.outputDirectory,
       now: input.now,
     });
@@ -179,6 +199,19 @@ export class SweepCheckpointStore {
 
   get outputDirectory(): string {
     return this.checkpoint.outputDirectory;
+  }
+
+  get codeSha(): string | null {
+    return this.checkpoint.codeSha;
+  }
+
+  get codeDrift(): SweepCodeDriftRefusal[] {
+    return this.checkpoint.codeDrift;
+  }
+
+  recordCodeDrift(refusal: SweepCodeDriftRefusal, now: Date): void {
+    this.checkpoint.codeDrift.push(refusal);
+    this.persist(now);
   }
 
   isDone(stepId: string): boolean {
@@ -205,8 +238,19 @@ export class SweepCheckpointStore {
     this.persist(now);
   }
 
-  markDone(stepId: string, kind: SweepStepKind, exitCode: number, now: Date): void {
-    this.upsert(stepId, kind, 'done', exitCode, now);
+  markDone(
+    stepId: string,
+    kind: SweepStepKind,
+    exitCode: number,
+    now: Date,
+    artifactPath?: string,
+  ): void {
+    this.upsert(stepId, kind, 'done', exitCode, now, artifactPath);
+  }
+
+  recordedArtifactPath(stepId: string): string | undefined {
+    const artifactPath = this.checkpoint.steps[stepId]?.artifactPath;
+    return typeof artifactPath === 'string' && artifactPath ? artifactPath : undefined;
   }
 
   markFailed(stepId: string, kind: SweepStepKind, exitCode: number, now: Date): void {
@@ -219,6 +263,7 @@ export class SweepCheckpointStore {
     status: SweepStepStatus,
     exitCode: number,
     now: Date,
+    artifactPath?: string,
   ): void {
     const existing = this.checkpoint.steps[stepId];
     this.checkpoint.steps[stepId] = {
@@ -226,6 +271,7 @@ export class SweepCheckpointStore {
       kind,
       status,
       exitCode,
+      ...(artifactPath ? { artifactPath } : {}),
       ...(existing?.startedAt ? { startedAt: existing.startedAt } : {}),
       finishedAt: now.toISOString(),
     };

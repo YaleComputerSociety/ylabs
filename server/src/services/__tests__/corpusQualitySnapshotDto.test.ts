@@ -28,6 +28,7 @@ const storedRow = () => ({
     shortDescriptionUseful: ratio(50),
     leadSentenceStatesResearch: ratio(24),
     shortDescriptionIsAreaEchoOnly: ratio(2),
+    fullDescriptionIsBiography: ratio(3),
     nameIsGenericFacultyResearchTitle: ratio(20),
   },
   integrity: { publicDescriptionInvariantFails: ratio(0) },
@@ -75,6 +76,17 @@ describe('toCorpusQualitySnapshotDto', () => {
     expect(dto.richness.hasResearchWebsite).toEqual({ n: 25, of: 50 });
     expect(dto.description.leadSentenceStatesResearch).toEqual({ n: 24, of: 50 });
     expect(dto.integrity.publicDescriptionInvariantFails).toEqual({ n: 0, of: 50 });
+  });
+
+  it('serves the biography count, and zeros for a measurement taken before it existed', () => {
+    expect(toCorpusQualitySnapshotDto(storedRow()).description.fullDescriptionIsBiography).toEqual({
+      n: 3,
+      of: 50,
+    });
+    const { fullDescriptionIsBiography: _omitted, ...olderDescription } = storedRow()
+      .description as Record<string, unknown>;
+    const older = toCorpusQualitySnapshotDto({ ...storedRow(), description: olderDescription });
+    expect(older.description.fullDescriptionIsBiography).toEqual({ n: 0, of: 0 });
   });
 
   it('fills a missing ratio with zeros rather than serving undefined', () => {

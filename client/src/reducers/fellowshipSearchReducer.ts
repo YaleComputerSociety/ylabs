@@ -5,18 +5,18 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
-import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
 
 export type FellowshipQuickFilter =
   | 'open'
   | 'closingSoon'
   | 'nextCycle'
-  | 'structured'
-  | 'mentorFirst'
+  | 'firstYear'
+  | 'noMentorFirst'
+  | 'guidance'
+  | 'applicationsOnly'
   | null;
 
-export interface FellowshipSearchState {
-  queryString: string;
+export interface StudentProgramFilters {
   selectedYearOfStudy: string[];
   selectedProgramCategory: string[];
   selectedProgramKind: string[];
@@ -27,27 +27,50 @@ export interface FellowshipSearchState {
   selectedSubjects: string[];
   selectedRegions: string[];
   selectedCitizenship: string[];
+  quickFilter: FellowshipQuickFilter;
+}
+
+export const createEmptyStudentProgramFilters = (): StudentProgramFilters => ({
+  selectedYearOfStudy: [],
+  selectedProgramCategory: [],
+  selectedProgramKind: [],
+  selectedEntryMode: [],
+  selectedStudentFacingCategory: [],
+  selectedTermOfAward: [],
+  selectedPurpose: [],
+  selectedSubjects: [],
+  selectedRegions: [],
+  selectedCitizenship: [],
+  quickFilter: null,
+});
+
+export interface ProgramSearchQueryCorrection {
+  originalQuery: string;
+  correctedQuery: string;
+}
+
+export interface FellowshipSearchState extends StudentProgramFilters {
+  queryString: string;
+  exactSpelling: boolean;
+  queryCorrection: ProgramSearchQueryCorrection | null;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
   sortDirection: 'asc' | 'desc';
   fellowships: Fellowship[];
   isLoading: boolean;
+  loadError: boolean;
   searchExhausted: boolean;
   total: number;
-  journeySummary: ProgramJourneySummary;
   page: number;
   filterOptions: FellowshipFilterOptions;
-  quickFilter: FellowshipQuickFilter;
   filterBarHeight: number;
-  queryStringLoaded: boolean;
-  filtersLoaded: boolean;
-  initialSearchDone: boolean;
   filterOptionsLoaded: boolean;
 }
 
 export type FellowshipSearchAction =
   | { type: 'SET_QUERY_STRING'; payload: string }
+  | { type: 'SEARCH_TYPED_SPELLING'; payload: string }
   | { type: 'SET_SELECTED_PROGRAM_CATEGORY'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_PROGRAM_KIND'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_ENTRY_MODE'; payload: string[] | ((prev: string[]) => string[]) }
@@ -64,14 +87,14 @@ export type FellowshipSearchAction =
   | {
       type: 'SET_SELECTED_STUDENT_VISIBILITY_TIER';
       payload:
-        | StudentVisibilityTier[]
-        | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
+        StudentVisibilityTier[] | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
     }
   | { type: 'SET_SORT_BY'; payload: string }
   | { type: 'SET_SORT_ORDER'; payload: number }
   | { type: 'TOGGLE_SORT_DIRECTION' }
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SET_QUICK_FILTER'; payload: FellowshipQuickFilter }
+  | { type: 'RESET_PROGRAM_FILTERS' }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }
   | { type: 'SEARCH_REQUEST' }
@@ -82,13 +105,11 @@ export type FellowshipSearchAction =
         total?: number;
         pageSize: number;
         append: boolean;
+        queryCorrection?: ProgramSearchQueryCorrection | null;
       };
     }
   | { type: 'SEARCH_FAILURE' }
-  | { type: 'SET_JOURNEY_SUMMARY'; payload: ProgramJourneySummary }
-  | { type: 'MARK_QUERY_STRING_LOADED' }
-  | { type: 'MARK_FILTERS_LOADED' }
-  | { type: 'MARK_INITIAL_SEARCH_DONE' }
+  | { type: 'LOAD_MORE_FAILURE' }
   | { type: 'MARK_FILTER_OPTIONS_LOADED' }
   | { type: 'RESET_LIFECYCLE_FLAGS' };
 
@@ -96,25 +117,18 @@ export const createInitialFellowshipSearchState = (
   overrides: Partial<FellowshipSearchState> = {},
 ): FellowshipSearchState => ({
   queryString: '',
-  selectedProgramCategory: [],
-  selectedProgramKind: [],
-  selectedEntryMode: [],
-  selectedStudentFacingCategory: [],
-  selectedYearOfStudy: [],
-  selectedTermOfAward: [],
-  selectedPurpose: [],
-  selectedSubjects: [],
-  selectedRegions: [],
-  selectedCitizenship: [],
+  exactSpelling: false,
+  queryCorrection: null,
+  ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
   sortOrder: -1,
   sortDirection: 'desc',
   fellowships: [],
-  isLoading: false,
+  isLoading: true,
+  loadError: false,
   searchExhausted: false,
   total: 0,
-  journeySummary: emptyProgramJourneySummary,
   page: 1,
   filterOptions: {
     programCategory: [],
@@ -128,11 +142,7 @@ export const createInitialFellowshipSearchState = (
     citizenshipStatus: [],
     subjects: [],
   },
-  quickFilter: null,
   filterBarHeight: 0,
-  queryStringLoaded: false,
-  filtersLoaded: false,
-  initialSearchDone: false,
   filterOptionsLoaded: false,
   ...overrides,
 });
@@ -146,7 +156,14 @@ export function fellowshipSearchReducer(
 ): FellowshipSearchState {
   switch (action.type) {
     case 'SET_QUERY_STRING':
-      return { ...state, queryString: action.payload };
+      return {
+        ...state,
+        queryString: action.payload,
+        exactSpelling: action.payload === state.queryString ? state.exactSpelling : false,
+      };
+
+    case 'SEARCH_TYPED_SPELLING':
+      return { ...state, queryString: action.payload, exactSpelling: true };
 
     case 'SET_SELECTED_PROGRAM_CATEGORY':
       return {
@@ -217,6 +234,9 @@ export function fellowshipSearchReducer(
     case 'SET_QUICK_FILTER':
       return { ...state, quickFilter: action.payload };
 
+    case 'RESET_PROGRAM_FILTERS':
+      return { ...state, ...createEmptyStudentProgramFilters() };
+
     case 'SET_FILTER_BAR_HEIGHT':
       return { ...state, filterBarHeight: action.payload };
 
@@ -224,10 +244,10 @@ export function fellowshipSearchReducer(
       return { ...state, filterOptions: action.payload };
 
     case 'SEARCH_REQUEST':
-      return { ...state, isLoading: true };
+      return { ...state, isLoading: true, loadError: false };
 
     case 'SEARCH_SUCCESS': {
-      const { fellowships, total, pageSize, append } = action.payload;
+      const { fellowships, total, pageSize, append, queryCorrection } = action.payload;
       const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
       const nextTotal = total !== undefined ? total : nextFellowships.length;
       return {
@@ -237,23 +257,23 @@ export function fellowshipSearchReducer(
         searchExhausted:
           total !== undefined ? nextFellowships.length >= total : fellowships.length < pageSize,
         isLoading: false,
+        queryCorrection: append ? state.queryCorrection : (queryCorrection ?? null),
       };
     }
 
     case 'SEARCH_FAILURE':
+      return {
+        ...state,
+        fellowships: [],
+        total: 0,
+        searchExhausted: true,
+        isLoading: false,
+        loadError: true,
+        queryCorrection: null,
+      };
+
+    case 'LOAD_MORE_FAILURE':
       return { ...state, isLoading: false };
-
-    case 'SET_JOURNEY_SUMMARY':
-      return { ...state, journeySummary: action.payload };
-
-    case 'MARK_QUERY_STRING_LOADED':
-      return { ...state, queryStringLoaded: true };
-
-    case 'MARK_FILTERS_LOADED':
-      return { ...state, filtersLoaded: true };
-
-    case 'MARK_INITIAL_SEARCH_DONE':
-      return { ...state, initialSearchDone: true };
 
     case 'MARK_FILTER_OPTIONS_LOADED':
       return { ...state, filterOptionsLoaded: true };
@@ -261,10 +281,7 @@ export function fellowshipSearchReducer(
     case 'RESET_LIFECYCLE_FLAGS':
       return {
         ...state,
-        initialSearchDone: false,
         filterOptionsLoaded: false,
-        queryStringLoaded: false,
-        filtersLoaded: false,
       };
 
     default:

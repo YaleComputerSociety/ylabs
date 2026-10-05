@@ -1,0 +1,45 @@
+name: Admin Author Approval
+
+# The beta merge queue refuses any pull request that lacks an approving review,
+# and GitHub does not honour a ruleset bypass when enqueuing (#4512). A sole
+# maintainer cannot approve their own pull request, so this approves pull
+# requests whose author holds the Admin repository role and leaves every other
+# contributor's pull request waiting for a human review.
+#
+# pull_request_target is deliberate: it runs this file as it exists on the base
+# branch, so a pull request cannot edit the workflow to approve itself. It must
+# never check out or execute pull request code.
+on:
+  pull_request_target:
+    branches:
+      - beta
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Approve when the author is a repository admin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          role="$(gh api "repos/${REPO}/collaborators/${AUTHOR}/permission" --jq .role_name)"
+          if [ "${role}" != "admin" ]; then
+            echo "Author role is ${role}; a human review is required."
+            exit 0
+          fi
+          gh pr review "${PR_NUMBER}" --repo "${REPO}" --approve --body "Approved automatically: the author holds the Admin repository role (#4512)."

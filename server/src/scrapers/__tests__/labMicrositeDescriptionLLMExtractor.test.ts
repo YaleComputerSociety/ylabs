@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
+import { LANE_PAGE_HEALTH_FIELD } from '../lanePageHealth';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import {
   LabMicrositeDescriptionLLMExtractor,
   candidateDescriptionLabsFromDocs,
+  isServableCardLine,
   descriptionExtractionToObservations,
   groundDescriptionExtraction,
+  htmlToText,
   discoverOrganizationAboutSubPageUrls,
   discoverResearchSubPageUrls,
   normalizeDescriptionLlmObjectId,
@@ -12,6 +15,7 @@ import {
   selectBestDescriptionPageProse,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import type { CardSynthesisLLMFn } from '../../utils/groundedCardSynthesis';
 import type { ObservationInput, ScraperContext } from '../types';
 import { SOURCE_CONTENT_HASH_FIELD } from '../contentHashGate';
 
@@ -34,7 +38,11 @@ function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs
         ignoreWorkPlanner: true,
       },
       emit: async (obs) => {
-        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+        emitted.push(
+          ...(Array.isArray(obs) ? obs : [obs]).filter(
+            (observation) => observation.field !== LANE_PAGE_HEALTH_FIELD,
+          ),
+        );
       },
       log: (msg) => logs.push(msg),
     },
@@ -264,11 +272,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const result = await scraper.run(ctx);
 
-    // Three rather than two: the card is now derivable from a body whose lead
-    // sentence names the person, because `normalizeLead` drops a person subject
-    // ahead of a research verb the way it already drops an organization one. The
-    // old count recorded the missing card rather than a contract.
-    expect(result).toMatchObject({ observationCount: 3, entitiesObserved: 1 });
+    // The card is derivable from a body whose lead sentence names the person,
+    // because `normalizeLead` drops a person subject ahead of a research verb the
+    // way it already drops an organization one, and the official body now carries
+    // its page-grounded topic (#3923).
+    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -328,6 +336,86 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const methodsObservation = emitted.find((obs) => obs.field === 'methods');
     expect(methodsObservation?.value).toEqual(['flow cytometry', 'live-cell imaging']);
+  });
+
+  describe('topics on the official-prose path', () => {
+    const pageProse =
+      'The Tide Lab studies coastal sediment transport and estuarine ecology, combining field surveys with numerical models of tidal mixing across seasonal cycles.';
+
+    async function runOfficialProsePath(extraction: DescriptionExtraction) {
+      const { ctx, emitted } = makeContext();
+      ctx.options.only = ['ysm-tide-lab'];
+      ctx.options.limit = 1;
+      const scraper = new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'entity-tide',
+            slug: 'ysm-tide-lab',
+            name: 'Tide Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/tide/',
+          },
+        ],
+        fetchPage: vi.fn().mockResolvedValue({
+          url: 'https://medicine.yale.edu/lab/tide/',
+          html: `<main><h1>Tide Lab</h1><p>${pageProse}</p></main>`,
+        }),
+        callLLM: vi.fn().mockResolvedValue(extraction),
+        callCardLLM: vi.fn().mockResolvedValue(''),
+      });
+      await scraper.run(ctx);
+      return emitted;
+    }
+
+    it('emits the page-grounded topics beside the official body', async () => {
+      const emitted = await runOfficialProsePath({
+        fullDescription: 'A paraphrase the official prose outranks.',
+        shortDescription: '',
+        topics: [
+          'Sediment transport',
+          'Estuarine ecology',
+          'Quantum chromodynamics',
+          'Publications',
+        ],
+        methods: [],
+      });
+
+      expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(pageProse);
+      expect(emitted.find((obs) => obs.field === 'researchAreas')).toMatchObject({
+        entityId: 'entity-tide',
+        sourceUrl: 'https://medicine.yale.edu/lab/tide/',
+        value: ['Sediment transport', 'Estuarine ecology'],
+      });
+    });
+
+    it('emits no topics when the model says the page describes another subject', async () => {
+      const emitted = await runOfficialProsePath({
+        fullDescription: '',
+        shortDescription: '',
+        topics: ['Sediment transport', 'Estuarine ecology'],
+        methods: [],
+        subject: 'organization',
+      });
+
+      expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(pageProse);
+      expect(emitted.map((obs) => obs.field)).not.toContain('researchAreas');
+    });
+
+    it('emits no topics when none is grounded on the page', async () => {
+      const emitted = await runOfficialProsePath({
+        fullDescription: '',
+        shortDescription: '',
+        topics: ['Quantum chromodynamics'],
+        methods: [],
+      });
+
+      expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(pageProse);
+      expect(emitted.map((obs) => obs.field)).not.toContain('researchAreas');
+    });
   });
 
   it('rejects unsafe runtime bounds before fetching lab pages', async () => {
@@ -537,6 +625,41 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
     expect(grounded.fullDescription).toContain('neural circuits underlying decision making');
     expect(grounded.shortDescription).toBe('');
+  });
+
+  it('blanks a grounded description the model classified as another subject', () => {
+    const pageText =
+      'The Department of Examples prepares students for careers across the discipline.';
+    const extraction = {
+      fullDescription:
+        'The Department of Examples prepares students for careers across the discipline.',
+      shortDescription:
+        'The Department of Examples prepares students for careers across the discipline.',
+      topics: [],
+      methods: [],
+    };
+    for (const subject of ['organization', 'other']) {
+      const grounded = groundDescriptionExtraction({ ...extraction, subject }, pageText);
+      expect(grounded.fullDescription).toBe('');
+      expect(grounded.shortDescription).toBe('');
+    }
+  });
+
+  it('keeps a grounded description about the named entity, or with no classification at all', () => {
+    const pageText = 'The Ground Lab studies neural circuits underlying decision making.';
+    const extraction = {
+      fullDescription: 'The Ground Lab studies neural circuits underlying decision making.',
+      shortDescription: '',
+      topics: [],
+      methods: [],
+    };
+    expect(
+      groundDescriptionExtraction({ ...extraction, subject: 'named_entity' }, pageText)
+        .fullDescription,
+    ).toContain('neural circuits');
+    expect(groundDescriptionExtraction(extraction, pageText).fullDescription).toContain(
+      'neural circuits',
+    );
   });
 
   it('emits nothing when deterministic extraction fails and the LLM output is ungrounded', async () => {
@@ -1096,6 +1219,127 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
   });
 
+  it('stores the research-interests sentence of a bio as the body and a card written from it', async () => {
+    const { ctx, emitted } = makeContext();
+    const bio =
+      'I am an assistant professor of Computer Science at Example University. Before that, I was a postdoc at the Department of Statistics of Northfield University. I received my PhD from the Department of Mathematics at Eastbrook Institute. During my Ph.D. studies, I was awarded the Example Society Dissertation Award. My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://example.org/',
+      html: `<main><p>${bio}</p></main>`,
+    });
+    const researchCard =
+      'Studies learning theory, optimization, game theory, and mechanism design.';
+    const callCardLLM = vi.fn().mockResolvedValue(researchCard);
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map<string, string>(),
+      }),
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'bio-1',
+          slug: 'dept-example-bio-homepage',
+          name: 'Example Faculty Research',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          websiteUrl: 'https://example.org/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription: bio,
+        shortDescription:
+          'During my Ph.D. studies, I was awarded the Example Society Dissertation Award.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+      callCardLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(callCardLLM).toHaveBeenCalledOnce();
+    expect(callCardLLM.mock.calls[0][0].fullDescription).not.toMatch(/awarded|postdoc|PhD/);
+    expect(emitted.find((obs) => obs.field === 'shortDescription')?.value).toBe(researchCard);
+    expect(emitted.find((obs) => obs.field === 'fullDescription')?.value).toBe(
+      'My research interests include: Learning Theory, Optimization, Game Theory, and Mechanism Design.',
+    );
+  });
+
+  describe('an extracted card the serve sanitizer would blank (#4392)', () => {
+    const fullDescription =
+      'At the Example Laboratory, we model and mechanistically study human infectious, inflammatory, and fibrotic diseases. We combine in vitro and in vivo models with bioinformatic approaches and perturbation studies to examine the role of immune cells in disease.';
+    const firstPersonCard =
+      'At the Example Laboratory, we model and mechanistically study human infectious, inflammatory, and fibrotic diseases.';
+
+    function scraperFor(callCardLLM: CardSynthesisLLMFn) {
+      return new LabMicrositeDescriptionLLMExtractor({
+        identityCorpusLoader: async () => ({
+          knownPersonSurnames: NO_SURNAME_ROSTER,
+          leadPersonNameByEntityId: new Map<string, string>(),
+        }),
+        apiKey: 'test-key',
+        labFinder: async () => [
+          {
+            _id: 'voice-1',
+            slug: 'example-laboratory',
+            name: 'Example Laboratory',
+            websiteUrl: 'https://example.yale.edu/example-laboratory/',
+          },
+        ],
+        fetchPage: vi.fn().mockResolvedValue({
+          url: 'https://example.yale.edu/example-laboratory/',
+          html: `<main><p>${fullDescription}</p></main>`,
+        }),
+        callLLM: vi.fn().mockResolvedValue({
+          fullDescription,
+          shortDescription: firstPersonCard,
+          topics: [],
+          methods: [],
+        } satisfies DescriptionExtraction),
+        callCardLLM,
+      });
+    }
+
+    it('is a line the quality bar accepts and the serve sanitizer blanks', () => {
+      expect(isServableCardLine(firstPersonCard, fullDescription)).toBe(false);
+      expect(
+        isServableCardLine(
+          'Studies how immune cells drive infectious, inflammatory, and fibrotic diseases.',
+          fullDescription,
+        ),
+      ).toBe(true);
+    });
+
+    it('is not emitted, and a grounded card is synthesized in its place', async () => {
+      const { ctx, emitted } = makeContext();
+      const synthesized =
+        'Studies the role of immune cells in human infectious, inflammatory, and fibrotic diseases using in vitro and in vivo models.';
+      const callCardLLM = vi.fn().mockResolvedValue(synthesized);
+
+      await scraperFor(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledOnce();
+      const cards = emitted.filter((obs) => obs.field === 'shortDescription');
+      expect(cards.map((obs) => obs.value)).toEqual([synthesized]);
+    });
+
+    it('emits no card when the synthesized line would serve blank too', async () => {
+      const { ctx, emitted } = makeContext();
+      const callCardLLM = vi
+        .fn()
+        .mockResolvedValue(
+          'We model and mechanistically study human infectious, inflammatory, and fibrotic diseases.',
+        );
+
+      await scraperFor(callCardLLM).run(ctx);
+
+      expect(callCardLLM).toHaveBeenCalledOnce();
+      expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(false);
+      expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+    });
+  });
+
   it('does not synthesize a card when the extraction already carries a usable one (#557)', async () => {
     const { ctx, emitted } = makeContext();
     const fullDescription =
@@ -1623,5 +1867,99 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     const full = emitted.find((obs) => obs.field === 'fullDescription');
     expect(full?.value).toBe(CRAWLED);
     expect(full?.sourceUrl).toBe('https://examplelab.org/research');
+  });
+});
+
+describe('deeply nested microsite pages (#3558)', () => {
+  const depth = 5_000;
+  const deeplyNestedHtml =
+    '<html><body>' +
+    '<div>'.repeat(depth) +
+    '<p>The lab studies synthetic example systems.</p>' +
+    '<a href="/research">Research</a>' +
+    '</div>'.repeat(depth) +
+    '</body></html>';
+
+  it('flattens page text without overflowing the stack', () => {
+    expect(htmlToText(deeplyNestedHtml)).toBe(
+      'The lab studies synthetic example systems. Research',
+    );
+  });
+
+  it('reads anchor text without overflowing the stack', () => {
+    expect(discoverResearchSubPageUrls(deeplyNestedHtml, 'https://deep.example.com/')).toEqual([
+      'https://deep.example.com/research',
+    ]);
+  });
+});
+
+describe('a person-named row takes its description only from a cited page that names its lead (#4809)', () => {
+  const RESEARCH_PROSE =
+    'investigates parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+
+  async function runRow(
+    row: { websiteUrl: string; sourceUrls?: string[] },
+    researchHref: string,
+    crawledText: string,
+  ) {
+    const homeUrl = row.sourceUrls?.[0] ?? row.websiteUrl;
+    const researchUrl = new URL(researchHref, homeUrl).toString();
+    const { ctx, emitted } = makeContext();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map([['entity-1', 'Robin Fixturely']]),
+      }),
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'fixturely-lab',
+          name: 'Fixturely Lab',
+          kind: 'lab',
+          ...row,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage: vi.fn(async (url: string) => {
+        if (url === homeUrl) {
+          return { url: homeUrl, html: `<main><a href="${researchHref}">Research</a></main>` };
+        }
+        if (url === researchUrl) {
+          return { url: researchUrl, html: `<main><p>${crawledText}</p></main>` };
+        }
+        throw new Error('not found');
+      }),
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+    await scraper.run(ctx);
+    return emitted.find((obs) => obs.field === 'fullDescription');
+  }
+
+  it('refuses a winning crawled department index that never names the lead', async () => {
+    const row = { websiteUrl: 'https://medicine.example.edu/lab/fixturely/' };
+    const departmentIndex = await runRow(
+      row,
+      '/psychiatry/research',
+      `Work here ${RESEARCH_PROSE}`,
+    );
+    expect(departmentIndex).toBeUndefined();
+    const namingPage = await runRow(
+      row,
+      '/psychiatry/research',
+      `The Fixturely group ${RESEARCH_PROSE}`,
+    );
+    expect(namingPage?.sourceUrl).toBe('https://medicine.example.edu/psychiatry/research');
+  });
+
+  it('accepts a winning crawled page that names the lead when the primary page does not', async () => {
+    const row = {
+      websiteUrl: 'https://fixturely.example.org/',
+      sourceUrls: ['https://medicine.example.edu/programs/signal-group/'],
+    };
+    const full = await runRow(row, 'research', `The Fixturely group ${RESEARCH_PROSE}`);
+    expect(full?.sourceUrl).toBe('https://medicine.example.edu/programs/signal-group/research');
   });
 });

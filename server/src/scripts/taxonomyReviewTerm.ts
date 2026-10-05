@@ -47,7 +47,7 @@ import {
 } from './taxonomyReviewDecisionCore';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(here, '../../.env') });
+dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'taxonomy:review-term';
 

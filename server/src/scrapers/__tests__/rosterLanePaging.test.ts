@@ -199,3 +199,84 @@ describe('walkRosterLanePages', () => {
     expect(walk.pagesFetched).toBe(1);
   });
 });
+
+describe('walkRosterLanePages readWholeRoster', () => {
+  const pagedWalk = (fetchHtml: (pageUrl: string) => Promise<string>) =>
+    walkRosterLanePages({
+      url: 'https://example.yale.edu/people',
+      paginated: true,
+      extractor: csvExtractor,
+      fetchHtml,
+    });
+
+  it('is false when a later page fails to fetch, because its people were never read', async () => {
+    const walk = await pagedWalk(async (pageUrl) => {
+      if (pageUrl.includes('page=1')) throw new Error('503 unavailable');
+      return 'Ann|Bob';
+    });
+
+    expect(walk.stopReason).toBe('fetch-failed');
+    expect(walk.distinctEntries).toHaveLength(2);
+    expect(walk.readWholeRoster).toBe(false);
+  });
+
+  it('is false when the extractor throws on a later page', async () => {
+    const walk = await walkRosterLanePages({
+      url: 'https://example.yale.edu/people',
+      paginated: true,
+      extractor: (html) => {
+        if (html === 'broken') throw new Error('selector gone');
+        return csvExtractor(html, { pageUrl: '' });
+      },
+      fetchHtml: async (pageUrl) => (pageUrl.includes('page=1') ? 'broken' : 'Ann'),
+    });
+
+    expect(walk.stopReason).toBe('extractor-error');
+    expect(walk.readWholeRoster).toBe(false);
+  });
+
+  it('is false at the page cap, because the pager may continue past it', async () => {
+    let page = 0;
+    const walk = await pagedWalk(async () => `person-${page++}`);
+
+    expect(walk.stopReason).toBe('page-cap');
+    expect(walk.readWholeRoster).toBe(false);
+  });
+
+  it('is false when a paginated walk stops on a page it cannot identify', async () => {
+    const walk = await walkRosterLanePages({
+      url: 'https://example.yale.edu/people',
+      paginated: true,
+      extractor: () => [{ name: 'jane-roe', namePlaceholder: true }],
+      fetchHtml: vi.fn().mockResolvedValue('anything'),
+    });
+
+    expect(walk.readWholeRoster).toBe(false);
+  });
+
+  it('is true when the pager ends on an empty or repeated page', async () => {
+    const ended = await pagedWalk(async (pageUrl) => (pageUrl.includes('page=1') ? '' : 'Ann'));
+    const repeated = await pagedWalk(async (pageUrl) =>
+      pageUrl.includes('page=1') ? 'Cal' : 'Ann',
+    );
+
+    expect(ended.readWholeRoster).toBe(true);
+    expect(repeated.readWholeRoster).toBe(true);
+  });
+
+  it('is true for a single-page lane, including one whose rows carry no identity', async () => {
+    const single = await walkRosterLanePages({
+      url: 'https://example.yale.edu/people',
+      extractor: csvExtractor,
+      fetchHtml: vi.fn().mockResolvedValue('Ann'),
+    });
+    const anonymous = await walkRosterLanePages({
+      url: 'https://example.yale.edu/people',
+      extractor: () => [{ name: 'jane-roe', namePlaceholder: true }],
+      fetchHtml: vi.fn().mockResolvedValue('anything'),
+    });
+
+    expect(single.readWholeRoster).toBe(true);
+    expect(anonymous.readWholeRoster).toBe(true);
+  });
+});

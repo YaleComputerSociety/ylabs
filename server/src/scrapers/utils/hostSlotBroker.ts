@@ -1,0 +1,215 @@
+import fs from 'fs';
+import net from 'net';
+import os from 'os';
+import path from 'path';
+import { SHARED_TEMP_ROOT } from '../../utils/tempArtifactRoots';
+import type { HostSlotLimiter, HostSlotRelease } from './hostConcurrencyLimiter';
+import { lineReader, writeLine as send } from './brokerWire';
+import { handleSweepPageMessage, type SweepPageStore } from './sweepPageStore';
+
+export const SCRAPER_HOST_SLOT_BROKER_ENV = 'SCRAPER_HOST_SLOT_BROKER';
+
+// libuv silently truncates a longer path to sun_path, so listen succeeds on a different name.
+export const UNIX_SOCKET_PATH_MAX_BYTES = process.platform === 'darwin' ? 103 : 107;
+
+export const fitsUnixSocketPath = (socketPath: string): boolean =>
+  Buffer.byteLength(socketPath) <= UNIX_SOCKET_PATH_MAX_BYTES;
+
+export function brokerSocketPath(fileName: string, directory: string = os.tmpdir()): string {
+  const preferred = path.join(directory, fileName);
+  return fitsUnixSocketPath(preferred) ? preferred : path.join(SHARED_TEMP_ROOT, fileName);
+}
+
+type ClientMessage =
+  | { t: 'acquire'; id: number; host: string }
+  | { t: 'hold'; id: number; host: string }
+  | { t: 'release'; id: number }
+  | { t: 'ping' };
+export type BrokerMessage = { t: 'grant'; id: number } | { t: 'pong' };
+
+export interface BrokerSlotLimiter extends HostSlotLimiter {
+  adopt?(host: string): HostSlotRelease;
+}
+
+export interface HostSlotBrokerOptions {
+  pageStore?: SweepPageStore;
+  detached?: boolean;
+}
+
+export class HostSlotBroker {
+  private readonly connections = new Set<net.Socket>();
+
+  private constructor(
+    private readonly server: net.Server,
+    readonly socketPath: string,
+    readonly pageStore?: SweepPageStore,
+  ) {}
+
+  static async listen(
+    socketPath: string,
+    limiter: BrokerSlotLimiter,
+    options: HostSlotBrokerOptions = {},
+  ): Promise<HostSlotBroker> {
+    if (!fitsUnixSocketPath(socketPath)) {
+      throw new Error(
+        `host slot broker socket path is ${Buffer.byteLength(socketPath)} bytes, past the ${UNIX_SOCKET_PATH_MAX_BYTES}-byte Unix socket limit: ${socketPath}`,
+      );
+    }
+    fs.rmSync(socketPath, { force: true });
+    const server = net.createServer((socket) => {
+      // A detached broker lives inside a scrape process, which must still exit when its own
+      // work is done; its clients then take over (see machineHostSlotBroker.ts).
+      if (options.detached) socket.unref();
+      broker.serve(socket, limiter);
+    });
+    const broker = new HostSlotBroker(server, socketPath, options.pageStore);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(socketPath, () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    fs.chmodSync(socketPath, 0o600);
+    if (options.detached) server.unref();
+    return broker;
+  }
+
+  private serve(socket: net.Socket, limiter: BrokerSlotLimiter): void {
+    this.connections.add(socket);
+    const leases = new Map<number, HostSlotRelease>();
+    let closed = false;
+    const releaseAll = () => {
+      closed = true;
+      this.connections.delete(socket);
+      for (const release of leases.values()) release();
+      leases.clear();
+    };
+    socket.on('close', releaseAll);
+    socket.on('error', () => socket.destroy());
+    socket.on(
+      'data',
+      lineReader((raw) => {
+        if (handleSweepPageMessage(this.pageStore, socket, raw)) return;
+        const message = raw as ClientMessage;
+        if (message?.t === 'acquire' && Number.isInteger(message.id)) {
+          void limiter.acquire(String(message.host ?? '')).then((release) => {
+            if (closed) {
+              release();
+              return;
+            }
+            leases.set(message.id, release);
+            send(socket, { t: 'grant', id: message.id });
+          });
+        } else if (message?.t === 'hold' && Number.isInteger(message.id)) {
+          const host = String(message.host ?? '');
+          if (limiter.adopt) leases.set(message.id, limiter.adopt(host));
+        } else if (message?.t === 'release') {
+          leases.get(message.id)?.();
+          leases.delete(message.id);
+        } else if (message?.t === 'ping') {
+          send(socket, { t: 'pong' });
+        }
+      }),
+    );
+  }
+
+  async close(options: { keepSocketFile?: boolean } = {}): Promise<void> {
+    this.closeSync(options);
+    await new Promise<void>((resolve) => this.server.close(() => resolve()));
+  }
+
+  closeSync(options: { keepSocketFile?: boolean } = {}): void {
+    for (const socket of this.connections) socket.destroy();
+    if (this.server.listening) this.server.close();
+    if (!options.keepSocketFile) fs.rmSync(this.socketPath, { force: true });
+  }
+}
+
+interface PendingAcquire {
+  host: string;
+  resolve: (release: HostSlotRelease) => void;
+}
+
+export class BrokeredHostSlotLimiter implements HostSlotLimiter {
+  private socket?: net.Socket;
+  private connected = false;
+  private failed = false;
+  private nextId = 1;
+  private activeLeases = 0;
+  private readonly pending = new Map<number, PendingAcquire>();
+
+  constructor(
+    private readonly socketPath: string,
+    private readonly fallback: HostSlotLimiter,
+    private readonly onFallback: (reason: string) => void = (reason) =>
+      console.warn(`[host-slots] ${reason}; falling back to this process's own per-host cap`),
+  ) {}
+
+  acquire(host: string): Promise<HostSlotRelease> {
+    if (this.failed) return this.fallback.acquire(host);
+    const socket = this.ensureSocket();
+    const id = this.nextId++;
+    return new Promise<HostSlotRelease>((resolve) => {
+      this.pending.set(id, { host, resolve });
+      this.holdEventLoopWhileBusy();
+      if (this.connected) send(socket, { t: 'acquire', id, host });
+    });
+  }
+
+  close(): void {
+    this.socket?.destroy();
+  }
+
+  private ensureSocket(): net.Socket {
+    if (this.socket) return this.socket;
+    const socket = net.createConnection(this.socketPath);
+    this.socket = socket;
+    socket.on('connect', () => {
+      this.connected = true;
+      for (const [id, { host }] of this.pending) send(socket, { t: 'acquire', id, host });
+    });
+    socket.on(
+      'data',
+      lineReader((raw) => {
+        const message = raw as BrokerMessage;
+        if (message?.t !== 'grant') return;
+        const waiter = this.pending.get(message.id);
+        if (!waiter) return;
+        this.pending.delete(message.id);
+        this.activeLeases += 1;
+        waiter.resolve(this.leaseRelease(socket, message.id));
+      }),
+    );
+    socket.on('error', (error) => this.failOver(`host slot broker unavailable (${error.message})`));
+    socket.on('close', () => this.failOver('host slot broker connection closed'));
+    return socket;
+  }
+
+  private leaseRelease(socket: net.Socket, id: number): HostSlotRelease {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.activeLeases -= 1;
+      send(socket, { t: 'release', id });
+      this.holdEventLoopWhileBusy();
+    };
+  }
+
+  private holdEventLoopWhileBusy(): void {
+    if (!this.socket || this.failed) return;
+    if (this.pending.size > 0 || this.activeLeases > 0) this.socket.ref();
+    else this.socket.unref();
+  }
+
+  private failOver(reason: string): void {
+    if (this.failed) return;
+    this.failed = true;
+    this.socket?.unref();
+    this.onFallback(reason);
+    const waiting = [...this.pending.values()];
+    this.pending.clear();
+    for (const { host, resolve } of waiting) void this.fallback.acquire(host).then(resolve);
+  }
+}

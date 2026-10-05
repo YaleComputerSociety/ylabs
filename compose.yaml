@@ -1,3 +1,5 @@
+name: ylabs
+
 services:
   meilisearch:
     image: getmeili/meilisearch:v1.13
@@ -11,5 +13,20 @@ services:
     volumes:
       - meili_data:/meili_data
 
+  mongodb:
+    image: mongo:7
+    container_name: ylabs-mongodb
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.runCommand({ ping: 1 }).ok']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
 volumes:
   meili_data:
+  mongo_data:

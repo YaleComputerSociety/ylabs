@@ -13,7 +13,7 @@ import {
   CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE,
   isLegacyFacultyResearchEntityType,
   LEGACY_FACULTY_RESEARCH_ENTITY_TYPES,
-} from '../../scripts/consolidateFacultyResearchEntityTypeCore';
+} from '../storedVocabularies';
 import { Source } from '../source';
 
 const oid = () => new mongoose.Types.ObjectId();

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MANUAL_ONLY_SWEEP_SOURCES } from '../../scrapers/manualOnlySweepSources';
 import {
   classifySourceFreshness,
   computeSourceFreshness,
@@ -21,8 +22,28 @@ describe('classifySourceFreshness', () => {
     expect(entry).toMatchObject({ status: 'never-crawled', lastCrawledAt: null });
   });
 
-  it('excludes disabled sources entirely', () => {
-    expect(classifySourceFreshness({ name: 'off', enabled: false }, NOW)).toBeNull();
+  it('excludes retired sources entirely', () => {
+    expect(classifySourceFreshness({ name: 'ylabs-listing', enabled: false }, NOW)).toBeNull();
+  });
+
+  it('still expects a live source to recur when its stored row reads disabled (#4025)', () => {
+    expect(
+      classifySourceFreshness({ name: 'fixture-live-lane', enabled: false }, NOW),
+    ).toMatchObject({ status: 'never-crawled' });
+  });
+
+  it('exempts a manual-only sweep source from a re-crawl expectation (#3582)', () => {
+    const entry = classifySourceFreshness(
+      {
+        name: MANUAL_ONLY_SWEEP_SOURCES[0],
+        enabled: true,
+        lastCrawledAt: daysAgo(9999),
+        coverage: { tier: 'THIRD_PARTY_ENRICHMENT' },
+      },
+      NOW,
+    );
+
+    expect(entry).toBeNull();
   });
 
   it('exempts MANUAL_OVERRIDE sources from a re-crawl expectation', () => {
@@ -125,14 +146,14 @@ describe('getStaleSources', () => {
 });
 
 describe('summarizeSourceFreshness', () => {
-  it('tallies each status bucket plus exempt/disabled sources', () => {
+  it('tallies each status bucket plus exempt and retired sources', () => {
     const summary = summarizeSourceFreshness(
       [
         { name: 'fresh', enabled: true, lastCrawledAt: daysAgo(1), cadenceDays: 30 },
         { name: 'due-soon', enabled: true, lastCrawledAt: daysAgo(25), cadenceDays: 30 },
         { name: 'overdue', enabled: true, lastCrawledAt: daysAgo(45), cadenceDays: 30 },
         { name: 'never-crawled', enabled: true },
-        { name: 'disabled', enabled: false },
+        { name: 'ylabs-listing', enabled: false },
         { name: 'manual', enabled: true, coverage: { tier: 'MANUAL_OVERRIDE' } },
       ],
       NOW,
@@ -143,11 +164,11 @@ describe('summarizeSourceFreshness', () => {
 });
 
 describe('computeSourceFreshness', () => {
-  it('drops disabled and exempt rows from the classified list', () => {
+  it('drops retired and exempt rows from the classified list', () => {
     const entries = computeSourceFreshness(
       [
         { name: 'kept', enabled: true, lastCrawledAt: daysAgo(1), cadenceDays: 30 },
-        { name: 'disabled', enabled: false },
+        { name: 'ylabs-listing', enabled: false },
       ],
       NOW,
     );

@@ -34,14 +34,9 @@ const richPayload: LabDetailPayload = {
       'Investigates the neural circuits underlying memory formation using imaging and behavioral models.',
     shortDescription: 'Neural circuits of memory.',
     websiteUrl: 'https://research-home.example.test/sample-lab/',
-    location: 'New Haven, CT',
     departments: ['Neurology'],
     researchAreas: ['Neuroscience', 'Imaging'],
     school: 'School of Medicine',
-    typicalUndergradRoles: ['Research assistant'],
-    prerequisiteCourses: ['Introductory neuroscience'],
-    creditOptions: ['Course credit'],
-    fundingPrograms: [],
     contactEmail: 'lab-contact@example.test',
     contactName: 'Lab Coordinator',
     contactRole: 'Coordinator',
@@ -129,6 +124,31 @@ describe('research-home detail accessibility', () => {
     const { container } = renderLabDetail(richPayload);
     await screen.findByText(ENTITY_NAME);
     await screen.findByText('More like this');
+    await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations when an emeritus-led row withholds its way in', async () => {
+    const { container } = renderLabDetail({
+      ...richPayload,
+      group: { ...richPayload.group, emeritusLed: true, wayInWithheld: true },
+      members: richPayload.members.map((member) =>
+        member.role === 'pi'
+          ? { ...member, user: { ...member.user, title: 'Professor Emeritus', emeritus: true } }
+          : member,
+      ),
+    });
+    await screen.findByText(ENTITY_NAME);
+    expect(screen.getByRole('note', { name: 'Current activity' })).toBeTruthy();
+    await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations on a creative practice profile', async () => {
+    const { container } = renderLabDetail({
+      ...richPayload,
+      group: { ...richPayload.group, creativePractice: true },
+    });
+    await screen.findByText(ENTITY_NAME);
+    expect(screen.getByText('Practice summary')).toBeTruthy();
     await expectNoAxeViolations(container);
   });
 

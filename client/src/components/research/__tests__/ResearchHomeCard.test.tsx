@@ -10,6 +10,7 @@ import ConfigContext, {
   defaultConfigContext,
   type ResearchAreaConfig,
 } from '../../../contexts/ConfigContext';
+import { expectNoAxeViolations } from '../../../testUtils/axe';
 
 const CANONICAL_AREAS: ResearchAreaConfig[] = [
   { name: 'Systems Neuroscience', field: 'Life Sciences', colorKey: 'blue', isDefault: false },
@@ -61,14 +62,9 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
       name: 'Example Research Home',
       kind: 'lab',
       websiteUrl: '',
-      location: '',
       departments: ['Neuroscience'],
       researchAreas: ['Systems neuroscience'],
       school: 'School of Medicine',
-      typicalUndergradRoles: [],
-      prerequisiteCourses: [],
-      creditOptions: [],
-      fundingPrograms: [],
       contactEmail: '',
       contactName: '',
       contactRole: '',
@@ -87,6 +83,92 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
 });
 
 describe('ResearchHomeCard', () => {
+  it('labels a card led by emeritus faculty (#4431)', () => {
+    const home = researchHome();
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [{ ...home.entities[0], emeritusLed: true, wayInWithheld: true }],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Led by emeritus faculty')).toBeTruthy();
+  });
+
+  it('carries no emeritus label for an ordinary card', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Led by emeritus faculty')).toBeNull();
+  });
+
+  it('labels a creative practice card and never calls its lead a principal investigator (#4519)', async () => {
+    const home = researchHome();
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                creativePractice: true,
+                contactName: 'Fixture Performer',
+                contactRole: 'Principal Investigator',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Creative practice')).toBeTruthy();
+    expect(container.textContent).toContain('Faculty: Fixture Performer');
+    expect(container.textContent).not.toContain('Principal Investigator');
+    await expectNoAxeViolations(container);
+  });
+
+  it('keeps a director lead a director on a creative practice card (#4519)', () => {
+    const home = researchHome();
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                creativePractice: true,
+                contactName: 'Fixture Performer',
+                contactRole: 'Director',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Director: Fixture Performer');
+    expect(container.textContent).not.toContain('Faculty: Fixture Performer');
+  });
+
+  it('carries no creative practice label for an ordinary card', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Creative practice')).toBeNull();
+  });
+
   it('frames profile results as research instead of clusters', () => {
     const onSelect = vi.fn();
     const { container } = render(
@@ -151,7 +233,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('this lab');
   });
 
-  it('puts department and topic badges before the coverage warning and the summary', () => {
+  it('puts status badges before the summary and topics after it on compact cards', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
@@ -168,10 +250,12 @@ describe('ResearchHomeCard', () => {
 
     const text = container.textContent || '';
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
-    expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
-    expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Summary limited'));
+    expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Summary limited'));
     expect(text.indexOf('Summary limited')).toBeLessThan(
       text.indexOf('Studies systems neuroscience'),
+    );
+    expect(text.indexOf('Studies systems neuroscience')).toBeLessThan(
+      text.indexOf('Social Cognition'),
     );
   });
 
@@ -258,6 +342,47 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByText('Zeta Visualization')).toBeNull();
     expect(screen.getByText('+3 more').className).toContain('sm:hidden');
     expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
+  });
+
+  it('keeps the compact card topic count visible at every width', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            labels: [
+              'alpha topic modeling',
+              'beta field methods',
+              'gamma archive analysis',
+              'delta source review',
+              'epsilon data curation',
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Alpha Topic Modeling')).toBeTruthy();
+    expect(screen.getByText('Beta Field Methods')).toBeTruthy();
+    expect(screen.queryByText('Gamma Archive Analysis')).toBeNull();
+    const moreCounts = screen.getAllByText(/^\+\d+ more$/);
+    expect(moreCounts.map((element) => element.textContent)).toEqual(['+3 more']);
+    expect(moreCounts[0].className.split(/\s+/)).not.toContain('hidden');
+    expect(moreCounts[0].className).not.toMatch(/\b(?:sm|md|lg|xl):hidden\b/);
+  });
+
+  it('keeps a spacing floor between the description and the action divider', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+
+    const divider = screen.getByRole('link', { name: 'View profile' }).parentElement;
+    expect(divider?.className.split(/\s+/)).toContain('border-t');
+    expect(divider?.className.split(/\s+/)).not.toContain('mt-auto');
+    const actionRow = divider?.parentElement;
+    expect(actionRow?.className.split(/\s+/)).toEqual(expect.arrayContaining(['mt-auto', 'pt-4']));
   });
 
   it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
@@ -371,9 +496,12 @@ describe('ResearchHomeCard', () => {
     const description = screen.getByText(
       /Studies how synthetic signals move through fixture workflows/,
     );
-    expect(description.className).toContain('line-clamp-4');
-    expect(description.className).not.toContain('line-clamp-2');
-    expect(screen.getByRole('link', { name: 'View profile' })).toBeTruthy();
+    expect(description.className).not.toContain('line-clamp');
+    expect(description.textContent).toMatch(/\.$/);
+    expect(screen.queryByRole('link', { name: 'View profile' })).toBeNull();
+    expect(screen.getByRole('link', { name: researchHome().label }).getAttribute('href')).toContain(
+      '/research/',
+    );
   });
 
   it('keeps the profile list for grouped homes with more than one linked profile', () => {
@@ -499,14 +627,9 @@ describe('ResearchHomeCard', () => {
                 name: 'Legacy Entry',
                 kind: 'lab',
                 websiteUrl: '',
-                location: '',
                 departments: ['Computer Science'],
                 researchAreas: ['Data Science'],
                 school: 'Yale College',
-                typicalUndergradRoles: [],
-                prerequisiteCourses: [],
-                creditOptions: [],
-                fundingPrograms: [],
                 contactEmail: '',
                 contactName: '',
                 contactRole: '',
@@ -580,5 +703,85 @@ describe('ResearchHomeCard', () => {
 
     expect(screen.getByLabelText('Appended pages').textContent).toBe('2');
     expect(renderSpy.mock.calls.length).toBe(rendersAfterMount);
+  });
+});
+
+describe('ResearchHomeCard compact browse card', () => {
+  it('names the kind when the title does not already say it', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Synthetic Faculty Profile',
+            entities: [
+              {
+                ...researchHome().entities[0],
+                name: 'Synthetic Faculty Profile',
+                kind: 'individual',
+                entityType: 'FACULTY_RESEARCH_AREA',
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Faculty research · Neuroscience · School of Medicine');
+  });
+
+  it('does not repeat a kind the title already names', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Example Imaging Lab',
+            entities: [{ ...researchHome().entities[0], name: 'Example Imaging Lab' }],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Neuroscience · School of Medicine');
+    expect(container.textContent).not.toContain('Lab · Neuroscience');
+  });
+
+  it('names the kind when the title only contains it inside another word', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            label: 'Collaborative Imaging Group',
+            entities: [{ ...researchHome().entities[0], name: 'Collaborative Imaging Group' }],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Lab · Neuroscience · School of Medicine');
+  });
+
+  it('ends a long description at a whole sentence', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          variant="compact"
+          home={researchHome({
+            description:
+              'The group studies how synthetic fixture circuits learn precise movements across development. ' +
+              'It combines recordings, imaging, and models to test theories of circuit plasticity in fixture systems. ' +
+              'A third sentence pushes the description past the card length.',
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const description = screen.getByText(/The group studies how synthetic fixture circuits/);
+    expect(description.textContent).toBe(
+      'The group studies how synthetic fixture circuits learn precise movements across development. ' +
+        'It combines recordings, imaging, and models to test theories of circuit plasticity in fixture systems.',
+    );
   });
 });

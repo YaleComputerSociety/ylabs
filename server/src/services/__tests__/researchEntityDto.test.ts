@@ -642,6 +642,118 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
+    const note = toPublicResearchEntityDto({
+      id: 'entity-search-note',
+      slug: 'search-note-lab',
+      name: 'Search Note Lab',
+      undergradEvidenceQuote:
+        'No explicit mention of undergraduate students was found on the provided pages.',
+    });
+    expect(note.undergradEvidenceQuote).toBeUndefined();
+
+    const alumni = toPublicResearchEntityDto({
+      id: 'entity-alumni-quote',
+      slug: 'alumni-quote-lab',
+      name: 'Alumni Quote Lab',
+      undergradEvidenceQuote: 'Former undergraduate researchers include three Yale College alumni.',
+    });
+    expect(alumni.undergradEvidenceQuote).toBe(
+      'Former undergraduate researchers include three Yale College alumni.',
+    );
+  });
+
+  it('serves the hosted-undergraduates flag from the row, not from a stale stored flag (#3593)', () => {
+    const hosted = toPublicResearchEntityDto({
+      id: 'entity-hosted',
+      slug: 'hosted-lab',
+      name: 'Hosted Lab',
+      pastUndergradAdvisees: [{ name: 'Synthetic Advisee', count: 1 }],
+    });
+    expect(hosted.hasUndergradHostingEvidence).toBe(true);
+
+    const staleFlag = toPublicResearchEntityDto({
+      id: 'entity-stale',
+      slug: 'stale-lab',
+      name: 'Stale Lab',
+      hasUndergradHostingEvidence: true,
+    });
+    expect(staleFlag.hasUndergradHostingEvidence).toBeUndefined();
+
+    const rosterCount = toPublicResearchEntityDto({
+      id: 'entity-roster',
+      slug: 'roster-lab',
+      name: 'Roster Lab',
+      currentUndergradCount: 3,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'lab-microsite-undergrad-llm' } },
+    });
+    expect(rosterCount.hasUndergradHostingEvidence).toBe(true);
+
+    const retiredCount = toPublicResearchEntityDto({
+      id: 'entity-retired',
+      slug: 'retired-lab',
+      name: 'Retired Lab',
+      currentUndergradCount: 3,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'research-entity-cache-backfill' } },
+    });
+    expect(retiredCount.hasUndergradHostingEvidence).toBeUndefined();
+  });
+
+  describe('undergraduate access fields no lane fills (#3579)', () => {
+    const storedRow = {
+      id: 'entity-unfilled-access',
+      slug: 'unfilled-access-lab',
+      name: 'Unfilled Access Lab',
+      undergradEvidenceQuote: 'Undergraduates join the lab each summer.',
+      pastUndergradAdvisees: [{ year: 2024, programName: 'Summer Program', count: 2 }],
+      offersIndependentStudy: true,
+      independentStudyCourses: [{ code: 'ABCD 4900', title: 'Independent Research' }],
+      typicalUndergradRoles: ['Data analysis'],
+    };
+    const unfilledFields = [
+      'offersIndependentStudy',
+      'independentStudyCourses',
+      'typicalUndergradRoles',
+    ];
+
+    it('serves none of them on the detail route, even when the stored row holds a value', () => {
+      const { researchEntity } = addResearchEntityDetailAlias({ group: { ...storedRow } });
+      for (const field of unfilledFields) expect(researchEntity).not.toHaveProperty(field);
+    });
+
+    it('serves none of them on a browse hit', () => {
+      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...storedRow }] });
+      for (const field of unfilledFields) expect(researchEntities[0]).not.toHaveProperty(field);
+    });
+
+    it('still serves the evidence quote and past advisees exactly as stored', () => {
+      const detail = toPublicResearchEntityDto({ ...storedRow });
+      expect(detail.undergradEvidenceQuote).toBe(storedRow.undergradEvidenceQuote);
+      expect(detail.pastUndergradAdvisees).toEqual(storedRow.pastUndergradAdvisees);
+      expect(detail.hasUndergradHostingEvidence).toBe(true);
+    });
+  });
+
+  it('withholds a current-undergraduate count held only by the retired cache backfill (#3789)', () => {
+    const retired = toPublicResearchEntityDto({
+      id: 'entity-retired-count',
+      slug: 'retired-count-lab',
+      name: 'Retired Count Lab',
+      currentUndergradCount: 4,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'research-entity-cache-backfill' } },
+    });
+    expect(retired.currentUndergradCount).toBeUndefined();
+
+    const live = toPublicResearchEntityDto({
+      id: 'entity-live-count',
+      slug: 'live-count-lab',
+      name: 'Live Count Lab',
+      currentUndergradCount: 2,
+      fieldProvenance: { currentUndergradCount: { sourceName: 'lab-microsite-undergrad-llm' } },
+    });
+    expect(live.currentUndergradCount).toBe(2);
+  });
+
   it('splits bare comma-delimited research-area blobs while preserving enumeration titles', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-area-split',
@@ -688,10 +800,7 @@ describe('researchEntityDto', () => {
     expect(dto.departments).toEqual(['Department [email redacted]']);
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
-    expect(dto.planningContext).toEqual({
-      bestNextStep: 'Email [email redacted] after reading the source.',
-      reasons: ['Call [phone redacted] before outreach.'],
-    });
+    expect(dto).not.toHaveProperty('planningContext');
     expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
     expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
@@ -902,7 +1011,7 @@ describe('researchEntityDto', () => {
     expect(String(dto.shortDescription).length).toBeLessThanOrEqual(MAX_SHORT_DESCRIPTION_LENGTH);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
-    expect((dto.planningContext as any).reasons).toHaveLength(100);
+    expect(dto).not.toHaveProperty('planningContext');
     expect(Object.keys(dto.qualitySummary as Record<string, unknown>)).toHaveLength(100);
   });
 
@@ -1041,6 +1150,139 @@ describe('researchEntityDto', () => {
     expect(dto.recentGrantCount).toBe(2);
   });
 
+  it('serves only running awards as current funding and restates the count and agencies (#3924)', () => {
+    const endedAward = {
+      id: 'award-ended',
+      agency: 'NSF',
+      title: 'Ended award',
+      startDate: new Date('2015-09-01T00:00:00Z'),
+      endDate: new Date('2019-08-31T00:00:00Z'),
+    };
+    const runningAward = {
+      id: 'award-running',
+      agency: 'NCI',
+      title: 'Running award',
+      startDate: new Date('2024-09-01T00:00:00Z'),
+      endDate: new Date('2999-08-31T00:00:00Z'),
+    };
+    const openEndedAward = { id: 'award-open', agency: 'DOE', title: 'Open-ended award' };
+
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-mixed-funding',
+      slug: 'mixed-funding-lab',
+      name: 'Mixed Funding Lab',
+      kind: 'lab',
+      recentGrants: [endedAward, runningAward, openEndedAward],
+      recentGrantCount: 3,
+      fundingAgencies: ['NIH', 'NSF', 'DOE'],
+    });
+
+    expect((dto.recentGrants as Array<{ id: string }>).map((award) => award.id)).toEqual([
+      'award-running',
+      'award-open',
+    ]);
+    expect(dto.recentGrantCount).toBe(2);
+    expect(dto.fundingAgencies).toEqual(['NIH', 'DOE']);
+  });
+
+  it('serves no current funding when every stored award has ended (#3924)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ended-funding',
+      slug: 'ended-funding-lab',
+      name: 'Ended Funding Lab',
+      kind: 'lab',
+      recentGrants: [
+        { id: 'award-a', agency: 'NHLBI', endDate: new Date('2020-06-30T00:00:00Z') },
+        { id: 'award-b', agency: 'NSF', endDate: '2021-01-31T00:00:00.000Z' },
+      ],
+      recentGrantCount: 2,
+      fundingAgencies: ['NIH', 'NSF'],
+    });
+
+    expect(dto.recentGrants).toEqual([]);
+    expect(dto).not.toHaveProperty('recentGrantCount');
+    expect(dto).not.toHaveProperty('fundingAgencies');
+  });
+
+  it('serves an all-running award list and its stored count unchanged (#3924)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-running-funding',
+      slug: 'running-funding-lab',
+      name: 'Running Funding Lab',
+      kind: 'lab',
+      recentGrants: [{ id: 'award-c', agency: 'NIGMS', endDate: new Date('2999-01-01T00:00:00Z') }],
+      recentGrantCount: 7,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect((dto.recentGrants as unknown[]).length).toBe(1);
+    expect(dto.recentGrantCount).toBe(7);
+    expect(dto.fundingAgencies).toEqual(['NIH']);
+  });
+
+  const datedAwards = (count: number, endedIndexes: readonly number[]) =>
+    Array.from({ length: count }, (_value, index) => ({
+      id: `award-${index}`,
+      agency: 'NIGMS',
+      startDate: new Date(Date.UTC(2024, 0, count - index)),
+      endDate: endedIndexes.includes(index)
+        ? new Date('2020-01-31T00:00:00Z')
+        : new Date('2999-01-31T00:00:00Z'),
+    }));
+
+  it('counts running awards from the dated award periods beyond the ten listed (#4245)', () => {
+    const periods = datedAwards(25, [0]);
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-many-awards',
+      slug: 'many-awards-lab',
+      name: 'Many Awards Lab',
+      kind: 'lab',
+      recentGrants: periods.slice(0, 10),
+      recentGrantPeriods: periods,
+      recentGrantCount: 25,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect((dto.recentGrants as unknown[]).length).toBe(9);
+    expect(dto.recentGrantCount).toBe(24);
+    expect(dto.fundingAgencies).toEqual(['NIH']);
+    expect(dto).not.toHaveProperty('recentGrantPeriods');
+  });
+
+  it('counts unlisted running awards when every listed award has ended (#4245)', () => {
+    const periods = datedAwards(14, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-listed-awards-ended',
+      slug: 'listed-awards-ended-lab',
+      name: 'Listed Awards Ended Lab',
+      kind: 'lab',
+      recentGrants: periods.slice(0, 10),
+      recentGrantPeriods: periods,
+      recentGrantCount: 14,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect(dto.recentGrants).toEqual([]);
+    expect(dto.recentGrantCount).toBe(4);
+  });
+
+  it('omits a count it cannot restate from a capped award list (#4245)', () => {
+    const awards = datedAwards(25, [0]);
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-undated-sample',
+      slug: 'undated-sample-lab',
+      name: 'Undated Sample Lab',
+      kind: 'lab',
+      recentGrants: awards.slice(0, 10),
+      recentGrantPeriods: awards.slice(0, 12),
+      recentGrantCount: 25,
+      fundingAgencies: ['NIH'],
+    });
+
+    expect((dto.recentGrants as unknown[]).length).toBe(9);
+    expect(dto).not.toHaveProperty('recentGrantCount');
+  });
+
   it('strips internal review, ownership, and provenance fields from public DTOs', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-private-fields',
@@ -1129,7 +1371,9 @@ describe('researchEntityDto', () => {
    * The browse card and the detail card must be the same string for the same row.
    * They diverged on 97 of 3,214 live `student_ready` rows because only the detail
    * path supplied the roster-derived lead names, so the mismatched-person-name strip
-   * was a structural no-op on browse (#2240).
+   * was a structural no-op on browse (#2240). The card compared here is now the one
+   * served card rather than a browse-only summary of the stored short and body, so the
+   * comparison is against the served card field rather than the body (#3747).
    */
   it('runs the lead-name-aware guard on a browse card so it matches the detail card (#2240)', () => {
     const entity = {
@@ -1139,8 +1383,10 @@ describe('researchEntityDto', () => {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
       researchAreas: ['Coral Reef Ecology'],
-      fullDescription:
+      shortDescription:
         "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+      fullDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress. The group tracks bleaching recovery across reef sites and trains students in the survey methods.",
     };
     const leadMemberNames = ['Hollis Quintrell'];
 
@@ -1160,7 +1406,10 @@ describe('researchEntityDto', () => {
     expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(
       'This research examines coral reef resilience under thermal stress.',
     );
-    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(detail.fullDescription);
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(detail.cardDescription);
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(
+      withLeadNames.researchEntities[0].shortDescription,
+    );
   });
 
   it('leaves a browse card intact when the possessive names the row own lead (#2240)', () => {
@@ -1171,8 +1420,10 @@ describe('researchEntityDto', () => {
       kind: 'individual',
       entityType: 'FACULTY_RESEARCH_AREA',
       researchAreas: ['Coral Reef Ecology'],
-      fullDescription:
+      shortDescription:
         "Professor Quintrell's research examines coral reef resilience under thermal stress.",
+      fullDescription:
+        "Professor Quintrell's research examines coral reef resilience under thermal stress. The group tracks bleaching recovery across reef sites and trains students in the survey methods.",
     };
 
     const withLeadNames = addResearchEntitySearchAliases(
@@ -1180,7 +1431,80 @@ describe('researchEntityDto', () => {
       { leadMemberNamesByEntityId: new Map([[entity._id, ['Hollis Quintrell']]]) },
     );
 
-    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.fullDescription);
+    expect(withLeadNames.researchEntities[0].cardDescription?.text).toBe(entity.shortDescription);
+  });
+
+  it('serves no description copy when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb83',
+      slug: 'dept-econ-hollis-quintrell-three',
+      name: 'Hollis Quintrell Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      researchAreas: ['Coral Reef Ecology'],
+      shortDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+      fullDescription:
+        "Marguerite Delacroix's research examines coral reef resilience under thermal stress.",
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.name).toBe('Hollis Quintrell Faculty Research');
+    expect(card.researchAreas).toEqual(['Coral Reef Ecology']);
+    expect(JSON.stringify(card)).not.toContain('Marguerite Delacroix');
+    expect(JSON.stringify(card)).not.toContain('thermal stress');
+  });
+
+  it('keeps unsourced topic chips the withheld copy supports when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb85',
+      slug: 'dept-psych-quokka-cognition',
+      name: 'Quokka Cognition Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Psychology'],
+      researchAreas: ['animal cognition', 'spatial memory', 'behavioral ecology'],
+      shortDescription:
+        'Studies animal cognition, spatial memory, and behavioral ecology in marsupials.',
+      fullDescription:
+        'The lab studies animal cognition, spatial memory, and behavioral ecology in wild marsupials.',
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.researchAreas).toEqual([
+      'animal cognition',
+      'spatial memory',
+      'behavioral ecology',
+    ]);
+    expect(JSON.stringify(card)).not.toContain('wild marsupials');
+  });
+
+  it('withholds the displayName alias when the page lead names could not be read', () => {
+    const entity = {
+      _id: '6a05677c7c6d4fba869fbb84',
+      slug: 'dept-econ-hollis-quintrell-four',
+      name: 'Hollis Quintrell Faculty Research',
+      displayName: 'Tidewater Marine Institute',
+      kind: 'center',
+      entityType: 'CENTER',
+      researchAreas: ['Coral Reef Ecology'],
+    };
+
+    const [card] = addResearchEntitySearchAliases(
+      { hits: [entity] },
+      { leadMemberNamesByEntityId: new Map(), leadMemberNamesUnavailable: true },
+    ).researchEntities;
+
+    expect(card.name).toBe('Hollis Quintrell Faculty Research');
+    expect(JSON.stringify(card)).not.toContain('Tidewater Marine Institute');
   });
 
   it('disambiguates two student-visible entities sharing an identical name (#1211)', () => {
@@ -1326,6 +1650,54 @@ describe('researchEntityDto', () => {
     });
   });
 
+  it('never serves the unmodelled profile-synthesis text or its source flag on any payload (#3937)', () => {
+    const stored = {
+      id: 'unbacked-synthesis-lab',
+      slug: 'unbacked-synthesis-lab',
+      name: 'Unbacked Synthesis Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Chemistry'],
+      shortDescription: 'Studies catalysis, reaction kinetics, and green chemistry routes.',
+      fullDescription:
+        'This lab studies catalysis, reaction kinetics, and green chemistry routes across many substrates.',
+      profileSynthesisDescription: 'Prose no lane asserts and no provenance records.',
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+    };
+
+    for (const dto of [
+      toPublicResearchEntityDto(stored),
+      toPublicResearchEntityDto(stored, { forList: true }),
+      toPublicResearchEntitySummaryDto(stored),
+    ]) {
+      expect(dto).not.toHaveProperty('profileSynthesisDescription');
+      expect(dto).not.toHaveProperty('descriptionSource');
+      expect(JSON.stringify(dto)).not.toContain('Prose no lane asserts');
+      expect(JSON.stringify(dto)).not.toContain('PI_PROFILE_SYNTHESIS');
+    }
+
+    const detail = addResearchEntityDetailAlias({ group: stored, members: [] });
+    expect(JSON.stringify(detail)).not.toContain('Prose no lane asserts');
+    expect(JSON.stringify(detail)).not.toContain('PI_PROFILE_SYNTHESIS');
+  });
+
+  it('serves no profile-synthesis text even when it is the only stored prose on the row (#3937)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'synthesis-only-lab',
+      slug: 'synthesis-only-lab',
+      name: 'Synthesis Only Lab',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      departments: ['Statistics & Data Science'],
+      profileSynthesisDescription: 'Prose no lane asserts and no provenance records.',
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+    });
+
+    expect(dto).not.toHaveProperty('profileSynthesisDescription');
+    expect(dto).not.toHaveProperty('descriptionSource');
+    expect(JSON.stringify(dto)).not.toContain('Prose no lane asserts');
+  });
+
   it('keeps fullDescription on the detail DTO untrimmed', () => {
     const detail = addResearchEntityDetailAlias({
       group: {
@@ -1428,6 +1800,43 @@ describe('researchEntityDto', () => {
       (entry) => entry.url === 'https://example.yale.edu/lab/detail-health',
     );
     expect(unavailable).toMatchObject({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+  });
+
+  it('keeps detail-only award and link-health lists off a browse card but on the detail payload (#3951)', () => {
+    const row = {
+      _id: 'entity-card-trim',
+      slug: 'card-trim-lab',
+      name: 'Card Trim Lab',
+      kind: 'lab',
+      websiteUrl: 'https://example.yale.edu/lab/card-trim',
+      sourceUrls: [
+        'https://example.yale.edu/lab/card-trim',
+        'https://example.yale.edu/lab/card-trim/gone',
+      ],
+      sourceLinkHealth: [
+        {
+          url: 'https://example.yale.edu/lab/card-trim/gone',
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+        },
+      ],
+      recentGrants: [
+        { id: 'award-card', agency: 'NSF', endDate: new Date('2999-01-01T00:00:00Z') },
+      ],
+      recentGrantCount: 4,
+      fundingAgencies: ['NSF'],
+    };
+
+    const [card] = addResearchEntitySearchAliases({ hits: [row] }).researchEntities;
+    const detail = addResearchEntityDetailAlias({ group: row, members: [] }).researchEntity;
+
+    expect(card).not.toHaveProperty('recentGrants');
+    expect(card).not.toHaveProperty('sourceLinkHealth');
+    expect(card.recentGrantCount).toBe(4);
+    expect(card.fundingAgencies).toEqual(['NSF']);
+    expect(card.sourceUrls).toEqual(detail.sourceUrls);
+    expect(detail.recentGrants).toHaveLength(1);
+    expect(detail.sourceLinkHealth).toHaveLength(1);
   });
 
   it('exposes only safe public lead identity fields', () => {
@@ -1621,6 +2030,8 @@ describe('a dead provenance citation stays in the served list, qualified (#3312)
       name: 'Somebody Faculty Research',
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
+      fullDescription:
+        'This research studies coastal sediment transport, estuary circulation, and shoreline change.',
       sourceUrls: [LIVE],
       sourceFieldContributions: [
         { sourceUrl: LIVE, contributions: ['Research summary'] },
@@ -1641,6 +2052,8 @@ describe('a dead provenance citation stays in the served list, qualified (#3312)
       name: 'Somebody Faculty Research',
       entityType: 'FACULTY_RESEARCH_AREA',
       kind: 'individual',
+      fullDescription:
+        'This research studies coastal sediment transport, estuary circulation, and shoreline change.',
       sourceFieldContributions: [{ sourceUrl: DEAD, contributions: ['Research summary'] }],
     } as Record<string, unknown>);
     expect(servedContributionUrls(dto)).toEqual([DEAD]);
@@ -1656,5 +2069,116 @@ describe('a dead provenance citation stays in the served list, qualified (#3312)
     expect(servedCitationIsWithheld('provenance', health, DEAD)).toBe(false);
     expect(servedCitationIsWithheld('instruction', health, LIVE)).toBe(false);
     expect(servedCitationIsWithheld('instruction', undefined, DEAD)).toBe(false);
+  });
+});
+
+describe('a source is credited only for a field the row serves (#3922)', () => {
+  const PAGE = 'https://example.yale.edu/people/fixture-page';
+  const BODY =
+    'This research studies coastal sediment transport, estuary circulation, and shoreline change.';
+  const ALL_LABELS = [
+    'Research summary',
+    'Topics',
+    'Methods',
+    'Research website',
+    'Department',
+    'School',
+    'Name',
+    'Lead identity',
+  ];
+  const creditedLabels = (row: Record<string, unknown>): string[] =>
+    (
+      (toPublicResearchEntityDto({
+        id: 'entity-credit',
+        slug: 'entity-credit',
+        name: 'Coastal Processes Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        sourceUrls: [PAGE],
+        sourceFieldContributions: [{ sourceUrl: PAGE, contributions: ALL_LABELS }],
+        ...row,
+      } as Record<string, unknown>).sourceFieldContributions ?? []) as Array<{
+        contributions: string[];
+      }>
+    ).flatMap((entry) => entry.contributions);
+
+  it('drops the research-website and department credit when the row serves neither', () => {
+    const labels = creditedLabels({ fullDescription: BODY, websiteUrl: '', departments: [] });
+    expect(labels).not.toContain('Research website');
+    expect(labels).not.toContain('Department');
+    expect(labels).toContain('Research summary');
+  });
+
+  it('keeps each credit whose field the row serves', () => {
+    const labels = creditedLabels({
+      fullDescription: BODY,
+      websiteUrl: 'https://coastal.example.yale.edu/',
+      departments: ['Earth & Planetary Sciences'],
+      researchAreas: ['Sediment transport'],
+      methods: ['Field sampling'],
+      school: 'Faculty of Arts and Sciences',
+    });
+    expect([...labels].sort()).toEqual([...ALL_LABELS].sort());
+  });
+
+  it('judges the value the payload serves, not the stored one', () => {
+    const labels = creditedLabels({
+      fullDescription: BODY,
+      websiteUrl: 'javascript:alert(1)',
+      departments: ['Earth & Planetary Sciences'],
+    });
+    expect(labels).not.toContain('Research website');
+    expect(labels).toContain('Department');
+  });
+
+  it('drops the research-summary credit when the row serves no description', () => {
+    const labels = creditedLabels({ departments: ['Earth & Planetary Sciences'] });
+    expect(labels).not.toContain('Research summary');
+    expect(labels).toContain('Name');
+    expect(labels).toContain('Lead identity');
+  });
+
+  it('drops the research-summary credit when the only card is built from topics', () => {
+    const labels = creditedLabels({
+      fullDescription: '',
+      shortDescription: '',
+      researchAreas: ['Sediment transport', 'Estuaries'],
+    });
+    expect(labels).toContain('Topics');
+    expect(labels).not.toContain('Research summary');
+  });
+
+  it('keeps the research-summary credit for a stored card line with no body', () => {
+    const labels = creditedLabels({
+      shortDescription: 'Studies how sediment moves through estuaries and along coastlines.',
+    });
+    expect(labels).toContain('Research summary');
+  });
+
+  it('drops the research-summary credit when a refused stored card line leaves only topics', () => {
+    const labels = creditedLabels({
+      fullDescription: '',
+      shortDescription: 'Studies sediment transport in estuaries and...',
+      researchAreas: ['Sediment transport', 'Estuaries'],
+    });
+    expect(labels).toContain('Topics');
+    expect(labels).not.toContain('Research summary');
+  });
+
+  it('drops a source entirely when none of its credits is served', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-credit-empty',
+      slug: 'entity-credit-empty',
+      name: 'Coastal Processes Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      fullDescription: BODY,
+      websiteUrl: '',
+      departments: [],
+      sourceFieldContributions: [
+        { sourceUrl: PAGE, contributions: ['Research website', 'Department'] },
+      ],
+    } as Record<string, unknown>);
+    expect(dto.sourceFieldContributions).toEqual([]);
   });
 });

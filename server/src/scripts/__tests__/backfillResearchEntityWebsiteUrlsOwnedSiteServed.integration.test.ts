@@ -53,7 +53,7 @@ describe('a stranded organization row gains a served website from its own citati
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

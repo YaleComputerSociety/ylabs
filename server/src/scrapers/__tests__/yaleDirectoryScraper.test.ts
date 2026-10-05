@@ -9,6 +9,7 @@ import {
   classifyUserType,
   isFacultyPerson,
   isFacultyTitle,
+  isResearchSupportStaffTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   personToObservations,
@@ -116,12 +117,10 @@ describe('personToObservations', () => {
       last_name: 'Doe',
       preferred_name: 'Janie',
       email: 'jane.doe@yale.edu',
-      phone: '+1 203 555 0001',
       title: 'Associate Professor of Molecular Biophysics & Biochemistry',
       school_code: 'GS',
       school: 'Graduate School of Arts and Sciences',
       school_name: 'Yale Graduate School of Arts and Sciences',
-      college: '',
       organization_name: 'Yale School of Medicine',
       primary_organization_name: 'Yale School of Medicine',
       unit_name: 'Molecular Biophysics & Biochemistry',
@@ -146,7 +145,6 @@ describe('personToObservations', () => {
     expect(byField.secondaryDepartments?.value).toEqual(['Yale School of Medicine']);
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
     expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
-    expect(byField.phone?.value).toBe('+1 203 555 0001');
     expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
     expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
 
@@ -157,8 +155,27 @@ describe('personToObservations', () => {
       expect(o.sourceUrl).toBe('https://api.yalies.io/v2/people');
     }
 
-    // College was empty so should not be present.
     expect(byField.college).toBeUndefined();
+    expect(byField.phone).toBeUndefined();
+  });
+
+  it('emits no phone number and no residential college, because nothing reads either', () => {
+    const directoryRecordCarryingContactData = {
+      netid: 'contact01',
+      first_name: 'Synthetic',
+      last_name: 'Person',
+      title: 'Professor of Synthetic Studies',
+      phone: '+1 555 000 0000',
+      college: 'A Synthetic College',
+    };
+
+    const obs = personToObservations(directoryRecordCarryingContactData);
+
+    const fields = obs.map((o) => o.field);
+    expect(fields).toContain('netid');
+    expect(fields).not.toContain('phone');
+    expect(fields).not.toContain('college');
+    expect(fields).not.toContain('physicalLocation');
   });
 
   it('falls back to first_name when preferred_name is absent', () => {
@@ -400,6 +417,39 @@ describe('YaleDirectoryScraper.run', () => {
     expect(result.entitiesObserved).toBe(200);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*ECONNRESET/)]);
+    expect(result.notes).toMatch(/incomplete/);
+  });
+
+  it('reports a 401 mid-pagination as a partial run rather than a complete roster', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    const fillerPage = Array.from({ length: 200 }, (_, i) => ({
+      netid: `dd${String(i).padStart(3, '0')}`,
+      first_name: 'Auth',
+      last_name: 'Expired',
+      title: 'Professor of Access',
+    }));
+    const unauthorized = Object.assign(new Error('Request failed with status code 401'), {
+      isAxiosError: true,
+      response: { status: 401 },
+    });
+    mockedListYalies.mockResolvedValueOnce(fillerPage).mockRejectedValueOnce(unauthorized);
+
+    const { ctx } = buildContext();
+    const result = await new YaleDirectoryScraper().run(ctx);
+
+    expect(result.entitiesObserved).toBe(200);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*401/)]);
+  });
+
+  it('fails the run when the first page cannot be read, since nothing was synced', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    mockedListYalies.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const { ctx, emitted } = buildContext();
+
+    await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 1.*ECONNRESET/);
+    expect(emitted).toEqual([]);
   });
 });
 
@@ -452,6 +502,69 @@ describe('isSubordinateResearchRank (#2304)', () => {
   it('keeps a trainee inside the researcher-identity vocabulary', () => {
     expect(isFacultyTitle('Postdoctoral Associate')).toBe(true);
     expect(looksLikeNonResearchTitle('Postdoctoral Associate')).toBe(false);
+  });
+});
+
+describe('isResearchSupportStaffTitle (#3410)', () => {
+  it("refuses support and technical roles held inside somebody else's group", () => {
+    for (const title of [
+      'Laboratory Assistant 3',
+      'Laboratory Assistant School of Public Health',
+      'Lab Technician',
+      'Clinical Laboratory Supervisor',
+      'Clinical Assistant 1, PET Radiochemistry',
+      'Clinical Technologist Genetics',
+      'Pathology Assistant',
+      'Materials Assistant 3',
+      'Media Technician',
+      'Research Aide',
+      'Genetic Counselor 2',
+      'Librarian 4',
+      'Research and Education Librarian',
+      'Software Engineer III',
+      'IT, Business Systems Analyst 4',
+      'Director, Outreach Business Development',
+      'Director of Alumni Engagement',
+      'Registrar, Yale School of Public Health',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(true);
+    }
+  });
+
+  // The whole reason this vocabulary is not in NON_FACULTY_TITLE_PATTERNS: that list
+  // short-circuits isFacultyTitle, so a conjoined appointment would lose its faculty
+  // reading. Every title the corpus holds that this predicate puts at risk is this
+  // shape, so the yield is the calibration rather than a nicety.
+  it('yields to a faculty appointment stated alongside the support role', () => {
+    for (const title of [
+      'Special Collections Librarian Divinity Library, Lecturer in American Religious History',
+      'Biomedical Sciences Research Support Librarian and Lecturer in Epidemiology',
+      'Assistant Professor Adjunct of Technical Design and Production and Electro Mechanical Laboratory Supervisor',
+      'Lecturer in Dramaturgy and Dramatic Criticism; Co-Editor, Alumni Magazine',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(false);
+      expect(isFacultyTitle(title)).toBe(true);
+    }
+  });
+
+  it('leaves research-entity owners and the other two screens alone', () => {
+    for (const title of [
+      'Professor of Molecular Biophysics and Biochemistry',
+      'Research Scientist',
+      'Director, Yale Cancer Center',
+      'Postdoctoral Associate',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(false);
+    }
+  });
+
+  it('does not fire on an absent title, which is a separate decision', () => {
+    expect(isResearchSupportStaffTitle(undefined)).toBe(false);
+    expect(isResearchSupportStaffTitle('')).toBe(false);
+  });
+
+  it('reads a support title through the invisible format characters a CMS emits', () => {
+    expect(isResearchSupportStaffTitle('Labora\u00adtory Assis\u00adtant 3')).toBe(true);
   });
 });
 

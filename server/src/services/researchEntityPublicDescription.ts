@@ -1,13 +1,37 @@
 import {
   assessResearchEntityDescriptionQuality,
+  describesResearchFocus,
+  isCardPageFragment,
+  isThinButAccurateBody,
+  withMemoizedDescriptionQuality,
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import {
+  isCredentialOrAwardLeadBiography,
+  isCredentialOrTitleLeadBiography,
+  isFacultyResearchTextEntity,
+  isLabResearchTextEntity,
+  isPersonBiographyOrAdvisingDescription,
+  researchEntitySubjectPersonNames,
   sanitizeFacultyResearchEntityCopyFields,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
+  stripLeadingCredentialTitleRun,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
+import {
+  careerBiographyOpening,
+  isCareerFactSentence,
+  isCurriculumVitaeRecordSentence,
+  isBibliographicCitationBody,
+  isCurriculumVitaeShapedBody,
+  isTeachingOrPastTraineeSentence,
+  isTeachingOrPastTraineeWorkBody,
+  opensOnTeachingAppointment,
+  opensOnResearchHomeSubject,
+  researchStatementSentences,
+  splitDescriptionSentences,
+} from '../utils/careerBiographyDescription';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
@@ -18,7 +42,11 @@ import {
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
-import { servedResearchEntityCopy } from './servedResearchEntityCard';
+import { decideCreativePractice } from '../utils/creativePracticeDescription';
+import {
+  servedResearchEntityCardWithoutLastResort,
+  servedResearchEntityCopy,
+} from './servedResearchEntityCard';
 
 // Every field `buildResearchEntityPublicDescriptionRepresentation` (and so
 // `researchEntityServesPublicDetail`) reads. A caller that loads entities with a
@@ -64,6 +92,7 @@ export const RESEARCH_ENTITY_PUBLIC_DESCRIPTION_GATE_FIELDS: readonly string[] =
   'descriptionSource',
   'researchAreas',
   'fieldProvenance',
+  'siteDeclaredOwnNames',
   'sourceUrls',
   'website',
   'websiteUrl',
@@ -87,6 +116,11 @@ export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
   leadMemberNames: string[];
   quality: ResearchEntityDescriptionQuality;
+  /**
+   * The strict verdict before a thin but accurate body is admitted. A lane choosing
+   * between two bodies to store reads this, so it still prefers the richer one.
+   */
+  strictQuality: ResearchEntityDescriptionQuality;
   /**
    * The card line resolved from the copy the canonical serve sanitizer produces,
    * which is what every verdict in this representation is computed on. It is not
@@ -130,7 +164,118 @@ export function publicDescriptionLeadMemberNames(
   return Array.from(new Set(leadMembers.map(memberDisplayName).filter(Boolean)));
 }
 
-export function buildResearchEntityPublicDescriptionRepresentation({
+export function buildResearchEntityPublicDescriptionRepresentation(input: {
+  entity: Record<string, any>;
+  leadMembers?: Array<Record<string, any>>;
+  leadMemberNames?: readonly string[];
+}): ResearchEntityPublicDescriptionRepresentation {
+  return withMemoizedDescriptionQuality(() => {
+    const narrowedBody = researchSentencesOfCurriculumVitaeBody(
+      input.entity,
+      input.leadMemberNames || publicDescriptionLeadMemberNames(input.leadMembers),
+    );
+    if (!narrowedBody) {
+      const whole = derivePublicDescriptionRepresentation(input);
+      const cardBody = cardServedInPlaceOfAResearchlessBiography(whole);
+      if (!cardBody) return whole;
+      const cardOnly = derivePublicDescriptionRepresentation({
+        ...input,
+        entity: { ...input.entity, fullDescription: cardBody },
+      });
+      // Served only when the row keeps a card: a card that becomes the body can stop
+      // counting as one, and trading the career text for a held row costs the student
+      // the page (#4829).
+      return representationServesCard(cardOnly) ? cardOnly : whole;
+    }
+    const narrowed = derivePublicDescriptionRepresentation({
+      ...input,
+      entity: { ...input.entity, fullDescription: narrowedBody },
+    });
+    if (representationServesCard(narrowed)) return narrowed;
+    const whole = derivePublicDescriptionRepresentation(input);
+    return narrowingKeepsWhatTheWholeBodyServed(narrowed, whole) ? narrowed : whole;
+  });
+}
+
+/**
+ * The research sentences of a person-scoped body pasted from a CV or a biography
+ * (degree lines, book lists, awards, past appointments), or '' when the body is not
+ * that shape or states no research. Narrowing happens on the stored text before the
+ * serve chain runs, so the gate, the card and the detail page all read one body.
+ */
+function researchSentencesOfCurriculumVitaeBody(
+  entity: Record<string, any>,
+  leadMemberNames: readonly string[],
+): string {
+  if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return '';
+  // The serve chain drops a leading degree run before it reads the opener, so the
+  // research sentence glued behind one is read here the same way; otherwise it fails
+  // the sentence-start test and is narrowed away with the degrees.
+  const stored = textValue(entity.fullDescription);
+  const body = stripLeadingCredentialTitleRun(
+    stored,
+    researchEntitySubjectPersonNames(entity, leadMemberNames),
+  );
+  if (!body) return '';
+  const readsAs = (predicate: (text: string) => boolean) => predicate(stored) || predicate(body);
+  const curriculumVitae = readsAs(isCurriculumVitaeShapedBody);
+  const careerBiography = readsAs(opensOnCareerFact);
+  const biography =
+    careerBiography ||
+    readsAs(isCredentialOrAwardLeadBiography) ||
+    readsAs(isCredentialOrTitleLeadBiography) ||
+    readsAs(isPersonBiographyOrAdvisingDescription) ||
+    readsAs(opensOnTeachingAppointment);
+  if (!curriculumVitae && !biography) return '';
+  const research = researchStatementSentences(body, {
+    activityAnchors: curriculumVitae || careerBiography,
+  });
+  const narrowed = research.join(' ').trim();
+  return narrowed && narrowed !== body ? narrowed : '';
+}
+
+// A body whose opening states where the person trained, what they were appointed to or
+// what they were awarded. Narrower than `isCareerBiographyDescription` on purpose: that
+// predicate also reads "<name> is a historian of ..." as a career opener, which is how a
+// good research body orients the reader, and narrowing such a body drops the sentence
+// that says what the person studies.
+function opensOnCareerFact(body: string): boolean {
+  const opening = careerBiographyOpening(body);
+  return !opensOnResearchHomeSubject(opening.join(' ')) && opening.some(isCareerFactSentence);
+}
+
+// A CV body narrowed to its research sentences is served when the narrowed body and
+// its card still serve, or when the whole body serves no card either. Narrowing can
+// leave a body too thin for a card the whole biography supported, and an accurate row should not leave the directory
+// because its biography was trimmed.
+function representationServesCard(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const cardIsOptional =
+    isProgramLikeResearchEntity(representation.entity) ||
+    isOrganizationalResearchEntity(representation.entity);
+  return (
+    representation.invariant.pass &&
+    representation.quality.full.isUseful &&
+    (representation.invariant.cardDescriptionUseful || cardIsOptional)
+  );
+}
+
+// The card a stored short supplies is the same whichever body is served, so when the
+// whole biography carries no usable card either, narrowing loses nothing the row had and
+// the narrowed body is still the better page.
+function narrowingKeepsWhatTheWholeBodyServed(
+  narrowed: ResearchEntityPublicDescriptionRepresentation,
+  whole: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  return (
+    narrowed.invariant.pass &&
+    narrowed.quality.full.isUseful &&
+    !whole.invariant.cardDescriptionUseful
+  );
+}
+
+function derivePublicDescriptionRepresentation({
   entity,
   leadMembers = [],
   leadMemberNames,
@@ -221,17 +366,18 @@ export function buildResearchEntityPublicDescriptionRepresentation({
   // already passed, so reading it here would be circular: the card invariant could
   // never refuse an empty card while a body existed, and #2597's refusal and #1872's
   // organizational exemption both key on card absence.
+  //
+  // That exclusion is the ONLY difference between the judged card and the served one,
+  // because this reads the served card resolver itself rather than a subset of it.
+  // Resolving the judged card from `resolveServedShortDescription` here still skipped
+  // three steps the resolver applies - the rendering-preference bar, the gate-accepted
+  // derived substitute and the ungrounded-card surrender - so the gate went on judging
+  // a line no surface renders on the rows those steps move (#3747).
   const servedCopy = servedResearchEntityCopy(sanitizedEntity, resolvedLeadMemberNames);
-  const servedCard = resolveServedShortDescription({
-    shortDescription: servedCopy.shortDescription,
-    fullDescription: servedCopy.fullDescription,
-    researchAreas: servedCopy.researchAreas,
-    entityType: resolvedEntityType,
-    kind: servedCopy.kind,
-  });
+  const servedCard = servedResearchEntityCardWithoutLastResort(servedCopy, resolvedEntityType);
   const programLike = isProgramLikeResearchEntity(sanitizedEntity);
   const cardIsOptional = programLike || isOrganizationalResearchEntity(sanitizedEntity);
-  const quality = assessResearchEntityDescriptionQuality({
+  const strictQuality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,
     shortDescription: servedCard,
     researchAreas: sanitizedEntity.researchAreas,
@@ -241,6 +387,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     isProgramLike: programLike,
     entityType: sanitizedEntity.entityType,
   });
+  const quality = withThinButAccurateBodyUsable(strictQuality, programLike);
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
   // that the quality assessment above does not, so a card can clear the quality
@@ -301,6 +448,7 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     entity: sanitizedEntity,
     leadMemberNames: resolvedLeadMemberNames,
     quality,
+    strictQuality,
     servedCard,
     fullDescription: quality.full.text,
     cardDescription: quality.short.text,
@@ -363,3 +511,120 @@ export function buildResearchEntityPublicDescriptionRepresentation({
 export const researchEntityServesPublicDetail = (entity: Record<string, any>): boolean =>
   buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
   !researchEntityHasDeceasedLead(entity);
+
+/**
+ * The gate and the served page show a thin but accurate body whatever its source
+ * (owner decision, 2026-10-04, superseding #4763), and a card refused only because
+ * that body was judged unusable is re-judged on its own text, still refusing a card
+ * that is a page fragment. Write paths keep `assessResearchEntityDescriptionQuality`.
+ */
+function withThinButAccurateBodyUsable(
+  quality: ResearchEntityDescriptionQuality,
+  programLike: boolean,
+): ResearchEntityDescriptionQuality {
+  if (!isThinButAccurateBody(quality.full)) return quality;
+  const full = { ...quality.full, isUseful: true };
+  const cardFlags = quality.short.flags.filter((flag) => flag !== 'full-not-useful');
+  const cardIsSound =
+    Boolean(quality.short.text) &&
+    cardFlags.length === 0 &&
+    !isCardPageFragment(quality.short.text, quality.full.text);
+  const short = {
+    ...quality.short,
+    flags: cardFlags,
+    isUseful: quality.short.isUseful || cardIsSound,
+  };
+  const cardComplete = short.isUseful || (programLike && !short.text);
+  return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
+}
+
+const CITATION_LIKE_CARD =
+  /\((?:19|20)\d{2}\)|\b(?:19|20)\d{2}\b[^.]{0,80}\b(?:Review|Journal|Studies|Quarterly|Press|Proceedings)\b|\b(?:Review|Journal|Studies|Quarterly)(?:\s+of\s+[A-Z][\p{L}]+(?:\s+[A-Z][\p{L}]+)*)?,?\s+\d{1,3}\b|\bet al\b/u;
+const DEGREE_FRAGMENT_CARD =
+  /^(?:[A-Z]\.\s?){1,3}(?:[A-Z][a-z]|in\b)|\b(?:B\.?A|B\.?S|M\.?A|M\.?S|Ph\.?\s?D)\b[^.]{0,60}\b(?:University|College)\b/;
+const SITE_TAGLINE_CARD =
+  /^(?:Official\s+(?:site|website|homepage|page)|Welcome\s+to|Home\s*page)\b/i;
+
+// A card speaks for the research only when it states the research itself. A citation,
+// a degree line, a site tagline or a career record in the card slot reads as research
+// to the focus test because it names topics, but it tells a student nothing the
+// biography beside it does not.
+function cardStatesResearchItself(card: unknown): boolean {
+  const text = textValue(card);
+  return (
+    Boolean(text) &&
+    describesResearchFocus(text) &&
+    !isCurriculumVitaeRecordSentence(text) &&
+    !CITATION_LIKE_CARD.test(text) &&
+    !DEGREE_FRAGMENT_CARD.test(text) &&
+    !SITE_TAGLINE_CARD.test(text) &&
+    !isTeachingOrPastTraineeSentence(text)
+  );
+}
+
+// A body sentence that names research topics counts as research unless it is itself a
+// career record or a citation, which name topics as titles rather than state work.
+const isResearchFocusSentenceOutsideTheRecord = (sentence: string): boolean =>
+  describesResearchFocus(sentence) &&
+  !isCurriculumVitaeRecordSentence(sentence) &&
+  !isTeachingOrPastTraineeSentence(sentence) &&
+  !CITATION_LIKE_CARD.test(sentence);
+
+function isResearchlessBiographyBody(entity: Record<string, any>, body: string): boolean {
+  if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return false;
+  if (!body) return false;
+  const biography =
+    isCurriculumVitaeShapedBody(body) ||
+    opensOnCareerFact(body) ||
+    isCredentialOrAwardLeadBiography(body) ||
+    isCredentialOrTitleLeadBiography(body) ||
+    isPersonBiographyOrAdvisingDescription(body) ||
+    isBibliographicCitationBody(body) ||
+    isTeachingOrPastTraineeWorkBody(body);
+  if (!biography) return false;
+  // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
+  // served and labelled creative practice, never withheld for stating no research.
+  if (decideCreativePractice({ ...entity, fullDescription: body }).creativePractice) return false;
+  return researchStatementSentences(body, { activityAnchors: true }).length === 0;
+}
+
+// A biography that states no research beside a card that does: the card is the only
+// research text the row has, so it is served as the body rather than the career it
+// would otherwise sit above.
+function cardServedInPlaceOfAResearchlessBiography(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): string {
+  const body = textValue(representation.entity.fullDescription);
+  if (!isResearchlessBiographyBody(representation.entity, body)) return '';
+  // A citation's title words read as a research focus sentence, but the whole body is one
+  // bibliography entry, so none of its sentences is research prose outside the record.
+  if (
+    !isBibliographicCitationBody(body) &&
+    splitDescriptionSentences(body).some(isResearchFocusSentenceOutsideTheRecord)
+  ) {
+    return '';
+  }
+  const card = textValue(representation.servedCard);
+  return cardStatesResearchItself(card) ? card : '';
+}
+
+/**
+ * A person-scoped row whose served body is a CV or a biography and, after narrowing,
+ * states no research at all: degrees, posts, exhibitions or a list of titles. Such a
+ * page tells a student nothing about the work, so it is held for review unless the
+ * served card states the research itself.
+ */
+export function servedBodyIsBiographyWithoutResearch(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  const body = textValue(representation.entity.fullDescription);
+  if (!isResearchlessBiographyBody(representation.entity, body)) return false;
+  if (
+    splitDescriptionSentences(body).some(
+      (sentence) => describesResearchFocus(sentence) && !isTeachingOrPastTraineeSentence(sentence),
+    )
+  ) {
+    return false;
+  }
+  return !cardStatesResearchItself(representation.servedCard);
+}

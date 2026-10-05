@@ -5,15 +5,25 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../../db/connections';
 import { ResearchEntity } from '../../models/researchEntity';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { buildGroundTruthClusters, clusterPairs } from './fuzzyMatchMetrics';
+import { AUTOMATED_MERGE_ARCHIVE_REASONS } from '../../models/entityArchival';
+import {
+  buildGroundTruthClusters,
+  clusterPairs,
+  groundTruthPairsByProvenance,
+  labelProvenance,
+} from './fuzzyMatchMetrics';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
 export interface FuzzyGroundTruth {
   redirects: Array<{ mergedEntityId?: unknown; canonicalEntityId?: unknown }>;
-  canonicalGroupRows: Array<{ entityId?: unknown; canonicalGroupId?: unknown }>;
+  canonicalGroupRows: Array<{
+    entityId?: unknown;
+    canonicalGroupId?: unknown;
+    archivedReason?: unknown;
+  }>;
 }
 
 /**
@@ -26,9 +36,13 @@ export async function loadFuzzyGroundTruth(): Promise<FuzzyGroundTruth> {
   const redirects: FuzzyGroundTruth['redirects'] = [];
   const canonicalGroupRows = (
     (await ResearchEntity.find({ canonicalGroupId: { $ne: null } })
-      .select('_id canonicalGroupId')
-      .lean()) as Array<{ _id: unknown; canonicalGroupId?: unknown }>
-  ).map((row) => ({ entityId: row._id, canonicalGroupId: row.canonicalGroupId }));
+      .select('_id canonicalGroupId archivedReason')
+      .lean()) as Array<{ _id: unknown; canonicalGroupId?: unknown; archivedReason?: unknown }>
+  ).map((row) => ({
+    entityId: row._id,
+    canonicalGroupId: row.canonicalGroupId,
+    archivedReason: row.archivedReason,
+  }));
   return { redirects, canonicalGroupRows };
 }
 
@@ -54,8 +68,25 @@ async function main() {
     canonicalGroupRows: groundTruth.canonicalGroupRows.length,
     groundTruthClusters: clusters.length,
     positivePairs: positives.size,
+    labelsByProvenance: Object.fromEntries(
+      Object.entries(
+        groundTruthPairsByProvenance(
+          groundTruth.canonicalGroupRows,
+          AUTOMATED_MERGE_ARCHIVE_REASONS,
+        ),
+      ).map(([provenance, pairs]) => [
+        provenance,
+        {
+          mergeRows: groundTruth.canonicalGroupRows.filter(
+            (row) =>
+              labelProvenance(row.archivedReason, AUTOMATED_MERGE_ARCHIVE_REASONS) === provenance,
+          ).length,
+          positivePairs: pairs.size,
+        },
+      ]),
+    ),
     clusterSizeHistogram: clusterSizeHistogram(clusters),
-    note: 'Positive pairs are within-cluster pairs of the merged-into-canonical ground truth. Hard negatives are built separately via buildLabeledNegatives over the same-name-different-person quarantines.',
+    note: 'Positive pairs are within-cluster pairs of the merged-into-canonical ground truth. Hard negatives are built separately via buildLabeledNegatives over the same-name-different-person quarantines. labelsByProvenance splits them: automated labels were made by the engine being measured and unattributed ones cannot be told apart, so neither is operator-adjudicated truth.',
   };
   console.log(JSON.stringify(report, null, 2));
 }

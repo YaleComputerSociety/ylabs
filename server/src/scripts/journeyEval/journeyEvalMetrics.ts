@@ -1,3 +1,10 @@
+import { createHash } from 'crypto';
+import {
+  UNDERGRAD_EVIDENCE_VERDICTS,
+  type UndergradEvidenceJudgement,
+  type UndergradEvidenceVerdict,
+} from './journeyEvalJudgements';
+
 export type InvariantStatus = 'pass' | 'fail' | 'inconclusive';
 
 export interface InvariantResult {
@@ -42,8 +49,14 @@ export const buildInconclusiveInvariant = (
 export interface TopicDropObservation {
   storedCount: number;
   servedCount: number;
-  guardExpectedCount: number;
+  explainedByDecision: boolean;
+  withheldBy: readonly string[];
   servedVersionMatchesStored: boolean;
+}
+
+export interface TopicDropAttribution {
+  attributed: boolean;
+  withheldBy: string[];
 }
 
 export interface TopicAttributionTally {
@@ -55,6 +68,7 @@ export interface TopicAttributionTally {
   unexplained: number;
   servedNoneWhileStoringSome: number;
   servedNoneUnexplained: number;
+  drops: TopicDropAttribution[];
 }
 
 export function attributeTopicDrops(
@@ -69,6 +83,7 @@ export function attributeTopicDrops(
     unexplained: 0,
     servedNoneWhileStoringSome: 0,
     servedNoneUnexplained: 0,
+    drops: [],
   };
 
   for (const observation of observations) {
@@ -79,12 +94,14 @@ export function attributeTopicDrops(
     tally.comparable += 1;
     if (observation.servedCount >= observation.storedCount) continue;
     tally.dropped += 1;
-    if (observation.servedCount === observation.guardExpectedCount) tally.attributedToGuard += 1;
+    const attributed = observation.explainedByDecision;
+    if (attributed) tally.attributedToGuard += 1;
     else tally.unexplained += 1;
+    tally.drops.push({ attributed, withheldBy: [...new Set(observation.withheldBy)] });
 
     if (observation.servedCount === 0 && observation.storedCount > 0) {
       tally.servedNoneWhileStoringSome += 1;
-      if (observation.guardExpectedCount !== 0) tally.servedNoneUnexplained += 1;
+      if (!attributed) tally.servedNoneUnexplained += 1;
     }
   }
 
@@ -127,6 +144,14 @@ export const corpusFingerprintMoved = (
 ): boolean =>
   before.rowCount !== after.rowCount || before.latestUpdatedAt !== after.latestUpdatedAt;
 
+export const resolvePagesToWalk = (pagesRequested: number, reachablePages: number): number =>
+  Math.max(1, Math.min(Math.max(1, Math.floor(pagesRequested) || 1), Math.max(1, reachablePages)));
+
+export interface PageWalkDepth {
+  pagesRequested: number;
+  reachablePages: number;
+}
+
 const PAGE_DISTINCTNESS_ID = 'no-row-repeats-across-pages';
 const PAGE_DISTINCTNESS_TITLE = 'Paging through browse never serves the same row twice';
 
@@ -134,6 +159,7 @@ export function checkNoRepeatedRowsAcrossPages(
   pages: ReadonlyArray<readonly string[]>,
   corpusBefore: CorpusFingerprint,
   corpusAfter: CorpusFingerprint,
+  depth?: PageWalkDepth,
 ): InvariantResult {
   const seen = new Set<string>();
   let repeated = 0;
@@ -145,10 +171,17 @@ export function checkNoRepeatedRowsAcrossPages(
   }
 
   const detail = {
-    pages: pages.length,
+    pagesWalked: pages.length,
     rowsServed: pages.reduce((total, page) => total + page.length, 0),
     distinctRowsServed: seen.size,
     repeatedRowCount: repeated,
+    ...(depth
+      ? {
+          pagesRequested: depth.pagesRequested,
+          reachablePages: depth.reachablePages,
+          walkTruncatedByDepthBound: depth.pagesRequested > depth.reachablePages,
+        }
+      : {}),
   };
 
   if (repeated > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
@@ -163,13 +196,54 @@ export function checkNoRepeatedRowsAcrossPages(
   return buildInvariant(PAGE_DISTINCTNESS_ID, PAGE_DISTINCTNESS_TITLE, repeated === 0, detail);
 }
 
+const REPEATABLE_BROWSE_ORDER_ID = 'default-browse-order-is-repeatable';
+const REPEATABLE_BROWSE_ORDER_TITLE =
+  'Two walks of the default browse over an unchanged corpus serve the same rows in the same order';
+
+export function checkDefaultBrowseOrderIsRepeatable(
+  firstWalk: ReadonlyArray<readonly string[]>,
+  secondWalk: ReadonlyArray<readonly string[]>,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const first = firstWalk.flat();
+  const second = secondWalk.flat();
+  const length = Math.max(first.length, second.length);
+  let firstDivergentPosition = -1;
+  for (let position = 0; position < length; position += 1) {
+    if (first[position] !== second[position]) {
+      firstDivergentPosition = position;
+      break;
+    }
+  }
+  const detail = {
+    pagesWalked: firstWalk.length,
+    rowsCompared: length,
+    firstDivergentPosition,
+  };
+  if (firstDivergentPosition >= 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      REPEATABLE_BROWSE_ORDER_ID,
+      REPEATABLE_BROWSE_ORDER_TITLE,
+      'The corpus changed between the two walks, so a reordering may come from a rescored row rather than an unstable tiebreak',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(
+    REPEATABLE_BROWSE_ORDER_ID,
+    REPEATABLE_BROWSE_ORDER_TITLE,
+    firstDivergentPosition < 0,
+    detail,
+  );
+}
+
 export function checkTopicDropAttribution(
   tally: TopicAttributionTally,
   corpusBefore: CorpusFingerprint,
   corpusAfter: CorpusFingerprint,
 ): InvariantResult {
   const id = 'every-topic-drop-is-attributable';
-  const title = 'No browse card withholds a topic the coherence guard does not account for';
+  const title = 'No browse card withholds a topic the served topic guards do not account for';
 
   if (tally.comparable === 0) {
     return buildInconclusiveInvariant(
@@ -192,6 +266,147 @@ export function checkTopicDropAttribution(
   return buildInvariant(id, title, tally.unexplained === 0, { ...tally });
 }
 
+export interface CreativePracticeLabelObservation {
+  served: boolean;
+  decided: boolean;
+  servedVersionMatchesStored: boolean;
+}
+
+export interface CreativePracticeLabelTally {
+  comparable: number;
+  labelled: number;
+  disagreeing: number;
+  skippedStaleIndex: number;
+}
+
+export function tallyCreativePracticeLabels(
+  observations: readonly CreativePracticeLabelObservation[],
+): CreativePracticeLabelTally {
+  const comparable = observations.filter((observation) => observation.servedVersionMatchesStored);
+  return {
+    comparable: comparable.length,
+    labelled: comparable.filter((observation) => observation.served).length,
+    disagreeing: comparable.filter((observation) => observation.served !== observation.decided)
+      .length,
+    skippedStaleIndex: observations.length - comparable.length,
+  };
+}
+
+export function checkCreativePracticeLabelAttribution(
+  tally: CreativePracticeLabelTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'creative-practice-label-is-the-decision';
+  const title =
+    'Every browse card serves the creative practice label exactly when the served-copy decision does';
+
+  if (tally.comparable === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled row could be compared, so zero disagreements would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+
+  if (tally.disagreeing > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the sample was compared, so a card may disagree only because it and the stored row describe different versions',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+
+  return buildInvariant(id, title, tally.disagreeing === 0, { ...tally });
+}
+
+export type SurvivorWebsiteAttribution =
+  | 'locked'
+  | 'survivor-evidence'
+  | 'loser-only-under-owned-slot'
+  | 'merged-loser-evidence'
+  | 'unbacked';
+
+export interface SurvivorWebsiteObservation {
+  servedWebsiteIdentity: string;
+  websiteLocked: boolean;
+  survivorStated: ReadonlySet<string>;
+  admittedStated: ReadonlySet<string>;
+  droppedLoser: ReadonlySet<string>;
+}
+
+export function classifySurvivorWebsite(
+  observation: SurvivorWebsiteObservation,
+): SurvivorWebsiteAttribution {
+  const served = observation.servedWebsiteIdentity;
+  if (observation.websiteLocked) return 'locked';
+  if (observation.survivorStated.has(served)) return 'survivor-evidence';
+  if (observation.droppedLoser.has(served)) return 'loser-only-under-owned-slot';
+  if (observation.admittedStated.has(served)) return 'merged-loser-evidence';
+  return 'unbacked';
+}
+
+export interface SurvivorWebsiteTally {
+  comparable: number;
+  byAttribution: Record<SurvivorWebsiteAttribution, number>;
+}
+
+export function tallySurvivorWebsites(
+  observations: readonly SurvivorWebsiteObservation[],
+): SurvivorWebsiteTally {
+  const byAttribution: Record<SurvivorWebsiteAttribution, number> = {
+    locked: 0,
+    'survivor-evidence': 0,
+    'loser-only-under-owned-slot': 0,
+    'merged-loser-evidence': 0,
+    unbacked: 0,
+  };
+  let comparable = 0;
+  for (const observation of observations) {
+    if (!observation.servedWebsiteIdentity) continue;
+    comparable += 1;
+    byAttribution[classifySurvivorWebsite(observation)] += 1;
+  }
+  return { comparable, byAttribution };
+}
+
+/**
+ * The defect class of #3585 is a served survivor website that only a merged-in
+ * loser states while the survivor's own lab-identity lane owns the slot. `unbacked`
+ * is reported but never asserted here, because a value no evidence states is its
+ * own defect class (#3586) with its own causes.
+ */
+export function checkSurvivorWebsiteAttribution(
+  tally: SurvivorWebsiteTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'survivor-website-is-not-a-loser-lab-identity';
+  const title =
+    'No served merged survivor serves a website only a loser states while its own lab-identity lane owns the slot';
+  const violations = tally.byAttribution['loser-only-under-owned-slot'];
+
+  if (tally.comparable === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served merged survivor serves a website, so a zero count would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+  if (violations > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the survivors were read, so a served value and its evidence may describe different versions',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, violations === 0, { ...tally });
+}
+
 export function checkSortOrdering(
   values: readonly (number | null)[],
   order: 'asc' | 'desc',
@@ -210,6 +425,99 @@ export function checkSortOrdering(
     inversions === 0,
     { returned: values.length, comparable: comparable.length, inversions },
   );
+}
+
+export interface IndexedSortKeyObservation {
+  inIndex: boolean;
+  matchesStored: boolean;
+  writtenDuringRead: boolean;
+}
+
+export function checkIndexedSortKeyMatchesStored(
+  sortAttribute: string,
+  observations: readonly IndexedSortKeyObservation[],
+): InvariantResult {
+  const settled = observations.filter((observation) => !observation.writtenDuringRead);
+  const stale = settled.filter(
+    (observation) => observation.inIndex && !observation.matchesStored,
+  ).length;
+  const tally = {
+    sortAttribute,
+    compared: settled.length,
+    stale,
+    missingFromIndex: settled.filter((observation) => !observation.inIndex).length,
+    writtenDuringRead: observations.length - settled.length,
+  };
+  const id = 'indexed-sort-key-is-fresh';
+  const title = `Every served row is sorted on the ${sortAttribute} its stored row derives now`;
+  if (settled.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served row settled before the read, so a zero stale count would be a green signal over an empty population',
+      tally,
+    );
+  }
+  return buildInvariant(
+    id,
+    title,
+    stale === 0,
+    stale === 0
+      ? tally
+      : {
+          ...tally,
+          remedy:
+            'The index predates these rows, so rebuild it per docs/meilisearch-reindex-runbook.md',
+        },
+  );
+}
+
+export function checkTitleSortOrdering(
+  sortTitles: readonly string[],
+  order: 'asc' | 'desc',
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = `sort-title-${order}-follows-card-title`;
+  const title = `A browse sorted A-Z ${order} is ordered by the title each card shows`;
+  let inversions = 0;
+  for (let index = 1; index < sortTitles.length; index += 1) {
+    const previous = sortTitles[index - 1];
+    const current = sortTitles[index];
+    if (order === 'asc' ? current < previous : current > previous) inversions += 1;
+  }
+  const tally = { returned: sortTitles.length, inversions };
+  if (inversions > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the pages were read, so a row may have moved between two requests',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, inversions === 0, tally);
+}
+
+export function checkConstantReportedTotal(
+  query: string,
+  totals: readonly (number | null)[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'text-query-total-is-constant-across-pages';
+  const title = 'A text query reports the same total on every page a student scrolls';
+  const distinctTotals = [...new Set(totals)];
+  const constant = distinctTotals.length === 1 && typeof distinctTotals[0] === 'number';
+  const tally = { query, pagesWalked: totals.length, firstTotal: totals[0], distinctTotals };
+  if (!constant && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the pages were read, so two pages may describe different corpora',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, constant, tally);
 }
 
 export function checkNotDegraded(id: string, title: string, degraded: unknown): InvariantResult {
@@ -234,4 +542,373 @@ export function summarizeInvariants(results: readonly InvariantResult[]): Journe
     failedInvariantIds: failed.map((result) => result.id),
     inconclusiveInvariantIds: inconclusive.map((result) => result.id),
   };
+}
+
+export interface QueryRelevanceScore {
+  query: string;
+  served: number;
+  judged: number;
+  relevant: number;
+  precisionAtK: number;
+  firstRelevantRank: number | null;
+}
+
+export function scoreQueryRelevance(
+  query: string,
+  relevanceByRank: readonly boolean[],
+  topK: number,
+  servedTotal: number,
+): QueryRelevanceScore {
+  const judgedFlags = relevanceByRank.slice(0, topK);
+  const relevant = judgedFlags.filter(Boolean).length;
+  const firstRelevantIndex = judgedFlags.indexOf(true);
+
+  return {
+    query,
+    served: servedTotal,
+    judged: judgedFlags.length,
+    relevant,
+    precisionAtK: asRate(relevant, judgedFlags.length),
+    firstRelevantRank: firstRelevantIndex === -1 ? null : firstRelevantIndex + 1,
+  };
+}
+
+export function checkQueryRelevance(
+  score: QueryRelevanceScore,
+  minRelevant: number,
+): InvariantResult {
+  const id = `query-relevance:${score.query}`;
+  const title = `A search for "${score.query}" returns at least ${minRelevant} relevant results in its top ${score.judged || 'K'}`;
+
+  if (score.judged === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The query returned nothing to judge, so a relevance score over it would be a green signal over an empty population',
+      { ...score, minRelevant },
+    );
+  }
+
+  return buildInvariant(id, title, score.relevant >= minRelevant, { ...score, minRelevant });
+}
+
+export function checkExpectedNoResults(query: string, servedTotal: number): InvariantResult {
+  return buildInvariant(
+    `query-returns-nothing:${query}`,
+    `A search for "${query}" legitimately returns nothing rather than erroring`,
+    servedTotal === 0,
+    { query, served: servedTotal },
+  );
+}
+
+export interface ProportionInterval {
+  low: number;
+  high: number;
+  z: number;
+}
+
+const Z_95 = 1.959964;
+
+const roundTo4 = (value: number): number => Number(value.toFixed(4));
+
+export function wilsonInterval(
+  successes: number,
+  trials: number,
+  z: number = Z_95,
+): ProportionInterval | null {
+  if (trials <= 0) return null;
+  const proportion = successes / trials;
+  const zSquared = z * z;
+  const denominator = 1 + zSquared / trials;
+  const centre = proportion + zSquared / (2 * trials);
+  const margin =
+    z * Math.sqrt((proportion * (1 - proportion)) / trials + zSquared / (4 * trials * trials));
+  return {
+    low: roundTo4(Math.max(0, (centre - margin) / denominator)),
+    high: roundTo4(Math.min(1, (centre + margin) / denominator)),
+    z,
+  };
+}
+
+export const fingerprintQuote = (quote: string): string =>
+  createHash('sha256').update(quote.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16);
+
+const seededDrawRank = (seed: string, rowKey: string): string =>
+  createHash('sha256').update(`${seed}:${rowKey}`).digest('hex');
+
+export function drawSeededSample(
+  rowKeys: readonly string[],
+  seed: string,
+  sampleSize: number,
+): string[] {
+  return [...new Set(rowKeys)]
+    .map((rowKey) => ({ rowKey, rank: seededDrawRank(seed, rowKey) }))
+    .sort((left, right) => (left.rank < right.rank ? -1 : left.rank > right.rank ? 1 : 0))
+    .slice(0, Math.max(0, sampleSize))
+    .map((entry) => entry.rowKey);
+}
+
+export const fingerprintPopulation = (rowKeys: readonly string[]): string =>
+  createHash('sha256')
+    .update([...new Set(rowKeys)].sort().join('\n'))
+    .digest('hex')
+    .slice(0, 16);
+
+export interface UndergradEvidenceServedRow {
+  rowKey: string;
+  quoteFingerprint: string;
+}
+
+export interface UndergradEvidenceJudgementScore {
+  population: number;
+  drawn: number;
+  judged: number;
+  unjudged: number;
+  judgementForAChangedQuote: number;
+  judgementsOutsideTheDraw: number;
+  verdicts: Record<UndergradEvidenceVerdict, number>;
+  verifiable: number;
+  correct: number;
+  badgePrecision: number;
+  badgePrecisionInterval: ProportionInterval | null;
+  grounded: number;
+  laneGroundingPrecision: number;
+  laneGroundingPrecisionInterval: ProportionInterval | null;
+  badgeWordingJudged: number;
+  badgeWordingBacked: number;
+  badgeWordingPrecision: number;
+  badgeWordingInterval: ProportionInterval | null;
+}
+
+const emptyVerdictTally = (): Record<UndergradEvidenceVerdict, number> =>
+  Object.fromEntries(UNDERGRAD_EVIDENCE_VERDICTS.map((verdict) => [verdict, 0])) as Record<
+    UndergradEvidenceVerdict,
+    number
+  >;
+
+export function scoreUndergradEvidenceJudgements(
+  population: readonly UndergradEvidenceServedRow[],
+  judgements: readonly UndergradEvidenceJudgement[],
+  seed: string,
+  sampleSize: number,
+): UndergradEvidenceJudgementScore {
+  const fingerprintByRow = new Map(population.map((row) => [row.rowKey, row.quoteFingerprint]));
+  const judgementByRow = new Map(judgements.map((judgement) => [judgement.rowKey, judgement]));
+  const drawn = drawSeededSample([...fingerprintByRow.keys()], seed, sampleSize);
+  const drawnSet = new Set(drawn);
+
+  const verdicts = emptyVerdictTally();
+  let unjudged = 0;
+  let judgementForAChangedQuote = 0;
+  let badgeWordingJudged = 0;
+  let badgeWordingBacked = 0;
+
+  for (const rowKey of drawn) {
+    const judgement = judgementByRow.get(rowKey);
+    if (!judgement?.verdict) {
+      unjudged += 1;
+      continue;
+    }
+    if (judgement.quoteFingerprint !== fingerprintByRow.get(rowKey)) {
+      judgementForAChangedQuote += 1;
+      continue;
+    }
+    verdicts[judgement.verdict] += 1;
+    if (
+      judgement.verdict !== 'stale_or_unreachable' &&
+      judgement.backsHostedBadgeWording !== undefined
+    ) {
+      badgeWordingJudged += 1;
+      if (judgement.backsHostedBadgeWording) badgeWordingBacked += 1;
+    }
+  }
+
+  const judged = Object.values(verdicts).reduce((total, count) => total + count, 0);
+  const verifiable = judged - verdicts.stale_or_unreachable;
+  const correct = verdicts.correct;
+  const grounded = verifiable - verdicts.not_grounded;
+
+  return {
+    population: fingerprintByRow.size,
+    drawn: drawn.length,
+    judged,
+    unjudged,
+    judgementForAChangedQuote,
+    judgementsOutsideTheDraw: judgements.filter((judgement) => !drawnSet.has(judgement.rowKey))
+      .length,
+    verdicts,
+    verifiable,
+    correct,
+    badgePrecision: asRate(correct, verifiable),
+    badgePrecisionInterval: wilsonInterval(correct, verifiable),
+    grounded,
+    laneGroundingPrecision: asRate(grounded, verifiable),
+    laneGroundingPrecisionInterval: wilsonInterval(grounded, verifiable),
+    badgeWordingJudged,
+    badgeWordingBacked,
+    badgeWordingPrecision: asRate(badgeWordingBacked, badgeWordingJudged),
+    badgeWordingInterval: wilsonInterval(badgeWordingBacked, badgeWordingJudged),
+  };
+}
+
+export interface QuoteAttributionObservation {
+  servedVersionMatchesStored: boolean;
+  storedSourceName: string;
+}
+
+export function checkUndergradEvidenceQuoteAttribution(
+  observations: readonly QuoteAttributionObservation[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'undergrad-evidence-quote-names-its-source';
+  const title = 'Every served undergraduate evidence quote is attributable to a named source';
+  const comparable = observations.filter((observation) => observation.servedVersionMatchesStored);
+  const unattributed = comparable.filter(
+    (observation) => observation.storedSourceName.trim().length === 0,
+  ).length;
+  const detail = {
+    served: observations.length,
+    comparable: comparable.length,
+    skippedStaleIndex: observations.length - comparable.length,
+    unattributed,
+  };
+
+  if (comparable.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served quote could be compared with its stored row, so a zero unattributed count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  if (unattributed > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the quotes were compared, so a quote may look unattributed only because the served and stored rows describe different versions',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, unattributed === 0, detail);
+}
+
+export interface ServedQueryPair {
+  baselineQuery: string;
+  baselineKeys: readonly string[];
+  variantQuery: string;
+  variantKeys: readonly string[];
+}
+
+export type QueryVariantAgreement = 'sameOrderedRows' | 'coversBaselineRows';
+
+const variantAgrees = (pair: ServedQueryPair, agreement: QueryVariantAgreement): boolean => {
+  if (agreement === 'coversBaselineRows') {
+    const variantKeys = new Set(pair.variantKeys);
+    return pair.baselineKeys.every((key) => variantKeys.has(key));
+  }
+  return (
+    pair.baselineKeys.length === pair.variantKeys.length &&
+    pair.baselineKeys.every((key, index) => pair.variantKeys[index] === key)
+  );
+};
+
+export function checkQueryVariantServesTheBaseline(
+  id: string,
+  title: string,
+  pairs: readonly ServedQueryPair[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+  agreement: QueryVariantAgreement = 'sameOrderedRows',
+): InvariantResult {
+  const compared = pairs.map((pair) => ({
+    baselineQuery: pair.baselineQuery,
+    variantQuery: pair.variantQuery,
+    baselineServed: pair.baselineKeys.length,
+    variantServed: pair.variantKeys.length,
+    agrees: variantAgrees(pair, agreement),
+  }));
+  const detail = { agreement, pairs: compared };
+  if (compared.some((pair) => pair.baselineServed === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'A baseline query served no rows, so agreement with it would be a green signal over an empty population',
+      detail,
+    );
+  }
+  const disagreeing = compared.filter((pair) => !pair.agrees).length;
+  if (disagreeing > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed between the two queries, so a ranking difference may be a write rather than the query',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, disagreeing === 0, detail);
+}
+
+export type QueryEvidenceClass = 'ownEvidence' | 'meshDescriptorOnly' | 'other';
+
+export interface QueryEvidenceRanking {
+  query: string;
+  topClasses: readonly QueryEvidenceClass[];
+  meshDescriptorOnlyServed: number;
+}
+
+export function checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
+  rankings: readonly QueryEvidenceRanking[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'mesh-descriptor-only-rows-rank-below-own-evidence';
+  const title =
+    'No row matching a query only through a MeSH descriptor outranks a row whose own text names the query';
+  const perQuery = rankings.map((ranking) => {
+    const lastOwnEvidenceRank = ranking.topClasses.lastIndexOf('ownEvidence');
+    const outranking = ranking.topClasses.filter(
+      (evidence, rank) => evidence === 'meshDescriptorOnly' && rank < lastOwnEvidenceRank,
+    ).length;
+    return {
+      query: ranking.query,
+      ranked: ranking.topClasses.length,
+      ownEvidenceInTop: ranking.topClasses.filter((evidence) => evidence === 'ownEvidence').length,
+      meshDescriptorOnlyInTop: ranking.topClasses.filter(
+        (evidence) => evidence === 'meshDescriptorOnly',
+      ).length,
+      meshDescriptorOnlyServed: ranking.meshDescriptorOnlyServed,
+      meshDescriptorOnlyOutrankingOwnEvidence: outranking,
+    };
+  });
+  const detail = {
+    queries: perQuery,
+    unexercisedQueries: perQuery
+      .filter((query) => query.meshDescriptorOnlyServed === 0)
+      .map((query) => query.query),
+  };
+  // A query whose descriptor-only rows rank below the served window exercised nothing, which is
+  // also what a correct demotion looks like, so it must not make the queries that did serve
+  // such rows inconclusive (#4538). Only an all-empty population is a green signal over nothing.
+  if (perQuery.every((query) => query.meshDescriptorOnlyServed === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No query served a MeSH-descriptor-only row, so the ordering it asserts was never exercised',
+      detail,
+    );
+  }
+  const violations = perQuery.reduce(
+    (total, query) => total + query.meshDescriptorOnlyOutrankingOwnEvidence,
+    0,
+  );
+  if (violations > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the rows were classified, so a stored row may describe a different version than the one ranked',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, violations === 0, detail);
 }

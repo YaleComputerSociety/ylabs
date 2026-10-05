@@ -133,11 +133,20 @@ They should not create a research-paper section, display metrics, or replace the
 ## CTA Vocabulary
 
 Reaching out is constant and primary: always offer a way to contact the research entity, never gating outreach.
-Because student-facing PI emails are redacted by design, the primary path is to open the official profile, then an available official page from the entity's own classified sources, and only search the Yale Directory as a last resort when no official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
+The lead card carries the person: their official profile and, when one is served, their email.
+The "How to get involved" block offers exactly one button: the research's own homepage where it has one, because a homepage is a better way in than a page deep inside it, and otherwise a specific place to apply or join from the entity's own classified sources ("See how to get involved", for every entity type).
+When the research has both a homepage and a join page the server vetted (`APPLICATION_FORM_EXISTS`), the join page sits beneath the button as a secondary "See how to join" link rather than a second button (#4753).
+When no lead card carries the profile, the official profile takes the website's place as that one action only while no place to apply competes; when one does, the homepage takes the action ahead of it, or the place to apply does when there is no homepage.
+An organization that coordinates involvement centrally offers its get-involved page as the one action, and its director's profile stays on the lead card.
+Every other page, including a lead's personal homepage, is listed under sources rather than offered as a second button.
+The header shows the research website whenever the block does not already offer it.
+Only when no official link exists does the block fall back to searching the Yale Directory for contact details.
+A prefilled mailto appears only when a non-redacted email is available.
+A generic official page from those sources is offered only when there is no homepage, no place to apply, and no lead card already links a profile, because beside such a card it is a third door to the same person.
 The contact prompt is never conditioned on access evidence, route, or computed confidence, and never gates outreach.
 Other CTA options surface alongside it when the supporting evidence exists:
 
-- Reach out (open official profile, open an official page from the entity's sources, search Yale Directory as a last resort, or email when a non-redacted address exists)
+- Reach out (see how to get involved, open official profile, visit the research website, open an official page from the entity's sources when no lead card links a profile, search Yale Directory as a last resort, or email when a non-redacted address exists)
 - Apply
 - View official profile
 - View Google Scholar
@@ -185,5 +194,5 @@ It should help a student discuss options with an advisor, not create mass-email 
 ## Student-Ready Visibility
 
 An entity is shown to students (`student_ready`) if, and only if, what we show is CORRECT and COHERENT.
-Because reaching out is the universal next step and is never gated, enrichment signals (source-backing, next step, action evidence, facet signals) make a card more specific but NEVER hide it.
+Because reaching out is the universal next step and is never gated, enrichment signals (source-backing, facet signals) make a card more specific but NEVER hide it.
 The correctness conditions, the hard-vs-soft split, and the canonical definition live in [student-ready-definition.md](student-ready-definition.md).

@@ -10,6 +10,7 @@
  * and the materializers must not cross-infer one type from another.
  */
 import mongoose from 'mongoose';
+import { archiveAttributionFields, enforceArchiveAttribution } from './entityArchival';
 import { recordSuppressionSchema } from './modelPrimitives';
 import { signalConfidences, signalStatuses, signalTypes } from './researchAccessTypes';
 
@@ -131,6 +132,7 @@ const signalSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    ...archiveAttributionFields,
     suppression: {
       type: recordSuppressionSchema,
       required: false,
@@ -183,6 +185,8 @@ signalSchema.index(
     },
   },
 );
+
+enforceArchiveAttribution(signalSchema);
 
 export const Signal = mongoose.model('Signal', signalSchema, 'signals');
 

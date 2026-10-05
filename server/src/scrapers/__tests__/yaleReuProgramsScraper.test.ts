@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { classificationFromObservedFacts } from '../fellowshipClassificationDerivation';
 import {
   candidateToObservations,
   extractYaleSiteUrlsFromNsfDirectory,
-  parseDeadlineToUtcEndOfDay,
   parseReuProgramPage,
   YaleReuProgramsScraper,
   YALE_REU_PROGRAMS_SOURCE,
@@ -69,9 +69,7 @@ describe('parseReuProgramPage', () => {
     expect(candidate?.sourceUrl).toBe(astronomyUrl);
     expect(candidate?.description).toMatch(/ten-week summer research program in astrophysics/);
     expect(candidate?.competitionType).toBe('NSF REU (Research Experiences for Undergraduates)');
-    expect(candidate?.deadline?.toISOString()).toBe(
-      parseDeadlineToUtcEndOfDay('February 6, 2026', referenceDate)?.toISOString(),
-    );
+    expect(candidate?.deadline?.toISOString()).toBe('2026-02-07T04:59:59.999Z');
     expect(candidate?.applicationLink).toBe('https://app.smarterselect.com/programs/999-fixture');
     expect(candidate?.termOfAward).toContain('Summer');
   });
@@ -113,6 +111,88 @@ describe('parseReuProgramPage', () => {
     expect(candidate).toBeUndefined();
   });
 
+  it('keeps an application-form link from a sidebar callout and drops sidebar admissions links', () => {
+    const html = `
+      <body>
+        <main>
+          <h1>Fixture Summer Research Program</h1>
+          <p>A ten-week summer research program where undergraduate students from any institution join a Yale research group.</p>
+          <aside>
+            <a href="https://admissions.yale.edu/apply">Apply to Yale</a>
+            <a href="https://forms.gle/fixtureSidebarForm">Application Form for 2026</a>
+          </aside>
+        </main>
+        <nav><a href="https://forms.gle/fixtureNavForm">Apply</a></nav>
+      </body>
+    `;
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale', referenceDate);
+    expect(candidate?.applicationLink).toBe('https://forms.gle/fixtureSidebarForm');
+    expect(candidate?.links.map((link) => link.url)).toEqual([
+      'https://forms.gle/fixtureSidebarForm',
+    ]);
+  });
+
+  it('reads an application-form link from a sidebar that sits outside the main content', () => {
+    const html = `
+      <body>
+        <main>
+          <h1>Fixture Summer Research Program</h1>
+          <p>A ten-week summer research program where undergraduate students from any institution join a Yale research group.</p>
+        </main>
+        <div class="region-sidebar"><aside><a href="https://redcap.med.yale.edu/surveys/?s=FIXTURE">Request an Application</a></aside></div>
+      </body>
+    `;
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale', referenceDate);
+    expect(candidate?.applicationLink).toBe('https://redcap.med.yale.edu/surveys/?s=FIXTURE');
+  });
+
+  it('describes the program from its prose when the page body carries an FAQ pointer', () => {
+    const html = `
+      <body>
+        <main>
+          <h1>Fixture Summer Research Program</h1>
+          <p>Spend the summer at Yale working as a researcher alongside faculty on an original undergraduate research project.</p>
+          <p>Admitted students receive a stipend and housing for the ten-week summer program.</p>
+          <p>Have more questions? Check out our FAQs!</p>
+        </main>
+      </body>
+    `;
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale', referenceDate);
+    expect(candidate?.description).toMatch(/original undergraduate research project/);
+    expect(candidate?.description).not.toMatch(/FAQ/);
+  });
+
+  it('titles a center subpage by its own heading rather than the site-name logo heading', () => {
+    const html = `
+      <body>
+        <div id="header"><h1><a href="https://fixture-center.yale.edu"><strong>Yale</strong> Fixture Center</a></h1></div>
+        <h1 class="title">Summer Undergraduate Research in Fixture Sciences</h1>
+        <p>An eight-week summer research program that places undergraduate students in Yale research groups.</p>
+      </body>
+    `;
+    const candidate = parseReuProgramPage(
+      html,
+      'https://fixture-center.yale.edu/summer',
+      'Yale',
+      referenceDate,
+    );
+    expect(candidate?.title).toBe('Summer Undergraduate Research in Fixture Sciences');
+  });
+
+  it('keeps the site-name heading on a single-program site whose page heading is generic', () => {
+    const html = `
+      <body>
+        <h1 class="site-name"><a href="/">Fixture Summer Math Research at Yale</a></h1>
+        <main>
+          <h1 class="title">Welcome</h1>
+          <p>A summer research program in mathematics open to undergraduate students from any institution.</p>
+        </main>
+      </body>
+    `;
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale', referenceDate);
+    expect(candidate?.title).toBe('Fixture Summer Math Research at Yale');
+  });
+
   it('returns undefined for a page with no summer-research or REU signal', () => {
     const candidate = parseReuProgramPage(
       '<main><h1>Department Directory</h1><p>Faculty office hours and contact list.</p></main>',
@@ -124,7 +204,36 @@ describe('parseReuProgramPage', () => {
   });
 });
 
-describe('candidateToObservations classification', () => {
+describe('an eligibility section past the old emission cap (#4572)', () => {
+  const requirement = 'Applicants must identify a Yale faculty mentor before applying.';
+  const conditions = Array.from(
+    { length: 24 },
+    (_, index) =>
+      `<p>Eligibility condition ${index + 1} describes a synthetic requirement every applicant to the summer program meets.</p>`,
+  ).join('');
+  const html = `
+    <main>
+      <h1>Fixture Summer Undergraduate Research Program</h1>
+      <p>This is a ten-week summer research program for undergraduates from any institution.</p>
+      <h2>Eligibility</h2>
+      ${conditions}
+      <p>${requirement}</p>
+    </main>
+  `;
+
+  it('emits the whole section and lets the classifier read its last requirement', () => {
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale Mathematics', referenceDate)!;
+
+    expect(candidate.eligibility?.length).toBeGreaterThan(2000);
+    expect(candidate.eligibility).toContain(requirement);
+    expect(classificationFromObservedFacts(candidateToObservations(candidate))).toMatchObject({
+      requiresMentorBeforeApply: true,
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    });
+  });
+});
+
+describe('classification derived from the observed facts', () => {
   it('classifies an REU that requires securing a mentor first as SECURE_MENTOR_THEN_APPLY', () => {
     const candidate = parseReuProgramPage(
       astronomyReuHtml,
@@ -133,10 +242,12 @@ describe('candidateToObservations classification', () => {
       referenceDate,
     )!;
     const observations = candidateToObservations(candidate);
-    const byField = (field: string) => observations.find((o) => o.field === field)?.value;
-    expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');
-    expect(byField('entryMode')).toBe('SECURE_MENTOR_THEN_APPLY');
-    expect(byField('requiresMentorBeforeApply')).toBe(true);
+    expect(observations.map((o) => o.field)).not.toContain('programCategory');
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+    });
   });
 
   it('classifies a program that matches admitted students with mentors as DIRECT_FACULTY_MATCHING', () => {
@@ -147,10 +258,12 @@ describe('candidateToObservations classification', () => {
       referenceDate,
     )!;
     const observations = candidateToObservations(candidate);
-    const byField = (field: string) => observations.find((o) => o.field === field)?.value;
-    expect(byField('programCategory')).toBe('SUMMER_RESEARCH_PROGRAM');
-    expect(byField('entryMode')).toBe('DIRECT_FACULTY_MATCHING');
-    expect(byField('mentorMatching')).toBe(true);
+    expect(observations.map((o) => o.field)).not.toContain('entryMode');
+    expect(classificationFromObservedFacts(observations)).toMatchObject({
+      programCategory: 'SUMMER_RESEARCH_PROGRAM',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+    });
   });
 });
 

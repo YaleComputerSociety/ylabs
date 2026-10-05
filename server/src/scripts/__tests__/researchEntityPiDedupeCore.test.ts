@@ -12,8 +12,11 @@ import {
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
+  explainSpecificProfileLabUrlRefusals,
   buildWebsiteUrlResearchEntityDedupePlan,
   entityMintedByPrimaryAppointmentRoster,
+  buildNameAgreedSharedPersonResearchEntityDedupePlan,
+  nameAgreementKey,
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
   partitionPlanByPersonProfileConflation,
@@ -27,6 +30,7 @@ import {
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
+  type OfficialLabUrlDedupeRow,
 } from '../researchEntityPiDedupeCore';
 import { PI_DEDUPE_ARCHIVE_REASON } from '../../models/entityArchival';
 import {
@@ -66,13 +70,14 @@ describe('planStrandedFundingObservationRelink', () => {
       duplicateKeys: [duplicateKey],
       observations: [
         { id: 'grants', entityKey: duplicateKey, field: 'recentGrants' },
+        { id: 'periods', entityKey: duplicateKey, field: 'recentGrantPeriods' },
         { id: 'count', entityKey: duplicateKey, field: 'recentGrantCount' },
         { id: 'agencies', entityKey: duplicateKey, field: 'fundingAgencies' },
       ],
     });
     expect(plan).not.toBeNull();
     expect(plan!.survivorKey).toBe(survivorKey);
-    expect(plan!.ids).toEqual(['grants', 'count', 'agencies']);
+    expect(plan!.ids).toEqual(['grants', 'periods', 'count', 'agencies']);
   });
 
   it('never re-keys an identity field, which would move a fabricated lab name (#3160)', () => {
@@ -1369,6 +1374,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1388,6 +1394,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1413,6 +1420,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1432,6 +1440,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 10000,
@@ -1617,6 +1626,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 2,
       visibilityRecomputed: 0,
       canonicalEntitiesResynced: 0,
+      canonicalIndexSyncFailures: 0,
       maxApply: 10,
     });
 
@@ -1637,6 +1647,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 0,
       visibilityRecomputed: 0,
       canonicalEntitiesResynced: 0,
+      canonicalIndexSyncFailures: 0,
       maxApply: 10,
     });
 
@@ -1660,6 +1671,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 3,
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
+      canonicalIndexSyncFailures: 1,
       maxApply: 500,
     });
 
@@ -1677,6 +1689,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       quarantinedConflatedPersonProfileGroups: 3,
       visibilityRecomputed: 2,
       canonicalEntitiesResynced: 2,
+      canonicalIndexSyncFailures: 1,
       maxApply: 500,
     });
   });
@@ -1814,6 +1827,14 @@ describe('buildResearchEntityPiDedupePlan', () => {
       studentVisibilityComputedAt: '',
       studentVisibilityEvaluatedAt: '',
     });
+  });
+
+  it('keeps an archived duplicate research plan out of the restore-window TTL, so its private notes survive (#4163)', () => {
+    const now = new Date('2026-05-31T12:00:00Z');
+
+    expect(
+      buildArchivedDocumentArchiveUpdate({ now, includeRelink: false }).$set,
+    ).not.toHaveProperty('restorableUntil');
   });
 
   it('names the dedupe lane on an archived artifact, so the write is attributable', () => {
@@ -2121,6 +2142,15 @@ describe('buildResearchEntityPiDedupePlan', () => {
     });
   });
 
+  it('accepts --require-name-agreement only as a narrowing of --shared-person-id', () => {
+    expect(
+      parseResearchEntityPiDedupeArgs(['--shared-person-id', '--require-name-agreement']),
+    ).toMatchObject({ sharedPersonId: true, requireNameAgreement: true });
+    expect(() => parseResearchEntityPiDedupeArgs(['--require-name-agreement'])).toThrow(
+      /only narrows --shared-person-id/,
+    );
+  });
+
   it('parses funding-only cleanup mode', () => {
     expect(parseResearchEntityPiDedupeArgs(['--funding-only', '--limit=50'])).toEqual({
       apply: false,
@@ -2134,6 +2164,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
+      requireNameAgreement: false,
       rematerializeCanonical: false,
       confirmDemotingMerge: false,
       limit: 50,
@@ -3475,6 +3506,60 @@ describe('shouldRetireDuplicateCurrentMembersForDedupeRun', () => {
   });
 });
 
+describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
+  const row = (entities: Array<{ id: string; name: string; entityType: string }>) => ({
+    userId: 'person-1',
+    normalizedName: 'same-pi:person-1',
+    entities: entities.map((entity) => ({ ...entity, slug: entity.id })),
+  });
+  const members = (groups: Array<{ canonicalEntityId: string; duplicateEntityIds: string[] }>) =>
+    groups.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds].sort());
+
+  it('folds diacritics, punctuation and kind nouns when comparing names', () => {
+    expect(nameAgreementKey('Zoë Murić-Núñez Faculty Research')).toBe(
+      nameAgreementKey('Zoe Muric Nunez - Research'),
+    );
+    expect(nameAgreementKey('Ortolan Lab')).toBe(nameAgreementKey('Ortolan Laboratory'));
+    expect(nameAgreementKey('Wren Q. Ortolan Faculty Research')).toBe(
+      nameAgreementKey('Wren Ortolan Faculty Research'),
+    );
+    expect(nameAgreementKey('W. Ortolan Lab')).not.toBe(nameAgreementKey('Wren Ortolan Lab'));
+  });
+
+  it('groups rows that agree on lead, name and type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'Ortolan Laboratory', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b']]);
+  });
+
+  it('merges the agreeing rows even when the lead also has rows that differ in name or type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'lab-a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'lab-b', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['lab-a', 'lab-b']]);
+  });
+
+  it('plans nothing when no two rows agree on both name and type', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      row([
+        { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(plan).toEqual([]);
+  });
+});
+
 describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
   it('merges same-person entities regardless of differing names and picks the human-readable canonical', () => {
     const rows = [
@@ -3593,6 +3678,70 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
       },
     ];
     expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
+  });
+
+  it.each(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'])(
+    'never folds a person row into a %s the person holds a PI edge to',
+    (entityType) => {
+      const rows = [
+        {
+          userId: 'person-org',
+          normalizedName: 'same-pi:person-org',
+          entities: [
+            {
+              id: 'org',
+              slug: 'center-fixture-energy-institute',
+              name: 'Fixture Energy Institute',
+              entityType,
+              fullDescription: 'A'.repeat(900),
+            },
+            {
+              id: 'lab',
+              slug: 'dept-chem-fixture-person',
+              name: 'Fixture Person Lab',
+              entityType: 'LAB',
+              fullDescription: 'B'.repeat(200),
+            },
+          ],
+        },
+      ];
+      expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
+    },
+  );
+
+  it('still merges the person rows that sit beside an organization edge', () => {
+    const rows = [
+      {
+        userId: 'person-org-and-shell',
+        normalizedName: 'same-pi:person-org-and-shell',
+        entities: [
+          {
+            id: 'org',
+            slug: 'center-fixture-energy-institute',
+            name: 'Fixture Energy Institute',
+            entityType: 'INSTITUTE',
+            fullDescription: 'A'.repeat(900),
+          },
+          {
+            id: 'lab',
+            slug: 'dept-chem-fixture-person',
+            name: 'Fixture Person Lab',
+            entityType: 'LAB',
+            fullDescription: 'B'.repeat(200),
+          },
+          {
+            id: 'shell',
+            slug: 'nih-pi-fixture-person',
+            name: 'Fixture Person',
+            entityType: 'FACULTY_RESEARCH_AREA',
+          },
+        ],
+      },
+    ];
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('lab');
+    expect(plan[0].duplicateEntityIds).toEqual(['shell']);
   });
 
   it('excludes a co-PI entity claimed by two persons from every merge group', () => {
@@ -4298,5 +4447,153 @@ describe('entityMintedByPrimaryAppointmentRoster', () => {
         { id: 'd' },
       ),
     ).toBe(false);
+  });
+});
+
+describe('profile-lab-url lane name agreement and refusals (#4791)', () => {
+  const lab = (
+    id: string,
+    name: string,
+    leadPersonIds: string[] = [],
+    entityType = 'LAB',
+  ): OfficialLabUrlDedupeRow['entities'][number] => ({
+    id,
+    slug: id,
+    name,
+    entityType,
+    leadPersonIds,
+  });
+  const plan = (url: string, entities: OfficialLabUrlDedupeRow['entities']) =>
+    buildSpecificProfileLabUrlResearchEntityDedupePlan([{ url, entities }]);
+  const members = (groups: ReturnType<typeof plan>) =>
+    groups.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds].sort());
+
+  it('merges a topical lab name with its lead profile row when both hold the same leads', () => {
+    const groups = plan('https://medicine.yale.edu/lab/dalton/', [
+      lab('ysm-dalton', 'BEACON Lab Yale Lab', ['person-a']),
+      lab('ysm-faculty-avery-dalton', 'BEACON Lab', ['person-a']),
+    ]);
+    expect(members(groups)).toEqual([['ysm-dalton', 'ysm-faculty-avery-dalton']]);
+  });
+
+  it('still refuses a member row that adds its own lead beside the lab lead', () => {
+    const rows = [
+      {
+        url: 'https://medicine.yale.edu/lab/dalton/',
+        entities: [
+          lab('ysm-dalton', 'BEACON Lab', ['person-a']),
+          lab('ysm-faculty-casey-north', 'BEACON Lab', ['person-a', 'person-b']),
+        ],
+      },
+    ];
+    expect(buildSpecificProfileLabUrlResearchEntityDedupePlan(rows)).toEqual([]);
+    expect(explainSpecificProfileLabUrlRefusals(rows)).toEqual([
+      { url: 'https://medicine.yale.edu/lab/dalton/', reason: 'slug_names_another_person' },
+    ]);
+  });
+
+  it('folds diacritics, a comma credential, a parenthetical alias, and a middle initial', () => {
+    expect(
+      members(
+        plan('https://medicine.yale.edu/profile/ana-kovacevic/', [
+          lab('ysm-kovacevic', 'Kovacevic Lab'),
+          lab('ysm-faculty-ana-kovacevic', 'Ana Kovačević Lab'),
+        ]),
+      ),
+    ).toEqual([['ysm-faculty-ana-kovacevic', 'ysm-kovacevic']]);
+    expect(
+      members(
+        plan('https://medicine.yale.edu/profile/sam-rivera/', [
+          lab('ysm-rivera', 'Rivera Lab'),
+          lab('dept-mbb-sam-rivera', 'Sam Rivera, PhD Lab'),
+        ]),
+      ),
+    ).toEqual([['dept-mbb-sam-rivera', 'ysm-rivera']]);
+    expect(
+      members(
+        plan('https://medicine.yale.edu/profile/rui-tan/', [
+          lab('ysm-quid', 'QUID Lab', ['person-c']),
+          lab('ysm-faculty-rui-tan', 'Quantitative Imaging Data Lab (QUID Lab)', ['person-c']),
+        ]),
+      ),
+    ).toEqual([['ysm-faculty-rui-tan', 'ysm-quid']]);
+    expect(
+      members(
+        plan('https://ysph.yale.edu/profile/pat-moreno/', [
+          lab(
+            'ysm-faculty-pat-moreno',
+            'Pat Quinn Moreno Faculty Research',
+            [],
+            'FACULTY_RESEARCH_AREA',
+          ),
+          lab(
+            'dept-ysph-pat-q-moreno',
+            'Pat Q. Moreno Faculty Research',
+            [],
+            'FACULTY_RESEARCH_AREA',
+          ),
+        ]),
+      ),
+    ).toEqual([['dept-ysph-pat-q-moreno', 'ysm-faculty-pat-moreno']]);
+  });
+
+  it('refuses a merge that would hand the survivor a lead it does not already hold', () => {
+    const rows = [
+      {
+        url: 'https://ysph.yale.edu/profile/pat-moreno/',
+        entities: [
+          lab(
+            'ysm-faculty-pat-moreno',
+            'Pat Quinn Moreno Faculty Research',
+            ['person-g'],
+            'FACULTY_RESEARCH_AREA',
+          ),
+          lab(
+            'dept-ysph-pat-q-moreno',
+            'Pat Q. Moreno Faculty Research',
+            ['person-g', 'person-h'],
+            'FACULTY_RESEARCH_AREA',
+          ),
+        ],
+      },
+    ];
+    expect(buildSpecificProfileLabUrlResearchEntityDedupePlan(rows)).toEqual([]);
+    expect(explainSpecificProfileLabUrlRefusals(rows)).toEqual([
+      { url: 'https://ysph.yale.edu/profile/pat-moreno/', reason: 'duplicate_adds_lead' },
+    ]);
+  });
+
+  it('keeps refusing two different people and names the rule that refused each URL', () => {
+    const rows = [
+      {
+        url: 'https://medicine.yale.edu/lab/north/',
+        entities: [
+          lab('ysm-north', 'North Lab', ['person-d']),
+          lab('dept-ysph-lee-west', 'Lee West Lab', ['person-e']),
+        ],
+      },
+      {
+        url: 'https://medicine.yale.edu/lab/wu/',
+        entities: [lab('ysm-wu', 'Dana Wu Lab'), lab('ysm-faculty-wu-min', 'Min Wu Lab')],
+      },
+      {
+        url: 'https://medicine.yale.edu/profile/kim-park/',
+        entities: [
+          lab('ysm-faculty-kim-park', 'Park Lab', ['person-f']),
+          lab('park-center', 'Park Center', ['person-f'], 'CENTER'),
+        ],
+      },
+      {
+        url: 'https://medicine.yale.edu/lab/park/',
+        entities: [lab('ysm-park', 'Park Lab'), lab('nih-pi-kim-park', 'Kim Park Lab')],
+      },
+    ];
+    expect(buildSpecificProfileLabUrlResearchEntityDedupePlan(rows)).toEqual([]);
+    expect(explainSpecificProfileLabUrlRefusals(rows).map((row) => row.reason)).toEqual([
+      'lead_names_disagree',
+      'lead_names_disagree',
+      'entity_type_outside_lane',
+      'funding_shell',
+    ]);
   });
 });

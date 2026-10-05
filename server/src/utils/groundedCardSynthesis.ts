@@ -20,7 +20,9 @@ import {
   sanitizeResearchEntityShortDescription,
 } from './descriptionHygiene';
 import { isProgramLikeResearchEntity } from './researchEntityProgramLike';
+import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
+import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
 export const MIN_CARD_GROUNDING = 0.9;
@@ -353,6 +355,24 @@ export interface ServedShortDescriptionOutcome {
   topicCardWithheld: boolean;
 }
 
+// A card lifted out of a body can open on a clause that leans on the sentence before
+// it ("And, using these ...", "When direct computation is not feasible, ...", "Before
+// joining ..."), which reads as a fragment on its own. Only a card derived from the
+// body is checked: a stored card is the source's own headline. "As <role>, ..." is
+// not listed because it is a complete opener on its own.
+const DEPENDENT_CLAUSE_OPENER =
+  /^(?:And|But|Or|Nor|So|Yet|Also|Then|Thus|Hence|Therefore|However|Moreover|Furthermore|Additionally|When|Whenever|While|Whereas|Although|Though|Because|Since|If|Unless|Before|After|Until|Once|Which|That|Who|Whose|Whom|Including|Such\s+as|Especially|Particularly)\b/;
+
+export const opensOnDependentClause = (card: string): boolean =>
+  DEPENDENT_CLAUSE_OPENER.test(card.trim());
+
+export function cardDerivedFromBody(fullDescription: unknown): string {
+  const derived = sanitizeResearchEntityShortDescription(
+    deriveShortDescriptionFromFullDescription(fullDescription),
+  );
+  return opensOnDependentClause(derived) ? '' : derived;
+}
+
 /**
  * The resolved card, collapsing withholding onto the empty string. Callers that
  * own a fallback chain must read `resolveServedShortDescriptionOutcome` instead,
@@ -430,9 +450,7 @@ export function resolveServedShortDescriptionOutcome(
       : sanitized;
   if (cleaned) {
     if (isReplaceableResearchAreaChipEchoShort(cleaned, full, researchAreas, input.entityType)) {
-      const derivedFromChipEcho = sanitizeResearchEntityShortDescription(
-        deriveShortDescriptionFromFullDescription(full),
-      );
+      const derivedFromChipEcho = cardDerivedFromBody(full);
       if (
         derivedFromChipEcho &&
         shortDescriptionQuality(derivedFromChipEcho, full, researchAreas, {
@@ -469,9 +487,7 @@ export function resolveServedShortDescriptionOutcome(
     }
   }
 
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(full),
-  );
+  const derived = cardDerivedFromBody(full);
   if (
     derived &&
     shortDescriptionQuality(derived, full, researchAreas, { entityType: input.entityType }).isUseful
@@ -580,11 +596,17 @@ export function gateAcceptedDerivedCardSubstitute(input: ServedCardBarInput): st
   const cleaned = textValue(input.shortDescription);
   if (!cleaned) return '';
   if (servedCardClearsGateBar(input)) return '';
-  const full = textValue(input.fullDescription);
-  const derived = sanitizeResearchEntityShortDescription(
-    deriveShortDescriptionFromFullDescription(full),
-  );
+  const derived = cardDerivedFromBody(input.fullDescription);
   if (!derived || derived === cleaned) return '';
+  return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
+}
+
+export function researchCardOverBiographyCard(input: ServedCardBarInput): string {
+  const cleaned = textValue(input.shortDescription);
+  if (!cleaned || !isBiographyRatherThanResearch(cleaned)) return '';
+  if (isProgramLikeResearchEntity({ kind: input.kind })) return '';
+  const derived = cardDerivedFromBody(input.fullDescription);
+  if (!derived || derived === cleaned || isBiographyRatherThanResearch(derived)) return '';
   return servedCardClearsGateBar({ ...input, shortDescription: derived }) ? derived : '';
 }
 
@@ -615,7 +637,37 @@ export interface CardSynthesisLLMInput {
   apiKey: string;
   fullDescription: string;
   entityName: string;
+  maxCharacters?: number;
+  previousAttempt?: string;
 }
+
+/**
+ * Whether a card line shows whole on the browse card, which ends at the last
+ * whole sentence within 200 characters and otherwise cuts mid-sentence with "…".
+ * A one-sentence line past that limit is what put "…" on 1,649 of 3,367 served
+ * Development cards on 2026-10-04 (#4809).
+ */
+export function cardLineFitsBrowseCard(card: unknown): boolean {
+  return !browseCardIsCutMidSentence(browseCardSummary(textValue(card)));
+}
+
+// Under the 200-character render, so a line that runs a little long still fits.
+export const CARD_SYNTHESIS_MAX_CHARACTERS = 170;
+
+// A character limit alone loses to the system prompt's "under 30 words": the model
+// returned the same 206-character line on both attempts. A word budget plus what to
+// leave out fit 12 of 12 cut Development cards on 2026-10-04 (#4834).
+const CARD_SYNTHESIS_MAX_WORDS = 20;
+
+const cardLengthInstruction = (input: CardSynthesisLLMInput): string[] => {
+  if (!input.maxCharacters) return [];
+  const limit = `This card has room for at most ${CARD_SYNTHESIS_MAX_WORDS} words and ${input.maxCharacters} characters, so name only the main subject and the main method; leave out parenthetical lists and secondary examples.`;
+  if (!input.previousAttempt) return [limit];
+  return [
+    limit,
+    `Your previous sentence was ${input.previousAttempt.length} characters: "${input.previousAttempt}". Rewrite it in at most ${CARD_SYNTHESIS_MAX_WORDS} words and ${input.maxCharacters} characters, using only words and terms that appear in the description, keeping what is studied and how.`,
+  ];
+};
 
 export type CardSynthesisLLMFn = (input: CardSynthesisLLMInput) => Promise<string>;
 
@@ -641,6 +693,7 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
           content: [
             `Research entity: ${safeName}`,
             'Return JSON {"shortDescription": "..."} with a single card sentence, or {"shortDescription": ""} when the description has no clear research focus.',
+            ...cardLengthInstruction(input),
             'DESCRIPTION:',
             safeSource,
           ].join('\n\n'),
@@ -663,7 +716,12 @@ export interface SynthesizeGroundedCardInput {
   entityName?: string;
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
-  callLLM: (input: { fullDescription: string; entityName: string }) => Promise<string>;
+  callLLM: (input: {
+    fullDescription: string;
+    entityName: string;
+    maxCharacters?: number;
+    previousAttempt?: string;
+  }) => Promise<string>;
 }
 
 export async function synthesizeGroundedCardDescription(
@@ -676,19 +734,43 @@ export async function synthesizeGroundedCardDescription(
     fullQuality.flags.length === 1 && fullQuality.flags.includes('first-person');
   if (!fullQuality.isUseful && !onlyFirstPersonFull) return '';
 
-  let raw: string;
-  try {
-    raw = await input.callLLM({ fullDescription: full, entityName: input.entityName || '' });
-  } catch {
-    return '';
-  }
-  const card = normalizeCardText(raw);
-  if (!card) return '';
-  if (!isSynthesizedCardGroundedInFullDescription(card, full)) return '';
-  return shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
-    .isUseful
-    ? card
-    : '';
+  const acceptable = (card: string): boolean =>
+    Boolean(card) &&
+    isSynthesizedCardGroundedInFullDescription(card, full) &&
+    shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
+      .isUseful;
+  // The serve chain surrenders a synthesized card its stricter grader calls ungrounded
+  // whenever giving it up reaches a summary of the body, so a card accepted on the
+  // stem-aware grader alone can be stored and never shown: 237 served Development rows
+  // read that way on 2026-10-04 (#4809). Such a card is still accepted, as #3282 decided,
+  // but a line the serving bar keeps is preferred when the retry yields one.
+  const shownWhole = (card: string): boolean =>
+    acceptable(card) &&
+    !isUngroundedSynthesizedCard({ card, body: full }) &&
+    cardLineFitsBrowseCard(card);
+  const attempt = async (previousAttempt?: string): Promise<string> => {
+    try {
+      return normalizeCardText(
+        await input.callLLM({
+          fullDescription: full,
+          entityName: input.entityName || '',
+          maxCharacters: CARD_SYNTHESIS_MAX_CHARACTERS,
+          previousAttempt,
+        }),
+      );
+    } catch {
+      return '';
+    }
+  };
+
+  const first = await attempt();
+  if (!acceptable(first)) return '';
+  if (shownWhole(first)) return first;
+  // One retry, for a line that runs long or that the serving bar would surrender.
+  const retried = await attempt(first);
+  if (shownWhole(retried)) return retried;
+  if (cardLineFitsBrowseCard(first)) return first;
+  return acceptable(retried) && cardLineFitsBrowseCard(retried) ? retried : first;
 }
 
 export interface ResolveGroundedCardInput {
@@ -750,31 +832,35 @@ export async function resolveGroundedCardDescription(
     deriveShortDescriptionFromFullDescription(input.fullDescription),
     input.isProgramLike,
   );
-  if (
-    derived &&
+  const derivedPasses =
+    Boolean(derived) &&
     !refused(derived) &&
     shortDescriptionQuality(derived, input.fullDescription, input.researchAreas, {
       entityType: input.entityType,
-    }).isUseful
-  ) {
-    return derived;
-  }
+    }).isUseful;
+  if (derivedPasses && cardLineFitsBrowseCard(derived)) return derived;
+  // A passing line that the browse card would cut mid-sentence is held back while a
+  // line that shows whole is sought, and is still preferred to the topic summary.
   const full = textValue(input.fullDescription);
+  let synthesized = '';
   if (input.synthesize && full) {
-    const synthesized = rejectStudiesLeadOnProgramLike(
+    const candidate = rejectStudiesLeadOnProgramLike(
       await input.synthesize(full),
       input.isProgramLike,
     );
     if (
-      synthesized &&
-      !refused(synthesized) &&
-      shortDescriptionQuality(synthesized, full, input.researchAreas, {
+      candidate &&
+      !refused(candidate) &&
+      shortDescriptionQuality(candidate, full, input.researchAreas, {
         entityType: input.entityType,
       }).isUseful
     ) {
-      return synthesized;
+      synthesized = candidate;
     }
   }
+  if (synthesized && cardLineFitsBrowseCard(synthesized)) return synthesized;
+  if (derivedPasses) return derived;
+  if (synthesized) return synthesized;
   const researchAreasSummary = rejectStudiesLeadOnProgramLike(
     buildResearchAreasCardSummary(input.researchAreas),
     input.isProgramLike,

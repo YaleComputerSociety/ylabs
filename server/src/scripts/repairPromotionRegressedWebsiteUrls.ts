@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { probeSourceLink, type SourceLinkProbeResult } from '../services/sourceLinkHealth';
 import {
   applyStudentVisibilityGatePlans,
@@ -26,7 +30,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'repair-promotion-regressed-website-urls';
 
@@ -81,7 +85,7 @@ async function probeVerdicts(
 
 export async function runRepairPromotionRegressedWebsiteUrls(
   options: RepairPromotionRegressedWebsiteUrlsOptions,
-): Promise<{ plans: WebsiteUrlRepairPlan[]; applied: boolean }> {
+): Promise<{ plans: WebsiteUrlRepairPlan[]; applied: boolean; indexSync: IndexSyncOutcome }> {
   const slugs = PROMOTION_REGRESSED_WEBSITE_URL_DECISIONS.map((decision) => decision.slug);
   const entities = await ResearchEntity.find({ slug: { $in: slugs } })
     .select('slug websiteUrl sourceUrls manuallyLockedFields')
@@ -103,7 +107,7 @@ export async function runRepairPromotionRegressedWebsiteUrls(
     ),
   );
 
-  if (!options.apply) return { plans, applied: false };
+  if (!options.apply) return { plans, applied: false, indexSync: NO_INDEX_SYNC };
 
   const regateIds: string[] = [];
   const resyncIds: mongoose.Types.ObjectId[] = [];
@@ -152,12 +156,11 @@ export async function runRepairPromotionRegressedWebsiteUrls(
   // The re-gate path re-indexes the rows it touches; a restore does not go through
   // it, and `websiteUrl` is a searchable attribute, so the replaced dead URL would
   // stay keyword-matchable in Meilisearch without this.
-  if (resyncIds.length > 0) {
-    const docs = await ResearchEntity.find({ _id: { $in: resyncIds } }).lean();
-    if (docs.length > 0) await syncEntities('researchEntity', docs);
-  }
+  const docs =
+    resyncIds.length > 0 ? await ResearchEntity.find({ _id: { $in: resyncIds } }).lean() : [];
+  const indexSync = await syncResearchEntitiesWithOutcome(docs);
 
-  return { plans: appliedPlans, applied: true };
+  return { plans: appliedPlans, applied: true, indexSync };
 }
 
 async function main(): Promise<void> {
@@ -174,7 +177,7 @@ async function main(): Promise<void> {
   }
   await initializeConnections();
   try {
-    const { plans, applied } = await runRepairPromotionRegressedWebsiteUrls(options);
+    const { plans, applied, indexSync } = await runRepairPromotionRegressedWebsiteUrls(options);
     const summary = summarizeWebsiteUrlRepairPlans(plans);
     console.log(`${SCRIPT_NAME}: ${applied ? 'APPLIED' : 'DRY RUN'}`);
     for (const plan of plans) {
@@ -187,7 +190,7 @@ async function main(): Promise<void> {
         `  ${plan.slug}\n     from ${plan.currentWebsiteUrl ?? '(none)'}\n     ${outcome}`,
       );
     }
-    console.log(`\n${JSON.stringify(summary)}`);
+    console.log(`\n${JSON.stringify({ ...summary, ...indexSync })}`);
     if (summary.regateSlugs.length > 0) {
       console.log(
         `Re-gated after clearing: ${summary.regateSlugs.join(', ')}${applied ? '' : ' (would re-gate on --apply)'}`,
@@ -198,7 +201,11 @@ async function main(): Promise<void> {
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
       fs.writeFileSync(
         safeOutput,
-        JSON.stringify({ generatedAt: new Date().toISOString(), applied, summary, plans }, null, 2),
+        JSON.stringify(
+          { generatedAt: new Date().toISOString(), applied, summary, indexSync, plans },
+          null,
+          2,
+        ),
       );
       console.log(`Saved report to ${safeOutput}`);
     }

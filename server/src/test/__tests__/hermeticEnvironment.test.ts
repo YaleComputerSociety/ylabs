@@ -23,7 +23,7 @@ describe('the server suite never resolves a live backend from the environment (#
   });
 
   it('leaves every fenced name unset while the suite runs', () => {
-    dotenv.config();
+    dotenv.config({ quiet: true });
     for (const key of fencedEnvironmentKeys()) {
       expect(process.env[key], `${key} must not be readable from a test`).toBeUndefined();
     }

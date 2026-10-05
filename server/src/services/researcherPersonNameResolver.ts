@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
-import { Researcher } from '../models/researcher';
+import { isValidOrcid, Researcher } from '../models/researcher';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import {
+  givenNamesCouldNameOnePerson,
   givenNamesEquivalent,
   surnameFetchRegex,
   surnameOnlyMatch,
@@ -15,6 +16,7 @@ export type ResearcherPersonNameResolutionStatus = 'matched' | 'absent' | 'ambig
 export interface ResearcherPersonNameResolution {
   status: ResearcherPersonNameResolutionStatus;
   researcherId?: mongoose.Types.ObjectId;
+  everyCandidateNamesSomeoneElse?: boolean;
 }
 
 export interface ResearcherNameCandidate {
@@ -25,6 +27,7 @@ export interface ResearcherNameCandidate {
 export interface ResearcherPersonNameResolverDeps {
   findResearchersBySurname: (surnameRegex: RegExp) => Promise<ResearcherNameCandidate[]>;
   resolveResearcherIdByNetid: (netid: string) => Promise<mongoose.Types.ObjectId | undefined>;
+  findResearcherByOrcid: (orcid: string) => Promise<ResearcherNameCandidate | undefined>;
 }
 
 const defaultFindResearchersBySurname = async (
@@ -50,6 +53,23 @@ const defaultResolveResearcherIdByNetid = async (
   return researcher?._id ?? undefined;
 };
 
+const defaultFindResearcherByOrcid = async (
+  orcid: string,
+): Promise<ResearcherNameCandidate | undefined> =>
+  ((await Researcher.findOne(
+    { 'identifiers.orcid': orcid, archived: { $ne: true } },
+    { _id: 1, displayName: 1 },
+  ).lean()) as ResearcherNameCandidate | null) ?? undefined;
+
+export function normalizeOrcid(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const bare = value
+    .trim()
+    .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
+    .toUpperCase();
+  return isValidOrcid(bare) ? bare : undefined;
+}
+
 const asResearcherId = (value: ResearcherNameCandidate['_id']): mongoose.Types.ObjectId =>
   value instanceof mongoose.Types.ObjectId ? value : new mongoose.Types.ObjectId(String(value));
 
@@ -57,6 +77,34 @@ const normalizeNetid = (value: unknown): string | undefined => {
   const netid = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return netid.length > 0 ? netid : undefined;
 };
+
+export async function resolveResearcherIdForOrcid(
+  rawOrcid: string | undefined,
+  claimedName: string,
+  deps?: Partial<ResearcherPersonNameResolverDeps>,
+): Promise<ResearcherPersonNameResolution> {
+  const orcid = normalizeOrcid(rawOrcid);
+  if (!orcid) return { status: 'absent' };
+  const findResearcherByOrcid = deps?.findResearcherByOrcid ?? defaultFindResearcherByOrcid;
+  const holder = await findResearcherByOrcid(orcid);
+  if (!holder) return { status: 'absent' };
+  const claimedSurname = splitName(claimedName).last;
+  const holderSurname = splitName(holder.displayName || '').last;
+  if (claimedSurname && !surnamesCompatible(claimedSurname, holderSurname)) {
+    return { status: 'ambiguous' };
+  }
+  return { status: 'matched', researcherId: asResearcherId(holder._id) };
+}
+
+// A lone token is read as a surname. A single-token query reads its candidates the same way,
+// because reading only the query that way made a single-token researcher unmatchable by its
+// own name, so every pass minted it again. A full-name query keeps the plain split, so a bare
+// surname record cannot turn a full name's lookup ambiguous.
+function personNameParts(name: string): { first: string; last: string } {
+  const { first, last } = splitName(name);
+  if (!last && first && !/\s/.test(first)) return { first: '', last: first };
+  return { first, last };
+}
 
 export async function resolveResearcherIdForPersonName(
   name: string,
@@ -74,11 +122,7 @@ export async function resolveResearcherIdForPersonName(
   }
 
   if (!name) return { status: 'absent' };
-  let { first, last } = splitName(name);
-  if (!last && first && !/\s/.test(first)) {
-    last = first;
-    first = '';
-  }
+  const { first, last } = personNameParts(name);
   if (!last) return { status: 'absent' };
 
   const surnameRe = surnameFetchRegex(last);
@@ -88,7 +132,12 @@ export async function resolveResearcherIdForPersonName(
   if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
 
   const candidates = fetched
-    .map((candidate) => ({ candidate, parsed: splitName(candidate.displayName || '') }))
+    .map((candidate) => ({
+      candidate,
+      parsed: first
+        ? splitName(candidate.displayName || '')
+        : personNameParts(candidate.displayName || ''),
+    }))
     .filter(({ parsed }) => surnamesCompatible(last, parsed.last));
 
   if (!first) {
@@ -117,5 +166,11 @@ export async function resolveResearcherIdForPersonName(
     if (byPrefix.length > 1) return { status: 'ambiguous' };
   }
 
-  return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
+  if (candidates.length === 0) return { status: 'absent' };
+  const everyCandidateNamesSomeoneElse = candidates.every(
+    ({ parsed }) => !givenNamesCouldNameOnePerson(first, parsed.first),
+  );
+  return everyCandidateNamesSomeoneElse
+    ? { status: 'ambiguous', everyCandidateNamesSomeoneElse }
+    : { status: 'ambiguous' };
 }

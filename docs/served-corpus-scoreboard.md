@@ -80,10 +80,12 @@ The dominant shape is `sanitizeResearchHomeSelfReferenceCopyFields`, which runs 
 The first version of this command used the first of those two projections, and for its first hour it reported copy that 160 served rows do not have (#2575).
 
 The browse card is a different surface again, and the two are **not nested in either direction**.
-Browse gates with the name-agnostic `researchEntityServesPublicDetail` and resolves its own card copy, so a row can pass one surface and fail the other: the gate never sees the mismatched-name strip, which can shorten or blank the line the card then has to render, and `shortDescriptionQuality` scores the short relative to the full.
+Browse gates with the name-agnostic `researchEntityServesPublicDetail`, so a row can pass one surface and fail the other.
 The lead set is no longer part of that gap: since #2240 browse batches the detail route's own derivation (`optionalPublicLeadMemberNames`), so a possessive naming the record's own lead survives on both surfaces or on neither.
-Card-only copy is therefore out of scope here: `cardDescription` via `resolveResearchHomeCardSummary`, and the "Name (Department)" decoration the list path applies to colliding names.
-A `shortDescription` that reads clean on this scoreboard can still be summarised badly on a card.
+Nor is the card line itself part of it any more: since #3747 the browse `cardDescription` is the row's own served card (`servedResearchEntityCardDescription`, the same resolver the detail card and the visibility gate read) or the named "Limited public description" state, so it cannot be a different summary of the same row.
+It used to be `resolveResearchHomeCardSummary` over the stored short and body, which put the whole body in the card slot on 143 of the 3,429 rows browse served.
+Since #4124 the list path also resolves that card from the same gate representation the detail route builds its DTO from (`buildResearchEntityPublicDescriptionRepresentation(...).entity`), because the resolver run over the raw hit skipped the description sanitizers and the short pre-resolution that representation applies, and 9 of 3,426 browse cards on Development read differently from their detail card.
+The card-only copy still out of scope here is the "Name (Department)" decoration the list path applies to colliding names.
 
 ## Numbers from before 2026-09-13 are not comparable
 
@@ -186,6 +188,8 @@ A diff count alone cannot tell you whether a defect was repaired or reworded.
 
 Tier and archived are not the last gate.
 `getResearchGroupDetail` returns null, and `/api/research/:slug` therefore 404s, when the public-description invariant fails or when the stored copy names a deceased lead (#982), even for a row that is `student_ready` and not archived.
+An admin caller is the one exception: the route passes `includeWithheldForOperator`, so an admin sees the page with an `operatorPreview` block naming the tier and each withholding check (#4564).
+Every script that asks whether a row is served calls `getResearchGroupDetail` without that option, so it still answers for a student.
 The scoreboard calls `researchEntityServesPublicDetail`, the same entity-only predicate the browse list filters on, so it covers both halves from one place instead of reimplementing either.
 
 So `still served` means the detail route would actually serve the row, and the holdback gets its own count rather than being absorbed into `still served` (which would report copy for a page nobody can reach) or into `no longer served` (which would read as a tier or archived change that never happened).
@@ -208,11 +212,11 @@ A run where nothing is served because nothing is `student_ready` is a different 
 ## Why it opens a Mongoose connection, and why that is safe
 
 Calling the real route needs the models, so this command connects Mongoose.
-That is the one thing a read-only command must not let change the environment it reads: connecting builds indexes for every registered model, which recreates a collection somebody deliberately dropped.
+That is the one thing a read-only command must not let change the environment it reads: connecting with Mongoose's defaults builds indexes for every registered model, which recreates a collection somebody deliberately dropped.
 
 Two things make it safe, and the second is a check rather than an assumption:
 
-- `autoIndex` is disabled before `mongoose.connect`, and a test pins that ordering rather than merely pinning that both calls exist.
+- It connects through `connectScriptMongo`, which sets `autoIndex: false` and `autoCreate: false` on the connection, and `db/__tests__/everyEntryPointConnectsWithMongoOptions.test.ts` fails on any direct connect that bypasses it.
 - The collection set is listed with the raw driver before and after, and the run fails naming any collection that appeared or disappeared.
 
 Corpus counts come from the raw driver, not the models.

@@ -4,7 +4,8 @@
  *
  * Algorithm:
  *   1. If the field is in manuallyLockedFields on the entity, return the locked value.
- *   2. Group observations by serialized value.
+ *   2. Group observations by serialized value. A website URL observed over both http and
+ *      https for the same host and path is one group that resolves to its https form.
  *   3. For each group: weight = sum(source.weight × recencyDecay(observedAt)).
  *   4. Apply an agreement bonus when more than one source contributes to a group.
  *   5. Return the highest-weighted group's value; flag conflict if runner-up is close.
@@ -24,8 +25,10 @@ import {
   type DescriptionEntityKind,
 } from '../utils/researchHomeDescriptionSelection';
 import { isCareerBiographyDescription } from '../utils/careerBiographyDescription';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
+import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
 
 export interface ResolverObservation {
   field: string;
@@ -79,6 +82,21 @@ const PROSE_COMPLETENESS_FIELDS = new Set(['bio', 'fullDescription', 'researchIn
 // for any realistic observation age.
 const NON_DECAYING_SOURCES = new Set(['manual-admin-edit', 'manual-pi-edit']);
 const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
+// Owner decision 2026-10-04 (#4788): an admin's description is evidence input to the
+// written description, not the description, so on these fields it decays and is
+// reordered like any other source. Every other field keeps the curated precedence.
+const ADMIN_EDIT_ORDINARY_FIELDS = new Set(['fullDescription', 'shortDescription', 'description']);
+const ADMIN_EDIT_SOURCE = 'manual-admin-edit';
+
+// The one writer of `fullDescription` (#4788). A servable written body outranks every
+// copied value, which stays in the ranked list as the fallback the materializer walks
+// to when the writer refused, has not run, or its body fails a content gate. A PI's own
+// edit is not copied page text, so it is the one source the written body does not
+// outrank.
+export const WRITTEN_DESCRIPTION_SOURCE_NAME = 'coverage-synthesis-llm';
+const WRITTEN_DESCRIPTION_SOURCES = new Set([WRITTEN_DESCRIPTION_SOURCE_NAME]);
+const WRITTEN_DESCRIPTION_FIELDS = new Set(['fullDescription']);
+const WRITTEN_DESCRIPTION_PEER_SOURCES = new Set(['manual-pi-edit']);
 
 // Sources whose description prose is keyword-synthesized from directory listings
 // rather than extracted from the entity's own page. For prose fields these rank
@@ -87,6 +105,13 @@ const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
 // roster one-liner; they still win when they are the only available source.
 const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
 const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
+// Sources that fill a field only when no other source states it. A lab roster's alumni
+// count carries no year or programme, so it must not displace a fellowship lane's dated
+// advisee history on the stored field (#4430).
+const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string>>> = {
+  researchAreas: new Set(['bbs-research-track']),
+  pastUndergradAdvisees: new Set(['lab-microsite-undergrad-llm']),
+};
 const PROSE_EXTENSION_BONUS = 1.25;
 
 // A research entity is a lab, faculty research area, or program - never a
@@ -163,6 +188,25 @@ export const MICROSITE_NAME_SOURCES = new Set([
   'lab-microsite-description-llm',
   'lab-microsite-undergrad-llm',
 ]);
+
+/**
+ * The names a row's own site gives itself, as the microsite lanes assert them. Those
+ * lanes emit an umbrella-headed name only from a page that names the row's person as
+ * its Principal Investigator, so this list is what the name authority's
+ * `siteDeclaredOwnNames` reads.
+ */
+export function siteDeclaredOwnNamesFromObservations(
+  observations: readonly { field?: unknown; sourceName?: unknown; value?: unknown }[],
+): string[] {
+  return observations
+    .filter(
+      (observation) =>
+        ENTITY_NAME_FIELDS.has(String(observation.field)) &&
+        MICROSITE_NAME_SOURCES.has(String(observation.sourceName)) &&
+        typeof observation.value === 'string',
+    )
+    .map((observation) => String(observation.value));
+}
 const RESEARCH_HOME_HEAD_NOUN_RE =
   /\b(labs?|laborator(?:y|ies)|cent(?:er|re)s?|institutes?|programs?|programmes?|initiatives?|groups?|projects?|collaboratives?|consorti(?:um|a)|networks?|clinics?|cores?|facilit(?:y|ies)|observator(?:y|ies)|studios?|workshops?)\b/i;
 const FACULTY_RESEARCH_NAME_RE = /\bfaculty\s+research\s*$/i;
@@ -181,14 +225,38 @@ function serializeValue(value: unknown): string {
   return `x:${String(value)}`;
 }
 
+const SCHEME_EQUIVALENT_URL_FIELDS = new Set(['websiteUrl', 'website']);
+const HTTP_SCHEME_PREFIX = /^https?:\/\//i;
+const HTTPS_SCHEME_PREFIX = /^https:\/\//i;
+
+function groupKeyForFieldValue(field: string, value: unknown): string {
+  if (SCHEME_EQUIVALENT_URL_FIELDS.has(field) && typeof value === 'string') {
+    return serializeValue(value.trim().replace(HTTP_SCHEME_PREFIX, 'https://'));
+  }
+  return serializeValue(value);
+}
+
+function isHttpsUrlValue(value: unknown): boolean {
+  return typeof value === 'string' && HTTPS_SCHEME_PREFIX.test(value.trim());
+}
+
 function recencyDecay(observedAt: Date, now: Date, halfLifeDays: number): number {
   const ageMs = Math.max(0, now.getTime() - observedAt.getTime());
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   return Math.pow(0.5, ageDays / halfLifeDays);
 }
 
-function halfLifeDaysForSource(sourceName: string, defaultHalfLifeDays: number): number {
-  return NON_DECAYING_SOURCES.has(sourceName)
+function isCuratedSourceForField(sourceName: string, field: string): boolean {
+  if (!NON_DECAYING_SOURCES.has(sourceName)) return false;
+  return !(sourceName === ADMIN_EDIT_SOURCE && ADMIN_EDIT_ORDINARY_FIELDS.has(field));
+}
+
+function halfLifeDaysForSource(
+  sourceName: string,
+  defaultHalfLifeDays: number,
+  field: string,
+): number {
+  return isCuratedSourceForField(sourceName, field)
     ? NON_DECAYING_SOURCE_HALF_LIFE_DAYS
     : defaultHalfLifeDays;
 }
@@ -241,6 +309,29 @@ function isSynthesizedProseGroup(group: { sources: Set<string> }): boolean {
     if (!SYNTHESIZED_DESCRIPTION_SOURCES.has(source)) return false;
   }
   return true;
+}
+
+function isFallbackOnlyGroup(field: string, group: { sources: Set<string> }): boolean {
+  if (group.sources.size === 0) return false;
+  for (const source of group.sources) {
+    if (!sourceRanksOnlyAsFieldFallback(field, source)) return false;
+  }
+  return true;
+}
+
+export function sourceRanksOnlyAsFieldFallback(field: string, sourceName: unknown): boolean {
+  return Boolean(FALLBACK_ONLY_SOURCES_BY_FIELD[field]?.has(String(sourceName ?? '')));
+}
+
+function demoteFallbackOnlyGroups(
+  field: string,
+  groups: Array<{ sources: Set<string>; demoted?: boolean }>,
+): void {
+  if (!FALLBACK_ONLY_SOURCES_BY_FIELD[field]) return;
+  if (groups.every((group) => isFallbackOnlyGroup(field, group))) return;
+  for (const group of groups) {
+    if (isFallbackOnlyGroup(field, group)) group.demoted = true;
+  }
 }
 
 function preferExtractedProseGroups<T extends { sources: Set<string> }>(
@@ -302,16 +393,18 @@ function isUsefulProseGroup(field: string, group: { value: unknown }): boolean {
 // A curated override is a human decision about what this entity should say, so
 // it is never reordered by a text heuristic. Same set as the decay exemption
 // above, for the same reason: these two sources are the manual-edit lanes.
-function isCuratedGroup(group: { sources: Set<string> }): boolean {
+function isCuratedGroup(group: { sources: Set<string> }, field: string): boolean {
   for (const source of group.sources) {
-    if (NON_DECAYING_SOURCES.has(source)) return true;
+    if (isCuratedSourceForField(source, field)) return true;
   }
   return false;
 }
 
-function isDemotableBioProseGroup(group: RankedGroup): boolean {
+function isDemotableBioProseGroup(field: string, group: RankedGroup): boolean {
   return (
-    typeof group.value === 'string' && !isCuratedGroup(group) && isDemotablePersonBio(group.value)
+    typeof group.value === 'string' &&
+    !isCuratedGroup(group, field) &&
+    (isDemotablePersonBio(group.value) || isBiographyRatherThanResearch(group.value))
   );
 }
 
@@ -368,7 +461,7 @@ function demotePersonBioProseGroups(
 ): void {
   if (!PERSON_BIO_DEMOTION_FIELDS.has(field)) return;
   const bioGroups = groups.filter(isPersonBioProseGroup);
-  if (bioGroups.length === 0 || bioGroups.length === groups.length) return;
+  if (bioGroups.length === 0) return;
   const synthesisReplacementExists = groups.some(
     (group) =>
       !isPersonBioProseGroup(group) &&
@@ -379,10 +472,16 @@ function demotePersonBioProseGroups(
     for (const group of bioGroups) group.demoted = true;
     return;
   }
-  const demotable = bioGroups.filter(isDemotableBioProseGroup);
-  if (demotable.length === 0) return;
+  const demotable = bioGroups.filter((group) => isDemotableBioProseGroup(field, group));
+  if (demotable.length === 0 || demotable.length === groups.length) return;
   const promoted = highestWeightedGroup(groups.filter((group) => !demotable.includes(group)));
-  if (!promoted || !isServableResearchHomeProseGroup(field, promoted, kind)) return;
+  if (
+    !promoted ||
+    isBiographyRatherThanResearch(promoted.value) ||
+    !isServableResearchHomeProseGroup(field, promoted, kind)
+  ) {
+    return;
+  }
   for (const group of demotable) group.demoted = true;
 }
 
@@ -494,7 +593,7 @@ function demoteUnusableProseGroups(
 ): void {
   if (!QUALITY_DEMOTION_FIELDS.has(field)) return;
   const unusable = groups.filter(
-    (group) => !group.demoted && !isCuratedGroup(group) && !isUsefulProseGroup(field, group),
+    (group) => !group.demoted && !isCuratedGroup(group, field) && !isUsefulProseGroup(field, group),
   );
   if (unusable.length === 0) return;
   const promoted = highestWeightedGroup(
@@ -502,6 +601,37 @@ function demoteUnusableProseGroups(
   );
   if (!promoted || !isAdoptableResearchProseGroup(field, promoted, kind)) return;
   for (const group of unusable) group.demoted = true;
+}
+
+function hasSourceIn(group: { sources: Set<string> }, names: ReadonlySet<string>): boolean {
+  for (const source of group.sources) {
+    if (names.has(source)) return true;
+  }
+  return false;
+}
+
+/**
+ * Runs last, so a written body every earlier rule left standing is the one judged.
+ * "Servable" is the bar the resolver can ask without entity context: undemoted, clears
+ * the quality bar, is not a biography, and does not narrate its sources. The materializer's serving bar
+ * still runs on whatever wins, and walks past a written body it refuses.
+ */
+function preferWrittenDescriptionGroups(field: string, groups: RankedGroup[]): void {
+  if (!WRITTEN_DESCRIPTION_FIELDS.has(field)) return;
+  const servableWritten = groups.some(
+    (group) =>
+      !group.demoted &&
+      hasSourceIn(group, WRITTEN_DESCRIPTION_SOURCES) &&
+      isUsefulProseGroup(field, group) &&
+      !isBiographyRatherThanResearch(group.value) &&
+      !isSourcePageNarrationDescription(group.value),
+  );
+  if (!servableWritten) return;
+  for (const group of groups) {
+    if (hasSourceIn(group, WRITTEN_DESCRIPTION_SOURCES)) continue;
+    if (hasSourceIn(group, WRITTEN_DESCRIPTION_PEER_SOURCES)) continue;
+    group.demoted = true;
+  }
 }
 
 function nameHasResearchHomeHeadNoun(value: unknown): boolean {
@@ -596,17 +726,23 @@ function rankFieldGroups(
 
   const groups = new Map<string, RankedGroup>();
   for (const obs of fieldObs) {
-    const key = serializeValue(obs.value);
+    const key = groupKeyForFieldValue(field, obs.value);
     const decay = recencyDecay(
       obs.observedAt,
       now,
-      halfLifeDaysForSource(obs.sourceName, halfLifeDays),
+      halfLifeDaysForSource(obs.sourceName, halfLifeDays, field),
     );
     const contribution = obs.confidence * decay;
     let g = groups.get(key);
     if (!g) {
       g = { value: obs.value, weight: 0, sources: new Set() };
       groups.set(key, g);
+    } else if (
+      SCHEME_EQUIVALENT_URL_FIELDS.has(field) &&
+      isHttpsUrlValue(obs.value) &&
+      !isHttpsUrlValue(g.value)
+    ) {
+      g.value = obs.value;
     }
     g.weight += contribution;
     g.sources.add(obs.sourceName);
@@ -627,6 +763,8 @@ function rankFieldGroups(
   demotePersonBioProseGroups(field, rankable, descriptionKind);
   demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
   demoteUnusableProseGroups(field, rankable, descriptionKind);
+  demoteFallbackOnlyGroups(field, rankable);
+  preferWrittenDescriptionGroups(field, rankable);
   return rankable.sort(
     (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
   );

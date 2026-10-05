@@ -57,7 +57,7 @@ import {
 
 const __filenameLocal = fileURLToPath(import.meta.url);
 const SERVER_ROOT = path.resolve(path.dirname(__filenameLocal), '../..');
-dotenv.config({ path: path.resolve(SERVER_ROOT, '.env') });
+dotenv.config({ path: path.resolve(SERVER_ROOT, '.env'), quiet: true });
 
 interface Feeder {
   gate: GateScorecardName;
@@ -243,7 +243,7 @@ function runFeeder(feeder: Feeder, startedAt: number): Promise<FeederResult> {
       // Success = the canonical artifact was written/updated during this run. A gate script that
       // exits nonzero because its gate did not PASS (e.g. launch-trust has held rows) still writes
       // a valid, current scorecard — that is a successful refresh, not a failure.
-      let wrote = false;
+      let wrote: boolean;
       try {
         wrote = fs.existsSync(feeder.output) && fs.statSync(feeder.output).mtimeMs >= startedAt;
       } catch {

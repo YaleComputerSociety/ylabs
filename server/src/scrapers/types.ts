@@ -3,6 +3,9 @@
  */
 import type { ObservedEntityType } from '../models/observation';
 import type { WorkPlannerMetrics } from './workPlanner';
+import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
+import type { SweepPageReuseStats } from './utils/sweepPageReuse';
+import type { ThrottleRetryStats } from './utils/throttleRetryStats';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -30,6 +33,25 @@ export interface ScraperContext {
   options: ScraperOptions;
   emit: (obs: ObservationInput | ObservationInput[]) => Promise<void>;
   log: (msg: string, meta?: Record<string, unknown>) => void;
+  /**
+   * Report what the run has measured so far, merged into the run's stored `metrics`
+   * whether the lane finishes or throws.
+   *
+   * `metrics` on `ScraperResult` rides on the return value, so a throw discards every
+   * measurement the lane had made: one Development run died after 474 observations
+   * with a stack overflow and stored nothing about how far it had got, which is the
+   * case a diagnostic is worth most (#3890). Report through here as soon as a number
+   * is known, and a later crash or early return keeps it.
+   *
+   * A returned `metrics` object wins over what was reported here, key by key, because
+   * the return value is the lane's final word.
+   *
+   * Optional only so the several dozen test fixtures that build a context by hand keep
+   * compiling; the orchestrator always supplies it, which `orchestrator.test.ts` pins.
+   * Call it as `ctx.reportMetrics?.(...)`. A fixture that omits it loses what a lane
+   * reports, so a lane test asserting reported metrics has to supply one.
+   */
+  reportMetrics?: (metrics: ScraperMetrics) => void;
 }
 
 export interface ScraperOptions {
@@ -55,12 +77,18 @@ export interface ScraperOptions {
   explain?: boolean;
   explainLimit?: number;
   triggeredBy?: 'cli' | 'cron' | 'admin';
+  benchmarkRun?: boolean;
+  // The moment a date-reading lane treats as now. A benchmark pins it to its capture time,
+  // so a replay next week infers the same deadline years and acceptance windows (#4132).
+  referenceDate?: Date;
 }
 
 export interface ScraperResult {
   observationCount: number;
   entitiesObserved: number;
   notes?: string;
+  partialFailures?: string[];
+  failedClosed?: boolean;
   metrics?: ScraperMetrics;
   fetchMetrics?: ScraperFetchMetrics;
 }
@@ -72,12 +100,7 @@ export interface IScraper {
 }
 
 export type ScraperFetchMode =
-  | 'http'
-  | 'rendered'
-  | 'browser'
-  | 'remote-browser'
-  | 'api'
-  | (string & {});
+  'http' | 'rendered' | 'browser' | 'remote-browser' | 'api' | (string & {});
 
 export interface ScraperFetchAttemptMetrics<TFetchMode extends string = ScraperFetchMode> {
   target?: string;
@@ -98,6 +121,9 @@ export type ScraperFetchMetric<TFetchMode extends string = ScraperFetchMode> =
 
 export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMode> {
   attempts: ScraperFetchAttemptMetrics<TFetchMode>[];
+  httpCache?: HttpValidatorCacheStats;
+  sweepPageReuse?: SweepPageReuseStats;
+  throttleRetry?: ThrottleRetryStats;
   summary: {
     total: number;
     succeeded: number;
@@ -121,9 +147,44 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   };
 }
 
+export interface RecordWebsiteLinkMetrics {
+  probed: number;
+  dead: number;
+  failed: number;
+  capped: number;
+}
+
+export interface FundShortLinkMetrics {
+  lookedUp: number;
+  citedAsFundPage: number;
+  notAFundPage: number;
+  failed: number;
+  capped: number;
+}
+
 export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   fetchAttempts?: ScraperFetchAttemptMetrics<TFetchMode>[];
   workPlanner?: WorkPlannerMetrics;
+  /**
+   * What each unit inside this lane yielded, keyed by unit: one track page, one
+   * department roster, one centre index. `sourceYieldGuard` compares each key across
+   * runs, so a unit going to zero fails the run even while the lane's other units
+   * keep the source total healthy (#3876).
+   *
+   * Report a unit only on a run that attempted it. An omitted unit reads as
+   * inconclusive; a zero reads as barren.
+   */
+  unitYields?: Record<string, number>;
+  descriptionSlotAttestation?: {
+    vocabulary: number;
+    empty: number;
+    refused: number;
+    unclaimed: number;
+    refusedByGuard: Partial<Record<string, number>>;
+  };
+  quotesNotOnPage?: number;
+  evidenceQuotesWithdrawn?: number;
+  evidenceQuotesRecited?: number;
   fellowshipCatalog?: {
     discovered: number;
     emitted: number;
@@ -137,6 +198,10 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
     sitemapProgramsDiscovered?: number;
     detailPagesCrawled?: number;
     detailPagesCapped?: number;
+    nonProgramPagesRefused?: Record<string, number>;
+    nonProgramRowsRetired?: number;
+    shortLinks?: FundShortLinkMetrics;
+    recordWebsiteLinks?: RecordWebsiteLinkMetrics;
   };
   reuPrograms?: {
     seeded: number;

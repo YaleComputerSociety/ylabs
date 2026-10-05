@@ -2,53 +2,39 @@ import axios from './axios';
 import { getApiBaseUrl } from './apiBaseUrl';
 
 export type LegacyResearchEventType =
-  | 'research_view'
-  | 'pathway_save'
-  | 'ways_in_click'
-  | 'contact_route_click'
-  | 'source_link_click';
+  'research_view' | 'pathway_save' | 'ways_in_click' | 'contact_route_click' | 'source_link_click';
 
 export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_search',
-  'research_entity_impression',
+  'research_results_view',
   'research_profile_open',
   'research_source_review',
   'research_filter_change',
   'research_save',
   'research_compare',
   'research_plan_update',
-  'research_qualified_action',
 ] as const;
 
 export type ResearchJourneyEventType = (typeof RESEARCH_JOURNEY_EVENT_TYPES)[number];
 export type ResearchEventType = LegacyResearchEventType | ResearchJourneyEventType;
+export type ResearchSaveSurface = 'profile' | 'search' | 'saved_plans';
 export type ResearchEntityType = 'profile' | 'listing' | 'fellowship' | 'research_entity';
-export type PlanningContextCategory =
-  | 'open_position'
-  | 'official_application'
-  | 'reviewed_route'
-  | 'qualified_participation';
 
 export type ResearchJourneyPayload =
   | {
-      outcome: 'results' | 'zero_results' | 'error';
+      outcome: 'results' | 'zero_results' | 'degraded' | 'error';
       resultCountBucket: '0' | '1-5' | '6-20' | '21-50' | '51+';
       searchKind: 'query' | 'filtered' | 'department';
       filterCountBucket: '0' | '1' | '2' | '3+';
     }
   | {
       surface: 'browse' | 'search' | 'saved_plans' | 'related_programs';
-      positionBucket: '1-3' | '4-10' | '11-24' | '25+';
+      pageBucket: '1' | '2' | '3-4' | '5+';
     }
-  | { source: 'browse' | 'search' | 'direct' | 'saved_plans' | 'related_programs' }
+  | { source: ResearchProfileOpenSource }
   | {
       sourceCategory:
-        | 'entity_website'
-        | 'faculty_profile'
-        | 'orcid'
-        | 'publication'
-        | 'evidence'
-        | 'other';
+        'entity_website' | 'faculty_profile' | 'orcid' | 'publication' | 'evidence' | 'other';
     }
   | {
       operation: 'apply' | 'remove' | 'clear' | 'panel_open' | 'panel_close';
@@ -61,7 +47,7 @@ export type ResearchJourneyPayload =
         | 'research_type'
         | 'hosts_undergrads';
     }
-  | { operation: 'save' | 'remove'; surface: 'profile' | 'search' | 'saved_plans' }
+  | { operation: 'save' | 'remove'; surface: ResearchSaveSurface }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }
   | {
       field:
@@ -72,28 +58,41 @@ export type ResearchJourneyPayload =
         | 'target_deadline'
         | 'acted_on_date'
         | 'follow_up';
-    }
-  | { actionCategory: PlanningContextCategory };
+    };
 
 interface TrackResearchEventParams {
   eventType: ResearchEventType;
   entityType?: ResearchEntityType;
   entityId?: string;
+  entityIds?: string[];
   payload?: Record<string, string> | ResearchJourneyPayload;
   dedupeKey?: string;
 }
 
 const sentOnceKeys = new Set<string>();
 let fallbackInteractionSequence = 0;
-let analyticsEnabled = true;
+let analyticsEnabled: boolean | null = null;
 
-/**
- * The research journey analytics endpoints require an authenticated session, and
- * personalization/analytics stay off for logged-out visitors. Callers set this
- * from auth state so guest browsing never emits an event.
- */
-export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
-  analyticsEnabled = enabled;
+const RESEARCH_PROFILE_OPEN_SOURCES = [
+  'browse',
+  'search',
+  'direct',
+  'saved_plans',
+  'related_programs',
+  'related_research',
+] as const;
+export type ResearchProfileOpenSource = (typeof RESEARCH_PROFILE_OPEN_SOURCES)[number];
+
+export const researchProfileOpenState = (source: ResearchProfileOpenSource) => ({
+  researchProfileOpenSource: source,
+});
+
+export const readResearchProfileOpenSource = (state: unknown): ResearchProfileOpenSource => {
+  const source = (state as { researchProfileOpenSource?: unknown } | null)
+    ?.researchProfileOpenSource;
+  return (RESEARCH_PROFILE_OPEN_SOURCES as readonly unknown[]).includes(source)
+    ? (source as ResearchProfileOpenSource)
+    : 'direct';
 };
 
 export const createResearchAnalyticsInteractionId = (prefix = 'journey'): string => {
@@ -113,13 +112,6 @@ export const researchResultCountBucket = (
   return '51+';
 };
 
-export const researchPositionBucket = (position: number): '1-3' | '4-10' | '11-24' | '25+' => {
-  if (position <= 3) return '1-3';
-  if (position <= 10) return '4-10';
-  if (position <= 24) return '11-24';
-  return '25+';
-};
-
 export const researchCountBucket = (count: number): '1' | '2' | '3-4' | '5+' => {
   if (count <= 1) return '1';
   if (count === 2) return '2';
@@ -131,6 +123,7 @@ type OutgoingResearchEvent = {
   eventType: ResearchEventType;
   entityType?: ResearchEntityType;
   entityId?: string;
+  entityIds?: string[];
   payload?: Record<string, string> | ResearchJourneyPayload;
   dedupeKey?: string;
 };
@@ -146,12 +139,14 @@ const buildOutgoingEvent = ({
   eventType,
   entityType,
   entityId,
+  entityIds,
   payload,
   dedupeKey,
 }: TrackResearchEventParams): OutgoingResearchEvent => ({
   eventType,
   ...(entityType ? { entityType } : {}),
   ...(entityId ? { entityId } : {}),
+  ...(entityIds?.length ? { entityIds } : {}),
   ...(payload ? { payload } : {}),
   ...(dedupeKey ? { dedupeKey } : {}),
 });
@@ -180,10 +175,12 @@ const takeBufferedEvents = (): OutgoingResearchEvent[] => {
  * batched request deterministically; also called on the size threshold.
  */
 export const flushResearchAnalytics = async (): Promise<void> => {
+  if (analyticsEnabled !== true) return;
   await sendResearchEventBatch(takeBufferedEvents());
 };
 
 const flushResearchAnalyticsViaBeacon = (): void => {
+  if (analyticsEnabled !== true) return;
   const events = takeBufferedEvents();
   if (events.length === 0) return;
   const body = JSON.stringify({ events });
@@ -214,13 +211,29 @@ const scheduleResearchAnalyticsFlush = (): void => {
 };
 
 /**
+ * The research journey analytics endpoints require an authenticated session, and
+ * personalization/analytics stay off for logged-out visitors. Callers set this
+ * from auth state so guest browsing never emits an event. Public pages render
+ * before `/check` answers, so until it does the session is unknown: events
+ * buffer, nothing is delivered, and a logged-out answer discards the buffer.
+ */
+export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
+  analyticsEnabled = enabled;
+  if (!enabled) {
+    takeBufferedEvents();
+    return;
+  }
+  if (eventBuffer.length > 0) scheduleResearchAnalyticsFlush();
+};
+
+/**
  * Fire-and-forget analytics. Events are buffered and delivered in batches so
  * ordinary browsing does not emit one request per impression; delivery is
  * guaranteed on the size threshold, a short timer, and tab hide/unload. The
  * promise always resolves so a blocked tracker can never affect interaction.
  */
 export const trackResearchEvent = async (params: TrackResearchEventParams): Promise<void> => {
-  if (!analyticsEnabled) return;
+  if (analyticsEnabled === false) return;
   bindUnloadFlush();
   eventBuffer.push(buildOutgoingEvent(params));
   if (eventBuffer.length >= RESEARCH_EVENT_MAX_BATCH) {
@@ -234,16 +247,32 @@ export const trackResearchEventOnce = (
   onceKey: string,
   event: TrackResearchEventParams,
 ): Promise<void> => {
-  if (!analyticsEnabled) return Promise.resolve();
+  if (analyticsEnabled === false) return Promise.resolve();
   if (sentOnceKeys.has(onceKey)) return Promise.resolve();
   sentOnceKeys.add(onceKey);
   return trackResearchEvent({ ...event, dedupeKey: event.dedupeKey || onceKey });
 };
 
+export const trackResearchResultsView = (
+  onceKey: string,
+  entities: ReadonlyArray<{ _id?: string }>,
+  surface: 'browse' | 'search',
+  page: number,
+): Promise<void> => {
+  const entityIds = entities.map((entity) => entity._id).filter((id): id is string => Boolean(id));
+  if (entityIds.length === 0) return Promise.resolve();
+  return trackResearchEventOnce(onceKey, {
+    eventType: 'research_results_view',
+    entityType: 'research_entity',
+    entityIds,
+    payload: { surface, pageBucket: researchCountBucket(page) },
+  });
+};
+
 export const resetResearchAnalyticsDedupeForTests = (): void => {
   sentOnceKeys.clear();
   fallbackInteractionSequence = 0;
-  analyticsEnabled = true;
+  analyticsEnabled = null;
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;

@@ -13,7 +13,7 @@ import type { StudentVisibilityGateCollection } from '../services/studentVisibil
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions extends LaunchTrustContractOptions {
   strict: boolean;
@@ -120,7 +120,7 @@ async function main() {
   });
 
   await initializeConnections();
-  const report = await runLaunchTrustContractAudit(options);
+  const report = await runLaunchTrustContractAudit({ ...options, environment: guard.environment });
   const output = buildLaunchTrustContractOutput(
     { environment: guard.environment, db: guard.dbLabel, options },
     report as unknown as Record<string, unknown>,

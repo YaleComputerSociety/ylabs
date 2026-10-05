@@ -3,9 +3,17 @@ import {
   buildResearchAreasCardSummary,
   describesResearchFocus,
 } from '../utils/researchEntityDescriptionQuality';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
+import {
+  browseCardHasSixWordsOrFewer,
+  browseCardIsCutMidSentence,
+  browseCardSummary,
+} from '../utils/browseCardSummary';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
-import { publicResearchAreaArray } from './researchEntityDto';
-import { servedResearchEntityCopy } from './servedResearchEntityCard';
+import {
+  decideServedResearchEntityTopics,
+  servedResearchEntityBrowseCardText,
+} from './researchEntityDto';
 import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
@@ -33,6 +41,8 @@ const leadSentence = (value: unknown): string => {
 };
 
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
+
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const nonEmptyStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry) => textValue(entry).length > 0) : [];
@@ -64,11 +74,10 @@ export function servedRowFacts(
   // STORED list, which is why the panel reported topic coverage on 78 served rows
   // that show a student no topic at all, and 797 chips nobody can read (#3379).
   // The guard is not the defect and is left alone; the count was.
-  const searchTopics = publicResearchAreaArray(
-    servedResearchEntityCopy(entity, leadMemberNames).researchAreas,
-  );
+  const searchTopics = decideServedResearchEntityTopics(entity, leadMemberNames).served;
   const shortDescription = textValue(served.shortDescription);
   const areaSummary = textValue(buildResearchAreasCardSummary(searchTopics));
+  const browseCard = browseCardSummary(servedResearchEntityBrowseCardText(entity, leadMemberNames));
 
   return {
     school: textValue(served.school),
@@ -82,6 +91,11 @@ export function servedRowFacts(
       leadSentence(representation.fullDescription || served.fullDescription),
     ),
     shortDescriptionIsAreaEchoOnly: shortDescription.length > 0 && shortDescription === areaSummary,
+    browseCardCutMidSentence: browseCardIsCutMidSentence(browseCard),
+    browseCardSixWordsOrFewer: browseCardHasSixWordsOrFewer(browseCard),
+    fullDescriptionIsBiography:
+      representation.invariant.fullDescriptionUseful &&
+      isBiographyRatherThanResearch(representation.fullDescription),
     nameIsGenericFacultyResearchTitle: GENERIC_FACULTY_RESEARCH_TITLE.test(textValue(served.name)),
     publicDescriptionInvariantPasses: representation.invariant.pass,
   };
@@ -116,6 +130,7 @@ export async function readCorpusQualityReport(
     const batch = servedRows.slice(offset, offset + ROSTER_BATCH_SIZE);
     const rosters = await getResearchEntityRosterByEntityId(batch.map((row: any) => row._id));
     for (const row of batch as any[]) {
+      await yieldToEventLoop();
       facts.push(servedRowFacts(row, publicLeadMemberNames(rosters.get(String(row._id)) || [])));
     }
   }

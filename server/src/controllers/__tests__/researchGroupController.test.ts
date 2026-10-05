@@ -32,10 +32,9 @@ describe('researchGroupController', () => {
     mocks.resolveArchivedResearchEntityCanonicalSlug.mockResolvedValue(null);
   });
 
-  it('does not leak internal service errors from public research detail failures', async () => {
-    mocks.getResearchGroupDetail.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid research detail failed'),
-    );
+  it('rethrows public research detail failures for the global error handler', async () => {
+    const outage = new Error('mongodb://user:pass@example.invalid research detail failed');
+    mocks.getResearchGroupDetail.mockRejectedValue(outage);
 
     const req = { params: { slug: 'example-lab' } } as any;
     const res = {
@@ -43,11 +42,8 @@ describe('researchGroupController', () => {
       status: vi.fn().mockReturnThis(),
     } as any;
 
-    await getResearchGroupBySlug(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research entity' });
-    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
+    await expect(getResearchGroupBySlug(req, res)).rejects.toBe(outage);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('does not echo slugs or internal text from missing public research details', async () => {
@@ -63,6 +59,46 @@ describe('researchGroupController', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Research entity not found' });
+  });
+
+  it('serves a visitor only the student-facing research detail', async () => {
+    mocks.getResearchGroupDetail.mockResolvedValue(null);
+    const req = { params: { slug: 'example-lab' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail).toHaveBeenCalledWith('example-lab', {
+      includeWithheldForOperator: false,
+    });
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('lets an admin preview a research detail withheld from students', async () => {
+    mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
+    const detail = {
+      researchEntity: { slug: 'example-lab' },
+      operatorPreview: {
+        studentVisibilityTier: 'operator_review',
+        studentVisibilityReasons: [],
+        withheldBy: ['visibility_tier'],
+      },
+    };
+    mocks.getResearchGroupDetail.mockResolvedValue(detail);
+    const req = {
+      params: { slug: 'example-lab' },
+      user: { netId: 'admin123', userType: 'admin' },
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.hasAdminAuthorityForUser).toHaveBeenCalledWith(req.user);
+    expect(mocks.getResearchGroupDetail).toHaveBeenCalledWith('example-lab', {
+      includeWithheldForOperator: true,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(detail);
   });
 
   it('rejects malformed public research detail slugs before service work', async () => {
@@ -327,6 +363,53 @@ describe('researchGroupController', () => {
     });
   });
 
+  const embeddingSpendKeyFor = async (ip: unknown): Promise<unknown> => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    mocks.searchResearchGroupsViaMeili.mockClear();
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(
+      { body: { q: 'machine learning', page: 1, pageSize: 24, filters: {} }, ip } as any,
+      res,
+    );
+
+    return mocks.searchResearchGroupsViaMeili.mock.calls[0][5]?.embeddingSpendKey;
+  };
+
+  it('meters query-embedding spend against the shared client bucket, port stripped', async () => {
+    expect(await embeddingSpendKeyFor('203.0.113.7:54321')).toBe(
+      await embeddingSpendKeyFor('203.0.113.7'),
+    );
+    expect(await embeddingSpendKeyFor('203.0.113.7')).not.toBe(
+      await embeddingSpendKeyFor('198.51.100.4'),
+    );
+  });
+
+  // A caller on a routed IPv6 prefix can source each request from a different
+  // address in it, so a per-address key would let one client mint a fresh budget per
+  // request and spend the whole window ceiling alone. Every other per-IP bucket here
+  // masks to the subnet for exactly that reason, and this one must agree.
+  it('holds one bucket for an IPv6 caller that moves within its own subnet', async () => {
+    expect(await embeddingSpendKeyFor('2001:db8::1')).toBe(
+      await embeddingSpendKeyFor('2001:db8::dead:beef'),
+    );
+    expect(await embeddingSpendKeyFor('2001:db8::1')).not.toBe(
+      await embeddingSpendKeyFor('2001:dba::1'),
+    );
+  });
+
+  // An address that does not resolve must share a bucket rather than escape the
+  // per-client ceiling, so the key is always supplied.
+  it('still supplies a spend key when the client address does not resolve', async () => {
+    expect(await embeddingSpendKeyFor(undefined)).toEqual(expect.any(String));
+    expect(await embeddingSpendKeyFor(undefined)).toBe(await embeddingSpendKeyFor(''));
+  });
+
   it('does not expose nonpublic research results to legacy admin sessions without active authority', async () => {
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
     mocks.searchResearchGroupsViaMeili.mockResolvedValue({
@@ -364,6 +447,8 @@ describe('researchGroupController', () => {
         lowQualityFirst: false,
         qualityFilters: [],
         includeFacets: true,
+        embeddingSpendKey: expect.any(String),
+        correctSpelling: true,
       },
     );
   });
@@ -403,7 +488,31 @@ describe('researchGroupController', () => {
         lowQualityFirst: false,
         qualityFilters: [],
         includeFacets: true,
+        embeddingSpendKey: expect.any(String),
+        correctSpelling: true,
       },
+    );
+  });
+
+  it('searches the words as typed when the student asks for the original spelling', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = { body: { q: 'imunology', correctSpelling: false } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(req, res);
+
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
+      'imunology',
+      expect.any(Object),
+      1,
+      24,
+      {},
+      expect.objectContaining({ correctSpelling: false }),
     );
   });
 
@@ -442,6 +551,8 @@ describe('researchGroupController', () => {
         lowQualityFirst: true,
         qualityFilters: ['missing-lead'],
         includeFacets: true,
+        embeddingSpendKey: expect.any(String),
+        correctSpelling: true,
       },
     );
   });

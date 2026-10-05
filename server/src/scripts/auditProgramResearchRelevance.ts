@@ -31,7 +31,7 @@ import {
 } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   apply: boolean;
@@ -88,7 +88,7 @@ async function main() {
 
   const programs: any[] = await Fellowship.find({ archived: false })
     .select(
-      'title purpose studentFacingCategory programKind summary description eligibility studentVisibilityTier studentVisibilityOverrideTier',
+      'title purpose studentFacingCategory programKind sourceName summary description eligibility studentVisibilityTier studentVisibilityOverrideTier',
     )
     .lean();
 

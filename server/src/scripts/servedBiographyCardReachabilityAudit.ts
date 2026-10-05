@@ -16,9 +16,9 @@
  * One route call per row, thousands of them, so the walk takes tens of minutes. It
  * writes nothing to any environment.
  *
- * Connecting Mongoose builds indexes for every registered model, which recreates a
- * collection that was deliberately dropped (#2812), so `autoIndex` is disabled and
- * the collection set is compared before and after.
+ * Connecting Mongoose with its defaults builds indexes for every registered model,
+ * which recreates a collection that was deliberately dropped (#2812), so it connects
+ * through `connectScriptMongo` and the collection set is compared before and after.
  *
  * Usage:
  *   yarn --cwd server research-entity:audit-served-biography-cards \
@@ -59,10 +59,11 @@ import {
   formatBiographyCardReachability,
   type ServedBiographyCardRow,
 } from './servedBiographyCardReachabilityAuditCore';
+import { connectScriptMongo } from '../db/connections';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const RESEARCH_ENTITIES_COLLECTION = 'research_entities';
 const SERVED_TIER = 'student_ready';
@@ -235,8 +236,7 @@ async function main(): Promise<void> {
     ).map((doc) => String((doc as { slug?: unknown }).slug || ''));
     console.log(`tier-admitted rows: ${slugs.length}`);
 
-    mongoose.set('autoIndex', false);
-    await mongoose.connect(url);
+    await connectScriptMongo(url);
     const rows: ServedBiographyCardRow[] = [];
     let servesNoPage = 0;
     let laneReach: SynthesisLaneReach | undefined;
@@ -245,9 +245,7 @@ async function main(): Promise<void> {
       for (const slug of slugs) {
         scanned += 1;
         const entity = (await getResearchGroupDetail(slug))?.researchEntity as
-          | Record<string, unknown>
-          | undefined
-          | null;
+          Record<string, unknown> | undefined | null;
         if (!entity) {
           servesNoPage += 1;
         } else {

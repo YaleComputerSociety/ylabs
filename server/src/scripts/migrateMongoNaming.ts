@@ -16,8 +16,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const COLLECTION_RENAMES = [
   ['accesssignals', 'access_signals'],
@@ -395,7 +396,7 @@ export async function migrateMongoNaming(options: MongoNamingMigrationCliOptions
     throw new Error('MONGODBURL environment variable is required');
   }
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
 
   try {
     return {

@@ -52,7 +52,7 @@ describe("a record bound to another person's official profile stops serving it (
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   const seedPerson = async (input: {

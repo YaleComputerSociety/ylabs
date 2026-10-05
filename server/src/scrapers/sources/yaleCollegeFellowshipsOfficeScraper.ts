@@ -4,18 +4,42 @@
  * This source keeps Fellowship rows fresh from official Yale pages while
  * treating gated CommunityForce URLs as application links, not fetch targets.
  */
-import axios from 'axios';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
+import { Fellowship } from '../../models/fellowship';
+import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { getCached, setCached } from '../snapshotCache';
-import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
-import { classifyProgram } from '../../services/programClassifier';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { fetchPageWithPolicy, fetchPublicHttpUrl } from '../utils/httpFetch';
+import {
+  NAMED_PROGRAM_DATE_SOURCE,
+  NUMERIC_PROGRAM_DATE_SOURCE,
+  OPTIONAL_STATED_CLOCK_TIME,
+  nextCycleDeadline,
+  parseProgramDate,
+} from '../utils/programDeadline';
+import type {
+  FundShortLinkMetrics,
+  IScraper,
+  ObservationInput,
+  RecordWebsiteLinkMetrics,
+  ScraperContext,
+  ScraperResult,
+} from '../types';
+import { isRecordSpecificFundDetailUrl } from './studentGrantsDatabaseScraper';
+import { assertPublicHttpUrl } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { normalizedProgramTitleKey, primaryConcatenatedAwardTitle } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
+import { fellowshipAbsenceAssertion } from '../fellowshipFieldAbsence';
+import {
+  boundedObservedFellowshipProse,
+  sanitizedObservedFellowshipProse,
+} from '../fellowshipProse';
+import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
+import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
+import { externalAwardRecord, withoutRecordWindow } from '../utils/externalAwardRecord';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -117,21 +141,6 @@ const MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS: Record<string, string> = {
     'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
 };
 
-const MONTHS: Record<string, number> = {
-  january: 0,
-  february: 1,
-  march: 2,
-  april: 3,
-  may: 4,
-  june: 5,
-  july: 6,
-  august: 7,
-  september: 8,
-  october: 9,
-  november: 10,
-  december: 11,
-};
-
 export interface FellowshipCatalogCandidate {
   sourceKey: string;
   sourceFingerprint: string;
@@ -147,9 +156,16 @@ export interface FellowshipCatalogCandidate {
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
   deadline?: Date;
+  /**
+   * What the read this candidate came from can say about a deadline, which is not the
+   * same question as whether it found one: only a whole program page read can state
+   * that there is none (#4230).
+   */
+  deadlineStatement: ProgramDeadlineStatement;
   applicationOpenDate?: Date;
   contactOffice?: string;
   contactEmail?: string;
+  eligibility?: string;
   yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
@@ -161,11 +177,22 @@ export interface FellowshipCatalogCandidate {
 
 type FetchPage = (url: string, useCache: boolean) => Promise<string>;
 
+export interface OwnedFellowshipRow {
+  sourceKey?: string;
+  title?: string;
+  sourceUrl?: string;
+}
+
 interface YaleCollegeFellowshipsOfficeScraperDeps {
   pageUrls?: string[];
   sitemapUrls?: string[];
   fetchPage?: FetchPage;
   retryDelay?: (attempt: number) => Promise<void>;
+  loadOwnedRows?: () => Promise<OwnedFellowshipRow[]>;
+  shortLinkHop?: ShortLinkHop;
+  shortLinkDelayMs?: number;
+  routeStatusProbe?: RouteStatusProbe;
+  routeProbeDelayMs?: number;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -193,9 +220,11 @@ function normalizedCandidateTitle(value: string): string {
   return primaryConcatenatedAwardTitle(cleaned);
 }
 
+const DOUBLED_SCHEME_RE = /^https?:\/\/(https?)(?::\/\/|\/\/)/i;
+
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
   if (!rawUrl) return undefined;
-  const trimmed = rawUrl.trim();
+  const trimmed = rawUrl.trim().replace(DOUBLED_SCHEME_RE, '$1://');
   if (!trimmed || trimmed.startsWith('#') || /^mailto:/i.test(trimmed)) return undefined;
   try {
     return new URL(trimmed, pageUrl).toString();
@@ -208,8 +237,11 @@ function normalizeLinkUrl(url: string): string {
   try {
     const parsed = new URL(url);
     parsed.hostname = parsed.hostname.toLowerCase();
-    if (parsed.hostname.endsWith('communityforce.com')) parsed.protocol = 'https:';
-    if (parsed.hostname.toLowerCase() === 'studentgrants.yale.edu') parsed.protocol = 'https:';
+    if (hostIsOrIsUnder(parsed.hostname, 'communityforce.com')) parsed.protocol = 'https:';
+    if (parsed.hostname === 'studentgrants.yale.edu') parsed.protocol = 'https:';
+    // An application is submitted through these, so never hand a student the
+    // plaintext spelling of one when the host serves https.
+    if (applicationPortalKind(parsed.toString())) parsed.protocol = 'https:';
     if (parsed.hostname === 'yalecollege.yale.edu') {
       const movedUrl =
         MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS[parsed.pathname.toLowerCase().replace(/\/$/, '')];
@@ -231,14 +263,71 @@ function isPublicYaleUrl(url: string | undefined): boolean {
   }
 }
 
+function hostIsOrIsUnder(hostname: string, domain: string): boolean {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
 function isYaleOwnedUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    return hostname === 'yale.edu' || hostname.endsWith('.yale.edu');
+    return hostIsOrIsUnder(new URL(url).hostname.toLowerCase(), 'yale.edu');
   } catch {
     return false;
   }
+}
+
+/**
+ * Hosts that exist to receive an application, so a link to one is the way in
+ * whatever its anchor text says.
+ */
+const APPLICATION_MANAGEMENT_HOSTS = [
+  'interfolio.com',
+  'slideroom.com',
+  'submittable.com',
+  'smapply.io',
+  'smapply.org',
+  'awardspring.com',
+  'fluidreview.com',
+];
+
+/**
+ * General-purpose form hosts. These also serve surveys and sign-up sheets, so a
+ * link to one counts as an application route only when its anchor text says so.
+ */
+const GENERAL_FORM_HOSTS = [
+  'forms.gle',
+  'jotform.com',
+  'wufoo.com',
+  'formstack.com',
+  'qualtrics.com',
+  'typeform.com',
+  'airtable.com',
+];
+
+function applicationPortalKind(
+  url: string | undefined,
+): 'application-management' | 'general-form' | undefined {
+  if (!url) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (APPLICATION_MANAGEMENT_HOSTS.some((host) => hostIsOrIsUnder(hostname, host))) {
+    return 'application-management';
+  }
+  if (GENERAL_FORM_HOSTS.some((host) => hostIsOrIsUnder(hostname, host))) return 'general-form';
+  // Google hosts a form under a path rather than a host of its own, so the path
+  // is what separates a form from an unrelated document or spreadsheet.
+  if (
+    (hostIsOrIsUnder(hostname, 'google.com') || hostIsOrIsUnder(hostname, 'docs.google.com')) &&
+    /^\/forms\//i.test(parsed.pathname)
+  ) {
+    return 'general-form';
+  }
+  return undefined;
 }
 
 function indexSeedKey(url: string): string {
@@ -287,7 +376,7 @@ function isFundingYaleIndexOrHubUrl(url: string | undefined): boolean {
 function isCommunityForceUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    return new URL(url).hostname.toLowerCase().endsWith('communityforce.com');
+    return hostIsOrIsUnder(new URL(url).hostname.toLowerCase(), 'communityforce.com');
   } catch {
     return false;
   }
@@ -298,6 +387,18 @@ function isRecordSpecificApplicationUrl(url: string | undefined): boolean {
   try {
     const parsed = new URL(url);
     return /^\/Funds\/FundDetails\.aspx$/i.test(parsed.pathname) && parsed.searchParams.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+const LINK_SHORTENER_HOSTS = ['bit.ly', 'tinyurl.com', 'ow.ly', 'goo.gl'];
+
+function isLinkShortenerUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return LINK_SHORTENER_HOSTS.some((host) => hostIsOrIsUnder(hostname, host));
   } catch {
     return false;
   }
@@ -438,9 +539,29 @@ export function extractIndexSeedChildDetailUrls(html: string, pageUrl: string): 
 
 const MAX_DETAIL_PROGRAM_LINKS = 12;
 
+const EXTERNAL_AWARD_WEBSITE_LABEL = 'Application or program website';
+
+const APPLY_LABEL_RE = /\b(?:apply|application|submit)\b/i;
+
+const STUDENT_GRANTS_LABEL_RE = /\bstudent grants\b/i;
+
+/**
+ * A Yale program routinely takes its applications on a host Yale does not own, so
+ * requiring a Yale host here dropped the only way in: the example in #4086 is a
+ * department page whose "Apply Now" button is a Google Form, which left the row
+ * with no route at all.
+ */
 function isProgramRelevantLink(url: string, label: string): boolean {
   if (isCommunityForceUrl(url) || isStudentGrantsUrl(url)) return true;
-  if (/\b(?:apply|application)\b/i.test(label) && isYaleOwnedUrl(url)) return true;
+  const portal = applicationPortalKind(url);
+  if (portal === 'application-management') return true;
+  if (APPLY_LABEL_RE.test(label) && (isYaleOwnedUrl(url) || portal === 'general-form')) return true;
+  if (
+    isLinkShortenerUrl(url) &&
+    (APPLY_LABEL_RE.test(label) || STUDENT_GRANTS_LABEL_RE.test(label))
+  ) {
+    return true;
+  }
   return isLikelyPublicFellowshipDetailUrl(url);
 }
 
@@ -464,12 +585,75 @@ function inferTerm(text: string): string[] {
   return Array.from(new Set(terms));
 }
 
-function inferPurpose(text: string): string[] {
+/**
+ * A purpose has to be stated, not merely mentioned, which is why each of these
+ * requires a phrase the way `isResearchFocused` does rather than a bare keyword.
+ * Measured on the #4086 example page, the bare keywords read two purposes out of
+ * prose that states neither: `course` matched the idiom "Yes of course!", and
+ * `international` matched a visa-eligibility answer. A page's only mention of
+ * travel is often a FAQ declining to cover it ("Does the program cover my travel
+ * cost?"), so the award-instrument word is what separates a funded purpose from a
+ * mention of the activity.
+ */
+const AWARD_INSTRUMENT =
+  '(?:grants?|awards?|fellowships?|scholarships?|prizes?|funds?|funding|stipends?|allowances?)';
+
+/**
+ * A program names its instrument close to its purpose but rarely adjacent to it,
+ * so the two are joined across a bounded gap: "Travel/Research Fellowship" and
+ * "Travel Research Grant" both state a travel purpose and both lost it when this
+ * required the instrument word to follow immediately.
+ */
+const nearAwardInstrument = (purpose: string): string =>
+  `\\b${purpose}\\b[\\s/&,-]+(?:\\w+[\\s/&,-]+){0,2}${AWARD_INSTRUMENT}\\b`;
+
+const forThePurposeOf = (purpose: string): string =>
+  `\\b${AWARD_INSTRUMENT} (?:for|supporting|toward) (?:the |a |an )?${purpose}\\b`;
+
+/**
+ * Coursework and tuition state a purpose only when the award pays for them: a page that
+ * asks for "a foundation through their coursework", or a research program that also
+ * covers one course's tuition, funds research rather than study (#4233).
+ */
+const STUDY_PURPOSE_RE = new RegExp(
+  [
+    '\\bstudy abroad\\b',
+    '\\bcourse of study\\b',
+    '\\b(?:supports?|funds?|covers?|pays?)(?: for)?(?: the)? (?:\\w+ ){0,2}(?:course ?work|tuition)\\b',
+    '(?<!can )\\b(?:supports?|funds?) (?:(?!(?:but|not)\\b)[\\w-]+ ){0,6}(?<!\\bof )study\\b',
+    nearAwardInstrument('study'),
+    forThePurposeOf('(?:study|course ?work)'),
+  ].join('|'),
+  'i',
+);
+
+const TRAVEL_PURPOSE_RE = new RegExp(
+  [
+    '\\b(?:study|research|work|intern(?:ship)?s?) abroad\\b',
+    '\\binternational travel\\b',
+    '\\b(?:defray|offset)s? (?:\\w+ ){0,2}travel (?:costs?|expenses?)\\b',
+    nearAwardInstrument('travel'),
+    forThePurposeOf('travel'),
+  ].join('|'),
+  'i',
+);
+
+const SERVICE_PURPOSE_RE = new RegExp(
+  [
+    '\\b(?:public|community) service\\b',
+    '\\bservice learning\\b',
+    nearAwardInstrument('service'),
+    forThePurposeOf('(?:public |community )?service'),
+  ].join('|'),
+  'i',
+);
+
+export function inferPurpose(text: string): string[] {
   const purposes: string[] = [];
   if (isResearchFocused(text)) purposes.push('Research');
-  if (/\bstudy\b|\bcourse\b/i.test(text)) purposes.push('Study');
-  if (/\btravel\b|\binternational\b|\babroad\b/i.test(text)) purposes.push('Travel');
-  if (/\bservice\b|\bpublic service\b/i.test(text)) purposes.push('Service');
+  if (STUDY_PURPOSE_RE.test(text)) purposes.push('Study');
+  if (TRAVEL_PURPOSE_RE.test(text)) purposes.push('Travel');
+  if (SERVICE_PURPOSE_RE.test(text)) purposes.push('Service');
   return Array.from(new Set(purposes));
 }
 
@@ -538,7 +722,7 @@ function applicationSectionText($: cheerio.CheerioAPI): string | undefined {
   });
 
   const unique = Array.from(new Set(sections));
-  return unique.length > 0 ? unique.join('\n').slice(0, 3000) : undefined;
+  return unique.length > 0 ? boundedObservedFellowshipProse(unique.join('\n')) : undefined;
 }
 
 function inferApplicationMaterials(text: string): string[] {
@@ -562,11 +746,58 @@ function hasExplicitNegativeResearchFocus(text: string): boolean {
   );
 }
 
+/**
+ * Research the award funds, named by what kind of research it is or by the award it
+ * funds. Plurals count, because "Graduate Research Fellowships" states the same purpose
+ * as "Research Fellowship", and the dissertation and field forms are how graduate awards
+ * state it (#4233).
+ */
+const RESEARCH_FOCUS_RE = new RegExp(
+  [
+    String.raw`\b(?:original|independent|summer|faculty[- ]mentored|undergraduate|student|dissertation|pre-dissertation|doctoral|thesis|field|laboratory|primary source) research\b`,
+    String.raw`\bresearch (?:projects?|proposals?|experiences?|fellowships?|programs?|grants?|awards?|trips?|internships?|assistantships?)\b`,
+    String.raw`\bconduct(?:s|ing)? (?:\w+ ){0,2}research\b`,
+  ].join('|'),
+  'i',
+);
+
 function isResearchFocused(text: string): boolean {
   if (hasExplicitNegativeResearchFocus(text)) return false;
-  return /\b(?:original|independent|summer|faculty[- ]mentored|undergraduate) research\b|\bresearch (?:project|proposal|experience|fellowship|program)\b/i.test(
-    text,
+  return RESEARCH_FOCUS_RE.test(text);
+}
+
+const TEXT_BLOCK_SELECTOR = 'p, li, dd, dt, td, th, h1, h2, h3, h4, h5, h6, div, br';
+
+function textBlocks(root: cheerio.Cheerio<any>): string[] {
+  const copy = root.clone();
+  copy.find('a[href^="mailto:" i], a[href^="tel:" i]').each((_, anchor) => {
+    const link = copy.find(anchor);
+    link.text(`${link.text()} ${link.attr('href')}`);
+  });
+  copy.find(TEXT_BLOCK_SELECTOR).before('\n').after('\n');
+  return copy.text().split('\n').map(normalizeWhitespace).filter(Boolean);
+}
+
+/**
+ * The years a page admits, read with the same prose rules as a Student Grants Database
+ * fund, where the page's eligibility sentences play the fund's eligibility section. A
+ * page's own structured year list plays the part the grants database's year filter does:
+ * the prose decides when it names years, and the list answers when it is silent, so a page
+ * with neither emits nothing.
+ */
+function statedYearOfStudy(
+  blocks: readonly string[],
+  eligibility: readonly string[],
+  listedYears: readonly string[],
+): string[] {
+  const resolution = resolveFundYearOfStudy(
+    [
+      { text: eligibility.join(' ¶ '), isEligibilitySection: true },
+      { text: blocks.join(' ¶ '), isEligibilitySection: false },
+    ],
+    [...listedYears],
   );
+  return resolution.kind === 'unreconcilable' ? [] : resolution.values;
 }
 
 function extractEmail(text: string): string | undefined {
@@ -579,28 +810,71 @@ function hasExplicitActiveApplicationLanguage(text: string): boolean {
   );
 }
 
-function nearestDateTextForLabel(
-  text: string,
-  labelPattern: RegExp,
-  preferredDirection: 'before' | 'after',
-): string {
-  const normalized = normalizeWhitespace(text);
-  const label = labelPattern.exec(normalized);
-  if (!label || label.index === undefined) return '';
+interface DateNearLabel {
+  text: string;
+  index: number;
+  inLabelSentence: boolean;
+}
 
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
-  const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
-  const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'gi');
-  const before = normalized.slice(Math.max(0, label.index - 100), label.index);
-  const datesBefore = Array.from(before.matchAll(datePattern));
-  const after = normalized.slice(
-    label.index + label[0].length,
-    label.index + label[0].length + 120,
+const DATE_BLOCK_BOUNDARY = '\u00b6';
+const DATE_BLOCK_SELECTOR =
+  'p, li, dd, dt, td, th, tr, h1, h2, h3, h4, h5, h6, div, section, article';
+
+function blockMarkedDateText(root: cheerio.Cheerio<any>): string {
+  const copy = root.clone();
+  copy
+    .find(DATE_BLOCK_SELECTOR)
+    .before(` ${DATE_BLOCK_BOUNDARY} `)
+    .after(` ${DATE_BLOCK_BOUNDARY} `);
+  return normalizeWhitespace(copy.text()).replace(
+    new RegExp(`${DATE_BLOCK_BOUNDARY}(?:\\s*${DATE_BLOCK_BOUNDARY})+`, 'g'),
+    DATE_BLOCK_BOUNDARY,
   );
+}
+
+const TIMELINE_STEP_LABEL =
+  /\b(?:deadlines?|due|notif\w*|decisions?|announc\w*|interviews?|open(?:s|ing)?|clos(?:e|es|ed|ing)|start(?:s|ing)?|begin(?:s|ning)?|end(?:s|ing)?|recommend\w*|references?)\b/i;
+
+/**
+ * On a timeline laid out one step per block, a date in another block followed by a label
+ * of its own is that label's value, whichever side of it the date sits (#4172). Only the
+ * words after the date count, because a block that leads with a label and then states the
+ * date ("Applications are due February 1") is describing the label being read.
+ */
+function withoutDateOfAnotherBlockLabel<Match extends RegExpMatchArray>(
+  match: Match | undefined,
+  window: string,
+  side: 'before' | 'after',
+): Match | undefined {
+  if (!match) return undefined;
+  const start = match.index ?? 0;
+  const end = start + match[0].length;
+  const between = side === 'before' ? window.slice(end) : window.slice(0, start);
+  if (!between.includes(DATE_BLOCK_BOUNDARY)) return match;
+  const nextBoundary = window.indexOf(DATE_BLOCK_BOUNDARY, end);
+  const blockEnd = nextBoundary === -1 ? window.length : nextBoundary;
+  return TIMELINE_STEP_LABEL.test(window.slice(end, blockEnd)) ? undefined : match;
+}
+
+function dateNearLabel(
+  normalized: string,
+  label: RegExpMatchArray,
+  preferredDirection: 'before' | 'after',
+): DateNearLabel | undefined {
+  const labelIndex = label.index ?? 0;
+  const labelEnd = labelIndex + label[0].length;
+  const datePattern = new RegExp(
+    `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})${OPTIONAL_STATED_CLOCK_TIME}`,
+    'gi',
+  );
+  const beforeStart = Math.max(0, labelIndex - 100);
+  const before = normalized.slice(beforeStart, labelIndex);
+  const datesBefore = Array.from(before.matchAll(datePattern));
+  const after = normalized.slice(labelEnd, labelEnd + 120);
   datePattern.lastIndex = 0;
-  const closestBeforeMatch = datesBefore.at(-1);
-  const closestAfterMatch = datePattern.exec(after);
+  const closestBeforeMatch = withoutDateOfAnotherBlockLabel(datesBefore.at(-1), before, 'before');
+  const closestAfterMatch =
+    withoutDateOfAnotherBlockLabel(datePattern.exec(after) ?? undefined, after, 'after') ?? null;
   const sentenceBoundaryPattern = /[.!?](?:\s|$)/;
   const beforeIsInSentence =
     closestBeforeMatch !== undefined &&
@@ -610,22 +884,153 @@ function nearestDateTextForLabel(
   const afterIsInSentence =
     closestAfterMatch !== null &&
     !sentenceBoundaryPattern.test(after.slice(0, closestAfterMatch.index));
+  const fromBefore = (inLabelSentence: boolean): DateNearLabel | undefined =>
+    closestBeforeMatch?.[0]
+      ? {
+          text: closestBeforeMatch[0],
+          index: beforeStart + (closestBeforeMatch.index ?? 0),
+          inLabelSentence,
+        }
+      : undefined;
+  const fromAfter = (inLabelSentence: boolean): DateNearLabel | undefined =>
+    closestAfterMatch?.[0]
+      ? { text: closestAfterMatch[0], index: labelEnd + closestAfterMatch.index, inLabelSentence }
+      : undefined;
 
   if (beforeIsInSentence !== afterIsInSentence) {
-    return beforeIsInSentence ? closestBeforeMatch?.[0] || '' : closestAfterMatch?.[0] || '';
+    return beforeIsInSentence ? fromBefore(true) : fromAfter(true);
   }
-  if (preferredDirection === 'after') {
-    return closestAfterMatch?.[0] || closestBeforeMatch?.[0] || '';
-  }
-  return closestBeforeMatch?.[0] || closestAfterMatch?.[0] || '';
+  return preferredDirection === 'after'
+    ? fromAfter(beforeIsInSentence) || fromBefore(beforeIsInSentence)
+    : fromBefore(beforeIsInSentence) || fromAfter(beforeIsInSentence);
 }
 
-function bestDeadlineText(text: string): string {
-  return nearestDateTextForLabel(
-    text,
-    /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b|\bapplications?\s+due\b|\b(?:apply|submit(?:\s+your\s+application)?|due)\s+by\b/i,
-    'after',
+function nearestDateTextForLabel(
+  text: string,
+  labelPattern: RegExp,
+  preferredDirection: 'before' | 'after',
+): string {
+  const normalized = normalizeWhitespace(text);
+  const label = labelPattern.exec(normalized);
+  if (!label) return '';
+  return dateNearLabel(normalized, label, preferredDirection)?.text || '';
+}
+
+const DEADLINE_LABEL =
+  /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b|\bapplications?\s+due\b|\b(?:apply|submit(?:\s+your\s+application)?|due)\s+by\b/i;
+
+const EVERY_DEADLINE_LABEL = new RegExp(DEADLINE_LABEL.source, 'gi');
+
+/**
+ * A label can date a step other than the application itself, such as letters of
+ * recommendation being due or decisions being announced, and that date is not the
+ * program's deadline. Only the words joining the label to its date are read, with the
+ * label's own clause when the date follows it, so a "notifications sent" entry beside
+ * the deadline in a timeline does not disqualify it.
+ */
+const ANOTHER_STEP_IN_LABEL_CLAUSE =
+  /\b(?:recommend\w*|references?|referees?|notif\w*|decisions?|announc\w*|interviews?|info(?:rmation(?:al)?)?\s+sessions?|webinars?|events?)\b/i;
+const CLAUSE_BOUNDARY = /[.!?;](?:\s|$)/g;
+const LABEL_CLAUSE_LEAD_CHARS = 60;
+
+function labelDatesAnotherStep(
+  normalized: string,
+  label: RegExpMatchArray,
+  date: DateNearLabel,
+): boolean {
+  const labelIndex = label.index ?? 0;
+  const labelEnd = labelIndex + label[0].length;
+  if (date.index < labelIndex) {
+    return ANOTHER_STEP_IN_LABEL_CLAUSE.test(
+      normalized.slice(date.index + date.text.length, labelEnd),
+    );
+  }
+  const lead = normalized.slice(Math.max(0, labelIndex - LABEL_CLAUSE_LEAD_CHARS), labelIndex);
+  const clauseStart = Array.from(lead.matchAll(CLAUSE_BOUNDARY)).at(-1);
+  const ownLead = clauseStart ? lead.slice((clauseStart.index ?? 0) + clauseStart[0].length) : lead;
+  return ANOTHER_STEP_IN_LABEL_CLAUSE.test(
+    `${ownLead} ${normalized.slice(labelIndex, date.index)}`,
   );
+}
+
+/**
+ * Every deadline the text states for applying, in page order. The first application label
+ * keeps the nearest-date fallback it has always had and decides whether the text states a
+ * deadline at all; a later label only adds another cycle, and only with a date in its own
+ * sentence. Letting a later label find a deadline the first did not read the open date of
+ * an "Application Open/Deadline: <open> to <close>" range on 55 external-award pages.
+ */
+function statedDeadlines(text: string, referenceDate: Date): Date[] {
+  const normalized = normalizeWhitespace(text);
+  const deadlines: Date[] = [];
+  let isPrimaryLabel = true;
+  for (const label of normalized.matchAll(EVERY_DEADLINE_LABEL)) {
+    const near = dateNearLabel(normalized, label, 'after');
+    if (near && labelDatesAnotherStep(normalized, label, near)) continue;
+    const admitsFallback = isPrimaryLabel;
+    isPrimaryLabel = false;
+    const dated = near && (admitsFallback || near.inLabelSentence) ? near.text : '';
+    const deadline = dated ? parseProgramDate(dated, 'deadline', referenceDate) : undefined;
+    if (admitsFallback && !deadline) return [];
+    if (deadline) deadlines.push(deadline);
+  }
+  return deadlines;
+}
+
+function statedDeadline(text: string, referenceDate: Date): Date | undefined {
+  return nextCycleDeadline(statedDeadlines(text, referenceDate), referenceDate);
+}
+
+/**
+ * What a page says about having a deadline, as opposed to which date it names (#4230).
+ *
+ * `none` is a positive reading, and the page has to say it: a sentence about applying
+ * that states review is rolling or that there is no fixed deadline, or one whose only
+ * date is marked as encouragement or preference. Everything else is `unresolved`,
+ * including a page that says nothing about applying at all, because this lane's
+ * vocabulary is not the page's: a CBEY grant page measured on 2026-10-01 states
+ * "Applications are due on September 27" in wording `DEADLINE_LABEL` does not match,
+ * so reading its silence as an absence would have cleared a real deadline (#2647 is the
+ * same mistake made from the other direction).
+ *
+ * A date the page presents as a requirement is `stated` whether or not this lane can
+ * parse it, so a date it misses keeps whatever the row already holds.
+ */
+export type ProgramDeadlineStatement = 'stated' | 'none' | 'unresolved';
+
+const PROGRAM_DATE = new RegExp(
+  `(?:${NAMED_PROGRAM_DATE_SOURCE}|${NUMERIC_PROGRAM_DATE_SOURCE})`,
+  'i',
+);
+
+const ABOUT_APPLICATION_TIMING =
+  /\bdeadlines?\b|\bdue\b|\bclos(?:e|es|ed|ing)\b|\blast day\b|\bfinal day\b|\bno later than\b|\bmust\s+(?:be\s+)?(?:submitted|received)\b|\bapply\s+by\b|\bsubmit\s+(?:your\s+application\s+)?by\b|\bapplications?\s+(?:are\s+)?(?:accepted|reviewed|open)\b|\breview(?:ed|ing|s)?\s+applications?\b/i;
+
+/**
+ * The marker has to govern the act of applying, not merely appear in the sentence: a
+ * bare `recommend\w*` read "two letters of recommendation ... must be received by
+ * February 01" as a suggestion, which turned a hard deadline into a claim that the page
+ * states none (measured on the CRISP REU page, 2026-10-01).
+ */
+const DEADLINE_IS_A_SUGGESTION =
+  /\b(?:encourag\w+|recommend(?:s|ed|ing)?|suggest\w+|prefer\w+|ideally|aim(?:ing)?\s+to)\b(?:\W+\w+){0,4}?\W+(?:to\s+)?(?:appl(?:y|ies|ying|ication)|submi(?:t|ts|tted|ssions?)|send|complete)\b/i;
+
+const STATES_NO_DEADLINE =
+  /\bno\s+(?:fixed|set|firm|specific|formal)?\s*deadlines?\b|\brolling\b|\bas\s+(?:we|they)\s+(?:are\s+)?receiv\w*\b|\byear[-\s]?round\b|\bcontinuous(?:ly)?\b/i;
+
+export function programDeadlineStatement(text: string): ProgramDeadlineStatement {
+  let suggestedDate = false;
+  let saysThereIsNone = false;
+  for (const sentence of normalizeWhitespace(text).split(/(?<=[.!?])\s+(?=\S)/)) {
+    if (!ABOUT_APPLICATION_TIMING.test(sentence)) continue;
+    const suggestion = DEADLINE_IS_A_SUGGESTION.test(sentence);
+    if (PROGRAM_DATE.test(sentence)) {
+      if (!suggestion) return 'stated';
+      suggestedDate = true;
+    }
+    if (STATES_NO_DEADLINE.test(sentence)) saysThereIsNone = true;
+  }
+  return suggestedDate || saysThereIsNone ? 'none' : 'unresolved';
 }
 
 function bestApplicationOpenText(text: string): string {
@@ -634,53 +1039,6 @@ function bestApplicationOpenText(text: string): string {
     /\bapplication\s+(?:opens?|open\s+date)\b|\bapplications?\s+open\b/i,
     'before',
   );
-}
-
-function utcStartOfDay(date: Date | undefined): Date | undefined {
-  if (!date) return undefined;
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
-
-export function parseDeadlineToUtcEndOfDay(
-  text: string,
-  referenceDate: Date = new Date(),
-): Date | undefined {
-  const normalized = normalizeWhitespace(text);
-  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
-  if (numeric) {
-    const numericMonth = Number(numeric[1]) - 1;
-    const numericDay = Number(numeric[2]);
-    const numericYear = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
-    const numericDate = new Date(Date.UTC(numericYear, numericMonth, numericDay, 23, 59, 59, 999));
-    if (
-      numericDate.getUTCFullYear() === numericYear &&
-      numericDate.getUTCMonth() === numericMonth &&
-      numericDate.getUTCDate() === numericDay
-    ) {
-      return numericDate;
-    }
-  }
-  const monthPattern = Object.keys(MONTHS).join('|');
-  const match = normalized.match(
-    new RegExp(
-      `(?:deadline[^A-Za-z0-9]*)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`,
-      'i',
-    ),
-  );
-  if (!match) return undefined;
-
-  const month = MONTHS[match[1].toLowerCase()];
-  const day = Number(match[2]);
-  let year = match[3] ? Number(match[3]) : referenceDate.getUTCFullYear();
-  let date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  if (!match[3] && date.getTime() < referenceDate.getTime() - 30 * 24 * 60 * 60 * 1000) {
-    year += 1;
-    date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
-  }
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
-    return undefined;
-  }
-  return date;
 }
 
 function fingerprintCandidate(
@@ -700,6 +1058,7 @@ function fingerprintCandidate(
     applicationOpenDate: candidate.applicationOpenDate?.toISOString() || '',
     contactOffice: candidate.contactOffice || '',
     contactEmail: candidate.contactEmail || '',
+    eligibility: candidate.eligibility || '',
     yearOfStudy: candidate.yearOfStudy,
     termOfAward: candidate.termOfAward,
     purpose: candidate.purpose,
@@ -733,6 +1092,20 @@ function compactTitleIdentity(title: string): string {
   return normalizedProgramTitleKey(title);
 }
 
+// Two programs can share one application, as two fellowships that a single form admits to
+// do, so a shared application link is not evidence that two program pages are one program.
+function areDistinctProgramPages(
+  existing: FellowshipCatalogCandidate,
+  candidate: FellowshipCatalogCandidate,
+): boolean {
+  return (
+    existing.sourcePageKind === 'detail' &&
+    candidate.sourcePageKind === 'detail' &&
+    normalizeLinkUrl(existing.sourceUrl) !== normalizeLinkUrl(candidate.sourceUrl) &&
+    compactTitleIdentity(existing.title) !== compactTitleIdentity(candidate.title)
+  );
+}
+
 function existingKeyForCandidate(
   byKey: Map<string, FellowshipCatalogCandidate>,
   candidate: FellowshipCatalogCandidate,
@@ -744,6 +1117,7 @@ function existingKeyForCandidate(
     : undefined;
   if (applicationLink && isRecordSpecificApplicationUrl(applicationLink)) {
     for (const [key, existing] of byKey) {
+      if (areDistinctProgramPages(existing, candidate)) continue;
       const existingUrls = [existing.applicationLink, ...existing.links.map((link) => link.url)]
         .filter((url): url is string => !!url)
         .map(normalizeLinkUrl);
@@ -867,6 +1241,30 @@ function isBareDeadlineRowContext(text: string, title: string): boolean {
   return residual.length === 0;
 }
 
+/**
+ * The administering office is a claim about who runs a program, so it is read off
+ * the site the page belongs to rather than assumed. This lane follows links out
+ * across Yale, so the fellowships-office constant it used to stamp on every arm
+ * described one office's programs and then said the same of a department's and a
+ * school's (#4086). A host this map does not name yields no claim.
+ */
+const ADMINISTERING_OFFICE_BY_HOST: Array<[string, string]> = [
+  ['funding.yale.edu', 'Yale Fellowships and Funding'],
+  ['fellowships.yale.edu', 'Yale Fellowships and Funding'],
+  ['macmillan.yale.edu', 'MacMillan Center'],
+  ['cbey.yale.edu', 'Yale Center for Business and the Environment'],
+];
+
+function administeringOfficeForPage(pageUrl: string): string {
+  let hostname: string;
+  try {
+    hostname = new URL(pageUrl).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+  return ADMINISTERING_OFFICE_BY_HOST.find(([host]) => hostIsOrIsUnder(hostname, host))?.[1] ?? '';
+}
+
 function summaryFromRowContext(rowContext: string, title: string): string | undefined {
   const safe = sanitizeStoredCatalogDescription(rowContext);
   if (!safe || safe === title) return undefined;
@@ -901,8 +1299,9 @@ function candidateFromLink(
   const rowContext = normalizeWhitespace(contextContainer.text());
   const pageContext = normalizeWhitespace($('body').text());
   const contextText = normalizeWhitespace(`${headingContext} ${rowContext}`);
-  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(contextText), referenceDate);
-  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const deadline = statedDeadline(contextText, referenceDate);
+  const applicationLink =
+    isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const sourceUrl = pageUrl;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
   const isAcceptingApplications =
@@ -925,8 +1324,11 @@ function candidateFromLink(
     applicationLink,
     links,
     deadline,
+    // A catalog row is not the program's page, so it cannot state that there is no
+    // deadline even when its own context names none.
+    deadlineStatement: 'unresolved',
     applicationOpenDate: undefined,
-    contactOffice: 'Yale Fellowships and Funding',
+    contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(contextText) || extractEmail(pageContext),
     yearOfStudy: [],
     termOfAward: inferTerm(contextText || pageContext),
@@ -964,12 +1366,19 @@ function candidateFromMacmillanOpportunityRow(
   const contactOffice = normalizeWhitespace($row.find('.node-teaser__groups').first().text());
   const summaryText = normalizeWhitespace($row.find('.node-teaser__summary').first().text());
   const rowContext = normalizeWhitespace(`${title} ${summaryText}`);
-  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(rowContext), referenceDate);
-  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const deadline = statedDeadline(rowContext, referenceDate);
+  // An opportunity row has no page of its own on this site: its heading links straight to
+  // the fund record, and a short link there redirects to one (#4233).
+  const applicationLink =
+    isCommunityForceUrl(href) || applicationPortalKind(href) || isLinkShortenerUrl(href)
+      ? href
+      : undefined;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
     hasExplicitActiveApplicationLanguage(rowContext);
+  const summaryBlocks = summaryText ? [summaryText] : [];
+  const eligibility = eligibilitySentences(summaryBlocks);
 
   return finalizeCandidate({
     sourceKey: sourceKeyForTitle(title),
@@ -985,10 +1394,12 @@ function candidateFromMacmillanOpportunityRow(
     applicationLink,
     links,
     deadline,
+    deadlineStatement: 'unresolved',
     applicationOpenDate: undefined,
-    contactOffice: contactOffice || undefined,
+    contactOffice: contactOffice || administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(summaryText),
-    yearOfStudy: [],
+    eligibility: eligibilityStatement(eligibility),
+    yearOfStudy: statedYearOfStudy(summaryBlocks, eligibility, []),
     termOfAward: inferTerm(rowContext),
     purpose: inferPurpose(rowContext),
     globalRegions: [],
@@ -1024,7 +1435,8 @@ function candidateFromCbeyProgramRow(
   const href = rawHref ? normalizeLinkUrl(rawHref) : undefined;
   if (!href) return undefined;
 
-  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const applicationLink =
+    isCommunityForceUrl(href) || applicationPortalKind(href) ? href : undefined;
   const links = [{ label: applicationLink ? 'Application' : title, url: href }];
 
   return finalizeCandidate({
@@ -1041,8 +1453,9 @@ function candidateFromCbeyProgramRow(
     applicationLink,
     links,
     deadline: undefined,
+    deadlineStatement: 'unresolved',
     applicationOpenDate: undefined,
-    contactOffice: 'Yale Center for Business and the Environment',
+    contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: undefined,
     yearOfStudy: [],
     termOfAward: inferTerm(title),
@@ -1065,6 +1478,225 @@ function candidatesFromCbeyFundingPage(
     .filter((candidate): candidate is FellowshipCatalogCandidate => !!candidate);
 }
 
+const TEASER_NODE_CLASS_RE = /\bnode-{1,2}(?:view-mode-)?teaser\b/i;
+
+function primaryContentNode($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
+  return $('.node, article')
+    .filter((_index, node) => {
+      const $node = $(node);
+      return (
+        !isInExcludedPageRegion($node) && !TEASER_NODE_CLASS_RE.test($node.attr('class') || '')
+      );
+    })
+    .first();
+}
+
+function detailContentRoot($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
+  const specificContent = primaryContentNode($);
+  const primaryContent = $('main, [role="main"]').first();
+  return specificContent.length > 0
+    ? specificContent
+    : primaryContent.length > 0
+      ? primaryContent
+      : $('body');
+}
+
+function chromeFreeContent(contentRoot: cheerio.Cheerio<any>): cheerio.Cheerio<any> {
+  const chromeFreeRoot = contentRoot.clone();
+  chromeFreeRoot
+    .find(
+      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], [class*="breadcrumb"], .menu, .sidebar',
+    )
+    .remove();
+  chromeFreeRoot.find('br').replaceWith(' ');
+  chromeFreeRoot.find('h1').remove();
+  return chromeFreeRoot;
+}
+
+function descriptionFieldText(chromeFreeRoot: cheerio.Cheerio<any>): string | undefined {
+  const descriptionField = chromeFreeRoot
+    .find('.field-name-field-description .field-items')
+    .first();
+  return descriptionField.length > 0 ? normalizeWhitespace(descriptionField.text()) : undefined;
+}
+
+export type NonProgramPageShape =
+  'cms-post' | 'news-roundup' | 'program-hub' | 'advising-page' | 'sign-in-wall';
+
+const CMS_POST_CONTENT_TYPES = new Set([
+  'narrative',
+  'news',
+  'news-item',
+  'news-article',
+  'article',
+  'story',
+  'blog',
+  'blog-post',
+  'event',
+]);
+
+function cmsContentTypes($: cheerio.CheerioAPI): string[] {
+  const classes = [$('body').attr('class') || '', primaryContentNode($).attr('class') || ''].join(
+    ' ',
+  );
+  const types = new Set<string>();
+  for (const match of classes.matchAll(/\b(?:page-)?node-{1,2}type-([a-z0-9_-]+)/gi)) {
+    types.add(match[1].toLowerCase().replace(/_/g, '-'));
+  }
+  return Array.from(types);
+}
+
+const DATED_ARTICLE_PATH_RE = /\/(?:19|20)\d{2}\/\d{1,2}\/\d{1,2}\//;
+
+function isDatedArticleUrl(url: string): boolean {
+  try {
+    return DATED_ARTICLE_PATH_RE.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isSignInWall($: cheerio.CheerioAPI): boolean {
+  return $('form input[type="password"]').length > 0;
+}
+
+interface ContentLinkCensus {
+  fundRecords: number;
+  otherPrograms: number;
+  datedArticles: number;
+  awardHeadings: number;
+}
+
+function contentLinkCensus(
+  $: cheerio.CheerioAPI,
+  content: cheerio.Cheerio<any>,
+  pageUrl: string,
+  pageTitle: string,
+): ContentLinkCensus {
+  const fundRecords = new Set<string>();
+  const otherPrograms = new Set<string>();
+  const datedArticles = new Set<string>();
+  const pageKey = indexSeedKey(normalizeLinkUrl(pageUrl));
+  const pageTitleKey = compactTitleIdentity(pageTitle);
+  for (const link of content.find('a').toArray()) {
+    const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
+    if (!rawUrl) continue;
+    const url = normalizeLinkUrl(rawUrl);
+    if (isRecordSpecificApplicationUrl(url)) {
+      fundRecords.add(url);
+      continue;
+    }
+    if (isDatedArticleUrl(url)) {
+      datedArticles.add(indexSeedKey(url));
+      continue;
+    }
+    const label = normalizedCandidateTitle($(link).text());
+    if (
+      indexSeedKey(url) !== pageKey &&
+      isLikelyPublicFellowshipDetailUrl(url) &&
+      isLikelyFellowshipTitle(label) &&
+      compactTitleIdentity(label) !== pageTitleKey
+    ) {
+      otherPrograms.add(indexSeedKey(url));
+    }
+  }
+  const awardHeadings = new Set<string>();
+  for (const heading of content.find('h2, h3, h4').toArray()) {
+    const label = normalizedCandidateTitle($(heading).text());
+    const key = compactTitleIdentity(label);
+    if (key && key !== pageTitleKey && namesAnAward(label)) awardHeadings.add(key);
+  }
+  return {
+    fundRecords: fundRecords.size,
+    otherPrograms: otherPrograms.size,
+    datedArticles: datedArticles.size,
+    awardHeadings: awardHeadings.size,
+  };
+}
+
+const AWARD_NOUN_RE =
+  /^(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|programs?)$/i;
+const AWARD_NAME_CONNECTOR_RE =
+  /^(?:and|&|or|the|a|an|of|for|in|on|to|with|by|about|this|that|these|our|your|its|each|per)$/i;
+
+function titleWords(title: string): string[] {
+  return normalizeWhitespace(title)
+    .replace(/(?:\s*\([^)]*\)|\s+\d{4})+$/, '')
+    .split(' ')
+    .map((word) => word.replace(/^[^\p{L}&]+|[^\p{L}&]+$/gu, ''))
+    .filter(Boolean);
+}
+
+function isQualifiedAwardNounAt(words: string[], index: number): boolean {
+  const qualifier = words[index - 1];
+  return (
+    AWARD_NOUN_RE.test(words[index] || '') &&
+    !!qualifier &&
+    !AWARD_NAME_CONNECTOR_RE.test(qualifier)
+  );
+}
+
+function namesSingleAward(title: string): boolean {
+  const words = titleWords(title);
+  return isLikelyFellowshipTitle(title) && isQualifiedAwardNounAt(words, words.length - 1);
+}
+
+function namesAnAward(label: string): boolean {
+  const words = titleWords(label);
+  return words.some((_word, index) => isQualifiedAwardNounAt(words, index));
+}
+
+function endsInAwardNoun(title: string): boolean {
+  const words = titleWords(title);
+  return AWARD_NOUN_RE.test(words[words.length - 1] || '');
+}
+
+const GENERIC_PAGE_CONTENT_TYPE = 'static-page';
+
+const MIN_DATED_ARTICLES_FOR_ROUNDUP = 3;
+const MIN_FUND_RECORDS_FOR_HUB = 2;
+const MIN_LISTED_PROGRAMS_FOR_HUB = 3;
+const MIN_AWARD_SECTIONS_FOR_HUB = 3;
+
+export function nonProgramPageShape(
+  $: cheerio.CheerioAPI,
+  pageUrl: string,
+): NonProgramPageShape | undefined {
+  if (isSignInWall($)) return 'sign-in-wall';
+  if (cmsContentTypes($).some((type) => CMS_POST_CONTENT_TYPES.has(type))) return 'cms-post';
+  const title = normalizedCandidateTitle($('h1').first().text());
+  const census = contentLinkCensus($, chromeFreeContent(detailContentRoot($)), pageUrl, title);
+  const singleAwardTitle = namesSingleAward(title);
+  if (!singleAwardTitle && census.datedArticles >= MIN_DATED_ARTICLES_FOR_ROUNDUP) {
+    return 'news-roundup';
+  }
+  if (census.awardHeadings >= MIN_AWARD_SECTIONS_FOR_HUB) return 'program-hub';
+  if (singleAwardTitle) return undefined;
+  if (
+    census.fundRecords >= MIN_FUND_RECORDS_FOR_HUB ||
+    census.fundRecords + census.otherPrograms >= MIN_LISTED_PROGRAMS_FOR_HUB
+  ) {
+    return 'program-hub';
+  }
+  if (cmsContentTypes($).includes(GENERIC_PAGE_CONTENT_TYPE) && !endsInAwardNoun(title)) {
+    return 'advising-page';
+  }
+  return undefined;
+}
+
+function chooseApplicationLink(
+  links: ReadonlyArray<{ label: string; url: string }>,
+  pageUrl: string,
+): string | undefined {
+  const routeLinks = links.filter((link) => !isUnhelpfulProgramUrl(link.url, pageUrl));
+  return (
+    routeLinks.find((link) => isCommunityForceUrl(link.url))?.url ||
+    routeLinks.find((link) => isStudentGrantsUrl(link.url))?.url ||
+    routeLinks.find((link) => applicationPortalKind(link.url))?.url ||
+    routeLinks.find((link) => /apply|application|student grants/i.test(link.label))?.url
+  );
+}
+
 function candidateFromDetailPage(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -1078,29 +1710,35 @@ function candidateFromDetailPage(
     return undefined;
   }
 
-  const specificContent = $('.node, article').first();
-  const primaryContent = $('main, [role="main"]').first();
-  const contentRoot =
-    specificContent.length > 0
-      ? specificContent
-      : primaryContent.length > 0
-        ? primaryContent
-        : $('body');
-  const chromeFreeRoot = contentRoot.clone();
-  chromeFreeRoot
-    .find(
-      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
-    )
-    .remove();
+  const contentRoot = detailContentRoot($);
+  const chromeFreeRoot = chromeFreeContent(contentRoot);
   const bodyText = normalizeWhitespace(chromeFreeRoot.text());
-  const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
-  const applicationInformation = applicationSectionText($);
-  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
-  const applicationOpenDate = utcStartOfDay(
-    parseDeadlineToUtcEndOfDay(bestApplicationOpenText(bodyText), referenceDate),
+  const bodyBlocks = textBlocks(chromeFreeRoot);
+  const titledBodyText = `${title} ${bodyText}`;
+  const eligibility = eligibilitySentences(bodyBlocks);
+  const safeDescription = sanitizedObservedFellowshipProse(
+    descriptionFieldText(chromeFreeRoot) ?? bodyText,
   );
-  const links = dedupeProgramLinks(
-    contentRoot
+  const applicationInformation = applicationSectionText($);
+  const record = externalAwardRecord($, contentRoot, pageUrl, referenceDate);
+  const proseRoot = withoutRecordWindow(chromeFreeRoot);
+  const proseDateText = normalizeWhitespace(proseRoot.text());
+  const deadlineStatement = record.deadline ? 'stated' : programDeadlineStatement(proseDateText);
+  const deadline =
+    record.deadline ??
+    (deadlineStatement === 'none'
+      ? undefined
+      : statedDeadline(blockMarkedDateText(proseRoot), referenceDate));
+  const applicationOpenDate = record.deadline
+    ? record.applicationOpenDate
+    : parseProgramDate(bestApplicationOpenText(proseDateText), 'opens', referenceDate);
+  const recordLinks = record.websiteUrls.map((url) => ({
+    label: EXTERNAL_AWARD_WEBSITE_LABEL,
+    url: normalizeLinkUrl(url),
+  }));
+  const links = dedupeProgramLinks([
+    ...recordLinks,
+    ...contentRoot
       .find('a')
       .toArray()
       .filter((link) => !isInExcludedPageRegion($(link)))
@@ -1113,11 +1751,10 @@ function candidateFromDetailPage(
       })
       .filter((item): item is { label: string; url: string } => !!item)
       .filter((item) => isProgramRelevantLink(item.url, item.label)),
-  ).slice(0, MAX_DETAIL_PROGRAM_LINKS);
-  const applicationLink =
-    links.find((link) => isCommunityForceUrl(link.url))?.url ||
-    links.find((link) => isStudentGrantsUrl(link.url))?.url ||
-    links.find((link) => /apply|application|student grants/i.test(link.label))?.url;
+  ]).slice(0, MAX_DETAIL_PROGRAM_LINKS);
+  // Chosen among the links the candidate keeps, so a chrome link that only labels itself
+  // "Application" cannot take the slot and then be dropped, leaving no route (#4233).
+  const applicationLink = chooseApplicationLink(links, pageUrl);
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
     hasExplicitActiveApplicationLanguage(bodyText);
@@ -1131,19 +1768,21 @@ function candidateFromDetailPage(
     applicationMaterials: applicationInformation
       ? inferApplicationMaterials(applicationInformation)
       : [],
-    researchFocused: isResearchFocused(bodyText),
+    researchFocused: isResearchFocused(titledBodyText),
     researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(bodyText),
     sourcePageKind: 'detail',
     sourceUrl: pageUrl,
     applicationLink,
     links,
     deadline,
+    deadlineStatement,
     applicationOpenDate,
-    contactOffice: 'Yale Fellowships and Funding',
+    contactOffice: administeringOfficeForPage(pageUrl),
     contactEmail: extractEmail(bodyText),
-    yearOfStudy: [],
+    eligibility: eligibilityStatement(eligibility),
+    yearOfStudy: statedYearOfStudy(bodyBlocks, eligibility, record.yearsOfStudy),
     termOfAward: inferTerm(bodyText),
-    purpose: inferPurpose(bodyText),
+    purpose: inferPurpose(titledBodyText),
     globalRegions: [],
     citizenshipStatus: [],
     isAcceptingApplications,
@@ -1183,6 +1822,7 @@ function mergeCandidates(
             !existing.description)
         ? incoming
         : existing;
+  const evidenceSecond = evidenceOwner === incoming ? existing : incoming;
   const sourceUrl = evidenceOwner.sourceUrl;
   const researchEvidenceOwner = evidenceOwner;
   const researchFocusExplicitNegative =
@@ -1215,10 +1855,13 @@ function mergeCandidates(
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
     links,
     deadline: incoming.deadline || existing.deadline,
+    deadlineStatement: evidenceOwner.deadlineStatement,
     applicationOpenDate: incoming.applicationOpenDate || existing.applicationOpenDate,
     contactOffice: incoming.contactOffice || existing.contactOffice,
     contactEmail: incoming.contactEmail || existing.contactEmail,
-    yearOfStudy: Array.from(new Set([...existing.yearOfStudy, ...incoming.yearOfStudy])),
+    eligibility: evidenceOwner.eligibility || evidenceSecond.eligibility,
+    yearOfStudy:
+      evidenceOwner.yearOfStudy.length > 0 ? evidenceOwner.yearOfStudy : evidenceSecond.yearOfStudy,
     termOfAward: Array.from(new Set([...existing.termOfAward, ...incoming.termOfAward])),
     purpose,
     globalRegions: Array.from(new Set([...existing.globalRegions, ...incoming.globalRegions])),
@@ -1230,14 +1873,20 @@ function mergeCandidates(
   });
 }
 
-export function parseFellowshipCatalogPage(
+export interface FellowshipCatalogPageRead {
+  candidates: FellowshipCatalogCandidate[];
+  refusedPage?: { shape: NonProgramPageShape; sourceKey: string; title: string };
+}
+
+export function readFellowshipCatalogPage(
   html: string,
   pageUrl: string,
   referenceDate: Date = new Date(),
-): FellowshipCatalogCandidate[] {
+): FellowshipCatalogPageRead {
   const $ = cheerio.load(html);
   $('script, style, noscript').remove();
   const byKey = new Map<string, FellowshipCatalogCandidate>();
+  const sorted = () => Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
 
   const opportunityRowCandidates = candidatesFromMacmillanOpportunityPage(
     $,
@@ -1246,27 +1895,42 @@ export function parseFellowshipCatalogPage(
   );
   if (opportunityRowCandidates.length > 0) {
     for (const candidate of opportunityRowCandidates) upsertCandidate(byKey, candidate);
-    return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+    return { candidates: sorted() };
   }
 
   const cbeyProgramCandidates = candidatesFromCbeyFundingPage($, pageUrl);
   if (cbeyProgramCandidates.length > 0) {
     for (const candidate of cbeyProgramCandidates) upsertCandidate(byKey, candidate);
-    return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+    return { candidates: sorted() };
   }
 
   const detail = candidateFromDetailPage($, pageUrl, referenceDate);
-  if (detail) upsertCandidate(byKey, detail);
-
-  if (!detail) {
-    for (const link of $('a').toArray()) {
-      const candidate = candidateFromLink($, link, pageUrl, referenceDate);
-      if (!candidate) continue;
-      upsertCandidate(byKey, candidate);
+  if (detail) {
+    const shape = nonProgramPageShape($, pageUrl);
+    if (shape) {
+      return {
+        candidates: [],
+        refusedPage: { shape, sourceKey: detail.sourceKey, title: detail.title },
+      };
     }
+    upsertCandidate(byKey, detail);
+    return { candidates: sorted() };
   }
 
-  return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+  for (const link of $('a').toArray()) {
+    const candidate = candidateFromLink($, link, pageUrl, referenceDate);
+    if (!candidate) continue;
+    upsertCandidate(byKey, candidate);
+  }
+  return { candidates: sorted() };
+}
+
+export function parseFellowshipCatalogPage(
+  html: string,
+  pageUrl: string,
+  referenceDate: Date = new Date(),
+): FellowshipCatalogCandidate[] {
+  return readFellowshipCatalogPage(html, pageUrl, referenceDate).candidates;
 }
 
 function observation(
@@ -1302,32 +1966,23 @@ function currentSourceObservation(
 }
 
 export function candidateToObservations(candidate: FellowshipCatalogCandidate): ObservationInput[] {
-  const classification = classifyProgram({
-    title: candidate.title,
-    summary: candidate.summary,
-    description: candidate.description,
-    purpose: candidate.purpose,
-    termOfAward: candidate.termOfAward,
-    sourceUrl: candidate.sourceUrl,
-  });
+  // Carried on the identity observation, which every read of this program emits, so a
+  // page the lane could not fetch or parse makes no claim, and the next read's own
+  // identity row supersedes this one and withdraws the claim with it (#4230).
+  const identity = observation('sourceKey', candidate.sourceKey, candidate);
+  const witness = identity && {
+    ...identity,
+    ...fellowshipAbsenceAssertion(
+      YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE,
+      !candidate.deadline && candidate.deadlineStatement === 'none' ? ['deadline'] : [],
+      candidate.deadline ? ['deadline'] : [],
+    ),
+  };
   return [
-    observation('sourceKey', candidate.sourceKey, candidate),
+    witness,
     observation('sourceName', YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, candidate),
     observation('sourceUrl', candidate.sourceUrl, candidate),
     observation('sourceFingerprint', candidate.sourceFingerprint, candidate),
-    observation('programCategory', classification.programCategory, candidate),
-    observation('programKind', classification.programKind, candidate),
-    observation('entryMode', classification.entryMode, candidate),
-    observation('studentFacingCategory', classification.studentFacingCategory, candidate),
-    observation('requiresMentorBeforeApply', classification.requiresMentorBeforeApply, candidate),
-    observation('mentorMatching', classification.mentorMatching, candidate),
-    observation('undergraduateOnly', classification.undergraduateOnly, candidate),
-    observation('yaleCollegeOnly', classification.yaleCollegeOnly, candidate),
-    observation('compensationSummary', classification.compensationSummary, candidate),
-    observation('hoursPerWeek', classification.hoursPerWeek, candidate),
-    observation('programDates', classification.programDates, candidate),
-    observation('bestNextStep', classification.bestNextStep, candidate),
-    observation('prepSteps', classification.prepSteps, candidate),
     observation('title', candidate.title, candidate),
     observation('summary', candidate.summary, candidate),
     observation('description', candidate.description, candidate),
@@ -1347,8 +2002,14 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),
     observation('applicationOpenDate', candidate.applicationOpenDate, candidate),
-    observation('contactOffice', candidate.contactOffice, candidate),
+    // Asserted rather than emitted-when-present, because the lane is the only
+    // writer of this field and it spent its history stamping one office on every
+    // row. Silence would leave every one of those in place: there is no
+    // clear-on-empty stage for a fellowship, so a field with no live observation
+    // keeps whatever it already holds (#4086).
+    currentSourceObservation('contactOffice', candidate.contactOffice || '', candidate),
     observation('contactEmail', candidate.contactEmail, candidate),
+    observation('eligibility', candidate.eligibility, candidate),
     observation('yearOfStudy', candidate.yearOfStudy, candidate),
     observation('termOfAward', candidate.termOfAward, candidate),
     observation('purpose', candidate.purpose, candidate),
@@ -1359,28 +2020,280 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
   ].filter((item): item is ObservationInput => !!item);
 }
 
+export async function loadRowsOwnedByLane(): Promise<OwnedFellowshipRow[]> {
+  return (await Fellowship.find(
+    { sourceName: YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE },
+    { sourceKey: 1, title: 1, sourceUrl: 1 },
+  ).lean()) as OwnedFellowshipRow[];
+}
+
+export interface RefusedCatalogPage {
+  url: string;
+  shape: NonProgramPageShape;
+  sourceKey: string;
+  title: string;
+}
+
+/**
+ * Matched on the cited page and on the identity that page would have minted, because a listing
+ * page is also the cited source of every program row it lists.
+ */
+export function rowsMintedByRefusedPages(
+  rows: OwnedFellowshipRow[],
+  refusedPages: RefusedCatalogPage[],
+  keptSourceKeys: ReadonlySet<string>,
+): Array<{ row: OwnedFellowshipRow & { sourceKey: string }; page: RefusedCatalogPage }> {
+  const pagesByUrl = new Map<string, RefusedCatalogPage[]>();
+  for (const page of refusedPages) {
+    const key = indexSeedKey(normalizeLinkUrl(page.url));
+    pagesByUrl.set(key, [...(pagesByUrl.get(key) || []), page]);
+  }
+  const matches: Array<{
+    row: OwnedFellowshipRow & { sourceKey: string };
+    page: RefusedCatalogPage;
+  }> = [];
+  for (const row of rows) {
+    const { sourceKey } = row;
+    if (!sourceKey || !row.sourceUrl || keptSourceKeys.has(sourceKey)) continue;
+    const page = (pagesByUrl.get(indexSeedKey(normalizeLinkUrl(row.sourceUrl))) || []).find(
+      (candidate) =>
+        candidate.sourceKey === sourceKey ||
+        compactTitleIdentity(candidate.title) === compactTitleIdentity(row.title || ''),
+    );
+    if (page) matches.push({ row: { ...row, sourceKey }, page });
+  }
+  return matches;
+}
+
+function retractionObservation(sourceKey: string, page: RefusedCatalogPage): ObservationInput {
+  return {
+    entityType: 'fellowship',
+    entityKey: sourceKey,
+    field: 'archived',
+    value: true,
+    sourceUrl: page.url,
+    confidenceOverride: 0.95,
+  };
+}
+
 async function fetchHtml(url: string, useCache: boolean): Promise<string> {
-  const safeUrl = await assertPublicHttpUrl(url);
-  const safeUrlText = safeUrl.toString();
+  const safeUrlText = (await assertPublicHttpUrl(url)).toString();
   const cacheKey = `page:${safeUrlText}`;
   if (useCache) {
     const cached = await getCached<string>(YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, cacheKey);
     if (cached) return cached;
   }
-  const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrlText, {
-    timeout: 30000,
+  const { html } = await fetchPageWithPolicy(safeUrlText, {
+    timeoutMs: 30000,
     headers: {
       'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
       Accept: 'text/html,application/xhtml+xml',
     },
     maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
+    // The run loop already retries every page three times, so a second retry layer here
+    // would multiply the requests a failing page costs.
+    maxRetries: 0,
   });
-  const html = String(res.data || '');
   if (useCache) await setCached(YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE, cacheKey, html);
   return html;
+}
+
+export type ShortLinkHop = (shortLink: string) => Promise<string>;
+
+export const MAX_SHORT_LINK_LOOKUPS = 200;
+const SHORT_LINK_DELAY_MS = 500;
+const SHORT_LINK_TIMEOUT_MS = 15_000;
+
+async function followShortLinkHop(shortLink: string): Promise<string> {
+  const hop = await fetchPublicHttpUrl(shortLink, {
+    maxRedirects: 0,
+    timeoutMs: SHORT_LINK_TIMEOUT_MS,
+  });
+  return hop.location ? new URL(hop.location, hop.finalUrl).toString() : '';
+}
+
+export interface FundShortLinkResolver {
+  fundPageFor(shortLink: string): Promise<string>;
+  metrics: FundShortLinkMetrics;
+}
+
+/**
+ * A catalog entry often links its fund only through a short link, which hides the fund page
+ * the cross-source match and the gate identify a fund by (#4289). One hop is followed, and
+ * the target is cited only when it is that fund page.
+ */
+export function createFundShortLinkResolver(
+  options: {
+    hop?: ShortLinkHop;
+    delayMs?: number;
+    maxLookups?: number;
+    sleep?: (ms: number) => Promise<void>;
+    log?: ScraperContext['log'];
+  } = {},
+): FundShortLinkResolver {
+  const hop = options.hop ?? followShortLinkHop;
+  const delayMs = options.delayMs ?? SHORT_LINK_DELAY_MS;
+  const maxLookups = options.maxLookups ?? MAX_SHORT_LINK_LOOKUPS;
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms))));
+  const fundPageByShortLink = new Map<string, string>();
+  const metrics: FundShortLinkMetrics = {
+    lookedUp: 0,
+    citedAsFundPage: 0,
+    notAFundPage: 0,
+    failed: 0,
+    capped: 0,
+  };
+
+  const lookUp = async (shortLink: string): Promise<string | null> => {
+    if (metrics.lookedUp >= maxLookups) {
+      metrics.capped += 1;
+      return null;
+    }
+    if (metrics.lookedUp > 0) await sleep(delayMs);
+    metrics.lookedUp += 1;
+    try {
+      const target = await hop(shortLink);
+      const fundPage =
+        target && isRecordSpecificFundDetailUrl(target) ? normalizeLinkUrl(target) : '';
+      if (fundPage) metrics.citedAsFundPage += 1;
+      else metrics.notAFundPage += 1;
+      return fundPage;
+    } catch (error) {
+      metrics.failed += 1;
+      options.log?.('Keeping fellowship short link after its redirect could not be read', {
+        url: shortLink,
+        error: sanitizeLogValue(error),
+      });
+      return '';
+    }
+  };
+
+  return {
+    metrics,
+    async fundPageFor(shortLink: string): Promise<string> {
+      const cached = fundPageByShortLink.get(shortLink);
+      if (cached !== undefined) return cached;
+      const fundPage = await lookUp(shortLink);
+      if (fundPage === null) return '';
+      fundPageByShortLink.set(shortLink, fundPage);
+      return fundPage;
+    },
+  };
+}
+
+export async function citeFundPagesInPlaceOfShortLinks(
+  candidate: FellowshipCatalogCandidate,
+  resolver: FundShortLinkResolver,
+): Promise<FellowshipCatalogCandidate> {
+  const citedUrl = async (url: string): Promise<string> =>
+    isLinkShortenerUrl(url) ? (await resolver.fundPageFor(url)) || url : url;
+  const applicationLink = candidate.applicationLink
+    ? await citedUrl(candidate.applicationLink)
+    : undefined;
+  const links: FellowshipCatalogCandidate['links'] = [];
+  for (const link of candidate.links) links.push({ ...link, url: await citedUrl(link.url) });
+  const unchanged =
+    applicationLink === candidate.applicationLink &&
+    links.every((link, index) => link.url === candidate.links[index].url);
+  if (unchanged) return candidate;
+  return finalizeCandidate({ ...candidate, applicationLink, links: dedupeProgramLinks(links) });
+}
+
+export type RouteStatusProbe = (url: string) => Promise<number>;
+
+const MAX_ROUTE_PROBES = 200;
+const ROUTE_PROBE_DELAY_MS = 500;
+const ROUTE_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * Only a status that says the page is gone retires a link. A bot challenge, a timeout or
+ * a server error says nothing about whether a student could reach the page, so each of
+ * those keeps the link (#4363).
+ */
+const GONE_STATUSES: ReadonlySet<number> = new Set([404, 410]);
+
+async function probeRouteStatus(url: string): Promise<number> {
+  const response = await fetchPublicHttpUrl(url, {
+    maxRedirects: 5,
+    timeoutMs: ROUTE_PROBE_TIMEOUT_MS,
+  });
+  return response.status;
+}
+
+export interface RecordWebsiteLinkChecker {
+  isGone(url: string): Promise<boolean>;
+  metrics: RecordWebsiteLinkMetrics;
+}
+
+/**
+ * The external-award records are an archive the office no longer keeps current, so the
+ * outside program page a record links has often moved. One request per link, sequential
+ * and spaced, tells a moved page from a live one before the link is cited as the route.
+ */
+export function createRecordWebsiteLinkChecker(
+  options: {
+    probe?: RouteStatusProbe;
+    delayMs?: number;
+    maxProbes?: number;
+    sleep?: (ms: number) => Promise<void>;
+    log?: ScraperContext['log'];
+  } = {},
+): RecordWebsiteLinkChecker {
+  const probe = options.probe ?? probeRouteStatus;
+  const delayMs = options.delayMs ?? ROUTE_PROBE_DELAY_MS;
+  const maxProbes = options.maxProbes ?? MAX_ROUTE_PROBES;
+  const sleep =
+    options.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms))));
+  const goneByUrl = new Map<string, boolean>();
+  const metrics: RecordWebsiteLinkMetrics = { probed: 0, dead: 0, failed: 0, capped: 0 };
+
+  return {
+    metrics,
+    async isGone(url: string): Promise<boolean> {
+      const known = goneByUrl.get(url);
+      if (known !== undefined) return known;
+      if (metrics.probed >= maxProbes) {
+        metrics.capped += 1;
+        return false;
+      }
+      if (metrics.probed > 0) await sleep(delayMs);
+      metrics.probed += 1;
+      let gone = false;
+      try {
+        gone = GONE_STATUSES.has(await probe(url));
+      } catch (error) {
+        metrics.failed += 1;
+        options.log?.('Keeping an external-award website link whose page could not be read', {
+          url,
+          error: sanitizeLogValue(error),
+        });
+      }
+      if (gone) metrics.dead += 1;
+      goneByUrl.set(url, gone);
+      return gone;
+    },
+  };
+}
+
+export async function withoutGoneRecordWebsiteLinks(
+  candidate: FellowshipCatalogCandidate,
+  checker: RecordWebsiteLinkChecker,
+): Promise<FellowshipCatalogCandidate> {
+  const links: FellowshipCatalogCandidate['links'] = [];
+  for (const link of candidate.links) {
+    const isRecordLink = link.label === EXTERNAL_AWARD_WEBSITE_LABEL;
+    if (isRecordLink && (await checker.isGone(link.url))) continue;
+    links.push(link);
+  }
+  if (links.length === candidate.links.length) return candidate;
+  const applicationLinkKept = links.some((link) => link.url === candidate.applicationLink);
+  const applicationLink = applicationLinkKept
+    ? candidate.applicationLink
+    : chooseApplicationLink(links, candidate.sourceUrl);
+  return finalizeCandidate({ ...candidate, applicationLink, links });
 }
 
 export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
@@ -1391,6 +2304,11 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
   private readonly sitemapUrls: string[];
   private readonly fetchPage: FetchPage;
   private readonly retryDelay: (attempt: number) => Promise<void>;
+  private readonly loadOwnedRows: () => Promise<OwnedFellowshipRow[]>;
+  private readonly shortLinkHop?: ShortLinkHop;
+  private readonly shortLinkDelayMs?: number;
+  private readonly routeStatusProbe?: RouteStatusProbe;
+  private readonly routeProbeDelayMs?: number;
 
   constructor(deps: YaleCollegeFellowshipsOfficeScraperDeps = {}) {
     this.pageUrls = deps.pageUrls || DEFAULT_PAGE_URLS;
@@ -1399,6 +2317,11 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     this.retryDelay =
       deps.retryDelay ||
       ((attempt) => new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt)));
+    this.loadOwnedRows = deps.loadOwnedRows || loadRowsOwnedByLane;
+    this.shortLinkHop = deps.shortLinkHop;
+    this.shortLinkDelayMs = deps.shortLinkDelayMs;
+    this.routeStatusProbe = deps.routeStatusProbe;
+    this.routeProbeDelayMs = deps.routeProbeDelayMs;
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -1407,11 +2330,12 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       throw new Error('--limit must be a safe non-negative integer');
     }
 
-    const referenceDate = new Date();
+    const referenceDate = ctx.options.referenceDate ?? new Date();
     const candidatesByKey = new Map<string, FellowshipCatalogCandidate>();
     const indexDiscoveredDetailUrls = new Set<string>();
     const fetched = new Set<string>();
     const failedUrls: string[] = [];
+    const refusedPages: RefusedCatalogPage[] = [];
 
     const parseAndMerge = async (url: string) => {
       if (fetched.has(url)) return;
@@ -1423,8 +2347,9 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         }
         return;
       }
-      const parsed = parseFellowshipCatalogPage(html, url, referenceDate);
-      for (const candidate of parsed) {
+      const read = readFellowshipCatalogPage(html, url, referenceDate);
+      if (read.refusedPage) refusedPages.push({ url, ...read.refusedPage });
+      for (const candidate of read.candidates) {
         upsertCandidate(candidatesByKey, candidate);
       }
     };
@@ -1508,10 +2433,50 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     const allCandidates = Array.from(candidatesByKey.values())
       .filter((candidate) => !isIndexSeedOnlyUrl(candidate.sourceUrl))
       .sort((a, b) => a.title.localeCompare(b.title));
-    const selected =
-      limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
-    const observations = selected.flatMap(candidateToObservations);
+    const limited = limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
+    // A benchmark freezes the pages a run reads, and a redirect is not one of them, so a
+    // capture or replay keeps the short link rather than reading the network.
+    const shortLinkResolver = isBenchmarkModeActive()
+      ? null
+      : createFundShortLinkResolver({
+          hop: this.shortLinkHop,
+          delayMs: this.shortLinkDelayMs,
+          log: ctx.log,
+        });
+    const websiteLinkChecker = isBenchmarkModeActive()
+      ? null
+      : createRecordWebsiteLinkChecker({
+          probe: this.routeStatusProbe,
+          delayMs: this.routeProbeDelayMs,
+          log: ctx.log,
+        });
+    const selected: FellowshipCatalogCandidate[] = [];
+    for (const candidate of limited) {
+      const cited = shortLinkResolver
+        ? await citeFundPagesInPlaceOfShortLinks(candidate, shortLinkResolver)
+        : candidate;
+      selected.push(
+        websiteLinkChecker ? await withoutGoneRecordWebsiteLinks(cited, websiteLinkChecker) : cited,
+      );
+    }
+    // There is no clear-on-empty for a fellowship, so going silent on a refused page would leave
+    // the row it minted live forever; the lane re-reads the page and asserts the row is retired.
+    const retractions =
+      refusedPages.length > 0
+        ? rowsMintedByRefusedPages(
+            await this.loadOwnedRows(),
+            refusedPages,
+            new Set(allCandidates.map((candidate) => candidate.sourceKey)),
+          )
+        : [];
+    const observations = [
+      ...selected.flatMap(candidateToObservations),
+      ...retractions.map(({ row, page }) => retractionObservation(row.sourceKey, page)),
+    ];
     if (observations.length > 0) await ctx.emit(observations);
+    const refusedByShape: Record<string, number> = {};
+    for (const page of refusedPages)
+      refusedByShape[page.shape] = (refusedByShape[page.shape] || 0) + 1;
 
     const deadlineParsed = selected.filter((candidate) => !!candidate.deadline).length;
     const reviewRequired = selected.filter((candidate) => candidate.reviewRequired).length;
@@ -1525,10 +2490,23 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
         `Capped ${detailUrlsCapped} program detail page(s) at the ${detailCrawlCap}-page crawl limit.`,
       );
     }
+    const unreadShortLinks = shortLinkResolver
+      ? shortLinkResolver.metrics.failed + shortLinkResolver.metrics.capped
+      : 0;
+    if (unreadShortLinks > 0) {
+      noteParts.push(
+        `Kept ${unreadShortLinks} fellowship short link(s) whose target was not read.`,
+      );
+    }
+    if (refusedPages.length > 0) {
+      noteParts.push(
+        `Refused ${refusedPages.length} page(s) that are not programs and retired ${retractions.length} row(s) they minted.`,
+      );
+    }
 
     return {
       observationCount: observations.length,
-      entitiesObserved: selected.length,
+      entitiesObserved: selected.length + retractions.length,
       notes: noteParts.length > 0 ? noteParts.join(' ') : undefined,
       metrics: {
         fellowshipCatalog: {
@@ -1544,6 +2522,10 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
           sitemapProgramsDiscovered: sitemapProgramUrls.length,
           detailPagesCrawled: detailUrls.length,
           detailPagesCapped: detailUrlsCapped,
+          nonProgramPagesRefused: refusedByShape,
+          nonProgramRowsRetired: retractions.length,
+          ...(shortLinkResolver ? { shortLinks: shortLinkResolver.metrics } : {}),
+          ...(websiteLinkChecker ? { recordWebsiteLinks: websiteLinkChecker.metrics } : {}),
         },
       },
     };

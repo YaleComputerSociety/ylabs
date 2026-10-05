@@ -47,6 +47,55 @@ describe('EntityCorrectionReportPanel', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('already have an open report');
   });
 
+  const openDialog = async () => {
+    render(<EntityCorrectionReportPanel slug={slug} entityName="Cell Systems Lab" />);
+    const trigger = screen.getByRole('button', { name: 'Report an issue with this page' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    return { trigger, dialog: await screen.findByRole('dialog') };
+  };
+
+  it('moves focus into the dialog when it opens', async () => {
+    const { dialog } = await openDialog();
+
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it('closes on Escape from wherever focus is after opening and returns focus to the trigger', async () => {
+    const { trigger } = await openDialog();
+
+    fireEvent.keyDown(document.activeElement || document.body, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('wraps Tab from the last control to the first and Shift+Tab back', async () => {
+    const { dialog } = await openDialog();
+    const firstControl = screen.getByLabelText(/what is wrong/i);
+    const lastControl = screen.getByRole('button', { name: 'Submit report' });
+
+    lastControl.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(firstControl);
+
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(lastControl);
+  });
+
+  it('does not show the previous thank-you when reopened', async () => {
+    vi.mocked(axios.post).mockResolvedValue({ data: {} });
+    await openDialog();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit report' }));
+    await screen.findByText(/Thanks\. Your report was sent/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Report an issue with this page' }));
+    await screen.findByRole('dialog');
+
+    expect(screen.queryByText(/Thanks\. Your report was sent/)).toBeNull();
+  });
+
   it('renders the current user report history for this page', async () => {
     vi.mocked(axios.get).mockResolvedValue({
       data: {

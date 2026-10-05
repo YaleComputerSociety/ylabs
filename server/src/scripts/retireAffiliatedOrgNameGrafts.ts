@@ -25,19 +25,22 @@ import {
   type ResearchHomeIdentitySource,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isPersonCmsProfileUrl } from '../utils/researchHomeWebsiteUrl';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   applyStudentVisibilityGatePlans,
   evaluateStudentVisibilityGateLeadResolution,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:retire-affiliated-org-name-grafts';
 const NAME_FIELDS = ['name', 'displayName'];
@@ -780,9 +783,9 @@ async function clearGraftedWebsiteFromDocument(
  */
 async function regateCorrectedEntities(
   entityIds: string[],
-): Promise<{ regated: number; regateSkippedReason?: string }> {
+): Promise<{ regated: number; regateSkippedReason?: string; indexSync: IndexSyncOutcome }> {
   const ids = entityIds.filter(Boolean);
-  if (ids.length === 0) return { regated: 0 };
+  if (ids.length === 0) return { regated: 0, indexSync: NO_INDEX_SYNC };
   const plans = await planStudentVisibilityGate({
     collection: 'research',
     mode: 'apply',
@@ -797,17 +800,12 @@ async function regateCorrectedEntities(
   const objectIds = ids
     .filter((id) => mongoose.isValidObjectId(id))
     .map((id) => new mongoose.Types.ObjectId(id));
-  if (objectIds.length > 0) {
-    const docs = await ResearchEntity.find({ _id: { $in: objectIds } }).lean();
-    try {
-      await syncEntities('researchEntity', docs as unknown[]);
-    } catch (error) {
-      console.error(`[${SCRIPT_NAME}] Meili resync after re-gate failed:`, sanitizeLogValue(error));
-    }
-  }
+  const docs =
+    objectIds.length > 0 ? await ResearchEntity.find({ _id: { $in: objectIds } }).lean() : [];
+  const indexSync = await syncResearchEntitiesWithOutcome(docs);
   return leadResolution.safe
-    ? { regated: plans.length }
-    : { regated: 0, regateSkippedReason: leadResolution.blocker };
+    ? { regated: plans.length, indexSync }
+    : { regated: 0, regateSkippedReason: leadResolution.blocker, indexSync };
 }
 
 export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
@@ -815,6 +813,7 @@ export async function applyRows(rows: OrgNameGraftRow[]): Promise<{
   documentFieldsCorrected: number;
   regated: number;
   regateSkippedReason?: string;
+  indexSync: IndexSyncOutcome;
 }> {
   let rolledBack = 0;
   let documentFieldsCorrected = 0;
@@ -888,7 +887,7 @@ async function main() {
 
   const applied = args.apply
     ? await applyRows(applyTargets)
-    : { rolledBack: 0, documentFieldsCorrected: 0, regated: 0 };
+    : { rolledBack: 0, documentFieldsCorrected: 0, regated: 0, indexSync: NO_INDEX_SYNC };
 
   const byVerdict: Record<string, number> = {};
   const bySource: Record<string, number> = {};
@@ -911,6 +910,8 @@ async function main() {
     documentFieldsCorrected: applied.documentFieldsCorrected,
     regated: applied.regated,
     regateSkippedReason: applied.regateSkippedReason,
+    indexResynced: applied.indexSync.resynced,
+    indexSyncFailures: applied.indexSync.indexSyncFailures,
     documentsStillServingGraft: rows.filter((row) => row.documentStillServesGraft).length,
     documentsServingGraftedWebsite: rows.filter((row) => !!row.graftedWebsiteUrl).length,
     graftedWebsiteClearable: rows.filter(

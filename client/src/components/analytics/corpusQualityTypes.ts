@@ -23,6 +23,9 @@ export interface CorpusQualitySnapshotRow {
     shortDescriptionUseful: CorpusQualityRatio;
     leadSentenceStatesResearch: CorpusQualityRatio;
     shortDescriptionIsAreaEchoOnly: CorpusQualityRatio;
+    browseCardCutMidSentence: CorpusQualityRatio;
+    browseCardSixWordsOrFewer: CorpusQualityRatio;
+    fullDescriptionIsBiography: CorpusQualityRatio;
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
   };
   integrity: {
@@ -41,10 +44,7 @@ export interface CorpusQualityLiveMetrics {
   };
   richness: {
     hasResearchWebsite: CorpusQualityRatio;
-    hasTopic: CorpusQualityRatio;
     hasSourceUrl: CorpusQualityRatio;
-    topicTotal: CorpusQualityRatio;
-    noResearchWebsiteAndNoTopics: CorpusQualityRatio;
   };
   description: {
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;

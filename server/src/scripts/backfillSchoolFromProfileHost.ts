@@ -10,7 +10,11 @@ import {
 } from './orgUnitSchoolAssertion';
 import { ResearchEntity } from '../models/researchEntity';
 import { resetOrgUnitCanonicalizerCache } from '../scrapers/orgUnitCanonicalization';
-import { syncEntities } from '../services/meiliSyncService';
+import {
+  NO_INDEX_SYNC,
+  syncResearchEntitiesWithOutcome,
+  type IndexSyncOutcome,
+} from '../services/researchEntityIndexSyncOutcome';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -23,7 +27,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export interface SchoolProfileHostCliOptions {
   dryRun: boolean;
@@ -75,6 +79,8 @@ export interface SchoolProfileHostResult {
   mode: 'dry-run' | 'apply';
   summary: SchoolProfileHostSummary;
   sampleChanges: SchoolProfileHostPlanRow[];
+  indexResynced: number;
+  indexSyncFailures: number;
 }
 
 interface EntityRow {
@@ -135,6 +141,7 @@ export async function runSchoolProfileHostBackfill(options: {
 
   let schoolAssertionsRecorded = 0;
   const schoolAssertionsSkipped: Record<string, number> = {};
+  let indexSync: IndexSyncOutcome = NO_INDEX_SYNC;
   if (!options.dryRun && changedRows.length > 0) {
     // Evidence first, then the eager projection. The observation is what makes the value
     // survive a re-projection; the `$set` is what makes the row serve it this pass.
@@ -160,7 +167,7 @@ export async function runSchoolProfileHostBackfill(options: {
     const updatedDocs = await ResearchEntity.find({
       _id: { $in: changedRows.map((row) => row.id) },
     }).lean();
-    await syncEntities('researchEntity', updatedDocs);
+    indexSync = await syncResearchEntitiesWithOutcome(updatedDocs);
   }
 
   return {
@@ -169,6 +176,9 @@ export async function runSchoolProfileHostBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeSchoolProfileHost(rows),
     sampleChanges: changedRows.slice(0, 25),
+
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
   };
 }
 

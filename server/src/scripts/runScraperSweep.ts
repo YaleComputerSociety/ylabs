@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -6,22 +6,52 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { Source } from '../models/source';
 import { buildOrchestrator } from '../scrapers/registry';
+import { MANUAL_ONLY_SWEEP_SOURCES } from '../scrapers/manualOnlySweepSources';
+import {
+  planSweepCodeDriftRefusal,
+  sweepCodeIdentityFrom,
+  type SweepCodeDriftRefusal,
+} from './sweepCodeIdentityCore';
 import {
   resolveMongoDatabaseName,
   resolveScraperEnvironment,
   type ScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
 import { c4LosslessIngestEnabled } from '../scrapers/observationStore';
+import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
-import { DEFAULT_PER_HOST_CONCURRENCY } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  ChainedHostSlotLimiter,
+  DEFAULT_PER_HOST_CONCURRENCY,
+  HostConcurrencyLimiter,
+  type HostSlotLimiter,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  brokerSocketPath,
+  HostSlotBroker,
+  SCRAPER_HOST_SLOT_BROKER_ENV,
+} from '../scrapers/utils/hostSlotBroker';
+import {
+  SCRAPER_SWEEP_PAGE_REUSE_ENV,
+  SWEEP_PAGE_REUSE_HOSTS,
+  resolveSweepPageReuseMaxBytes,
+} from '../scrapers/utils/sweepPageReuse';
+import { SweepPageStore, type SweepPageStoreStats } from '../scrapers/utils/sweepPageStore';
+import { machineHostSlotLimiter } from '../scrapers/utils/scraperHostSlotLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../services/sourceLinkHealth';
+import { SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS } from './backfillSourceLinkHealthCore';
 import {
   DEFAULT_EPONYMOUS_FRA_MERGE_MAX,
   SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV,
   type EponymousFraLabMergeDelta,
 } from './researchEntityEponymousMergeStage';
 import { SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV } from './cleanupArchivedResearchEntities';
+import {
+  DEFAULT_GRANT_SHELL_PORT_MAX,
+  SCRAPER_SWEEP_PORT_GRANT_SHELLS_ENV,
+  type GrantShellPortDelta,
+} from './portGrantShellsToFacultyProfiles';
 import {
   SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV,
   type ResearcherDedupeStageDelta,
@@ -41,21 +71,45 @@ import {
   stageStepId,
   sweepCheckpointFlagSignature,
 } from './scraperSweepCheckpoint';
-import { SweepRunLogger } from './scraperSweepLogging';
+import { SweepRunLogger, buildFailureTail, formatFailureTailForLog } from './scraperSweepLogging';
+import {
+  formatStageCounts,
+  formatStageRegressions,
+  judgeIntegrityGateResult,
+  judgeLaneScorecardResult,
+  judgeTrustContractResult,
+  stageCountBaselineFromRuns,
+  type StageCountRegression,
+  type StageJudgement,
+  type StageResultJudge,
+  type StageUnscoredBenchmark,
+  type SweepStageCountBaseline,
+} from './sweepStageJudgement';
+import { WeeklySweepRun } from '../models/weeklySweepRun';
+import type { WeeklySweepStageFailureKind } from '../models/storedVocabularies';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
+import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
+import { connectScriptMongo } from '../db/connections';
+import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 
 export type ScraperSweepMode =
   | 'development-plan'
   | 'development-sample'
   | 'development-full'
   | 'development-incremental'
-  | 'fellowship-development-full'
-  | 'beta-plan'
-  | 'beta-fetch';
+  | 'fellowship-development-full';
 
 export interface ScraperSweepSource {
   name: string;
-  phase: 'identity' | 'discovery' | 'funding' | 'relationships' | 'content-access' | 'scholarly';
+  phase:
+    | 'identity'
+    | 'discovery'
+    | 'discovery-readers'
+    | 'funding'
+    | 'relationships'
+    | 'content-access'
+    | 'scholarly';
+  readsRowsWrittenBy?: string[];
 }
 
 export const FELLOWSHIP_SWEEP_SOURCES: ScraperSweepSource[] = [
@@ -74,43 +128,51 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yale-research-official', phase: 'discovery' },
   { name: 'centers-institutes-index', phase: 'discovery' },
   { name: 'dept-faculty-roster', phase: 'discovery' },
-  { name: 'bbs-research-track', phase: 'discovery' },
-  { name: 'department-research-areas', phase: 'discovery' },
   { name: 'department-undergrad-research', phase: 'discovery' },
+  {
+    name: 'bbs-research-track',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['ysm-faculty-directory'],
+  },
+  {
+    name: 'department-research-areas',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['dept-faculty-roster'],
+  },
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'neh-funded-projects', phase: 'funding' },
-  { name: 'federal-award-usaspending', phase: 'funding' },
   { name: 'doe-osti', phase: 'funding' },
+  { name: 'crossref-grants', phase: 'funding' },
   // Identity work, but deliberately not in the `identity` phase: the aliases it resolves are
   // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever
   // resolve the previous sweep's keys. It leads `relationships` because the lanes below it read
   // the person key it repairs.
-  { name: 'directory-alias-resolution', phase: 'relationships' },
+  {
+    name: 'directory-alias-resolution',
+    phase: 'relationships',
+    readsRowsWrittenBy: ['dept-faculty-roster'],
+  },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
-  { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'lab-site-lead-verification', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
-  { name: 'lab-microsite-undergrad-llm', phase: 'content-access' },
-  { name: 'undergrad-research-posting', phase: 'content-access' },
   { name: 'research-area-source-extractor', phase: 'content-access' },
   { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
 
-export const MANUAL_ONLY_SWEEP_SOURCES: string[] = ['undergrad-fellowships-recipients'];
+export { MANUAL_ONLY_SWEEP_SOURCES };
 
 export function sweepSourcesForMode(mode: ScraperSweepMode): ScraperSweepSource[] {
   return isFellowshipSweepMode(mode) ? FELLOWSHIP_SWEEP_SOURCES : RESEARCH_SWEEP_SOURCES;
 }
 
 interface ScraperSweepModeConfig {
-  environment: Extract<ScraperEnvironment, 'development' | 'beta'>;
-  database: 'Development' | 'Beta';
+  environment: Extract<ScraperEnvironment, 'development'>;
+  database: 'Development';
   writes: boolean;
   autoMaterialize: boolean;
-  stopOnFailure: boolean;
   scraperFlags: string[];
   confirmationFlag?: string;
   defaultConcurrency: number;
@@ -123,6 +185,9 @@ export interface ScraperSweepCliOptions {
   restart?: boolean;
   forceLlm?: boolean;
   pruneBetweenPhases?: boolean;
+  skipPreflight?: boolean;
+  noPageReuse?: boolean;
+  fullLinkHealthReprobe?: boolean;
 }
 
 export type ScraperSweepPhase = ScraperSweepSource['phase'];
@@ -134,7 +199,25 @@ const PHASE_CONCURRENCY_CAPS: Partial<Record<ScraperSweepPhase, number>> = {
   'content-access': LLM_PHASE_CONCURRENCY_CAP,
 };
 
-export interface ScraperSweepRunRow {
+export interface SweepStepTiming {
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+}
+
+export function sweepStepTiming(startedAt: Date, finishedAt: Date): Required<SweepStepTiming> {
+  return {
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+  };
+}
+
+export interface SweepPhaseTiming extends Required<SweepStepTiming> {
+  phase: ScraperSweepPhase;
+}
+
+export interface ScraperSweepRunRow extends SweepStepTiming {
   sourceName: string;
   phase: ScraperSweepSource['phase'];
   status: 'succeeded' | 'failed' | 'not-run';
@@ -149,6 +232,8 @@ export interface ScraperSweepRunRow {
   fetchFailed?: number;
   fetchBlocked?: number;
   selectorBreakages?: number;
+  throttleRecovered?: number;
+  throttleExhausted?: number;
   materializationCreated?: number;
   materializationUpdated?: number;
   materializationArchived?: number;
@@ -157,23 +242,40 @@ export interface ScraperSweepRunRow {
   materializationErrors?: number;
   exitCode?: number;
   error?: string;
-  betaRenderCommands?: {
-    plan: string;
-    apply: string;
-  };
+  failureTail?: string;
 }
 
-export interface DevelopmentPostRunStage {
+export interface PostRunStageDiagnostics {
+  failureKind?: WeeklySweepStageFailureKind;
+  failureTail?: string;
+  counts?: Record<string, number>;
+  regressions?: StageCountRegression[];
+  unscored?: StageUnscoredBenchmark[];
+}
+
+export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDiagnostics {
   name:
+    | 'stale-scrape-run-reap'
     | 'researcher-dedupe'
+    | 'grant-shell-faculty-port'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
     | 'website-url-identity-dedupe'
+    | 'shared-person-name-agreed-dedupe'
     | 'source-link-health'
     | 'profile-link-health'
     | 'dead-research-website-clear'
+    | 'organization-identity-website-retire'
+    | 'shared-roster-website-retire'
+    | 'refusal-lane-attribution'
+    | 'pi-attributed-researcher-mint'
+    | 'inferred-pi-lead-reclaim'
+    | 'profile-honors'
     | 'visibility-gate'
     | 'search-rebuild'
+    | 'search-index-check'
+    | 'lane-scorecard'
+    | 'engine-benchmark'
     | 'coverage-audit'
     | 'data-quality'
     | 'integrity-gate'
@@ -185,17 +287,23 @@ export interface DevelopmentPostRunStage {
   exitCode: number;
   error?: string;
   mergeDelta?: EponymousFraLabMergeDelta;
+  grantShellPortDelta?: GrantShellPortDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
+  deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
+  staleScrapeRunReapDelta?: StaleScrapeRunReapStageDelta;
+  inferredPiLeadReclaimDelta?: InferredPiLeadReclaimStageDelta;
 }
 
 export interface DevelopmentPostRunStageOptions {
   autoMergeEponymousFra?: boolean;
   dedupeResearchers?: boolean;
+  portGrantShells?: boolean;
   mergeUrlIdentityDuplicates?: boolean;
   deleteMergeResidue?: boolean;
   pruneDeadObservations?: boolean;
+  fullLinkHealthReprobe?: boolean;
   sinceIso?: string;
   maxMerges?: number;
   maxUrlIdentityMerges?: number;
@@ -222,6 +330,7 @@ export function resolveDevelopmentPostRunOptions(
   return {
     autoMergeEponymousFra: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV]),
     dedupeResearchers: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV]),
+    portGrantShells: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_PORT_GRANT_SHELLS_ENV]),
     mergeUrlIdentityDuplicates: isUrlIdentityDedupeStageEnabled(env),
     deleteMergeResidue: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV]),
     sinceIso,
@@ -252,6 +361,26 @@ export function sourcesThatProducedNothing(rows: ScraperSweepRunRow[]): string[]
     .map((row) => row.sourceName);
 }
 
+export interface SweepThrottleRetrySummary {
+  recovered: number;
+  exhausted: number;
+  exhaustedSources: string[];
+}
+
+export function sweepThrottleRetrySummary(rows: ScraperSweepRunRow[]): SweepThrottleRetrySummary {
+  return {
+    recovered: rows.reduce((total, row) => total + (row.throttleRecovered ?? 0), 0),
+    exhausted: rows.reduce((total, row) => total + (row.throttleExhausted ?? 0), 0),
+    exhaustedSources: rows
+      .filter((row) => (row.throttleExhausted ?? 0) > 0)
+      .map((row) => row.sourceName),
+  };
+}
+
+export interface SweepPageReuseSummary extends SweepPageStoreStats {
+  hosts: string[];
+}
+
 export interface ScraperSweepSummary {
   mode: ScraperSweepMode;
   environment: ScraperSweepModeConfig['environment'];
@@ -259,28 +388,56 @@ export interface ScraperSweepSummary {
   startedAt: string;
   finishedAt: string;
   outputDirectory: string;
+  /**
+   * The commit the stages actually ran, which is a property of the checkout rather than of
+   * `beta`. `null` where the checkout could not report one. `codeDrift` is present only when the
+   * checkout moved mid-run, which is the condition that makes stage results unattributable.
+   */
+  codeSha: string | null;
+  codeDrift?: SweepCodeDriftRefusal[];
   sourceCount: number;
   succeeded: number;
   failed: number;
   notRun: number;
   producedNothing: number;
   producedNothingSources: string[];
+  throttleRetry: SweepThrottleRetrySummary;
   rows: ScraperSweepRunRow[];
+  phases?: SweepPhaseTiming[];
+  pageReuse?: SweepPageReuseSummary;
   postRun?: {
     status: 'succeeded' | 'failed';
     stages: Array<DevelopmentPostRunStage | FellowshipPostRunStage>;
-  };
+  } & SweepStepTiming;
+  searchIndex?: SweepSearchIndexOutcome;
 }
 
-export interface FellowshipPostRunStage {
+export const SEARCH_INDEX_CHECK_JOURNEY_CASES = [
+  'sorted-browse-keeps-order',
+  'title-sorted-browse-follows-card-title',
+] as const;
+
+export const DEVELOPMENT_SEARCH_RESYNC_COMMAND = 'yarn development:search:rebuild';
+
+export type SweepSearchIndexOutcome =
+  { status: 'written' } | { status: 'resync-required'; remedy: string };
+
+export function sweepSearchIndexOutcome(
+  env: NodeJS.ProcessEnv = process.env,
+): SweepSearchIndexOutcome {
+  return searchIndexWritesDeferred(env)
+    ? { status: 'resync-required', remedy: DEVELOPMENT_SEARCH_RESYNC_COMMAND }
+    : { status: 'written' };
+}
+
+export interface FellowshipPostRunStage extends SweepStepTiming, PostRunStageDiagnostics {
   name:
-    | 'classification-backfill'
+    | 'program-visibility-gate'
     | 'global-regions-backfill'
     | 'official-sources-backfill'
     | 'link-labels-backfill'
     | 'accepting-applications-invariant'
     | 'source-link-health'
-    | 'catalog-refresh'
     | 'research-relevance-audit'
     | 'freshness-audit'
     | 'dead-data-prune';
@@ -292,22 +449,19 @@ export interface FellowshipPostRunStage {
 
 export interface FellowshipPostRunStageOptions {
   applyOfficialSourceChangeSet?: boolean;
-  refreshFellowshipCatalog?: boolean;
-  fellowshipRefreshTarget?: string;
-  fellowshipRefreshRestoreToken?: string;
-  fellowshipRefreshLimit?: number;
-  sweepRefreshTarget?: string;
   applyLimit?: number;
   pruneDeadObservations?: boolean;
 }
 
+// An exhaustive mode never passes --use-cache: it persists every fetched payload to
+// scrape_snapshots for 24h, and one full sweep wrote more cache than the Development
+// Atlas quota holds (#3536). Only the --limit modes may cache.
 const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
   'development-plan': {
     environment: 'development',
     database: 'Development',
     writes: false,
     autoMaterialize: false,
-    stopOnFailure: false,
     scraperFlags: ['--limit', '100', '--use-cache', '--dry-run'],
     defaultConcurrency: 4,
   },
@@ -316,7 +470,6 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
     scraperFlags: ['--limit', '100', '--use-cache', '--auto-materialize'],
     defaultConcurrency: 4,
   },
@@ -325,8 +478,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
+    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-full-sweep',
     defaultConcurrency: 8,
   },
@@ -335,8 +487,7 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
-    scraperFlags: ['--exhaustive', '--use-cache', '--auto-materialize'],
+    scraperFlags: ['--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-development-incremental-sweep',
     defaultConcurrency: 8,
   },
@@ -345,33 +496,17 @@ const MODE_CONFIG: Record<ScraperSweepMode, ScraperSweepModeConfig> = {
     database: 'Development',
     writes: true,
     autoMaterialize: true,
-    stopOnFailure: false,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--use-cache', '--auto-materialize'],
+    scraperFlags: ['--ignore-work-planner', '--exhaustive', '--auto-materialize'],
     confirmationFlag: '--confirm-fellowship-sweep',
     defaultConcurrency: 8,
-  },
-  'beta-plan': {
-    environment: 'beta',
-    database: 'Beta',
-    writes: false,
-    autoMaterialize: false,
-    stopOnFailure: true,
-    scraperFlags: ['--limit', '100', '--dry-run'],
-    defaultConcurrency: 1,
-  },
-  'beta-fetch': {
-    environment: 'beta',
-    database: 'Beta',
-    writes: true,
-    autoMaterialize: false,
-    stopOnFailure: true,
-    scraperFlags: ['--ignore-work-planner', '--exhaustive'],
-    confirmationFlag: '--confirm-beta-release-candidate',
-    defaultConcurrency: 1,
   },
 };
 
 const SWEEP_MODE_VALUES = new Set(Object.keys(MODE_CONFIG));
+
+export function scraperSweepModes(): ScraperSweepMode[] {
+  return Object.keys(MODE_CONFIG) as ScraperSweepMode[];
+}
 const LOCAL_MEILI_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 function parseConcurrencyValue(raw: string): number {
@@ -388,6 +523,9 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
   let restart = false;
   let forceLlm = false;
   let pruneBetweenPhases = false;
+  let skipPreflight = false;
+  let noPageReuse = false;
+  let fullLinkHealthReprobe = false;
   const confirmations = new Set<string>();
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -402,6 +540,18 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     }
     if (arg === '--prune-between-phases') {
       pruneBetweenPhases = true;
+      continue;
+    }
+    if (arg === '--skip-preflight') {
+      skipPreflight = true;
+      continue;
+    }
+    if (arg === '--no-page-reuse') {
+      noPageReuse = true;
+      continue;
+    }
+    if (arg === '--full-link-health-reprobe') {
+      fullLinkHealthReprobe = true;
       continue;
     }
     if (arg.startsWith('--concurrency=')) {
@@ -433,8 +583,7 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     if (
       arg === '--confirm-development-full-sweep' ||
       arg === '--confirm-development-incremental-sweep' ||
-      arg === '--confirm-fellowship-sweep' ||
-      arg === '--confirm-beta-release-candidate'
+      arg === '--confirm-fellowship-sweep'
     ) {
       confirmations.add(arg);
       continue;
@@ -456,7 +605,18 @@ export function parseScraperSweepArgs(argv: string[]): ScraperSweepCliOptions {
     ...(restart ? { restart } : {}),
     ...(forceLlm ? { forceLlm } : {}),
     ...(pruneBetweenPhases ? { pruneBetweenPhases } : {}),
+    ...(skipPreflight ? { skipPreflight } : {}),
+    ...(noPageReuse ? { noPageReuse } : {}),
+    ...(fullLinkHealthReprobe ? { fullLinkHealthReprobe } : {}),
   };
+}
+
+export function isSweepPageReuseEnabled(options: ScraperSweepCliOptions): boolean {
+  return isDeadObservationPruneSweepMode(options.mode) && !options.noPageReuse;
+}
+
+export function isSweepPreflightEnabled(options: ScraperSweepCliOptions): boolean {
+  return options.mode === 'development-full' && !options.skipPreflight;
 }
 
 export function orderedScraperSweepPhases(
@@ -471,6 +631,49 @@ export function orderedScraperSweepPhases(
     }
   }
   return phases;
+}
+
+export interface SweepSourceOrderingViolation {
+  reader: string;
+  producer: string;
+  reason: 'producer-not-in-sweep' | 'producer-not-in-an-earlier-phase';
+}
+
+export function sweepSourceOrderingViolations(
+  sources: ScraperSweepSource[] = RESEARCH_SWEEP_SOURCES,
+): SweepSourceOrderingViolation[] {
+  const phaseIndex = new Map(
+    orderedScraperSweepPhases(sources).map((phase, index) => [phase, index]),
+  );
+  const sourcePhaseIndex = new Map(
+    sources.map((source) => [source.name, phaseIndex.get(source.phase) ?? -1]),
+  );
+  const violations: SweepSourceOrderingViolation[] = [];
+  for (const reader of sources) {
+    const readerIndex = sourcePhaseIndex.get(reader.name) ?? -1;
+    for (const producer of reader.readsRowsWrittenBy ?? []) {
+      const producerIndex = sourcePhaseIndex.get(producer);
+      if (producerIndex === undefined) {
+        violations.push({ reader: reader.name, producer, reason: 'producer-not-in-sweep' });
+      } else if (producerIndex >= readerIndex) {
+        violations.push({
+          reader: reader.name,
+          producer,
+          reason: 'producer-not-in-an-earlier-phase',
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+export function assertSweepSourceOrdering(sources: ScraperSweepSource[]): void {
+  const violations = sweepSourceOrderingViolations(sources);
+  if (violations.length === 0) return;
+  const detail = violations
+    .map((violation) => `${violation.reader} reads ${violation.producer} (${violation.reason})`)
+    .join('; ');
+  throw new Error(`Sweep source ordering is unsafe: ${detail}`);
 }
 
 export function resolvePhaseConcurrency(
@@ -493,6 +696,51 @@ export function resolveSweepChildPerHostConcurrency(
   return Number.isInteger(override) && override >= 1 ? Math.min(override, shared) : shared;
 }
 
+export function resolveSweepHostSlotBudget(
+  env: NodeJS.ProcessEnv = process.env,
+  budget: number = DEFAULT_PER_HOST_CONCURRENCY,
+): number {
+  const override = Number(env.SCRAPER_PER_HOST_CONCURRENCY);
+  return Number.isInteger(override) && override >= 1 ? Math.min(override, budget) : budget;
+}
+
+export function sweepHostSlotBrokerPath(tmpdir: string = os.tmpdir(), pid = process.pid): string {
+  return brokerSocketPath(`ylabs-host-slots-${pid}.sock`, tmpdir);
+}
+
+export async function startSweepHostSlotBroker(
+  env: NodeJS.ProcessEnv = process.env,
+  socketPath: string = sweepHostSlotBrokerPath(),
+  options: { pageReuse?: boolean; machineWide?: HostSlotLimiter } = {},
+): Promise<HostSlotBroker> {
+  return HostSlotBroker.listen(
+    socketPath,
+    new ChainedHostSlotLimiter([
+      new HostConcurrencyLimiter(resolveSweepHostSlotBudget(env)),
+      options.machineWide ?? machineHostSlotLimiter(),
+    ]),
+    options.pageReuse
+      ? {
+          pageStore: new SweepPageStore(resolveSweepPageReuseMaxBytes(env), SWEEP_PAGE_REUSE_HOSTS),
+        }
+      : {},
+  );
+}
+
+export function sweepPageReuseSummary(broker: HostSlotBroker): SweepPageReuseSummary | undefined {
+  const stats = broker.pageStore?.stats();
+  return stats ? { hosts: [...SWEEP_PAGE_REUSE_HOSTS], ...stats } : undefined;
+}
+
+function formatMebibytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MiB`;
+}
+
+export function formatSweepPageReuseSummary(summary: SweepPageReuseSummary | undefined): string {
+  if (!summary) return 'Page reuse within this sweep: off';
+  return `Page reuse within this sweep: ${summary.hits} of ${summary.lookups} lookups served from a page fetched earlier in the sweep; ${summary.stored} stored, ${summary.evicted} evicted, peak ${formatMebibytes(summary.peakHeldBytes)} of ${formatMebibytes(summary.maxBytes)}`;
+}
+
 export { runWithBoundedConcurrency };
 
 export function validateScraperSweepManifest(registeredNames: string[]): void {
@@ -511,12 +759,16 @@ export function validateScraperSweepManifest(registeredNames: string[]): void {
   );
   const unknownInSweep = configuredNames.filter((name) => !registeredSet.has(name));
   const manualInSweep = configuredNames.filter((name) => manualOnlySet.has(name));
+  const unregisteredManualOnly = MANUAL_ONLY_SWEEP_SOURCES.filter(
+    (name) => !registeredSet.has(name),
+  );
 
   if (
     duplicateNames.length ||
     missingFromSweep.length ||
     unknownInSweep.length ||
-    manualInSweep.length
+    manualInSweep.length ||
+    unregisteredManualOnly.length
   ) {
     throw new Error(
       [
@@ -529,6 +781,9 @@ export function validateScraperSweepManifest(registeredNames: string[]): void {
         unknownInSweep.length ? `unknown sweep sources: ${unknownInSweep.join(', ')}` : '',
         manualInSweep.length
           ? `manual-only sources must stay out of the sweep manifest: ${manualInSweep.join(', ')}`
+          : '',
+        unregisteredManualOnly.length
+          ? `manual-only sources that are not registered: ${unregisteredManualOnly.join(', ')}`
           : '',
       ]
         .filter(Boolean)
@@ -550,13 +805,37 @@ export function validateScraperSweepSourceRows(
   }
 }
 
-async function validateScraperSweepDatabasePreflight(registeredNames: string[]): Promise<void> {
+const STAGE_BASELINE_RUN_LOOKBACK = 12;
+
+export async function loadSweepStageCountBaseline(): Promise<SweepStageCountBaseline> {
+  try {
+    const runs = await WeeklySweepRun.find({ 'stages.counts': { $exists: true } })
+      .select('startedAt stages.name stages.status stages.counts')
+      .sort({ startedAt: -1 })
+      .limit(STAGE_BASELINE_RUN_LOOKBACK)
+      .lean();
+    return stageCountBaselineFromRuns(
+      runs as unknown as Parameters<typeof stageCountBaselineFromRuns>[0],
+    );
+  } catch (error) {
+    console.warn(
+      `[post-run] could not read stage counts from weekly_sweep_runs, so counts are recorded without a baseline: ${sanitizeLogValue(error)}`,
+    );
+    return {};
+  }
+}
+
+async function validateScraperSweepDatabasePreflight(
+  registeredNames: string[],
+  readStageBaseline: boolean,
+): Promise<SweepStageCountBaseline> {
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for the scraper sweep');
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const sourceRowNames = await Source.find({ name: { $in: registeredNames } }).distinct('name');
     validateScraperSweepSourceRows(registeredNames, sourceRowNames);
+    return readStageBaseline ? await loadSweepStageCountBaseline() : {};
   } finally {
     await mongoose.disconnect();
   }
@@ -579,7 +858,7 @@ export function validateScraperSweepEnvironment(
   if (config.writes && env.ALLOW_NON_PROD_SCRAPER_WRITES !== 'true') {
     throw new Error(`${mode} requires ALLOW_NON_PROD_SCRAPER_WRITES=true`);
   }
-  if (config.environment === 'development' && config.autoMaterialize) {
+  if (config.autoMaterialize && !searchIndexWritesDeferred(env)) {
     let meiliHost: URL;
     try {
       meiliHost = new URL(env.MEILISEARCH_HOST || '');
@@ -640,19 +919,6 @@ export function buildPruneDeadObservationsChildArgs(artifactPath: string): strin
   ];
 }
 
-function betaRenderCommands(sourceName: string, runId: string) {
-  const prefix = `/tmp/ylabs-beta-${sourceName}`;
-  return {
-    plan:
-      `SCRAPER_ENV=beta yarn --cwd server scrape materialize --run ${runId} ` +
-      `--dry-run --output ${prefix}-materialize-plan.json`,
-    apply:
-      `SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true ` +
-      `yarn --cwd server scrape materialize --run ${runId} ` +
-      `--confirm-materialize --output ${prefix}-materialize-result.json`,
-  };
-}
-
 type ScraperSweepArtifactSummary = Pick<
   ScraperSweepRunRow,
   | 'runId'
@@ -665,6 +931,8 @@ type ScraperSweepArtifactSummary = Pick<
   | 'fetchFailed'
   | 'fetchBlocked'
   | 'selectorBreakages'
+  | 'throttleRecovered'
+  | 'throttleExhausted'
   | 'materializationCreated'
   | 'materializationUpdated'
   | 'materializationArchived'
@@ -688,6 +956,8 @@ function safeArtifactSummary(artifactPath: string): ScraperSweepArtifactSummary 
     fetchFailed: numeric(artifact.coverage?.fetch?.failed),
     fetchBlocked: numeric(artifact.coverage?.fetch?.blocked),
     selectorBreakages: numeric(artifact.coverage?.fetch?.selectorBreakages),
+    throttleRecovered: numeric(artifact.coverage?.fetch?.throttleRecovered),
+    throttleExhausted: numeric(artifact.coverage?.fetch?.throttleExhausted),
     materializationCreated: numeric(artifact.materialization?.created),
     materializationUpdated: numeric(artifact.materialization?.updated),
     materializationArchived: numeric(artifact.materialization?.archived),
@@ -724,20 +994,49 @@ export function defaultScraperSweepOutputDirectory(
 
 export interface ScraperSweepChildResult {
   status: number | null;
+  signal?: NodeJS.Signals | null;
   error?: Error;
+  timedOut?: boolean;
+}
+
+export function describeChildExit(label: string, child: ScraperSweepChildResult): string {
+  if (child.error) return sanitizeLogValue(child.error);
+  if (child.timedOut) return `${label} timed out and was stopped`;
+  if (child.signal) return `${label} was killed by ${child.signal}`;
+  return `${label} exited with status ${child.status ?? 1}`;
 }
 
 interface ChildRunnerOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
   logPath?: string;
+  timeoutMs?: number;
 }
+
+const CHILD_KILL_GRACE_MS = 10_000;
 
 type ChildRunner = (
   command: string,
   args: string[],
   options: ChildRunnerOptions,
 ) => Promise<ScraperSweepChildResult>;
+
+// A container image carries no .git, so the commit it was built from arrives as RENDER_GIT_COMMIT
+// (deploy/sweep-runner/Dockerfile). An image cannot move under a run, so it is a faithful HEAD.
+export function readSweepHeadSha(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  runGit: (repoRoot: string) => { status: number | null; stdout: string } = (root) =>
+    spawnSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }),
+): string | null {
+  const result = runGit(repoRoot);
+  if (result.status === 0) return result.stdout.trim();
+  return readCodeSha(env, repoRoot) ?? null;
+}
+
+function defaultHeadShaReader(repoRoot: string): string | null {
+  return readSweepHeadSha(repoRoot);
+}
 
 function spawnChild(
   command: string,
@@ -747,33 +1046,108 @@ function spawnChild(
   return new Promise((resolve) => {
     const logFd = options.logPath ? fs.openSync(options.logPath, 'a') : undefined;
     let settled = false;
+    let timedOut = false;
+    const timers: NodeJS.Timeout[] = [];
     const finish = (result: ScraperSweepChildResult) => {
       if (settled) return;
       settled = true;
+      for (const timer of timers) clearTimeout(timer);
       if (logFd !== undefined) fs.closeSync(logFd);
-      resolve(result);
+      resolve(timedOut ? { ...result, timedOut } : result);
     };
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
       stdio: logFd === undefined ? 'inherit' : ['ignore', logFd, logFd],
+      detached: options.timeoutMs !== undefined,
     });
+    if (options.timeoutMs !== undefined && child.pid !== undefined) {
+      const killGroup = (signal: NodeJS.Signals) => {
+        try {
+          process.kill(-child.pid!, signal);
+        } catch {
+          child.kill(signal);
+        }
+      };
+      const killOnParentExit = () => killGroup('SIGKILL');
+      process.once('exit', killOnParentExit);
+      child.once('close', () => process.removeListener('exit', killOnParentExit));
+      timers.push(
+        setTimeout(() => {
+          timedOut = true;
+          killGroup('SIGTERM');
+          timers.push(setTimeout(() => killGroup('SIGKILL'), CHILD_KILL_GRACE_MS));
+        }, options.timeoutMs),
+      );
+    }
     child.on('error', (error) => finish({ status: null, error }));
-    child.on('close', (code) => finish({ status: code }));
+    child.on('close', (code, signal) =>
+      finish(signal ? { status: code, signal } : { status: code }),
+    );
   });
 }
 
 interface PostRunStageDelta {
   mergeDelta?: EponymousFraLabMergeDelta;
+  grantShellPortDelta?: GrantShellPortDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
   deadResearchWebsiteDelta?: DeadResearchWebsiteStageDelta;
+  staleScrapeRunReapDelta?: StaleScrapeRunReapStageDelta;
+  inferredPiLeadReclaimDelta?: InferredPiLeadReclaimStageDelta;
+}
+
+export interface StaleScrapeRunReapStageDelta {
+  running: number;
+  planned: number;
+  closed: number;
+  changedSinceRead: number;
+  keptByReason: Record<string, number>;
+}
+
+const numericField = (record: Record<string, unknown>, field: string): number => {
+  const value = record[field];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`stale-scrape-run-reap result is missing a numeric ${field}`);
+  }
+  return value;
+};
+
+export function parseStaleScrapeRunReapResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.mode !== 'apply') {
+    throw new Error('stale-scrape-run-reap result is not an apply report');
+  }
+  if (record.heartbeatStaleOnly !== true || typeof record.startedBefore !== 'string') {
+    throw new Error(
+      'stale-scrape-run-reap result was not scoped to heartbeat-stale runs that started before the sweep',
+    );
+  }
+  const plannedByReason = (record.plannedByReason ?? {}) as Record<string, unknown>;
+  const foreignReasons = Object.keys(plannedByReason).filter(
+    (reason) => reason !== 'heartbeat_stale',
+  );
+  if (foreignReasons.length > 0) {
+    throw new Error(
+      `stale-scrape-run-reap planned runs for ${foreignReasons.join(', ')}, which only an operator may close`,
+    );
+  }
+  return {
+    staleScrapeRunReapDelta: {
+      running: numericField(record, 'running'),
+      planned: numericField(record, 'planned'),
+      closed: numericField(record, 'closed'),
+      changedSinceRead: numericField(record, 'changedSinceRead'),
+      keptByReason: (record.keptByReason ?? {}) as Record<string, number>,
+    },
+  };
 }
 
 export interface DeadResearchWebsiteStageDelta {
   plannedClears: number;
   cleared: number;
+  refusalsWithdrawn: number;
   deliberatelyExcludedTotal: number;
   demotedRepairedRows: number;
   completed: boolean;
@@ -798,10 +1172,41 @@ export function parseDeadResearchWebsiteResult(artifact: unknown): PostRunStageD
     deadResearchWebsiteDelta: {
       plannedClears: Number(record.plannedClears ?? 0),
       cleared: Number(record.cleared ?? 0),
+      refusalsWithdrawn: Number(record.refusalsWithdrawn ?? 0),
       deliberatelyExcludedTotal: Number(record.deliberatelyExcludedTotal ?? 0),
       demotedRepairedRows: Number(record.demotedRepairedRows ?? 0),
       completed: record.completed,
       stoppedAfter: String(record.stoppedAfter ?? ''),
+    },
+  };
+}
+
+export interface InferredPiLeadReclaimStageDelta {
+  scanned: number;
+  lagging: number;
+  materializedLead: number;
+  stillUnresolved: number;
+}
+
+export function parseInferredPiLeadReclaimResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  if (!record || typeof record !== 'object' || record.mode !== 'apply' || record.scope !== 'all') {
+    throw new Error('inferred-pi-lead-reclaim result is not an apply report over every entity');
+  }
+  const tally = (record.tally ?? {}) as Record<string, unknown>;
+  const count = (source: Record<string, unknown>, field: string): number => {
+    const value = source[field];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new Error(`inferred-pi-lead-reclaim result is missing a numeric ${field}`);
+    }
+    return value;
+  };
+  return {
+    inferredPiLeadReclaimDelta: {
+      scanned: count(record, 'scanned'),
+      lagging: count(record, 'lagging'),
+      materializedLead: count(tally, 'materialized-lead'),
+      stillUnresolved: count(tally, 'still-unresolved'),
     },
   };
 }
@@ -813,6 +1218,7 @@ interface PostRunStageDefinition {
   buildArgs: (options: DevelopmentPostRunStageOptions) => string[];
   isEnabled: (options: DevelopmentPostRunStageOptions) => boolean;
   parseResult?: (artifact: unknown) => PostRunStageDelta;
+  judgeResult?: StageResultJudge;
 }
 
 export function parseEponymousFraMergeResult(artifact: unknown): PostRunStageDelta {
@@ -822,6 +1228,15 @@ export function parseEponymousFraMergeResult(artifact: unknown): PostRunStageDel
     throw new Error('eponymous-fra-merge result is missing a mergeDelta object');
   }
   return { mergeDelta: mergeDelta as EponymousFraLabMergeDelta };
+}
+
+export function parseGrantShellPortResult(artifact: unknown): PostRunStageDelta {
+  const record = artifact as Record<string, unknown> | null;
+  const portDelta = record?.portDelta;
+  if (!portDelta || typeof portDelta !== 'object' || record?.mode !== 'apply') {
+    throw new Error('grant-shell-faculty-port result is missing an apply-mode portDelta object');
+  }
+  return { grantShellPortDelta: portDelta as GrantShellPortDelta };
 }
 
 export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelta {
@@ -953,12 +1368,43 @@ const PROFILE_LINK_STALE_AFTER_DAYS = SOURCE_LINK_HEALTH_FRESHNESS_DAYS;
 
 export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = [
   {
+    // First, so a later stage failing cannot skip it. It closes only a run whose heartbeat
+    // went stale with no live owner process and no held source lock, and never one that
+    // started during this sweep. A run that predates heartbeats has no sign of life to
+    // judge, so closing it stays an operator step (#3595).
+    name: 'stale-scrape-run-reap',
+    command: 'scrape-runs:reconcile-stale',
+    artifactName: 'development-stale-scrape-run-reap.json',
+    buildArgs: (options) => [
+      '--apply',
+      '--confirm-reconcile-stale-scrape-runs',
+      '--heartbeat-stale-only',
+      '--started-before',
+      options.sinceIso as string,
+    ],
+    isEnabled: (options) => Boolean(options.sinceIso),
+    parseResult: parseStaleScrapeRunReapResult,
+  },
+  {
     name: 'researcher-dedupe',
     command: 'researchers:dedupe-accountless-shells',
     artifactName: 'development-researcher-dedupe.json',
     buildArgs: () => ['--apply', '--confirm-dedupe-accountless-researcher-shells'],
     isEnabled: (options) => Boolean(options.dedupeResearchers),
     parseResult: parseResearcherDedupeResult,
+  },
+  {
+    name: 'grant-shell-faculty-port',
+    command: 'research-entity:port-grant-shells-to-faculty-profiles',
+    artifactName: 'development-grant-shell-faculty-port.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-port-grant-shells-to-faculty-profiles',
+      '--max-ports',
+      String(DEFAULT_GRANT_SHELL_PORT_MAX),
+    ],
+    isEnabled: (options) => Boolean(options.portGrantShells),
+    parseResult: parseGrantShellPortResult,
   },
   {
     name: 'eponymous-fra-merge',
@@ -1009,20 +1455,47 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
     parseResult: parseUrlIdentityDedupeResult,
   },
+  // Both URL lanes need the two rows to share an address, so one lab listed by the
+  // medical school's lab index and by its own domain stayed two cards under one lead.
+  // The shared-person lane finds those through the lead, and the name-agreement filter
+  // keeps it to rows that are the same kind of thing under the same name, because a
+  // shared lead alone does not make two rows one entity (#3279).
+  {
+    name: 'shared-person-name-agreed-dedupe',
+    command: 'research-entity:dedupe-by-pi',
+    artifactName: 'development-shared-person-name-agreed-dedupe.json',
+    buildArgs: (options) => [
+      '--shared-person-id',
+      '--require-name-agreement',
+      '--apply',
+      '--confirm-research-entity-pi-dedupe',
+      '--limit=10000',
+      `--max-apply=${options.maxUrlIdentityMerges ?? DEFAULT_URL_IDENTITY_MERGE_MAX}`,
+    ],
+    isEnabled: (options) => Boolean(options.mergeUrlIdentityDuplicates),
+    parseResult: parseUrlIdentityDedupeResult,
+  },
   // Ordered before `visibility-gate` on purpose: the gate reads `sourceLinkHealth`
   // to decide whether a cited link still counts as a way in (#2531), so probing
   // after the gate would leave every decision one cycle stale. This is also the
   // only scheduled re-probe of research-entity links - without it a link
   // harvested alive rots indefinitely, which is how 41 served rows came to cite a
   // dead website while every scraper reported success (#2539).
+  //
+  // A `HEALTHY` verdict younger than the re-probe window is carried forward rather
+  // than probed again; every other verdict, and every URL without one, is probed on
+  // every sweep. `--full-link-health-reprobe` probes everything (#3568).
   {
     name: 'source-link-health',
     command: 'research-homes:backfill-source-link-health',
     artifactName: 'development-source-link-health.json',
-    buildArgs: () => [
+    buildArgs: (options) => [
       '--apply',
       '--confirm-source-link-health',
       `--limit=${SOURCE_LINK_HEALTH_STAGE_LIMIT}`,
+      ...(options.fullLinkHealthReprobe
+        ? []
+        : [`--reprobe-healthy-after-days=${SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS}`]),
     ],
     isEnabled: () => true,
   },
@@ -1070,6 +1543,82 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     parseResult: parseDeadResearchWebsiteResult,
   },
   {
+    // Ordered with the other clear stage and ahead of the gate. It is safe to run every
+    // sweep because it is idempotent by construction rather than by a marker: it skips a
+    // row whose value is already in `fieldValueRefusals`, so a second run plans nothing
+    // because the corpus is clean. Measured immediately after its first apply: 5 rows
+    // repaired, then 0 planned (#3484).
+    //
+    // This is the stage that makes the correction stop being a one-off. The lane's
+    // decision is relational - does another row, whose name denotes an organization, own
+    // this same resolved page - so it cannot become a per-URL refusal arm the way the
+    // four scripts in #3469 could, and a pass over rows is the only shape it can take.
+    // Registering that pass here is the difference between a repair someone must remember
+    // and engine behaviour that runs on every sweep.
+    name: 'organization-identity-website-retire',
+    command: 'observations:retire-organization-identity-websites',
+    artifactName: 'development-organization-identity-website-retire.json',
+    buildArgs: () => ['--apply', '--confirm-retire-organization-identity-websites'],
+    isEnabled: () => true,
+  },
+  {
+    // Relational like the stage above: whether a roster website is a group site depends on
+    // which other people the lane gave it to. Ordered before `refusal-lane-attribution` so
+    // the refusals it records are attributed the same sweep, and it plans nothing once the
+    // lane's shared claims are retired (#3615).
+    name: 'shared-roster-website-retire',
+    command: 'observations:retire-shared-roster-websites',
+    artifactName: 'development-shared-roster-website-retire.json',
+    buildArgs: () => ['--apply', '--confirm-retire-shared-roster-websites'],
+    isEnabled: () => true,
+  },
+  {
+    // After every stage that records a refusal, so a refusal written this sweep is
+    // attributed this sweep. It writes only the derived `attributedSourceNames` on a
+    // refusal, never a field a student sees, and plans nothing once the corpus is
+    // attributed (#3521).
+    name: 'refusal-lane-attribution',
+    command: 'refusals:attribute-lanes',
+    artifactName: 'development-refusal-lane-attribution.json',
+    buildArgs: () => ['--apply', '--confirm-attribute-refusal-lanes'],
+    isEnabled: () => true,
+  },
+  {
+    // Ordered before `inferred-pi-lead-reclaim` so the reclaim can link the researchers this
+    // mints in the same sweep. A PI attribution can name a person who has no researcher yet,
+    // and the scrape mints one only while it re-observes that person's `user` evidence, so a
+    // stored attribution otherwise stays leadless: the last sweep's reclaim reported every
+    // lagging row unresolved while 103 of these keys would have minted. `--mint-only` leaves
+    // the researchers the same keys already reach to the scrape that observes them.
+    name: 'pi-attributed-researcher-mint',
+    command: 'observations:materialize-pi-attributed-users',
+    artifactName: 'development-pi-attributed-researcher-mint.json',
+    buildArgs: () => ['--apply', '--confirm-materialize-pi-attributed-users', '--mint-only'],
+    isEnabled: () => true,
+  },
+  {
+    // Ordered before `visibility-gate` so the gate judges the leads this writes in the same
+    // sweep. The materializer links an inferred PI only for rows a run re-observes, so a row
+    // whose PI key became resolvable after its last materialize stays leadless until this
+    // pass revisits every row whose evidence names a PI the gate does not yet accept (#3741).
+    name: 'inferred-pi-lead-reclaim',
+    command: 'data:materialize-inferred-pi-leads',
+    artifactName: 'development-inferred-pi-lead-reclaim.json',
+    buildArgs: () => ['--all', '--apply'],
+    isEnabled: () => true,
+    parseResult: parseInferredPiLeadReclaimResult,
+  },
+  {
+    // Ordered after the lead reclaim so a lead linked this sweep has its profile page read
+    // this sweep. Writes only a row whose honors changed, so a settled corpus plans nothing
+    // beyond the page reads (#4771).
+    name: 'profile-honors',
+    command: 'research-entity:profile-honors',
+    artifactName: 'development-profile-honors.json',
+    buildArgs: () => ['--apply'],
+    isEnabled: () => true,
+  },
+  {
     name: 'visibility-gate',
     command: 'student-visibility:gate',
     artifactName: 'development-visibility-gate.json',
@@ -1086,6 +1635,39 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'meili:rebuild-research-entities',
     artifactName: 'development-search-rebuild.json',
     buildArgs: () => ['--clear', '--confirm-meili-rebuild'],
+    isEnabled: () => !searchIndexWritesDeferred(),
+  },
+  {
+    name: 'search-index-check',
+    command: 'journey:eval',
+    artifactName: 'development-search-index-check.json',
+    buildArgs: () => [
+      `--case=${SEARCH_INDEX_CHECK_JOURNEY_CASES.join(',')}`,
+      '--fail-on-inconclusive',
+    ],
+    isEnabled: () => !searchIndexWritesDeferred(),
+  },
+  {
+    // Replays each lane against its frozen benchmark, so the stored trend moves only when
+    // lane code does. It reads benchmark pages and never the network, and writes a
+    // `lane_scorecard_snapshots` row plus one `invalidated` scrape run per replay, so no
+    // health, freshness, or barren-streak reader mistakes a replay for a live run (#3526).
+    name: 'lane-scorecard',
+    command: 'lane:scorecard',
+    artifactName: 'development-lane-scorecard.json',
+    buildArgs: () => ['--apply', '--confirm-lane-scorecard'],
+    isEnabled: () => true,
+    judgeResult: judgeLaneScorecardResult,
+  },
+  {
+    // Replays resolve, derive and gate against the frozen engine benchmark, so the stored
+    // trend moves only when engine code does (#3589). Deliberately does not pass
+    // `--capture`: a sweep that re-froze the input every run would compare each run against
+    // itself and could never show a regression. Capture is an operator step.
+    name: 'engine-benchmark',
+    command: 'engine:benchmark',
+    artifactName: 'development-engine-benchmark.json',
+    buildArgs: () => ['--apply', '--confirm-engine-benchmark', '--replays=2'],
     isEnabled: () => true,
   },
   {
@@ -1108,6 +1690,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-integrity.json',
     buildArgs: () => ['--include-samples', '--include-claim-gate'],
     isEnabled: () => true,
+    judgeResult: judgeIntegrityGateResult,
   },
   {
     name: 'trust-contract',
@@ -1115,6 +1698,7 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-trust-contract.json',
     buildArgs: () => ['--collection=all', '--mode=student-ready-only', '--strict'],
     isEnabled: () => true,
+    judgeResult: judgeTrustContractResult,
   },
   {
     name: 'archived-cleanup',
@@ -1180,10 +1764,10 @@ export function buildDevelopmentPostRunStages(
   );
 }
 
-export function parseDevelopmentPostRunStageResult(
+export function parseDevelopmentPostRunStageResult<T = PostRunStageDelta>(
   artifactPath: string,
-  parseResult: (artifact: unknown) => PostRunStageDelta,
-): PostRunStageDelta {
+  parseResult: (artifact: unknown) => T,
+): T {
   let raw: string;
   try {
     raw = fs.readFileSync(artifactPath, 'utf8');
@@ -1203,16 +1787,69 @@ interface SweepRuntimeContext {
   store: SweepCheckpointStore;
   logger: SweepRunLogger;
   now: () => Date;
+  stageBaseline?: SweepStageCountBaseline;
 }
 
-function reconstructDevelopmentStageDelta(
+export function judgeDevelopmentPostRunStageResult(
+  artifactPath: string,
+  judge: StageResultJudge,
+  baseline: Record<string, number> | undefined,
+): StageJudgement {
+  return parseDevelopmentPostRunStageResult(artifactPath, (artifact) => judge(artifact, baseline));
+}
+
+function judgementDiagnostics(judgement: StageJudgement): PostRunStageDiagnostics {
+  return {
+    ...(judgement.counts ? { counts: judgement.counts } : {}),
+    ...(judgement.regressions.length > 0 ? { regressions: judgement.regressions } : {}),
+    ...(judgement.unscored && judgement.unscored.length > 0
+      ? { unscored: judgement.unscored }
+      : {}),
+  };
+}
+
+function reconstructDevelopmentStage(
   planned: PlannedPostRunStage,
-): PostRunStageDelta | undefined {
-  if (!planned.definition.parseResult) return {};
+  baseline: Record<string, number> | undefined,
+): (PostRunStageDelta & PostRunStageDiagnostics) | undefined {
   try {
-    return parseDevelopmentPostRunStageResult(planned.artifactPath, planned.definition.parseResult);
+    const delta = planned.definition.parseResult
+      ? parseDevelopmentPostRunStageResult(planned.artifactPath, planned.definition.parseResult)
+      : {};
+    const judge = planned.definition.judgeResult;
+    if (!judge) return delta;
+    const judgement = judgeDevelopmentPostRunStageResult(planned.artifactPath, judge, baseline);
+    return judgement.regressions.length > 0 || judgement.violation
+      ? undefined
+      : { ...delta, ...judgementDiagnostics(judgement) };
   } catch {
     return undefined;
+  }
+}
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+function reportPostRunStageOutcome(
+  label: string,
+  name: string,
+  error: string | undefined,
+  diagnostics: PostRunStageDiagnostics,
+): void {
+  if (error) {
+    console.error(`[${label}] ${name} failed (${diagnostics.failureKind ?? 'crashed'}): ${error}`);
+    if (diagnostics.failureKind === 'crashed') {
+      console.error(formatFailureTailForLog(diagnostics.failureTail));
+    }
+  } else if (diagnostics.counts) {
+    console.log(`[${label}] ${name} standing counts: ${formatStageCounts(diagnostics.counts)}`);
+  }
+  if (diagnostics.unscored) {
+    console.log(
+      `[${label}] ${name}: ${diagnostics.unscored.length} unscored benchmark(s) need recapture: ${diagnostics.unscored
+        .map((entry) => `${entry.benchmarkId} (${entry.reason})`)
+        .join('; ')}`,
+    );
   }
 }
 
@@ -1223,20 +1860,23 @@ async function runDevelopmentPostRunStages(
   options: DevelopmentPostRunStageOptions = {},
   ctx?: SweepRuntimeContext,
 ): Promise<ScraperSweepSummary['postRun']> {
+  const clock = ctx?.now ?? (() => new Date());
+  const postRunStartedAt = clock();
   const stages: DevelopmentPostRunStage[] = [];
   for (const planned of planDevelopmentPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
-    const resumedDelta = ctx?.store.isDone(stepId)
-      ? reconstructDevelopmentStageDelta(planned)
+    const baseline = ctx?.stageBaseline?.[planned.name];
+    const resumed = ctx?.store.isDone(stepId)
+      ? reconstructDevelopmentStage(planned, baseline)
       : undefined;
-    if (resumedDelta) {
+    if (resumed) {
       console.log(`\n[post-run] ${planned.name} (resume: already done)`);
       stages.push({
         name: planned.name,
         status: 'succeeded',
         artifactPath: planned.artifactPath,
         exitCode: 0,
-        ...resumedDelta,
+        ...resumed,
       });
       continue;
     }
@@ -1246,7 +1886,12 @@ async function runDevelopmentPostRunStages(
       );
     }
     console.log(`\n[post-run] ${planned.name}`);
+    const stageStartedAt = clock();
     const logPath = `${planned.artifactPath}.log`;
+    const judge = planned.definition.judgeResult;
+    // A judged stage passes on a nonzero exit when its artifact holds its counts, so an
+    // artifact left by an earlier attempt must not stand in for one this attempt never wrote.
+    if (judge) fs.rmSync(planned.artifactPath, { force: true });
     ctx?.store.markRunning(stepId, 'stage', ctx.now());
     ctx?.logger.logStart(stepId);
     const child = await childRunner('yarn', planned.args, {
@@ -1255,10 +1900,34 @@ async function runDevelopmentPostRunStages(
       logPath,
     });
     const exitCode = child.status ?? 1;
-    let error =
-      child.error || exitCode !== 0
-        ? sanitizeLogValue(child.error || `${planned.name} exited with status ${exitCode}`)
-        : undefined;
+    const childDied = Boolean(child.error || child.timedOut || child.signal);
+    let error: string | undefined;
+    let diagnostics: PostRunStageDiagnostics = {};
+    if (judge && !childDied) {
+      try {
+        const judgement = judgeDevelopmentPostRunStageResult(planned.artifactPath, judge, baseline);
+        diagnostics = judgementDiagnostics(judgement);
+        const regressionText =
+          judgement.regressions.length > 0
+            ? formatStageRegressions(planned.name, judgement.regressions)
+            : undefined;
+        if (judgement.violation) {
+          error = [judgement.violation, regressionText].filter(Boolean).join('; ');
+          diagnostics.failureKind = 'violation';
+        } else if (regressionText) {
+          error = regressionText;
+          diagnostics.failureKind = 'regression';
+        }
+      } catch (contractError) {
+        error = sanitizeLogValue(
+          `${describeChildExit(planned.name, child)} and its result could not be judged: ${errorMessage(contractError)}`,
+        );
+        diagnostics.failureKind = 'crashed';
+      }
+    } else if (childDied || exitCode !== 0) {
+      error = describeChildExit(planned.name, child);
+      diagnostics.failureKind = 'crashed';
+    }
     let delta: PostRunStageDelta = {};
     if (!error && planned.definition.parseResult) {
       try {
@@ -1268,6 +1937,7 @@ async function runDevelopmentPostRunStages(
         );
       } catch (contractError) {
         error = sanitizeLogValue(contractError);
+        diagnostics.failureKind = 'crashed';
         console.error(`[post-run] ${planned.name} result contract failed: ${error}`);
       }
     }
@@ -1280,6 +1950,11 @@ async function runDevelopmentPostRunStages(
         );
       }
     }
+    if (diagnostics.failureKind === 'crashed') {
+      const failureTail = buildFailureTail({ logPath, artifactPath: planned.artifactPath });
+      if (failureTail) diagnostics.failureTail = failureTail;
+    }
+    reportPostRunStageOutcome('post-run', planned.name, error, diagnostics);
     if (ctx) {
       if (error) {
         ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
@@ -1294,31 +1969,23 @@ async function runDevelopmentPostRunStages(
       status: error ? 'failed' : 'succeeded',
       artifactPath: planned.artifactPath,
       exitCode,
+      ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
+      ...diagnostics,
       ...delta,
     });
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
     stages,
+    ...sweepStepTiming(postRunStartedAt, clock()),
   };
 }
 
-export const SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV = 'SCRAPER_SWEEP_REFRESH_FELLOWSHIPS';
-export const SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV =
-  'SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET';
-export const SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV =
-  'SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN';
 export const SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV =
   'SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET';
-export const FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV = 'FELLOWSHIP_REFRESH_RESTORE_TOKEN';
 
 const DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT = 10000;
-const DEFAULT_FELLOWSHIP_REFRESH_LIMIT = 50;
-
-export function sweepFellowshipRefreshTarget(mode: ScraperSweepMode): string | undefined {
-  return MODE_CONFIG[mode].environment === 'beta' ? 'beta' : undefined;
-}
 
 export function resolveFellowshipPostRunOptions(
   mode: ScraperSweepMode,
@@ -1329,10 +1996,6 @@ export function resolveFellowshipPostRunOptions(
     applyOfficialSourceChangeSet: isSweepStageOptedIn(
       env[SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV],
     ),
-    refreshFellowshipCatalog: isSweepStageOptedIn(env[SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV]),
-    fellowshipRefreshTarget: env[SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV],
-    fellowshipRefreshRestoreToken: env[SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV],
-    sweepRefreshTarget: sweepFellowshipRefreshTarget(mode),
   };
 }
 
@@ -1341,7 +2004,6 @@ interface FellowshipPostRunStageDefinition {
   command: string;
   artifactName: string;
   buildArgs: (options: FellowshipPostRunStageOptions) => string[];
-  buildSecretEnv?: (options: FellowshipPostRunStageOptions) => NodeJS.ProcessEnv;
   isEnabled: (options: FellowshipPostRunStageOptions) => boolean;
   appendsOutputArtifact: boolean;
 }
@@ -1350,33 +2012,16 @@ function fellowshipApplyLimit(options: FellowshipPostRunStageOptions): number {
   return options.applyLimit ?? DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT;
 }
 
-export function fellowshipCatalogRefreshBlocker(
-  options: FellowshipPostRunStageOptions,
-): string | undefined {
-  if (!options.refreshFellowshipCatalog) {
-    return `${SCRAPER_SWEEP_REFRESH_FELLOWSHIPS_ENV} is not set`;
-  }
-  if (!options.fellowshipRefreshTarget || !options.fellowshipRefreshRestoreToken) {
-    return `${SCRAPER_SWEEP_FELLOWSHIP_REFRESH_TARGET_ENV} and ${SCRAPER_SWEEP_FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV} are both required`;
-  }
-  if (!options.sweepRefreshTarget) {
-    return 'fellowships:refresh only accepts a beta or prod target, which no Development sweep mode can satisfy';
-  }
-  if (options.fellowshipRefreshTarget !== options.sweepRefreshTarget) {
-    return `the requested refresh target does not match this sweep's ${options.sweepRefreshTarget} target`;
-  }
-  return undefined;
-}
-
 export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefinition[] = [
   {
-    name: 'classification-backfill',
-    command: 'programs:backfill-classification',
-    artifactName: 'fellowship-classification-backfill.json',
+    name: 'program-visibility-gate',
+    command: 'student-visibility:gate',
+    artifactName: 'fellowship-program-visibility-gate.json',
     buildArgs: (options) => [
+      '--collection=programs',
       '--apply',
-      '--confirm-program-classification-backfill',
-      `--limit=${fellowshipApplyLimit(options)}`,
+      '--confirm-student-visibility-apply',
+      `--max-apply=${fellowshipApplyLimit(options)}`,
     ],
     isEnabled: () => true,
     appendsOutputArtifact: true,
@@ -1434,25 +2079,6 @@ export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefini
     appendsOutputArtifact: true,
   },
   {
-    name: 'catalog-refresh',
-    command: 'fellowships:refresh',
-    artifactName: 'fellowship-catalog-refresh.json',
-    buildArgs: (options) => {
-      const target = options.fellowshipRefreshTarget as string;
-      return [
-        `--target=${target}`,
-        `--confirm=execute-fellowship-refresh-${target}`,
-        '--execute',
-        `--limit=${options.fellowshipRefreshLimit ?? DEFAULT_FELLOWSHIP_REFRESH_LIMIT}`,
-      ];
-    },
-    buildSecretEnv: (options) => ({
-      [FELLOWSHIP_REFRESH_RESTORE_TOKEN_ENV]: options.fellowshipRefreshRestoreToken,
-    }),
-    isEnabled: (options) => !fellowshipCatalogRefreshBlocker(options),
-    appendsOutputArtifact: false,
-  },
-  {
     name: 'research-relevance-audit',
     command: 'programs:audit-research-relevance',
     artifactName: 'fellowship-research-relevance-audit.json',
@@ -1482,7 +2108,6 @@ interface PlannedFellowshipPostRunStage {
   name: FellowshipPostRunStage['name'];
   artifactPath?: string;
   args: string[];
-  secretEnv?: NodeJS.ProcessEnv;
 }
 
 function planFellowshipPostRunStages(
@@ -1495,7 +2120,6 @@ function planFellowshipPostRunStages(
     const artifactPath = definition.appendsOutputArtifact
       ? path.join(outputDirectory, definition.artifactName)
       : undefined;
-    const secretEnv = definition.buildSecretEnv?.(options);
     return {
       name: definition.name,
       ...(artifactPath ? { artifactPath } : {}),
@@ -1506,7 +2130,6 @@ function planFellowshipPostRunStages(
         ...definition.buildArgs(options),
         ...(artifactPath ? [`--output=${artifactPath}`] : []),
       ],
-      ...(secretEnv ? { secretEnv } : {}),
     };
   });
 }
@@ -1540,14 +2163,8 @@ async function runFellowshipPostRunStages(
   options: FellowshipPostRunStageOptions = {},
   ctx?: SweepRuntimeContext,
 ): Promise<ScraperSweepSummary['postRun']> {
-  const refreshBlocker = options.refreshFellowshipCatalog
-    ? fellowshipCatalogRefreshBlocker(options)
-    : undefined;
-  if (refreshBlocker) {
-    console.warn(
-      `[fellowship-post-run] catalog-refresh skipped: ${sanitizeLogValue(refreshBlocker)}`,
-    );
-  }
+  const clock = ctx?.now ?? (() => new Date());
+  const postRunStartedAt = clock();
   const stages: FellowshipPostRunStage[] = [];
   for (const planned of planFellowshipPostRunStages(outputDirectory, options)) {
     const stepId = stageStepId(planned.name);
@@ -1570,6 +2187,7 @@ async function runFellowshipPostRunStages(
       );
     }
     console.log(`\n[fellowship-post-run] ${planned.name}`);
+    const stageStartedAt = clock();
     const logPath = planned.artifactPath
       ? `${planned.artifactPath}.log`
       : path.join(outputDirectory, `fellowship-${planned.name}.log`);
@@ -1577,13 +2195,13 @@ async function runFellowshipPostRunStages(
     ctx?.logger.logStart(stepId);
     const child = await childRunner('yarn', planned.args, {
       cwd: repoRoot,
-      env: planned.secretEnv ? { ...process.env, ...planned.secretEnv } : process.env,
+      env: process.env,
       logPath,
     });
     const exitCode = child.status ?? 1;
     let error =
-      child.error || exitCode !== 0
-        ? sanitizeLogValue(child.error || `${planned.name} exited with status ${exitCode}`)
+      child.error || child.timedOut || child.signal || exitCode !== 0
+        ? describeChildExit(planned.name, child)
         : undefined;
     if (!error && planned.artifactPath) {
       const artifactError = fellowshipPostRunArtifactError(planned.artifactPath);
@@ -1592,6 +2210,13 @@ async function runFellowshipPostRunStages(
         console.error(`[fellowship-post-run] ${planned.name} report contract failed: ${error}`);
       }
     }
+    const diagnostics: PostRunStageDiagnostics = {};
+    if (error) {
+      diagnostics.failureKind = 'crashed';
+      const failureTail = buildFailureTail({ logPath, artifactPath: planned.artifactPath });
+      if (failureTail) diagnostics.failureTail = failureTail;
+    }
+    reportPostRunStageOutcome('fellowship-post-run', planned.name, error, diagnostics);
     if (ctx) {
       if (error) {
         ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
@@ -1606,12 +2231,15 @@ async function runFellowshipPostRunStages(
       status: error ? 'failed' : 'succeeded',
       ...(planned.artifactPath ? { artifactPath: planned.artifactPath } : {}),
       exitCode,
+      ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
+      ...diagnostics,
     });
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
     stages,
+    ...sweepStepTiming(postRunStartedAt, clock()),
   };
 }
 
@@ -1619,9 +2247,14 @@ export async function runScraperSweep(
   options: ScraperSweepCliOptions,
   dependencies: {
     childRunner?: ChildRunner;
+    readHeadSha?: (repoRoot: string) => string | null;
     now?: () => Date;
+    sweepSources?: ScraperSweepSource[];
+    stageBaseline?: SweepStageCountBaseline;
   } = {},
 ): Promise<ScraperSweepSummary> {
+  const sweepSources = dependencies.sweepSources || sweepSourcesForMode(options.mode);
+  assertSweepSourceOrdering(sweepSources);
   const config = MODE_CONFIG[options.mode];
   validateScraperSweepEnvironment(options.mode);
   declareMaterializationReadScopeForChildren();
@@ -1629,15 +2262,21 @@ export async function runScraperSweep(
     .list()
     .map((source) => source.name);
   validateScraperSweepManifest(registeredNames);
-  await validateScraperSweepDatabasePreflight(registeredNames);
+  const storedStageBaseline = await validateScraperSweepDatabasePreflight(
+    registeredNames,
+    !dependencies.stageBaseline && isDevelopmentSweepMode(options.mode),
+  );
+  const stageBaseline = dependencies.stageBaseline ?? storedStageBaseline;
 
   const now = dependencies.now || (() => new Date());
   const startedAt = now();
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const checkpointPath = checkpointPathForMode(options.mode, os.tmpdir(), repoRoot);
+  const readHeadSha = dependencies.readHeadSha || defaultHeadShaReader;
   const { store, resumed } = SweepCheckpointStore.start({
     mode: options.mode,
     flags: sweepCheckpointFlagSignature(options),
+    codeSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)),
     checkpointPath,
     outputDirectory: defaultScraperSweepOutputDirectory(options.mode, startedAt),
     now: startedAt,
@@ -1651,17 +2290,76 @@ export async function runScraperSweep(
       : `Starting ${options.mode} sweep (checkpoint ${checkpointPath}, output ${outputDirectory})`,
   );
   const logger = new SweepRunLogger(outputDirectory, now);
-  const ctx: SweepRuntimeContext = { store, logger, now };
-  const childRunner = dependencies.childRunner || spawnChild;
-  const sweepSources = sweepSourcesForMode(options.mode);
+  const ctx: SweepRuntimeContext = { store, logger, now, stageBaseline };
+  const sweepCodeSha = store.codeSha;
+  console.log(
+    sweepCodeSha
+      ? `Sweep code: ${sweepCodeSha} (the checkout's HEAD, which is what every stage runs)`
+      : 'Sweep code: the checkout did not report a commit, so stage results are not attributable to one',
+  );
+  const spawnStageChild = dependencies.childRunner || spawnChild;
+  // Wrapped at the single injection point so every stage is covered: sources, both post-run
+  // paths, and the between-phase prune all spawn through this one function.
+  const childRunner: ChildRunner = async (command, args, childOptions) => {
+    const stageLabel = `${command} ${args.join(' ')}`.slice(0, 120);
+    const refusal = planSweepCodeDriftRefusal({
+      stage: stageLabel,
+      startedSha: sweepCodeSha,
+      currentSha: sweepCodeIdentityFrom(readHeadSha(repoRoot)),
+    });
+    if (!refusal) return spawnStageChild(command, args, childOptions);
+    // Fails closed and does no work, which is what keeps the run resumable: the stage is recorded
+    // failed, so a resume re-runs it once the checkout is back at the commit the run started on.
+    store.recordCodeDrift(refusal, now());
+    console.error(`[sweep-code] ${refusal.message}`);
+    return { status: 1, error: new Error(refusal.message) };
+  };
   const rows = new Array<ScraperSweepRunRow>(sweepSources.length);
-  let stopped = false;
 
   if (resumed && sweepSources.some((source) => !store.isDone(sourceStepId(source.name)))) {
     const invalidated = store.clearStageSteps(startedAt);
     if (invalidated.length > 0) {
       console.log(
         `Re-running ${invalidated.length} post-run stage(s) because at least one source still has to run: ${invalidated.join(', ')}`,
+      );
+    }
+  }
+
+  const pageReuse = isSweepPageReuseEnabled(options);
+  const hostSlotBroker = await startSweepHostSlotBroker(process.env, sweepHostSlotBrokerPath(), {
+    pageReuse,
+  });
+  console.log(
+    pageReuse
+      ? `Page reuse within this sweep: on for ${SWEEP_PAGE_REUSE_HOSTS.join(', ')}, held in memory up to ${formatMebibytes(resolveSweepPageReuseMaxBytes())} and discarded when the sweep ends (disable with --no-page-reuse)`
+      : 'Page reuse within this sweep: off',
+  );
+
+  if (isSweepPreflightEnabled(options)) {
+    const pendingSources = sweepSources
+      .map((source) => source.name)
+      .filter((name) => !store.isDone(sourceStepId(name)));
+    console.log(
+      `Running sweep preflight: storage headroom plus a write-free canary for ${pendingSources.length} source(s) (skip with --skip-preflight)`,
+    );
+    const preflight = await runSweepPreflight({
+      mongoUrl: process.env.MONGODBURL || '',
+      sourceNames: pendingSources,
+      outputDirectory,
+      repoRoot,
+      childRunner,
+      forceLlm: options.forceLlm,
+      env: { ...process.env, [SCRAPER_HOST_SLOT_BROKER_ENV]: hostSlotBroker.socketPath },
+      now,
+    }).catch(async (error: unknown) => {
+      await hostSlotBroker.close();
+      throw error;
+    });
+    console.log(formatSweepPreflightReport(preflight));
+    if (preflight.status === 'failed') {
+      await hostSlotBroker.close();
+      throw new Error(
+        `sweep preflight failed before any source ran (${preflight.failures.length} failure(s)); report at ${path.join(outputDirectory, 'preflight.json')}`,
       );
     }
   }
@@ -1687,17 +2385,13 @@ export async function runScraperSweep(
       return undefined;
     }
     if (scraperSweepArtifactError(options.mode, artifact)) return undefined;
-    const row: ScraperSweepRunRow = {
+    return {
       sourceName: source.name,
       phase: source.phase,
       status: 'succeeded',
       artifactPath,
       ...artifact,
     };
-    if (options.mode === 'beta-fetch' && artifact.runId) {
-      row.betaRenderCommands = betaRenderCommands(source.name, artifact.runId);
-    }
-    return row;
   };
 
   const runSource = async (
@@ -1708,7 +2402,10 @@ export async function runScraperSweep(
     const artifactPath = artifactPathFor(source, index);
     const stepId = sourceStepId(source.name);
     if (store.isDone(stepId)) {
-      const resumedRow = succeededRowFromArtifact(source, artifactPath);
+      const resumedRow = succeededRowFromArtifact(
+        source,
+        store.recordedArtifactPath(stepId) || artifactPath,
+      );
       if (resumedRow) {
         console.log(
           `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`,
@@ -1720,15 +2417,12 @@ export async function runScraperSweep(
         `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} was marked done but its artifact is missing or invalid; re-running`,
       );
     }
-    if (stopped) {
-      rows[index] = notRunRow(source, index);
-      return;
-    }
     const logPath = `${artifactPath}.log`;
     console.log(
       `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (logs -> ${logPath})`,
     );
-    store.markRunning(stepId, 'source', now());
+    const sourceStartedAt = now();
+    store.markRunning(stepId, 'source', sourceStartedAt);
     logger.logStart(stepId);
     const child = await childRunner(
       'yarn',
@@ -1742,26 +2436,37 @@ export async function runScraperSweep(
           SCRAPER_PER_HOST_CONCURRENCY: String(
             resolveSweepChildPerHostConcurrency(phaseConcurrency),
           ),
+          [SCRAPER_HOST_SLOT_BROKER_ENV]: hostSlotBroker.socketPath,
+          [SCRAPER_SWEEP_PAGE_REUSE_ENV]: pageReuse ? '1' : '0',
         },
         logPath,
       },
     );
     const exitCode = child.status ?? 1;
+    const sourceTiming = sweepStepTiming(sourceStartedAt, now());
     const failStep = (error: string): void => {
       store.markFailed(stepId, 'source', exitCode, now());
       logger.logFailed(stepId, exitCode, logPath);
+      const failureTail = buildFailureTail({ logPath, artifactPath });
+      console.error(`[${index + 1}/${sweepSources.length}] ${source.name} failed: ${error}`);
+      console.error(formatFailureTailForLog(failureTail));
       rows[index] = {
         sourceName: source.name,
         phase: source.phase,
         status: 'failed',
         artifactPath,
         exitCode,
+        ...sourceTiming,
         error,
+        ...(failureTail ? { failureTail } : {}),
       };
-      if (config.stopOnFailure) stopped = true;
     };
-    if (child.error || exitCode !== 0 || !fs.existsSync(artifactPath)) {
-      failStep(sanitizeLogValue(child.error || `scraper exited with status ${exitCode}`));
+    if (child.error || child.timedOut || child.signal || exitCode !== 0) {
+      failStep(describeChildExit('scraper', child));
+      return;
+    }
+    if (!fs.existsSync(artifactPath)) {
+      failStep(`scraper exited with status ${exitCode} but wrote no artifact`);
       return;
     }
 
@@ -1772,18 +2477,16 @@ export async function runScraperSweep(
         failStep(artifactError);
         return;
       }
-      const row: ScraperSweepRunRow = {
+      rows[index] = {
         sourceName: source.name,
         phase: source.phase,
         status: 'succeeded',
         artifactPath,
+        exitCode,
+        ...sourceTiming,
         ...artifact,
       };
-      if (options.mode === 'beta-fetch' && artifact.runId) {
-        row.betaRenderCommands = betaRenderCommands(source.name, artifact.runId);
-      }
-      rows[index] = row;
-      store.markDone(stepId, 'source', exitCode, now());
+      store.markDone(stepId, 'source', exitCode, now(), artifactPath);
       logger.logDone(stepId, exitCode);
     } catch (error) {
       failStep(sanitizeLogValue(error));
@@ -1791,7 +2494,7 @@ export async function runScraperSweep(
   };
 
   const runBetweenPhasesPrune = async (phase: ScraperSweepPhase): Promise<void> => {
-    if (!options.pruneBetweenPhases || !isDeadObservationPruneSweepMode(options.mode) || stopped) {
+    if (!options.pruneBetweenPhases || !isDeadObservationPruneSweepMode(options.mode)) {
       return;
     }
     const stepId = pruneStepId(phase);
@@ -1823,20 +2526,24 @@ export async function runScraperSweep(
   };
 
   const globalEntries = sweepSources.map((source, index) => ({ source, index }));
-  for (const phase of orderedScraperSweepPhases(sweepSources)) {
-    const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
-    if (stopped) {
-      for (const { source, index } of phaseEntries) {
-        if (!rows[index]) rows[index] = notRunRow(source, index);
-      }
-      continue;
+  const phases: SweepPhaseTiming[] = [];
+  let pageReuseSummary: SweepPageReuseSummary | undefined;
+  try {
+    for (const phase of orderedScraperSweepPhases(sweepSources)) {
+      const phaseStartedAt = now();
+      const phaseEntries = globalEntries.filter((entry) => entry.source.phase === phase);
+      const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
+      await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
+        runSource(source, index, phaseConcurrency),
+      );
+      await runBetweenPhasesPrune(phase);
+      phases.push({ phase, ...sweepStepTiming(phaseStartedAt, now()) });
     }
-    const phaseConcurrency = resolvePhaseConcurrency(options.mode, phase, options.concurrency);
-    await runWithBoundedConcurrency(phaseEntries, phaseConcurrency, ({ source, index }) =>
-      runSource(source, index, phaseConcurrency),
-    );
-    await runBetweenPhasesPrune(phase);
+  } finally {
+    pageReuseSummary = sweepPageReuseSummary(hostSlotBroker);
+    await hostSlotBroker.close();
   }
+  console.log(formatSweepPageReuseSummary(pageReuseSummary));
 
   for (const [index, source] of sweepSources.entries()) {
     if (!rows[index]) rows[index] = notRunRow(source, index);
@@ -1851,6 +2558,9 @@ export async function runScraperSweep(
     Boolean(options.pruneBetweenPhases) && isDeadObservationPruneSweepMode(options.mode);
   if (developmentPostRunOptions && pruneDeadObservations) {
     developmentPostRunOptions.pruneDeadObservations = true;
+  }
+  if (developmentPostRunOptions && options.fullLinkHealthReprobe) {
+    developmentPostRunOptions.fullLinkHealthReprobe = true;
   }
   const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode, process.env);
   if (fellowshipPostRunOptions && pruneDeadObservations) {
@@ -1882,14 +2592,20 @@ export async function runScraperSweep(
     startedAt: startedAt.toISOString(),
     finishedAt: now().toISOString(),
     outputDirectory,
+    codeSha: sweepCodeSha,
+    ...(store.codeDrift.length > 0 ? { codeDrift: store.codeDrift } : {}),
     sourceCount: rows.length,
     succeeded: rows.filter((row) => row.status === 'succeeded').length,
     failed: rows.filter((row) => row.status === 'failed').length,
     notRun: rows.filter((row) => row.status === 'not-run').length,
     producedNothing: producedNothingSources.length,
     producedNothingSources,
+    throttleRetry: sweepThrottleRetrySummary(rows),
     rows,
+    phases,
+    ...(pageReuseSummary ? { pageReuse: pageReuseSummary } : {}),
     ...(postRun ? { postRun } : {}),
+    searchIndex: sweepSearchIndexOutcome(),
   };
   const summaryPath = path.join(outputDirectory, 'summary.json');
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);

@@ -6,18 +6,25 @@
  */
 import { useState } from 'react';
 import { LabMember, LabMemberRole } from '../../types/labDetail';
-import { EXTERNAL_IMAGE_REFERRER_POLICY, EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import {
+  EXTERNAL_IMAGE_REFERRER_POLICY,
+  EXTERNAL_LINK_REL,
+  safeHttpUrl,
+  safeMailtoHref,
+} from '../../utils/url';
 import { useConfig } from '../../hooks/useConfig';
 import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
 import { DepartmentNameRecord } from '../../utils/departmentNames';
 import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
+import { ExternalLinkIcon } from '../shared/icons';
 
 interface LabMembersListProps {
   members: LabMember[];
   singleColumn?: boolean;
   entityDepartments?: Array<string | undefined | null>;
   resolveMemberProfileUrl?: (member: LabMember) => string | undefined;
+  resolveLeadRoleLabel?: (role: LabMemberRole) => string | undefined;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -65,26 +72,6 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   staff: 9,
 };
 
-const ExternalLinkIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="14"
-    height="14"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
-  >
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    <polyline points="15 3 21 3 21 9" />
-    <line x1="10" y1="14" x2="21" y2="3" />
-  </svg>
-);
-
 const LabMemberCard = ({
   user,
   role,
@@ -93,6 +80,7 @@ const LabMemberCard = ({
   pillEligibleLabels,
   entityDepartments,
   profileUrl,
+  resolveLeadRoleLabel,
 }: {
   user: LabMember['user'];
   role: LabMemberRole;
@@ -101,6 +89,7 @@ const LabMemberCard = ({
   pillEligibleLabels: readonly string[];
   entityDepartments: Array<string | undefined | null>;
   profileUrl?: string;
+  resolveLeadRoleLabel?: (role: LabMemberRole) => string | undefined;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
@@ -112,14 +101,18 @@ const LabMemberCard = ({
     { pillEligibleLabels, entityDepartments },
   );
   const isMisattributedLead = LEAD_ROLES.has(role) && cannotOwnResearchHome(user.title);
-  const roleLabel = isMisattributedLead ? NEUTRAL_NON_OWNER_ROLE_LABEL : ROLE_LABELS[role];
+  const roleLabel = isMisattributedLead
+    ? NEUTRAL_NON_OWNER_ROLE_LABEL
+    : (resolveLeadRoleLabel?.(role) ?? ROLE_LABELS[role]);
   const rolePillClassName = isMisattributedLead
     ? NEUTRAL_NON_OWNER_ROLE_PILL
     : ROLE_PILL_CLASSES[role];
   const orcidUrl = orcidRecordUrlFromMemberUser(user);
+  const resolvedEmailHref = safeMailtoHref(user.email);
+
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition-colors ${singleColumn ? 'gap-2' : 'gap-3'}`;
   const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
   const identityBody = (
     <>
@@ -130,11 +123,13 @@ const LabMemberCard = ({
             alt={fullName}
             referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
             onError={() => setImageFailed(true)}
+            loading="lazy"
+            decoding="async"
             className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
           />
         ) : (
           <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-brand-soft to-line-brand font-semibold text-brand`}
+            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
           >
             {initials || fullName.charAt(0).toUpperCase() || '?'}
           </div>
@@ -147,35 +142,41 @@ const LabMemberCard = ({
           {fullName}
         </p>
         {user.title && (
-          <p
-            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-muted`}
-          >
+          <p className={`${singleColumn ? 'leading-snug' : 'truncate'} text-xs text-muted`}>
             {user.title}
           </p>
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span
-            className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${rolePillClassName}`}
+            className={`${singleColumn ? 'rounded-control leading-snug' : 'rounded-full'} px-1.5 py-0.5 text-xs font-medium ${rolePillClassName}`}
           >
             {roleLabel}
           </span>
+          {user.emeritus && LEAD_ROLES.has(role) && (
+            <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
+              Emeritus
+            </span>
+          )}
           {departmentLabel && (
             <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-ink-soft`}
+              className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-xs text-ink-soft`}
             >
               {departmentLabel}
             </span>
           )}
         </div>
         {isExternalLink && (
-          <p
-            className={`${singleColumn ? 'text-[10px]' : 'text-xs'} mt-1.5 font-medium text-brand group-hover:underline`}
-          >
+          <p className="mt-1.5 text-xs font-medium text-brand group-hover:underline">
             View official profile
           </p>
         )}
       </div>
-      {isExternalLink && <ExternalLinkIcon />}
+      {isExternalLink && (
+        <ExternalLinkIcon
+          className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
+          size={14}
+        />
+      )}
     </>
   );
   const identityCard =
@@ -192,19 +193,28 @@ const LabMemberCard = ({
     ) : (
       <div className={baseClassName}>{identityBody}</div>
     );
-  if (!orcidUrl) return identityCard;
+  const sideLinkClassName =
+    'yr-focus-ring self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
+  if (!orcidUrl && !resolvedEmailHref) return identityCard;
   return (
     <div className="flex flex-col gap-1">
       {identityCard}
-      <a
-        href={orcidUrl}
-        target="_blank"
-        rel={EXTERNAL_LINK_REL}
-        aria-label={`Open ${fullName}'s ORCID record`}
-        className={`${singleColumn ? 'text-[10px]' : 'text-xs'} yr-focus-ring self-start rounded-control px-1 font-medium text-muted hover:text-brand hover:underline`}
-      >
-        ORCID {user.orcid}
-      </a>
+      {orcidUrl && (
+        <a
+          href={orcidUrl}
+          target="_blank"
+          rel={EXTERNAL_LINK_REL}
+          aria-label={`Open ${fullName}'s ORCID record`}
+          className={sideLinkClassName}
+        >
+          ORCID {user.orcid}
+        </a>
+      )}
+      {resolvedEmailHref && (
+        <a href={resolvedEmailHref} aria-label={`Email ${fullName}`} className={sideLinkClassName}>
+          {user.email}
+        </a>
+      )}
     </div>
   );
 };
@@ -214,6 +224,7 @@ const LabMembersList = ({
   singleColumn = false,
   entityDepartments = [],
   resolveMemberProfileUrl,
+  resolveLeadRoleLabel,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   if (!members || members.length === 0) {
@@ -262,6 +273,7 @@ const LabMembersList = ({
             pillEligibleLabels={departmentPillEligibleLabels}
             entityDepartments={entityDepartments}
             profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
+            resolveLeadRoleLabel={resolveLeadRoleLabel}
           />
         );
       })}

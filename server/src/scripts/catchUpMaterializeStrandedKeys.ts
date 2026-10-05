@@ -43,10 +43,11 @@ import {
   type CatchUpArgs,
   type CatchUpKeyReport,
 } from './catchUpMaterializeStrandedKeysCore';
+import { connectScriptMongo } from '../db/connections';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:catch-up-materialize';
 
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
     }`,
   );
 
-  await mongoose.connect(mongoUrl);
+  await connectScriptMongo(mongoUrl);
   try {
     const audit = await runOrphanObservationKeyAudit();
     const eligible = audit.classifications.filter(

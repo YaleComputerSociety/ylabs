@@ -28,25 +28,25 @@ describe('searchTopicAliases source of truth', () => {
   });
 
   it('expands biomedical, environmental, and social-science vernacular to on-corpus canonical terms', () => {
-    expect(QUERY_TOPIC_ALIASES.cancer).toEqual(
+    expect(STUDENT_QUERY_ALIASES.cancer).toEqual(
       expect.arrayContaining(['oncology', 'tumor biology']),
     );
-    expect(QUERY_TOPIC_ALIASES.heart).toEqual(expect.arrayContaining(['cardiology']));
-    expect(QUERY_TOPIC_ALIASES.children).toEqual(expect.arrayContaining(['pediatrics']));
-    expect(QUERY_TOPIC_ALIASES.genes).toEqual(expect.arrayContaining(['genetics', 'genomics']));
-    expect(QUERY_TOPIC_ALIASES.immune).toEqual(expect.arrayContaining(['immunology']));
-    expect(QUERY_TOPIC_ALIASES.climate).toEqual(
+    expect(STUDENT_QUERY_ALIASES.heart).toEqual(expect.arrayContaining(['cardiology']));
+    expect(STUDENT_QUERY_ALIASES.children).toEqual(expect.arrayContaining(['pediatrics']));
+    expect(STUDENT_QUERY_ALIASES.genes).toEqual(expect.arrayContaining(['genetics', 'genomics']));
+    expect(STUDENT_QUERY_ALIASES.immune).toEqual(expect.arrayContaining(['immunology']));
+    expect(STUDENT_QUERY_ALIASES.climate).toEqual(
       expect.arrayContaining(['climate change', 'environmental science']),
     );
-    expect(QUERY_TOPIC_ALIASES['infectious disease']).toEqual(
+    expect(STUDENT_QUERY_ALIASES['infectious disease']).toEqual(
       expect.arrayContaining(['epidemiology', 'microbiology']),
     );
-    expect(QUERY_TOPIC_ALIASES.aging).toEqual(
+    expect(STUDENT_QUERY_ALIASES.aging).toEqual(
       expect.arrayContaining(['geriatrics', 'gerontology']),
     );
-    expect(QUERY_TOPIC_ALIASES.drugs).toEqual(expect.arrayContaining(['pharmacology']));
-    expect(QUERY_TOPIC_ALIASES['mental health']).toEqual(expect.arrayContaining(['psychiatry']));
-    expect(QUERY_TOPIC_ALIASES.ir).toEqual(expect.arrayContaining(['international relations']));
+    expect(STUDENT_QUERY_ALIASES.drugs).toEqual(expect.arrayContaining(['pharmacology']));
+    expect(STUDENT_QUERY_ALIASES['mental health']).toEqual(expect.arrayContaining(['psychiatry']));
+    expect(STUDENT_QUERY_ALIASES.ir).toEqual(expect.arrayContaining(['international relations']));
   });
 
   it('never registers a canonical term as its own query-expansion trigger', () => {
@@ -65,9 +65,35 @@ describe('searchTopicAliases source of truth', () => {
     );
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.cancer).toEqual(expect.arrayContaining(['oncology']));
 
-    for (const queryOnly of ['heart', 'climate', 'aging', 'drugs', 'ir', 'mental health']) {
-      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[queryOnly]).toBeUndefined();
+    for (const queryOnly of ['heart', 'climate', 'kids', 'drugs', 'ir', 'mental health']) {
       expect(STUDENT_TOPIC_TEXT_ALIASES[queryOnly]).toBeUndefined();
+      for (const targets of Object.values(RESEARCH_ENTITY_MEILI_SYNONYMS)) {
+        expect(targets).not.toContain(queryOnly);
+      }
+    }
+  });
+
+  it('expands a typed full-word topic only where the expansion keeps the typed word reachable (#3940)', () => {
+    for (const fullWord of ['cancer', 'heart', 'kids', 'aging', 'drug', 'mental health']) {
+      expect(QUERY_TOPIC_ALIASES[fullWord]).toBeUndefined();
+    }
+    for (const abbreviation of ['ai', 'ml', 'nlp', 'cv', 'neuro', 'psych', 'dna', 'ir']) {
+      expect(QUERY_TOPIC_ALIASES[abbreviation]).toEqual(STUDENT_QUERY_ALIASES[abbreviation]);
+    }
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.kids).toEqual(
+      expect.arrayContaining(['pediatrics', 'child health']),
+    );
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS['mental health']).toEqual(['psychiatry']);
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.pediatrics ?? []).not.toContain('kids');
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ir).toBeUndefined();
+  });
+
+  it('makes a free-text-guarded shorthand a one-way synonym, so no topic expands to "cv" (#3797)', () => {
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.cv).toEqual(
+      expect.arrayContaining(['computer vision', 'computational vision']),
+    );
+    for (const [term, targets] of Object.entries(RESEARCH_ENTITY_MEILI_SYNONYMS)) {
+      if (term !== 'cv') expect(targets).not.toContain('cv');
     }
   });
 
@@ -147,16 +173,19 @@ describe('Meili synonyms derived from the governed research-area alias map', () 
     );
   });
 
-  it('leaves query-only vernacular out of the index synonyms', () => {
-    for (const queryOnly of ['heart', 'climate', 'aging', 'drugs', 'ir', 'mental health']) {
-      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[queryOnly]).toBeUndefined();
+  it('lets query-only vernacular widen one way only, never as a synonym target', () => {
+    for (const queryOnly of ['heart', 'climate', 'kids', 'drugs', 'mental health']) {
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[queryOnly]?.length).toBeGreaterThan(0);
+      for (const targets of Object.values(RESEARCH_ENTITY_MEILI_SYNONYMS)) {
+        expect(targets).not.toContain(queryOnly);
+      }
     }
   });
 
   it('never emits or references a term outside the governed input vocabulary', () => {
     const governedTerms = new Set<string>();
     for (const cluster of RESEARCH_TOPIC_ALIAS_CLUSTERS) {
-      if (cluster.kind !== 'topical' || cluster.queryOnly) continue;
+      if (cluster.kind !== 'topical') continue;
       for (const term of [...cluster.canonical, ...cluster.aliases]) {
         governedTerms.add(term.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim());
       }

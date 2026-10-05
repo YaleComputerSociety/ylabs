@@ -14,6 +14,7 @@
  * as the name.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { LANE_PAGE_HEALTH_FIELD } from '../lanePageHealth';
 import {
   LabMicrositeDescriptionLLMExtractor,
   descriptionExtractionToObservations,
@@ -55,7 +56,11 @@ function makeContext(): { ctx: ScraperContext; emitted: ObservationInput[]; logs
         ignoreWorkPlanner: true,
       },
       emit: async (obs) => {
-        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+        emitted.push(
+          ...(Array.isArray(obs) ? obs : [obs]).filter(
+            (observation) => observation.field !== LANE_PAGE_HEALTH_FIELD,
+          ),
+        );
       },
       log: (msg) => logs.push(msg),
     },

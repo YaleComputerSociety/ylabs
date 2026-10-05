@@ -5,6 +5,7 @@ import {
   extractProfile,
   facultyToUserObservations,
   facultyToResearchEntityObservations,
+  REFUSED_PROFILE_RETRY_PAUSE_MS,
   type RawYsmFaculty,
 } from '../sources/ysmFacultyDirectoryScraper';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
@@ -159,6 +160,14 @@ describe('extractProfile', () => {
     expect(profile?.orcid).toBe('9999-9000-9999-9005');
   });
 
+  it('drops MeSH geographic descriptors, which tag a study site rather than a topic', () => {
+    const html = profileHtml({
+      fullName: 'Jordan Rivers',
+      meshKeywords: ['Heart Failure', 'Uganda', 'Global Health', 'Africa, Eastern'],
+    });
+    expect(extractProfile(html, RIVERS)?.researchAreas).toEqual(['Heart Failure', 'Global Health']);
+  });
+
   it('inserts a block-boundary separator between glued bio/research HTML blocks (#1481)', () => {
     const html = profileHtml({
       fullName: 'Jordan Rivers',
@@ -191,6 +200,73 @@ describe('extractProfile', () => {
     });
     const profile = extractProfile(html, RIVERS);
     expect(profile?.labUrl).toBeUndefined();
+  });
+});
+
+describe('the websiteUrl absence the research-entity mint asserts (#2647)', () => {
+  const absenceAssertions = (labWebsite?: { name: string; url: string }) => {
+    const profile = extractProfile(
+      profileHtml({ fullName: 'Jordan Rivers', meshKeywords: ['Heart Failure'], labWebsite }),
+      RIVERS,
+    )!;
+    return facultyToResearchEntityObservations(profile, 'ysm:jordan-rivers', NO_SURNAME_ROSTER)
+      .filter((observation) => observation.assertsNoValueFor)
+      .map((observation) => observation.assertsNoValueFor);
+  };
+
+  it('asserts the absence when the profile carries no lab link at all', () => {
+    expect(absenceAssertions()).toEqual([['websiteUrl']]);
+    expect(absenceAssertions({ name: 'Rivers Lab', url: '  ' })).toEqual([['websiteUrl']]);
+  });
+
+  it('asserts nothing when the profile carries a scheme-less lab link it cannot adopt', () => {
+    expect(absenceAssertions({ name: 'Rivers Lab', url: 'www.riverslab.example.org' })).toEqual([]);
+  });
+
+  it('asserts nothing when the profile carries a non-http lab link', () => {
+    expect(absenceAssertions({ name: 'Bad', url: 'javascript:alert(1)' })).toEqual([]);
+  });
+});
+
+describe('the refused lab link the research-entity mint states (#3926)', () => {
+  const LAB_URL = 'https://riverslab.example.org';
+  const refusalsFor = (options: {
+    labWebsite?: { name: string; url: string };
+    unusable: boolean;
+  }) => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Heart Failure'],
+        labWebsite: options.labWebsite,
+      }),
+      RIVERS,
+    )!;
+    const observations = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+      () => options.unusable,
+    );
+    return {
+      refused: observations
+        .filter((observation) => observation.field === 'refusedWebsiteUrl')
+        .map((observation) => observation.value),
+      websiteUrl: observations.find((observation) => observation.field === 'websiteUrl')?.value,
+    };
+  };
+
+  it('states the link it refused when the slot carries one it will not adopt', () => {
+    expect(
+      refusalsFor({ labWebsite: { name: 'Rivers Lab', url: LAB_URL }, unusable: true }),
+    ).toEqual({ refused: [LAB_URL], websiteUrl: undefined });
+  });
+
+  it('states no refusal for a link it adopts or for an empty slot', () => {
+    expect(
+      refusalsFor({ labWebsite: { name: 'Rivers Lab', url: LAB_URL }, unusable: false }),
+    ).toEqual({ refused: [], websiteUrl: LAB_URL });
+    expect(refusalsFor({ unusable: true })).toEqual({ refused: [], websiteUrl: undefined });
   });
 });
 
@@ -378,6 +454,122 @@ describe('YsmFacultyDirectoryScraper.run', () => {
   });
 });
 
+describe('YsmFacultyDirectoryScraper.run profile prefetch (#3568)', () => {
+  it('fetches profiles concurrently but emits them in roster order, and still skips a failed fetch', async () => {
+    const html = directoryHtml([
+      {
+        id: 'A',
+        items: [
+          { url: '/profile/jordan-rivers/', text: 'Rivers, Jordan' },
+          { url: '/profile/cole-nobody/', text: 'Nobody, Cole' },
+          { url: '/profile/avery-sloan/', text: 'Sloan, Avery' },
+        ],
+      },
+    ]);
+    const pages: Record<string, string> = {
+      [RIVERS.profileUrl]: profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        meshKeywords: ['Heart Failure'],
+      }),
+      [SLOAN.profileUrl]: profileHtml({
+        fullName: 'Avery Sloan',
+        email: 'avery.sloan@yale.edu',
+        meshKeywords: ['Climate Policy'],
+      }),
+    };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, url === RIVERS.profileUrl ? 40 : 5));
+      inFlight -= 1;
+      if (!pages[url]) throw new Error('Request failed with status code 403');
+      return pages[url];
+    });
+    const logs: string[] = [];
+    const { ctx, emitted } = makeContext();
+    ctx.log = (message) => logs.push(message);
+
+    await new YsmFacultyDirectoryScraper(fetcher).run(ctx);
+
+    expect(maxInFlight).toBe(3);
+    const slugs = emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'slug')
+      .map((o) => o.value);
+    expect(slugs).toEqual(['ysm-faculty-jordan-rivers', 'ysm-faculty-avery-sloan']);
+    expect(logs.some((line) => line.includes('[cole-nobody] profile fetch failed'))).toBe(true);
+    expect(logs.at(-1)).toContain('of 3 profiles scanned');
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run support-staff mint gate (#3410)', () => {
+  // The damaging path, not the predicate: a lab assistant's profile carries the PI's
+  // lab link and the PI's MeSH keywords, so every positive mint condition is met and
+  // the row was minted with the PI's lab name, website, and later the PI's lab prose.
+  it('mints no research entity from a research-support profile that links its PI lab', async () => {
+    const html = directoryHtml([
+      { id: 'T', items: [{ url: '/profile/support-person/', text: 'Person, Support' }] },
+    ]);
+    const supportProfile = profileHtml({
+      fullName: 'Support Person',
+      workdayTitle: 'Laboratory Assistant 3',
+      email: 'support.person@yale.edu',
+      meshKeywords: ['Microbiome'],
+      labWebsite: { name: 'Principal Lab', url: 'https://medicine.yale.edu/lab/principal/' },
+    });
+    const profileUrl = 'https://medicine.yale.edu/profile/support-person/';
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return supportProfile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YsmFacultyDirectoryScraper(fetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(
+      emitted.filter((o) => o.entityType === 'researchEntity' && o.field !== 'refusedWebsiteUrl'),
+    ).toEqual([]);
+    expect(result.notes).toMatch(/1 research-support staff skipped/);
+
+    // The person is still a person: their own observations keep flowing, which is
+    // both the sibling screens' stated contract and the evidence the retirement pass
+    // reads to judge the row.
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.length).toBeGreaterThan(0);
+    expect(userObs.map((o) => o.field)).toContain('title');
+    expect(userObs.every((o) => o.sourceUrl === profileUrl)).toBe(true);
+  });
+
+  it('still mints from a faculty profile that states a support role alongside it', async () => {
+    const html = directoryHtml([
+      { id: 'L', items: [{ url: '/profile/dual-role/', text: 'Role, Dual' }] },
+    ]);
+    const dualProfile = profileHtml({
+      fullName: 'Dual Role',
+      workdayTitle: 'Special Collections Librarian, Lecturer in American Religious History',
+      email: 'dual.faculty@yale.edu',
+      meshKeywords: ['Religion'],
+    });
+    const profileUrl = 'https://medicine.yale.edu/profile/dual-role/';
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return dualProfile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const scraper = new YsmFacultyDirectoryScraper(fetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    expect(emitted.filter((o) => o.field === 'slug').map((o) => o.value)).toEqual([
+      'ysm-faculty-dual-role',
+    ]);
+  });
+});
+
 describe('facultyToResearchEntityObservations affiliated-organization guard (#2234)', () => {
   const SHARMA: RawYsmFaculty = {
     name: 'Sharma, Priya',
@@ -556,5 +748,250 @@ describe('facultyToResearchEntityObservations foreign-lab and affiliation eviden
     expect(byField.name).toBe('HAIR Lab');
     expect(byField.entityType).toBe('LAB');
     expect(byField.websiteUrl).toBe('https://www.hairlab.example.org/');
+  });
+});
+
+describe('a lab URL the corpus has already refused (#3452)', () => {
+  const REFUSES_RIVERS_LAB = (url: string) => url === 'https://riverslab.example.org';
+
+  it('withdraws the lab identity, not only the websiteUrl', () => {
+    // `classifyProfileLabWebsite` reads the page and sees an own research home, so
+    // before this the refusal withheld the websiteUrl while the name, kind, and
+    // entityType kept asserting the lab.
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Climate Policy'],
+        labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+      REFUSES_RIVERS_LAB,
+    );
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.kind).toBe('individual');
+    expect(byField.websiteUrl).toBeUndefined();
+    expect(byField.sourceUrls).toEqual([RIVERS.profileUrl]);
+  });
+
+  it('keeps the lab when the refusal names a different URL', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Climate Policy'],
+        labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+      (url) => url === 'https://some-other-site.example/',
+    );
+    expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
+  });
+
+  it('keeps the lab when nothing is refused, so silence never costs an identity', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Climate Policy'],
+        labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+    );
+    expect(Object.fromEntries(obs.map((o) => [o.field, o.value])).entityType).toBe('LAB');
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run refused-profile retry (#3599)', () => {
+  const refusal = (status: number) =>
+    Object.assign(new Error(`Request failed with status code ${status}`), {
+      response: { status },
+    });
+  const roster = directoryHtml([
+    {
+      id: 'A',
+      items: [
+        { url: '/profile/jordan-rivers/', text: 'Rivers, Jordan' },
+        { url: '/profile/cole-nobody/', text: 'Nobody, Cole' },
+        { url: '/profile/avery-sloan/', text: 'Sloan, Avery' },
+      ],
+    },
+  ]);
+  const NOBODY_URL = 'https://medicine.yale.edu/profile/cole-nobody/';
+  const pages: Record<string, string> = {
+    [RIVERS.profileUrl]: profileHtml({
+      fullName: 'Jordan Rivers',
+      email: 'jordan.rivers@yale.edu',
+      meshKeywords: ['Heart Failure'],
+    }),
+    [SLOAN.profileUrl]: profileHtml({
+      fullName: 'Avery Sloan',
+      email: 'avery.sloan@yale.edu',
+      meshKeywords: ['Climate Policy'],
+    }),
+  };
+  const noLabEvidence = async () => new Map();
+  const slugsOf = (emitted: ObservationInput[]) =>
+    emitted
+      .filter((o) => o.entityType === 'researchEntity' && o.field === 'slug')
+      .map((o) => o.value);
+
+  it('retries a 403 once after the pause and emits the recovered profile after the walk', async () => {
+    const refusedOnce = new Set<string>();
+    const events: string[] = [];
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return roster;
+      if (url === RIVERS.profileUrl && !refusedOnce.has(url)) {
+        refusedOnce.add(url);
+        throw refusal(403);
+      }
+      if (!pages[url]) throw refusal(404);
+      events.push(`fetch ${url}`);
+      return pages[url];
+    });
+    const pause = vi.fn(async (ms: number) => {
+      events.push(`pause ${ms}`);
+    });
+    const logs: string[] = [];
+    const { ctx, emitted } = makeContext();
+    ctx.log = (message) => logs.push(message);
+
+    const result = await new YsmFacultyDirectoryScraper(fetcher, noLabEvidence, pause).run(ctx);
+
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([
+      `fetch ${SLOAN.profileUrl}`,
+      `pause ${REFUSED_PROFILE_RETRY_PAUSE_MS}`,
+      `fetch ${RIVERS.profileUrl}`,
+    ]);
+    expect(slugsOf(emitted)).toEqual(['ysm-faculty-avery-sloan', 'ysm-faculty-jordan-rivers']);
+    expect(fetcher.mock.calls.filter(([url]) => url === NOBODY_URL)).toHaveLength(1);
+    expect(logs.some((line) => line.includes('[cole-nobody] profile fetch failed'))).toBe(true);
+    expect(logs.at(-1)).toContain('of 3 profiles scanned');
+    expect(logs.at(-1)).toContain('1 refused on the first pass, 1 recovered on the retry, 0 lost');
+    expect(result.notes).toContain('1 profiles refused then 1 recovered on a second pass');
+  });
+
+  it('emits what a clean walk emits once the refused profile recovers', async () => {
+    const clean = makeContext();
+    await new YsmFacultyDirectoryScraper(
+      async (url) => {
+        if (url === DIRECTORY_URL) return roster;
+        if (!pages[url]) throw refusal(404);
+        return pages[url];
+      },
+      noLabEvidence,
+      async () => undefined,
+    ).run(clean.ctx);
+
+    const refusedOnce = new Set<string>();
+    const retried = makeContext();
+    await new YsmFacultyDirectoryScraper(
+      async (url) => {
+        if (url === DIRECTORY_URL) return roster;
+        if (url === RIVERS.profileUrl && !refusedOnce.has(url)) {
+          refusedOnce.add(url);
+          throw refusal(429);
+        }
+        if (!pages[url]) throw refusal(404);
+        return pages[url];
+      },
+      noLabEvidence,
+      async () => undefined,
+    ).run(retried.ctx);
+
+    const key = (o: ObservationInput) => JSON.stringify(o);
+    expect(retried.emitted.map(key).sort()).toEqual(clean.emitted.map(key).sort());
+  });
+
+  it('retries only once, and never pauses when nothing was refused', async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return roster;
+      if (url === RIVERS.profileUrl) throw refusal(403);
+      if (!pages[url]) throw refusal(404);
+      return pages[url];
+    });
+    const pause = vi.fn(async () => undefined);
+    const logs: string[] = [];
+    const { ctx, emitted } = makeContext();
+    ctx.log = (message) => logs.push(message);
+
+    await new YsmFacultyDirectoryScraper(fetcher, noLabEvidence, pause).run(ctx);
+
+    expect(fetcher.mock.calls.filter(([url]) => url === RIVERS.profileUrl)).toHaveLength(2);
+    expect(slugsOf(emitted)).toEqual(['ysm-faculty-avery-sloan']);
+    expect(logs.some((line) => line.includes('[jordan-rivers] profile fetch failed'))).toBe(true);
+    expect(logs.at(-1)).toContain('1 refused on the first pass, 0 recovered on the retry, 1 lost');
+
+    const quiet = vi.fn(async () => undefined);
+    await new YsmFacultyDirectoryScraper(
+      async (url) => (url === DIRECTORY_URL ? directoryHtml([]) : ''),
+      noLabEvidence,
+      quiet,
+    ).run(makeContext().ctx);
+    expect(quiet).not.toHaveBeenCalled();
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run title-skip refusal (#4596)', () => {
+  async function runOne(workdayTitle: string, labWebsite?: { name: string; url: string }) {
+    const html = directoryHtml([
+      { id: 'T', items: [{ url: '/profile/skip-person/', text: 'Person, Skip' }] },
+    ]);
+    const profileUrl = 'https://medicine.yale.edu/profile/skip-person/';
+    const profile = profileHtml({
+      fullName: 'Skip Person',
+      workdayTitle,
+      email: 'skip.person@yale.edu',
+      meshKeywords: ['Microbiome'],
+      ...(labWebsite ? { labWebsite } : {}),
+    });
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return profile;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await new YsmFacultyDirectoryScraper(fetcher).run(ctx);
+    return { emitted, result, profileUrl };
+  }
+
+  const LAB = { name: 'Principal Lab', url: 'https://medicine.yale.edu/lab/principal/' };
+
+  it.each(['Postdoctoral Associate', 'Laboratory Assistant 3', 'Administrative Assistant'])(
+    'states the lab link it skipped as a refusal on the row key for a %s',
+    async (title) => {
+      const { emitted, result, profileUrl } = await runOne(title, LAB);
+      const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+      expect(entityObs).toEqual([
+        {
+          entityType: 'researchEntity',
+          entityKey: 'ysm-faculty-skip-person',
+          sourceUrl: profileUrl,
+          field: 'refusedWebsiteUrl',
+          value: LAB.url,
+        },
+      ]);
+      expect(result.observationCount).toBe(emitted.length);
+    },
+  );
+
+  it('states nothing for a skipped profile with no lab link', async () => {
+    const { emitted } = await runOne('Postdoctoral Associate');
+    expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
   });
 });

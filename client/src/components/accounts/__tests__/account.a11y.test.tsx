@@ -12,7 +12,7 @@ vi.mock('../../../utils/axios', () => ({
   default: { get: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
-vi.mock('sweetalert', () => ({ default: vi.fn() }));
+vi.mock('../../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi.fn() }));
 
 vi.mock('../../../utils/researchAnalytics', async () => {
   const actual = await vi.importActual<typeof import('../../../utils/researchAnalytics')>(
@@ -94,6 +94,32 @@ describe('account dashboard accessibility', () => {
     );
 
     await screen.findByText('No saved research plans yet');
+    await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations when saved plans fail to load', async () => {
+    mockedAxios.get.mockRejectedValue(new Error('network'));
+
+    const { container } = render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('alert');
+    await expectNoAxeViolations(container);
+  });
+
+  it('has no serious or critical axe violations when watched programs fail to load', async () => {
+    mockedAxios.get.mockRejectedValue(new Error('network'));
+
+    const { container } = render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('alert');
     await expectNoAxeViolations(container);
   });
 

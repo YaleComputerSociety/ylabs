@@ -4,7 +4,6 @@ import {
   isWithinCrawlSubtree,
   readCourseCreditRouteFromHtml,
 } from '../utils/courseCreditRouteEvidence';
-import { readOrgUnitCourseCreditRouteValue } from '../orgUnitSignalMaterializer';
 import { Signal, signalTargetIsExactlyOne } from '../../models/signal';
 
 const page = (body: string, heading = 'Undergraduate Program') =>
@@ -108,6 +107,97 @@ describe('readCourseCreditRouteFromHtml', () => {
   });
 });
 
+describe('a sentence that names the route but does not state how to take it (#4045)', () => {
+  const DEADLINE =
+    'For ABCD 4491 in the spring term, the deadline for the senior essay is the Monday of the third to last week of classes.';
+  const DROP_WARNING =
+    'If you do not find an advisor by the prospectus deadline, you must drop ABCD 4491 and cannot write a senior essay.';
+  const GRADE_RULE =
+    'Students must also receive an A or A- in the senior project course, ABCD 4900.';
+  const ROUTE = 'Seniors receive course credit for the senior essay by enrolling in ABCD 4491.';
+
+  it.each([
+    ['a deadline', DEADLINE],
+    ['a drop warning', DROP_WARNING],
+    ['a grade rule', GRADE_RULE],
+  ])('refuses %s when it is the only candidate', (_shape, sentence) => {
+    expect(
+      readCourseCreditRouteFromHtml(page(`<p>${sentence}</p>`, 'Senior Essay'), DEPARTMENT_URL),
+    ).toBeNull();
+  });
+
+  it.each([
+    ['a deadline', DEADLINE],
+    ['a drop warning', DROP_WARNING],
+    ['a grade rule', GRADE_RULE],
+  ])('quotes the route sentence over %s on the same page', (_shape, sentence) => {
+    const reading = readCourseCreditRouteFromHtml(
+      page(`<p>${sentence}</p><p>${ROUTE}</p>`, 'Senior Essay'),
+      DEPARTMENT_URL,
+    );
+
+    expect(reading).toEqual({ evidenceQuote: ROUTE, supportingQuoteCount: 1 });
+  });
+
+  it('refuses a sentence that says a student cannot receive credit', () => {
+    expect(
+      readCourseCreditRouteFromHtml(
+        page(
+          '<p>Students who are paid for directed research in ABCD 4900 cannot receive course credit for it.</p>',
+          'Directed Research',
+        ),
+        DEPARTMENT_URL,
+      ),
+    ).toBeNull();
+  });
+
+  it('refuses a sentence that says the university does not award credit', () => {
+    const refusal =
+      'Yale does not award academic credit for research done at other institutions, even if done in the context of a course.';
+    const reading = readCourseCreditRouteFromHtml(
+      page(`<p>${refusal}</p><p>${ROUTE}</p>`, 'Senior Essay'),
+      DEPARTMENT_URL,
+    );
+
+    expect(reading).toEqual({ evidenceQuote: ROUTE, supportingQuoteCount: 1 });
+  });
+
+  it('refuses a page-length rule that names the route and its course', () => {
+    expect(
+      readCourseCreditRouteFromHtml(
+        page(
+          '<p>The senior essay for ABCD 4491 should be between 25 and 40 pages long.</p>',
+          'Senior Essay',
+        ),
+        DEPARTMENT_URL,
+      ),
+    ).toBeNull();
+  });
+
+  it('admits a route whose negation governs majorship rather than receiving credit', () => {
+    const sentence =
+      'Students need not be majors to receive course credit for directed research in ABCD 4710.';
+    const reading = readCourseCreditRouteFromHtml(
+      page(`<p>${sentence}</p>`, 'Directed Research'),
+      DEPARTMENT_URL,
+    );
+
+    expect(reading?.evidenceQuote).toBe(sentence);
+  });
+
+  it('admits a route named beside its course with no verb of taking it', () => {
+    const reading = readCourseCreditRouteFromHtml(
+      page(
+        '<p>The senior essay courses, ABCD 4910 and ABCD 4920, include research and writing assignments for seniors.</p>',
+        'Senior Essay',
+      ),
+      DEPARTMENT_URL,
+    );
+
+    expect(reading?.evidenceQuote).toContain('ABCD 4910');
+  });
+});
+
 describe('isWithinCrawlSubtree', () => {
   const seed = 'https://example.yale.edu/undergraduate/senior-essay';
 
@@ -131,28 +221,6 @@ describe('isWithinCrawlSubtree', () => {
   });
 });
 
-describe('readOrgUnitCourseCreditRouteValue', () => {
-  const value = {
-    schemaVersion: 1,
-    evidenceQuote: 'Undergraduates receive course credit for directed research in ABCD 4900.',
-    supportingQuoteCount: 2,
-  };
-
-  it('accepts a versioned value with a quote and a supporting count', () => {
-    expect(readOrgUnitCourseCreditRouteValue(value)).toMatchObject({
-      schemaVersion: 1,
-      supportingQuoteCount: 2,
-    });
-  });
-
-  it('refuses an unversioned value, an empty quote, and a zero supporting count', () => {
-    expect(readOrgUnitCourseCreditRouteValue({ ...value, schemaVersion: 2 })).toBeNull();
-    expect(readOrgUnitCourseCreditRouteValue({ ...value, evidenceQuote: '   ' })).toBeNull();
-    expect(readOrgUnitCourseCreditRouteValue({ ...value, supportingQuoteCount: 0 })).toBeNull();
-    expect(readOrgUnitCourseCreditRouteValue(null)).toBeNull();
-  });
-});
-
 describe('Signal targeting', () => {
   it('requires exactly one of researchEntityId and orgUnitId', () => {
     expect(signalTargetIsExactlyOne({ researchEntityId: 'a' })).toBe(true);
@@ -164,12 +232,12 @@ describe('Signal targeting', () => {
   it('validates an org-unit-targeted signal and refuses one with neither target', () => {
     const orgUnitSignal = new Signal({
       orgUnitId: '507f1f77bcf86cd799439011',
-      type: 'COURSE_CREDIT_PATHWAY',
+      type: 'CURRENT_UNDERGRADS',
       status: 'KNOWN',
     });
     expect(orgUnitSignal.validateSync()).toBeUndefined();
 
-    const targetless = new Signal({ type: 'COURSE_CREDIT_PATHWAY', status: 'KNOWN' });
+    const targetless = new Signal({ type: 'CURRENT_UNDERGRADS', status: 'KNOWN' });
     expect(targetless.validateSync()?.errors.researchEntityId).toBeDefined();
   });
 

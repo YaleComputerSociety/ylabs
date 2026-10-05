@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { ResearchEntityPiDedupeRow } from '../../scripts/researchEntityPiDedupeCore';
 
 const meiliMocks = vi.hoisted(() => ({
-  syncEntities: vi.fn(async (_entityType: string, _docs: any[]) => {}),
+  syncEntities: vi.fn(async (_entityType: string, docs: any[]) => docs.length),
   deleteFromIndex: vi.fn(async (_entityType: string, _id: string) => {}),
 }));
 
@@ -63,6 +63,85 @@ describe('selectEponymousFraLabMergeGroups', () => {
       canonicalEntityId: 'lovelace-lab',
       duplicateEntityIds: ['lovelace-fra-shell'],
     });
+  });
+
+  it('selects an FRA shell whose website is its person page at a bare name path (#4652)', () => {
+    const groups = selectEponymousFraLabMergeGroups([
+      eponymousShellRow({
+        entities: [
+          eponymousShellRow().entities[0],
+          {
+            id: 'lovelace-dept-fra',
+            slug: 'dept-physics-ada-lovelace',
+            name: 'Ada Lovelace Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://appliedphysics.yale.edu/ada-b-lovelace',
+            sourceUrls: ['http://appliedphysics.yale.edu/ada-b-lovelace'],
+            departments: ['Computer Science'],
+          },
+        ],
+      }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      canonicalEntityId: 'lovelace-lab',
+      duplicateEntityIds: ['lovelace-dept-fra'],
+    });
+  });
+
+  it('keeps an FRA whose website is a real lab site out of the merge', () => {
+    const groups = selectEponymousFraLabMergeGroups([
+      eponymousShellRow({
+        entities: [
+          eponymousShellRow().entities[0],
+          {
+            id: 'lovelace-own-site-fra',
+            slug: 'dept-physics-ada-lovelace',
+            name: 'Ada Lovelace Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://analyticalengine.yale.edu/',
+            sourceUrls: ['https://analyticalengine.yale.edu/'],
+            departments: ['Computer Science'],
+          },
+        ],
+      }),
+    ]);
+    expect(groups).toHaveLength(0);
+  });
+
+  it('keeps a lead-named LAB whose site sits at a bare name path concrete', () => {
+    const groups = selectEponymousFraLabMergeGroups([
+      eponymousShellRow({
+        entities: [
+          {
+            id: 'topical-lab',
+            slug: 'analytical-engine-lab',
+            name: 'Analytical Engine Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://analyticalengine.yale.edu/',
+            sourceUrls: ['https://analyticalengine.yale.edu/'],
+            departments: ['Computer Science'],
+          },
+          {
+            id: 'name-path-lab',
+            slug: 'ada-lovelace-lab',
+            name: 'Ada Lovelace Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://campuspress.yale.edu/adalovelace',
+            sourceUrls: ['https://campuspress.yale.edu/adalovelace'],
+            departments: ['Computer Science'],
+          },
+          eponymousShellRow().entities[1],
+        ],
+      }),
+    ]);
+    for (const group of groups) {
+      expect(group.duplicateEntityIds).not.toContain('name-path-lab');
+    }
   });
 
   it('never merges an FRA shell into a CENTER when the same PI leads a center but no lab', () => {
@@ -194,7 +273,7 @@ describe('applyResearchEntityMergeGroupsWithCanonicalResync', () => {
     });
     const resyncCanonicalEntities = vi.fn(async (ids: string[]) => {
       callOrder.push(`resync:${ids.join(',')}`);
-      return ids.length;
+      return { resynced: ids.length, indexSyncFailures: 0 };
     });
 
     const result = await applyResearchEntityMergeGroupsWithCanonicalResync(
@@ -221,7 +300,10 @@ describe('applyResearchEntityMergeGroupsWithCanonicalResync', () => {
   });
 
   it('forces the canonical re-sync even when no visibility tier changed', async () => {
-    const resyncCanonicalEntities = vi.fn(async (ids: string[]) => ids.length);
+    const resyncCanonicalEntities = vi.fn(async (ids: string[]) => ({
+      resynced: ids.length,
+      indexSyncFailures: 0,
+    }));
     const result = await applyResearchEntityMergeGroupsWithCanonicalResync(
       [{ canonicalEntityId: 'lab-c' }],
       {
@@ -241,7 +323,10 @@ describe('runEponymousFraLabMerge', () => {
     const applyMergeGroup = vi.fn(async (group: { canonicalEntityId: string }) => ({
       canonicalEntityId: group.canonicalEntityId,
     }));
-    const resyncCanonicalEntities = vi.fn(async (ids: string[]) => ids.length);
+    const resyncCanonicalEntities = vi.fn(async (ids: string[]) => ({
+      resynced: ids.length,
+      indexSyncFailures: 0,
+    }));
 
     const result = await runEponymousFraLabMerge(
       { rows: [eponymousShellRow()] },
@@ -263,7 +348,10 @@ describe('runEponymousFraLabMerge', () => {
     const applyMergeGroup = vi.fn(async (group: { canonicalEntityId: string }) => ({
       canonicalEntityId: group.canonicalEntityId,
     }));
-    const resyncCanonicalEntities = vi.fn(async (ids: string[]) => ids.length);
+    const resyncCanonicalEntities = vi.fn(async (ids: string[]) => ({
+      resynced: ids.length,
+      indexSyncFailures: 0,
+    }));
 
     const result = await runEponymousFraLabMerge(
       { rows: [eponymousShellRow()] },
@@ -282,11 +370,11 @@ describe('forceResyncCanonicalResearchEntities', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -310,7 +398,7 @@ describe('forceResyncCanonicalResearchEntities', () => {
       archivedId.toHexString(),
     ]);
 
-    expect(resynced).toBe(1);
+    expect(resynced).toEqual({ resynced: 1, indexSyncFailures: 0 });
     expect(meiliMocks.syncEntities).toHaveBeenCalledTimes(1);
     const [entityType, docs] = meiliMocks.syncEntities.mock.calls[0];
     expect(entityType).toBe('researchEntity');
@@ -320,8 +408,20 @@ describe('forceResyncCanonicalResearchEntities', () => {
 
   it('is a no-op for an empty id set', async () => {
     const resynced = await forceResyncCanonicalResearchEntities([]);
-    expect(resynced).toBe(0);
+    expect(resynced).toEqual({ resynced: 0, indexSyncFailures: 0 });
     expect(meiliMocks.syncEntities).not.toHaveBeenCalled();
+  });
+
+  it('reports a canonical the index refused as a sync failure, not a resync (#3726)', async () => {
+    const liveId = new mongoose.Types.ObjectId();
+    await mongoose.connection
+      .db!.collection('research_entities')
+      .insertOne({ _id: liveId, slug: 'synthetic-live-lab', archived: false });
+    meiliMocks.syncEntities.mockResolvedValueOnce(0);
+
+    const outcome = await forceResyncCanonicalResearchEntities([liveId.toHexString()]);
+
+    expect(outcome).toEqual({ resynced: 0, indexSyncFailures: 1 });
   });
 });
 
@@ -335,10 +435,14 @@ describe('recomputeVisibilityAndResyncCanonicals', () => {
       },
       resyncCanonicalEntities: async (ids) => {
         order.push(`resync:${ids.length}`);
-        return ids.length;
+        return { resynced: ids.length - 1, indexSyncFailures: 1 };
       },
     });
     expect(order).toEqual(['visibility:2', 'resync:2']);
-    expect(result).toEqual({ visibilityRecomputed: 2, canonicalEntitiesResynced: 2 });
+    expect(result).toEqual({
+      visibilityRecomputed: 2,
+      canonicalEntitiesResynced: 1,
+      canonicalIndexSyncFailures: 1,
+    });
   });
 });

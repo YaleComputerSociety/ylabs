@@ -7,6 +7,7 @@ import { MongoClient, ObjectId } from 'mongodb';
 vi.setConfig({ testTimeout: 60_000 });
 
 const mocks = vi.hoisted(() => ({
+  adminGrantDistinct: vi.fn(async () => [] as string[]),
   analyticsAggregate: vi.fn(),
   analyticsCreate: vi.fn(),
   analyticsFind: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('../../models/analytics', () => ({
     SOURCE_LINK_CLICK: 'source_link_click',
     RESEARCH_SEARCH: 'research_search',
     RESEARCH_ENTITY_IMPRESSION: 'research_entity_impression',
+    RESEARCH_RESULTS_VIEW: 'research_results_view',
     RESEARCH_PROFILE_OPEN: 'research_profile_open',
     RESEARCH_SOURCE_REVIEW: 'research_source_review',
     RESEARCH_FILTER_CHANGE: 'research_filter_change',
@@ -70,6 +72,10 @@ vi.mock('../../models/index', () => ({
   Fellowship: {
     find: mocks.fellowshipFind,
   },
+}));
+
+vi.mock('../../models/adminGrant', () => ({
+  AdminGrant: { distinct: mocks.adminGrantDistinct },
 }));
 
 vi.mock('../../models/account', () => ({
@@ -150,6 +156,7 @@ describe('search engagement attribution', () => {
         overall: [
           {
             totalSearches: 10,
+            degradedSearches: 0,
             zeroResultSearches: 2,
             uniqueSearchers: 4,
             engagedSearches: 3,
@@ -210,7 +217,7 @@ describe('per-user activity view aggregation', () => {
     vi.clearAllMocks();
   });
 
-  it('counts research views and fellowship views as separate per-user metrics', async () => {
+  it('counts research profile opens and fellowship views as separate per-user metrics', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([{ users: [], total: 0 }]);
 
     await getUserAnalytics({});
@@ -221,7 +228,10 @@ describe('per-user activity view aggregation', () => {
     const fellowshipViewsAccumulator = groupStage.fellowshipViews?.$sum?.$cond?.[0]?.$eq;
 
     expect(groupStage).not.toHaveProperty('views');
-    expect(researchViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.RESEARCH_VIEW]);
+    expect(researchViewsAccumulator).toEqual([
+      '$eventType',
+      AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+    ]);
     expect(fellowshipViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.FELLOWSHIP_VIEW]);
   });
 });
@@ -435,7 +445,7 @@ describe('getAnalytics research coverage and range scoping', () => {
       expect(buggySum).toBeGreaterThan(distinctNetids);
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 
@@ -641,13 +651,13 @@ describe('getAnalytics research coverage and range scoping', () => {
 
       await db.collection('analyticsevents').insertMany([
         ...Array.from({ length: 3 }, () => ({
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'accountless01',
           userType: 'undergraduate',
           timestamp: new Date(),
         })),
         ...Array.from({ length: 5 }, () => ({
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'linked01',
           userType: 'graduate',
           timestamp: new Date(),
@@ -679,7 +689,69 @@ describe('getAnalytics research coverage and range scoping', () => {
       ]);
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
+    }
+  });
+
+  it('ranks top entities from profile opens and program views, and keeps program views out of the research breakdowns', async () => {
+    primeAnalyticsMocks();
+
+    await getAnalytics();
+
+    const researchPipeline = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.topEntities),
+    )![0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const db = client.db('analytics_top_entities');
+      const fellowshipId = new ObjectId();
+      const researchEntityId = new ObjectId().toString();
+
+      await db.collection('analyticsevents').insertMany([
+        ...['viewer01', 'viewer02', 'viewer02'].map((netid) => ({
+          eventType: AnalyticsEventType.FELLOWSHIP_VIEW,
+          netid,
+          userType: 'undergraduate',
+          fellowshipId,
+          metadata: { entityType: 'fellowship' },
+          timestamp: new Date(),
+        })),
+        {
+          eventType: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+          netid: 'viewer01',
+          userType: 'undergraduate',
+          entityType: 'research_entity',
+          entityId: researchEntityId,
+          timestamp: new Date(),
+        },
+      ]);
+
+      const [result] = await db.collection('analyticsevents').aggregate(researchPipeline).toArray();
+
+      expect(result.topEntities).toEqual([
+        {
+          entityType: 'fellowship',
+          entityId: fellowshipId.toString(),
+          views: 3,
+          uniqueViewers: 2,
+        },
+        {
+          entityType: 'research_entity',
+          entityId: researchEntityId,
+          views: 1,
+          uniqueViewers: 1,
+        },
+      ]);
+      expect(result.byEventType.map((row: { eventType: string }) => row.eventType)).toEqual([
+        AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+      ]);
+      expect(result.byUserType).toEqual([{ userType: 'undergraduate', count: 1 }]);
+    } finally {
+      await client.close();
+      await server?.stop();
     }
   });
 
@@ -775,6 +847,48 @@ describe('getAnalytics research coverage and range scoping', () => {
       },
     ]);
   });
+  it('resolves research profile opens recorded by slug to a name and href', async () => {
+    const slug = 'synthetic-quokka-lab';
+    primeAnalyticsMocks();
+    mocks.analyticsAggregate.mockResolvedValue([
+      {
+        ...eventFacetStub,
+        topEntities: [
+          { entityType: 'research_entity', entityId: slug, views: 2, uniqueViewers: 1 },
+        ],
+      },
+    ]);
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+    mocks.researchEntityFind.mockImplementation((query: any) => ({
+      select: () => ({
+        lean: async () =>
+          query.$or?.some((clause: any) => clause.slug?.$in?.includes(slug))
+            ? [{ _id: '507f1f77bcf86cd799439013', name: 'Quokka Lab', slug }]
+            : [],
+      }),
+    }));
+
+    const analytics = await getAnalytics();
+
+    expect(analytics.research.topEntities).toEqual([
+      {
+        entityType: 'research_entity',
+        entityId: slug,
+        views: 2,
+        uniqueViewers: 1,
+        name: 'Quokka Lab',
+        href: `/research/${slug}`,
+      },
+    ]);
+  });
 });
 
 describe('shouldSuppressBetaAnalyticsEvent', () => {
@@ -867,13 +981,13 @@ describe('getUserAnalytics', () => {
 
       await db.collection('analyticsevents').insertMany([
         {
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'linked01',
           userType: 'graduate',
           timestamp: new Date(),
         },
         {
-          eventType: AnalyticsEventType.SEARCH,
+          eventType: AnalyticsEventType.LOGIN,
           netid: 'accountless01',
           userType: 'undergraduate',
           timestamp: new Date(),
@@ -897,9 +1011,9 @@ describe('getUserAnalytics', () => {
         netid: 'linked01',
         userType: 'graduate',
         displayName: 'Linked Researcher',
-        email: 'linked01@example.edu',
         totalEvents: 1,
       });
+      expect(linked).not.toHaveProperty('email');
       const accountless = result.users.find(
         (user: Record<string, any>) => user.netid === 'accountless01',
       );
@@ -908,7 +1022,7 @@ describe('getUserAnalytics', () => {
       expect(accountless.email).toBeUndefined();
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 });
@@ -1042,6 +1156,7 @@ describe('logEvent', () => {
       searchDepartments: Array.from({ length: 55 }, (_, index) => `Department ${index}`),
       metadata: {
         '$private.key': 'hidden@example.edu',
+        ...JSON.parse('{"__proto__": "prototype payload"}'),
         constructor: 'prototype payload',
         prototype: 'prototype payload',
         longText: 'x'.repeat(800),
@@ -1060,6 +1175,7 @@ describe('logEvent', () => {
     expect(Object.prototype.hasOwnProperty.call(created.metadata, '$private.key')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, '_private_key')).toBe(false);
     expect(JSON.stringify(created.metadata)).not.toContain('hidden@example.edu');
+    expect(Object.prototype.hasOwnProperty.call(created.metadata, '__proto__')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, 'constructor')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(created.metadata, 'prototype')).toBe(false);
     expect(created.metadata.longText).toHaveLength(512);
@@ -1067,6 +1183,23 @@ describe('logEvent', () => {
     expect(created.metadata).not.toHaveProperty('notFinite');
     expect(created.metadata.nested.values).toHaveLength(50);
     expect(JSON.stringify(created)).not.toContain('hidden@example.edu');
+  });
+
+  it('drops over-long metadata keys and bounds the stored user type', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.SEARCH,
+      netid: 'student123',
+      userType: 'u'.repeat(41),
+      searchQuery: 'reach jdoe [at] example [dot] edu',
+      metadata: { ['k'.repeat(80)]: 'kept', ['k'.repeat(81)]: 'dropped' },
+    });
+
+    const created = mocks.analyticsCreate.mock.calls[0][0];
+    expect(created.userType).toBe('u'.repeat(40));
+    expect(created.searchQuery).toBe('reach [email redacted]');
+    expect(created.metadata).toEqual({ ['k'.repeat(80)]: 'kept' });
   });
 
   it('rejects malformed analytics actor netids before persistence', async () => {
@@ -1166,6 +1299,111 @@ describe('logEvent', () => {
       { $setOnInsert: expect.objectContaining({ eventType: 'research_save' }) },
       { upsert: true },
     );
+  });
+});
+
+describe('logEvent outcome', () => {
+  beforeEach(() => {
+    stubPreviousSearchEvent(null);
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+  });
+
+  it('reports a created event as recorded', async () => {
+    mocks.analyticsCreate.mockResolvedValueOnce({});
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.LOGIN,
+        netid: 'student123',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('recorded');
+  });
+
+  it('reports a storage error as failed without throwing', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.analyticsCreate.mockRejectedValueOnce(new Error('mongo down'));
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.LOGIN,
+        netid: 'student123',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('failed');
+  });
+
+  it('reports a failed dedupe upsert as failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.analyticsUpdateOne.mockRejectedValueOnce(new Error('mongo down'));
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.RESEARCH_SAVE,
+        netid: 'student123',
+        userType: 'undergraduate',
+        entityType: 'research_entity',
+        entityId: '507f1f77bcf86cd799439011',
+        dedupeKey: 'save:fixture-2',
+      }),
+    ).resolves.toBe('failed');
+  });
+
+  it('reports an already-stored dedupe key as recorded', async () => {
+    mocks.analyticsUpdateOne.mockResolvedValueOnce({ upsertedCount: 0, matchedCount: 1 });
+
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.RESEARCH_SAVE,
+        netid: 'student123',
+        userType: 'undergraduate',
+        entityType: 'research_entity',
+        entityId: '507f1f77bcf86cd799439011',
+        dedupeKey: 'save:fixture-3',
+      }),
+    ).resolves.toBe('recorded');
+  });
+
+  it('reports a Beta student event as suppressed, not stored', async () => {
+    vi.stubEnv('SCRAPER_ENV', 'beta');
+    try {
+      await expect(
+        logEvent({
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'zz9999',
+          userType: 'undergraduate',
+        }),
+      ).resolves.toBe('suppressed');
+      expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('reports a malformed event type or actor as invalid rather than failed', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await expect(
+      logEvent({
+        eventType: 'search.$where' as AnalyticsEventType,
+        netid: 'student123',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('invalid');
+    await expect(
+      logEvent({
+        eventType: AnalyticsEventType.SEARCH,
+        netid: '../not-a-netid',
+        userType: 'undergraduate',
+      }),
+    ).resolves.toBe('invalid');
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -1701,7 +1939,7 @@ describe('search query report grain', () => {
       const collection = client.db('search_query_grain').collection('analyticsevents');
       const timestamp = new Date('2026-03-01T00:00:00.000Z');
 
-      await collection.insertMany([
+      const episodes = [
         {
           eventType: AnalyticsEventType.SEARCH,
           netid: 'student001',
@@ -1754,10 +1992,15 @@ describe('search query report grain', () => {
           metadata: { entityType: 'research_entity', resultCount: 0, filters: {} },
           timestamp,
         },
-      ]);
+      ];
+      await collection.insertMany(
+        ['a', 'b', 'c'].flatMap((cohort) =>
+          episodes.map((episode) => ({ ...episode, netid: `${episode.netid}${cohort}` })),
+        ),
+      );
 
-      const rows = await collection.aggregate(pipeline).toArray();
-      const labelled = rows.map((row) => ({
+      const [{ queries: rows }] = await collection.aggregate(pipeline).toArray();
+      const labelled = rows.map((row: Record<string, any>) => ({
         query: row.query,
         filterSummary: row.filterSummary,
         surface: row.surface,
@@ -1779,16 +2022,18 @@ describe('search query report grain', () => {
             zeroResultSearches: 0,
           },
           { query: 'econ', filterSummary: '', surface: 'program', zeroResultSearches: 0 },
-          { query: 'econ', filterSummary: '', surface: 'research_entity', zeroResultSearches: 1 },
+          { query: 'econ', filterSummary: '', surface: 'research_entity', zeroResultSearches: 3 },
         ]),
       );
       expect(labelled).toHaveLength(4);
 
-      const regionsRow = rows.find((row) => row.filterSummary === 'globalRegions: Africa / Asia');
-      expect(regionsRow).toMatchObject({ totalSearches: 2, uniqueSearchers: 2 });
+      const regionsRow = rows.find(
+        (row: Record<string, any>) => row.filterSummary === 'globalRegions: Africa / Asia',
+      );
+      expect(regionsRow).toMatchObject({ totalSearches: 6, uniqueSearchers: 6 });
     } finally {
       await client.close();
-      await server.stop();
+      await server?.stop();
     }
   });
 });

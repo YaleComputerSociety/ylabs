@@ -22,7 +22,7 @@ import { Fellowship } from '../models/fellowship';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 interface CliOptions {
   apply: boolean;

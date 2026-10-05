@@ -8,20 +8,31 @@ A research-discovery app for Yale students. It helps students find Yale research
 
 | Layer           | Tech                                                                      |
 | --------------- | ------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript, Vite, TailwindCSS, MUI                              |
-| Server          | Express 4, TypeScript, Passport.js (Yale CAS)                             |
-| Database        | MongoDB Atlas (Mongoose 8)                                                |
+| Client          | React 19, TypeScript 6, Vite, TailwindCSS 4, MUI                          |
+| Server          | Express 5, TypeScript 6, Passport.js (Yale CAS)                           |
+| Database        | MongoDB Atlas (Mongoose 9)                                                |
 | Search          | Meilisearch (keyword plus semantic via OpenAI embedder where appropriate) |
 | Package Manager | Yarn 4 via Corepack                                                       |
 
 ## Quick Start
 
+Use the Node major in `.node-version`; an older major is untested and fails the client suite.
+
 ```bash
+npm install -g corepack@0.36.0
 corepack enable
-yarn install:all
+bash scripts/install-all.sh
 ```
 
-Create `server/.env` and `client/.env` - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
+With no credentials, `yarn local:setup` starts a local MongoDB and Meilisearch, seeds them with synthetic rows, and `yarn dev:server:local` serves them; see the [Developer Guide](DEVELOPER_GUIDE.md#3-configure-environment).
+For the real corpus, create `server/.env` and `client/.env` with Development credentials from a maintainer - see the [Developer Guide](DEVELOPER_GUIDE.md) for required variables.
+Then start and seed the local search index, which needs Docker:
+
+```bash
+yarn meili:up
+yarn meili:seed
+yarn meili:health   # {"status":"available"}
+```
 
 ```bash
 # Terminal 1
@@ -31,12 +42,12 @@ yarn dev:client
 yarn dev:server
 ```
 
-Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a local session, or set `LOCAL_AUTH_BYPASS=true` in `server/.env` to inject the default `devadmin` admin user on protected API requests. Leave that flag off when testing the real CAS flow at `/api/cas`.
+Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a local session (in a worktree, use the dev-login URL `scripts/new-agent-worktree.sh` prints, whose `?redirect=` returns you to that worktree's client port), or set `LOCAL_AUTH_BYPASS=true` in `server/.env` to inject the default `devadmin` admin user on protected API requests. Leave that flag off when testing the real CAS flow at `/api/cas`.
 
 ## Product Surfaces
 
-- `/research`: y/labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other Yale research. Cards emphasize profiles, source-backed evidence, and planning context when it exists.
-- `/programs`: Programs & Fellowships, the structured application and planning surface for open cycles, closing-soon deadlines, likely next cycles, center internships, fellowships, and recurring research programs.
+- `/research`: y/labs, the primary discovery surface for labs, centers, institutes, faculty projects, archives, collections projects, RA programs, and other Yale research. Cards emphasize profiles and source-backed evidence.
+- `/programs`: Programs & Fellowships, an application board grouped by application status rather than research role: due in the next 30 days, accepting applications, opening soon, the next cycle, department research guidance, no dates posted, and archive review last, soonest action first inside each section. Each card states the award and whether a mentor comes first, and quick filters narrow to open, closing-soon, first-year, no-mentor-needed, or next-cycle programs, or to department research guidance or applications only. Department research guidance is a department's own page on getting into research, labelled as not an application, with no deadline or apply action.
 - `/dashboard`: the private, read-only saved-planning workspace split into two surfaces: a Dashboard of saved research with notes and next steps, and a Program Watch of watched programs with deadlines, accepting status, and eligibility.
 - `/research/:slug`: research-home detail pages with source-backed evidence signals, a constant prompt to reach out and get involved, source-verified current team context when available, sources, and saved research-plan actions.
 
@@ -53,6 +64,8 @@ Scrapers run as short-lived CLI or cron jobs outside the web service process. Do
 
 ### Playwright environment fix (no root required)
 
+This shim only changes anything on Linux: there it downloads x86_64 Debian libraries.
+On macOS and every other platform it runs the wrapped command unchanged, so `yarn e2e:smoke` works there too.
 If `npx playwright` crashes with missing system libs (for example `libnspr4.so`), run Playwright through the local shim:
 
 ```bash

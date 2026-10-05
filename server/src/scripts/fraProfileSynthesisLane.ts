@@ -43,6 +43,9 @@ import {
   PROFILE_FETCH_FAILED_NOTE,
   profilePageProgressRank,
   profileResearchSnippets,
+  profileStatesCareerInsteadOfResearch,
+  readProfileResearchEvidence,
+  type ProfileResearchReading,
   repairPronounLead,
   selectFraProfileUrl,
   selectLeadProfileUrls,
@@ -77,6 +80,7 @@ export interface FraProfileSynthesisEntity {
   sourceUrls?: unknown;
   manuallyLockedFields?: unknown;
   studentVisibilityTier?: unknown;
+  fieldProvenance?: unknown;
 }
 
 export interface FraProfileSynthesisEntityReport {
@@ -416,7 +420,7 @@ async function attemptProfileSynthesis(
   profileUrl: string,
 ): Promise<ProfileSynthesisAttempt> {
   const { entity } = step;
-  let pageText = '';
+  let pageText: string;
   try {
     pageText = await step.fetchProfileText(profileUrl);
   } catch {
@@ -710,4 +714,273 @@ export async function runFraProfileSynthesisEntity(
   report.adopted = laneValueIsServed(persisted);
   report.regated = await regateWrittenRow(persisted);
   return report;
+}
+
+export const FRA_PROFILE_SYNTHESIS_WITHDRAWAL_REASON =
+  'fra-profile-synthesis withdrawal: complete re-reads of every candidate page state a career rather than research (#4561)';
+
+/**
+ * The drop guard, on the terms of `FIELD_RETRACTION_MAX_ABSENT_FRACTION`: a page
+ * template change or a selector regression makes every page read as a career at once,
+ * and only the corpus-wide shape separates that from a handful of genuine career pages.
+ * Above the ceiling the whole pass is frozen and reported, never applied in part.
+ */
+export const FRA_PROFILE_SYNTHESIS_WITHDRAWAL_MAX_FRACTION = 0.5;
+export const FRA_PROFILE_SYNTHESIS_WITHDRAWAL_GUARD_MIN_POPULATION = 20;
+
+interface StoredProvenanceEntry {
+  sourceName?: unknown;
+  observationId?: unknown;
+}
+
+function storedBodyProvenance(entity: FraProfileSynthesisEntity): StoredProvenanceEntry | null {
+  const provenance = entity.fieldProvenance as { fullDescription?: StoredProvenanceEntry } | null;
+  return provenance?.fullDescription ?? null;
+}
+
+/**
+ * Whether the body this row stores is one this lane wrote. That is the population the
+ * lane must be able to take back: before #4561 a row whose synthesized body read as
+ * research left selection for good, so a later fix to what the lane admits as research
+ * evidence never reached the bodies an earlier run had already written.
+ */
+export function laneHoldsStoredBody(entity: FraProfileSynthesisEntity): boolean {
+  return textValue(storedBodyProvenance(entity)?.sourceName) === FRA_PROFILE_SYNTHESIS_SOURCE_NAME;
+}
+
+export function selectFraProfileSynthesisRevalidationTargets<T extends FraProfileSynthesisEntity>(
+  entities: T[],
+): T[] {
+  return entities.filter(
+    (entity) =>
+      entity.archived !== true &&
+      !isFullDescriptionLocked(entity) &&
+      laneHoldsStoredBody(entity) &&
+      profileUrlsOf(entity).length > 0,
+  );
+}
+
+export interface FraProfileSynthesisWithdrawalPlan {
+  slug: string;
+  entityId: string;
+  observationIds: string[];
+}
+
+export interface FraProfileSynthesisRevalidationReport {
+  slug: string;
+  completeRead: boolean;
+  statesCareer: boolean;
+  withdrawal?: FraProfileSynthesisWithdrawalPlan;
+  skipped?: string;
+}
+
+export interface FraProfileSynthesisRevalidationStep {
+  entity: FraProfileSynthesisEntity;
+  profileUrls: readonly string[];
+  fetchProfileText: (url: string) => Promise<string>;
+}
+
+async function liveLaneBodyObservationIds(entity: FraProfileSynthesisEntity): Promise<string[]> {
+  const slug = textValue(entity.slug);
+  const entityId = String(entity._id ?? '');
+  const identities: Record<string, unknown>[] = [];
+  if (slug) identities.push({ entityKey: slug });
+  if (mongoose.isValidObjectId(entityId)) {
+    identities.push({ entityId: new mongoose.Types.ObjectId(entityId) });
+  }
+  if (identities.length === 0) return [];
+  const rows = (await Observation.find({
+    entityType: 'researchEntity',
+    field: 'fullDescription',
+    sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+    superseded: { $ne: true },
+    $or: identities,
+  })
+    .select('_id')
+    .lean()) as Array<{ _id: unknown }>;
+  const ids = new Set(rows.map((row) => String(row._id)));
+  const stored = String(storedBodyProvenance(entity)?.observationId ?? '');
+  if (mongoose.isValidObjectId(stored) && !ids.has(stored)) {
+    const live = await Observation.exists({
+      _id: new mongoose.Types.ObjectId(stored),
+      sourceName: FRA_PROFILE_SYNTHESIS_SOURCE_NAME,
+      field: 'fullDescription',
+      superseded: { $ne: true },
+    });
+    if (live) ids.add(stored);
+  }
+  return [...ids];
+}
+
+/**
+ * Re-read every candidate page of a row whose body this lane wrote, and plan the
+ * withdrawal of that body when the pages now state a career rather than research.
+ *
+ * A complete read is every candidate page fetched: one failed fetch licenses nothing,
+ * because the page that failed may be the one carrying the research. No model is
+ * called, so a row whose pages still carry research keeps its body unchanged rather
+ * than being rewritten, which is the churn #2183 records.
+ */
+export async function revalidateFraProfileSynthesisEntity(
+  step: FraProfileSynthesisRevalidationStep,
+): Promise<FraProfileSynthesisRevalidationReport> {
+  const { entity } = step;
+  const slug = textValue(entity.slug);
+  const report: FraProfileSynthesisRevalidationReport = {
+    slug,
+    completeRead: false,
+    statesCareer: false,
+  };
+  if (entity.archived === true) {
+    report.skipped = 'archived';
+    return report;
+  }
+  if (isFullDescriptionLocked(entity)) {
+    report.skipped = 'fullDescription-locked';
+    return report;
+  }
+  if (!laneHoldsStoredBody(entity)) {
+    report.skipped = 'stored body is not this lane';
+    return report;
+  }
+  if (step.profileUrls.length === 0) {
+    report.skipped = NO_CANDIDATE_PAGE_SKIP;
+    return report;
+  }
+  const readings: ProfileResearchReading[] = [];
+  for (const profileUrl of step.profileUrls) {
+    try {
+      readings.push(readProfileResearchEvidence(await step.fetchProfileText(profileUrl)));
+    } catch {
+      report.skipped = PROFILE_FETCH_FAILED_NOTE;
+      return report;
+    }
+  }
+  report.completeRead = true;
+  report.statesCareer = profileStatesCareerInsteadOfResearch(readings);
+  if (!report.statesCareer) return report;
+  const observationIds = await liveLaneBodyObservationIds(entity);
+  if (observationIds.length === 0) {
+    report.skipped = 'no live lane observation to withdraw';
+    return report;
+  }
+  report.withdrawal = { slug, entityId: String(entity._id ?? ''), observationIds };
+  return report;
+}
+
+export type FraProfileSynthesisWithdrawalOutcome = 'planned' | 'frozen' | 'applied';
+
+export interface FraProfileSynthesisWithdrawalResult {
+  outcome: FraProfileSynthesisWithdrawalOutcome;
+  frozenReason?: string;
+  planned: number;
+  completeReads: number;
+  withdrawn: number;
+  storedBodiesCleared: number;
+  regated: number;
+  rowsServingAfter: number;
+}
+
+export function fraProfileSynthesisWithdrawalFreezeReason(
+  planned: number,
+  completeReads: number,
+  maxWithdraw?: number,
+): string | undefined {
+  if (typeof maxWithdraw === 'number' && planned > maxWithdraw) {
+    return `${planned} planned withdrawals exceed --max-withdraw ${maxWithdraw}`;
+  }
+  if (
+    completeReads >= FRA_PROFILE_SYNTHESIS_WITHDRAWAL_GUARD_MIN_POPULATION &&
+    planned > FRA_PROFILE_SYNTHESIS_WITHDRAWAL_MAX_FRACTION * completeReads
+  ) {
+    return `${planned} of ${completeReads} complete reads would withdraw, above the drop guard`;
+  }
+  return undefined;
+}
+
+/**
+ * The description fields whose stored value still rests on an observation this pass
+ * retired. The card is one of them when it was derived from the withdrawn body, because
+ * the materializer records the body's observation as the card's provenance, and a card
+ * left behind restates a body the lane no longer asserts.
+ */
+function fieldsBackedByRetiredObservations(
+  persisted: FraProfileSynthesisEntity,
+  retiredIds: ReadonlySet<string>,
+): Array<'fullDescription' | 'shortDescription'> {
+  const provenance = persisted.fieldProvenance as Record<string, StoredProvenanceEntry> | null;
+  return (['fullDescription', 'shortDescription'] as const).filter((field) => {
+    const entry = provenance?.[field];
+    return (
+      textValue(entry?.sourceName) === FRA_PROFILE_SYNTHESIS_SOURCE_NAME &&
+      retiredIds.has(String(entry?.observationId ?? ''))
+    );
+  });
+}
+
+/**
+ * Withdraw the planned bodies: retire this lane's own live observations, re-resolve
+ * the row, and re-gate it.
+ *
+ * The retirement is the assertion; the clear only follows from it. `fullDescription`
+ * is not clearable on empty, so when the retired observation was the only evidence
+ * the resolver had, materialize leaves the stored value in place, still pointing at
+ * the observation this pass retired. Only then is the stored body unset, on the same
+ * terms `reconcileFieldRetractions` clears a field whose last live observation it
+ * retracted: a rival observation that survives is re-resolved instead, so nothing the
+ * corpus can still support is blanked.
+ */
+export async function applyFraProfileSynthesisWithdrawals(
+  plans: readonly FraProfileSynthesisWithdrawalPlan[],
+  options: { apply: boolean; completeReads: number; maxWithdraw?: number },
+): Promise<FraProfileSynthesisWithdrawalResult> {
+  const result: FraProfileSynthesisWithdrawalResult = {
+    outcome: 'planned',
+    planned: plans.length,
+    completeReads: options.completeReads,
+    withdrawn: 0,
+    storedBodiesCleared: 0,
+    regated: 0,
+    rowsServingAfter: 0,
+  };
+  const frozenReason = fraProfileSynthesisWithdrawalFreezeReason(
+    plans.length,
+    options.completeReads,
+    options.maxWithdraw,
+  );
+  if (frozenReason) return { ...result, outcome: 'frozen', frozenReason };
+  if (!options.apply) return result;
+
+  for (const plan of plans) {
+    const retiredIds = new Set(plan.observationIds);
+    await retireObservations(
+      { _id: { $in: plan.observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+      FRA_PROFILE_SYNTHESIS_WITHDRAWAL_REASON,
+    );
+    result.withdrawn += 1;
+    await materializeEntity('researchEntity', { entityKey: plan.slug }, { dryRun: false });
+    let persisted = await readPersistedRow(plan.slug);
+    const staleFields = persisted ? fieldsBackedByRetiredObservations(persisted, retiredIds) : [];
+    if (persisted && staleFields.length > 0) {
+      await ResearchEntity.updateOne(
+        { _id: (persisted as { _id?: unknown })._id },
+        {
+          $unset: Object.fromEntries(
+            staleFields.flatMap((field) => [
+              [field, ''],
+              [`fieldProvenance.${field}`, ''],
+            ]),
+          ),
+        },
+      );
+      if (staleFields.includes('fullDescription')) result.storedBodiesCleared += 1;
+      await materializeEntity('researchEntity', { entityKey: plan.slug }, { dryRun: false });
+      persisted = await readPersistedRow(plan.slug);
+    }
+    if (await regateWrittenRow(persisted)) result.regated += 1;
+    const regated = await readPersistedRow(plan.slug);
+    const tier = textValue(regated?.studentVisibilityTier) as StudentVisibilityTier;
+    if (publicStudentVisibilityTiers.includes(tier)) result.rowsServingAfter += 1;
+  }
+  return { ...result, outcome: 'applied' };
 }

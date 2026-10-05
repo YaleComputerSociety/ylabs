@@ -1,7 +1,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CONTENT_SECURITY_POLICY, PERMISSIONS_POLICY, securityHeaders } from '../securityHeaders';
+import {
+  CONTENT_SECURITY_POLICY,
+  PERMISSIONS_POLICY,
+  securityHeaders,
+  sentryIngestOrigin,
+} from '../securityHeaders';
 
 const originalEnv = { ...process.env };
 
@@ -59,17 +64,31 @@ describe('securityHeaders', () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it('keeps CSP script execution restricted to self and the analytics loader', () => {
+  it('keeps CSP script execution restricted to self', () => {
     const scriptDirective = CONTENT_SECURITY_POLICY.split('; ').find((directive) =>
       directive.startsWith('script-src '),
     );
 
-    expect(scriptDirective).toBe("script-src 'self' https://www.googletagmanager.com");
+    expect(scriptDirective).toBe("script-src 'self'");
     expect(CONTENT_SECURITY_POLICY).toContain("base-uri 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("object-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("frame-ancestors 'none'");
     expect(scriptDirective).not.toContain("'unsafe-inline'");
     expect(scriptDirective).not.toContain("'unsafe-eval'");
+  });
+
+  it.each([
+    ['production', 'https://yalelabs.io'],
+    ['development', 'http://localhost:4000'],
+  ])('allows no Google Analytics or Google tag origin in the %s CSP', (nodeEnv, serverBaseUrl) => {
+    process.env.NODE_ENV = nodeEnv;
+    process.env.SERVER_BASE_URL = serverBaseUrl;
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+    const csp = headers.get('Content-Security-Policy') || '';
+
+    expect(csp).not.toMatch(
+      /googletagmanager\.com|google-analytics\.com|analytics\.google\.com|doubleclick\.net/,
+    );
   });
 
   it('keeps form submissions restricted to self and Yale CAS', () => {
@@ -95,11 +114,50 @@ describe('securityHeaders', () => {
       .find((directive) => directive.startsWith('connect-src '));
 
     expect(connectDirective).toBe(
-      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com https://sheets.googleapis.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://stats.g.doubleclick.net",
+      "connect-src 'self' https://yalelabs.io https://www.yalelabs.io https://yalelabs.onrender.com https://ylabs-gr4v.onrender.com",
     );
     expect(csp).not.toContain('http://localhost:4000');
     expect(connectDirective).not.toMatch(/\shttps:(?:\s|$)/);
     expect(csp).toContain('upgrade-insecure-requests');
+  });
+
+  it('allows the configured client Sentry ingest host in production connect-src', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.VITE_SENTRY_DSN = 'https://publickey@o123.ingest.us.sentry.io/456';
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+    const connectDirective = (headers.get('Content-Security-Policy') || '')
+      .split('; ')
+      .find((directive) => directive.startsWith('connect-src '));
+
+    expect(connectDirective?.split(' ')).toContain('https://o123.ingest.us.sentry.io');
+    expect(connectDirective).not.toContain('publickey');
+    expect(connectDirective).not.toContain('/456');
+  });
+
+  it('adds no Sentry origin without a client DSN', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.VITE_SENTRY_DSN;
+    const { headers } = runMiddleware({ secure: false, headers: {} });
+
+    expect(headers.get('Content-Security-Policy')).not.toContain('sentry.io');
+  });
+
+  it.each([
+    ['a non-Sentry host', 'https://publickey@collector.example.test/1'],
+    ['a look-alike host', 'https://publickey@o123.ingest.us.sentry.io.example.test/1'],
+    ['plain http', 'http://publickey@o123.ingest.us.sentry.io/1'],
+    ['an explicit port', 'https://publickey@o123.ingest.us.sentry.io:8443/1'],
+    ['a malformed value', 'not a url'],
+  ])('refuses %s as a connect-src origin', (_label, dsn) => {
+    expect(sentryIngestOrigin(dsn)).toBeUndefined();
+  });
+
+  it('emits only the parsed origin when the DSN carries trailing directive text', () => {
+    expect(
+      sentryIngestOrigin(
+        "https://publickey@o123.ingest.us.sentry.io/1; script-src 'unsafe-inline'",
+      ),
+    ).toBe('https://o123.ingest.us.sentry.io');
   });
 
   it('limits production image sources to self, local data/blob URLs, and trusted image origins', () => {
@@ -112,7 +170,7 @@ describe('securityHeaders', () => {
     const imageDirective = csp.split('; ').find((directive) => directive.startsWith('img-src '));
 
     expect(imageDirective).toBe(
-      "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://*.yalies.io https://www.google-analytics.com https://stats.g.doubleclick.net",
+      "img-src 'self' data: blob: https://yale.edu https://*.yale.edu https://ysm-res.cloudinary.com https://yalies.io https://*.yalies.io",
     );
     expect(imageDirective).not.toMatch(/\shttps:(?:\s|$)/);
   });

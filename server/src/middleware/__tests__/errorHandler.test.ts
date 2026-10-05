@@ -4,8 +4,10 @@ import { errorHandler, notFoundHandler } from '../errorHandler';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../../utils/errors';
 import { captureServerError } from '../../utils/errorTracking';
 
-vi.mock('../../utils/errorTracking', () => ({
+vi.mock('../../utils/errorTracking', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/errorTracking')>()),
   captureServerError: vi.fn(),
+  captureServerWarning: vi.fn(),
 }));
 
 const ORIGINAL_ENV = { ...process.env };

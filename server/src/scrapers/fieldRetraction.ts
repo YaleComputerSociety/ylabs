@@ -85,11 +85,35 @@
  * removed, so every row whose stored value this clears goes back through
  * `planStudentVisibilityGate`/`applyStudentVisibilityGatePlans` rather than
  * keeping a tier decided about evidence it no longer has.
+ *
+ * An absence claim is only as good as the code that made it (#3824). The log is
+ * append-only, so when a lane is fixed because it asserted an empty slot it had not
+ * read, every claim the old code made stays live and still counts toward the quorum.
+ * Measured on Development after #3666: all 24 planned `websiteUrl` retractions had at
+ * least one claim from pre-fix runs, and only 10 had two post-fix ones. So a contract
+ * declares `absenceClaimCutoffs`, one per fixed field, naming the fix PR, its commit,
+ * and its merge time, and `disregardPreFixAbsenceClaims` drops every claim whose run
+ * did not carry the fix before the quorum is counted. The read itself still counts as
+ * a later complete read that said nothing, so the quorum has to be met by post-fix
+ * claims alone. Whether a run carried the fix is decided by ancestry when the run
+ * recorded its commit (`ScrapeRun.codeSha`), because a run started after the merge on
+ * a stale checkout still runs the old code (#3814), and by the merge time only when no
+ * commit was recorded or git cannot resolve it. A run that cannot be found is refused.
+ * A fix to a lane's absence-claim path gets its cutoff in a follow-up PR naming the
+ * squash-merge commit and merge time, which do not exist until the fix merges; no
+ * retraction apply for that field runs before it lands. A field has at most one
+ * cutoff: the latest fix, whose commit contains the earlier ones.
  */
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
+import {
+  MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS,
+  listResearchEntityMergedInRowsBySurvivor,
+  walkResearchEntityTombstoneChain,
+  type ResearchEntityTombstoneNode,
+} from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -102,6 +126,7 @@ import {
   probeSourceLink,
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
+import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import {
   INGEST_REJECTABLE_PERSON_NAME_FIELDS,
   INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS,
@@ -128,8 +153,22 @@ export interface SourceFieldRetractionContract {
    */
   witnessFields: readonly string[];
   retractableFields: readonly string[];
+  absenceClaimCutoffs?: readonly AbsenceClaimCutoff[];
   notes: string;
 }
+
+export interface AbsenceClaimCutoff {
+  field: string;
+  fixedBy: string;
+  fixCommit: string;
+  fixMergedAt: Date;
+}
+
+const ABSENCE_CLAIM_FIX_3666: Omit<AbsenceClaimCutoff, 'field'> = {
+  fixedBy: '#3666',
+  fixCommit: '63ece2c57056f38e588b0c733e59827ba9691f83',
+  fixMergedAt: new Date('2026-09-27T16:51:32Z'),
+};
 
 /**
  * Only sources whose emit path has been read end to end belong here.
@@ -144,12 +183,24 @@ export interface SourceFieldRetractionContract {
  * carries carries nothing. This comment previously claimed both refusals were
  * retractable, which is the #2647 defect.
  *
- * `dept-faculty-roster` deliberately does NOT qualify even though its emit has
- * the same shape. On a `profileBelongsToRosterPerson` mismatch it keeps the
- * citation and drops only the enrichment, `labUrl` included, so a wrong-person
- * refusal is indistinguishable from a delisting; and #2385 records that dropping
- * that edge strands the real lab, which `observations:retarget-foreign-lab-websites`
- * exists to repair rather than retract.
+ * `dept-faculty-roster` qualifies through `FacultyEntry.labSlotAttestation` (#3135).
+ * On a `profileBelongsToRosterPerson` mismatch it keeps the citation and drops only
+ * the enrichment, `labUrl` included, so that outcome is recorded as `refused`, and a
+ * profile left unread (a fetch failure or an off-Yale link) withdraws the roster card's
+ * `empty`: the profile is where the lab link usually lives, so an unread one states
+ * nothing. #2385 records that dropping that edge strands the real lab, which
+ * `observations:retarget-foreign-lab-websites` exists to repair rather than retract.
+ *
+ * Both of those lanes asserted `empty` on unread or refused profiles until #3666, so
+ * each declares that fix as its `websiteUrl` cutoff; #3135 and #3658 predate it and are
+ * contained in its commit.
+ *
+ * `yse-faculty-directory` qualifies for one case only. It emits `slug` and
+ * `sourceUrls` for every entity it mints, and states `assertsNoValueFor:
+ * ['websiteUrl']` only when it withdrew a lab because the linked site is known or
+ * probed dead (#3452). A refused link and an empty slot state nothing, because
+ * `extractLabUrl` can decline a link the page still carries. It declares no cutoff
+ * because its claim path has not been fixed since #3566 introduced it.
  *
  * `ysm-atoz-index` does not qualify either, for the opposite reason: a delisted
  * lab vanishes from the index entirely, so it emits no witness and no partial
@@ -159,14 +210,28 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
   'ysm-faculty-directory': {
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
+    absenceClaimCutoffs: [{ field: 'websiteUrl', ...ABSENCE_CLAIM_FIX_3666 }],
     notes:
       'Reads one official profile per entity and emits slug plus sourceUrls unconditionally. It states assertsNoValueFor: [websiteUrl] only when the profile carries no lab link at all, so a classifyProfileLabWebsite refusal of a link the page still carries retracts nothing (#2647).',
+  },
+  'yse-faculty-directory': {
+    witnessFields: ['slug', 'sourceUrls'],
+    retractableFields: ['websiteUrl'],
+    notes:
+      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only when it withdrew the lab because the linked site is dead on a stored or probed verdict, so the websiteUrl it asserted before it knew stops being live (#3452). A refused link and an empty lab slot state nothing.',
+  },
+  'official-profile-pi-backfill': {
+    witnessFields: ['sourceUrls'],
+    retractableFields: ['websiteUrl', 'website'],
+    notes:
+      'Re-reads the profiles behind the websites it set and states assertsNoValueFor: [websiteUrl, website] only when it re-read the same profile the stored website was observed from, that page carries no lab-website slot of any kind, and the stored link appears nowhere among its links. It retracts website beside websiteUrl because it asserts both from the same link and every reader serves websiteUrl || website. Every refusal of a link the page still carries states nothing, and a read of a different profile never claims (#4544).',
   },
   'dept-faculty-roster': {
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
+    absenceClaimCutoffs: [{ field: 'websiteUrl', ...ABSENCE_CLAIM_FIX_3666 }],
     notes:
-      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135).',
+      'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135). An unread profile withdraws the empty a roster card attested, and a profile refused as naming someone else records refused.',
   },
 };
 
@@ -175,8 +240,8 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
  * than an omission (#3261).
  *
  * #3135's plan listed `ysm-atoz-index` and `official-profile-pi-backfill` as the next
- * two contracts to declare. Reading both emit paths end to end, neither can state a
- * positive absence, and a contract they cannot honour is worse than no contract: the
+ * two contracts to declare. Reading both emit paths end to end, neither could state a
+ * positive absence, and a contract a source cannot honour is worse than no contract: the
  * lane would then read their silence as a claim, which is precisely what #2647
  * measured going wrong when 2 of 4 planned retractions turned out to be refusals of
  * links the page still carried.
@@ -187,19 +252,11 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
  * `ysmLabDelistingReconciler` already owns that. A contract here would count one
  * delisting twice under two mechanisms.
  *
- * `official-profile-pi-backfill` mints from a discovered URL:
- * `entityResearchHomeToObservations` and `entityLeadDirectWebsiteToObservations` both
- * take the URL as their premise. Nothing in it reaches the state "I read this person's
- * official profile and it carried no research-home link", which is the only state that
- * could attest emptiness. It reads profile pages, so that state is reachable in
- * principle, and adding it is the `labSlotIsEmpty` work from #3153: a parse-time
- * empty-slot signal kept distinct from every refusal path. Until that exists there is
- * nothing for a contract to witness.
+ * `official-profile-pi-backfill` was listed here until #4544 gave it the parse-time
+ * empty-slot signal #3153 asked for, `profileAttestsItsLabWebsiteIsGone`, which is kept
+ * distinct from every refusal path, so it now carries a contract above.
  */
-const SOURCES_THAT_CANNOT_ATTEST_ABSENCE: readonly string[] = [
-  'ysm-atoz-index',
-  'official-profile-pi-backfill',
-];
+const SOURCES_THAT_CANNOT_ATTEST_ABSENCE: readonly string[] = ['ysm-atoz-index'];
 
 export function sourceCannotAttestAbsence(sourceName: string): boolean {
   return SOURCES_THAT_CANNOT_ATTEST_ABSENCE.includes(sourceName);
@@ -257,6 +314,29 @@ export function assertFieldRetractionContractsAreDeclarable(
     for (const field of contract.retractableFields) {
       assertDeclarableRetractionField(field, 'retractable');
     }
+    const cutFields = new Set<string>();
+    for (const cutoff of contract.absenceClaimCutoffs ?? []) {
+      if (!contract.retractableFields.includes(cutoff.field)) {
+        throw new Error(
+          `${sourceName} declares an absence-claim cutoff for ${JSON.stringify(cutoff.field)}, which is not a retractable field.`,
+        );
+      }
+      if (cutFields.has(cutoff.field)) {
+        throw new Error(
+          `${sourceName} declares more than one cutoff for ${JSON.stringify(cutoff.field)}; keep only the latest fix.`,
+        );
+      }
+      cutFields.add(cutoff.field);
+      if (!isFullCommitSha(cutoff.fixCommit)) {
+        throw new Error(`${sourceName} cutoff for ${cutoff.field} must name a full fix commit.`);
+      }
+      if (!/^#\d+$/.test(cutoff.fixedBy)) {
+        throw new Error(`${sourceName} cutoff for ${cutoff.field} must name its fix PR as #<n>.`);
+      }
+      if (!(cutoff.fixMergedAt instanceof Date) || Number.isNaN(cutoff.fixMergedAt.getTime())) {
+        throw new Error(`${sourceName} cutoff for ${cutoff.field} must carry a valid merge time.`);
+      }
+    }
   }
 }
 
@@ -284,6 +364,49 @@ export interface FieldRetractionCompleteRead {
    * nothing for it (#2647).
    */
   assertsNoValueFor: readonly string[];
+  /** Claims in `assertsNoValueFor` made by lane code that predates the field's fix. */
+  preFixAbsenceClaims?: readonly string[];
+}
+
+export interface FieldRetractionRunProvenance {
+  startedAt?: Date;
+  codeSha?: string;
+}
+
+export type CommitIsAncestor = (ancestor: string, descendant: string) => boolean | undefined;
+
+export function runCarriesAbsenceClaimFix(
+  run: FieldRetractionRunProvenance | undefined,
+  cutoff: AbsenceClaimCutoff,
+  commitIsAncestor: CommitIsAncestor,
+): boolean {
+  if (!run) return false;
+  if (run.codeSha) {
+    const containsFix = commitIsAncestor(cutoff.fixCommit, run.codeSha);
+    if (containsFix !== undefined) return containsFix;
+  }
+  return run.startedAt instanceof Date && run.startedAt.getTime() >= cutoff.fixMergedAt.getTime();
+}
+
+export function disregardPreFixAbsenceClaims(
+  completeReads: readonly FieldRetractionCompleteRead[],
+  contract: SourceFieldRetractionContract,
+  runsById: ReadonlyMap<string, FieldRetractionRunProvenance>,
+  commitIsAncestor: CommitIsAncestor,
+): FieldRetractionCompleteRead[] {
+  const cutoffs = contract.absenceClaimCutoffs ?? [];
+  if (cutoffs.length === 0) return [...completeReads];
+  return completeReads.map((read) => {
+    const run = runsById.get(read.scrapeRunId);
+    const preFix = cutoffs
+      .filter(
+        (cutoff) =>
+          read.assertsNoValueFor.includes(cutoff.field) &&
+          !runCarriesAbsenceClaimFix(run, cutoff, commitIsAncestor),
+      )
+      .map((cutoff) => cutoff.field);
+    return { ...read, preFixAbsenceClaims: preFix };
+  });
 }
 
 export interface FieldRetractionCandidateObservation {
@@ -301,13 +424,11 @@ export interface FieldRetractionEntityState {
   manuallyLockedFields: string[];
   storedValues: Record<string, unknown>;
   liveObservationCountByField: Record<string, number>;
+  survivorKey?: string;
 }
 
 export type FieldRetractionVerdict =
-  | 'source-has-not-reread'
-  | 'absence-not-witnessed'
-  | 'awaiting-second-complete-read'
-  | 'retract';
+  'source-has-not-reread' | 'absence-not-witnessed' | 'awaiting-second-complete-read' | 'retract';
 
 /**
  * A read only counts when it is BOTH a different run and strictly later than the
@@ -329,9 +450,52 @@ export function completeReadsSupportingRetraction(
     if (read.scrapeRunId === observation.scrapeRunId) continue;
     if (!(read.observedAt.getTime() > observation.observedAt.getTime())) continue;
     if (!read.assertsNoValueFor.includes(field)) continue;
+    if (read.preFixAbsenceClaims?.includes(field)) continue;
     runIds.add(read.scrapeRunId);
   }
   return Array.from(runIds);
+}
+
+/**
+ * A merged-in key's state is its survivor's (#3560), and so is its re-read: the source reads
+ * the survivor under the survivor's own key, so matching reads by the exact key the old
+ * observation was filed under judged it `source-has-not-reread` forever (#4568). A survivor's
+ * read is shared with each key merged into it, never the reverse or between merged-in keys, so
+ * a duplicate's absence claim never judges the survivor; every other guard is unchanged.
+ */
+export function completeReadsAcrossMergedEvidence(
+  reads: readonly FieldRetractionCompleteRead[],
+  entities: readonly Pick<FieldRetractionEntityState, 'entityKey' | 'survivorKey'>[],
+): FieldRetractionCompleteRead[] {
+  const readsByKey = new Map<string, FieldRetractionCompleteRead[]>();
+  for (const read of reads) {
+    const group = readsByKey.get(read.entityKey);
+    if (group) group.push(read);
+    else readsByKey.set(read.entityKey, [read]);
+  }
+  const merged = new Map<string, FieldRetractionCompleteRead>();
+  const add = (entityKey: string, read: FieldRetractionCompleteRead) => {
+    const identity = `${entityKey}\u0000${read.scrapeRunId}`;
+    const existing = merged.get(identity);
+    if (!existing) {
+      merged.set(identity, { ...read, entityKey });
+      return;
+    }
+    merged.set(identity, {
+      ...existing,
+      observedAt:
+        read.observedAt.getTime() > existing.observedAt.getTime()
+          ? read.observedAt
+          : existing.observedAt,
+      assertsNoValueFor: [...new Set([...existing.assertsNoValueFor, ...read.assertsNoValueFor])],
+    });
+  };
+  for (const read of reads) add(read.entityKey, read);
+  for (const entity of entities) {
+    if (!entity.survivorKey || entity.survivorKey === entity.entityKey) continue;
+    for (const read of readsByKey.get(entity.survivorKey) ?? []) add(entity.entityKey, read);
+  }
+  return [...merged.values()];
 }
 
 /**
@@ -407,8 +571,9 @@ export interface PlannedFieldRetraction {
   observationIds: string[];
   clearsStoredValue: boolean;
   /**
-   * The retracted values, and how many distinct entities this source asserts each
-   * of them for. A value asserted for many entities cannot be any one of their
+   * The retracted values, and how many distinct stored rows this source asserts
+   * each of them for, a survivor and its merged-in keys counting once. A value
+   * asserted for many entities cannot be any one of their
    * research websites, so the count is the ownership signal - see
    * `classifyRetractionValueOwnership`.
    */
@@ -452,6 +617,16 @@ export interface FieldRetractionCounts {
   soleHolderValueWithheld: number;
   /** Sole-holder value retracted because a probe positively found it dead. */
   soleHolderValueProbedDead: number;
+  /** Per field with a declared cutoff: what disregarding pre-fix claims changed. */
+  preFixAbsenceClaims: Record<string, PreFixAbsenceClaimCounts>;
+}
+
+export interface PreFixAbsenceClaimCounts {
+  /** Absence claims, one per (entity, run), made by runs on pre-fix lane code. */
+  excludedClaims: number;
+  /** Observations that would have been retracted had those claims counted. */
+  heldObservations: number;
+  heldEntities: number;
 }
 
 export interface FieldRetractionPlan {
@@ -495,7 +670,23 @@ export function planFieldRetractions(input: {
     sharedBoilerplateValue: 0,
     soleHolderValueWithheld: 0,
     soleHolderValueProbedDead: 0,
+    preFixAbsenceClaims: {},
   };
+  const heldEntitiesByField = new Map<string, Set<string>>();
+  for (const cutoff of input.contract.absenceClaimCutoffs ?? []) {
+    counts.preFixAbsenceClaims[cutoff.field] = {
+      excludedClaims: 0,
+      heldObservations: 0,
+      heldEntities: 0,
+    };
+    heldEntitiesByField.set(cutoff.field, new Set());
+  }
+  for (const read of input.completeReads) {
+    for (const field of read.preFixAbsenceClaims ?? []) {
+      const tally = counts.preFixAbsenceClaims[field];
+      if (tally) tally.excludedClaims += 1;
+    }
+  }
 
   const entitiesByValue = new Map<string, Set<string>>();
   for (const observation of input.activeObservations) {
@@ -503,7 +694,7 @@ export function planFieldRetractions(input: {
     const value = normalizedComparableValue(observation.value);
     if (!value) continue;
     const holders = entitiesByValue.get(value) ?? new Set<string>();
-    holders.add(observation.entityKey);
+    holders.add(entityStates.get(observation.entityKey)?.entityId || observation.entityKey);
     entitiesByValue.set(value, holders);
   }
 
@@ -524,6 +715,19 @@ export function planFieldRetractions(input: {
       completeReads,
       minCompleteReads: input.minCompleteReads,
     });
+    const tally = counts.preFixAbsenceClaims[observation.field];
+    if (
+      tally &&
+      verdict !== 'retract' &&
+      classifyFieldRetraction({
+        observation,
+        completeReads: completeReads.map((read) => ({ ...read, preFixAbsenceClaims: [] })),
+        minCompleteReads: input.minCompleteReads,
+      }) === 'retract'
+    ) {
+      tally.heldObservations += 1;
+      heldEntitiesByField.get(observation.field)?.add(observation.entityKey);
+    }
     if (verdict === 'source-has-not-reread') {
       counts.sourceHasNotReread += 1;
       continue;
@@ -554,6 +758,9 @@ export function planFieldRetractions(input: {
   counts.candidateEntities = new Set(
     Array.from(assertingEntitiesByField.values()).flatMap((entities) => Array.from(entities)),
   ).size;
+  for (const [field, entities] of heldEntitiesByField) {
+    counts.preFixAbsenceClaims[field].heldEntities = entities.size;
+  }
 
   const frozenFields: FrozenFieldRetraction[] = [];
   const frozen = new Set<string>();
@@ -583,6 +790,21 @@ export function planFieldRetractions(input: {
     }
   }
 
+  // Several keys can store into one row (a survivor and its merged-in losers), so
+  // whether rival evidence survives is decided per stored row and field, not per key.
+  const retractingByStoredRowField = new Map<string, { observations: number; values: unknown[] }>();
+  for (const group of retractedByKey.values()) {
+    if (frozen.has(group.field)) continue;
+    const entity = entityStates.get(group.entityKey);
+    if (!entity || entity.manuallyLockedFields.includes(group.field)) continue;
+    const key = `${entity.entityId}\u0000${group.field}`;
+    const total = retractingByStoredRowField.get(key) ?? { observations: 0, values: [] };
+    total.observations += group.observationIds.length;
+    total.values.push(...group.values);
+    retractingByStoredRowField.set(key, total);
+  }
+  const clearDecidedForStoredRowField = new Set<string>();
+
   const retractions: PlannedFieldRetraction[] = [];
   for (const group of retractedByKey.values()) {
     if (frozen.has(group.field)) continue;
@@ -595,15 +817,23 @@ export function planFieldRetractions(input: {
       counts.lockedSkipped += 1;
       continue;
     }
+    const storedRowField = `${entity.entityId}\u0000${group.field}`;
+    const retracting = retractingByStoredRowField.get(storedRowField) ?? {
+      observations: group.observationIds.length,
+      values: group.values,
+    };
     const liveCount = entity.liveObservationCountByField[group.field] ?? 0;
-    const rivalEvidenceSurvives = liveCount > group.observationIds.length;
+    const rivalEvidenceSurvives = liveCount > retracting.observations;
+    const clearAlreadyDecided = clearDecidedForStoredRowField.has(storedRowField);
+    clearDecidedForStoredRowField.add(storedRowField);
     const clearsStoredValue =
+      !clearAlreadyDecided &&
       !rivalEvidenceSurvives &&
-      storedValueIsRetractedValue(entity.storedValues[group.field], group.values);
+      storedValueIsRetractedValue(entity.storedValues[group.field], retracting.values);
     counts.retractedObservations += group.observationIds.length;
     if (clearsStoredValue) counts.storedValuesCleared += 1;
-    else if (rivalEvidenceSurvives) counts.deferredToResolver += 1;
-    else if (normalizedComparableValue(entity.storedValues[group.field])) {
+    else if (!clearAlreadyDecided && rivalEvidenceSurvives) counts.deferredToResolver += 1;
+    else if (!clearAlreadyDecided && normalizedComparableValue(entity.storedValues[group.field])) {
       counts.storedValueDiverged += 1;
     }
     // Raw values, not `normalizedComparableValue` output: the identity key drops the
@@ -689,6 +919,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
 }> {
   const retained: PlannedFieldRetraction[] = [];
   const withheld: WithheldFieldRetraction[] = [];
+  const withheldStoredRowFields = new Set<string>();
   let probedValues = 0;
   for (const retraction of retractions) {
     if (
@@ -708,6 +939,7 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
     }
     if (everyValueIsDead) retained.push(retraction);
     else {
+      withheldStoredRowFields.add(`${retraction.entityId}\u0000${retraction.field}`);
       withheld.push({
         entityKey: retraction.entityKey,
         field: retraction.field,
@@ -716,7 +948,16 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
       });
     }
   }
-  return { retained, withheld, probedValues };
+  return {
+    retained: retained.map((retraction) =>
+      retraction.clearsStoredValue &&
+      withheldStoredRowFields.has(`${retraction.entityId}\u0000${retraction.field}`)
+        ? { ...retraction, clearsStoredValue: false }
+        : retraction,
+    ),
+    withheld,
+    probedValues,
+  };
 }
 
 /**
@@ -759,6 +1000,7 @@ const emptyCounts = (): FieldRetractionCounts => ({
   sharedBoilerplateValue: 0,
   soleHolderValueWithheld: 0,
   soleHolderValueProbedDead: 0,
+  preFixAbsenceClaims: {},
 });
 
 const emptyResult = (outcome: FieldRetractionOutcome, dryRun: boolean): FieldRetractionResult => ({
@@ -846,6 +1088,28 @@ export async function loadCompleteReads(
   return reads;
 }
 
+async function loadRunProvenance(
+  scrapeRunIds: readonly string[],
+): Promise<Map<string, FieldRetractionRunProvenance>> {
+  const ids = [...new Set(scrapeRunIds)]
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (ids.length === 0) return new Map();
+  const rows = (await ScrapeRun.find({ _id: { $in: ids } })
+    .select('_id startedAt codeSha')
+    .lean()) as Array<{ _id: unknown; startedAt?: unknown; codeSha?: unknown }>;
+  const runs = new Map<string, FieldRetractionRunProvenance>();
+  for (const row of rows) {
+    const id = serializedDocumentId(row._id);
+    if (!id) continue;
+    runs.set(id, {
+      startedAt: row.startedAt instanceof Date ? row.startedAt : undefined,
+      codeSha: isFullCommitSha(row.codeSha) ? row.codeSha : undefined,
+    });
+  }
+  return runs;
+}
+
 async function loadActiveRetractableObservations(
   sourceName: string,
   retractableFields: readonly string[],
@@ -883,52 +1147,130 @@ async function loadActiveRetractableObservations(
  * whether clearing the stored value is safe turns on whether the corpus still has
  * any assertion for that field, and a rival source's assertion is exactly what
  * must stop the clear.
+ *
+ * A key whose row was merged away stores nothing a student sees: its evidence backs
+ * the live survivor its tombstone chain reaches (#3560). So that key's state is the
+ * survivor's stored value and locks, and the live evidence counted is every key and
+ * id merged into the survivor, since any of them can still refill the field (#3609).
  */
 async function loadEntityStates(
   entityKeys: string[],
   retractableFields: readonly string[],
 ): Promise<FieldRetractionEntityState[]> {
   if (entityKeys.length === 0) return [];
-  const entities = (await ResearchEntity.find({ slug: { $in: entityKeys } })
-    .select(['slug', 'manuallyLockedFields', ...retractableFields].join(' '))
+  const selection = [
+    'slug',
+    'archived',
+    'canonicalGroupId',
+    'manuallyLockedFields',
+    ...retractableFields,
+  ].join(' ');
+  const keyed = (await ResearchEntity.find({ slug: { $in: entityKeys } })
+    .select(selection)
     .lean()) as any[];
 
-  const liveCounts = (await Observation.aggregate([
+  const rowsById = new Map<string, any>(keyed.map((row) => [String(row._id), row]));
+  let pending = keyed.filter((row) => row.archived === true && row.canonicalGroupId);
+  for (let hop = 0; hop < MAX_RESEARCH_ENTITY_TOMBSTONE_HOPS && pending.length > 0; hop += 1) {
+    const unloaded = [...new Set(pending.map((row) => String(row.canonicalGroupId)))].filter(
+      (id) => !rowsById.has(id) && mongoose.isValidObjectId(id),
+    );
+    const loaded =
+      unloaded.length > 0
+        ? ((await ResearchEntity.find({
+            _id: { $in: unloaded.map((id) => new mongoose.Types.ObjectId(id)) },
+          })
+            .select(selection)
+            .lean()) as any[])
+        : [];
+    for (const row of loaded) rowsById.set(String(row._id), row);
+    pending = loaded.filter((row) => row.archived === true && row.canonicalGroupId);
+  }
+  const findLoadedById = async (id: string) =>
+    (rowsById.get(id) as ResearchEntityTombstoneNode | undefined) ?? null;
+
+  const storedRowByKey = new Map<string, any>();
+  for (const entity of keyed) {
+    const entityKey = typeof entity.slug === 'string' ? entity.slug : '';
+    if (!entityKey) continue;
+    const storedRow =
+      entity.archived === true && entity.canonicalGroupId
+        ? ((await walkResearchEntityTombstoneChain(entity, { findById: findLoadedById })) ?? entity)
+        : entity;
+    storedRowByKey.set(entityKey, storedRow);
+  }
+
+  const mergedInBySurvivor = await listResearchEntityMergedInRowsBySurvivor(
+    [...storedRowByKey.values()].filter((row) => row.archived !== true).map((row) => row._id),
+  );
+  const evidenceKeysByStoredRow = new Map<string, { keys: Set<string>; ids: Set<string> }>();
+  for (const storedRow of storedRowByKey.values()) {
+    const storedRowId = serializedDocumentId(storedRow._id) || '';
+    if (!storedRowId || evidenceKeysByStoredRow.has(storedRowId)) continue;
+    const merged = mergedInBySurvivor.get(storedRowId) ?? [];
+    evidenceKeysByStoredRow.set(storedRowId, {
+      keys: new Set(
+        [storedRow.slug, ...merged.map((row) => row.slug)].filter(
+          (slug): slug is string => typeof slug === 'string' && slug.length > 0,
+        ),
+      ),
+      ids: new Set([storedRowId, ...merged.map((row) => String(row._id))]),
+    });
+  }
+  const allEvidenceKeys = [...evidenceKeysByStoredRow.values()].flatMap(({ keys }) => [...keys]);
+  const allEvidenceIds = [...evidenceKeysByStoredRow.values()].flatMap(({ ids }) =>
+    [...ids]
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id)),
+  );
+
+  const liveEvidence = (await Observation.aggregate([
     {
       $match: {
         entityType: 'researchEntity',
-        entityKey: { $in: entityKeys },
+        $or: [{ entityKey: { $in: allEvidenceKeys } }, { entityId: { $in: allEvidenceIds } }],
         field: { $in: [...retractableFields] },
         superseded: { $ne: true },
       },
     },
-    { $group: { _id: { entityKey: '$entityKey', field: '$field' }, count: { $sum: 1 } } },
-  ])) as Array<{ _id: { entityKey: string; field: string }; count: number }>;
+    {
+      $group: {
+        _id: { entityKey: '$entityKey', entityId: '$entityId', field: '$field' },
+        count: { $sum: 1 },
+      },
+    },
+  ])) as Array<{ _id: { entityKey?: string; entityId?: unknown; field: string }; count: number }>;
 
-  const countsByEntity = new Map<string, Record<string, number>>();
-  for (const row of liveCounts) {
-    const forEntity = countsByEntity.get(row._id.entityKey) ?? {};
-    forEntity[row._id.field] = row.count;
-    countsByEntity.set(row._id.entityKey, forEntity);
+  const countsByStoredRow = new Map<string, Record<string, number>>();
+  for (const [storedRowId, { keys, ids }] of evidenceKeysByStoredRow) {
+    const counts: Record<string, number> = {};
+    for (const row of liveEvidence) {
+      const entityId = serializedDocumentId(row._id.entityId) || '';
+      const backsThisRow = entityId ? ids.has(entityId) : keys.has(String(row._id.entityKey || ''));
+      if (backsThisRow) counts[row._id.field] = (counts[row._id.field] ?? 0) + row.count;
+    }
+    countsByStoredRow.set(storedRowId, counts);
   }
 
-  return entities
-    .map((entity) => {
-      const entityId = serializedDocumentId(entity._id) || '';
-      const entityKey = typeof entity.slug === 'string' ? entity.slug : '';
-      const storedValues: Record<string, unknown> = {};
-      for (const field of retractableFields) storedValues[field] = entity[field];
-      return {
-        entityId,
-        entityKey,
-        manuallyLockedFields: Array.isArray(entity.manuallyLockedFields)
-          ? entity.manuallyLockedFields.filter((value: unknown) => typeof value === 'string')
-          : [],
-        storedValues,
-        liveObservationCountByField: countsByEntity.get(entityKey) ?? {},
-      };
-    })
-    .filter((entity) => entity.entityId && entity.entityKey);
+  const states: FieldRetractionEntityState[] = [];
+  for (const [entityKey, storedRow] of storedRowByKey) {
+    const entityId = serializedDocumentId(storedRow._id) || '';
+    if (!entityId) continue;
+    const storedValues: Record<string, unknown> = {};
+    for (const field of retractableFields) storedValues[field] = storedRow[field];
+    states.push({
+      entityId,
+      entityKey,
+      survivorKey:
+        typeof storedRow.slug === 'string' && storedRow.slug ? storedRow.slug : undefined,
+      manuallyLockedFields: Array.isArray(storedRow.manuallyLockedFields)
+        ? storedRow.manuallyLockedFields.filter((value: unknown) => typeof value === 'string')
+        : [],
+      storedValues,
+      liveObservationCountByField: countsByStoredRow.get(entityId) ?? {},
+    });
+  }
+  return states;
 }
 
 /**
@@ -988,6 +1330,7 @@ export async function reconcileFieldRetractions(options: {
   sourceName: string;
   dryRun?: boolean;
   probeValue?: (value: string) => Promise<RetractionProbeVerdict>;
+  commitIsAncestor?: CommitIsAncestor;
 }): Promise<FieldRetractionResult> {
   const dryRun = options.dryRun === true;
   const contract = fieldRetractionContractFor(options.sourceName);
@@ -1000,16 +1343,28 @@ export async function reconcileFieldRetractions(options: {
   const candidateEntityKeys = Array.from(
     new Set(activeObservations.map((observation) => observation.entityKey)),
   );
-  const completeReads = await loadCompleteReads(
-    options.sourceName,
-    contract.witnessFields,
-    candidateEntityKeys,
+  const entities = await loadEntityStates(candidateEntityKeys, contract.retractableFields);
+  const loadedReads = completeReadsAcrossMergedEvidence(
+    await loadCompleteReads(options.sourceName, contract.witnessFields, [
+      ...new Set([
+        ...candidateEntityKeys,
+        ...entities.flatMap((entity) => (entity.survivorKey ? [entity.survivorKey] : [])),
+      ]),
+    ]),
+    entities,
   );
+  const completeReads =
+    (contract.absenceClaimCutoffs ?? []).length > 0
+      ? disregardPreFixAbsenceClaims(
+          loadedReads,
+          contract,
+          await loadRunProvenance(loadedReads.map((read) => read.scrapeRunId)),
+          options.commitIsAncestor ?? gitCommitIsAncestor,
+        )
+      : loadedReads;
   if (completeReads.length === 0) {
     return { ...emptyResult('no-complete-reads', dryRun), sourceName: options.sourceName };
   }
-
-  const entities = await loadEntityStates(candidateEntityKeys, contract.retractableFields);
 
   const plan = planFieldRetractions({
     sourceName: options.sourceName,
@@ -1030,6 +1385,9 @@ export async function reconcileFieldRetractions(options: {
     options.probeValue ?? probeRetractionValueLiveness,
   );
   plan.counts.soleHolderValueWithheld = screened.withheld.length;
+  plan.counts.storedValuesCleared = screened.retained.filter(
+    (retraction) => retraction.clearsStoredValue,
+  ).length;
   plan.counts.soleHolderValueProbedDead = screened.retained.filter(
     (retraction) =>
       classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder',

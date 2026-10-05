@@ -26,11 +26,11 @@ describe('materializeEntity joins a user key on the official profile page it cit
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-  }, 60000);
+  });
 
   afterAll(async () => {
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {
@@ -134,6 +134,23 @@ describe('materializeEntity joins a user key on the official profile page it cit
     await materializeEntity('user', { entityKey: 'dept:computing:ada-lovelace' }, {});
 
     expect((await storedProfile(owner._id))?.profile?.title).toBe('Professor of Computing');
+  });
+
+  it('stores the title without a field label scraped in front of it', async () => {
+    const owner = await Researcher.create({
+      displayName: 'Ada Lovelace',
+      profileLinks: [yaleOfficialLink('https://medicine.yale.edu/profile/ada-lovelace/')],
+      status: 'UNKNOWN',
+      archived: false,
+    });
+    await seedRosterIdentity('dept:computing:ada-lovelace', 'Ada Lovelace', {
+      title: 'Title: Lecturer in Computing',
+      profileUrls: { official: 'https://medicine.yale.edu/profile/ada-lovelace/' },
+    });
+
+    await materializeEntity('user', { entityKey: 'dept:computing:ada-lovelace' }, {});
+
+    expect((await storedProfile(owner._id))?.profile?.title).toBe('Lecturer in Computing');
   });
 
   it('refuses when two live researchers carry the same page, rather than picking one', async () => {

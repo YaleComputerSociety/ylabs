@@ -1,4 +1,5 @@
 import { isExternalScholarlyPlatformHost } from '../utils/externalScholarlyPlatforms';
+import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import {
   isBoilerplatePlatformHostUrl,
   isDepartmentRosterProvenanceUrl,
@@ -14,6 +15,7 @@ import {
   isSharedPeopleRosterUrl,
   isUmbrellaPageCitedByPerson,
   organizationOwnedSiteUrlFromCitation,
+  isSchoolSectionPageUrl,
   sourceUrlToResearchHomeWebsiteUrl,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -117,14 +119,6 @@ export function isMultiTenantHostRootWebsiteUrl(
   return isMultiTenantAcademicHostRootUrl(value, entity);
 }
 
-const PERSON_SCOPED_RESEARCH_HOME_TYPES: ReadonlySet<string> = new Set([
-  'LAB',
-  'FACULTY_RESEARCH_AREA',
-  'FACULTY_PROJECT',
-  'FACULTY_RESEARCH',
-  'INDIVIDUAL_RESEARCH',
-]);
-
 /**
  * A faculty roster or members list is legitimate evidence about the department or
  * centre that publishes it, and a graft on a person's row. `retireGraftedDirectoryUrls`
@@ -140,8 +134,7 @@ export function isRosterPageWebsiteUrlForPerson(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
-  const entityType = typeof entity?.entityType === 'string' ? entity.entityType : '';
-  if (!PERSON_SCOPED_RESEARCH_HOME_TYPES.has(entityType)) return false;
+  if (!isPersonScopedResearchEntityType(entity?.entityType)) return false;
   const url = cleanString(value);
   if (!url) return false;
   return isSharedPeopleRosterUrl(url) || isDepartmentRosterProvenanceUrl(url);
@@ -177,6 +170,7 @@ export function isPromotableWebsiteUrl(
     // department offers, and is a graft on a person's row. Already scoped by who cites
     // it, so the page stays valid evidence for the department itself (#2708).
     !isProgrammePageCitedByPerson(value, entity) &&
+    !isSchoolSectionPageUrl(value) &&
     // A research group's host root or a department's audience-recruitment page names a
     // collective. The serve-time gate hides one, but promotion is where the value comes
     // from: without this arm the resolver re-fills a cleared slot from `sourceUrls` on
@@ -205,7 +199,8 @@ export function isUnservableWebsiteUrl(
     isFileShareOrDocumentWebsiteUrl(value) ||
     isExternalScholarlyPlatformWebsiteUrl(value) ||
     isMultiTenantHostRootWebsiteUrl(value, entity) ||
-    isUmbrellaPageCitedByPerson(value, entity)
+    isUmbrellaPageCitedByPerson(value, entity) ||
+    isSchoolSectionPageUrl(value)
   );
 }
 
@@ -290,9 +285,7 @@ function isWebsiteUrlAlreadyCitedAsRenderedEvidence(
 }
 
 export type WebsiteUrlBackfillResolution =
-  | { action: 'keep' }
-  | { action: 'set'; websiteUrl: string }
-  | { action: 'clear' };
+  { action: 'keep' } | { action: 'set'; websiteUrl: string } | { action: 'clear' };
 
 /**
  * Deterministic, evidence-first resolution of a website URL from the entity's

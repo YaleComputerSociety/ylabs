@@ -14,14 +14,20 @@ The server follows a layered architecture: **Routes -> Middleware -> Controllers
 1. **Route** in `server/src/routes/<resource>.ts` - define HTTP method, path, and the middleware chain.
 2. **Controller** in `server/src/controllers/<resource>Controller.ts` - extract request data, call the service, format the response.
 3. **Service** in `server/src/services/<resource>Service.ts` - business logic, DB operations.
-4. Apply **auth middleware** (`isAuthenticated`, `isProfessor`, `isAdmin`, etc.) and **validation middleware** in the route.
+4. Apply **auth middleware** (`isAuthenticated` or `isAdmin`) and **validation middleware** in the route.
 5. Add tests where risk justifies them.
 
-Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, and `isConfirmed`.
+Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated` and `isAdmin`.
 
-Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireFields(fields[])`, `validatePagination()`, `validateQuery(allowedParams[])`.
+Validation middleware: `validateObjectId(paramName?)`, `validateResearchEntityId(paramName?)`, `validateNetid(paramName?)`, `requireFields(fields[])`, `validatePagination` (plain middleware, not a factory), `validateQuery(allowedParams[])`.
 
 The `asyncHandler` wrapper catches promise rejections in route handlers.
+
+Never answer a 500 from a controller or route `catch`.
+The global `errorHandler` is the only place that sanitizes a server error body and reports it to error tracking, so a handler that writes its own 500 hides the failure.
+Answer only the domain-specific 4xx cases the handler owns, then forward everything else with `next(error)`, or let `asyncHandler` forward the rejection.
+Throw `BadRequestError` for invalid input so it answers 400 with its bounded message; the global handler already maps mongoose validation errors to 400, a duplicate key to 409, and `NotFoundError` to 404.
+`server/src/__tests__/handledServerErrorsReachErrorTracking.test.ts` pins this for every route family.
 
 ## Adding a new page
 
@@ -37,8 +43,36 @@ Iterate on canonical product surfaces instead of creating student-facing version
 2. **TypeScript interfaces** in `client/src/types/`.
 3. **Backfill script** in `server/src/scripts/` if existing data needs transformation, wired as a `package.json` command and dry-run by default.
 4. If the model affects Research search, update the relevant **Meilisearch** rebuild/index config and the release gate.
-5. **An added `schema.index(...)` does not build itself.** `db/connections.ts` sets `autoIndex: false` and `autoCreate: false`, so connecting is not a schema-mutating act (#2233): shipping an index no longer builds it on the next boot. Build it deliberately with `yarn --cwd server db:build-indexes` (dry-run, reports what is missing) then `--apply`. The command is additive and never drops, so **removing** an index is still a reviewed migration with its own issue. Boot logs the drift, so a forgotten build is loud rather than a silent slow query.
+5. **An added `schema.index(...)` does not build itself.** `db/connections.ts` sets `autoIndex: false` and `autoCreate: false`, so connecting is not a schema-mutating act (#2233): shipping an index no longer builds it on the next boot. That holds for every process, not only the API: a CLI or script connects through `connectScriptMongo` or `createScriptMongoConnection` from the same module, and `db/__tests__/everyEntryPointConnectsWithMongoOptions.test.ts` fails on a direct `mongoose.connect`, `createConnection`, or global `autoIndex`/`autoCreate` setting anywhere else (#3932). Build it deliberately with `yarn --cwd server db:build-indexes` (dry-run, reports what is missing) then `--apply`. The command is additive and never drops, so **removing** an index is still a reviewed migration with its own issue. Its dry run also lists every physical index on a modelled collection that no model declares (`undeclaredByCollection`, from `reportUndeclaredMongoIndexes`), which is how a retired field's leftover index is found; retire one by adding it to `RETIRED_INDEXES` in `cleanupLegacyMongoCollections.ts` and running `legacy:cleanup --drop-legacy` on Development once the field is unset. Promotion carries that drop only for a collection in `COPY_COLLECTIONS` in `promoteAcceptedBetaCopy.ts`; an index on any other collection, such as `analytics_events`, survives every promotion, so run the same cleanup against Beta and Production as well, where its populated-field refusal applies too. Boot logs the drift, so a forgotten build is loud rather than a silent slow query. Run the build against Development only: Beta and Production receive indexes through promotion, which copies them from the source collection.
 6. **Narrowing or widening an existing index needs a drop first.** MongoDB allows one text index per collection and refuses a changed spec under the same name, so a widened index fails to build. The build command reports the failure and leaves the old index alone rather than dropping it for you. Measured on Development: two declared indexes had been failing to build silently for the database's whole life under `autoIndex: true`, one a unique index blocked by a duplicate value and one a text index blocked by that one-per-collection rule.
+7. **Hooks and validators follow Mongoose 9.** A pre hook takes no `next()`: it throws to refuse a write and returns or awaits to continue, and an `insertMany` or `bulkWrite` hook gets the documents or operations as its first argument. A custom validator's `this` is typed as the document or the query, because update validators run with the query, so declare it `this: unknown` and read the fields it needs through a narrowed local. The rest of the Mongoose 9 conventions are in `skills/search-data/SKILL.md`.
+
+## Adding a script that writes
+
+A new entry script anywhere under `server/src/scripts` that calls `assertScriptApplyAllowed` or parses an `--apply` flag must be one of three things, or CI fails (`server/src/scripts/__tests__/humanRunWriteScriptGuard.test.ts`, #3524).
+
+1. A sweep stage: register its npm command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` (or `FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS` for a fellowship writer) in `runScraperSweep.ts`, so it runs every sweep rather than when someone remembers.
+2. A lane or projection change instead of a script, when the correction has a shape a predicate can express.
+3. A standing operator tool, added to `OPERATOR_TOOLS` with its reason, only when it records a judgement about one row or operates infrastructure.
+
+A read-only instrument that names `--apply` only to refuse it goes in `INSTRUMENTS_THAT_REFUSE_APPLY` instead.
+
+Pass `mongoUrl: process.env.MONGODBURL` at every `assertScriptApplyAllowed` call, so the call says out loud which database the apply would write.
+The guard also resolves `MONGODBURL` itself when the argument is absent, because before #3725 four apply-capable scripts omitted it: `summarizeMongoUrl(undefined)` returned `missing`, no production pattern matched, and the refusal could not fire while the script connected through `MONGODBURL` anyway.
+Omission is therefore no longer unsafe, and the convention is what keeps the target reviewable.
+Never hand the guard an `env` override while omitting `mongoUrl`: the guard would resolve its target from that stub while the script connects through the real `process.env`, which is the one remaining way past the check.
+`server/src/scripts/__tests__/scriptWriteGuards.test.ts` closes the argument-shape space rather than enumerating call sites, so a new apply path is covered by whichever shape it uses, and the shape that resolves nothing is recorded there as the one to avoid.
+
+Every entry script under `server/src/scripts` with an `--apply` path, named in its own code or through an imported function that parses the flag, must call `assertScriptApplyAllowed` itself or through an imported function that calls it, or be listed in `APPLY_GUARD_EXEMPTIONS` with the guard that stands in for it (`server/src/scripts/__tests__/everyApplyPathReachesTheApplyGuard.test.ts`, #4320).
+The test parses each module with the TypeScript compiler and follows calls of imported functions rather than imports alone, so a constant imported from a guarded script does not count as a guard and a comment that mentions the flag is not an apply path.
+The exemptions are the read-only instruments that throw on `--apply`, the Development-only scripts that check the database name themselves, the promotion and sync tooling, and the sweep runner, which forwards `--apply` to stages that each run their own guard.
+`assertScraperEnvironmentMatchesMongoTarget` resolves `mongoUrl ?? env.MONGODBURL` the same way the apply guard does, so a scraper caller that omits the URL is still checked against the database it will connect to.
+
+`humanRunWriteScripts.pending.json` lists the legacy one-offs awaiting conversion.
+Converting or deleting one means removing it from that list and lowering `PENDING_CONVERSION_CEILING` to match, because the test requires the two to be equal, which is what keeps the count moving in one direction.
+
+A scratch one-off does not get committed: no `tmp`-prefixed file in `server/src/scripts`, and no server source that reads its input from a hard-coded `/tmp` path, which nothing in the repository writes (`server/src/scripts/__tests__/noCommittedScratchScripts.test.ts`, #3728).
+Take an input path as a flag instead.
 
 ## General implementation rules
 

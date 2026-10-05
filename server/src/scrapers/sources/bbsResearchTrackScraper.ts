@@ -13,10 +13,9 @@
  * label onto each PI's existing canonical research home rather than minting a
  * duplicate identity shell: BBS PIs are YSM/basic-science faculty already
  * covered by `ysm-faculty-directory` / `ysm-atoz-index` / department rosters.
- * A conservative FACULTY_RESEARCH_AREA home is minted only when no existing
- * entity resolves for the PI, keyed on the same `ysm-faculty-<slug>` namespace
- * `ysm-faculty-directory` uses so the two sources converge on one entity
- * instead of forking a shell (#1390).
+ * A track listing proves a person's research area, never that a row should
+ * exist, so a PI with no existing row, or with several, mints nothing and is
+ * counted by reason (#3561).
  *
  * Crawl shape (mirrors `ysm-mesh-keyword` / `ysm-faculty-directory`):
  *   - Each `/bbs/people/<track>` page is a SEED listing, never cited as a source.
@@ -27,92 +26,148 @@
  *     from the person's own official profile URL and name, never a surname search.
  */
 import axios from 'axios';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  type CenterRosterReadMember,
+  type CenterRosterStopReason,
+} from '../centerRosterRetirement';
 import { getCached, setCached } from '../snapshotCache';
-import { splitName } from '../utils/scraperHelpers';
+import { fetchFailureStatusCode } from '../utils/fetchFailure';
+import {
+  DEFAULT_SOURCE_CONCURRENCY,
+  mapWithConcurrency,
+  resolveSourceConcurrency,
+} from '../utils/mapWithConcurrency';
 import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import type { BbsTrackHealthSnapshot } from '../bbsTrackRosterRetirement';
 
 const SOURCE_KEY = 'bbs-research-track';
+
+/**
+ * The role a track listing claims about a PI, which is the same for every entry: it says the PI
+ * belongs to this graduate track and nothing else. The retirement mechanism keys a claim by
+ * member and role, so a single constant degrades that key to the PI, which is exactly the claim
+ * this lane makes and later retires (#3852).
+ */
+const BBS_TRACK_PI_ROLE = 'track-pi';
 const BBS_HOST = 'medicine.yale.edu';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
-const SCHOOL_NAME = 'Yale School of Medicine';
+const PROFILE_REFUSAL_STATUS_CODES: ReadonlySet<number> = new Set([403, 429]);
+export const BBS_REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
+/**
+ * The school name as the CORPUS stores it, which is not how the school brands itself.
+ *
+ * This read `'Yale School of Medicine'` and matched zero rows: every live row stores
+ * `'School of Medicine'`, so both school arms of the candidate query below were dead and the
+ * candidate set was exactly its slug-prefix arm. Measured on Development: `'Yale School of
+ * Medicine'` 0 rows, `'School of Medicine'` 2,244, and the only school value containing
+ * "Medicine" is the latter (#3834).
+ *
+ * That is why the lane could not re-reach rows it had grafted onto: a row whose slug is not
+ * `ysm-` or `bbs-` prefixed had no other way into the candidate set, so a re-run reported it as
+ * having no existing research row and left its previous observation live forever.
+ *
+ * Cross-checked against `schoolForDirectoryProfileHost`, which maps this school's hosts to the
+ * same stored name, so the two agree rather than each carrying its own spelling.
+ */
+const SCHOOL_NAME = 'School of Medicine';
 const RESEARCH_AREA_CONFIDENCE = 0.7;
-const INFERRED_PI_CONFIDENCE = 0.7;
 const MAX_CANDIDATE_SCAN = 4000;
 
 export interface BbsTrack {
   /** Track path segment under `/bbs/people/`, also used to filter with `--only`. */
   slug: string;
   url: string;
-  /** Human-readable research-area facet label grafted for every PI in the track. */
-  researchArea: string;
+  /**
+   * The research-area chips grafted for every PI in the track. A list rather than one
+   * label because three of the nine tracks are named after several fields at once, and a
+   * programme name is not a topic (#3806).
+   */
+  researchAreas: string[];
 }
 
 /**
- * The nine BBS research tracks and the concise research-area label each maps to.
- * Labels are the curated facet chip, not the raw slug or the full program name,
- * kept short enough to survive research-area label hygiene and read as a topic.
+ * The nine BBS research tracks and the research-area chips each maps to.
+ *
+ * Chips are the curated facet values, not the raw slug and not the programme name. Six
+ * tracks are named after a single field and map to it directly. The other three are named
+ * after the several fields they span, and each is listed as those fields rather than as its
+ * programme name: a chip reading "Molecular Medicine, Pharmacology & Physiology" tells a
+ * student they are a fit for one of three things without saying which, and for 38 served
+ * rows it was the whole of "Best fit for" (#3806).
+ *
+ * Splitting them asserts no more than the single-field tracks already do. Membership of the
+ * immunology track is grafted as `Immunology` on the same evidence and at the same 0.7
+ * confidence, so membership of a track that spans pharmacology is grafted as
+ * `Pharmacology`. What changes is that each chip now names a field a student can read.
  */
 export const BBS_TRACKS: BbsTrack[] = [
   {
     slug: 'bbsb',
     url: 'https://medicine.yale.edu/bbs/people/bbsb/',
-    researchArea: 'Biochemistry, Quantitative Biology, Biophysics & Structural Biology',
+    researchAreas: ['Biochemistry', 'Quantitative Biology', 'Biophysics', 'Structural Biology'],
   },
   {
     slug: 'cbb',
     url: 'https://medicine.yale.edu/bbs/people/cbb/',
-    researchArea: 'Computational Biology & Bioinformatics',
+    researchAreas: ['Computational Biology & Bioinformatics'],
   },
   {
     slug: 'human-genome-sciences',
     url: 'https://medicine.yale.edu/bbs/people/human-genome-sciences/',
-    researchArea: 'Human Genome Sciences',
+    researchAreas: ['Human Genome Sciences'],
   },
   {
     slug: 'immunology',
     url: 'https://medicine.yale.edu/bbs/people/immunology/',
-    researchArea: 'Immunology',
+    researchAreas: ['Immunology'],
   },
   {
     slug: 'm2p2',
     url: 'https://medicine.yale.edu/bbs/people/m2p2/',
-    researchArea: 'Molecular Medicine, Pharmacology & Physiology',
+    researchAreas: ['Molecular Medicine', 'Pharmacology', 'Physiology'],
   },
   {
     slug: 'mcbgd',
     url: 'https://medicine.yale.edu/bbs/people/mcbgd/',
-    researchArea: 'Molecular Cell Biology, Genetics & Development',
+    researchAreas: ['Molecular Cell Biology', 'Genetics', 'Developmental Biology'],
   },
   {
     slug: 'microbiology',
     url: 'https://medicine.yale.edu/bbs/people/microbiology/',
-    researchArea: 'Microbiology',
+    researchAreas: ['Microbiology'],
   },
   {
     slug: 'neuroscience',
     url: 'https://medicine.yale.edu/bbs/people/neuroscience/',
-    researchArea: 'Neuroscience',
+    researchAreas: ['Neuroscience'],
   },
   {
     slug: 'plantmolbio',
     url: 'https://medicine.yale.edu/bbs/people/plantmolbio/',
-    researchArea: 'Plant Molecular Biology',
+    researchAreas: ['Plant Molecular Biology'],
   },
 ];
 
-export const BBS_TRACK_RESEARCH_AREAS: Record<string, string> = Object.fromEntries(
-  BBS_TRACKS.map((track) => [track.slug, track.researchArea]),
+export const BBS_TRACK_RESEARCH_AREAS: Record<string, string[]> = Object.fromEntries(
+  BBS_TRACKS.map((track) => [track.slug, track.researchAreas]),
 );
 
-export function bbsTrackResearchAreaLabel(slug: string): string | undefined {
-  return BBS_TRACK_RESEARCH_AREAS[slug.trim().toLowerCase()];
+/** The chips a track grafts, or an empty list when the slug names no track. */
+export function bbsTrackResearchAreaLabels(slug: string): string[] {
+  return BBS_TRACK_RESEARCH_AREAS[slug.trim().toLowerCase()] ?? [];
 }
 
 export interface BbsFacultyRef {
@@ -184,16 +239,33 @@ function nameFromLastCommaFirst(raw: string): string {
 }
 
 /**
- * Parse a BBS track listing page into the faculty it lists. The roster renders
- * as `link-items-list__item` anchors linking each PI's `/bbs/profile/<slug>`
- * page (name is "Last, First"); the same data is duplicated in an escaped JSON
- * blob, so dedupe by profile slug.
+ * Parse a BBS track listing page into the faculty it lists, in either shape the CMS serves.
+ *
+ * Most tracks render the roster as `link-items-list__item` anchors linking each PI's
+ * `/bbs/profile/<slug>` page, with the name as "Last, First". At least one track serves the same
+ * roster as a plain two-column table instead, with no `link-items-list` wrapper and no
+ * `hyperlink` class anywhere on the page, and the name as "First Last". The old selector required
+ * all three of those, so that track parsed to zero faculty for three consecutive runs while the
+ * run reported success (#3833).
+ *
+ * Both shapes are matched rather than the union of every `/bbs/profile/` link on the page,
+ * because a track page also links profiles from navigation and related-content blocks and those
+ * are not roster members. A link inside a roster list item or a table row is; anything else is
+ * not. `nameFromLastCommaFirst` already passes an uncommaed "First Last" through unchanged, so
+ * the name needs no second rule.
+ *
+ * The same data is duplicated in an escaped JSON blob, so dedupe by profile slug.
  */
+const BBS_ROSTER_LINK_SELECTORS = [
+  'li.link-items-list__item a[href*="/bbs/profile/"]',
+  'table tr td a[href*="/bbs/profile/"]',
+].join(', ');
+
 export function parseBbsTrackFaculty(html: string, pageUrl: string): BbsFacultyRef[] {
   if (!html) return [];
   const $ = cheerio.load(html);
   const bySlug = new Map<string, BbsFacultyRef>();
-  $('li.link-items-list__item a.hyperlink[href*="/bbs/profile/"]').each((_i, el) => {
+  $(BBS_ROSTER_LINK_SELECTORS).each((_i, el) => {
     const link = $(el);
     const href = link.attr('href') || '';
     const profileSlug = bbsProfileSlugFromUrl(href);
@@ -260,6 +332,7 @@ export function bbsPiMatchKeys(links: BbsProfileLinks): { urls: string[]; slugs:
 export interface BbsMatchIndex {
   entityIdByUrl: Map<string, Set<string>>;
   entityIdBySlug: Map<string, string>;
+  slugByEntityId: Map<string, string>;
   entityIdByNameKey: Map<string, Set<string>>;
   /** Identity tokens and netid per entity, for corroborating a non-person-key match. */
   identityByEntityId: Map<string, { tokens: Set<string>; netid: string }>;
@@ -366,12 +439,16 @@ export function bbsRowIdentityNamesProfilePerson(
 export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIndex {
   const entityIdByUrl = new Map<string, Set<string>>();
   const entityIdBySlug = new Map<string, string>();
+  const slugByEntityId = new Map<string, string>();
   const entityIdByNameKey = new Map<string, Set<string>>();
   for (const candidate of candidates) {
     const entityId = serializedDocumentId(candidate._id);
     if (!entityId) continue;
     const slug = text(candidate.slug).toLowerCase();
-    if (slug) entityIdBySlug.set(slug, entityId);
+    if (slug) {
+      entityIdBySlug.set(slug, entityId);
+      slugByEntityId.set(entityId, text(candidate.slug));
+    }
     for (const rawUrl of candidate.matchUrls) {
       const url = normalizeMatchUrl(rawUrl);
       if (!url) continue;
@@ -394,12 +471,13 @@ export function buildBbsMatchIndex(candidates: BbsCandidateEntity[]): BbsMatchIn
       netid: bbsIdentityNetid(candidate.slug),
     });
   }
-  return { entityIdByUrl, entityIdBySlug, entityIdByNameKey, identityByEntityId };
+  return { entityIdByUrl, entityIdBySlug, slugByEntityId, entityIdByNameKey, identityByEntityId };
 }
 
 export type BbsHomeResolution =
   | { status: 'matched'; entityId: string }
   | { status: 'ambiguous' }
+  | { status: 'refused' }
   | { status: 'unmatched' };
 
 /**
@@ -413,6 +491,7 @@ export function resolveBbsResearchHome(
   links: BbsProfileLinks,
   nameKey: string,
   index: BbsMatchIndex,
+  bbsProfileSlug = '',
 ): BbsHomeResolution {
   const { urls, slugs } = bbsPiMatchKeys(links);
   const profileUrl = normalizeMatchUrl(links.canonicalProfileUrl);
@@ -446,7 +525,17 @@ export function resolveBbsResearchHome(
   // A borrowed URL that names nobody on this row is a refusal, not a fall-through to
   // the name fallback: the name key that would be tried next is the same PI's name,
   // and letting it through would re-admit the row the URL arm just declined.
-  if (matchedOnCitedUrl.size > 0) return { status: 'unmatched' };
+  if (matchedOnCitedUrl.size > 0) return { status: 'refused' };
+
+  // The key this lane minted rows under before #3561, derived from this same profile, so it names
+  // the PI. A fallback rather than a person key: where the canonical row also exists, ranking the
+  // two as equals would fail every such PI closed as ambiguous (#3834).
+  const profileWasRead = Boolean(profileSlug);
+  const lanesOwnRow =
+    profileWasRead && bbsProfileSlug
+      ? index.entityIdBySlug.get(`bbs-${bbsProfileSlug.trim().toLowerCase()}`)
+      : undefined;
+  if (lanesOwnRow) return { status: 'matched', entityId: lanesOwnRow };
 
   if (nameKey) {
     const byName = index.entityIdByNameKey.get(nameKey);
@@ -460,6 +549,7 @@ export function bbsGraftObservations(
   entityId: string,
   researchAreas: string[],
   sourceUrl: string,
+  entityKey = '',
 ): ObservationInput[] {
   const areas = uniqueStrings(researchAreas);
   if (!entityId || areas.length === 0) return [];
@@ -467,6 +557,7 @@ export function bbsGraftObservations(
     {
       entityType: 'researchEntity',
       entityId,
+      ...(entityKey ? { entityKey } : {}),
       sourceUrl,
       field: 'researchAreas',
       value: areas,
@@ -475,70 +566,141 @@ export function bbsGraftObservations(
   ];
 }
 
-/**
- * Conservative FACULTY_RESEARCH_AREA home minted only when no existing home
- * resolves. Keyed on the `ysm-faculty-<slug>` namespace so it converges with
- * `ysm-faculty-directory` rather than forking a duplicate shell (#1390). The
- * lead is keyed to a synthetic BBS user observation; the materializer resolves
- * the actual canonical Researcher from the name under the existing person-match guards.
- */
-export function bbsMintObservations(pi: BbsTrackPi, links: BbsProfileLinks): ObservationInput[] {
-  const ysmProfileUrl = links.canonicalProfileUrl;
-  const identitySourceUrl = ysmProfileUrl || pi.profileUrl;
-  const profileSlug = ysmProfileUrl
-    ? ysmProfileUrl.replace(/\/+$/, '').split('/').pop() || pi.profileSlug
-    : pi.profileSlug;
-  const entityKey = ysmProfileUrl
-    ? `ysm-faculty-${profileSlug}`.slice(0, 100)
-    : `bbs-${pi.profileSlug}`.slice(0, 100);
-  const areas = uniqueStrings(pi.researchAreas);
-  if (areas.length === 0) return [];
-
-  const userKey = `bbs:${profileSlug}`;
-  const { first, last } = splitName(pi.name);
-  const userBase = {
-    entityType: 'user' as const,
-    entityKey: userKey,
-    sourceUrl: identitySourceUrl,
-  };
-  const userObs: ObservationInput[] = [{ ...userBase, field: 'userType', value: 'faculty' }];
-  if (first) userObs.push({ ...userBase, field: 'fname', value: first });
-  if (last) userObs.push({ ...userBase, field: 'lname', value: last });
-  if (ysmProfileUrl) {
-    userObs.push({ ...userBase, field: 'profileUrls', value: { departmental: ysmProfileUrl } });
-  }
-
-  const entityBase = {
-    entityType: 'researchEntity' as const,
-    entityKey,
-    sourceUrl: identitySourceUrl,
-  };
-  const entityObs: ObservationInput[] = [
-    { ...entityBase, field: 'slug', value: entityKey },
-    { ...entityBase, field: 'name', value: `${pi.name} Faculty Research` },
-    { ...entityBase, field: 'kind', value: 'individual' },
-    { ...entityBase, field: 'entityType', value: 'FACULTY_RESEARCH_AREA' },
-    { ...entityBase, field: 'school', value: SCHOOL_NAME },
-    { ...entityBase, field: 'sourceUrls', value: [identitySourceUrl] },
-    { ...entityBase, field: 'researchAreas', value: areas },
-    {
-      ...entityBase,
-      field: 'inferredPiUserKey',
-      value: userKey,
-      confidenceOverride: INFERRED_PI_CONFIDENCE,
-    },
-  ];
-
-  return [...userObs, ...entityObs];
-}
-
 export type FetchBbsPageFn = (url: string, useCache: boolean) => Promise<string | null>;
 
 export type BbsEntityFinderFn = () => Promise<BbsCandidateEntity[]>;
 
+export type TrackEverListedPisFn = (track: BbsTrack, sourceId: string) => Promise<boolean>;
+
 export interface BbsResearchTrackScraperDeps {
   fetchPage?: FetchBbsPageFn;
   entityFinder?: BbsEntityFinderFn;
+  trackEverListedPis?: TrackEverListedPisFn;
+  pause?: (ms: number) => Promise<void>;
+}
+
+type BbsProfileRead =
+  | { status: 'read'; links: BbsProfileLinks }
+  | { status: 'refused'; statusCode: number }
+  | { status: 'failed' };
+
+export interface BbsProfileFetchTally {
+  concurrency: number;
+  attempted: number;
+  read: number;
+  refused: number;
+  recovered: number;
+  lost: number;
+  failed: number;
+}
+
+const EMPTY_PROFILE_LINKS: BbsProfileLinks = { canonicalProfileUrl: '', labUrls: [] };
+
+const realPause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A per-track read snapshot on the #3781 contract, so absence can later be governed by the same
+ * rule rather than a second one.
+ *
+ * Admissible only for a complete, off-the-wire read that listed at least one PI. A zero-PI parse,
+ * a failed fetch and a cache-permitted read each produce a snapshot
+ * `centerRosterReadAdmissibility` refuses, so none of them can retire anybody, and the emptiness
+ * is recorded rather than lost. That is the protection the `plantmolbio` case needed: it listed
+ * zero for three consecutive runs, and under a naive omission rule its whole membership would
+ * have been retired three times over (#3852).
+ *
+ * `not-paginated` is the honest stop reason because a track listing is one page, and it counts as
+ * having read the whole roster. A fetch that failed says so instead, which makes the read
+ * incomplete and therefore inadmissible.
+ */
+export interface BbsTrackRead {
+  track: BbsTrack;
+  faculty: readonly BbsFacultyRef[];
+  fetched: boolean;
+}
+
+function buildTrackRosterHealthObservation(input: {
+  track: BbsTrack;
+  faculty: readonly BbsFacultyRef[];
+  fetched: boolean;
+  /**
+   * The row each listed PI resolved to THIS run, which is the identity space the claim lives in.
+   *
+   * A claim is a `researchAreas` value on a research entity, so a signal that governs it has to
+   * name research entities. Naming only the PI cannot: the claim records the PI's canonical YSM
+   * profile URL while a listing names the BBS one, and measured on Development only 409 of 1,036
+   * live claims carry a recoverable BBS slug, so a slug-keyed join would govern 39% of them and
+   * report success (#3852).
+   *
+   * A listed PI missing from this map did not resolve to a row this run, for any reason: a profile
+   * fetch that failed, an ambiguous match, a refusal, or no existing row. That is unknown rather
+   * than absent, and `bbsTrackReadBlocksRetirementOf` is what keeps it from retiring anybody.
+   */
+  claimEntityKeyByProfileSlug: ReadonlyMap<string, string>;
+  citedProfileUrlByProfileSlug: ReadonlyMap<string, string>;
+  cacheAllowed: boolean;
+  readAt: Date;
+}): ObservationInput {
+  const members: Array<CenterRosterReadMember & { citedProfileUrl?: string }> = input.faculty.map(
+    (ref) => {
+      const claimEntityKey = input.claimEntityKeyByProfileSlug.get(ref.profileSlug);
+      const citedProfileUrl = input.citedProfileUrlByProfileSlug.get(ref.profileSlug);
+      return {
+        memberKey: ref.profileSlug,
+        role: BBS_TRACK_PI_ROLE,
+        ...(claimEntityKey ? { claimEntityKey } : {}),
+        ...(citedProfileUrl ? { citedProfileUrl } : {}),
+      };
+    },
+  );
+  const stopReason: CenterRosterStopReason = input.fetched ? 'not-paginated' : 'fetch-failed';
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey: input.track.slug,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    sourceUrl: input.track.url,
+    value: {
+      ...buildCenterRosterHealthSnapshot({
+        centerKey: input.track.slug,
+        entityKey: input.track.slug,
+        members,
+        pagesRead: input.fetched ? 1 : 0,
+        readMode: 'html',
+        stopReason,
+        cacheAllowed: input.cacheAllowed,
+        readAt: input.readAt,
+      }),
+      claimEntityKeysRecorded: true,
+    } satisfies BbsTrackHealthSnapshot,
+  };
+}
+
+/**
+ * Whether this lane has ever recorded a PI from this track page.
+ *
+ * A track that lists nobody is either a page that changed shape or a parser that broke on it, and
+ * both are defects. Neither was visible: the lane logged `0 faculty listed` and carried on, so
+ * `plantmolbio` parsed to zero for three consecutive runs while every run reported success
+ * (#3833). The per-source barren-streak check cannot see it either, because the lane's other
+ * tracks keep yielding and the source's own total never drops to zero.
+ *
+ * The distinction between a warning and a stage failure is this read: a track that never listed
+ * anybody may simply be empty upstream, while a track that used to list PIs and now lists none is
+ * unambiguously a defect. Fails open, returning false, because an unanswerable read must not
+ * invent a failure.
+ *
+ * The read keys on a topic this track grafts rather than on the track URL, because a graft cites
+ * the PI's profile page and never the track page, and no two tracks share a topic.
+ */
+async function defaultTrackEverListedPis(track: BbsTrack, sourceId: string): Promise<boolean> {
+  if (mongoose.connection.readyState !== 1 || !mongoose.isValidObjectId(sourceId)) return false;
+  const seen = await Observation.exists({
+    sourceId,
+    entityType: 'researchEntity',
+    field: 'researchAreas',
+    value: { $in: track.researchAreas },
+  });
+  return Boolean(seen);
 }
 
 async function defaultFetchPage(url: string, useCache: boolean): Promise<string | null> {
@@ -548,13 +710,15 @@ async function defaultFetchPage(url: string, useCache: boolean): Promise<string 
   }
   const safeUrl = await assertPublicHttpUrl(url);
   const agents = ssrfSafeAgents();
-  const res = await axios.get(safeUrl.toString(), {
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT },
-    maxRedirects: 5,
-    httpAgent: agents.httpAgent,
-    httpsAgent: agents.httpsAgent,
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(safeUrl.toString(), {
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
+      maxRedirects: 5,
+      httpAgent: agents.httpAgent,
+      httpsAgent: agents.httpsAgent,
+    }),
+  );
   const html = String(res.data || '');
   if (useCache) await setCached(SOURCE_KEY, `page:${url}`, html);
   return html;
@@ -569,6 +733,9 @@ interface BbsCandidateDoc {
   websiteUrl?: string;
   website?: string;
   sourceUrls?: unknown;
+  /** Selected only so the dead-arm check below can see whether the school arm matched. */
+  school?: string;
+  schools?: string[];
 }
 
 function candidateFromDoc(doc: BbsCandidateDoc): BbsCandidateEntity {
@@ -607,12 +774,31 @@ async function defaultEntityFinder(): Promise<BbsCandidateEntity[]> {
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      school: 1,
+      schools: 1,
     },
   )
     .sort({ _id: 1 })
     .limit(MAX_CANDIDATE_SCAN)
     .lean()) as BbsCandidateDoc[];
+  // A predicate arm that matches nothing is how this lane lost reach silently for weeks, so it
+  // is reported rather than left to be inferred from a shortfall in grafts (#3834).
+  if (
+    !docs.some((doc) => doc.school === SCHOOL_NAME || (doc.schools || []).includes(SCHOOL_NAME))
+  ) {
+    console.warn(
+      `[bbs-research-track] no candidate row carries school ${JSON.stringify(SCHOOL_NAME)}, so only the slug-prefix arm is finding rows; the corpus may have renamed the school (#3834)`,
+    );
+  }
   return docs.map(candidateFromDoc);
+}
+
+export function profileFetchSummary(tally: BbsProfileFetchTally): string {
+  return (
+    `profiles at concurrency ${tally.concurrency}: ${tally.read} of ${tally.attempted} read, ` +
+    `${tally.refused} refused with HTTP 403/429 (${tally.recovered} recovered on a retry, ${tally.lost} lost), ` +
+    `${tally.failed} failed otherwise`
+  );
 }
 
 export class BbsResearchTrackScraper implements IScraper {
@@ -621,47 +807,154 @@ export class BbsResearchTrackScraper implements IScraper {
 
   private readonly fetchPage: FetchBbsPageFn;
   private readonly entityFinder: BbsEntityFinderFn;
+  private readonly trackEverListedPis: TrackEverListedPisFn;
+  private readonly pause: (ms: number) => Promise<void>;
 
   constructor(deps: BbsResearchTrackScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.entityFinder = deps.entityFinder || defaultEntityFinder;
+    this.trackEverListedPis = deps.trackEverListedPis || defaultTrackEverListedPis;
+    this.pause = deps.pause || realPause;
   }
 
-  private async collectTrackPis(ctx: ScraperContext): Promise<Map<string, BbsTrackPi>> {
+  private async readProfile(pi: BbsTrackPi, ctx: ScraperContext): Promise<BbsProfileRead> {
+    try {
+      const html = await this.fetchPage(pi.profileUrl, ctx.options.useCache);
+      return {
+        status: 'read',
+        links: html ? parseBbsProfileLinks(html, pi.profileUrl) : EMPTY_PROFILE_LINKS,
+      };
+    } catch (error) {
+      const statusCode = fetchFailureStatusCode(error);
+      if (statusCode !== undefined && PROFILE_REFUSAL_STATUS_CODES.has(statusCode)) {
+        return { status: 'refused', statusCode };
+      }
+      ctx.log(`[${pi.profileSlug}] profile fetch failed: ${sanitizeLogValue(error)}`);
+      return { status: 'failed' };
+    }
+  }
+
+  private async readProfiles(
+    targets: readonly BbsTrackPi[],
+    ctx: ScraperContext,
+  ): Promise<{ linksBySlug: Map<string, BbsProfileLinks>; tally: BbsProfileFetchTally }> {
+    const concurrency = resolveSourceConcurrency(
+      ctx.options.sourceConcurrency,
+      DEFAULT_SOURCE_CONCURRENCY,
+    );
+    const tally: BbsProfileFetchTally = {
+      concurrency,
+      attempted: targets.length,
+      read: 0,
+      refused: 0,
+      recovered: 0,
+      lost: 0,
+      failed: 0,
+    };
+    const linksBySlug = new Map<string, BbsProfileLinks>();
+    const refused: BbsTrackPi[] = [];
+    ctx.log(`Reading ${targets.length} PI profile(s) at source concurrency ${concurrency}`);
+    await mapWithConcurrency(targets, concurrency, async (pi) => {
+      const read = await this.readProfile(pi, ctx);
+      if (read.status === 'read') {
+        tally.read += 1;
+        linksBySlug.set(pi.profileSlug, read.links);
+      } else if (read.status === 'refused') {
+        tally.refused += 1;
+        refused.push(pi);
+        ctx.log(`[${pi.profileSlug}] profile refused with HTTP ${read.statusCode}`);
+      } else {
+        tally.failed += 1;
+      }
+    });
+    if (refused.length > 0) {
+      ctx.log(
+        `Retrying ${refused.length} refused profile(s) once after a ${BBS_REFUSED_PROFILE_RETRY_PAUSE_MS} ms pause`,
+      );
+      await this.pause(BBS_REFUSED_PROFILE_RETRY_PAUSE_MS);
+      await mapWithConcurrency(refused, concurrency, async (pi) => {
+        const read = await this.readProfile(pi, ctx);
+        if (read.status === 'read') {
+          tally.recovered += 1;
+          tally.read += 1;
+          linksBySlug.set(pi.profileSlug, read.links);
+          return;
+        }
+        tally.lost += 1;
+        if (read.status === 'refused') {
+          ctx.log(`[${pi.profileSlug}] profile refused again with HTTP ${read.statusCode}`);
+        }
+      });
+    }
+    return { linksBySlug, tally };
+  }
+
+  private async collectTrackPis(ctx: ScraperContext): Promise<{
+    pis: Map<string, BbsTrackPi>;
+    emptyTrackFailures: string[];
+    trackReads: BbsTrackRead[];
+    unitYields: Record<string, number>;
+  }> {
     const onlyFilter =
       ctx.options.only && ctx.options.only.length > 0
         ? new Set(ctx.options.only.map((value) => value.trim().toLowerCase()))
         : null;
     const byProfileSlug = new Map<string, BbsTrackPi>();
+    const emptyTrackFailures: string[] = [];
+    const trackReads: BbsTrackRead[] = [];
+    const unitYields: Record<string, number> = {};
     for (const track of BBS_TRACKS) {
       if (onlyFilter && !onlyFilter.has(track.slug)) continue;
-      let html: string | null = null;
+      let html: string | null;
       try {
         html = await this.fetchPage(track.url, ctx.options.useCache);
       } catch (error) {
         ctx.log(`[${track.slug}] track page fetch failed: ${sanitizeLogValue(error)}`);
+        trackReads.push({ track, faculty: [], fetched: false });
         continue;
       }
-      if (!html) continue;
+      if (!html) {
+        trackReads.push({ track, faculty: [], fetched: false });
+        continue;
+      }
       const faculty = parseBbsTrackFaculty(html, track.url);
       ctx.log(`[${track.slug}] ${faculty.length} faculty listed`);
+      // Recorded only on the branch that actually read and parsed the page: a fetch
+      // failure above leaves the track out, which the guard reads as inconclusive
+      // rather than as a barren run for it (#3876).
+      unitYields[track.slug] = faculty.length;
+      trackReads.push({ track, faculty, fetched: true });
+      if (faculty.length === 0) {
+        // A warning whatever the history, so an empty track is never silent again.
+        ctx.log(
+          `[${track.slug}] WARNING: this track listed no faculty; the page shape or the parser changed (#3833)`,
+        );
+        if (await this.trackEverListedPis(track, ctx.sourceId)) {
+          // An error only here, because this track has listed PIs before, so zero is a defect
+          // rather than an empty programme. It names the track and reaches the run's errors, which
+          // fails this lane's stage; every other source is its own subprocess and still runs.
+          emptyTrackFailures.push(
+            `${track.slug} listed no faculty but has listed PIs before, so the track page or the parser is broken (#3833)`,
+          );
+        }
+      }
       for (const ref of faculty) {
         const existing = byProfileSlug.get(ref.profileSlug);
         if (existing) {
-          if (!existing.researchAreas.includes(track.researchArea)) {
-            existing.researchAreas.push(track.researchArea);
+          for (const area of track.researchAreas) {
+            if (!existing.researchAreas.includes(area)) existing.researchAreas.push(area);
           }
         } else {
           byProfileSlug.set(ref.profileSlug, {
             name: ref.name,
             profileSlug: ref.profileSlug,
             profileUrl: ref.profileUrl,
-            researchAreas: [track.researchArea],
+            researchAreas: [...track.researchAreas],
           });
         }
       }
     }
-    return byProfileSlug;
+    return { pis: byProfileSlug, emptyTrackFailures, trackReads, unitYields };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -671,62 +964,103 @@ export class BbsResearchTrackScraper implements IScraper {
     }
     const limit = limitOption ?? Infinity;
 
-    const pis = await this.collectTrackPis(ctx);
+    const { pis, emptyTrackFailures, trackReads, unitYields } = await this.collectTrackPis(ctx);
     const candidates = await this.entityFinder();
     const index = buildBbsMatchIndex(candidates);
 
+    // Filled as the graft resolves each PI, so the snapshots below can name the row each listed PI
+    // claims on. A listed PI absent from this map did not resolve to a row this run.
+    const claimEntityKeyByProfileSlug = new Map<string, string>();
+    const citedProfileUrlByProfileSlug = new Map<string, string>();
     let observationCount = 0;
     let grafted = 0;
-    let minted = 0;
+    let noExistingRow = 0;
     let ambiguous = 0;
-    let processed = 0;
+    let citedByAnotherPerson = 0;
 
-    for (const pi of pis.values()) {
-      if (processed >= limit) break;
-      processed += 1;
+    const targets = [...pis.values()].slice(0, Number.isFinite(limit) ? limit : undefined);
+    const { linksBySlug, tally } = await this.readProfiles(targets, ctx);
 
-      let links: BbsProfileLinks = { canonicalProfileUrl: '', labUrls: [] };
-      try {
-        const html = await this.fetchPage(pi.profileUrl, ctx.options.useCache);
-        if (html) links = parseBbsProfileLinks(html, pi.profileUrl);
-      } catch (error) {
-        ctx.log(`[${pi.profileSlug}] profile fetch failed: ${sanitizeLogValue(error)}`);
-      }
+    for (const pi of targets) {
+      const links = linksBySlug.get(pi.profileSlug) ?? EMPTY_PROFILE_LINKS;
+      citedProfileUrlByProfileSlug.set(pi.profileSlug, links.canonicalProfileUrl || pi.profileUrl);
 
-      const resolution = resolveBbsResearchHome(links, facultyNameMatchKey(pi.name), index);
+      const resolution = resolveBbsResearchHome(
+        links,
+        facultyNameMatchKey(pi.name),
+        index,
+        pi.profileSlug,
+      );
 
       if (resolution.status === 'ambiguous') {
         ambiguous += 1;
         continue;
       }
 
-      if (resolution.status === 'matched') {
-        const observations = bbsGraftObservations(
-          resolution.entityId,
-          pi.researchAreas,
-          links.canonicalProfileUrl || pi.profileUrl,
-        );
-        if (observations.length === 0) continue;
-        await ctx.emit(observations);
-        observationCount += observations.length;
-        grafted += 1;
+      if (resolution.status === 'refused') {
+        citedByAnotherPerson += 1;
         continue;
       }
 
-      const observations = bbsMintObservations(pi, links);
+      if (resolution.status === 'unmatched') {
+        noExistingRow += 1;
+        continue;
+      }
+
+      claimEntityKeyByProfileSlug.set(pi.profileSlug, resolution.entityId);
+      const observations = bbsGraftObservations(
+        resolution.entityId,
+        pi.researchAreas,
+        links.canonicalProfileUrl || pi.profileUrl,
+        index.slugByEntityId.get(resolution.entityId),
+      );
       if (observations.length === 0) continue;
       await ctx.emit(observations);
       observationCount += observations.length;
-      minted += 1;
+      grafted += 1;
+    }
+
+    // Emitted after the graft, because a snapshot has to name the row each listed PI claims on and
+    // that is only known once the PI has been resolved (#3852).
+    const readAt = new Date();
+    const rosterHealth = trackReads.map((read) =>
+      buildTrackRosterHealthObservation({
+        track: read.track,
+        faculty: read.faculty,
+        fetched: read.fetched,
+        claimEntityKeyByProfileSlug,
+        citedProfileUrlByProfileSlug,
+        cacheAllowed: ctx.options.useCache,
+        readAt,
+      }),
+    );
+    if (rosterHealth.length > 0) {
+      await ctx.emit(rosterHealth);
+      observationCount += rosterHealth.length;
+    }
+
+    const partialFailures = [...emptyTrackFailures];
+    if (tally.lost > 0) {
+      partialFailures.push(
+        `${tally.lost} BBS profile page(s) stayed refused or unreadable after a retry, so those PIs resolved on the name path alone (#3835)`,
+      );
     }
 
     return {
       observationCount,
-      entitiesObserved: grafted + minted,
+      entitiesObserved: grafted,
+      // Per-track counts for the general per-unit barren-streak check (#3876). The
+      // lane's own empty-track failure above stays: it fires on the first barren run
+      // for a track that has listed PIs before, where the general rule waits for the
+      // streak, so deferring to it would cost two runs of detection on the one unit
+      // class known to have broken (#3833).
+      metrics: { unitYields },
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
       notes:
-        `Grafted BBS track research areas onto ${grafted} existing homes; ` +
-        `minted ${minted} net-new FACULTY_RESEARCH_AREA homes; ` +
-        `${ambiguous} PIs held (ambiguous home) of ${pis.size} track PIs.`,
+        `rows enriched: ${grafted} of ${pis.size} track PIs; not attached: ` +
+        `${noExistingRow} have no existing research row (a track listing never mints one, #3561), ` +
+        `${citedByAnotherPerson} cite a lab URL only on a row naming someone else, ` +
+        `${ambiguous} ambiguous row; ${profileFetchSummary(tally)}.`,
     };
   }
 }

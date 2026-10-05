@@ -6,7 +6,9 @@ import {
   createEntityCorrectionReport,
   listEntityCorrectionReports,
   reviewEntityCorrectionReport,
+  toReporterCorrectionReport,
 } from '../services/entityCorrectionReportService';
+import { routeParam } from '../utils/routeParams';
 
 export const submitEntityCorrectionReport = async (
   request: Request,
@@ -20,12 +22,12 @@ export const submitEntityCorrectionReport = async (
       return response.status(401).json({ error: 'Unauthorized' });
     }
 
-    const report = await createEntityCorrectionReport(request.params.slug, request.body, {
+    const report = await createEntityCorrectionReport(routeParam(request, 'slug'), request.body, {
       netId,
       userType: currentUser.isAdmin ? 'admin' : undefined,
     });
 
-    response.status(201).json({ report });
+    response.status(201).json({ report: toReporterCorrectionReport(report) });
   } catch (error) {
     next(error);
   }
@@ -43,12 +45,17 @@ export const listMyEntityCorrectionReports = async (
 
     const result = await listEntityCorrectionReports({
       reporterNetId: netId,
-      entitySlug: request.params.slug,
+      entitySlug: routeParam(request, 'slug'),
       status: request.query.status as string | undefined,
       page: request.query.page as string | undefined,
       pageSize: request.query.pageSize as string | undefined,
     });
-    response.json(result);
+    response.json({
+      ...result,
+      reports: result.reports.map((report) =>
+        toReporterCorrectionReport(report as Record<string, unknown>),
+      ),
+    });
   } catch (error) {
     next(error);
   }
@@ -80,7 +87,7 @@ export const reviewAdminEntityCorrectionReport = async (
   try {
     const currentUser = request.user as { netId?: string; netid?: string };
     const report = await reviewEntityCorrectionReport(
-      request.params.id,
+      routeParam(request, 'id'),
       currentUser?.netId || currentUser?.netid || '',
       request.body,
     );

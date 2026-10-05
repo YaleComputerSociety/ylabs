@@ -32,11 +32,11 @@
  *      unambiguous single-match resolver the NIH/NSF lanes use. A report counts
  *      only when it resolves to exactly one Yale faculty User; 0 or 2+ matches
  *      fail closed.
- *   4. Group reports by resolved PI. Enrich the PI's one eligible official
- *      research home when present, mint a conservative synthetic `doe-pi-<id>`
- *      shell only when no home membership exists, and fail closed on ambiguous
- *      or ineligible home evidence.
- *   5. Emit grant evidence without replacing identity fields on an official home
+ *   4. Group reports by resolved PI and attach to the one existing research row
+ *      the canonical resolver names for them. A grant proves that a person is
+ *      funded, never that a row should exist, so every other outcome is counted
+ *      by reason and mints nothing (#3145, #3565).
+ *   5. Emit grant evidence without replacing identity fields on the existing row
  *      (`recentGrants`, `recentGrantCount`, `fundingAgencies: ['DOE']`,
  *      `lastObservedAt`). Abstract prose is embedded only inside `recentGrants`
  *      and never written to `fullDescription`, so award-summary boilerplate can
@@ -54,11 +54,17 @@ import {
 } from '../canonicalResearchHomeResolver';
 import { canonicalPiName, resolveUserForPi } from './nihReporterScraper';
 import {
-  GRANT_SHELL_ENTITY_TYPE,
-  GRANT_SHELL_KIND,
-  grantShellResearchRecordName,
-} from '../utils/grantShellIdentity';
+  countGrantAttach,
+  emptyGrantAttachTally,
+  grantAttachSummary,
+  resolveGrantEnrichmentTarget,
+  type GrantEnrichmentTarget,
+  type GrantPersonResolution,
+} from '../utils/grantEnrichmentTarget';
+import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
+import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -69,9 +75,6 @@ const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_PI = 10;
 const RESEARCH_ORG_QUERY = '"Yale University"';
 const TECHNICAL_REPORT_PRODUCT_TYPE = 'Technical Report';
-// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
-// any real-name source (microsite, official profile) so those always win (#456).
-const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
 // OSTI author -> DOE PI is a weaker signal than NIH/NSF's structured contact PI,
 // so the inferred-PI link sits below the NIH (0.9) confidence.
 const INFERRED_PI_CONFIDENCE = 0.7;
@@ -199,28 +202,35 @@ export type PiResolver = (
   { status: 'matched'; userId: string } | { status: 'absent' } | { status: 'ambiguous' }
 >;
 
+export type ReportPiResolution =
+  | { status: 'matched'; userId: string; piName: string }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
 /**
  * Resolve a report to exactly one Yale faculty User across its candidate
- * authors. Returns the lone matched User, or null when the report has zero or
- * more than one distinct faculty match (fail closed).
+ * authors. A report with no match is `absent`; one whose candidates match more
+ * than one distinct User, or match none while one is itself ambiguous, is
+ * `ambiguous`. Neither is attributed (fail closed).
  */
 export async function resolveReportPi(
   record: OstiRecord,
   resolvePi: PiResolver,
-): Promise<{ userId: string; piName: string } | null> {
+): Promise<ReportPiResolution> {
   const candidates = selectYalePiCandidates(record.authors || []);
   const matched = new Map<string, string>();
+  let sawAmbiguous = false;
   for (const candidate of candidates) {
     const canonical = canonicalPiName(candidate.name);
     if (!canonical) continue;
     const resolution = await resolvePi(canonical);
-    if (resolution.status === 'matched') {
-      matched.set(resolution.userId, canonical);
-    }
+    if (resolution.status === 'matched') matched.set(resolution.userId, canonical);
+    else if (resolution.status === 'ambiguous') sawAmbiguous = true;
   }
-  if (matched.size !== 1) return null;
+  if (matched.size > 1) return { status: 'ambiguous' };
+  if (matched.size === 0) return { status: sawAmbiguous ? 'ambiguous' : 'absent' };
   const [userId, piName] = [...matched.entries()][0];
-  return { userId, piName };
+  return { status: 'matched', userId, piName };
 }
 
 export function groupReportsByPi(resolved: ResolvedReport[]): DoePiGroup[] {
@@ -236,37 +246,24 @@ export function groupReportsByPi(resolved: ResolvedReport[]): DoePiGroup[] {
   return [...map.values()];
 }
 
-export function doePiSlug(userId: string): string {
-  return `doe-pi-${userId}`;
-}
-
-export function buildResearchGroupObservations(
+export function buildResearchEntityObservations(
   group: DoePiGroup,
-  canonicalResearchHomeSlug: string | null,
-  sourceUrl: string,
+  existingRowSlug: string,
 ): ObservationInput[] {
-  const slug = canonicalResearchHomeSlug || doePiSlug(group.userId);
   const grants = group.records
     .map(recordToGrant)
     .sort((left, right) => (right.startDate?.getTime() ?? 0) - (left.startDate?.getTime() ?? 0));
   const top = grants.slice(0, MAX_GRANTS_PER_PI);
-  const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: existingRowSlug,
+    sourceUrl: OSTI_ENDPOINT,
+  };
+  const periods = recentGrantPeriodsOf(grants);
   const out: ObservationInput[] = [
-    ...(!canonicalResearchHomeSlug
-      ? [
-          { ...base, field: 'slug', value: slug },
-          {
-            ...base,
-            field: 'name',
-            value: grantShellResearchRecordName(group.piName, `DOE PI ${slug}`),
-            confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
-          },
-          { ...base, field: 'kind', value: GRANT_SHELL_KIND },
-          { ...base, field: 'entityType', value: GRANT_SHELL_ENTITY_TYPE },
-        ]
-      : []),
     { ...base, field: 'recentGrants', value: top },
-    { ...base, field: 'recentGrantCount', value: grants.length },
+    { ...base, field: 'recentGrantPeriods', value: periods },
+    { ...base, field: 'recentGrantCount', value: periods.length },
     { ...base, field: 'fundingAgencies', value: ['DOE'] },
     {
       ...base,
@@ -290,17 +287,19 @@ async function fetchPage(
     const cached = await getCached<OstiRecord[]>(sourceName, cacheKey);
     if (cached) return cached;
   }
-  const res = await axios.get(OSTI_ENDPOINT, {
-    params: {
-      research_org: RESEARCH_ORG_QUERY,
-      product_type: TECHNICAL_REPORT_PRODUCT_TYPE,
-      rows: String(PAGE_SIZE),
-      page: String(page),
-      sort: 'publication_date desc',
-    },
-    timeout: FETCH_TIMEOUT_MS,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  });
+  const res = await retryOnRetryableStatus(() =>
+    axios.get(OSTI_ENDPOINT, {
+      params: {
+        research_org: RESEARCH_ORG_QUERY,
+        product_type: TECHNICAL_REPORT_PRODUCT_TYPE,
+        rows: String(PAGE_SIZE),
+        page: String(page),
+        sort: 'publication_date desc',
+      },
+      timeout: FETCH_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+    }),
+  );
   const records: OstiRecord[] = Array.isArray(res.data) ? res.data : res.data?.records || [];
   if (useCache) await setCached(sourceName, cacheKey, records);
   return records;
@@ -312,6 +311,7 @@ export interface DoeOstiGrantScraperDeps {
   researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
   lookbackYears?: number;
   now?: () => Date;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 function defaultPiResolver(canonicalName: string): ReturnType<PiResolver> {
@@ -333,7 +333,7 @@ export class DoeOstiGrantScraper implements IScraper {
     const resolvePi = this.deps.piResolver ?? defaultPiResolver;
     const researchHomeResolver =
       this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForResearcher;
-    const now = this.deps.now ? this.deps.now() : new Date();
+    const now = this.deps.now ? this.deps.now() : (ctx.options.referenceDate ?? new Date());
     const cutoff = new Date(now);
     cutoff.setFullYear(cutoff.getFullYear() - (this.deps.lookbackYears ?? DEFAULT_LOOKBACK_YEARS));
 
@@ -348,17 +348,24 @@ export class DoeOstiGrantScraper implements IScraper {
 
     const records: OstiRecord[] = [];
     let reachedCutoff = false;
-    let fetchFailed = false;
+    let windowEnded = false;
+    let pagesRead = 0;
+    let failedPage: { page: number; error: string } | undefined;
     for (let page = 1; page <= MAX_PAGES && !reachedCutoff; page++) {
-      let pageRecords: OstiRecord[];
-      try {
-        pageRecords = await fetcher(page, ctx.options.useCache, this.name);
-      } catch (err: unknown) {
-        ctx.log(`fetch failed at page ${page}: ${sanitizeLogValue(err)} - failing closed`);
-        fetchFailed = true;
+      const outcome = await fetchGrantWindowPage(
+        () => fetcher(page, ctx.options.useCache, this.name),
+        { label: `DOE OSTI page ${page}`, sleep: this.deps.sleep, log: ctx.log },
+      );
+      if (outcome.status === 'failed') {
+        failedPage = { page, error: outcome.error };
         break;
       }
-      if (pageRecords.length === 0) break;
+      const pageRecords = outcome.value;
+      pagesRead++;
+      if (pageRecords.length === 0) {
+        windowEnded = true;
+        break;
+      }
       for (const record of pageRecords) {
         const published = parseOstiDate(record.publication_date);
         if (published && published.getTime() < cutoff.getTime()) {
@@ -367,65 +374,66 @@ export class DoeOstiGrantScraper implements IScraper {
         }
         records.push(record);
       }
-      if (pageRecords.length < PAGE_SIZE) break;
+      if (pageRecords.length < PAGE_SIZE) {
+        windowEnded = true;
+        break;
+      }
     }
 
-    if (fetchFailed && records.length === 0) {
+    const windowCounts = `${records.length} in-window record(s) across ${pagesRead} page(s)`;
+    const incompleteReason = failedPage
+      ? `page ${failedPage.page} unreadable after retries (${failedPage.error})`
+      : !reachedCutoff && !windowEnded
+        ? `page cap of ${MAX_PAGES} reached before the window ended`
+        : undefined;
+    if (incompleteReason) {
+      const notes = `DOE OSTI window incomplete: ${incompleteReason}; read ${windowCounts}; failed closed, no observations emitted`;
+      ctx.log(notes);
       return {
         observationCount: 0,
         entitiesObserved: 0,
-        notes: 'DOE OSTI unreachable - failed closed, no observations emitted',
+        notes,
+        partialFailures: [notes],
+        failedClosed: true,
       };
     }
 
     ctx.log(`Collected ${records.length} in-window technical-report record(s)`);
 
+    const attach = emptyGrantAttachTally();
     const resolved: ResolvedReport[] = [];
-    let skippedUnresolved = 0;
     for (const record of records) {
       const pi = await resolveReportPi(record, resolvePi);
-      if (!pi) {
-        skippedUnresolved++;
+      if (pi.status !== 'matched') {
+        countGrantAttach(attach, await resolveGrantEnrichmentTarget(pi, researchHomeResolver));
         continue;
       }
       resolved.push({ userId: pi.userId, piName: pi.piName, record });
     }
+    const unattributedReports = records.length - resolved.length;
 
     const allGroups = groupReportsByPi(resolved);
     const groups = limitOption ? allGroups.slice(0, limitOption) : allGroups;
     ctx.log(
       `Resolved ${resolved.length} report(s) to ${allGroups.length} Yale PI(s); ` +
-        `${skippedUnresolved} report(s) failed closed on attribution`,
+        `${unattributedReports} report(s) failed closed on attribution`,
     );
 
-    const sourceUrl = OSTI_ENDPOINT;
     let totalObs = 0;
-    let enrichedHomes = 0;
-    let mintedShells = 0;
+    let resolveErrors = 0;
     for (const group of groups) {
-      let researchHomeResolution: CanonicalResearchHomeResolution;
+      const person: GrantPersonResolution = { status: 'matched', userId: group.userId };
+      let target: GrantEnrichmentTarget;
       try {
-        researchHomeResolution = await researchHomeResolver(group.userId);
+        target = await resolveGrantEnrichmentTarget(person, researchHomeResolver);
       } catch (err: unknown) {
-        ctx.log(`research-home resolve error: ${sanitizeLogValue(err)} - skipping PI`);
+        ctx.log(`research-row resolve error: ${sanitizeLogValue(err)} - skipping PI`);
+        resolveErrors++;
         continue;
       }
-      if (
-        researchHomeResolution.status === 'ambiguous' ||
-        researchHomeResolution.status === 'ineligible'
-      ) {
-        continue;
-      }
-      const canonicalResearchHomeSlug =
-        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
-      if (canonicalResearchHomeSlug) enrichedHomes++;
-      else mintedShells++;
-
-      const observations = buildResearchGroupObservations(
-        group,
-        canonicalResearchHomeSlug,
-        sourceUrl,
-      );
+      countGrantAttach(attach, target);
+      if (target.status !== 'enrich') continue;
+      const observations = buildResearchEntityObservations(group, target.slug);
       await ctx.emit(observations);
       totalObs += observations.length;
     }
@@ -434,9 +442,11 @@ export class DoeOstiGrantScraper implements IScraper {
       observationCount: totalObs,
       entitiesObserved: groups.length,
       notes:
-        `DOE OSTI technical reports: ${records.length} in-window, ` +
-        `${resolved.length} attributed, ${skippedUnresolved} failed closed; ` +
-        `${enrichedHomes} home(s) enriched, ${mintedShells} shell(s) minted`,
+        `DOE OSTI technical reports: ${windowCounts}, ` +
+        `${resolved.length} attributed to ${allGroups.length} PI(s); ` +
+        `researcher refusals count reports, row outcomes count PIs; ` +
+        grantAttachSummary(attach) +
+        (resolveErrors > 0 ? `; ${resolveErrors} PI(s) skipped on a resolve error` : ''),
     };
   }
 }

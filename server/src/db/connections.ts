@@ -3,8 +3,11 @@
  */
 import mongoose from 'mongoose';
 
-// Shared across initializeConnections and triggerReconnect so both use identical options.
-export const mongoOptions = {
+// `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
+// declare, so the shape is spelled out here rather than inferred.
+export type MongoConnectOptions = mongoose.ConnectOptions & { bufferTimeoutMS: number };
+
+export const mongoOptions: MongoConnectOptions = {
   // Connecting must not be a schema-mutating act. `autoIndex` builds a model's
   // declared indexes on connect and `autoCreate` creates its collection, so with
   // both defaulted on a process that merely imports a model recreates the
@@ -22,8 +25,24 @@ export const mongoOptions = {
   // forgotten build is loud rather than a silent performance cliff.
   autoIndex: false,
   autoCreate: false,
-  serverSelectionTimeoutMS: 30000,
-  socketTimeoutMS: 60000,
+  // Bounded on purpose, because the request path is the only consumer of these
+  // and a student waiting on a database that is not answering is waiting for
+  // nothing. Measured against a local server: a reachable database answers a
+  // detail request in under 10 ms, while the driver's own 30 s selection default
+  // turned an unreachable one into a 30 s wait and a 60 s socket default turned a
+  // hung one into a 63 s wait, both ending in a generic error (#4188). 5 s is
+  // generous for selecting a reachable replica set and short enough that a
+  // retrying client learns the answer quickly; the 20 s socket ceiling is well
+  // above the slowest request this server makes and well under the hosting
+  // platform's own request timeout.
+  // Scripts need the opposite trade-off and get it from scriptMongoConnectOptions.
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 20000,
+  // Mongoose queues an operation issued while the connection is down and throws
+  // after this long. The default is 10 s, which outlives the whole point of the
+  // bound above. Kept non-zero rather than disabled so a reconnect in flight is
+  // still waited out instead of failing every request during it.
+  bufferTimeoutMS: 5000,
   // Close idle connections after 3.5 min so we beat the ~4-min AWS NAT TCP
   // idle timeout before the NAT silently kills them under us. startMongoKeepAlive
   // pings well inside this window so the live connection never hits the cap.
@@ -35,6 +54,44 @@ export const mongoOptions = {
   // idle-teardown path.
   minPoolSize: 1,
 };
+
+export type ScriptMongoConnectOptions = Omit<
+  Partial<MongoConnectOptions>,
+  'autoIndex' | 'autoCreate'
+>;
+
+export function scriptMongoConnectOptions(
+  extra: ScriptMongoConnectOptions = {},
+): MongoConnectOptions {
+  return {
+    ...mongoOptions,
+    // A request-sized socket timeout suits the API, but an operator scan or a
+    // materialize can wait longer than a minute for one batch, so entry points
+    // keep the driver's no-timeout default. The serving process's fail-fast
+    // selection and buffer bounds are wrong here for the same reason: a sweep that
+    // starts while a replica set is electing should wait for it, not abort.
+    socketTimeoutMS: 0,
+    serverSelectionTimeoutMS: 30000,
+    bufferTimeoutMS: 30000,
+    ...extra,
+    autoIndex: false,
+    autoCreate: false,
+  };
+}
+
+export function connectScriptMongo(
+  url: string,
+  extra?: ScriptMongoConnectOptions,
+): Promise<typeof mongoose> {
+  return mongoose.connect(url, scriptMongoConnectOptions(extra));
+}
+
+export function createScriptMongoConnection(
+  url: string,
+  extra?: ScriptMongoConnectOptions,
+): Promise<mongoose.Connection> {
+  return mongoose.createConnection(url, scriptMongoConnectOptions(extra)).asPromise();
+}
 
 // Serialise reconnect attempts: if one is already in flight, later callers
 // await the same promise rather than launching a second parallel reconnect.
@@ -59,6 +116,33 @@ export function isTopologyLostError(error: unknown): boolean {
   return isTopologyLostError(cause);
 }
 
+const UNAVAILABLE_ERROR_NAMES = new Set([
+  'MongooseServerSelectionError',
+  'MongoServerSelectionError',
+  'MongoNetworkTimeoutError',
+  'MongoTimeoutError',
+  'MongoClientClosedError',
+]);
+
+const BUFFERING_TIMEOUT_MESSAGE = 'buffering timed out';
+
+/**
+ * True when an error says the database could not be reached, rather than that the
+ * request itself was wrong. Every arm is the same condition reported under a
+ * different name: selection gave up, a socket timed out, the client was closed, or
+ * the operation waited out Mongoose's buffer while the connection was down. The
+ * caller owes such a request a 503 and a retry, never a 500 (#4188).
+ */
+export function isMongoUnavailableError(error: unknown): boolean {
+  const e = error as { name?: string; message?: string; cause?: unknown } | null | undefined;
+  if (!e) return false;
+  if (isTopologyLostError(e)) return true;
+  if (typeof e.name === 'string' && UNAVAILABLE_ERROR_NAMES.has(e.name)) return true;
+  if (typeof e.message === 'string' && e.message.includes(BUFFERING_TIMEOUT_MESSAGE)) return true;
+  const cause = typeof (e as any).cause === 'function' ? (e as any).cause() : (e as any).cause;
+  return isMongoUnavailableError(cause);
+}
+
 /**
  * Forces an explicit disconnect + reconnect when the topology is lost. Returns
  * the in-flight promise so callers can await recovery and retry their operation
@@ -74,7 +158,7 @@ export function triggerReconnect(): Promise<void> {
       console.error('MongoDB: topology lost — forcing reconnect');
 
       await mongoose.disconnect();
-      await mongoose.connect(primaryUrl, mongoOptions);
+      await mongoose.connect(primaryUrl, activeConnectOptions);
       console.log('MongoDB: reconnected');
     } catch (err) {
       console.error('MongoDB: reconnect failed:', (err as Error)?.message ?? err);
@@ -102,27 +186,63 @@ export async function withMongoReconnect<T>(operation: () => Promise<T>): Promis
 
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
+const MONGO_READY_STATE_DISCONNECTED = 0;
+const MONGO_READY_STATE_UNINITIALIZED = 99;
+
+function sharedConnectionNeedsReconnect(): boolean {
+  const readyState = mongoose.connection.readyState as number;
+  return (
+    readyState === MONGO_READY_STATE_DISCONNECTED || readyState === MONGO_READY_STATE_UNINITIALIZED
+  );
+}
+
 /**
- * Pings the primary connection on an interval inside maxIdleTimeMS so a
- * low-traffic instance never lets its live connection go idle-closed, and so a
- * silently dead socket is detected and healed before the next real request.
+ * One keep-alive pass over the primary connection: reconnects a connection that
+ * is no longer established, and otherwise pings it so a silently dead socket is
+ * detected and healed before the next real request.
+ *
+ * The reconnect arm is what makes the pass able to heal at all. A ping reaches
+ * `connection.db`, which is undefined on a connection that was dropped or never
+ * established, so optional chaining made the pass a silent no-op in exactly the
+ * state that needs it and the process served errors until someone restarted it
+ * (#4186).
+ */
+export async function mongoKeepAliveTick(): Promise<void> {
+  try {
+    if (sharedConnectionNeedsReconnect()) {
+      await triggerReconnect();
+      return;
+    }
+    await mongoose.connection.db?.admin().ping();
+  } catch (error) {
+    if (isTopologyLostError(error)) {
+      await triggerReconnect();
+    } else {
+      console.error('MongoDB: keepAlive ping failed:', (error as Error)?.message ?? error);
+    }
+  }
+}
+
+/**
+ * Runs mongoKeepAliveTick on an interval inside maxIdleTimeMS so a low-traffic
+ * instance never lets its live connection go idle-closed.
  */
 export function startMongoKeepAlive(intervalMs = 120000): void {
   if (keepAliveTimer) return;
   keepAliveTimer = setInterval(() => {
-    void (async () => {
-      try {
-        await mongoose.connection.db?.admin().ping();
-      } catch (error) {
-        if (isTopologyLostError(error)) {
-          await triggerReconnect();
-        } else {
-          console.error('MongoDB: keepAlive ping failed:', (error as Error)?.message ?? error);
-        }
-      }
-    })();
+    void mongoKeepAliveTick();
   }, intervalMs);
   keepAliveTimer.unref?.();
+}
+
+/**
+ * Stops the keep-alive pass. A shutdown has to call this before it disconnects,
+ * because the pass reconnects a connection it finds down and would re-open the one
+ * the shutdown just closed.
+ */
+export function stopMongoKeepAlive(): void {
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
 }
 
 export interface MongoIndexDrift {
@@ -214,25 +334,92 @@ export async function reportMissingMongoIndexes(
     const model = connection.model(modelName);
     const collection = model.collection.name;
     if (!live.has(collection)) continue;
-    const declared = model.schema
-      .indexes()
-      .map(([key, options]) =>
-        declaredIndexName(key as Record<string, unknown>, options as Record<string, unknown>),
-      )
-      .filter(Boolean);
+    const declared = schemaDeclaredIndexNames(model.schema);
     if (declared.length === 0) continue;
-    const present = new Set((await db.collection(collection).indexes()).map((entry) => entry.name));
-    const missingIndexNames = declared.filter((name) => !present.has(name));
-    if (missingIndexNames.length > 0)
-      drift.push({ model: modelName, collection, missingIndexNames });
+    const present = (await db.collection(collection).indexes()).map((entry) => entry.name ?? '');
+    const { missing } = compareDeclaredAndLiveIndexNames(declared, present);
+    if (missing.length > 0)
+      drift.push({ model: modelName, collection, missingIndexNames: missing });
   }
   return drift;
+}
+
+export interface UndeclaredMongoIndexDrift {
+  collection: string;
+  models: string[];
+  undeclaredIndexNames: string[];
+}
+
+const MONGO_DEFAULT_ID_INDEX_NAME = '_id_';
+
+function schemaDeclaredIndexNames(schema: Pick<mongoose.Schema, 'indexes'>): string[] {
+  return schema
+    .indexes()
+    .map(([key, options]) =>
+      declaredIndexName(key as Record<string, unknown>, options as Record<string, unknown>),
+    )
+    .filter(Boolean);
+}
+
+export function compareDeclaredAndLiveIndexNames(
+  declared: readonly string[],
+  live: readonly string[],
+): { missing: string[]; undeclared: string[] } {
+  const declaredSet = new Set(declared);
+  const liveSet = new Set(live.filter(Boolean));
+  return {
+    missing: declared.filter((name) => !liveSet.has(name)),
+    undeclared: [...liveSet]
+      .filter((name) => name !== MONGO_DEFAULT_ID_INDEX_NAME && !declaredSet.has(name))
+      .sort(),
+  };
+}
+
+export function declaredIndexNamesByCollection(
+  connection: mongoose.Connection = mongoose.connection,
+): Map<string, { models: string[]; indexNames: string[] }> {
+  const byCollection = new Map<string, { models: string[]; indexNames: string[] }>();
+  for (const modelName of connection.modelNames()) {
+    const model = connection.model(modelName);
+    const entry = byCollection.get(model.collection.name) ?? { models: [], indexNames: [] };
+    entry.models.push(modelName);
+    entry.indexNames.push(...schemaDeclaredIndexNames(model.schema));
+    byCollection.set(model.collection.name, entry);
+  }
+  return byCollection;
+}
+
+/**
+ * The reverse of `reportMissingMongoIndexes`: physical indexes on a modelled
+ * collection that no registered model declares. Mongoose never drops an index it
+ * has stopped declaring, so a retirement leaves one behind unless something
+ * reports it. Reads only, and skips absent collections for the same reason the
+ * forward report does.
+ */
+export async function reportUndeclaredMongoIndexes(
+  connection: mongoose.Connection = mongoose.connection,
+): Promise<UndeclaredMongoIndexDrift[]> {
+  const db = connection.db;
+  if (!db) return [];
+  const live = new Set(
+    (await db.listCollections({}, { nameOnly: true }).toArray()).map((entry) => entry.name),
+  );
+  const drift: UndeclaredMongoIndexDrift[] = [];
+  for (const [collection, declared] of declaredIndexNamesByCollection(connection)) {
+    if (!live.has(collection)) continue;
+    const present = (await db.collection(collection).indexes()).map((entry) => entry.name ?? '');
+    const { undeclared } = compareDeclaredAndLiveIndexNames(declared.indexNames, present);
+    if (undeclared.length > 0) {
+      drift.push({ collection, models: declared.models, undeclaredIndexNames: undeclared });
+    }
+  }
+  return drift.sort((left, right) => left.collection.localeCompare(right.collection));
 }
 
 export async function logMissingMongoIndexes(
   connection: mongoose.Connection = mongoose.connection,
 ): Promise<MongoIndexDrift[]> {
-  let drift: MongoIndexDrift[] = [];
+  let drift: MongoIndexDrift[];
   try {
     drift = await reportMissingMongoIndexes(connection);
   } catch (error) {
@@ -251,7 +438,14 @@ export async function logMissingMongoIndexes(
   return drift;
 }
 
-export async function initializeConnections(): Promise<void> {
+let activeConnectOptions: MongoConnectOptions = mongoOptions;
+
+// Defaults to the script budget because nearly every caller is an operator entry
+// point; the serving process opts into mongoOptions explicitly. triggerReconnect
+// reuses whatever budget connected, so a reconnect never swaps one for the other.
+export async function initializeConnections(
+  connectOptions: MongoConnectOptions = scriptMongoConnectOptions(),
+): Promise<void> {
   // Surface connection lifecycle so Render logs show exactly when the driver
   // loses or regains the server — makes the next incident much easier to trace.
   mongoose.connection.on('disconnected', () => console.error('MongoDB: disconnected'));
@@ -264,7 +458,8 @@ export async function initializeConnections(): Promise<void> {
   if (!url) {
     throw new Error('MONGODBURL is required');
   }
-  await mongoose.connect(url, mongoOptions);
+  activeConnectOptions = connectOptions;
+  await mongoose.connect(url, connectOptions);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very

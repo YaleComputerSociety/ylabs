@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -319,8 +319,22 @@ echo "fake yarn ran: $*"
 exit 0
 `;
 
+const createdTempDirectories = [];
+
+const makeTempDirectory = async (prefix) => {
+  const directory = await mkdtemp(path.join(tmpdir(), prefix));
+  createdTempDirectories.push(directory);
+  return directory;
+};
+
+after(() =>
+  Promise.all(
+    createdTempDirectories.map((directory) => rm(directory, { recursive: true, force: true })),
+  ),
+);
+
 const createFakeYarn = async (failureBody) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'ylabs-fake-yarn-'));
+  const directory = await makeTempDirectory('ylabs-fake-yarn-');
   const callFile = path.join(directory, 'calls');
   await writeFile(path.join(directory, 'yarn'), fakeYarnScript(failureBody), { mode: 0o755 });
   return { directory, callFile };
@@ -466,7 +480,7 @@ exit 1`);
 });
 
 test('the verdict artifact distinguishes clean, advisories-found, and unreachable', async () => {
-  const verdictFile = path.join(await mkdtemp(path.join(tmpdir(), 'ylabs-verdict-')), 'v.json');
+  const verdictFile = path.join(await makeTempDirectory('ylabs-verdict-'), 'v.json');
 
   const cleanYarn = await createFakeYarn('');
   await runAuditCli(['.', '--', '--severity', 'moderate'], {
@@ -496,7 +510,7 @@ exit 1`);
 });
 
 test('the override verdict is distinct from a clean verdict, so a pass cannot be forged', async () => {
-  const verdictFile = path.join(await mkdtemp(path.join(tmpdir(), 'ylabs-verdict-')), 'v.json');
+  const verdictFile = path.join(await makeTempDirectory('ylabs-verdict-'), 'v.json');
   const outageYarn =
     await createFakeYarn(`echo "RequestError: Timeout awaiting 'socket' for 60000ms" >&2
 exit 1`);

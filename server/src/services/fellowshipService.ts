@@ -1,6 +1,13 @@
 /**
  * Service layer for fellowship CRUD, search, and filter operations.
  */
+import { escapeRegex } from '../utils/regex';
+import { foldLatinDiacritics } from '../utils/latinDiacritics';
+import {
+  correctProgramSearchQuerySpelling,
+  PROGRAM_QUERY_STOP_WORDS,
+  PROGRAM_SEARCH_SPELLING_FIELDS,
+} from './programSearchSpellingVocabulary';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import {
   Fellowship,
@@ -14,16 +21,33 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
+import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { Observation } from '../models/observation';
+import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
+import { programRoleForKind } from './programClassifier';
+import { programAudience } from './programAudience';
+import { isDepartmentResearchGuidance } from './departmentResearchGuidance';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
+import { newYorkCalendarDate } from '../utils/newYorkTime';
+import {
+  deadlineIsStale,
+  programDeadlineClosesAt,
+  sameProgramDeadlineNextCycle,
+} from '../utils/programDeadlineInstant';
+import {
+  servedUpcomingDuplicateWindow,
+  type UpcomingDuplicateWindow,
+} from './programUpcomingDuplicateWindow';
 import {
   inferProgramSubjects,
   PROGRAM_TOPIC_TAXONOMY,
   resolveTopicSubjects,
   topicAliasesForSubjects,
+  yearOfStudyAliasesForQuery,
   topicRegexForSubjects,
 } from './programTopicService';
 
@@ -133,6 +157,7 @@ const PUBLIC_FELLOWSHIP_TEXT_FIELDS = new Set([
   'additionalInformation',
   'contactOffice',
   'sourceName',
+  'sourcePageTitle',
 ]);
 
 // The two prose card fields the student-visibility gate reads through
@@ -149,6 +174,7 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'id',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -184,6 +210,7 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'citizenshipStatus',
   'sourceName',
   'sourceUrl',
+  'sourcePageTitle',
   'sourceLinkHealth',
 ] as const;
 
@@ -192,6 +219,7 @@ const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
   'id',
   'programCategory',
   'programKind',
+  'programRole',
   'entryMode',
   'studentFacingCategory',
   'requiresMentorBeforeApply',
@@ -306,12 +334,11 @@ export const toValidDate = (value: unknown): Date | undefined => {
 
 export const deadlineIsPast = (value: unknown, now: Date): boolean => {
   const date = toValidDate(value);
-  return date !== undefined && date.getTime() < now.getTime();
+  return date !== undefined && programDeadlineClosesAt(date).getTime() < now.getTime();
 };
 
 const RECURRING_PROGRAM_TEXT_RE =
   /\b(fellowship|grant|award|funding|stipend|summer|annual|year|cycle|term|spring|fall|deadline|application)\b/i;
-const MAX_NEXT_CYCLE_PROJECTION_YEARS = 6;
 
 const hasFellowshipSourceUrl = (fellowship: any): boolean => {
   if (
@@ -346,22 +373,48 @@ export const isLikelyRecurringProgram = (fellowship: any): boolean =>
   hasFellowshipSourceUrl(fellowship) &&
   RECURRING_PROGRAM_TEXT_RE.test(textForRecurrenceDetection(fellowship));
 
+export { deadlineIsStale };
+
 export const projectNextCycleDeadline = (deadline: Date, now: Date): Date | undefined => {
-  let projected = deadline;
-  for (let yearsAdded = 0; yearsAdded < MAX_NEXT_CYCLE_PROJECTION_YEARS; yearsAdded += 1) {
-    projected = new Date(
-      Date.UTC(
-        projected.getUTCFullYear() + 1,
-        projected.getUTCMonth(),
-        projected.getUTCDate(),
-        projected.getUTCHours(),
-        projected.getUTCMinutes(),
-        projected.getUTCSeconds(),
-      ),
-    );
-    if (projected.getTime() > now.getTime()) return projected;
+  const projected = sameProgramDeadlineNextCycle(deadline);
+  return projected.getTime() < now.getTime() ? undefined : projected;
+};
+
+export interface ServedProgramDeadline {
+  deadline: Date | undefined;
+  closed: boolean;
+  projectedNextCycle: boolean;
+  stale: boolean;
+  duplicateWindow?: UpcomingDuplicateWindow;
+}
+
+export const servedProgramDeadline = (program: any, now: Date): ServedProgramDeadline => {
+  const duplicateWindow = servedUpcomingDuplicateWindow(program, now);
+  if (duplicateWindow) {
+    return {
+      deadline: programDeadlineClosesAt(duplicateWindow.deadline),
+      closed: false,
+      projectedNextCycle: false,
+      stale: false,
+      duplicateWindow,
+    };
   }
-  return undefined;
+  const statedDeadline = toValidDate(program?.deadline);
+  if (!statedDeadline) {
+    return { deadline: undefined, closed: false, projectedNextCycle: false, stale: false };
+  }
+  const closesAt = programDeadlineClosesAt(statedDeadline);
+  const closed = deadlineIsPast(closesAt, now);
+  if (closed && deadlineIsStale(closesAt, now)) {
+    return { deadline: undefined, closed, projectedNextCycle: false, stale: true };
+  }
+  const projectedDeadline =
+    closed && isLikelyRecurringProgram(program)
+      ? projectNextCycleDeadline(closesAt, now)
+      : undefined;
+  return projectedDeadline
+    ? { deadline: projectedDeadline, closed, projectedNextCycle: true, stale: false }
+    : { deadline: closesAt, closed, projectedNextCycle: false, stale: false };
 };
 
 const MONTH_NAME_TO_INDEX: Record<string, number> = {
@@ -383,7 +436,8 @@ const PRESENTATION_DATE_CLAUSE_RE =
   /\s+by\s+(January|February|March|April|May|June|July|August|September|October|November|December),?\s+(\d{4})(?=[.,;)\s]|$)/gi;
 
 const stripStalePresentationDate = (text: string, deadline: Date): string => {
-  const deadlineMonthOrdinal = deadline.getUTCFullYear() * 12 + deadline.getUTCMonth();
+  const { year, monthIndex } = newYorkCalendarDate(deadline);
+  const deadlineMonthOrdinal = year * 12 + monthIndex;
   return text.replace(
     PRESENTATION_DATE_CLAUSE_RE,
     (match, monthName: string, yearText: string, offset: number, whole: string) => {
@@ -398,6 +452,30 @@ const stripStalePresentationDate = (text: string, deadline: Date): string => {
   );
 };
 
+// The copy that supplies a served deadline also supplies its opening date when it states one,
+// because the two are one statement of one cycle. Otherwise the row's own opening date stands.
+export const servedApplicationOpenDate = (program: any, served: ServedProgramDeadline): unknown =>
+  served.duplicateWindow?.applicationOpenDate ?? program?.applicationOpenDate;
+
+// The stored flag freezes whatever a lane last wrote, so a window that opened since then would
+// still read as closed (#4231). Where the row states a deadline, the served window decides in
+// both directions; without both a deadline and a stated opening date the dates cannot show the
+// window opened, so the stored flag stands unless the window is closed. A deadline served from
+// another copy of the fund (#4382) is that copy's, so where neither copy states an opening date
+// the flag that copy's lane read beside the deadline stands instead of the row's own.
+export const acceptingFromServedWindow = (
+  program: any,
+  served: ServedProgramDeadline,
+  now: Date,
+): boolean | undefined => {
+  if (served.stale) return false;
+  if (!served.deadline) return undefined;
+  if (served.closed || served.projectedNextCycle) return false;
+  const opensAt = toValidDate(servedApplicationOpenDate(program, served));
+  if (!opensAt) return served.duplicateWindow?.isAcceptingApplications;
+  return opensAt.getTime() <= now.getTime();
+};
+
 export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date()) => {
   if (!fellowship || typeof fellowship !== 'object') return fellowship;
 
@@ -408,22 +486,22 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
     }
   }
 
-  const deadlinePast = deadlineIsPast(publicFellowship.deadline, now);
-  if (publicFellowship.isAcceptingApplications === true && deadlinePast) {
-    publicFellowship.isAcceptingApplications = false;
-  }
+  publicFellowship.audience = programAudience(fellowship);
+  publicFellowship.departmentResearchGuidance = isDepartmentResearchGuidance(fellowship);
 
-  publicFellowship.deadlineProjectedNextCycle = false;
-  if (deadlinePast && isLikelyRecurringProgram(fellowship)) {
-    const originalDeadline = toValidDate(publicFellowship.deadline);
-    const projectedDeadline = originalDeadline
-      ? projectNextCycleDeadline(originalDeadline, now)
-      : undefined;
-    if (projectedDeadline) {
-      publicFellowship.deadline = projectedDeadline;
-      publicFellowship.deadlineProjectedNextCycle = true;
-    }
+  const served = servedProgramDeadline(fellowship, now);
+  if (served.deadline) publicFellowship.deadline = served.deadline;
+  if (served.stale) {
+    delete publicFellowship.deadline;
+    delete publicFellowship.applicationOpenDate;
   }
+  if (served.duplicateWindow?.applicationOpenDate) {
+    publicFellowship.applicationOpenDate = served.duplicateWindow.applicationOpenDate;
+  }
+  const windowAcceptance = acceptingFromServedWindow(fellowship, served, now);
+  if (windowAcceptance !== undefined) publicFellowship.isAcceptingApplications = windowAcceptance;
+  publicFellowship.deadlineProjectedNextCycle = served.projectedNextCycle;
+  publicFellowship.deadlineStale = served.stale;
 
   const deadlineDate = toValidDate(publicFellowship.deadline);
   if (deadlineDate) {
@@ -437,7 +515,10 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   // The browse card renders one clamped line, so a summary that is the whole
   // body reaches a student cut off mid-sentence. `summary` stays as stored
   // because the detail surface falls back to it as the body (#2215).
-  if (typeof publicFellowship.summary === 'string') {
+  if (
+    typeof publicFellowship.summary === 'string' ||
+    typeof publicFellowship.description === 'string'
+  ) {
     publicFellowship.cardSummary = programLikeCardShortDescription({
       shortDescription: publicFellowship.summary,
       fullDescription: publicFellowship.description,
@@ -658,6 +739,7 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   if ('programCategory' in update && !PROGRAM_CATEGORIES.has(update.programCategory))
     delete update.programCategory;
   if ('programKind' in update && !PROGRAM_KINDS.has(update.programKind)) delete update.programKind;
+  if ('programKind' in update) update.programRole = programRoleForKind(update.programKind);
   if ('entryMode' in update && !PROGRAM_ENTRY_MODES.has(update.entryMode)) delete update.entryMode;
 
   if ('studentVisibilityReviewedByAccountId' in update) {
@@ -669,32 +751,89 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   return update;
 };
 
+const withoutClearedVerdict = (update: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(update).filter(
+      ([field]) => !(field in clearedProgramStudentVisibilityVerdict()),
+    ),
+  );
+
+const VISIBILITY_OVERRIDE_FIELDS = [
+  'studentVisibilityOverrideTier',
+  'studentVisibilitySuppressionReason',
+] as const;
+
+const LIFTED_OVERRIDE_REASON =
+  'operator lifted the student-visibility override in the admin editor';
+
+/**
+ * Lifting an override clears the stored field and retires the observations that assert it.
+ * Clearing the field alone does not stick: a `manual-admin-edit` observation still asserts
+ * the old tier, and the next materialization projects it back, which is how per-row repairs
+ * of research-entity overrides came undone before #1898.
+ */
+async function liftFellowshipVisibilityOverride(fellowship: { _id: unknown; sourceKey?: unknown }) {
+  const identity: Record<string, unknown>[] = [{ entityId: fellowship._id }];
+  if (typeof fellowship.sourceKey === 'string' && fellowship.sourceKey) {
+    identity.push({ entityKey: fellowship.sourceKey });
+  }
+  await Observation.updateMany(
+    {
+      entityType: 'fellowship',
+      $or: identity,
+      field: { $in: [...VISIBILITY_OVERRIDE_FIELDS] },
+      superseded: { $ne: true },
+    },
+    {
+      $set: {
+        superseded: true,
+        rollback: { rolledBackAt: new Date(), reason: LIFTED_OVERRIDE_REASON },
+      },
+    },
+  );
+  await Fellowship.updateOne(
+    { _id: fellowship._id },
+    {
+      $unset: Object.fromEntries(
+        VISIBILITY_OVERRIDE_FIELDS.flatMap((field) => [
+          [field, ''],
+          [`fieldProvenance.${field}`, ''],
+        ]),
+      ),
+    },
+  );
+}
+
 export const updateFellowship = async (id: any, data: any) => {
   const safeId = normalizeFellowshipObjectId(id);
-  if (safeId) {
-    const safeData = filterFellowshipUpdate(data);
-    const fellowship = await Fellowship.findByIdAndUpdate(safeId, safeData, {
-      new: true,
-      runValidators: true,
-    });
+  if (!safeId) throw new ObjectIdError('Did not receive expected id type ObjectId');
+  const liftsOverride =
+    data !== null && typeof data === 'object' && data.studentVisibilityOverrideTier === null;
 
-    if (!fellowship) {
-      throw new NotFoundError('Fellowship not found');
-    }
+  const safeData = filterFellowshipUpdate(data);
+  const restoring =
+    safeData.archived === false &&
+    (await Fellowship.exists({ _id: safeId, archived: true })) !== null;
+  const withdrawsVerdict = safeData.archived === true || restoring;
+  const update = withdrawsVerdict
+    ? { $set: withoutClearedVerdict(safeData), $unset: clearedProgramStudentVisibilityVerdict() }
+    : safeData;
+  const fellowship = await Fellowship.findByIdAndUpdate(safeId, update, {
+    returnDocument: 'after',
+    runValidators: true,
+  });
+  if (!fellowship) throw new NotFoundError('Fellowship not found');
+  if (liftsOverride) await liftFellowshipVisibilityOverride(fellowship);
+  if (!restoring && !liftsOverride) return fellowship.toObject();
 
-    return fellowship.toObject();
-  } else {
-    throw new ObjectIdError('Did not receive expected id type ObjectId');
-  }
+  await runStudentVisibilityGate({ collection: 'programs', mode: 'apply', recordIds: [safeId] });
+  const regated = await Fellowship.findById(safeId).lean();
+  return regated || fellowship.toObject();
 };
 
-export const archiveFellowship = async (id: any) => {
-  return await updateFellowship(id, { archived: true });
-};
+export const archiveFellowship = async (id: any) => updateFellowship(id, { archived: true });
 
-export const unarchiveFellowship = async (id: any) => {
-  return await updateFellowship(id, { archived: false });
-};
+export const unarchiveFellowship = async (id: any) => updateFellowship(id, { archived: false });
 
 export const addView = async (id: any) => {
   return publicFellowshipForStudent(
@@ -717,6 +856,25 @@ export const deleteFellowship = async (id: any) => {
     throw new ObjectIdError('Did not receive expected id type ObjectId');
   }
 };
+
+const PROGRAM_WORD_PREFIX_MIN_LENGTH = 2;
+const PROGRAM_WORD_PREFIX_STOP_WORDS: ReadonlySet<string> = new Set(PROGRAM_QUERY_STOP_WORDS);
+
+// MongoDB `$text` matches whole stemmed words only, so a student typing into the live search
+// box sees nothing until the word is finished: `Com` matched no program while 87 carry a word
+// starting with it. Every typed word must start some word in the program. See #4537.
+export const programQueryWordPrefixClauses = (query: string): Record<string, unknown>[] =>
+  [...new Set(foldLatinDiacritics(query.toLowerCase()).match(/[a-z0-9]+/g) ?? [])]
+    .filter(
+      (token) =>
+        token.length >= PROGRAM_WORD_PREFIX_MIN_LENGTH &&
+        !PROGRAM_WORD_PREFIX_STOP_WORDS.has(token),
+    )
+    .map((token) => ({
+      $or: PROGRAM_SEARCH_SPELLING_FIELDS.map((field) => ({
+        [field]: { $regex: `(?:^|[^a-z0-9])${escapeRegex(token)}`, $options: 'i' },
+      })),
+    }));
 
 export const searchFellowships = async (params: {
   query?: string;
@@ -742,6 +900,7 @@ export const searchFellowships = async (params: {
   includeNonPublic?: boolean;
   includeOperatorReview?: boolean;
   includeSuppressed?: boolean;
+  correctSpelling?: boolean;
 }) => {
   const {
     query = '',
@@ -767,8 +926,13 @@ export const searchFellowships = async (params: {
     includeNonPublic = false,
     includeOperatorReview = false,
     includeSuppressed = false,
+    correctSpelling = true,
   } = params;
-  const safeQuery = boundedSearchQuery(query);
+  const typedQuery = boundedSearchQuery(query);
+  const spelling = correctSpelling
+    ? await correctProgramSearchQuerySpelling(typedQuery)
+    : { query: typedQuery, corrections: [] };
+  const safeQuery = boundedSearchQuery(spelling.query);
   const safeYearOfStudy = boundedSearchFilterValues(yearOfStudy);
   const safeTermOfAward = boundedSearchFilterValues(termOfAward);
   const safePurpose = boundedSearchFilterValues(purpose);
@@ -808,7 +972,11 @@ export const searchFellowships = async (params: {
   const querySubjects = resolveTopicSubjects([safeQuery]);
   const queryTopicAliases = topicAliasesForSubjects(querySubjects);
   if (safeQuery) {
-    const searchTerms = [safeQuery, ...queryTopicAliases].filter(Boolean);
+    const searchTerms = [
+      safeQuery,
+      ...queryTopicAliases,
+      ...yearOfStudyAliasesForQuery(safeQuery),
+    ].filter(Boolean);
     filter.$text = { $search: searchTerms.join(' ') };
   }
   if (safeSubjects.length > 0) {
@@ -867,36 +1035,79 @@ export const searchFellowships = async (params: {
     filter.yaleCollegeOnly = yaleCollegeOnly;
   }
 
-  const sortOptions: any = {};
-  if (safeQuery) {
-    sortOptions.score = { $meta: 'textScore' };
-  }
-  sortOptions[publicFellowshipSortField(sortBy, includeNonPublic)] =
-    publicFellowshipSortOrder(sortOrder);
-  sortOptions._id = 1;
-
+  const sortField = publicFellowshipSortField(sortBy, includeNonPublic);
+  const fieldSortOptions: Record<string, any> = {
+    [sortField]: publicFellowshipSortOrder(sortOrder),
+    _id: 1,
+  };
   const skip = (page - 1) * pageSize;
 
-  let fellowshipsQuery = Fellowship.find(filter);
-
-  if (safeQuery) {
-    fellowshipsQuery = fellowshipsQuery.select({ score: { $meta: 'textScore' } });
-  }
-
-  const [fellowships, total] = await Promise.all([
-    fellowshipsQuery.sort(sortOptions).skip(skip).limit(pageSize).lean(),
-    Fellowship.countDocuments(filter),
-  ]);
-
-  return {
-    fellowships: (includeNonPublic
+  const servePrograms = (fellowships: any[]) =>
+    (includeNonPublic
       ? fellowships
       : fellowships.map((fellowship) => publicFellowshipForStudent(fellowship))
-    ).map((fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) })),
-    total,
+    ).map((fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) }));
+  const queryCorrection =
+    spelling.corrections.length > 0
+      ? { originalQuery: typedQuery, correctedQuery: safeQuery }
+      : undefined;
+
+  if (!safeQuery) {
+    const [fellowships, total] = await Promise.all([
+      Fellowship.find(filter).sort(fieldSortOptions).skip(skip).limit(pageSize).lean(),
+      Fellowship.countDocuments(filter),
+    ]);
+    return {
+      fellowships: servePrograms(fellowships),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  const { $text: _textClause, ...filterWithoutText } = filter;
+  const prefixClauses = programQueryWordPrefixClauses(safeQuery);
+  const [textMatches, prefixMatches] = await Promise.all([
+    Fellowship.find(filter, { _id: 1, score: { $meta: 'textScore' } })
+      .sort({ score: { $meta: 'textScore' }, ...fieldSortOptions })
+      .lean(),
+    prefixClauses.length > 0
+      ? Fellowship.find(
+          { ...filterWithoutText, $and: [...(filterWithoutText.$and ?? []), ...prefixClauses] },
+          { _id: 1 },
+        )
+          .sort(fieldSortOptions)
+          .lean()
+      : Promise.resolve([]),
+  ]);
+  const scoreById = new Map<string, number>(
+    (textMatches as any[]).map((match) => [String(match._id), match.score]),
+  );
+  const orderedIds = [
+    ...new Set([...(textMatches as any[]), ...(prefixMatches as any[])].map((m) => String(m._id))),
+  ];
+  const pageIds = orderedIds.slice(skip, skip + pageSize);
+  const pageDocuments = pageIds.length
+    ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
+    : [];
+  const documentById = new Map(pageDocuments.map((document) => [String(document._id), document]));
+  const fellowships = pageIds
+    .map((id) => documentById.get(id))
+    .filter(Boolean)
+    .map((document) =>
+      scoreById.has(String(document._id))
+        ? { ...document, score: scoreById.get(String(document._id)) }
+        : document,
+    );
+
+  return {
+    fellowships: servePrograms(fellowships),
+    total: orderedIds.length,
     page,
     pageSize,
-    totalPages: Math.ceil(total / pageSize),
+    totalPages: Math.ceil(orderedIds.length / pageSize),
+    ...(queryCorrection ? { queryCorrection } : {}),
   };
 };
 

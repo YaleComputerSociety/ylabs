@@ -12,7 +12,12 @@ import { Source } from '../models/source';
 import type { ScraperFetchMetrics, ScraperMetrics } from './types';
 import { resolveField, type ResolverObservation } from './confidenceResolver';
 import { workPlannerSkippedEveryTarget } from './sourceYieldGuard';
+import { classifyScrapeRunLiveness, type ScrapeRunLiveness } from './scrapeRunLiveness';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  WITHHELD_CONTACT_VALUE_PREVIEW,
+  isResearchEntityContactField,
+} from './rowKeyedContactEvidence';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -40,6 +45,7 @@ export interface ReportScrapeRun {
   triggeredBy?: string;
   startedAt?: Date | string;
   finishedAt?: Date | string;
+  heartbeatAt?: Date | string;
   observationCount?: number;
   entitiesObserved?: number;
   entitiesCreated?: number;
@@ -137,9 +143,7 @@ export interface MaterializationConflictReviewSample {
 }
 
 export type MaterializationConflictReviewQueue =
-  | 'priority_review'
-  | 'context_review'
-  | 'metadata_review';
+  'priority_review' | 'context_review' | 'metadata_review';
 
 export interface MaterializationConflictReview {
   required: boolean;
@@ -174,6 +178,8 @@ export interface ScrapeRunReport {
     startedAt?: string;
     finishedAt?: string;
     durationSeconds?: number;
+    heartbeatAt?: string;
+    liveness?: ScrapeRunLiveness;
     invalidated: boolean;
     options: Record<string, unknown>;
   };
@@ -230,6 +236,8 @@ export interface ScrapeRunReport {
       failed: number;
       blocked: number;
       selectorBreakages: number;
+      throttleRecovered: number;
+      throttleExhausted: number;
       byMode: Record<
         string,
         {
@@ -304,7 +312,11 @@ const ACCESS_EVIDENCE_CONFLICT_FIELDS = new Set([
   'joinPageUrl',
   'applicationUrl',
 ]);
-const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
+const FUNDING_CONTEXT_CONFLICT_FIELDS = new Set([
+  'recentGrants',
+  'recentGrantPeriods',
+  'recentGrantCount',
+]);
 
 function stringifyId(value: unknown): string | undefined {
   return serializedDocumentId(value);
@@ -340,7 +352,8 @@ function serializeValue(value: unknown): string {
   }
 }
 
-function previewValue(value: unknown): string {
+function previewValue(value: unknown, field: string): string {
+  if (isResearchEntityContactField(field)) return WITHHELD_CONTACT_VALUE_PREVIEW;
   let raw: string;
   if (typeof value === 'string') raw = value;
   else {
@@ -538,7 +551,9 @@ export function buildMaterializationConflictReview(
       sourceNames,
       resolvedConfidence: resolved.confidence,
       contributingSources: resolved.contributingSources.slice().sort(),
-      conflictingValuePreviews: (resolved.conflictingValues || []).slice(0, 3).map(previewValue),
+      conflictingValuePreviews: (resolved.conflictingValues || [])
+        .slice(0, 3)
+        .map((value) => previewValue(value, group.field)),
     });
   }
 
@@ -604,6 +619,8 @@ function buildCoverageFetchSummary(
     failed: summary?.failed || 0,
     blocked: summary?.blocked || 0,
     selectorBreakages: summary?.selectorBreakages || 0,
+    throttleRecovered: fetchMetrics?.throttleRetry?.recovered || 0,
+    throttleExhausted: fetchMetrics?.throttleRetry?.exhausted || 0,
     byMode,
   };
 }
@@ -849,6 +866,19 @@ export function buildScrapeRunReport(
     warnings.push('Run failed; do not materialize without inspecting errors.');
   if (run.status === 'partial')
     warnings.push('Run completed partially; inspect source-level logs/errors.');
+  const liveness = classifyScrapeRunLiveness(run);
+  if (liveness === 'stale')
+    warnings.push(
+      'Run is marked running but its heartbeat has stopped, so no process is working on it; close it with scrape-runs:reconcile-stale.',
+    );
+  if (liveness === 'unverifiable')
+    warnings.push(
+      'Run is marked running but predates run heartbeats, so the status is not evidence of a live writer.',
+    );
+  if (run.status === 'interrupted')
+    warnings.push(
+      'Run was interrupted before it finished; its observations are incomplete, so re-run the source rather than materializing this run.',
+    );
   if (run.invalidated) warnings.push('Run has been invalidated.');
   if (reportedObservationCount === 0 && !workPlannerSkippedAll) {
     warnings.push('Run produced zero observations.');
@@ -888,6 +918,11 @@ export function buildScrapeRunReport(
   if (coverageFetch.succeeded > 0 && reportedObservationCount === 0) {
     warnings.push(
       `${coverageFetch.succeeded} fetch(es) succeeded, but run emitted zero observations.`,
+    );
+  }
+  if (coverageFetch.throttleExhausted > 0) {
+    warnings.push(
+      `${coverageFetch.throttleExhausted} request(s) were still refused after the throttle retry budget; their pages are missing from this run.`,
     );
   }
   if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && reportedObservationCount > 0) {
@@ -930,6 +965,8 @@ export function buildScrapeRunReport(
       startedAt: iso(run.startedAt),
       finishedAt: iso(run.finishedAt),
       durationSeconds: durationSeconds(run.startedAt, run.finishedAt),
+      ...(run.heartbeatAt ? { heartbeatAt: iso(run.heartbeatAt) } : {}),
+      ...(liveness !== 'finished' ? { liveness } : {}),
       invalidated: !!run.invalidated,
       options: run.options || {},
     },

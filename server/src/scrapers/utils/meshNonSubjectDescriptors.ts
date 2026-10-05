@@ -1,0 +1,565 @@
+// The descriptor names under MeSH tree Z01 (Geographic Locations), read from the NLM MeSH
+// SPARQL endpoint (id.nlm.nih.gov/mesh). MeSH indexes a study by where it ran with these, so
+// a MeSH keyword list carries them beside its subject headings (#3685).
+const MESH_GEOGRAPHIC_DESCRIPTOR_NAMES = [
+  'Afghanistan',
+  'Africa',
+  'Africa South of the Sahara',
+  'Africa, Central',
+  'Africa, Eastern',
+  'Africa, Northern',
+  'Africa, Southern',
+  'Africa, Western',
+  'Alabama',
+  'Alaska',
+  'Albania',
+  'Alberta',
+  'Algeria',
+  'American Samoa',
+  'Americas',
+  'Ancient Lands',
+  'Andorra',
+  'Angola',
+  'Antarctic Regions',
+  'Antigua and Barbuda',
+  'Appalachian Region',
+  'Arabia',
+  'Arctic Regions',
+  'Argentina',
+  'Arizona',
+  'Arkansas',
+  'Armenia',
+  'Aruba',
+  'Asia',
+  'Asia, Central',
+  'Asia, Eastern',
+  'Asia, Northern',
+  'Asia, Southeastern',
+  'Asia, Southern',
+  'Asia, Western',
+  'Atlantic Islands',
+  'Atlantic Ocean',
+  'Australasia',
+  'Australia',
+  'Australian Capital Territory',
+  'Austria',
+  'Austria-Hungary',
+  'Azerbaijan',
+  'Azores',
+  'Bahamas',
+  'Bahrain',
+  'Balkan Peninsula',
+  'Baltic States',
+  'Baltimore',
+  'Bangladesh',
+  'Barbados',
+  'Bashkiria',
+  'Beijing',
+  'Belgium',
+  'Belize',
+  'Benin',
+  'Berlin',
+  'Bermuda',
+  'Bhutan',
+  'Black Sea',
+  'Bolivia',
+  'Borneo',
+  'Bosnia and Herzegovina',
+  'Boston',
+  'Botswana',
+  'Brazil',
+  'British Columbia',
+  'British Virgin Islands',
+  'Brunei',
+  'Bulgaria',
+  'Burkina Faso',
+  'Burundi',
+  'Byzantium',
+  'Cabo Verde',
+  'California',
+  'Cambodia',
+  'Cameroon',
+  'Canada',
+  'Caribbean Netherlands',
+  'Caribbean Region',
+  'Central African Republic',
+  'Central America',
+  'Chad',
+  'Channel Islands',
+  'Chicago',
+  'Chile',
+  'China',
+  'Cities',
+  'Colombia',
+  'Colorado',
+  'Commonwealth of Independent States',
+  'Comoros',
+  'Confederate States of America',
+  'Congo',
+  'Connecticut',
+  'Costa Rica',
+  "Cote d'Ivoire",
+  'Croatia',
+  'Cuba',
+  'Curacao',
+  'Cyprus',
+  'Czech Republic',
+  'Czechoslovakia',
+  'Dagestan',
+  'Delaware',
+  "Democratic People's Republic of Korea",
+  'Democratic Republic of the Congo',
+  'Denmark',
+  'District of Columbia',
+  'Djibouti',
+  'Dominica',
+  'Dominican Republic',
+  'Ecuador',
+  'Egypt',
+  'Egypt, Ancient',
+  'El Salvador',
+  'England',
+  'Equatorial Guinea',
+  'Eritrea',
+  'Estonia',
+  'Eswatini',
+  'Ethiopia',
+  'Europe',
+  'Europe, Eastern',
+  'European Alpine Region',
+  'Falkland Islands',
+  'Fiji',
+  'Finland',
+  'Florida',
+  'France',
+  'French Guiana',
+  'Gabon',
+  'Gambia',
+  'Geographic Locations',
+  'Georgia',
+  'Georgia (Republic)',
+  'Germany',
+  'Germany, East',
+  'Germany, West',
+  'Ghana',
+  'Gibraltar',
+  'Great Lakes Region',
+  'Greece',
+  'Greece, Ancient',
+  'Greenland',
+  'Grenada',
+  'Guadeloupe',
+  'Guam',
+  'Guatemala',
+  'Guernsey',
+  'Guinea',
+  'Guinea-Bissau',
+  'Gulf of America',
+  'Guyana',
+  'Haiti',
+  'Hawaii',
+  'Hebrides',
+  'Himalayas',
+  'Historical Geographic Locations',
+  'Holy Roman Empire',
+  'Honduras',
+  'Hong Kong',
+  'Hungary',
+  'Iceland',
+  'Idaho',
+  'Illinois',
+  'Independent State of Samoa',
+  'India',
+  'Indian Ocean',
+  'Indian Ocean Islands',
+  'Indiana',
+  'Indochina',
+  'Indonesia',
+  'Iowa',
+  'Iran',
+  'Iraq',
+  'Ireland',
+  'Islands',
+  'Israel',
+  'Italy',
+  'Jamaica',
+  'Japan',
+  'Jordan',
+  'Kansas',
+  'Kazakhstan',
+  'Kentucky',
+  'Kenya',
+  'Kiribati',
+  'Korea',
+  'Kosovo',
+  'Kuwait',
+  'Kyrgyzstan',
+  'Laos',
+  'Latin America',
+  'Latvia',
+  'Lebanon',
+  'Lesotho',
+  'Liberia',
+  'Libya',
+  'Liechtenstein',
+  'Lithuania',
+  'London',
+  'Los Angeles',
+  'Louisiana',
+  'Luxembourg',
+  'Macau',
+  'Madagascar',
+  'Maine',
+  'Malawi',
+  'Malaysia',
+  'Maldives',
+  'Mali',
+  'Malta',
+  'Manitoba',
+  'Martinique',
+  'Maryland',
+  'Massachusetts',
+  'Mauritania',
+  'Mauritius',
+  'Mediterranean Islands',
+  'Mediterranean Region',
+  'Mediterranean Sea',
+  'Mekong Valley',
+  'Melanesia',
+  'Mesopotamia',
+  'Mexico',
+  'Michigan',
+  'Micronesia',
+  'Mid-Atlantic Region',
+  'Middle East',
+  'Midwestern United States',
+  'Minnesota',
+  'Mississippi',
+  'Missouri',
+  'Moldova',
+  'Monaco',
+  'Mongolia',
+  'Montana',
+  'Montenegro',
+  'Morocco',
+  'Moscow',
+  'Mozambique',
+  'Myanmar',
+  'Namibia',
+  'Nebraska',
+  'Nepal',
+  'Netherlands',
+  'Netherlands Antilles',
+  'Nevada',
+  'New Brunswick',
+  'New Caledonia',
+  'New England',
+  'New Guinea',
+  'New Hampshire',
+  'New Jersey',
+  'New Mexico',
+  'New Orleans',
+  'New South Wales',
+  'New York',
+  'New York City',
+  'New Zealand',
+  'Newfoundland and Labrador',
+  'Nicaragua',
+  'Niger',
+  'Nigeria',
+  'North America',
+  'North Carolina',
+  'North Dakota',
+  'North Sea',
+  'Northern Ireland',
+  'Northern Territory',
+  'Northwest Territories',
+  'Northwestern United States',
+  'Norway',
+  'Nova Scotia',
+  'Nunavut',
+  'Oceania',
+  'Oceans and Seas',
+  'Ohio',
+  'Oklahoma',
+  'Oman',
+  'Ontario',
+  'Oregon',
+  'Ottoman Empire',
+  'Pacific Islands',
+  'Pacific Ocean',
+  'Pacific States',
+  'Pakistan',
+  'Palau',
+  'Panama',
+  'Panama Canal Zone',
+  'Papua New Guinea',
+  'Paraguay',
+  'Paris',
+  'Pennsylvania',
+  'Persia',
+  'Peru',
+  'Philadelphia',
+  'Philippines',
+  'Pitcairn Island',
+  'Poland',
+  'Polynesia',
+  'Portugal',
+  'Prince Edward Island',
+  'Prussia',
+  'Puerto Rico',
+  'Qatar',
+  'Quebec',
+  'Queensland',
+  'Republic of Belarus',
+  'Republic of Korea',
+  'Republic of North Macedonia',
+  'Reunion',
+  'Rhode Island',
+  'Romania',
+  'Rome',
+  'Russia',
+  'Russia (Pre-1917)',
+  'Rwanda',
+  'Saint Kitts and Nevis',
+  'Saint Lucia',
+  'Saint Vincent and the Grenadines',
+  'Samoa',
+  'San Francisco',
+  'San Marino',
+  'Sao Tome and Principe',
+  'Saskatchewan',
+  'Saudi Arabia',
+  'Scandinavian and Nordic Countries',
+  'Scotland',
+  'Senegal',
+  'Seoul',
+  'Serbia',
+  'Seychelles',
+  'Siberia',
+  'Sicily',
+  'Sierra Leone',
+  'Sikkim',
+  'Singapore',
+  'Sint Maarten',
+  'Slovakia',
+  'Slovenia',
+  'Somalia',
+  'South Africa',
+  'South America',
+  'South Australia',
+  'South Carolina',
+  'South Dakota',
+  'South Sudan',
+  'Southeastern United States',
+  'Southwestern United States',
+  'Spain',
+  'Sri Lanka',
+  'Sudan',
+  'Suriname',
+  'Svalbard',
+  'Sweden',
+  'Switzerland',
+  'Syria',
+  'Taiwan',
+  'Tajikistan',
+  'Tanzania',
+  'Tasmania',
+  'Tatarstan',
+  'Tennessee',
+  'Texas',
+  'Thailand',
+  'Tibet',
+  'Timor-Leste',
+  'Togo',
+  'Tokyo',
+  'Tonga',
+  'Transcaucasia',
+  'Trinidad and Tobago',
+  'Tunisia',
+  'Turkey',
+  'Turkmenistan',
+  'Uganda',
+  'Ukraine',
+  'United Arab Emirates',
+  'United Kingdom',
+  'United States',
+  'United States Virgin Islands',
+  'Uruguay',
+  'USSR',
+  'Utah',
+  'Uzbekistan',
+  'Vanuatu',
+  'Vatican City',
+  'Venezuela',
+  'Vermont',
+  'Victoria',
+  'Vietnam',
+  'Virginia',
+  'Wales',
+  'Washington',
+  'West Indies',
+  'West Virginia',
+  'Western Australia',
+  'Wisconsin',
+  'Wyoming',
+  'Yemen',
+  'Yugoslavia',
+  'Yukon Territory',
+  'Zambia',
+  'Zimbabwe',
+] as const;
+
+const MESH_GEOGRAPHIC_DESCRIPTOR_KEYS: ReadonlySet<string> = new Set(
+  MESH_GEOGRAPHIC_DESCRIPTOR_NAMES.map(meshTermKey),
+);
+
+function meshTermKey(term: string): string {
+  return term.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+export function isMeshGeographicDescriptor(term: string): boolean {
+  return MESH_GEOGRAPHIC_DESCRIPTOR_KEYS.has(meshTermKey(term));
+}
+
+interface MeshDescriptor {
+  readonly ui: string;
+  readonly name: string;
+  readonly treeNumbers: readonly string[];
+}
+
+// The age-group check tags NLM indexing applies to every study of people, all under MeSH tree
+// M01.060 (Age Groups). Its finer descendants ("Infant, Premature", "Frail Elderly") are not
+// check tags and can be a neonatologist's or geriatrician's real subject, so they stay (#4051).
+export const MESH_AGE_GROUP_CHECK_TAGS: readonly MeshDescriptor[] = [
+  { ui: 'D007231', name: 'Infant, Newborn', treeNumbers: ['M01.060.703.520'] },
+  { ui: 'D007223', name: 'Infant', treeNumbers: ['M01.060.703'] },
+  { ui: 'D002675', name: 'Child, Preschool', treeNumbers: ['M01.060.406.448'] },
+  { ui: 'D002648', name: 'Child', treeNumbers: ['M01.060.406'] },
+  { ui: 'D000293', name: 'Adolescent', treeNumbers: ['M01.060.057'] },
+  { ui: 'D055815', name: 'Young Adult', treeNumbers: ['M01.060.116.815'] },
+  { ui: 'D000328', name: 'Adult', treeNumbers: ['M01.060.116'] },
+  { ui: 'D008875', name: 'Middle Aged', treeNumbers: ['M01.060.116.630'] },
+  { ui: 'D000368', name: 'Aged', treeNumbers: ['M01.060.116.100'] },
+  { ui: 'D000369', name: 'Aged, 80 and over', treeNumbers: ['M01.060.116.100.080'] },
+];
+
+// The other check tags NLM indexing applies to nearly every study: the species and sex of the
+// subjects, and the laboratory organism of an animal study. "Pregnancy" is a check tag too but
+// is deliberately absent: hand-read on Development it named the person's real subject on 4 of
+// the 6 rows that served it, all reproductive or perinatal research (#4051).
+export const MESH_SUBJECT_CHECK_TAGS: readonly MeshDescriptor[] = [
+  { ui: 'D006801', name: 'Humans', treeNumbers: ['B01.050.150.900.649.313.988.400.112.400.400'] },
+  { ui: 'D000818', name: 'Animals', treeNumbers: ['B01.050'] },
+  { ui: 'D008297', name: 'Male', treeNumbers: [] },
+  { ui: 'D005260', name: 'Female', treeNumbers: [] },
+  { ui: 'D051379', name: 'Mice', treeNumbers: ['B01.050.150.900.649.313.992.635.505.500'] },
+  { ui: 'D051381', name: 'Rats', treeNumbers: ['B01.050.150.900.649.313.992.635.505.700'] },
+];
+
+// The headings that frame how a clinical study was reported rather than what it studied: the
+// roots of the Diagnosis (E01) and Therapeutics (E02) trees and the outcome and risk headings
+// indexed onto any trial or cohort.
+export const MESH_STUDY_CONTEXT_DESCRIPTORS: readonly MeshDescriptor[] = [
+  { ui: 'D003933', name: 'Diagnosis', treeNumbers: ['E01'] },
+  { ui: 'D013812', name: 'Therapeutics', treeNumbers: ['E02'] },
+  { ui: 'D011379', name: 'Prognosis', treeNumbers: ['E01.789'] },
+  {
+    ui: 'D016896',
+    name: 'Treatment Outcome',
+    treeNumbers: ['E01.789.800', 'N04.761.559.590.800', 'N05.715.360.575.575.800'],
+  },
+  {
+    ui: 'D012307',
+    name: 'Risk Factors',
+    treeNumbers: ['E05.318.740.600.800.725', 'N05.715.350.200.700'],
+  },
+];
+
+const MESH_NON_SUBJECT_DESCRIPTOR_KEYS: ReadonlySet<string> = new Set(
+  [...MESH_AGE_GROUP_CHECK_TAGS, ...MESH_SUBJECT_CHECK_TAGS, ...MESH_STUDY_CONTEXT_DESCRIPTORS].map(
+    (descriptor) => meshTermKey(descriptor.name),
+  ),
+);
+
+export function isMeshNonSubjectDescriptor(term: string): boolean {
+  return (
+    isMeshGeographicDescriptor(term) || MESH_NON_SUBJECT_DESCRIPTOR_KEYS.has(meshTermKey(term))
+  );
+}
+
+export function withoutMeshNonSubjectDescriptors(terms: readonly string[]): string[] {
+  return terms.filter((term) => !isMeshNonSubjectDescriptor(term));
+}
+
+const MESH_INDEXED_PROFILE_HOSTS: ReadonlySet<string> = new Set([
+  'medicine.yale.edu',
+  'ysph.yale.edu',
+]);
+
+export function isMeshIndexedProfileUrl(url: string): boolean {
+  try {
+    return MESH_INDEXED_PROFILE_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function researchAreaProvenanceSourceUrl(fieldProvenance: unknown): string {
+  if (!fieldProvenance || typeof fieldProvenance !== 'object') return '';
+  const entry = (fieldProvenance as Record<string, unknown>).researchAreas;
+  if (!entry || typeof entry !== 'object') return '';
+  const sourceUrl = (entry as Record<string, unknown>).sourceUrl;
+  return typeof sourceUrl === 'string' ? sourceUrl : '';
+}
+
+// Serve-time as well as ingest-time, because a stored list whose every entry is a non-subject
+// descriptor has no successor observation to supersede it once the lanes stop emitting one.
+export function withoutMeshSourcedNonSubjectResearchAreas(
+  areas: readonly string[],
+  fieldProvenance: unknown,
+): string[] {
+  if (!isMeshIndexedProfileUrl(researchAreaProvenanceSourceUrl(fieldProvenance))) {
+    return areas as string[];
+  }
+  const kept = areas.filter(
+    (area) => typeof area !== 'string' || !isMeshNonSubjectDescriptor(area),
+  );
+  return kept.length === areas.length ? (areas as string[]) : kept;
+}
+
+const descriptorWordKey = (word: string): string =>
+  word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word;
+
+export function meshDescriptorWordKeys(text: string): string[] {
+  return text
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map(descriptorWordKey);
+}
+
+const wordKeysOf = (values: readonly unknown[]): Set<string> =>
+  new Set(
+    values
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap(meshDescriptorWordKeys),
+  );
+
+// MeSH indexes a clinician's publications with the techniques the studies used, so a
+// descriptor such as "Robotics" on a MeSH-indexed profile says the clinician used a
+// surgical robot, not that the row researches robotics (#4373). These are the words
+// only such descriptors carry, which the search path reads to rank a row's own
+// evidence above them.
+export function meshDescriptorOnlyTerms(
+  areas: readonly unknown[],
+  fieldProvenance: unknown,
+  ownEvidence: readonly unknown[],
+): string[] {
+  if (!isMeshIndexedProfileUrl(researchAreaProvenanceSourceUrl(fieldProvenance))) return [];
+  const ownKeys = wordKeysOf(ownEvidence);
+  return [...wordKeysOf(areas)].filter((key) => !ownKeys.has(key));
+}

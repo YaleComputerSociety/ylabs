@@ -9,22 +9,39 @@ import dotenv from 'dotenv';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const LOCAL_PROFILE_DATABASE = 'ylabs_local';
+
 const PROFILES = {
+  local: {
+    file: path.join(REPO_ROOT, 'server', '.env.local'),
+    missingHint: 'Run yarn local:setup to create it.',
+    shadowedFile: path.join(REPO_ROOT, 'server', '.env'),
+    environment: 'development',
+    database: LOCAL_PROFILE_DATABASE,
+    requireLocalMongo: true,
+    writable: false,
+    meiliIndexPrefix: LOCAL_PROFILE_DATABASE,
+  },
   development: {
     file: path.join(REPO_ROOT, 'server', '.env'),
     environment: 'development',
     database: 'Development',
     requireRemoteMongo: true,
+    writable: true,
   },
   'beta-operator': {
     file: path.join(REPO_ROOT, 'server', '.env.beta-operator'),
     environment: 'beta',
     database: 'Beta',
     requireRemoteMongo: true,
+    writable: false,
   },
 };
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const PROFILE_CHOICES = 'Use local, development or beta-operator.';
+const USAGE =
+  'Usage: run-data-profile.mjs <local|development|beta-operator> [--write] -- <command> [args...]';
 
 export function parseMongoTarget(value) {
   if (!value) throw new Error('MONGODBURL is required by the selected data profile.');
@@ -51,7 +68,7 @@ export function parseMongoTarget(value) {
 export function validateProfileValues(profileName, values) {
   const profile = PROFILES[profileName];
   if (!profile) {
-    throw new Error(`Unknown data profile "${profileName}". Use development or beta-operator.`);
+    throw new Error(`Unknown data profile "${profileName}". ${PROFILE_CHOICES}`);
   }
 
   const target = parseMongoTarget(values.MONGODBURL);
@@ -62,6 +79,11 @@ export function validateProfileValues(profileName, values) {
   }
   if (profile.requireRemoteMongo && target.local) {
     throw new Error(`The ${profileName} profile requires a remote MongoDB database.`);
+  }
+  if (profile.requireLocalMongo && !target.local) {
+    throw new Error(
+      `The ${profileName} profile requires a local MongoDB host (localhost, 127.0.0.1 or ::1); resolved ${target.host}.`,
+    );
   }
   if (values.SCRAPER_ENV && values.SCRAPER_ENV !== profile.environment) {
     throw new Error(
@@ -75,9 +97,7 @@ export function validateProfileValues(profileName, values) {
 export function parseInvocation(argv) {
   const separator = argv.indexOf('--');
   if (separator < 0) {
-    throw new Error(
-      'Usage: run-data-profile.mjs <development|beta-operator> [--write] -- <command> [args...]',
-    );
+    throw new Error(USAGE);
   }
 
   const options = argv.slice(0, separator);
@@ -85,9 +105,7 @@ export function parseInvocation(argv) {
   const profileName = options[0];
   const unknown = options.slice(1).filter((option) => option !== '--write');
   if (!profileName || unknown.length > 0 || command.length === 0) {
-    throw new Error(
-      'Usage: run-data-profile.mjs <development|beta-operator> [--write] -- <command> [args...]',
-    );
+    throw new Error(USAGE);
   }
 
   return {
@@ -97,38 +115,44 @@ export function parseInvocation(argv) {
   };
 }
 
-export function assertCommandAllowed(profileName, command) {
-  if (
-    profileName === 'beta-operator' &&
-    (command.includes('--auto-materialize') || command.includes('materialize'))
-  ) {
+export function assertWritesAllowed(profileName, writesEnabled) {
+  if (writesEnabled && !PROFILES[profileName]?.writable) {
     throw new Error(
-      'The local Beta operator may fetch observations only. Materialize the run from the Beta Render shell so it updates Beta Meilisearch.',
+      `The ${profileName} profile is read-only. Scrapes and repairs run against Development, and Beta receives data only through promotion: yarn beta:refresh-from-development:plan, then yarn beta:refresh-from-development:apply (docs/data-refresh-runbook.md).`,
     );
   }
+}
+
+export function shadowedValues(profile, values) {
+  if (!profile.shadowedFile || !fs.existsSync(profile.shadowedFile)) return {};
+  const shadowed = dotenv.parse(fs.readFileSync(profile.shadowedFile));
+  return Object.fromEntries(
+    Object.keys(shadowed)
+      .filter((key) => !(key in values))
+      .map((key) => [key, '']),
+  );
 }
 
 export function run(argv = process.argv.slice(2)) {
   const invocation = parseInvocation(argv);
   const profile = PROFILES[invocation.profileName];
   if (!profile) {
-    throw new Error(
-      `Unknown data profile "${invocation.profileName}". Use development or beta-operator.`,
-    );
+    throw new Error(`Unknown data profile "${invocation.profileName}". ${PROFILE_CHOICES}`);
   }
   if (!fs.existsSync(profile.file)) {
     const example = `${profile.file}.example`;
     throw new Error(
-      `Missing ${path.relative(REPO_ROOT, profile.file)}. Copy ${path.relative(REPO_ROOT, example)} and fill in its placeholders.`,
+      `Missing ${path.relative(REPO_ROOT, profile.file)}. ${profile.missingHint ?? `Copy ${path.relative(REPO_ROOT, example)} and fill in its placeholders.`}`,
     );
   }
 
   const values = dotenv.parse(fs.readFileSync(profile.file));
   const { target } = validateProfileValues(invocation.profileName, values);
-  assertCommandAllowed(invocation.profileName, invocation.command);
+  assertWritesAllowed(invocation.profileName, invocation.writesEnabled);
 
   const childEnv = {
     ...process.env,
+    ...shadowedValues(profile, values),
     ...values,
     SCRAPER_ENV: profile.environment,
     CONFIRM_PROD_SCRAPE: 'false',
@@ -138,9 +162,14 @@ export function run(argv = process.argv.slice(2)) {
   } else {
     delete childEnv.ALLOW_NON_PROD_SCRAPER_WRITES;
   }
+  if (profile.meiliIndexPrefix) {
+    childEnv.MEILISEARCH_INDEX_PREFIX = profile.meiliIndexPrefix;
+  }
   if (invocation.profileName === 'beta-operator') {
     childEnv.MEILISEARCH_HOST = 'http://127.0.0.1:7700';
     childEnv.MEILISEARCH_API_KEY = 'local_development_master_key';
+    delete childEnv.MEILISEARCH_SEARCH_API_KEY;
+    delete childEnv.MEILISEARCH_WRITE_API_KEY;
     childEnv.MEILISEARCH_INDEX_PREFIX = 'beta_operator';
   }
   delete childEnv.MONGODBURL_MIGRATION;

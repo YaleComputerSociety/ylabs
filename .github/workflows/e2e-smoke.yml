@@ -5,14 +5,33 @@ on:
     branches:
       - main
       - beta
+  # The beta merge queue gates on this run against the exact squash commit that
+  # lands (#4512); without it the required context never reports on a queued
+  # group and every merge stalls.
+  merge_group:
+    types:
+      - checks_requested
+  # Post-merge safety net for anything that reaches beta outside the queue
+  # (#3913). Not a merge gate.
+  push:
+    branches:
+      - beta
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Only push runs share a group, so a burst of merges only tests the newest beta
+# head. Every other run gets its own group and is neither queued nor cancelled,
+# because a cancelled run reports as a non-success on a required context.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   student-journey-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       mongodb:
@@ -30,36 +49,42 @@ jobs:
           - 7700:7700
         env:
           MEILI_ENV: development
-          MEILI_MASTER_KEY: e2eSmokeMeiliMasterKey123
+          MEILI_MASTER_KEY: e2e-smoke-meili-${{ github.run_id }}-${{ github.run_attempt }}
           MEILI_NO_ANALYTICS: 'true'
 
     env:
       NODE_ENV: development
       PORT: '4000'
       SERVER_BASE_URL: http://localhost:4000
-      SESSION_SECRET: k7Qm2Xb9Rp4Zt6Vy1Nc3Hs5Jd8Lf0Wg2Ea
+      # Built per run so no credential-shaped literal is committed (#4198).
+      SESSION_SECRET: e2e-smoke-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
       MONGODBURL: mongodb://localhost:27017/ylabs_e2e_smoke
       MEILISEARCH_HOST: http://localhost:7700
-      MEILISEARCH_API_KEY: e2eSmokeMeiliMasterKey123
+      MEILISEARCH_API_KEY: e2e-smoke-meili-${{ github.run_id }}-${{ github.run_attempt }}
       E2E_BASE_URL: http://localhost:4000
 
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # .node-version is the single declaration of the runtime major, read here
+      # and by the hosting provider, so CI and the deployed service cannot drift
+      # apart (#3915).
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 26
+          node-version-file: .node-version
 
       # Node 25 removed Corepack from the distribution, so `corepack enable` alone exits
       # non-zero on a current runner and the install dies before any test runs. The
       # preinstalled Yarn 1 does not delegate on its own either. `packageManager` in the
       # root package.json stays the single source of truth for the Yarn version (#3216).
+      # The version is pinned rather than @latest so a new Corepack release cannot
+      # change the tool that selects Yarn between two runs of the same commit (#3915).
       - name: Install Corepack
-        run: npm install -g corepack@latest
+        run: npm install -g corepack@0.36.0
 
       - name: Enable Corepack
         run: corepack enable
@@ -69,6 +94,15 @@ jobs:
           yarn install --immutable
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
+
+      # The browser download and its apt dependencies take ~25 seconds and need
+      # nothing the steps below produce, so they run while the client builds, the
+      # index is seeded and the API starts (#4666). The exit code is written to a
+      # file because a later step cannot `wait` on another step's process, and
+      # the wait step below fails the job on any non-zero install.
+      - name: Start Playwright Chromium install
+        run: |
+          nohup bash -c 'npx playwright install --with-deps chromium > /tmp/playwright-install.log 2>&1; echo $? > /tmp/playwright-install.exit' > /dev/null 2>&1 &
 
       - name: Build client
         run: yarn build:client
@@ -107,7 +141,13 @@ jobs:
           exit 1
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: |
+          for attempt in $(seq 1 300); do
+            [ -s /tmp/playwright-install.exit ] && break
+            sleep 1
+          done
+          cat /tmp/playwright-install.log || true
+          [ "$(cat /tmp/playwright-install.exit 2>/dev/null)" = 0 ]
 
       - name: Run student-journey smoke
         run: node scripts/e2e-student-journey-smoke.mjs

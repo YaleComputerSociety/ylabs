@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = join(__dirname, '..');
 
-const GENERIC_RADIUS = /\brounded-(?:sm|md|lg|xl|2xl)\b/;
+const GENERIC_RADIUS =
+  /\brounded-(?:(?:[trbl]|tl|tr|bl|br|[se]|ss|se|es|ee)-)?(?:xs|sm|md|lg|xl|2xl|3xl|4xl)\b/;
 
 /**
  * Bare `rounded` is 0.25rem and reads as "no radius chosen", which is how 11
@@ -14,9 +15,17 @@ const GENERIC_RADIUS = /\brounded-(?:sm|md|lg|xl|2xl)\b/;
  */
 const UNNAMED_RADIUS = /\brounded\b(?!-)/;
 
-/** The structural signature of a card: a hairline border over the panel surface. */
-const CARD_BORDER = /border-\[var\(--yr-line\)\]|\bborder-line\b/;
-const CARD_SURFACE = /bg-\[var\(--yr-panel\)\]|\bbg-panel\b/;
+/**
+ * The structural signature of a card: a hairline border over the panel surface.
+ *
+ * Both tokens need a negative lookahead, and no state prefix is allowed. `\b`
+ * treats a hyphen as a boundary, so `\bborder-line\b` also matches
+ * `border-line-strong` and `\bbg-panel\b` also matches `bg-panel-muted`. With
+ * those, a secondary button carrying `border-line-strong hover:bg-panel-muted`
+ * read as a card, which is how this guard first failed on a button.
+ */
+const CARD_BORDER = /(?<![:\w-])(?:border-\[var\(--yr-line\)\]|border-line(?![-\w]))/;
+const CARD_SURFACE = /(?<![:\w-])(?:bg-\[var\(--yr-panel\)\]|bg-panel(?![-\w]))/;
 
 /**
  * Paths assigned a radius by role. The operator surfaces still put inputs at the

@@ -1,3 +1,17 @@
+/**
+ * Re-runs the materializer over selected research entities and reports what changed.
+ *
+ * `--resynthesize-cut-cards` lets a stored card that the browse card cuts mid-sentence
+ * reach card synthesis. A routine materialize reconsiders such a card with the
+ * deterministic derivation only, so run this flag over the rows whose browse card is
+ * cut to have their cards rewritten to fit (#4809).
+ *
+ * `--card-model=<model>` synthesizes those cards with another model for this run only.
+ * The description lane keys its content hash on its own card model, so a stronger model
+ * for a repair pass belongs here rather than in `CARD_SYNTHESIS_MODEL`: on the cards three
+ * passes left cut, the default model returned a line that shows whole for 5 of 10 and a
+ * stronger one for 8 of 10.
+ */
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -6,43 +20,83 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
+import { Signal } from '../models/signal';
+import {
+  ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON,
+  EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS,
+} from '../scrapers/accessMaterializer';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { fieldProvenanceEntries } from '../models/fieldProvenanceBacking';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
   runStudentVisibilityGateForPlans,
 } from '../services/studentVisibilityGateService';
-import { syncEntities } from '../services/meiliSyncService';
+import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { resolveResearchEntityCanonicalIdentity } from '../services/researchEntityCanonicalTombstone';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
-  buildRematerializeFieldChanges,
   collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  rematerializeComparedFields,
+  rematerializeEntityReportFromChanges,
   rematerializeFailureMessage,
+  rematerializeReportedChanges,
   rematerializeSkipReasonForEntity,
+  rematerializeStateAfterPlan,
+  summarizeAccessSignalChanges,
+  summarizeRematerializeEntities,
   researchEntityFieldIsStranded,
+  countProvenanceReconciliation,
+  provenanceReconciliationChanges,
   selectRematerializeRegateEntityIds,
+  slugsCarryingUnbackedProvenance,
+  foreignContactFieldsByRow,
   type RematerializeEntityReport,
 } from './rematerializeResearchEntitiesCore';
+import { RESEARCH_ENTITY_CONTACT_FIELDS } from '../scrapers/rowKeyedContactEvidence';
+import { loadResearchAreaEvidenceBackedRowIds } from '../scrapers/researchAreaEvidence';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-const SELECT_FIELDS = `${REMATERIALIZE_TRACKED_FIELDS.join(' ')} archived`;
-
-async function loadTrackedFields(slug: string): Promise<Record<string, unknown> | null> {
+async function loadComparedFields(
+  slug: string,
+  fields: readonly string[],
+): Promise<Record<string, unknown> | null> {
   const doc = await ResearchEntity.findOne({ slug })
-    .select(SELECT_FIELDS)
+    .select(`${fields.join(' ')} archived`)
     .lean<Record<string, unknown>>();
   return doc || null;
+}
+
+async function loadFieldProvenance(slug: string): Promise<unknown> {
+  const doc = await ResearchEntity.findOne({ slug })
+    .select('fieldProvenance')
+    .lean<{ fieldProvenance?: unknown }>();
+  return doc?.fieldProvenance;
+}
+
+function provenanceAfterPlan(
+  provenance: unknown,
+  plannedSet: Record<string, unknown>,
+  plannedUnset: Record<string, unknown>,
+): Record<string, unknown> {
+  const planned: Record<string, unknown> = {};
+  for (const [field, entry] of fieldProvenanceEntries(provenance)) {
+    const path = `fieldProvenance.${field}`;
+    if (Object.prototype.hasOwnProperty.call(plannedUnset, path)) continue;
+    planned[field] = Object.prototype.hasOwnProperty.call(plannedSet, path)
+      ? plannedSet[path]
+      : entry;
+  }
+  return planned;
 }
 
 async function processSlug(
@@ -50,9 +104,18 @@ async function processSlug(
   apply: boolean,
   onlyFields: string[],
   includeArchived: boolean,
+  onlyReconcileFieldProvenance: boolean,
+  foreignContact = false,
+  resynthesizeCutCards = false,
+  cardModel?: string,
 ): Promise<RematerializeEntityReport> {
-  const before = await loadTrackedFields(slug);
+  const writeOnlyFields = foreignContact ? [...RESEARCH_ENTITY_CONTACT_FIELDS] : onlyFields;
+  const comparedFields = rematerializeComparedFields(writeOnlyFields);
+  const before = await loadComparedFields(slug, comparedFields);
   if (!before) return { slug, found: false, changes: [] };
+  const provenanceBefore = onlyReconcileFieldProvenance
+    ? await loadFieldProvenance(slug)
+    : undefined;
 
   const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
     slug,
@@ -77,27 +140,95 @@ async function processSlug(
   const result = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
-    { dryRun: !apply, ...(onlyFields.length > 0 ? { writeOnlyFields: onlyFields } : {}) },
+    {
+      dryRun: !apply,
+      ...(writeOnlyFields.length > 0 ? { writeOnlyFields } : {}),
+      ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
+      ...(resynthesizeCutCards ? { resynthesizeCutCards } : {}),
+      ...(cardModel ? { cardModel } : {}),
+    },
   );
 
-  let plannedSet: Record<string, unknown> = result.plannedSet || {};
+  const plannedSet: Record<string, unknown> = result.plannedSet || {};
   const plannedUnset: Record<string, unknown> = result.plannedUnset || {};
-  if (apply) {
-    const after = await loadTrackedFields(slug);
-    plannedSet = (after as Record<string, unknown>) || {};
-  }
 
-  const changes = buildRematerializeFieldChanges(before, plannedSet, plannedUnset);
-  return {
+  const changes = onlyReconcileFieldProvenance
+    ? provenanceReconciliationChanges(
+        provenanceBefore,
+        apply
+          ? await loadFieldProvenance(slug)
+          : provenanceAfterPlan(provenanceBefore, plannedSet, plannedUnset),
+      )
+    : rematerializeReportedChanges(
+        before,
+        apply
+          ? (await loadComparedFields(slug, comparedFields)) || {}
+          : rematerializeStateAfterPlan(before, plannedSet, plannedUnset, comparedFields),
+        comparedFields,
+      );
+  return rematerializeEntityReportFromChanges({
     slug,
-    found: true,
     entityId: result.entityId,
     studentVisibilityTierBefore: before.studentVisibilityTier,
-    fieldsWritten: result.fieldsWritten,
+    materializerFieldsWritten: result.fieldsWritten,
     conflicts: result.conflicts,
     changes,
+    foreignContact,
+    unbackedResearchAreas: result.unbackedResearchAreas,
     skipped: result.skipped,
+  });
+}
+
+async function processAccessSignalsSlug(
+  slug: string,
+  apply: boolean,
+  includeArchived: boolean,
+): Promise<RematerializeEntityReport> {
+  const before = await loadComparedFields(slug, ['_id', 'slug', 'studentVisibilityTier']);
+  if (!before) return { slug, found: false, changes: [] };
+  const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
+    slug,
+    entityId: before._id ? String(before._id) : undefined,
+  });
+  const skipReason = rematerializeSkipReasonForEntity(
+    before,
+    includeArchived,
+    redirectCanonical?._id ? String(redirectCanonical._id) : undefined,
+  );
+  const report: RematerializeEntityReport = {
+    slug,
+    found: true,
+    entityId: before._id ? String(before._id) : undefined,
+    studentVisibilityTierBefore: before.studentVisibilityTier,
+    changes: [],
   };
+  if (skipReason) return { ...report, skipped: skipReason };
+  const result = await materializeEntity(
+    'researchEntity',
+    { entityKey: slug },
+    { dryRun: !apply, accessSignalsOnly: true },
+  );
+  return {
+    ...report,
+    accessSignalChanges: result.accessSignalChanges,
+    ...(result.skipped ? { skipped: result.skipped } : {}),
+  };
+}
+
+async function discoverEvidenceGovernedSignalSlugs(): Promise<string[]> {
+  const keys = Object.keys(EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS);
+  const entityIds = await Signal.distinct('researchEntityId', {
+    derivationKey: { $in: keys },
+    $or: [{ archived: { $ne: true } }, { archivedReason: ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON }],
+  });
+  if (entityIds.length === 0) return [];
+  const rows = await ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
+    .select('slug')
+    .lean<Array<{ slug?: string }>>();
+  return rows
+    .map((row) => row.slug)
+    .filter((slug): slug is string => Boolean(slug))
+    .sort();
 }
 
 async function discoverStrandedFieldSlugs(field: string): Promise<string[]> {
@@ -141,6 +272,53 @@ async function discoverStrandedFieldSlugs(field: string): Promise<string[]> {
   return Array.from(strandedSlugs).sort();
 }
 
+async function discoverForeignContactSlugs(): Promise<string[]> {
+  const storesContact = RESEARCH_ENTITY_CONTACT_FIELDS.map((field) => ({
+    [field]: { $exists: true, $nin: ['', null] },
+  }));
+  const rows = await ResearchEntity.find({ archived: { $ne: true }, $or: storesContact })
+    .select(`_id slug manuallyLockedFields ${RESEARCH_ENTITY_CONTACT_FIELDS.join(' ')}`)
+    .lean<Array<Record<string, unknown>>>();
+  if (rows.length === 0) return [];
+  const observations = await Observation.find({
+    entityType: 'researchEntity',
+    superseded: false,
+    field: { $in: [...RESEARCH_ENTITY_CONTACT_FIELDS] },
+    $or: [
+      { entityId: { $in: rows.map((row) => row._id as mongoose.Types.ObjectId) } },
+      { entityKey: { $in: rows.map((row) => String(row.slug || '')).filter(Boolean) } },
+    ],
+  })
+    .select('entityId entityKey field value')
+    .lean();
+  return Array.from(foreignContactFieldsByRow(rows, observations).keys()).sort();
+}
+
+async function discoverUnbackedProvenanceSlugs(includeArchived: boolean): Promise<string[]> {
+  const rows = await ResearchEntity.find(
+    includeArchived
+      ? { fieldProvenance: { $exists: true } }
+      : { fieldProvenance: { $exists: true }, archived: { $ne: true } },
+  )
+    .select('slug fieldProvenance')
+    .lean<Array<{ slug?: string; fieldProvenance?: unknown }>>();
+  return slugsCarryingUnbackedProvenance(rows);
+}
+
+async function discoverUnbackedResearchAreaSlugs(): Promise<string[]> {
+  const rows = await ResearchEntity.find({
+    archived: { $ne: true },
+    manuallyLockedFields: { $ne: 'researchAreas' },
+  })
+    .select('_id slug departments manuallyLockedFields')
+    .lean<Array<{ _id: unknown; slug?: string; departments?: unknown }>>();
+  const backed = await loadResearchAreaEvidenceBackedRowIds(rows);
+  return rows
+    .filter((row) => row.slug && !backed.has(String(row._id)))
+    .map((row) => row.slug as string)
+    .sort();
+}
+
 function writeReport(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
@@ -148,14 +326,16 @@ function writeReport(report: Record<string, unknown>, output?: string): void {
   fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
-interface RematerializeRegateSummary {
+export interface RematerializeRegateSummary {
   scopedEntities: number;
+  indexResynced: number;
+  indexSyncFailures: number;
   tierChanged: number;
   tierTransitions: Array<{ recordId: string; label: string; from: string | null; to: string }>;
   counts: Record<string, number>;
 }
 
-async function regateRematerializedEntities(
+export async function regateRematerializedEntities(
   entityIds: string[],
 ): Promise<RematerializeRegateSummary> {
   const plans = await planStudentVisibilityGate({
@@ -172,17 +352,9 @@ async function regateRematerializedEntities(
   const objectIds = entityIds
     .filter((id) => mongoose.isValidObjectId(id))
     .map((id) => new mongoose.Types.ObjectId(id));
-  if (objectIds.length > 0) {
-    const docs = await ResearchEntity.find({ _id: { $in: objectIds } }).lean();
-    try {
-      await syncEntities('researchEntity', docs as unknown[]);
-    } catch (error) {
-      console.error(
-        '[research-entity:rematerialize] Meili resync after re-gate failed:',
-        sanitizeLogValue(error),
-      );
-    }
-  }
+  const docs =
+    objectIds.length > 0 ? await ResearchEntity.find({ _id: { $in: objectIds } }).lean() : [];
+  const indexSync = await syncResearchEntitiesWithOutcome(docs);
 
   const tierTransitions = plans
     .filter((plan) => plan.currentTier !== plan.tier)
@@ -195,6 +367,8 @@ async function regateRematerializedEntities(
 
   return {
     scopedEntities: entityIds.length,
+    indexResynced: indexSync.resynced,
+    indexSyncFailures: indexSync.indexSyncFailures,
     tierChanged: tierTransitions.length,
     tierTransitions,
     counts: gateReport.counts as unknown as Record<string, number>,
@@ -218,9 +392,43 @@ async function main() {
     discoveredSlugs = await discoverStrandedFieldSlugs(args.reclaimStrandedField);
     slugs = Array.from(new Set([...slugs, ...discoveredSlugs]));
   }
+  let discoveredUnbackedProvenanceSlugs: string[] | undefined;
+  if (args.unbackedProvenance) {
+    discoveredUnbackedProvenanceSlugs = await discoverUnbackedProvenanceSlugs(args.includeArchived);
+    slugs = Array.from(new Set([...slugs, ...discoveredUnbackedProvenanceSlugs]));
+  }
+
+  let discoveredForeignContactSlugs: string[] | undefined;
+  if (args.foreignContact) {
+    discoveredForeignContactSlugs = await discoverForeignContactSlugs();
+    slugs = Array.from(new Set([...slugs, ...discoveredForeignContactSlugs]));
+  }
+
+  let discoveredUnbackedResearchAreaSlugs: string[] | undefined;
+  if (args.unbackedResearchAreas) {
+    discoveredUnbackedResearchAreaSlugs = await discoverUnbackedResearchAreaSlugs();
+    slugs = Array.from(new Set([...slugs, ...discoveredUnbackedResearchAreaSlugs]));
+  }
+
+  let discoveredAccessSignalSlugs: string[] | undefined;
+  if (args.accessSignals && args.slugs.length === 0) {
+    discoveredAccessSignalSlugs = await discoverEvidenceGovernedSignalSlugs();
+    slugs = discoveredAccessSignalSlugs;
+  }
 
   const entities = await collectRematerializeEntityReports(slugs, (slug) =>
-    processSlug(slug, args.apply, args.onlyFields, args.includeArchived),
+    args.accessSignals
+      ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
+      : processSlug(
+          slug,
+          args.apply,
+          args.onlyFields,
+          args.includeArchived,
+          args.unbackedProvenance,
+          args.foreignContact,
+          args.resynthesizeCutCards,
+          args.cardModel,
+        ),
   );
   const failed = entities.filter((entity) => entity.error);
 
@@ -237,6 +445,10 @@ async function main() {
     }
   }
 
+  const provenanceReconciliation = args.unbackedProvenance
+    ? countProvenanceReconciliation(entities)
+    : undefined;
+  const summary = summarizeRematerializeEntities(entities, { foreignContact: args.foreignContact });
   const report = {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
@@ -244,6 +456,18 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     reclaimStrandedField: args.reclaimStrandedField,
     discoveredStrandedCount: discoveredSlugs?.length,
+    unbackedProvenance: args.unbackedProvenance,
+    discoveredUnbackedProvenanceCount: discoveredUnbackedProvenanceSlugs?.length,
+    foreignContact: args.foreignContact,
+    discoveredForeignContactCount: discoveredForeignContactSlugs?.length,
+    clearedContactFields: summary.clearedContactFields,
+    unbackedResearchAreasMode: args.unbackedResearchAreas,
+    discoveredUnbackedResearchAreasCount: discoveredUnbackedResearchAreaSlugs?.length,
+    accessSignalsMode: args.accessSignals,
+    discoveredAccessSignalCount: discoveredAccessSignalSlugs?.length,
+    accessSignalChanges: args.accessSignals ? summarizeAccessSignalChanges(entities) : undefined,
+    retiredProvenanceEntries: provenanceReconciliation?.retired,
+    relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,
     includeArchived: args.includeArchived,
     requestedSlugs: slugs,
@@ -251,7 +475,10 @@ async function main() {
     entitiesMissing: entities
       .filter((entity) => !entity.found && !entity.error)
       .map((entity) => entity.slug),
-    entitiesChanged: entities.filter((entity) => entity.changes.length > 0).length,
+    entitiesChanged: summary.entitiesChanged,
+    fieldsWritten: summary.fieldsWritten,
+    unbackedResearchAreas: summary.unbackedResearchAreas,
+    researchAreaChips: summary.researchAreaChips,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,

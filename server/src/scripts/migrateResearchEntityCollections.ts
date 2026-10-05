@@ -7,7 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 type MongoDb = NonNullable<typeof mongoose.connection.db>;
 type Mode = 'dry-run' | 'apply' | 'verify' | 'drop-legacy';

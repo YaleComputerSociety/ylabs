@@ -80,12 +80,12 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
       const listening = app.listen(0, () => resolve(listening));
     });
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  }, 60000);
+  });
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await mongoose.disconnect();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

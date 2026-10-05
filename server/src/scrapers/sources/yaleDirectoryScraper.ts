@@ -3,8 +3,12 @@
  *
  * Maintains the faculty roster by paginating Yale faculty/staff
  * records from the Yalies API (https://api.yalies.io/v2/people). It can be re-run on a
- * cadence so that new appointments, title changes, and email/phone updates flow through
+ * cadence so that new appointments, title changes, and email updates flow through
  * the observation pipeline.
+ *
+ * A person's phone number and residential college are deliberately not emitted: nothing
+ * reads them, and an observation nothing reads is retained and copied between
+ * environments for no product purpose (#4161).
  *
  * Source choice: the public web directory at https://directory.yale.edu sits behind a
  * search UI (autocomplete + login wall for full records), so it is not a viable bulk
@@ -34,7 +38,7 @@ import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatChara
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const SOURCE_NAME = 'yale-directory';
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
@@ -117,6 +121,23 @@ export function looksLikeNonResearchTitle(title: string | undefined | null): boo
   return NON_FACULTY_TITLE_PATTERNS.some((rx) => rx.test(clean));
 }
 
+// A degree programme's people page lists students and graduates in its faculty card
+// markup, spelled the programme's way (`Ph.D. Student`, `IDE Alumni`).
+const STUDENT_TITLE_PATTERNS: RegExp[] = [
+  /\b(?:graduate(?: school)?|doctoral|ph\.?\s?d\.?|medical|undergraduate|ide|master'?s)\s+student\b/i,
+  /^\s*(?:ide\s+)?alumn(?:i|us|a|ae)\s*$/i,
+];
+
+/**
+ * Whether a title states that its holder is enrolled in, or has graduated from, a
+ * degree programme rather than holding an appointment.
+ */
+export function isStudentTitle(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  return STUDENT_TITLE_PATTERNS.some((rx) => rx.test(clean));
+}
+
 // Ranks held inside somebody else's research group. Kept separate from
 // NON_FACULTY_TITLE_PATTERNS on purpose: these people ARE researchers and must
 // keep their Researcher record and their lab membership, so the researcher-identity
@@ -131,7 +152,7 @@ const SUBORDINATE_RESEARCH_RANK_PATTERNS: RegExp[] = [
   /\bresearch affiliate\b/i,
   /\bstaff affiliate\b/i,
   /\bvisiting (?:scholar|fellow|researcher|student|assistant)\b/i,
-  /\b(?:graduate|doctoral|phd|medical|undergraduate) student\b/i,
+  ...STUDENT_TITLE_PATTERNS,
   /\bstudent researcher\b/i,
   /\bclinical fellow\b/i,
   /\b(?:resident|intern)\b/i,
@@ -160,7 +181,7 @@ export function isSubordinateResearchRank(title: string | undefined | null): boo
 }
 
 /**
- * Pure helper: does this title look faculty? Mirrors directoryService.isFacultyTitle
+ * Pure helper: does this title look faculty? Mirrors the login classifier in utils/facultyTitle.ts
  * but with a slightly broader vocabulary for the bulk-roster case.
  */
 export function isFacultyTitle(title: string | undefined | null): boolean {
@@ -169,6 +190,103 @@ export function isFacultyTitle(title: string | undefined | null): boolean {
   if (looksLikeNonResearchTitle(clean)) return false;
   const lower = clean.toLowerCase();
   return FACULTY_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+/**
+ * Whether the title names a faculty appointment ANYWHERE in it, asking the faculty
+ * vocabulary directly rather than through `isFacultyTitle`.
+ *
+ * `isFacultyTitle` is a classifier and must stay one: it short-circuits on
+ * `looksLikeNonResearchTitle` so that a staff title cannot be read as faculty on a
+ * stray keyword. That short-circuit is wrong for an irreversible decision about a
+ * person who states an appointment, because `'Associate Professor of Medicine;
+ * Clinical Program Manager'` loses its faculty reading to `\bmanager\b`. This
+ * predicate therefore asks only "is a faculty appointment stated", and it is a
+ * one-way guard: the answer is used to SPARE a row, never to accept one (#3410).
+ */
+export function statesAnyFacultyAppointment(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  const lower = clean.toLowerCase();
+  return FACULTY_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+/**
+ * Support and technical ranks held inside somebody else's research group: the
+ * people who run an instrument, a collection, a counselling clinic or a codebase
+ * for a lab they do not own.
+ *
+ * Kept apart from `SUBORDINATE_RESEARCH_RANK_PATTERNS`, which enumerates academic
+ * ranks, and from `NON_FACULTY_TITLE_PATTERNS`, which is the reason this list
+ * cannot simply be folded into it: that list short-circuits `isFacultyTitle`, so
+ * `librarian` sitting in it would refuse a Special Collections Librarian who is
+ * also a Lecturer in American Religious History. Measured against all 5,573
+ * distinct stored titles in the corpus, every title this vocabulary puts at risk
+ * is that shape - a faculty appointment stated alongside a support role - which
+ * is why the predicate yields to a stated faculty appointment (#3410).
+ *
+ * That measurement is also the answer to the reasonable objection that the last four
+ * entries are administrative rather than research-support, and so belong in
+ * `NON_FACULTY_TITLE_PATTERNS`. Moving them there costs exactly one stored title its
+ * faculty reading: a Lecturer in Dramaturgy who is also co-editor of an alumni
+ * magazine. A real lecturer misread as staff is the more expensive error, so they
+ * stay here, where a stated faculty appointment still wins.
+ */
+const RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS: RegExp[] = [
+  // `technician` and `technologist` are matched on their own below, so the compound
+  // patterns state only what they add.
+  /\b(?:lab|laboratory)\s+(?:assistant|aide|supervisor|support)\b/i,
+  /\b(?:clinical|medical|materials|pathology|histology|autopsy|dental|surgical)\s+(?:assistant|aide)\b/i,
+  /\btechnologist\b/i,
+  /\btechnician\b/i,
+  /\bresearch aide\b/i,
+  /\bgenetic counsel(?:o|le)r\b/i,
+  /\blibrarian\b/i,
+  /\bsoftware (?:engineer|developer)\b/i,
+  /\bbusiness (?:systems )?analyst\b/i,
+  /\bbusiness development\b/i,
+  // The advancement role, not the word: a bare `alumni` also refuses "Director,
+  // Alumni Research Program", and three of the six non-faculty titles containing it
+  // are not person titles at all (a scholarship, a speaker series).
+  /\balumni (?:affairs|engagement|relations|magazine)\b|\bdevelopment and alumni\b/i,
+  /\bregistrar\b/i,
+];
+
+/**
+ * Whether a title names a research-support or technical staff role rather than
+ * somebody who owns research of their own.
+ *
+ * The mint gate asked only `looksLikeNonResearchTitle` and
+ * `isSubordinateResearchRank`, and a `Laboratory Assistant 3` matches neither:
+ * the staff list covers coaches, facilities and managers, and the subordinate
+ * list has `research assistant`, which does not match *Laboratory* Assistant. So
+ * a lab technician minted a research entity carrying their PI's lab name, website
+ * and - once the microsite lane followed that website - the PI's lab prose, which
+ * survived the graft repair that withdrew the website (#3410).
+ */
+export function isResearchSupportStaffTitle(title: string | undefined | null): boolean {
+  const clean = classifiableTitle(title);
+  if (!clean) return false;
+  if (!RESEARCH_SUPPORT_STAFF_TITLE_PATTERNS.some((rx) => rx.test(clean))) return false;
+  return !isFacultyTitle(clean);
+}
+
+/**
+ * Every title screen that disqualifies a person profile from minting a research entity
+ * of its own, as one predicate.
+ *
+ * Sole owner on purpose. Four lanes ask this question, and a lane that asks a subset
+ * re-mints exactly the rows the retirement pass archives, which is the defect #3410
+ * was: the YSM mint asked two of the three, and the roster and YSE mints asked none.
+ * A lane added later that cites a person profile as a row's identity must call this
+ * rather than restate it.
+ */
+export function ownsNoResearchEntityByTitle(title: string | undefined | null): boolean {
+  return (
+    looksLikeNonResearchTitle(title) ||
+    isSubordinateResearchRank(title) ||
+    isResearchSupportStaffTitle(title)
+  );
 }
 
 /**
@@ -220,8 +338,6 @@ export function personToObservations(
   const lname = (person.last_name && String(person.last_name).trim()) || '';
   const email = (person.email && String(person.email).trim()) || '';
   const title = (person.title && String(person.title).trim()) || '';
-  const phone = (person.phone && String(person.phone).trim()) || '';
-  const college = (person.college && String(person.college).trim()) || '';
   const school =
     (person.school_name && String(person.school_name).trim()) ||
     (person.school && String(person.school).trim()) ||
@@ -266,10 +382,8 @@ export function personToObservations(
     ['title', title],
     ['primaryDepartment', primaryDept],
     ['secondaryDepartments', secondaryDepts.length > 0 ? secondaryDepts : undefined],
-    ['college', college],
     ['school', school],
     ['imageUrl', imageUrl],
-    ['phone', phone],
     ['orcid', orcid],
     ['profileUrls', Object.keys(profileUrls).length > 0 ? profileUrls : undefined],
   ];
@@ -337,6 +451,7 @@ export class YaleDirectoryScraper implements IScraper {
     let skippedNonFaculty = 0;
     let pageNum = 1;
     let stop = false;
+    const partialFailures: string[] = [];
 
     // Yalies's filter DSL takes arrays like { school_code: ['MD','EN',...] }. We
     // pass no filter and discriminate faculty vs students client-side via
@@ -348,15 +463,14 @@ export class YaleDirectoryScraper implements IScraper {
       try {
         records = await fetchYaliesPage(pageNum, undefined, ctx.options.useCache);
       } catch (err: unknown) {
-        if (axios.isAxiosError(err) && err.response?.status === 401) {
-          ctx.log(`Yalies API returned 401 (auth failed); aborting after page ${pageNum}.`);
-          break;
-        }
-        ctx.log(
-          `error fetching Yalies page ${pageNum}: ${sanitizeLogValue(
-            err instanceof Error ? err.message : String(err),
-          )} — aborting.`,
-        );
+        const reason =
+          axios.isAxiosError(err) && err.response?.status === 401
+            ? 'Yalies API returned 401 (auth failed)'
+            : sanitizeLogValue(err instanceof Error ? err.message : String(err));
+        const failure = `Yalies page ${pageNum} could not be read (${reason}); pagination aborted`;
+        if (pageNum === 1) throw new Error(failure, { cause: err });
+        ctx.log(`${failure}; the faculty roster is incomplete.`);
+        partialFailures.push(failure);
         break;
       }
 
@@ -395,10 +509,13 @@ export class YaleDirectoryScraper implements IScraper {
         `non-faculty skipped: ${skippedNonFaculty}, pages fetched: ${pageNum}.`,
     );
 
+    const incomplete =
+      partialFailures.length > 0 ? `; incomplete: ${partialFailures.join('; ')}` : '';
     return {
       observationCount: totalObs,
       entitiesObserved: processed,
-      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages`,
+      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages${incomplete}`,
+      ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }
 }

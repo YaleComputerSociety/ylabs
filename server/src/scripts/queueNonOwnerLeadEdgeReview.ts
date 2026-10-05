@@ -22,7 +22,7 @@ import {
 } from './queueNonOwnerLeadEdgeReviewCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:queue-non-owner-lead-edge-review';
 
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
   // so "what changes for a student" is the question, not "is the edge present".
   const servedByEntityKey: Record<string, unknown> = {};
   for (const key of [...new Set(plan.queue.map((row) => row.entityKey).filter(Boolean))]) {
-    let detail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null = null;
+    let detail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
     try {
       detail = await getResearchGroupDetail(key);
     } catch {

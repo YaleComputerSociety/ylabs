@@ -15,8 +15,15 @@ import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
 } from '../services/researchGroupService';
-import { archivedEntityUpdate } from '../models/entityArchival';
+import { SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON } from '../models/entityArchival';
+import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  addResearchPlanCarryReports,
+  carryResearchPlansToSurvivor,
+  emptyResearchPlanCarryReport,
+  researchPlansThatWouldMove,
+} from '../services/researchPlanMergeCarry';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { SAME_LEAD_MERGE_CARRIED_FIELDS } from './mergeSameLeadDuplicateGroupsCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -24,17 +31,19 @@ import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   isShellSlug,
   planSameLeadCorroboratedMerges,
+  sameLeadUrlLaneHoldFlags,
+  sameLeadUrlLaneHolds,
+  sameLeadUrlLaneInputsReport,
   summarizeSameLeadMergeHolds,
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
+import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:merge-same-lead-duplicate-groups';
 export const CONFIRM_FLAG = '--confirm-merge-same-lead-duplicate-groups';
-const ARCHIVE_REASON =
-  'Merged into the corroborated survivor of its duplicate-url group: same lead person plus a corroborating name or shell asymmetry (#3326).';
 
 /** The distinct funding evidence a row carries, as comparable keys. */
 const fundingEvidenceKeys = (row: Record<string, any>): Set<string> => {
@@ -53,22 +62,6 @@ const fundingEvidenceKeys = (row: Record<string, any>): Set<string> => {
   return keys;
 };
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-
-function laneSlugsFrom(file: string, key: string): Set<string> {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
-    const rows = Array.isArray(parsed[key]) ? (parsed[key] as unknown[]) : [];
-    const slugs = new Set<string>();
-    for (const row of rows) {
-      for (const match of JSON.stringify(row).match(/"[a-z0-9][a-z0-9-]{5,}"/g) ?? []) {
-        slugs.add(match.replace(/"/g, ''));
-      }
-    }
-    return slugs;
-  } catch {
-    return new Set();
-  }
-}
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -121,15 +114,8 @@ async function main(): Promise<void> {
     leadsByEntity.get(entityId)!.add(String(doc.personId ?? ''));
   }
 
-  const lanePlanned = new Set([
-    ...laneSlugsFrom('/tmp/lane-official-lab-url.json', 'plan'),
-    ...laneSlugsFrom('/tmp/lane-profile-lab-url.json', 'plan'),
-    ...laneSlugsFrom('/tmp/lane-website-url.json', 'plan'),
-  ]);
-  const laneQuarantined = new Set([
-    ...laneSlugsFrom('/tmp/lane-official-lab-url.json', 'conflatedPersonProfileQuarantine'),
-    ...laneSlugsFrom('/tmp/lane-profile-lab-url.json', 'conflatedPersonProfileQuarantine'),
-  ]);
+  const urlLaneVerdicts = await planUrlIdentityLaneVerdicts();
+  const urlLaneHolds = sameLeadUrlLaneHolds(urlLaneVerdicts);
 
   const groups = exactDuplicateUrlGroups(rows as any[])
     .map((group) => {
@@ -165,8 +151,7 @@ async function main(): Promise<void> {
         members: planMembers,
         sharesALead,
         everyMemberHasALead: leadSets.every((set) => set.size > 0),
-        alreadyPlannedByUrlLane: slugs.some((slug) => lanePlanned.has(slug)),
-        quarantinedByConflationGuard: slugs.some((slug) => laneQuarantined.has(slug)),
+        ...sameLeadUrlLaneHoldFlags(slugs, urlLaneHolds),
         servingMembers: members.filter(
           (member) => text(member.studentVisibilityTier) === 'student_ready',
         ).length,
@@ -180,6 +165,8 @@ async function main(): Promise<void> {
 
   const applied = {
     merged: 0,
+    roleEdgesRepointed: 0,
+    roleEdgesArchivedRedundant: 0,
     fundingFieldsCarried: 0,
     rematerializations: 0,
     loserEvidenceMissingFromSurvivorBefore: 0,
@@ -191,6 +178,20 @@ async function main(): Promise<void> {
     survivorsGainedFundingWithNoBackingObservation: 0,
     anyManualLockWritten: 0,
   };
+  let researchPlanCarry = emptyResearchPlanCarryReport();
+
+  if (dryRun) {
+    for (const merge of outcome.merges) {
+      researchPlanCarry = addResearchPlanCarryReports(
+        researchPlanCarry,
+        await carryResearchPlansToSurvivor({
+          survivorId: merge.survivorId,
+          duplicateIds: merge.loserIds,
+          apply: false,
+        }),
+      );
+    }
+  }
 
   if (!dryRun && outcome.merges.length > 0) {
     const now = new Date();
@@ -248,15 +249,26 @@ async function main(): Promise<void> {
       }
 
       for (const loser of losers) {
-        await ResearchEntity.updateOne(
-          { _id: loser._id },
-          archivedEntityUpdate(ARCHIVE_REASON, {
-            canonicalGroupId: survivor._id,
-            lastObservedAt: now,
-          }),
-        );
+        const archivedLoser = await archiveResearchEntities({
+          ids: [loser._id],
+          archivedReason: SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+          set: { canonicalGroupId: survivor._id, lastObservedAt: now },
+          survivorId: survivor._id,
+          now,
+        });
         applied.merged += 1;
+        applied.roleEdgesRepointed += archivedLoser.roleEdges.repointed;
+        applied.roleEdgesArchivedRedundant += archivedLoser.roleEdges.archivedRedundant;
       }
+      researchPlanCarry = addResearchPlanCarryReports(
+        researchPlanCarry,
+        await carryResearchPlansToSurvivor({
+          survivorId: survivor._id,
+          duplicateIds: losers.map((loser) => loser._id),
+          apply: true,
+          now,
+        }),
+      );
     }
 
     // Two re-materializations. The second is the durability check: a merge that only holds
@@ -291,7 +303,7 @@ async function main(): Promise<void> {
       if (merge.survivorGainsFunding && !survivorRow.fieldProvenance?.recentGrants) {
         applied.survivorsGainedFundingWithNoBackingObservation += 1;
       }
-      let survivorDetail = null;
+      let survivorDetail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
       try {
         survivorDetail = await getResearchGroupDetail(String(survivorRow.slug));
       } catch {
@@ -309,7 +321,7 @@ async function main(): Promise<void> {
         if (redirect && redirect === String(survivorRow.slug))
           applied.redirectsResolvingToTheSurvivor += 1;
         else applied.redirectsNotResolving += 1;
-        let loserDetail = null;
+        let loserDetail: Awaited<ReturnType<typeof getResearchGroupDetail>> | null;
         try {
           loserDetail = await getResearchGroupDetail(String(loser.slug));
         } catch {
@@ -326,6 +338,8 @@ async function main(): Promise<void> {
         script: SCRIPT_NAME,
         mode: dryRun ? 'dry-run' : 'apply',
         applied,
+        researchPlanCarry,
+        researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
         duplicateUrlGroupsScanned: groups.length,
         sameLeadGroups: groups.filter((g) => g.sharesALead && g.everyMemberHasALead).length,
         plannedMerges: outcome.merges.length,
@@ -335,6 +349,7 @@ async function main(): Promise<void> {
             (m) => m.corroboration === 'shell-versus-concrete',
           ).length,
         },
+        urlLaneInputs: sameLeadUrlLaneInputsReport(urlLaneVerdicts),
         heldByReason: summarizeSameLeadMergeHolds(outcome.held),
         survivorsGainingFunding: outcome.merges.filter((m) => m.survivorGainsFunding).length,
         // The served trade: a loser only leaves the surface if its group serves more than

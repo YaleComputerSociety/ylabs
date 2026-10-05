@@ -125,6 +125,36 @@ describe('buildScrapeRunReport', () => {
     );
   });
 
+  it('says whether a run still marked running is alive (#3595)', () => {
+    const report = (run: Record<string, unknown>) =>
+      buildScrapeRunReport(
+        {
+          _id: 'run-open',
+          sourceName: 'ysm-atoz-index',
+          status: 'running',
+          startedAt: new Date('2026-05-17T19:13:21Z'),
+          ...run,
+        },
+        [],
+      );
+
+    const legacy = report({});
+    expect(legacy.run.liveness).toBe('unverifiable');
+    expect(legacy.warnings.join(' ')).toContain('predates run heartbeats');
+
+    const stale = report({ heartbeatAt: new Date('2026-05-17T20:00:00Z') });
+    expect(stale.run.liveness).toBe('stale');
+    expect(stale.run.heartbeatAt).toBe('2026-05-17T20:00:00.000Z');
+    expect(stale.warnings.join(' ')).toContain('scrape-runs:reconcile-stale');
+
+    const interrupted = report({
+      status: 'interrupted',
+      finishedAt: new Date('2026-05-17T20:00:00Z'),
+    });
+    expect(interrupted.run).not.toHaveProperty('liveness');
+    expect(interrupted.warnings.join(' ')).toContain('interrupted');
+  });
+
   it('does not expect logistics claims from legacy microsite runs', () => {
     const report = buildScrapeRunReport(
       {
@@ -324,6 +354,25 @@ describe('buildScrapeRunReport', () => {
     expect(review.samples[0].sourceNames).toEqual(
       expect.arrayContaining(['dept-faculty-roster', 'department-undergrad-research']),
     );
+  });
+
+  it('withholds conflicting contact values from the materialization conflict review', () => {
+    const contactValues = ['Roster Synthetic Contact', 'Page Synthetic Contact 555-010-0199'];
+    const review = buildMaterializationConflictReview(1, {
+      activeObservations: contactValues.map((value, index) => ({
+        entityType: 'researchEntity',
+        entityKey: 'synthetic-contact-row',
+        field: 'contactName',
+        value,
+        sourceName: index === 0 ? 'source-a' : 'source-b',
+        confidence: 0.9 - index * 0.02,
+        observedAt: new Date('2026-05-01T12:00:00Z'),
+      })),
+    });
+
+    expect(review?.samples[0]).toMatchObject({ field: 'contactName', distinctValues: 2 });
+    const serialized = JSON.stringify(review);
+    for (const value of contactValues) expect(serialized).not.toContain(value);
   });
 
   it('classifies materialization conflict review samples by operator category', () => {
@@ -605,6 +654,34 @@ describe('buildScrapeRunReport', () => {
     expect(serialized).not.toContain('source-access-token');
     expect(serialized).not.toContain('abc123');
     expect(serialized).not.toContain('203-555-1212');
+  });
+
+  it('reports throttled requests that recovered and warns about those that were lost', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-throttle',
+        sourceName: 'ysm-faculty-directory',
+        status: 'success',
+        fetchMetrics: {
+          attempts: [],
+          throttleRetry: { refused: 5, recovered: 3, exhausted: 2, retries: 11 },
+          summary: {
+            total: 0,
+            succeeded: 0,
+            failed: 0,
+            blocked: 0,
+            selectorBreakages: 0,
+            averageLatencyMs: 0,
+            byMode: {},
+          },
+        },
+      },
+      [],
+    );
+    expect(report.coverage.fetch).toMatchObject({ throttleRecovered: 3, throttleExhausted: 2 });
+    expect(
+      report.warnings.some((warning) => warning.startsWith('2 request(s) were still refused')),
+    ).toBe(true);
   });
 
   it('adds source-level coverage and fetch coverage metrics', () => {

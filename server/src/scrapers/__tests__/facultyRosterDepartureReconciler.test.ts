@@ -126,6 +126,33 @@ describe('isEntityAuthoritativeSnapshot / snapshotDiscoveredEntityKeys', () => {
         read: { pagesRead: 2, readMode: 'html', cacheAllowed: true },
       }),
     ).toBe('cache-permitted');
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 2, readMode: 'html', cacheAllowed: false, pagesReusedWithinSweep: 1 },
+      }),
+    ).toBe('reused-within-sweep');
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 2, readMode: 'html', cacheAllowed: true, pagesReusedWithinSweep: 1 },
+      }),
+    ).toBe('cache-permitted');
+    expect(
+      rosterHealthReadProvenance({
+        read: { pagesRead: 0, readMode: 'none', pagesReusedWithinSweep: 1 },
+      }),
+    ).toBe('not-read');
+  });
+
+  it('admits a read reused within the sweep exactly as it admits a fetched one', () => {
+    const snapshot = (read: Record<string, unknown>) => ({
+      complete: true,
+      discoveredEntityKeys: ['a'],
+      read: { pagesRead: 1, readMode: 'html', cacheAllowed: false, readAt: NOW_ISO, ...read },
+    });
+    expect(rosterHealthAdmissibility(snapshot({ pagesReusedWithinSweep: 1 }))).toBe(
+      rosterHealthAdmissibility(snapshot({ pagesReusedWithinSweep: 0 })),
+    );
+    expect(isEntityAuthoritativeSnapshot(snapshot({ pagesReusedWithinSweep: 1 }))).toBe(true);
   });
 
   it('dates a row from the newest read among its own departments', () => {
@@ -206,6 +233,8 @@ describe('classifyEntityRunSignal', () => {
         healthyDiscoveredByDept: healthy({ Physics: ['lab-a'] }),
         entitySlug: 'lab-a',
         rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(),
+        previouslyListedByDept: healthy({ Physics: ['lab-a'], Astronomy: ['lab-a'] }),
       }),
     ).toBe('inconclusive');
   });
@@ -217,6 +246,8 @@ describe('classifyEntityRunSignal', () => {
         healthyDiscoveredByDept: healthy({ Physics: ['lab-a'] }),
         entitySlug: 'lab-a',
         rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(),
+        previouslyListedByDept: healthy({ Physics: ['lab-a'], Astronomy: ['lab-a'] }),
       }),
     ).toBe('inconclusive');
   });
@@ -228,6 +259,8 @@ describe('classifyEntityRunSignal', () => {
         healthyDiscoveredByDept: healthy({ Physics: ['other'], Astronomy: ['lab-a'] }),
         entitySlug: 'lab-a',
         rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(),
+        previouslyListedByDept: healthy({ Physics: ['lab-a'], Astronomy: ['lab-a'] }),
       }),
     ).toBe('present');
   });
@@ -241,6 +274,8 @@ describe('classifyEntityRunSignal', () => {
         healthyDiscoveredByDept: healthy({ Physics: ['other'] }),
         entitySlug: 'ysm-faculty-someone',
         rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(),
+        previouslyListedByDept: healthy({ Physics: ['ysm-faculty-someone'] }),
       }),
     ).toBe('inconclusive');
   });
@@ -252,8 +287,36 @@ describe('classifyEntityRunSignal', () => {
         healthyDiscoveredByDept: healthy({ Physics: ['other'], Astronomy: ['another'] }),
         entitySlug: 'lab-a',
         rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(),
+        previouslyListedByDept: healthy({ Physics: ['lab-a'], Astronomy: ['lab-a'] }),
       }),
     ).toBe('absent');
+  });
+
+  it('is inconclusive when no covering department has ever listed the row', () => {
+    expect(
+      classifyEntityRunSignal({
+        coveredDeptNames: ['Economics'],
+        healthyDiscoveredByDept: healthy({ Economics: ['other'] }),
+        entitySlug: 'lab-a',
+        rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(),
+        previouslyListedByDept: healthy({ 'Political Science': ['lab-a'], Economics: ['other'] }),
+      }),
+    ).toBe('inconclusive');
+  });
+
+  it('is present when the run listed the row on a roster page outside its departments', () => {
+    expect(
+      classifyEntityRunSignal({
+        coveredDeptNames: ['Physics'],
+        healthyDiscoveredByDept: healthy({ Physics: ['other'] }),
+        entitySlug: 'lab-a',
+        rosterObservedEntityKeys,
+        presentElsewhereInRun: new Set(['lab-a']),
+        previouslyListedByDept: healthy({ Physics: ['lab-a'] }),
+      }),
+    ).toBe('present');
   });
 });
 
@@ -317,11 +380,21 @@ describe('decideFacultyRosterDeparture K=2 durability', () => {
   });
 
   it('proposes suppression on a second consecutive absent run (K=2)', () => {
-    const decision = decide('absent', { absentFromRosterSinceRunId: runA }, runB);
+    const decision = decide(
+      'absent',
+      { absentFromRosterSinceRunId: runA, absenceMarkerCorroborated: true },
+      runB,
+    );
     expect(decision.action).toBe('suppress_departed');
     expect(decision.set.yaleStatusCache).toBe('departed');
     expect(decision.set.activeAtYaleCache).toBe(false);
     expect(decision.set.yaleStatusReasonCache).toBe('departed');
+  });
+
+  it('replaces a marker its own run does not corroborate with a first absence of this run', () => {
+    const decision = decide('absent', { absentFromRosterSinceRunId: runA }, runB);
+    expect(decision.action).toBe('record_first_absence');
+    expect(decision.set).toEqual({ absentFromRosterSinceRunId: runB });
   });
 });
 

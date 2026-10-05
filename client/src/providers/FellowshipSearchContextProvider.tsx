@@ -4,16 +4,25 @@
  * State transitions live in reducers/fellowshipSearchReducer.ts; this component
  * owns side effects and maps reducer state/dispatch onto the context API.
  */
-import { FC, useEffect, useCallback, useContext, useReducer, useRef, ReactNode } from 'react';
+import {
+  FC,
+  useEffect,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useReducer,
+  useRef,
+  ReactNode,
+} from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
 
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
-import { summarizeProgramJourney, emptyProgramJourneySummary } from '../utils/programJourney';
+import { scrollViewportToTop } from '../utils/scrollViewportToTop';
+import { showWarningDialog } from '../utils/warningDialog';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
@@ -46,6 +55,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const {
     queryString,
+    exactSpelling,
+    queryCorrection,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -62,22 +73,24 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortDirection,
     fellowships,
     isLoading,
+    loadError,
     searchExhausted,
     total,
-    journeySummary,
     page,
     filterOptions,
     quickFilter,
     filterBarHeight,
-    queryStringLoaded,
-    filtersLoaded,
-    initialSearchDone,
     filterOptionsLoaded,
   } = state;
 
   const setQueryString = useCallback((value: string) => {
     dispatch({ type: 'SET_QUERY_STRING', payload: value });
   }, []);
+
+  const searchTypedSpelling = useCallback(() => {
+    if (!queryCorrection) return;
+    dispatch({ type: 'SEARCH_TYPED_SPELLING', payload: queryCorrection.originalQuery });
+  }, [queryCorrection]);
 
   const setSelectedYearOfStudy = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_YEAR_OF_STUDY', payload: value });
@@ -148,6 +161,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     dispatch({ type: 'SET_QUICK_FILTER', payload: value });
   }, []);
 
+  const resetProgramFilters = useCallback(() => {
+    dispatch({ type: 'RESET_PROGRAM_FILTERS' });
+  }, []);
+
   const setFilterBarHeight = useCallback((value: number) => {
     dispatch({ type: 'SET_FILTER_BAR_HEIGHT', payload: value });
   }, []);
@@ -158,6 +175,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const filtersRef = useRef({
     queryString,
+    exactSpelling,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -172,25 +190,31 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortBy,
     sortOrder,
   });
-  filtersRef.current = {
-    queryString,
-    selectedProgramCategory,
-    selectedProgramKind,
-    selectedEntryMode,
-    selectedStudentFacingCategory,
-    selectedYearOfStudy,
-    selectedTermOfAward,
-    selectedPurpose,
-    selectedSubjects,
-    selectedRegions,
-    selectedCitizenship,
-    selectedStudentVisibilityTier,
-    sortBy,
-    sortOrder,
-  };
+  useLayoutEffect(() => {
+    filtersRef.current = {
+      queryString,
+      exactSpelling,
+      selectedProgramCategory,
+      selectedProgramKind,
+      selectedEntryMode,
+      selectedStudentFacingCategory,
+      selectedYearOfStudy,
+      selectedTermOfAward,
+      selectedPurpose,
+      selectedSubjects,
+      selectedRegions,
+      selectedCitizenship,
+      selectedStudentVisibilityTier,
+      sortBy,
+      sortOrder,
+    };
+  });
+
+  const lastSearchedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isActive) {
+      lastSearchedUrlRef.current = null;
       dispatch({ type: 'RESET_LIFECYCLE_FLAGS' });
     }
   }, [isActive]);
@@ -231,6 +255,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       const formattedQuery = f.queryString.trim();
 
       let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${searchPageSize}`;
+
+      if (f.exactSpelling && formattedQuery) {
+        url += '&correctSpelling=false';
+      }
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
@@ -288,12 +316,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     loadRequestIdRef.current = requestId;
 
     dispatch({ type: 'SEARCH_REQUEST' });
-    dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: { ...emptyProgramJourneySummary } });
 
     const accumulate = async () => {
       const collected: Fellowship[] = [];
       let currentPage = 1;
       let reportedTotal = Infinity;
+      let queryCorrection = null;
 
       while (collected.length < reportedTotal) {
         const response = await axios.get(buildSearchUrl(currentPage, pageSize));
@@ -301,17 +329,18 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           createFellowship(elem),
         );
         collected.push(...pageResults);
+        if (currentPage === 1) queryCorrection = response.data.queryCorrection ?? null;
         reportedTotal =
           typeof response.data.total === 'number' ? response.data.total : collected.length;
         if (pageResults.length < pageSize || collected.length >= reportedTotal) break;
         currentPage += 1;
       }
 
-      return { collected, reportedTotal };
+      return { collected, reportedTotal, queryCorrection };
     };
 
     accumulate()
-      .then(({ collected, reportedTotal }) => {
+      .then(({ collected, reportedTotal, queryCorrection }) => {
         if (loadRequestIdRef.current !== requestId) return;
         dispatch({
           type: 'SEARCH_SUCCESS',
@@ -320,9 +349,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             total: Number.isFinite(reportedTotal) ? reportedTotal : collected.length,
             pageSize,
             append: false,
+            queryCorrection,
           },
         });
-        dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: summarizeProgramJourney(collected) });
       })
       .catch(() => {
         if (loadRequestIdRef.current !== requestId) return;
@@ -351,65 +380,42 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
               total: response.data.total,
               pageSize,
               append: searchPage !== 1,
+              queryCorrection: response.data.queryCorrection ?? null,
             },
           });
         })
         .catch((error) => {
           console.error('Error loading fellowships.');
           if (error?.response?.status !== 401) {
-            void swal({
-              text: 'Unable to load fellowships. Please try again later.',
-              icon: 'warning',
-            });
+            void showWarningDialog('Unable to load fellowships. Please try again later.');
           }
-          dispatch({ type: 'SEARCH_FAILURE' });
+          dispatch({ type: 'LOAD_MORE_FAILURE' });
         });
     },
     [buildSearchUrl, pageSize],
   );
 
   const runFirstPageSearch = useCallback(() => {
+    lastSearchedUrlRef.current = buildSearchUrl(1, pageSize);
     dispatch({ type: 'SET_PAGE', payload: 1 });
     loadAllPrograms();
-  }, [loadAllPrograms]);
+  }, [buildSearchUrl, loadAllPrograms, pageSize]);
+
+  const searchIfParametersChanged = useCallback(() => {
+    if (buildSearchUrl(1, pageSize) === lastSearchedUrlRef.current) return;
+    if (lastSearchedUrlRef.current !== null) scrollViewportToTop();
+    runFirstPageSearch();
+  }, [buildSearchUrl, pageSize, runFirstPageSearch]);
 
   const refreshFellowships = useCallback(() => {
     runFirstPageSearch();
   }, [runFirstPageSearch]);
 
-  useEffect(() => {
-    if (!isActive) return;
-    if (!authReady) return;
-    if (filterOptionsLoaded && !initialSearchDone) {
-      runFirstPageSearch();
-      dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
-    }
-  }, [filterOptionsLoaded, initialSearchDone, runFirstPageSearch, isActive, authReady]);
+  const searchReady = isActive && authReady && filterOptionsLoaded;
 
   useEffect(() => {
-    if (!isActive) return;
-    if (!filterOptionsLoaded) return;
-
-    const debounceTimeout = setTimeout(() => {
-      if (queryStringLoaded) {
-        runFirstPageSearch();
-      }
-      dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
-    }, 500);
-
-    return () => {
-      clearTimeout(debounceTimeout);
-    };
-  }, [queryString, queryStringLoaded, filterOptionsLoaded, isActive, runFirstPageSearch]);
-
-  useEffect(() => {
-    if (!isActive) return;
-    if (!filterOptionsLoaded) return;
-
-    if (filtersLoaded) {
-      runFirstPageSearch();
-    }
-    dispatch({ type: 'MARK_FILTERS_LOADED' });
+    if (!searchReady) return;
+    searchIfParametersChanged();
   }, [
     selectedYearOfStudy,
     selectedProgramCategory,
@@ -424,11 +430,20 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedStudentVisibilityTier,
     sortBy,
     sortOrder,
-    filterOptionsLoaded,
-    isActive,
-    filtersLoaded,
-    runFirstPageSearch,
+    exactSpelling,
+    searchReady,
+    searchIfParametersChanged,
   ]);
+
+  useEffect(() => {
+    if (!searchReady) return;
+
+    const debounceTimeout = setTimeout(searchIfParametersChanged, 500);
+
+    return () => {
+      clearTimeout(debounceTimeout);
+    };
+  }, [queryString, searchReady, searchIfParametersChanged]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -442,6 +457,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       value={{
         queryString,
         setQueryString,
+        queryCorrection,
+        searchTypedSpelling,
         selectedProgramCategory,
         setSelectedProgramCategory,
         selectedProgramKind,
@@ -472,17 +489,18 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         onToggleSortDirection,
         fellowships,
         isLoading,
+        loadError,
         searchExhausted,
         page,
         setPage,
         pageSize,
         total,
-        journeySummary,
         filterOptions,
         sortableKeys,
         refreshFellowships,
         quickFilter,
         setQuickFilter,
+        resetProgramFilters,
         filterBarHeight,
         setFilterBarHeight,
       }}

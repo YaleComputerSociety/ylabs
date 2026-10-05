@@ -34,6 +34,12 @@ export interface RoleAssignmentTarget {
   id: mongoose.Types.ObjectId;
 }
 
+export const rosterIdentityBases = ['profile-url', 'identity-evidence'] as const;
+export type RosterIdentityBasis = (typeof rosterIdentityBases)[number];
+
+export const isRosterIdentityBasis = (value: unknown): value is RosterIdentityBasis =>
+  typeof value === 'string' && (rosterIdentityBases as readonly string[]).includes(value);
+
 export interface RoleAssignmentRosterProvenance {
   sourceName?: string;
   sourceUrl?: string;
@@ -43,6 +49,8 @@ export interface RoleAssignmentRosterProvenance {
   membershipKey?: string;
   observedAt?: Date;
   freshnessExpiresAt?: Date;
+  adoptedAt?: Date;
+  identityBasis?: RosterIdentityBasis;
 }
 
 export interface RoleAssignmentRecord {
@@ -107,12 +115,10 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: Date,
       required: false,
       validate: {
-        validator: function (
-          this: { startedAt?: Date; state?: RoleAssignmentState },
-          value?: Date,
-        ) {
-          if (this.state === 'CURRENT' && value !== undefined) return false;
-          return value === undefined || this.startedAt === undefined || value >= this.startedAt;
+        validator: function (this: unknown, value?: Date) {
+          const { startedAt, state } = this as { startedAt?: Date; state?: RoleAssignmentState };
+          if (state === 'CURRENT' && value !== undefined) return false;
+          return value === undefined || startedAt === undefined || value >= startedAt;
         },
         message: 'endedAt must follow startedAt and cannot be set on a CURRENT role assignment.',
       },
@@ -147,6 +153,8 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
           membershipKey: { type: String, trim: true, maxlength: 512 },
           observedAt: { type: Date },
           freshnessExpiresAt: { type: Date },
+          adoptedAt: { type: Date },
+          identityBasis: { type: String, enum: rosterIdentityBases },
         },
         { _id: false },
       ),
@@ -207,3 +215,20 @@ export function roleAssignmentReattachWrite(
 export const RoleAssignment =
   mongoose.models.RoleAssignment ||
   mongoose.model<RoleAssignmentRecord>('RoleAssignment', roleAssignmentSchema, 'role_assignments');
+
+// The `(personId, target, role)` upsert filter matches retired edges too, and the target
+// index orders `HISTORICAL` ahead of `UNKNOWN`, so an unpinned write revives a retired twin
+// beside the live edge and mints a second live edge for the same person and role (#4791).
+export async function pinRoleAssignmentUpsertToLiveEdge(
+  upsertFilter: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const live = (await RoleAssignment.findOne({
+    ...upsertFilter,
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  })
+    .sort({ _id: 1 })
+    .select('_id')
+    .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+  return live?._id ? { ...upsertFilter, _id: live._id } : upsertFilter;
+}

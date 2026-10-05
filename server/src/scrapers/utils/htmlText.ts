@@ -62,24 +62,74 @@ const NON_TEXT_TAGS = new Set(['script', 'style', 'noscript']);
 
 const collapseWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
-function nodeTextWithBlockSeparators(node: AnyNode): string {
-  const anyNode = node as {
-    type?: string;
-    data?: string;
-    name?: string;
-    children?: AnyNode[];
-  };
+type WalkableNode = {
+  type?: string;
+  data?: string;
+  name?: string;
+  children?: AnyNode[];
+};
 
-  if (anyNode.type === 'text') return anyNode.data || '';
-  if (anyNode.type === 'comment' || anyNode.type === 'directive' || anyNode.type === 'cdata') {
-    return '';
+const CLOSING_BLOCK_SEPARATOR = Symbol('closing-block-separator');
+
+function pushInDocumentOrder<Marker>(
+  pending: Array<AnyNode | Marker>,
+  nodes: readonly AnyNode[] | undefined,
+): void {
+  if (!nodes) return;
+  for (let index = nodes.length - 1; index >= 0; index -= 1) pending.push(nodes[index]);
+}
+
+function nodeTextWithBlockSeparators(root: AnyNode, blockSeparator = ' '): string {
+  const parts: string[] = [];
+  const keepsLineBreaks = blockSeparator === '\n';
+  const pending: Array<AnyNode | typeof CLOSING_BLOCK_SEPARATOR> = [root];
+  while (pending.length > 0) {
+    const next = pending.pop();
+    if (next === CLOSING_BLOCK_SEPARATOR) {
+      parts.push(blockSeparator);
+      continue;
+    }
+    const node = next as WalkableNode;
+    if (node.type === 'text') {
+      const data = node.data || '';
+      parts.push(keepsLineBreaks ? data.replace(/\s+/g, ' ') : data);
+      continue;
+    }
+    if (node.type === 'comment' || node.type === 'directive' || node.type === 'cdata') continue;
+
+    const tagName = String(node.name || '').toLowerCase();
+    if (NON_TEXT_TAGS.has(tagName)) continue;
+
+    if (BLOCK_LEVEL_TAGS.has(tagName)) {
+      parts.push(blockSeparator);
+      pending.push(CLOSING_BLOCK_SEPARATOR);
+    }
+    pushInDocumentOrder(pending, node.children);
   }
+  return parts.join('');
+}
 
-  const tagName = String(anyNode.name || '').toLowerCase();
-  if (NON_TEXT_TAGS.has(tagName)) return '';
-
-  const inner = (anyNode.children || []).map(nodeTextWithBlockSeparators).join('');
-  return BLOCK_LEVEL_TAGS.has(tagName) ? ` ${inner} ` : inner;
+/**
+ * Iterative equivalent of cheerio `.text()` (domutils `textContent`), returning
+ * byte-identical output. The library version recurses once per DOM level, so a
+ * page nested a few thousand elements deep overflows the call stack (#3558).
+ */
+export function plainTextContent(nodes: AnyNode | readonly AnyNode[] | undefined | null): string {
+  if (!nodes) return '';
+  const roots: readonly AnyNode[] = Array.isArray(nodes) ? nodes : [nodes as AnyNode];
+  const parts: string[] = [];
+  const pending: AnyNode[] = [];
+  pushInDocumentOrder(pending, roots);
+  while (pending.length > 0) {
+    const node = pending.pop() as WalkableNode;
+    if (node.type === 'text') {
+      parts.push(node.data || '');
+      continue;
+    }
+    if (node.type === 'comment') continue;
+    pushInDocumentOrder(pending, node.children);
+  }
+  return parts.join('');
 }
 
 /**
@@ -92,6 +142,20 @@ function nodeTextWithBlockSeparators(node: AnyNode): string {
 export function extractElementTextWithBlockSeparators(el: AnyNode | undefined | null): string {
   if (!el) return '';
   return collapseWhitespace(nodeTextWithBlockSeparators(el));
+}
+
+/**
+ * Like `extractElementTextWithBlockSeparators`, but a block-level boundary becomes
+ * a line break, so a reader can tell where one block ends and the next begins.
+ * Whitespace inside a text node, including a newline in the HTML source, stays a
+ * space.
+ */
+export function extractElementTextWithLineBreaks(el: AnyNode | undefined | null): string {
+  if (!el) return '';
+  return nodeTextWithBlockSeparators(el, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
 }
 
 /**

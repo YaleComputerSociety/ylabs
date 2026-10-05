@@ -123,6 +123,24 @@ describe('resolveMaterializedShortDescription', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('keeps a useful card rather than trading it for a card that restates the body (#3866)', async () => {
+    const singleSentenceBody =
+      'Research focuses on how synaptic plasticity in the hippocampus encodes memory, using electrophysiology and optogenetics to map the circuits involved.';
+    const usefulCard =
+      "The lab's research focuses on how synaptic plasticity in the hippocampus encodes memory, combining electrophysiology with optogenetics to map the circuits that store it.";
+    expect(shortDescriptionQuality(usefulCard, singleSentenceBody).isUseful).toBe(true);
+    expect(deriveShortDescriptionFromFullDescription(singleSentenceBody)).toBe(singleSentenceBody);
+
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: singleSentenceBody,
+      currentShortDescription: usefulCard,
+      reconsiderCurrentShortDescription: true,
+      synthesize: unavailableLLM,
+    });
+
+    expect(result).toBeNull();
+  });
+
   it('replaces a thin existing short description with a grounded synthesis', async () => {
     const result = await resolveMaterializedShortDescription({
       fullDescription: LLM_ONLY_FULL,

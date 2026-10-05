@@ -13,6 +13,9 @@ export interface CorpusQualityServedRowFacts {
   shortDescriptionUseful: boolean;
   leadSentenceStatesResearch: boolean;
   shortDescriptionIsAreaEchoOnly: boolean;
+  browseCardCutMidSentence: boolean;
+  browseCardSixWordsOrFewer: boolean;
+  fullDescriptionIsBiography: boolean;
   nameIsGenericFacultyResearchTitle: boolean;
   publicDescriptionInvariantPasses: boolean;
 }
@@ -46,6 +49,9 @@ export interface CorpusQualityReport {
     shortDescriptionUseful: CorpusQualityRatio;
     leadSentenceStatesResearch: CorpusQualityRatio;
     shortDescriptionIsAreaEchoOnly: CorpusQualityRatio;
+    browseCardCutMidSentence: CorpusQualityRatio;
+    browseCardSixWordsOrFewer: CorpusQualityRatio;
+    fullDescriptionIsBiography: CorpusQualityRatio;
     nameIsGenericFacultyResearchTitle: CorpusQualityRatio;
   };
   integrity: {
@@ -135,6 +141,18 @@ export function buildCorpusQualityReport({
       ),
       shortDescriptionIsAreaEchoOnly: ratio(
         countWhere(facts, (row) => row.shortDescriptionIsAreaEchoOnly),
+        served,
+      ),
+      browseCardCutMidSentence: ratio(
+        countWhere(facts, (row) => row.browseCardCutMidSentence),
+        served,
+      ),
+      browseCardSixWordsOrFewer: ratio(
+        countWhere(facts, (row) => row.browseCardSixWordsOrFewer),
+        served,
+      ),
+      fullDescriptionIsBiography: ratio(
+        countWhere(facts, (row) => row.fullDescriptionIsBiography),
         served,
       ),
       nameIsGenericFacultyResearchTitle: ratio(

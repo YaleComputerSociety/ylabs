@@ -11,26 +11,51 @@
  * hygiene shortens the body a derived card came from - and all three are steps of
  * `sanitizeServedResearchEntityCopyFields` the gate did not run.
  *
- * So both the DTO and `buildResearchEntityPublicDescriptionRepresentation` call
- * `servedResearchEntityCardDescription` here. Adding a card guard to either surface
- * now moves the gate verdict with it.
+ * So every card surface resolves its line here. The detail card, the browse card
+ * (`cardDescription` on a list payload) and the gate's judged card all read this
+ * module, which means adding a card guard here moves the gate verdict and all three
+ * surfaces together.
+ *
+ * The gate reads `servedResearchEntityCardWithoutLastResort` and the DTO reads
+ * `servedResearchEntityCardDescription`, and the only difference between the two is
+ * the last-resort whole-body card the gate deliberately excludes, because that resort
+ * only ever runs on a row the card invariant has already passed. Before #3747 the
+ * gate resolved its own card from `resolveServedShortDescription`, which skipped the
+ * rendering-preference bar, the gate-accepted derived substitute and the
+ * ungrounded-card surrender, and the browse card came from
+ * `resolveResearchHomeCardSummary`, which served the whole body in the card slot when
+ * the stored short was empty - the unguarded fallback #1832 had already removed from
+ * the detail card. So the gate cleared a row on one line while browse showed a second
+ * and the related, similar and compare cards showed a third.
  */
+import { shortenCardLineToFitBrowseCard } from '../utils/browseCardClauseShortening';
 import {
   asResearchEntityType,
   mapResearchGroupKindToEntityType,
 } from '../models/researchAccessTypes';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
-import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
+import {
+  MAX_CARD_SHORT_DESCRIPTION_LENGTH,
+  MAX_CARD_SHORT_DESCRIPTION_WORDS,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
+import {
+  LEAD_GUARD_WITHHELD_PROSE,
+  type LeadGuardWithheldProse,
+  sanitizeServedResearchEntityCopyFieldsWithTopicDecision,
+  type ServedResearchEntityCopyWithTopicDecision,
+} from '../utils/researchEntityDescriptionText';
 import {
   gateAcceptedDerivedCardSubstitute,
+  researchCardOverBiographyCard,
   isUngroundedSynthesizedCard,
   researchAreasGroundedInFullDescription,
   resolveServedShortDescriptionOutcome,
   storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
 import { buildResearchAreasCardSummary } from '../utils/researchEntityDescriptionQuality';
+import { withBalancedLeadingQuotation } from '../utils/cardLeadingQuotation';
 
 export const MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
 export const MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH = 5000;
@@ -65,6 +90,13 @@ export function servedResearchEntityCopy(
   group: Record<string, any>,
   leadMemberNames: readonly string[] = [],
 ): Record<string, any> {
+  return servedResearchEntityCopyWithTopicDecision(group, leadMemberNames).entity;
+}
+
+export function servedResearchEntityCopyWithTopicDecision(
+  group: Record<string, any>,
+  leadMemberNames: readonly string[] = [],
+): ServedResearchEntityCopyWithTopicDecision<Record<string, any>> {
   const bounded: Record<string, any> = { ...group };
   for (const field of SERVED_COPY_TEXT_FIELDS) {
     if (typeof bounded[field] === 'string') {
@@ -81,7 +113,41 @@ export function servedResearchEntityCopy(
       bounded[field] = bounded[field].slice(0, MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS);
     }
   }
-  return sanitizeServedResearchEntityCopyFields(bounded, leadMemberNames);
+  return sanitizeServedResearchEntityCopyFieldsWithTopicDecision(bounded, leadMemberNames);
+}
+
+/**
+ * The entity with every copy field that `leadMemberNames` guards withheld, for a serve
+ * path whose roster read failed.
+ *
+ * An empty lead list is a structural no-op for the mismatched-person-name strip and
+ * weakens the organization and other-person biography checks, so serving a stored
+ * card after a failed read serves it with those guards off. The row stays findable by
+ * its name, topics, and departments, and the card falls back to a topic summary, which
+ * names no person. The `displayName` alias is withheld too, because the organization
+ * check that refuses it keys on the lead names; `name` is kept as the heading fallback.
+ * The withheld prose still rides along as chip-coherence evidence, the same way the
+ * sanitizer's own withholds do, so unsourced topic chips are not lost as collateral.
+ * A row whose read succeeded with no leads is not this case and keeps its copy.
+ */
+export function withoutLeadGuardedCopy<T extends Record<string, any>>(entity: T): T {
+  const withheld: Record<string | symbol, any> = { ...entity };
+  const withheldProse: LeadGuardWithheldProse = {
+    shortDescription: String(entity.shortDescription || '').slice(
+      0,
+      MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
+    ),
+    fullDescription: String(entity.fullDescription || '').slice(
+      0,
+      MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
+    ),
+  };
+  withheld[LEAD_GUARD_WITHHELD_PROSE] = withheldProse;
+  for (const field of SERVED_COPY_TEXT_FIELDS) {
+    if (typeof withheld[field] === 'string') withheld[field] = '';
+  }
+  if (typeof withheld.displayName === 'string') withheld.displayName = '';
+  return withheld as T;
 }
 
 export function servedShortDescriptionString(value: unknown): string {
@@ -154,11 +220,27 @@ export function groundedShortDescriptionString(
     kind: served.kind,
   });
   if (substitute) return substitute;
+  const researchCard = researchCardOverBiographyCard({
+    shortDescription,
+    fullDescription: fullValue,
+    researchAreas: served.researchAreas,
+    entityType,
+    kind: served.kind,
+  });
+  if (researchCard) return researchCard;
   if (isUngroundedSynthesizedCard({ card: shortDescription, body: fullValue })) {
     return surrenderingTheCardReachesTheBody(served, entityType) ? '' : shortDescription;
   }
   return shortDescription;
 }
+
+const bodyIsPastCardCeiling = (value: unknown): boolean => {
+  const text = String(value || '');
+  return (
+    text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
+    text.split(/\s+/).filter(Boolean).length > MAX_CARD_SHORT_DESCRIPTION_WORDS
+  );
+};
 
 /**
  * Whether giving up the stored card actually reaches a summary of this entity's own
@@ -192,7 +274,17 @@ function surrenderingTheCardReachesTheBody(
   entityType: ResearchEntityType | undefined,
 ): boolean {
   if (!servedShortDescriptionString(served.fullDescription)) return false;
-  const fallback = servedShortDescriptionFallback(served, entityType);
+  // A body past the card ceiling reaches the card only through the clause cut, a
+  // last resort the gate does not count, so surrendering there would hold the row.
+  const fallback = bodyIsPastCardCeiling(served.fullDescription)
+    ? resolveServedShortDescriptionOutcome({
+        shortDescription: '',
+        fullDescription: served.fullDescription,
+        researchAreas: served.researchAreas,
+        entityType,
+        kind: served.kind,
+      }).card
+    : servedShortDescriptionFallback(served, entityType);
   if (!fallback) return false;
   return !isResearchAreasChipSummary(fallback, served);
 }
@@ -249,6 +341,45 @@ export function servedShortDescriptionFallback(
   return servedShortDescriptionString(served.fullDescription);
 }
 
+function servedResearchEntityType(
+  served: Record<string, any>,
+  entityType?: ResearchEntityType,
+): ResearchEntityType | undefined {
+  return entityType === undefined
+    ? asResearchEntityType(served.entityType || mapResearchGroupKindToEntityType(served.kind))
+    : entityType;
+}
+
+/**
+ * The card line a student reads, minus the last-resort whole-body card - the one
+ * step of the served resolution the visibility gate deliberately does not judge.
+ *
+ * The gate reads this rather than the full resolution below because the resort only
+ * ever runs on a row the card invariant has already passed, so reading it there
+ * would be circular: the invariant could never refuse an empty card while a body
+ * existed, and #2597's refusal and #1872's organizational exemption both key on card
+ * absence. Every other step is shared, so the judged card and the served card can
+ * now differ on that documented step alone (#3747).
+ */
+export function servedResearchEntityCardWithoutLastResort(
+  served: Record<string, any>,
+  entityType?: ResearchEntityType,
+): string {
+  const resolvedEntityType = servedResearchEntityType(served, entityType);
+  return withBalancedLeadingQuotation(
+    shortenCardLineToFitBrowseCard(
+      groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+        resolveServedShortDescriptionOutcome({
+          shortDescription: '',
+          fullDescription: served.fullDescription,
+          researchAreas: served.researchAreas,
+          entityType: resolvedEntityType,
+          kind: served.kind,
+        }).card,
+    ),
+  );
+}
+
 /**
  * The card line a student reads on this row, resolved from copy the canonical
  * serve sanitizer has already cleaned.
@@ -262,12 +393,11 @@ export function servedResearchEntityCardDescription(
   served: Record<string, any>,
   entityType?: ResearchEntityType,
 ): string {
-  const resolvedEntityType =
-    entityType === undefined
-      ? asResearchEntityType(served.entityType || mapResearchGroupKindToEntityType(served.kind))
-      : entityType;
-  return (
-    groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
-    servedShortDescriptionFallback(served, resolvedEntityType)
+  const resolvedEntityType = servedResearchEntityType(served, entityType);
+  return withBalancedLeadingQuotation(
+    shortenCardLineToFitBrowseCard(
+      groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+        servedShortDescriptionFallback(served, resolvedEntityType),
+    ),
   );
 }

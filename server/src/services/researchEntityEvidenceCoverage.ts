@@ -17,9 +17,7 @@ export type EvidenceCoverageBlocker =
   | 'missing_action_route';
 
 export type SuggestedSourceType =
-  | 'official-profile-page'
-  | 'official-lab-homepage'
-  | 'department-undergrad-research';
+  'official-profile-page' | 'official-lab-homepage' | 'department-undergrad-research';
 
 export interface EvidenceCoverageInput {
   entity: Record<string, any>;
@@ -190,8 +188,7 @@ export function assessResearchEntityEvidenceCoverage(
   const hasLead = hasUsefulLead(members);
   const hasContactRoute = contactRoutes.some(rowHasHttpUrl);
   const hasAccess = accessSignals.length > 0;
-  const hasAction =
-    hasContactRoute || accessSignals.some((signal) => textValue(signal.bestNextStep));
+  const hasAction = hasContactRoute;
   const blockers: EvidenceCoverageBlocker[] = [];
   const suggestedSourceTypes: SuggestedSourceType[] = [];
 
@@ -306,7 +303,7 @@ function overlayObservation(
       evidence: value,
     });
   }
-  if (field === 'contactRoute' || field === 'applicationUrl' || field === 'bestNextStep') {
+  if (field === 'contactRoute' || field === 'applicationUrl') {
     contactRoutes.push({
       routeType: field === 'applicationUrl' ? 'APPLICATION' : 'OFFICIAL_PAGE',
       url: field === 'applicationUrl' ? value : observation.sourceUrl,

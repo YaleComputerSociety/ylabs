@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TaxonomyTerm } from '../../models/taxonomyTerm';
 import {
   applyResearchEntityResearchAreaCanonicalization,
   buildResearchAreaResolverIndex,
   createResearchAreaCanonicalizer,
   isDivisionLevelResearchAreaLabel,
   isResearchAreaLabelLeakage,
+  partitionResearchAreas,
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
   setResearchAreaCanonicalizerForTesting,
@@ -564,6 +566,21 @@ describe('generic seeded single-word derivation precision', () => {
 });
 
 describe('applyResearchEntityResearchAreaCanonicalization', () => {
+  it('fails loud when the vocabulary cannot be loaded, instead of passing raw areas through', async () => {
+    resetResearchAreaCanonicalizerCache();
+    const findSpy = vi.spyOn(TaxonomyTerm, 'find').mockImplementation(() => {
+      throw new Error('MongoServerSelectionError: connection refused');
+    });
+    const set: Record<string, unknown> = {
+      researchAreas: ['Internal Medicine', 'Fields of Interest', 'Neuroscience'],
+    };
+
+    await expect(
+      applyResearchEntityResearchAreaCanonicalization(set, ['Internal Medicine']),
+    ).rejects.toThrow(/connection refused/);
+    findSpy.mockRestore();
+  });
+
   it('rewrites the set researchAreas in place and reports unmatched', async () => {
     setResearchAreaCanonicalizerForTesting(canonicalizer);
     const set: Record<string, unknown> = { researchAreas: ['AI', 'Quilting'] };
@@ -656,6 +673,32 @@ describe('applyResearchEntityResearchAreaCanonicalization', () => {
     const result = await applyResearchEntityResearchAreaCanonicalization(set, ['Pathology']);
     expect(set.researchAreas).toEqual(['Artificial Intelligence']);
     expect(result.droppedResearchAreas).toEqual(['Genetics']);
+  });
+});
+
+describe('partitionResearchAreas department-duplicate scope (#3836)', () => {
+  it('drops the row own department and keeps another department name as a topic', () => {
+    const partition = partitionResearchAreas(
+      canonicalizer,
+      ['Economics', 'Neuroscience'],
+      ['Economics'],
+    );
+    expect(partition.admitted).toEqual(['Neuroscience']);
+    expect(partition.dropped).toEqual(['Economics']);
+  });
+
+  it('keeps a department name as a topic on a row with no departments', () => {
+    expect(partitionResearchAreas(canonicalizer, ['Economics', 'Neuroscience']).admitted).toEqual([
+      'Economics',
+      'Neuroscience',
+    ]);
+  });
+
+  it('drops the row own department in its canonical form, not only verbatim', () => {
+    expect(
+      partitionResearchAreas(canonicalizer, ['economics.', 'Gender Studies'], ['Economics'])
+        .admitted,
+    ).toEqual(['Gender Studies']);
   });
 });
 

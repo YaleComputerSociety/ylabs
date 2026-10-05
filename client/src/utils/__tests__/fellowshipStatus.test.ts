@@ -18,6 +18,7 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   requiresMentorBeforeApply: true,
   mentorMatching: false,
   undergraduateOnly: true,
+  audience: 'UNDERGRADUATE',
   yaleCollegeOnly: true,
   compensationSummary: '',
   hoursPerWeek: null,
@@ -68,7 +69,7 @@ describe('fellowshipStatus', () => {
 
     expect(status.kind).toBe('closingSoon');
     expect(status.label).toBe('Closing soon');
-    expect(status.detail).toBe('19 days left');
+    expect(status.detail).toBe('19\u00a0days left');
     expect(status.isCurrentlyRelevant).toBe(true);
     expect(status.isApplicationWindowOpen).toBe(true);
   });
@@ -237,6 +238,7 @@ describe('getStructuredEligibilityDetails', () => {
     const fellowship = makeFellowship({
       eligibility: '',
       undergraduateOnly: true,
+      audience: 'UNDERGRADUATE',
       yaleCollegeOnly: true,
       yearOfStudy: ['Sophomore', 'Junior'],
       termOfAward: ['Summer'],
@@ -258,6 +260,7 @@ describe('getStructuredEligibilityDetails', () => {
     const fellowship = makeFellowship({
       eligibility: '',
       undergraduateOnly: null,
+      audience: null,
       yaleCollegeOnly: null,
       yearOfStudy: [],
       termOfAward: [],
@@ -266,5 +269,46 @@ describe('getStructuredEligibilityDetails', () => {
       purpose: [],
     });
     expect(getStructuredEligibilityDetails(fellowship)).toEqual([]);
+  });
+
+  it('names a program open to undergraduates and graduates instead of calling it undergraduate-only', () => {
+    const fellowship = makeFellowship({
+      eligibility: '',
+      undergraduateOnly: true,
+      audience: 'UNDERGRADUATE_AND_GRADUATE',
+      yaleCollegeOnly: true,
+      yearOfStudy: ['Junior', 'PhD Pre-Candidacy'],
+      termOfAward: [],
+      citizenshipStatus: [],
+      globalRegions: [],
+      purpose: [],
+    });
+    expect(getStructuredEligibilityDetails(fellowship)).toEqual([
+      { label: 'Level', value: 'Undergraduate and graduate students' },
+      { label: 'Year of study', value: 'Junior, PhD Pre-Candidacy' },
+    ]);
+  });
+
+  it('labels a stated deadline with its New York time and a date-only one with its date', () => {
+    const stated = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-04-20T17:00:00.000Z' }),
+      NOW,
+    );
+    expect(stated.deadlineLabel).toBe('Apr 20, 2026, 1:00 PM ET');
+
+    const dateOnly = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-04-21T03:59:59.999Z' }),
+      NOW,
+    );
+    expect(dateOnly.deadlineLabel).toBe('Apr 20, 2026');
+  });
+
+  it('keeps a date-only deadline open until the end of its New York day', () => {
+    const lateEveningInNewHaven = new Date('2026-04-21T01:00:00.000Z');
+    const stored = (deadline: string) =>
+      getFellowshipApplicationStatus(makeFellowship({ deadline }), lateEveningInNewHaven).kind;
+    expect(stored('2026-04-20T23:59:59.999Z')).toBe('closingSoon');
+    expect(stored('2026-04-21T03:59:59.999Z')).toBe('closingSoon');
+    expect(stored('2026-04-20T17:00:00.000Z')).toBe('deadlinePassed');
   });
 });

@@ -1,18 +1,17 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
 import { buildSourceHealthRows, type SourceHealthRow } from '../services/sourceHealthService';
+import { isDirectScriptInvocation } from './directScriptInvocation';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.join(resolveServerPackageRoot(import.meta.url), '.env'), quiet: true });
 
 export interface SourceHealthCliOptions {
   days: number;
@@ -571,7 +570,7 @@ async function main(): Promise<void> {
     startedAt: { $gte: since },
   })
     .select(
-      'sourceName status startedAt finishedAt observationCount materializationErrors materializationConflicts invalidated',
+      'sourceName status startedAt finishedAt heartbeatAt observationCount materializationErrors materializationConflicts invalidated',
     )
     .sort({ sourceName: 1, startedAt: -1 })
     .lean();
@@ -605,7 +604,7 @@ async function main(): Promise<void> {
   if (options.strict && riskCounts.error > 0) process.exitCode = 1;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+if (isDirectScriptInvocation(import.meta.url, 'sourceHealth')) {
   main()
     .catch((error) => {
       console.error(sanitizeLogValue(error));

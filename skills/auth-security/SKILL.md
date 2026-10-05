@@ -12,22 +12,99 @@ Prefer source verification before editing `passport.ts`, `app.ts`, security midd
 
 ```
 User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
-     -> Yalies API for undergrad/grad classification
-     -> Yale Directory for faculty classification
-     -> Fallback: userType "unknown"
+     -> Yalies lookup (lookupYalieByNetid): student, employee, not_found, or unavailable
+        student  -> undergraduate (school_code YC) or graduate
+        employee -> professor when isFacultyTitle(title), otherwise staff
+        unavailable -> the userType a previous login stored on Account.profile, else "unknown"
+        not_found -> "unknown"
      -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
-     -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
+     -> cookie-session carrying a session claim, httpOnly, secure in prod, sameSite lax
+     -> deserializeUser refuses it after sign-out or 30 days (SESSION_LIFETIME_MS)
 ```
 
 Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
-Classification (undergrad/grad/faculty) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies/Directory profile (name, `userType`, title/department for faculty, college/year/major for students) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in.
+Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name and `userType`, plus title/department for faculty and staff) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record.
+A student's residential college, class year and major were persisted here until #4162 and are not any more: nothing read them, so every signed-in student carried three extra personal attributes against their netid for no product purpose.
+A login that resolves a record replaces `profile` wholesale and so sheds them; a login whose Yalies lookup was unavailable writes no profile and unsets those three paths instead, so an account stops carrying them either way.
+Accounts stored before the fix that never sign in again keep the values until a one-off cleanup runs, which is an operator decision rather than something a login may do for them.
+`yarn --cwd server accounts:purge-retired-login-profile-fields --environment=<env>` is that cleanup: it is dry-run by default, and a dry run is read-only, so it is also how the population is counted before anyone decides to clear it.
+Count it in Production rather than Development, because a Development login does not go through CAS and so never wrote these values: on 2026-10-01, 0 of 4,179 Development accounts held any of the three.
+Each CAS login also increments one per-UTC-day bucket in `login_signal_tallies` (`services/loginSignalTallyService.ts`), counting how many logins carry a usable major or graduate curriculum for browse personalization (#4744).
+The bucket is computed inside `yaliesService.ts` by `classifyStudentLoginSignal`, so the major and curriculum never leave it; the row stores the date and counts only, the write is fire-and-forget and skipped while Mongo is disconnected, and `yarn --cwd server auth:login-signal-tally` reads it.
+It is temporary: it goes once the personalization decision in `docs/decisions.md` is made.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
+One scraper path still mints an `Account`: `resolveOrCreateAccountId` in `scrapers/canonicalMembershipMaterializer.ts` upserts one with status `UNKNOWN` for a roster identity that carries both a netid and an email.
+An account netid must be a Yale netid (`looksLikeYaleNetid` in `utils/yaleNetid.ts`), and `models/account.ts` enforces that with hooks on every Mongoose write path, `save`, `insertMany` and the update and replace queries, rather than with the schema `match`, so an upsert without `runValidators` is refused too (#4773).
+That is the shape of the defect: on 2026-08-27, between #2122 and #2129, the user-identity materializer upserted 170 accounts keyed on an email local part, because the user observations were keyed `netid:<local part>` (#2831) and that upsert ran no validators.
+152 of them share an email with the person's real-netid account, which made two live accounts claim one address, so the email joins in `entityMaterializer.ts` refused that person.
+`yarn --cwd server accounts:merge-local-part-netid-twins` repairs a pair whose twin is unambiguous: it repoints every reference in `ACCOUNT_ID_REFERENCE_FIELDS` to the real-netid account, leaves a research plan whose target the twin already holds on the archived account, and archives the local-part account with `archivedReason` and `mergedIntoAccountId`.
+It never deletes, and it reports rather than merges a pair where both accounts link a researcher, the local part has a login, a researcher holds the local part as `identifiers.netid`, any netid-keyed history row names it, or the pair is off-shape.
+It is dry-run by default; `--apply` needs `--confirm-merge-local-part-netid-twins`, a `--max-apply` cap and the Development database, because Beta and Production receive accounts only through sync and promotion.
+The raw-driver copies in promotion and sync bypass the hooks on purpose, since they copy stored rows rather than mint them.
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
+`unknown` means Yalies has no record of the person, or could not answer and no earlier login stored a type; a request failure is never read as "not in Yalies", because that typed returning students `unknown` (#4234).
+Yalies lists faculty and staff with a `title` and an organization or unit (`unit_name`, `organization_name`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
+There is no Yale Directory fallback: `directory.yale.edu` is behind a per-person CAS sign-in with no server-callable API, so the old `directory.yale.edu/api/people` call resolved nobody and was removed (#4287); Yalies employee records type faculty and staff instead.
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
 A session whose `Account` no longer exists or is archived deserializes to unauthenticated.
+
+### Sessions are revocable and expire on the server (#4010)
+
+The session is still a signed `cookie-session` cookie with no server-side session store, so the server keeps no list of live sessions.
+What makes it revocable is a claim `serializeUser` adds to the signed principal at every sign-in: a fresh random `sessionId`, an `issuedAt` time, and the account's current `Account.sessionVersion`.
+The helpers live in `server/src/utils/sessionClaim.ts`.
+`deserializeUser` refuses a principal with no claim, a claim whose `sessionVersion` differs from the stored one, and a claim older than `SESSION_LIFETIME_MS` (30 days), so the lifetime holds even for a client that keeps the cookie past its `Expires`.
+The check rides on the `Account` read that `deserializeUser` already does, so it costs no extra query.
+Sign-out calls `revokeAccountSessions`, which increments `sessionVersion`, so it ends every copy of that account's sessions on every device, not just the browser that signed out.
+`revokeAccountSessions` is also the call an operator or admin path should use to end a suspected leaked session.
+The fresh `sessionId` per sign-in is the fixation defence: a cookie captured before a sign-in never carries the signed-in principal, and two sign-ins never share an id.
+The Passport `regenerate` shim stays a no-op because there is no stored session to rotate.
+A missing `sessionVersion` on an older `Account` reads as `0`; the field needs no index because it is read only through the `netid` lookup.
+Cookies issued before this change carry no claim, so the deploy that shipped it signed everyone out once.
+`server/src/__tests__/sessionRevocation.integration.test.ts` drives sign-in, sign-out, replay, expiry, and id rotation through the mounted app against a stub CAS and an in-memory Mongo.
+Key rotation with an overlap window is not implemented: one `SESSION_SECRET` signs every cookie, so changing it still signs everyone out.
+
+### The two legs of `GET /api/cas`
+
+A login callback completes a login only for the browser that started it, so the route is two distinct legs rather than one handler.
+Reached without a `ticket`, it is the start leg: it mints a single-use random value, appends it to `casLoginStates` in the signed cookie session, and carries it in the `service` URL it hands CAS, which is what makes CAS echo it back.
+The session keeps only the five most recent pending values, so a login started in one tab still completes after a later start in another tab, and the oldest pending login is dropped once a sixth is started.
+Reached with a `ticket`, it is the callback leg: the returned value must equal one of the pending values, which is then removed, so the same callback cannot be completed twice.
+A missing or mismatched value is refused with `401` before the ticket is ever presented to CAS, and nothing about the caller's session is written, so an existing sign-in survives the refusal untouched.
+The value has to ride inside the request URL rather than beside it, because the strategy derives the CAS `service` parameter from `req.originalUrl` and recomputes it when it validates the ticket, and CAS refuses a ticket whose two service URLs differ.
+That byte-level equality is the fragile part of the arrangement, so `server/src/__tests__/casLoginCallbackSessionState.test.ts` asserts it directly against a loopback CAS stand-in that, like CAS, issues a ticket for one service URL and validates it against no other.
+The return path is unchanged: `safeRedirectTarget` still decides where a completed login lands.
+
+The callback leg separates a CAS rejection from our own failure, because a student whose login broke on our side must not be told they are unauthorized (#3672).
+`classifyCasCallbackError` in `server/src/utils/casCallbackFailure.ts` classifies by error type with `instanceof` along the cause chain, never by message text, so no wording change in a dependency can move a failure between buckets.
+Only CAS answering `no` to the ticket (`CasTicketRejectedError`), or a CAS identity that is not a usable netid (`UnusableCasIdentityError`), is a rejection: it answers `401`, or the caller's `error` page when one is named.
+A CAS that cannot be reached or answers a non-success status (`CasUnreachableError`), answers with something that is neither `yes` nor `no` (`CasMalformedResponseError`), or does not answer within `CAS_VALIDATION_TIMEOUT_MS` (ten seconds, `CasValidationTimeoutError`), and a database that cannot be reached, answer `503`; any other exception answers `500`.
+The error classes live in `casCallbackFailure.ts` beside the classifier and the strategy imports them from there, so both always hold the same class even when a test reloads one module.
+Both carry the same student-facing message asking them to try again, never redirect to the `error` page, and are reported through `captureServerError`.
+Unlike the error handler's database `503`, neither sets `Retry-After`, because the callback is a top-level browser navigation that ignores it.
+The report is a fresh `CasLoginServerError` naming the failure and the error names and codes along the cause chain, never the original error, because a duplicate-key message quotes the netid and a transport error can carry the validation URL with the ticket in it.
+A verdict that arrives after the timeout has answered is dropped, so a slow CAS can never complete a login the student has already been told failed.
+The validation request itself is bounded by the same `CAS_VALIDATION_TIMEOUT_MS`, through an `AbortSignal.timeout` on its `fetch`, so a CAS that accepts the connection and never answers has its socket released at the deadline instead of holding one open per retry, and the late verdict never reaches the login write (#4190).
+The value is the route deadline on purpose: a CAS 1.0 validation is one small GET that answers well under a second, a shorter bound would only change which timer reports the same `503`, and a longer one would keep a socket open after the student was already asked to retry.
+Keep both bounds, the route timer and the request signal, so neither depends on the other firing.
+`server/src/__tests__/casLoginCallbackFailures.test.ts` drives all four outcomes through the mounted app against a stub CAS.
+
+### The CAS strategy
+
+`CasStrategy` in `server/src/utils/casStrategy.ts` is the in-repo CAS 1.0 Passport strategy; it replaced the `passport-cas` git dependency (#4036).
+It extends `passport.Strategy`, so it needs no dependency beyond `passport` itself.
+`casServiceUrl` is the one function that builds the `service` URL, for the login redirect and for validation alike, so the two legs agree byte for byte.
+It takes the path and query from `req.originalUrl`, drops only `ticket`, and puts them under `SERVER_BASE_URL`, so the request can never choose the service host; the request's own origin is the fallback only where `SERVER_BASE_URL` is unset, which `resolveAuthConfig` refuses in deployed runtimes.
+The login redirect carries `service` and nothing else, so the caller's `redirect` and `error` parameters are never sent to CAS.
+`casValidateUrl` writes `ticket` and `service` with `URLSearchParams`, so a ticket containing `&` or `=` cannot add or override a parameter; the published `@coursetable/passport-cas` 0.1.4 interpolates both unencoded, which is why it was not adopted.
+CAS 1.0 `/validate` answers `yes` and the netid on two lines, or `no`, so `parseCas1ValidationResponse` needs no XML parser.
+The validation `fetch` refuses redirects, and it is the one reviewed exemption for this file in `scripts/unguardedOutboundFetchScan.mjs`, because its host is the operator-configured `SSOBASEURL` that deployed runtimes require to be public `https`.
+`presentedCasTicket` is the single test for whether a request is a callback, read by the strategy, by `casLogin`, and by `authLimiter`, so the three can never disagree about which requests spend a validation; only one non-empty string counts, so a repeated `ticket` is treated as a start.
+`server/src/utils/__tests__/casStrategy.test.ts` covers the encoding, the `yes`, `no`, and malformed answers, a non-success status, an unreachable CAS, the timeout, and service-URL equality across the two legs against a loopback stub CAS.
+`.yarnrc.yml` sets `approvedGitRepositories: []`, and `scripts/security-preflight.test.mjs` fails if any lockfile resolves a dependency from a git source.
 
 Dev login bypass:
 
@@ -36,6 +113,17 @@ Dev login bypass:
 This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
 `?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
+
+### Development affordances are scoped to the developer's own machine
+
+The runtime label alone never licenses a development affordance, because "this process is a local development process" and "this request came from the developer" are different facts.
+`isLoopbackRequest` in `server/src/utils/loopbackAccess.ts` answers the second one, and it requires both a loopback socket peer and a `Host` header in a localhost form.
+It reads the socket peer rather than `req.ip`, because `req.ip` can be resolved from a forwarded header.
+
+- `/api/dev-login` is registered only in a local development runtime (`isDevLoginAllowed`) and additionally answers `404 {"error":"Not found"}` to any caller that is not loopback (`isDevLoginRequestAllowed`).
+The refusal reuses the ordinary not-found shape rather than announcing a disabled route.
+- The `LOCAL_AUTH_BYPASS` user and its `x-dev-netid` / `x-dev-user-type` selection apply only to a loopback caller (`isLocalAuthBypassRequestAllowed`), so a request from elsewhere is simply unauthenticated.
+- `serverListenHost` in `server/src/utils/environment.ts` binds a local run to `127.0.0.1` and a deployed run to `0.0.0.0`, keyed off `requiresDeployedRuntimeSecurity`, because the hosting platform reaches the process from outside its network namespace and a local run needs no interface beyond loopback.
 
 ## Auth middleware
 
@@ -47,7 +135,49 @@ Defined in `server/src/middleware/auth.ts`.
 | `isAdmin` | active `AdminGrant` for the NetID (`hasActiveAdminGrant`). |
 
 There are no `userType`-based authorization guards.
-Admin-review write surfaces (research-area creation) use `isAdmin`; correction-report and listing-claim submission use `isAuthenticated`.
+Correction-report submission and the reporter's own report history use `isAuthenticated`.
+
+### Responses to a non-admin caller are allowlists
+
+A route that returns a stored document to a non-admin caller serializes it through an explicit allowlist of the fields that caller's UI reads, never the raw document and never a denylist.
+A denylist leaks every field added to the model later, and a raw document leaks whatever the admin shape carries.
+The correction-report routes are the worked example (#4011): `POST /api/research/:slug/report` and `GET /api/research/:slug/reports/mine` return `toReporterCorrectionReport` from `entityCorrectionReportService.ts`, which keeps only `_id`, `category`, `status`, `note`, `reviewerNote`, and `createdAt`.
+The reviewer's netid (`reviewedBy`, `reviewHistory`), the reporter snapshot, and entity bookkeeping stay on the admin queue alone.
+Adding a field to the reporter panel means adding it to that allowlist, and `server/src/__tests__/correctionReportReporterProjection.integration.test.ts` pins the exact key set through the mounted routes.
+
+## Admin audit log
+
+Every admin mutation lives on the admin router (`server/src/routes/admin.ts`, mounted at `/api/admin`), which runs `isAuthenticated`, `isAdmin`, and `adminAuditMutationLogger` ahead of every route.
+Research-area creation moved there as `POST /api/admin/research-areas` so it is audited like the rest of topic management (#3648).
+Do not guard a mutation with `isAdmin` on another router: it would bypass the logger.
+
+`adminAuditMutationLogger` (`server/src/middleware/adminAuditLogger.ts`) records one `AdminAuditEvent` per successful (2xx) `POST`/`PUT`/`PATCH`/`DELETE`, using the action vocabulary in `ADMIN_AUDIT_ROUTES`, keyed by method and the path relative to the admin router.
+A new admin mutation therefore needs an `ADMIN_AUDIT_ROUTES` entry, and a matching label in `client/src/components/analytics/analyticsPresentation.tsx` for the audit-log filter.
+`server/src/middleware/__tests__/adminAuditCoverage.test.ts` walks the mounted Express app and fails when an `isAdmin` mutation is outside the admin router, runs without the logger, has no entry, or when an entry names a route that no longer exists.
+At runtime a successful admin mutation with no entry logs a `console.warn` naming the method and route instead of passing silently.
+
+Audit writes are fail-soft by design.
+The event is written on `finish`, after the mutation has committed and the response has gone, so failing the request would report failure for a change that happened and invite a retry.
+Failing closed would need the event written before the mutation, in the same transaction, which would also turn an audit-collection outage into an outage of every admin surface.
+The most sensitive mutation, an admin grant or revoke, also keeps its own actor history on the `AdminGrant` document.
+A failed insert logs `console.error` naming the action and target type, and an event refused for an invalid actor or action logs `console.warn`; neither log carries the actor netid or target id.
+
+## Admin search analytics are aggregates only
+
+Decided 2026-10-03 (#4159): an admin sees search-query counts and trends, never who searched for what.
+No search-query row or list may carry an email, netid, user id, display name, or a per-searcher list, and no analytics response returns an email at all.
+This covers `topSearchQueries` (whose entries carry only `query` and `count`), the search-quality and search-query reports, and the action-needed query lists.
+The overview's `mostActiveUsers` list is user activity rather than search data: it carries no query and links to none.
+There is no per-student attribution of search activity anywhere (#4159 follow-up).
+The user table (`GET /api/analytics/users`), the per-user drilldown (`GET /api/analytics/users/:netid`) and the overview's `mostActiveUsers` are built over non-search events only: every `search`, `research_search` and `research_filter_change` event is left out of their event lists, their `totalEvents` and `eventCount`, and their last-event time, and no per-student search count exists, so the table cannot be sorted by one.
+A student whose only activity is searching therefore has no row in the user table and no drilldown.
+A shown query row's `lastSearchedAt` is truncated to its UTC day, so no row can be matched to the moment one student searched.
+A query string, or a filter-only search's filter summary, is shown only once `MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY` (3) distinct students searched it.
+Below that it is folded into `suppressedQueries`, which counts the hidden query groups and their searches and zero-result searches, so the hidden demand stays visible as a number.
+Three is the smallest threshold at which a shown query cannot be read as one student's search, either directly or by a student who knows the other searcher was themself.
+Suppression applies only to the listed rows: totals, the zero-result rate, engagement, `avgResultsPerSearch` and the funnel are computed over every search.
+The stored `netid` on an `analytics_events` row is still required, because engagement attribution windows each student's own events, and the unique-searcher counts, the funnel and the search-episode fold are per student; email is never stored on an event and is joined from `accounts` nowhere in the search reports.
+`server/src/services/__tests__/analyticsAggregatesOnly.integration.test.ts` pins all of this, so a new search-query field or report needs it extended rather than relaxed.
 
 Client route guards:
 
@@ -55,17 +185,28 @@ Client route guards:
 |-------|---------|
 | `PrivateRoute` | Auth required. |
 | `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
-| `PublicRoute` | Renders for logged-out and authenticated users alike. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. |
 | `UnprivateRoute` | No auth required. |
+
+Because a public page now runs before the check answers, client research analytics has three states rather than two.
+`setResearchAnalyticsEnabled` in `client/src/utils/researchAnalytics.ts` starts unknown: an event raised in that window buffers but is never flushed or beaconed, a logged-out answer discards the buffer, and a signed-in answer schedules its delivery.
+Treating unknown as enabled would post a guest's first browse impression to `/analytics/research/batch`, which is behind `isAuthenticated`, and spend a first-contact unit on the 401.
+
+`PrivateRoute` and `AdminRoute` share one signed-out contract: they redirect to `/login` with `state.from` set to the requested path, query, and hash, and they `replace` the guarded entry so Back does not loop through `/login`.
+`AdminRoute` also replaces the entry when it sends a signed-in non-admin home.
+`normalizeReturnPath` in `client/src/utils/returnPath.ts` reduces `state.from` to a same-origin path or an empty string.
+`SignInButton` applies it before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
+`/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
 
 ## Validation middleware
 
 Exported from `server/src/middleware/`:
 
 - `validateObjectId(paramName?)`
+- `validateResearchEntityId(paramName?)`
 - `validateNetid(paramName?)`
 - `requireFields(fields[])`
-- `validatePagination()`
+- `validatePagination` (plain middleware, not a factory)
 - `validateQuery(allowedParams[])`
 
 ## Security middleware
@@ -76,13 +217,41 @@ Applied globally or to `/api` in `app.ts`.
 |------------|---------|
 | `securityHeaders` | CSP, permissions policy, and `X-*` headers. |
 | `csrfOriginGuard(allowList)` | Rejects unsafe-method `/api` requests from non-allowlisted origins or referrers. |
-| `sanitizeMongo` | Strips Mongo operator and prototype-pollution keys from body/query. |
+| `sanitizeMongo` | Refuses with `400` a body or query carrying Mongo operator, dotted, bracketed, or prototype-pollution keys. |
 | `createCorsOriginHandler` | Dynamic CORS origin handler. |
 | `errorHandler` / `notFoundHandler` | Terminal error and 404 handlers. |
+
+### Express 5 request contract
+
+The server runs Express 5 (#4374), and four of its rules bear on these middlewares.
+`req.query` is a getter that re-parses the URL on every read, so a middleware cannot rewrite it in place; `sanitizeMongo` therefore refuses an unsafe query rather than scrubbing it, and nothing may depend on a mutated `req.query`.
+The app sets `query parser` to `simple` explicitly, so a query value is a string or an array of strings and `a[b]=1` stays the literal key `a[b]`, which the sanitizer refuses.
+`req.body` is `undefined` rather than `{}` when no parser ran, so read it as `req.body ?? {}` or `req.body?.field`.
+A route param is typed `string | string[]` because a `*name` wildcard captures segments, so read a named param with `routeParam` from `server/src/utils/routeParams.ts`, which answers `''` for anything that is not a single string.
+
+The CORS policy is an allowlist in every runtime.
+`allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward, with an API port from `4000` upward) talk to the API with credentials.
+Nothing reflects an arbitrary `Origin`, so an allowlist entry is the only way in from a browser.
+
+### Static client files
+
+`createClientStaticAssets` in `server/src/middleware/clientStaticAssets.ts` serves the client build, and `app.ts` mounts it after `securityHeaders` and CORS but ahead of `cookie-session` and Passport (#3950).
+A static file therefore never reads or writes a session cookie and never runs `deserializeUser`, which is what lets the CDN cache it.
+The router skips every `/api` path, so a file in the build can never shadow an API route, and it keeps the source-map block ahead of `express.static`.
+Only content-hashed files directly under `/assets/` are served `public, max-age=31536000, immutable`; `index.html`, the SPA fallback, and unhashed files such as `/assets/developers/*` and `/brand/*` keep `max-age=0` so a deploy is seen on the next load.
+The Passport `regenerate`/`save` shim defines its methods as non-enumerable, because cookie-session writes a new session that has any own enumerable key, and an enumerable shim issued an empty session cookie to every anonymous response.
+`server/src/__tests__/appStaticAssetCaching.test.ts` pins all of this through the mounted app.
 
 SSRF protection lives in `server/src/utils/ssrfGuard.ts`.
 Any outbound fetch to a host derived from user input or stored data must go through it.
 Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate.
+Operator scripts and scrapers that need a status, a body, or a redirect location use `fetchPublicHttpUrl` in `server/src/scrapers/utils/httpFetch.ts`: it follows redirects by hand, asserts every hop with `assertPublicHttpUrl`, and connects through `ssrfSafeAgents`, so neither the first host nor any redirect target can be private (#4013).
+`ssrfSafeAgents` also refuses a private IP-literal host before opening a socket, because Node connects to an IP literal without calling the agent's `lookup`, so a redirect to `http://127.0.0.1/` used to pass the connect-time check.
+A headless render cannot use Node's agents, so every request the browser makes goes through a per-render forward proxy, `startSsrfGuardedForwardProxy` in `server/src/scrapers/utils/ssrfGuardedForwardProxy.ts`, which runs `ssrfSafeLookup` on each request, tunnel, and redirect hop and connects to the address it vetted.
+Playwright forces loopback through a configured proxy unless `PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK` is set, so `scraplingBridge.py` removes that variable, and the renderer discards a page whose seed request never passed through the proxy.
+`scripts/security-preflight.test.mjs` scans all of `server/src` with `scripts/unguardedOutboundFetchScan.mjs` and fails on a global `fetch`, an `axios` call without both agents, or a Node `http.get`/`request` without an `agent`, whenever the URL is not a constant; agents count only in a file that calls `ssrfSafeAgents()`.
+A reviewed exemption, such as a constant host or the forward proxy's connection to the address it vetted, lists its file, its reason, and the exact number of calls it covers, so a further call in that file fails the scan, and the exemption is removed once it stops matching.
+A guard refusal is inconclusive rather than evidence that a page is gone: on a machine inside Yale's split-horizon DNS a Yale host can resolve to `10.x` and be refused, so a script that clears data on a failed probe must treat a guard refusal, `isSsrfGuardRefusal` in `server/src/utils/ssrfGuard.ts`, as its own outcome, as `clearDeadLabResearchHomes` does with `address-refused`.
 
 The guard refuses first and reports second, so its refusal is the only signal a caller ever sees for a host it never reached.
 `classifyHostnameResolution` returns which of `public`, `private-address`, `unresolvable`, or `resolver-failure` applies, and `assertPublicHttpUrl` carries the same value on `SsrfBlockedError.reason`.
@@ -96,12 +265,19 @@ No retry interval is sufficient on its own, because any fixed interval is a gues
 A pass that probes many hosts has a better signal: `ResolverCircuitBreaker` in `server/src/scrapers/utils/resolverCircuitBreaker.ts` counts **distinct** hosts that fail to resolve inside a sliding window and throws `ResolverUnhealthyError` once they reach a threshold, halting the pass rather than recording further deaths.
 It counts distinct hosts so one genuinely dead host retried in a loop never trips it, and it trips open and stays open so a caller cannot continue past it.
 The failure mode is deliberate: a false halt costs a re-run, a false death hides a live page from a student, so halting wins when the two are indistinguishable.
+Distinct failures alone stop being a signal when dead hosts are common in the probe set: `--reprobe-healthy-after-days` carries recent `HEALTHY` verdicts forward, so a run hours after the last one probes mostly links that were already failing and reached the threshold on a healthy resolver (#4865).
+So the threshold no longer trips the breaker by itself in `research-homes:backfill-source-link-health`: it asks a control probe, `probeResolverControl` in `server/src/scrapers/utils/resolverControlProbe.ts`, which fetches fixed Yale `robots.txt` URLs through `fetchPublicHttpUrl`, and trips only when every control host fails too.
+Any HTTP status, or a split-horizon `private-address` refusal, counts as a working resolver; a Yale control is deliberate, because if Yale's names stop resolving every Yale citation would be recorded dead.
+A passing check clears the window, the control is asked at most once per window, and the pass waits at `settle()` rather than probing on while a check is due, so a genuine outage still halts before the page's verdicts are written.
+Hosts whose every stored verdict is a no-status `UNAVAILABLE` are not counted, because a host already stored as unresolvable failing again changes nothing stored.
+The run's report carries `result.resolver` (control checks, trips avoided, trips, uncounted failures), and `ResolverUnhealthyError` names the control failure.
 This distinction is load-bearing rather than cosmetic: a bare `catch { return false }` made "this name has no record" indistinguishable from "this resolves somewhere we refuse to go", so `sourceLinkHealth` recorded a host that had stopped existing as `UNKNOWN` and `ENOTFOUND` in its `DEAD_LINK_ERROR_CODES` was unreachable (#2709).
 When adding a refusal path, give it a reason and keep the security answer unchanged: a private or loopback address must still be refused and must still read as inconclusive, because that is a fact about our network position and not about whether the page exists.
 Inconclusive is not the same as uninformative, though.
 A `private-address` refusal is a durable fact about addressing, so `probeSourceLink` reports it as `privateAddressHost` alongside the inconclusive error code, and `sourceLinkHealth` stores it as a second axis beside `healthStatus`.
 Discarding it made a host only Yale's network can route to indistinguishable from a throttled request, and because `UNKNOWN` fails open the visibility gate credited it as a way in for a student off campus (#2556).
 Judge that question from the resolved IP and never from whether a fetch succeeded: a machine egressing from a Yale range fetches these hosts successfully, which is evidence about the machine rather than about the audience.
+The resolved IP is equally a fact about the machine: Yale serves split-horizon DNS, so `probeSourceLink` records `privateAddressHost` only after public DNS over HTTPS confirms it (`server/src/utils/publicDnsResolution.ts`, #3903), and never widens what the guard will connect to.
 `docs/research-data-pipeline.md` owns what each axis licenses.
 
 ## Rate limits
@@ -110,16 +286,29 @@ The limiters live in `server/src/middleware/rateLimiters.ts`.
 Request-scoped limiters (`globalLimiter`, `writeLimit`) are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
 The anonymous identifier is initialized only for `/api` requests.
 This prevents shared proxy buckets, because the netid and session arms do not consult the network address at all.
-`authLimiter` is keyed per IP so login cannot be brute-forced from one host regardless of session.
+`authLimiter` is keyed per IP and meters rejected CAS ticket validation only, so repeated failures from one address stay bounded regardless of session.
+The ticketless first leg of login is skipped, because it only redirects the caller to CAS, and a validation that succeeds is refunded, so a completed login spends nothing from a bucket that a whole NATed cohort shares.
+A CAS ticket is minted and validated by CAS rather than supplied by the caller, so repeated failure is the only thing on this path the budget can usefully bound.
+A caller that keeps its session cookie therefore reaches that ticketless start under no limiter at all, because `globalLimiter` skips `/api/cas` and `firstContactLimiter` meters cookie-less requests only.
+That is accepted rather than overlooked: the start is a bare redirect to CAS with no outbound call and no database write, so there is no scarce resource on it to meter.
 Every per-IP key is the client address the validated `trust proxy` predicate resolves, not the raw TCP peer: keying on the peer put the whole user base in one bucket behind a load balancer (#2318), and a forwarded address is accepted only when the connecting peer is inside `TRUSTED_PROXY_CIDRS`, so an ordinary client still cannot shift buckets by spoofing the header.
+That only holds while the list is narrow, so `parseTrustedProxyCidrs` (`server/src/utils/trustedProxyCidrs.ts`) refuses at startup, in every runtime, any IPv4 range wider than `/8`, any IPv6 range wider than `/29`, and any IPv6 range that reaches into IPv4-mapped space (`::ffff:0:0/96`) wider than `/104`, naming the offending entry (#4015).
+`0.0.0.0/0` and `::/0` fall under those floors, and the mapped arm matters because Node's `BlockList` matches an IPv4 peer against an IPv6 mapped rule, so `::ffff:0:0/96` or `::/80` trusts every IPv4 client.
+The IPv4 floor is the widest private block a proxy fleet sits in (`10.0.0.0/8`), and the IPv6 floor is `/29` rather than `/32` because a major CDN publishes a `/29` proxy range.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
-That exemption covers `globalLimiter`, `writeLimit`, and `authLimiter`, the three that set `skipFailedRequests: true`.
+`globalLimiter` and `writeLimit` reach that exemption with `skipFailedRequests: true` and the shared predicate.
+`authLimiter` reaches the same place from the other side: it sets `skipSuccessfulRequests: true` with its own predicate, which refunds a `5x` exactly as before and otherwise refunds only a request that `casLogin` recorded as accepted with `markCasValidationAccepted`, so a rejected validation is the only response it charges.
+Acceptance is recorded rather than read from the status because `casLogin` answers a rejected validation with a redirect when the caller names an `error` target, and a redirect is also what an accepted one returns; an unrecorded outcome is charged, so a new response path fails closed.
+Both flags together would refund every finished response and count nothing, so the two are alternatives rather than a pair.
 `firstContactLimiter` is deliberately excluded and counts every response, a `5x` included (#2990).
 It meters the session mint, and `ensureAnonymousRateLimitId` performs that mint before the limiter runs, so a request that ends `500` has already spent the resource; refunding it would turn an outage into a window for minting unlimited sessions, which is the bypass the limiter exists to close.
 The cost is accepted rather than unnoticed: a `5x` storm spends a NATed cohort's first-contact budget, and their recovery is the one the exhaustion message already names, retrying with the cookie issued regardless of the failure.
 Because express-rate-limit consults `requestWasSuccessful` only when a skip flag is set, declaring the predicate without the flag advertises an exemption that does not exist, so `scripts/security-preflight.test.mjs` pins that no limiter does.
 `server/src/middleware/__tests__/firstContactMetering.test.ts` drives the exported limiter over a `500` and a `404` and asserts the counter keeps climbing, so the guarantee rests on measured counting rather than on how the options block is written.
+`server/src/middleware/__tests__/authLimiterScope.test.ts` does the same for `authLimiter`, driving the exported limiter over a ticketless start, an accepted validation, a rejected one answering `401` or an error-page redirect, a `503`, and a server-side failure answering `500` even when the caller named an error page, and pinning that the two request-scoped limiters still charge a successful response.
+It needs no CAS: one block uses a stand-in route, and another drives the real `/cas` route with the strategy's verdict stubbed, so the acceptance record is measured where `casLogin` writes it; `server/src/__tests__/appSecurityRuntime.test.ts` covers the route wiring by driving the mounted app's login start.
+That second block drives both legs with one cookie jar, because a callback that does not return the single-use state its session minted is refused before validation (#4081), and it pins that such a callback is charged.
 
 ### What the request-scoped limiters do and do not control
 
@@ -141,6 +330,13 @@ That is a self-inflicted availability failure dressed as a security control.
 The genuine abuse controls are the two `getPeerIpKey` limiters, `firstContactLimiter` and `authLimiter`, which cannot be reset by dropping cookies.
 They carry the opposite exposure by construction: because they are IP-keyed, callers behind one Yale egress address do share a bucket.
 `firstContactLimiter` is the one that answers the cookie-discarding caller, by metering the scarce thing (a new session) rather than the abundant one (a request); see the design note in `rateLimiters.ts`.
+A new visitor's cost is the number of `/api` requests the client sends before the first response sets the cookie, so the cold-visit request order is part of this budget.
+A cold visit to a public page sends `/api/check` and the first `/api/research/search` in parallel (#3952), and `ConfigContextProvider` requests `/api/config` only once the session check has answered, so it carries the cookie that answer issued (#4118).
+Each new visitor therefore spends two first-contact units, and the default 300 admits about 150 cold visits per egress address per window.
+Do not add another request that fires before the session check answers without counting it here: #4083 briefly made the cost three, about 100 cold visits, by sending `/api/config` alongside the other two.
+Do not recover the unit on the server by exempting a route from the limiter instead, because a cookie-discarding caller would then reach that route unmetered.
+`client/src/__tests__/coldVisitFirstContactCost.test.tsx` mounts the real session and config providers with the browse page and pins the requests sent before the check answers.
+`authLimiter` narrows the same exposure by metering only what is worth metering, a rejected ticket validation, so the shared bucket is no longer spent by ordinary logging in.
 
 Write limiting is opt-in per route, not inferred from the HTTP method.
 A route is billed as a write only if it lists the `writeLimit` middleware in its definition, so reads and telemetry (search, exports, `addView`, the `/analytics/research/batch` beacon) can never exhaust the mutation budget, and a new route defaults to read-safe.
@@ -149,8 +345,15 @@ A route is billed as a write only if it lists the `writeLimit` middleware in its
 |---------|-------|-------|
 | `globalLimiter` | All `/api` except `/api/cas`. Safety net across reads, telemetry, and writes. | 1000 per 15 minutes. |
 | `writeLimit` | Opt-in per route on genuine mutations (favorites/saves, profile edits, claims, research outreach, admin writes). | 50 per 15 minutes. |
-| `authLimiter` | `/api/cas` login callback, keyed per IP. | 20 per 15 minutes. |
+| `authLimiter` | Rejected CAS ticket validation on `/api/cas`, keyed per IP. A ticketless login start is skipped and a successful validation is refunded. | 60 rejected validations per 15 minutes. |
 | `firstContactLimiter` | Cookie-less `/api` requests only, keyed per IP. The abuse control for callers who discard cookies. | `FIRST_CONTACT_RATE_LIMIT_MAX` per 15 minutes, default 300, floored at 50. |
+
+One paid dependency is metered separately, because a request budget does not bound it.
+Each distinct search query text is one paid embedding call, and `server/src/services/researchSearchQueryEmbeddingBudget.ts` bounds those calls per one-minute window, globally and per client address, with a breaker for an upstream rejection.
+It is not a rate limiter and never answers `429`: over budget the search drops its semantic leg, the keyword leg answers, and the response is marked `degraded`.
+The client key is `getPeerIpKey(req)`, so it is the same bucket the limiters above meter, IPv6 masked to its subnet, and a new derivation must not be written for it.
+The route supplies it unconditionally, so a request whose address does not resolve shares one bucket rather than reading as an in-process caller, which is the only case the ceilings exempt.
+`skills/search-data/SKILL.md` owns the ceilings, the defaults, and why the window ceiling rather than the per-address one is the real bound.
 
 `globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.
 The limiters use express-rate-limit's in-process MemoryStore, which is correct only because the Render web service runs a single instance; if it is ever scaled beyond one instance, move to a shared store (e.g. Redis) first.
@@ -164,23 +367,33 @@ Custom errors in `server/src/utils/errors.ts`:
 
 | Error | Status |
 |-------|--------|
+| `BadRequestError` | 400 |
 | `NotFoundError` | 404 |
 | `ObjectIdError` | 404 |
 | `IncorrectPermissionsError` | 403 |
+| `SearchUnavailableError` | 503, with `Retry-After` |
 
-The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, and everything else to 500.
-Development responses include full details.
-Production responses are generic.
+The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, an unavailable MongoDB (lost topology, server selection or socket timeout) to 503 with `Retry-After`, and everything else to 500.
+Response bodies are generic in every environment, except that a `BadRequestError` returns its own thrown message; outside deployed runtimes the stack is logged, never returned.
 
 ## Sensitive areas
 
 - `server/.env` and `client/.env` contain credentials, API keys, and database URLs.
 Never commit them.
 The server test suite must never read them either, and `server/src/test/hermeticEnvironment.ts` is the fence that makes sure of it (#2966).
+- Request-path logs name the action and the object, never the person (#4012).
+A log line must not interpolate a netid, email, or name, because hosted logs sit outside the database and its access controls; log the document id and let an operator join to it.
+Route any value that is not a literal through `sanitizeLogValue` in `server/src/utils/logSanitizer.ts`, which redacts credentials, emails, phone-shaped digits, and the values a MongoDB duplicate-key error quotes after `dup key:`, since a unique index keyed on `netid` or `reporter.netId` puts the identifier into the error message.
+`server/src/__tests__/correctionReportSubmissionLogs.integration.test.ts` captures every console call while a report is filed, including one that loses the duplicate race, and asserts the reporter's netid appears in none of them.
+- `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` also redacts hand-obfuscated email addresses (#4202); the shapes it covers and the prose it leaves intact are owned by the contact redaction paragraph in `docs/research-model.md`.
+- The preflight asserts what a guard does by running it on a fixed table of hostile inputs, through `runServerGuard`, and keeps source-text pins only for wiring, meaning that a call site routes through the guard at all (#3736).
+A pin on a guard's own spelling fails on behaviour-preserving rewrites and passes when a new code path leaks, so a new guarantee is written as an input and its expected output.
+- Error reports to Sentry carry no user identity, cookie, header beyond the client `User-Agent`, body, query value, or local variable.
+The posture, including why every `dataCollection` category is set off explicitly and why Express's automatic capture is disabled, is owned by the Error Reporting section of `docs/research-journey-analytics.md`.
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
-- Production scraper writes require explicit guardrails with `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
+- Scraper writes against Beta or Production are refused outright by `applyScraperEnvironmentGuards`; both environments receive data only through promotion. Promotion and other guarded Production scripts still require `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 
 ## Environment variables
 
@@ -193,17 +406,22 @@ The server test suite must never read them either, and `server/src/test/hermetic
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
-| `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests. |
+| `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests, and a range wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104` refuses startup. |
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Per-IP cookie-less request ceiling per 15 minutes for `firstContactLimiter`; defaults to 300 and is floored at 50, so a too-small value cannot lock out a NATed cohort. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
-| `MEILISEARCH_HOST` | No | Meilisearch host. |
-| `MEILISEARCH_API_KEY` | No | Meilisearch API key. |
-| `MEILISEARCH_INDEX_PREFIX` | No | Environment index prefix. |
+| `RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE` | No | Search query-embedding calls a one-minute window may hold across all callers; defaults to 600 and is floored at 60. |
+| `RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE` | No | Same window, per client address; defaults to 120 and is floored at 10. |
+| `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | No | How long the query-embedding breaker stays open after an upstream rejection or repeated failures; defaults to 60000 and is floored at 1000. |
+| `MEILISEARCH_HOST` | Deployed | Meilisearch host; defaults to `http://localhost:7700` only outside deployed runtimes, and the server refuses to start without it when deployed. |
+| `MEILISEARCH_SEARCH_API_KEY` | Deployed web service | Search-only Meilisearch key used by the request path (#4014). |
+| `MEILISEARCH_WRITE_API_KEY` | Reindex shell | Meilisearch write key for the reindex and scripts; never stored on the web service. |
+| `MEILISEARCH_API_KEY` | No | Legacy single key, the fallback for either role; a deployed fallback logs a warning. Remove from the web service once the search key is set. |
+| `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |
 | `SCRAPER_ENV` | No | Scraper write guards. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
-| `CONFIRM_PROD_SCRAPE` | No | Enables production scraper writes with production env. |
+| `CONFIRM_PROD_SCRAPE` | No | Confirms guarded Production writes such as the promotion and reindex; scraper writes against Production are refused regardless. |
 | `SCRAPER_DEVELOPMENT_DB_NAME` | No | Overrides the exact Development database name expected by scraper guards. |
 | `SCRAPER_BETA_DB_NAME` | No | Overrides the exact Beta database name expected by scraper guards. |
 | `SCRAPER_PRODUCTION_DB_NAME` | No | Overrides the exact Production database name expected by scraper guards. |

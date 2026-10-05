@@ -19,6 +19,7 @@ import {
   officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
+  planStoredCitationReadmission,
   withoutSupersededProfileSourceUrls,
   selectOfficialProfileObservationUserMatch,
   shouldIgnoreObservationForEntityMaterialization,
@@ -164,6 +165,73 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
     expect(evidence.recentGrants).toHaveLength(10);
     expect(evidence.recentGrantCount).toBe(12);
+  });
+
+  it('counts distinct dated awards across sources once every counting source dates them', () => {
+    const evidence = aggregateResearchEntityGrantEvidence([
+      {
+        field: 'recentGrants',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'NIH-1' }, { id: 'SHARED' }],
+      },
+      {
+        field: 'recentGrantPeriods',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'NIH-1' }, { id: 'NIH-2' }, { id: 'SHARED' }],
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: 3,
+      },
+      {
+        field: 'recentGrantPeriods',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'shared' }, { id: 'NSF-1' }],
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: 2,
+      },
+    ]);
+    expect(evidence.recentGrantPeriods).toEqual([
+      { id: 'NIH-1' },
+      { id: 'NIH-2' },
+      { id: 'SHARED' },
+      { id: 'NSF-1' },
+    ]);
+    expect(evidence.recentGrantCount).toBe(4);
+  });
+
+  it('withholds award periods while a counting source has not dated its awards', () => {
+    const evidence = aggregateResearchEntityGrantEvidence([
+      {
+        field: 'recentGrantPeriods',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: [{ id: 'NIH-1' }],
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nih',
+        observedAt: new Date('2026-01-01'),
+        value: 1,
+      },
+      {
+        field: 'recentGrantCount',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: 5,
+      },
+    ]);
+    expect(evidence.recentGrantPeriods).toEqual([]);
+    expect(evidence.recentGrantCount).toBe(6);
   });
 
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {
@@ -412,6 +480,33 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toEqual(['https://example-dept.yale.edu/profile/robin-oexample']);
   });
 
+  // The helper re-derives the predicates it knows about, but `condemned` is what makes an arm's
+  // removal respected in general: it carries what an arm actually dropped this pass, so an arm
+  // added to the projection later has its removal honoured without anyone remembering to teach
+  // this helper a matching predicate. Without it the next arm's removal is silently undone,
+  // which is the failure #3476 exists to stop.
+  it('respects a removal recorded by an arm even when no predicate here re-derives it (#3476)', () => {
+    const labSite = 'https://example-lab.example.com/';
+    const droppedByAnArm = 'https://example-dept.yale.edu/centers/example-initiative/';
+    expect(
+      planStoredCitationReadmission({
+        stored: [labSite, droppedByAnArm],
+        planned: [labSite],
+        condemned: new Set([droppedByAnArm]),
+        entity: { entityType: 'LAB', kind: 'lab' },
+      }),
+    ).toBeNull();
+    // The same candidate, uncondemned, is exactly what re-admission is for.
+    expect(
+      planStoredCitationReadmission({
+        stored: [labSite, droppedByAnArm],
+        planned: [labSite],
+        condemned: new Set(),
+        entity: { entityType: 'LAB', kind: 'lab' },
+      }),
+    ).toEqual([droppedByAnArm, labSite]);
+  });
+
   it('coerces a bare-string sourceUrls observation into an array instead of passing it through as a scalar (#observation-array-integrity)', () => {
     expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://bei-lab.com/')).toEqual([
       'https://bei-lab.com/',
@@ -474,6 +569,48 @@ describe('entityMaterializer post-materialization metrics', () => {
         value: 'abc123',
       }),
     ).toBe(true);
+  });
+
+  it('ignores a methods observation that states no method, so clear-on-empty can withdraw it (#4049)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['teaching', 'Peer-Reviewed Original Research'],
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['teaching', 'flow cytometry'],
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps the sourceUrl the fellowship database lane asserts, because the database is official (#4284)', () => {
+    const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('fellowship', {
+        field: 'sourceUrl',
+        sourceName: 'student-grants-database',
+        value: fundPage,
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('fellowship', {
+        field: 'deadline',
+        sourceName: 'student-grants-database',
+        value: '2027-02-01',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('fellowship', {
+        field: 'sourceUrl',
+        sourceName: 'yale-college-fellowships-office',
+        value: 'https://funding.yale.edu/fixture-fellowship',
+      }),
+    ).toBe(false);
   });
 
   it('ignores official-profile bio observations that are address or page chrome', () => {

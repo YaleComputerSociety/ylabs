@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LLM_AUTHORED_SOURCE_NAMES } from '../../scrapers/seedSources';
 
 import {
   BLANK_PUBLIC_DESCRIPTION_REASON,
@@ -7,6 +8,7 @@ import {
   enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
+  isUnbackedLabNameShell,
   isStudentReadySoftSignalReason,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
@@ -43,8 +45,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
   it('classifies the finalized enrichment set as soft, and no hard blocker as soft', () => {
     expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
       [
-        'concrete_next_step',
-        'missing_action_evidence',
+        'biography_description_fallback',
         'missing_alternate_access_path',
         'missing_application_route',
         'missing_facet_signal',
@@ -56,8 +57,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     );
     for (const soft of [
       'source_backed_description',
-      'concrete_next_step',
-      'missing_action_evidence',
+      'biography_description_fallback',
       'missing_facet_signal',
       'missing_alternate_access_path',
       'missing_application_route',
@@ -78,6 +78,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'exact_url_duplicate_risk',
       'lab_name_org_type_mismatch',
       'unbacked_lab_name',
+      'lead_title_ruled_non_hosting_rank',
       'inactive_at_yale',
       'not_undergraduate_relevant',
     ]) {
@@ -341,6 +342,198 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('unusable_name');
   });
 
+  // The class the shared-host arm alone could not reach, and the largest of them: the
+  // name is a real laboratory eponymous for somebody who is demonstrably not this
+  // record's lead, so it is that person's home rather than this one's. 81 of the 90
+  // rows whose stored `name` the authority condemns are this shape and none had a gate
+  // blocker before (#3499).
+  it('holds a person-scoped record named after another person eponymous lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'foreign-eponym-named',
+        name: 'Quimby Lab',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      knownPersonSurnames: new Set(['quimby', 'sloan']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('leaves the lead own eponymous lab at student_ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'own-eponym-named',
+        name: 'Sloan Lab',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+        websiteUrl: 'https://medicine.yale.edu/lab/sloan/',
+        sourceUrls: ['https://medicine.yale.edu/lab/sloan/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      knownPersonSurnames: new Set(['quimby', 'sloan']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('holds a person-scoped record named after an umbrella organization it does not lead', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'umbrella-named',
+        name: 'Yale Center for Synthetic Carbon Capture',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: 'Studies mineral carbonation pathways for atmospheric carbon removal.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering mineral carbonation pathways.',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('admits a unit name its own site declares under the lead as Principal Investigator', () => {
+    const input = {
+      entity: {
+        _id: 'led-unit-named',
+        name: 'Fixture Computation Unit',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies decision making with computational models and neuroimaging.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering decision making with computational models.',
+        websiteUrl: 'https://fixtureunit.example.org/',
+        sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    };
+
+    expect(computeResearchEntityStudentVisibility(input).reasons).toContain('unusable_name');
+    expect(
+      computeResearchEntityStudentVisibility({
+        ...input,
+        entity: { ...input.entity, siteDeclaredOwnNames: ['Yale Fixture Computation Unit'] },
+      }).reasons,
+    ).not.toContain('unusable_name');
+  });
+
+  // The roster is a corpus load, so a caller that judges one record omits it. What it
+  // costs was measured rather than assumed, and it is narrower than "the eponym arm
+  // goes quiet": an eponym the row's own URL path corroborates is still refused without
+  // any roster, because the page itself says whose lab it is. The roster is what decides
+  // an eponym NO cited URL corroborates, which is the case below, and corpus-wide it is
+  // the difference between the arm reaching 11 of the 90 condemned rows and 87 of them.
+  it('needs the surname roster only for an eponym no cited url corroborates', () => {
+    const base = {
+      _id: 'foreign-eponym-uncorroborated',
+      name: 'Quimby Lab',
+      slug: 'ysm-faculty-fixture-sloan',
+      entityType: 'LAB' as const,
+      kind: 'lab',
+      shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+      fullDescription:
+        'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+      websiteUrl: 'https://medicine.yale.edu/profile/fixture-sloan/',
+      sourceUrls: ['https://medicine.yale.edu/profile/fixture-sloan/'],
+    };
+    const withoutRoster = computeResearchEntityStudentVisibility({
+      entity: base,
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+    expect(withoutRoster.reasons).not.toContain('unusable_name');
+
+    const withRoster = computeResearchEntityStudentVisibility({
+      entity: base,
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      knownPersonSurnames: new Set(['quimby', 'sloan']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+    expect(withRoster.reasons).toContain('unusable_name');
+  });
+
+  // An eponym the row's own cited page corroborates needs no roster at all, which is
+  // why omitting the roster is a narrowing rather than a switch-off.
+  it('refuses another person eponymous lab corroborated by the cited url with no roster', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'foreign-eponym-url-corroborated',
+        name: 'Quimby Lab',
+        slug: 'ysm-faculty-fixture-sloan',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies vascular remodelling after ischaemic injury in model systems.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering vascular remodelling after ischaemic injury.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+  });
+
+  // The row the eponym arm must not touch: no lead resolves, so there is no person for
+  // "another person's lab" to be measured against, and the slug carries research words
+  // rather than the surname. Judging it anyway condemns a lab for its OWN eponym and
+  // shuts the lead-attachment lanes over exactly the population they recover, because
+  // they refuse a row a second hard blocker also holds (#1930/#3499).
+  it('leaves a leadless eponymous lab held by missing_lead alone', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'leadless-eponym-named',
+        name: 'Quimby Lab',
+        slug: 'synthetic-eponymous-neonatal-lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription: 'Studies neonatal care quality improvement across community nurseries.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering neonatal care quality improvement across community hospital nurseries.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quimby/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quimby/'],
+      },
+      leadMembers: [],
+      knownPersonSurnames: new Set(['quimby']),
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
   // A third furniture class, on the axis the placeholder and platform arms do not
   // reach: the value names a real thing that is simply not this research record, and
   // nothing on the row derives a name from it, so there is nothing to substitute
@@ -519,9 +712,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('missing_lead');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['source_backed_description', 'concrete_next_step']),
-    );
+    expect(result.reasons).toEqual(expect.arrayContaining(['source_backed_description']));
   });
 
   it.each([
@@ -803,7 +994,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.reasons).not.toContain('missing_lead');
     expect(result.reasons).not.toContain('missing_alternate_access_path');
-    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).not.toContain('missing_action_evidence');
     expect(result.tier).toBe('student_ready');
   });
 
@@ -983,12 +1174,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'generic_directory_shell',
-        'missing_description',
-        'missing_lead',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['generic_directory_shell', 'missing_description', 'missing_lead']),
     );
   });
 
@@ -1023,9 +1209,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['non_owner_grant_shell', 'missing_action_evidence']),
-    );
+    expect(result.reasons).toEqual(expect.arrayContaining(['non_owner_grant_shell']));
   });
 
   it('holds a "<Person> Lab"-named entity typed as an org (CENTER/INSTITUTE/PROGRAM) out of student_ready', () => {
@@ -1111,30 +1295,72 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('unbacked_lab_name');
   });
 
-  it('leaves a lab-titled row alone when a source is recorded for its name', () => {
-    const result = computeResearchEntityStudentVisibility({
-      entity: {
-        _id: 'named-from-source-lab-fixture',
-        name: 'Fixture Lab',
-        slug: 'named-from-source-lab-fixture',
-        kind: 'lab',
-        entityType: 'LAB',
-        shortDescription:
-          'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
-        fullDescription:
-          'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
-        sourceUrls: ['https://example.edu/profile/example-person/'],
-        fieldProvenance: {
-          name: { sourceUrl: 'https://example.edu/profile/example-person/' },
+  describe('a recorded name source backs a lab name only beside a type from the same page (#4050)', () => {
+    const PROFILE = 'https://medicine.yale.edu/profile/example-person/';
+    const reasonsFor = (fieldProvenance: Record<string, unknown>, sourceUrls = [PROFILE]) =>
+      computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'recorded-name-source-lab-fixture',
+          name: 'Fixture Lab',
+          slug: 'recorded-name-source-lab-fixture',
+          kind: 'lab',
+          entityType: 'LAB',
+          shortDescription:
+            'The Fixture Lab investigates the molecular mechanisms of metabolic disease.',
+          fullDescription:
+            'The Fixture Lab studies how metabolic pathways are regulated and how their regulation contributes to disease, using molecular biology and biochemistry.',
+          sourceUrls,
+          fieldProvenance,
         },
-      },
-      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
-      accessSignalCount: 1,
-      actionablePathwayCount: 1,
-      relatedEntityAccessPathCount: 1,
+        leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+        relatedEntityAccessPathCount: 1,
+      }).reasons;
+
+    it('serves a lab name one lane read with its type off the person own page', () => {
+      const read = { sourceName: 'ysm-faculty-directory', sourceUrl: PROFILE };
+      expect(reasonsFor({ name: read, entityType: read })).not.toContain('unbacked_lab_name');
     });
 
-    expect(result.reasons).not.toContain('unbacked_lab_name');
+    it('holds a lab name a lane recorded from a person page with no type beside it', () => {
+      expect(
+        reasonsFor({ name: { sourceName: 'lab-microsite-description-llm', sourceUrl: PROFILE } }),
+      ).toContain('unbacked_lab_name');
+    });
+
+    it('holds a lab name recorded from a grant record while the type came from elsewhere', () => {
+      const grant = 'https://reporter.nih.gov/project-details/00000000';
+      expect(
+        reasonsFor(
+          {
+            name: { sourceName: 'nih-reporter', sourceUrl: grant },
+            entityType: { sourceName: 'dept-faculty-roster', sourceUrl: PROFILE },
+          },
+          [PROFILE, grant],
+        ),
+      ).toContain('unbacked_lab_name');
+    });
+
+    it('serves a lab name and type one lane recorded together from a listing page', () => {
+      const listing = 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/';
+      const read = { sourceName: 'dept-faculty-roster', sourceUrl: listing };
+      expect(reasonsFor({ name: read, entityType: read }, [PROFILE, listing])).not.toContain(
+        'unbacked_lab_name',
+      );
+    });
+
+    it('keeps an operator correction of the name', () => {
+      expect(
+        reasonsFor({ name: { sourceName: 'manual-admin-edit', sourceUrl: PROFILE } }),
+      ).not.toContain('unbacked_lab_name');
+    });
+
+    it('keeps a lab name a data correction wrote, which #4050 leaves to its operator', () => {
+      expect(
+        reasonsFor({ name: { sourceName: 'manual-data-correction', sourceUrl: PROFILE } }),
+      ).not.toContain('unbacked_lab_name');
+    });
   });
 
   it('promotes a legitimately named laboratory center whose eponym appears in its own description', () => {
@@ -1276,12 +1502,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'profile_biography_shell',
-        'thin_description',
-        'missing_lead',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['profile_biography_shell', 'thin_description', 'missing_lead']),
     );
   });
 
@@ -1361,7 +1582,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('source_backed_description');
-    expect(result.reasons).toContain('concrete_next_step');
+    expect(result.reasons).not.toContain('concrete_next_step');
   });
 
   it('publishes a faculty-research-area entity with no department or research area, since missing_facet_signal is a soft signal only (issue #1802)', () => {
@@ -1499,7 +1720,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('student_ready');
-    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).not.toContain('missing_action_evidence');
     expect(result.reasons).toContain('source_backed_description');
   });
 
@@ -1572,7 +1793,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('operator_review');
     expect(result.reasons).toContain('profile_fallback_only');
-    expect(result.reasons).toContain('missing_action_evidence');
+    expect(result.reasons).not.toContain('missing_action_evidence');
   });
 
   it('keeps profile fallback rows in operator review even when concrete action evidence exists', () => {
@@ -1591,7 +1812,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.tier).toBe('operator_review');
     expect(result.reasons).toContain('profile_fallback_only');
-    expect(result.reasons).toContain('concrete_next_step');
+    expect(result.reasons).not.toContain('concrete_next_step');
   });
 
   it('routes missing source or lead records to operator review', () => {
@@ -2025,6 +2246,22 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_description');
   });
 
+  it('suppresses a common application as a container rather than a program', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Fixture Office Summer Research Common Application',
+      studentFacingCategory: 'Fellowship or grant',
+      summary:
+        'One application for the summer research fellowships the office administers, each of which funds independent research.',
+      sourceUrl: 'https://fellowships.example.edu/summer',
+      applicationLink: 'https://apply.example.edu/summer',
+      undergraduateOnly: true,
+      purpose: ['Research'],
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('common_application_container');
+  });
+
   it('keeps official but ambiguous program records in review', () => {
     const result = computeProgramStudentVisibility({
       title: 'Research Travel Funding',
@@ -2050,31 +2287,35 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.reasons).not.toContain('undergraduate_relevant');
   });
 
-  it('caps application-portal-only undergraduate programs at limited visibility', () => {
-    const result = computeProgramStudentVisibility({
-      title: 'Senior Research Fellowship',
-      studentFacingCategory: 'Senior research funding',
-      sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
-      applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
-      undergraduateOnly: true,
-    });
-
-    expect(result.tier).toBe('limited_but_safe');
-    expect(result.reasons).toContain('application_source_only');
-  });
-
-  it('caps fellowship funding to limited when its only source is the application portal', () => {
+  it('treats a fund page in the Yale fellowship database as an official source (#4284)', () => {
     const result = computeProgramStudentVisibility({
       title: 'Senior Research Fellowship',
       studentFacingCategory: 'Senior research funding',
       programKind: 'FELLOWSHIP_FUNDING',
+      summary:
+        'Funds senior undergraduates conducting independent research toward a thesis at Yale.',
+      sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
+      applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
+      deadline: '2027-03-24T17:00:00.000Z',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('official_source');
+    expect(result.reasons).not.toContain('application_source_only');
+  });
+
+  it('still holds a database-sourced fund back when it is not research-related', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Fixture Conference Attendance Fund',
+      studentFacingCategory: 'Fellowship or grant',
+      summary: 'Covers registration fees for attending a professional conference.',
       sourceUrl: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?abc123',
       undergraduateOnly: true,
     });
 
-    expect(result.tier).toBe('limited_but_safe');
-    expect(result.reasons).toContain('application_source_only');
+    expect(result.tier).not.toBe('student_ready');
   });
 
   it('promotes undergraduate research funding with a real source + application route to student-ready', () => {
@@ -2426,11 +2667,32 @@ describe('enforceStudentReadyDescriptionInvariant', () => {
     expect(recordHasNoUsablePublicDescription(describedRecord)).toBe(false);
   });
 
-  it('treats a description that only echoes the record research-area chips as no usable description', () => {
+  it('treats a body echo as usable when it is the only body, because it is served as thin but accurate', () => {
     const echoOnlyRecord = {
       researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
       fullDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
       shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+    };
+
+    expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(false);
+    const result = enforceStudentReadyDescriptionInvariant(
+      {
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description'],
+      },
+      echoOnlyRecord,
+    );
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('treats a description that only echoes the record research-area chips beside another body as no usable description', () => {
+    const echoOnlyRecord = {
+      researchAreas: ['Marine Ecology', 'Coral Reefs', 'Ocean Chemistry'],
+      fullDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+      shortDescription: 'Studies marine ecology, coral reefs, and ocean chemistry.',
+      profileSynthesisDescription:
+        'The faculty member surveys reef recovery after bleaching events in the Caribbean.',
     };
 
     expect(recordHasNoUsablePublicDescription(echoOnlyRecord)).toBe(true);
@@ -2802,5 +3064,501 @@ describe('source_backed_description withheld on lost description grounding (#287
     expect(visibility(groundingRow('UNREACHABLE', stale)).reasons).toContain(
       'source_backed_description',
     );
+  });
+});
+
+describe('a program whose apply link is its own information page (#3904)', () => {
+  const guide = {
+    title: 'Fixture Undergraduate Research',
+    studentFacingCategory: 'Department research guide',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    entryMode: 'CONTACT_FACULTY',
+    summary:
+      'The department explains how undergraduates find faculty research projects and what the senior essay requires.',
+    sourceUrl: 'https://fixture.yale.edu/undergraduate-program/senior-project',
+    applicationLink: 'https://fixture.yale.edu/undergraduate-program/senior-project/',
+    undergraduateOnly: true,
+  };
+
+  it('is not served as something to apply to when it has no application cycle', () => {
+    const result = computeProgramStudentVisibility(guide);
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+    expect(result.reasons).toContain('missing_application_route');
+  });
+
+  it('still counts its own page as the application route when it has a deadline', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('is not served when the apply link differs from its page only by scheme or www prefix', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      applicationLink: 'http://www.fixture.yale.edu/undergraduate-program/senior-project#apply',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+  });
+
+  it('still counts its own page as the application route when it is accepting applications', () => {
+    const result = computeProgramStudentVisibility({ ...guide, isAcceptingApplications: true });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('still counts a separate application page with no deadline', () => {
+    const result = computeProgramStudentVisibility({
+      ...guide,
+      applicationLink: 'https://fixture.yale.edu/apply/research-internship',
+    });
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('application_route');
+  });
+});
+
+describe('a department research guidance page (#4285)', () => {
+  const guidance = {
+    title: 'Fixture Undergraduate Research',
+    studentFacingCategory: 'Department research guidance',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    entryMode: 'CONTACT_FACULTY',
+    summary:
+      'The department explains how undergraduates find faculty research projects and approach a mentor.',
+    sourceUrl: 'https://fixture.yale.edu/undergraduate/undergraduate-research',
+    sourcePageTitle: 'Undergraduate Research Opportunities',
+    applicationLink: 'https://fixture.yale.edu/undergraduate/undergraduate-research',
+    undergraduateOnly: true,
+  };
+
+  it('is served as guidance when its own page title names undergraduate research', () => {
+    const result = computeProgramStudentVisibility(guidance);
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('department_research_guidance');
+    expect(result.reasons).not.toContain('application_route');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('stays held when the guide kind rests on no page title', () => {
+    const { sourcePageTitle: _omitted, ...withoutPageTitle } = guidance;
+    const result = computeProgramStudentVisibility(withoutPageTitle);
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).toContain('application_link_is_info_page');
+    expect(result.reasons).not.toContain('department_research_guidance');
+  });
+
+  it('stays held when its page title names a senior essay or a general program page', () => {
+    for (const sourcePageTitle of ['The Senior Essay', 'Undergraduate Program', 'Senior Project']) {
+      const result = computeProgramStudentVisibility({ ...guidance, sourcePageTitle });
+      expect(result.tier).not.toBe('student_ready');
+      expect(result.reasons).not.toContain('department_research_guidance');
+    }
+  });
+
+  it('stays held when another kind carries a guidance page title', () => {
+    const result = computeProgramStudentVisibility({
+      ...guidance,
+      programKind: 'FELLOWSHIP_FUNDING',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).not.toContain('department_research_guidance');
+  });
+
+  it('is not served as guidance without a public description', () => {
+    const result = computeProgramStudentVisibility({ ...guidance, summary: '' });
+    expect(result.tier).not.toBe('student_ready');
+  });
+});
+
+describe('a stored card that repeats a useful body', () => {
+  const lead = [
+    { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+  ];
+  const visibility = (shortDescription: string, fullDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'card-repeats-body-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription,
+        fullDescription,
+        researchAreas: ['Glaciology'],
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: lead,
+    });
+
+  it('does not hold the row for a missing card', () => {
+    const text =
+      'Studies glacier physics, including ice sheet dynamics, subglacial hydrology, meltwater routing, and sea level projections.';
+    expect(visibility(text, text).reasons).not.toContain('missing_card_description');
+  });
+
+  it('still holds a repeated sentence that only states why a model guessed the topic', () => {
+    const text =
+      'Studies topics associated with the Example Glacier Center, as evidenced by inclusion in news about award recipients at the center.';
+    expect(visibility(text, text).reasons).toContain('missing_card_description');
+  });
+
+  it('still holds a repeated sentence whose template swallowed a clause', () => {
+    const text =
+      'Studies glaciology, including research in the group is currently focused on three themes: ice flow, calving, and meltwater routing.';
+    expect(visibility(text, text).reasons).toContain('missing_card_description');
+  });
+});
+
+describe('a thin but accurate body', () => {
+  const OFFICIAL_SOURCE = 'ysm-faculty-directory';
+  const LLM_SOURCE = 'lab-microsite-description-llm';
+  const TOPIC_ECHO_TEMPLATE_BODY =
+    'Research focuses on topics including glaciology, ice sheet dynamics, and sea level rise.';
+  const SOUND_CARD =
+    'Studies how ice sheets respond to ocean warming and what that means for sea level rise.';
+  const visibility = (
+    fullDescription: string,
+    shortDescription: string,
+    bodySourceName: string | null = OFFICIAL_SOURCE,
+  ) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'thin-body-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription,
+        shortDescription,
+        researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+        ...(bodySourceName
+          ? { fieldProvenance: { fullDescription: { sourceName: bodySourceName } } }
+          : {}),
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+
+  it('does not hold a row whose short accurate official body restates its topics', () => {
+    const result = visibility(
+      "Robin Fixture's research focuses on glaciology, ice sheet dynamics, and sea level rise.",
+      SOUND_CARD,
+    );
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves an official topic-echo template body', () => {
+    const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves a thin accurate language-model template body that only echoes its topics', () => {
+    const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, LLM_SOURCE);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves a thin accurate echo body from every lane the registry marks as a model', () => {
+    for (const sourceName of LLM_AUTHORED_SOURCE_NAMES) {
+      expect(visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, sourceName).tier).toBe(
+        'student_ready',
+      );
+    }
+  });
+
+  it('serves a thin accurate echo body that carries no provenance', () => {
+    const result = visibility(TOPIC_ECHO_TEMPLATE_BODY, SOUND_CARD, null);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves the pipeline "Studies <topics>." sentence as the only body', () => {
+    const studiesSentence = 'Studies glaciology, ice sheet dynamics, and sea level rise.';
+    const result = visibility(studiesSentence, studiesSentence, LLM_SOURCE);
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('still holds a thin language-model line that states no research', () => {
+    const result = visibility(
+      'Robin Fixture is an associate professor in the department of earth sciences.',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a thin language-model line that is a topic label list', () => {
+    const result = visibility(
+      'Research Interests Glaciology; Ice Sheet Dynamics; Sea Level Rise',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('still holds a thin language-model line whose subject is another organization', () => {
+    const offSubjectLine =
+      'The Section of Glacier Surgery is interested in health systems research and clinical outcomes.';
+    const result = visibility(offSubjectLine, offSubjectLine, LLM_SOURCE);
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a thin accurate line on a row whose cited profile is another person', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'thin-body-misattributed-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: TOPIC_ECHO_TEMPLATE_BODY,
+        shortDescription: SOUND_CARD,
+        researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
+        sourceUrls: ['https://medicine.yale.edu/profile/quinlan-otherperson/'],
+        fieldProvenance: { fullDescription: { sourceName: LLM_SOURCE } },
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+    expect(result.reasons).toContain('profile_identity_risk');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a thin language-model page fragment', () => {
+    const result = visibility(
+      'Studies glaciology, including research areas:.',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('serves a full language-model body whatever the echo relaxation', () => {
+    const result = visibility(
+      'Robin Fixture studies how ice sheets respond to a warming ocean, combining satellite altimetry with ice flow models to project how fast glaciers retreat and how much they add to sea level rise over the coming century.',
+      SOUND_CARD,
+      LLM_SOURCE,
+    );
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('still holds a thin body that is a page fragment', () => {
+    const result = visibility('Studies glaciology, including research areas:.', SOUND_CARD);
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('still holds a thin body whose card opens on a glued dateline', () => {
+    const result = visibility(
+      "Robin Fixture's research focuses on glaciology, ice sheet dynamics, and sea level rise.",
+      'May 11, 2021In Defense of Ice Models, using glaciology and sea level rise records.',
+    );
+    expect(result.tier).not.toBe('student_ready');
+  });
+});
+
+describe('a lab name backed only by a school section page', () => {
+  const labRow = (websiteUrl: string) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name: 'Fixture Lab',
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+  });
+
+  it('is unbacked when the only website is a school section page', () => {
+    expect(isUnbackedLabNameShell(labRow('https://www.art.yale.edu/opportunities'))).toBe(true);
+    expect(isUnbackedLabNameShell(labRow('https://medicine.yale.edu/pediatrics/'))).toBe(true);
+  });
+
+  it('is unbacked when the only website is a department host listing', () => {
+    expect(isUnbackedLabNameShell(labRow('https://economics.yale.edu/people?page=4'))).toBe(true);
+    expect(isUnbackedLabNameShell(labRow('https://campuspress.yale.edu/economics/'))).toBe(true);
+  });
+
+  it('is unbacked when a name token only appears inside a longer section word', () => {
+    const row = { ...labRow('https://medicine.yale.edu/pediatrics/'), name: 'Pediatric Lab' };
+    expect(isUnbackedLabNameShell(row)).toBe(true);
+  });
+
+  it('does not count the university itself as a token of the name', () => {
+    const row = { ...labRow('https://www.yale.edu/research'), name: 'Yale Fixture Lab' };
+    expect(isUnbackedLabNameShell(row)).toBe(true);
+  });
+
+  it.each([
+    'https://fixture.yale.edu/',
+    'https://fixture.research.yale.edu/',
+    'https://www.fixture.yale.edu/',
+    'https://campuspress.yale.edu/fixture/',
+    'https://campuspress.yale.edu/rf123/',
+    'https://rfix.research.yale.edu/',
+    'https://tidalmechanics.yale.edu/',
+    'https://medicine.yale.edu/lab/fixture/',
+    'https://example.org/',
+  ])('is backed by a lab or person site: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow(url))).toBe(false);
+  });
+});
+
+describe("a lab heading composed from the lead's full name", () => {
+  const labRow = (name: string, websiteUrl: string) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name,
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+    fieldProvenance: {
+      name: { sourceName: 'lab-microsite-description-llm', sourceUrl: websiteUrl },
+      entityType: { sourceName: 'lab-microsite-description-llm', sourceUrl: websiteUrl },
+    },
+  });
+
+  it('is unbacked when the only site is a personal page that names no lab', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
+  });
+
+  it('is backed when a cited site is lab-named', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.fixturelab.example.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it.each([
+    'https://medicine.yale.edu/lab/rfix/',
+    'https://www.example.org/labs/',
+    'https://fixturelaboratory.example.org/',
+  ])('is backed by a lab segment or lab-ending site: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(false);
+  });
+
+  it.each([
+    'https://www.example.org/available/',
+    'https://www.example.org/collaborators/',
+    'https://www.example.org/syllabus/',
+    'https://www.example.org/label/',
+    'https://www.example.org/labor/',
+  ])('is unbacked when a path word only contains the letters lab: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(true);
+  });
+
+  it("is unbacked when the only lab letters are the lead's own surname", () => {
+    const row = labRow('Robin Fixturelab Lab', 'https://www.robinfixturelab.example.com/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixturelab')).toBe(true);
+  });
+
+  it('leaves a surname heading and a multi-word surname to the existing rules', () => {
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Fixture Lab', 'https://www.rfixsite.example.com/'),
+        'Robin Fixture',
+      ),
+    ).toBe(false);
+    expect(
+      isUnbackedLabNameShell(
+        labRow('da Costa Fixture Lab', 'https://www.rfixsite.example.com/'),
+        'Robin Ana da Costa Fixture',
+      ),
+    ).toBe(false);
+  });
+
+  it('is backed when a recorded non-LLM description names the surname lab', () => {
+    const row = {
+      ...labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/'),
+      fullDescription: 'The Fixture Lab studies tidal sediment transport in estuaries.',
+      fieldProvenance: {
+        fullDescription: { sourceName: 'ysm-faculty-directory', sourceUrl: 'https://x.example/' },
+      },
+    };
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it('is unbacked when the only lab-named citation is a listing of many labs', () => {
+    const row = {
+      ...labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/'),
+      sourceUrls: ['https://www.rfixsite.example.com/', 'https://dept.example.edu/faculty-labs'],
+    };
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
+  });
+
+  it('is backed by a bare lab path segment when the lead carries a middle initial', () => {
+    const row = labRow('Robin L. Fixture Lab', 'https://www.example.edu/lab/rfixture/');
+    expect(isUnbackedLabNameShell(row, 'Robin L. Fixture')).toBe(false);
+  });
+
+  it('is backed by a host that runs the surname into lab', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.fixturelabatexample.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it('is backed by a plural lab path segment under a two-letter surname', () => {
+    const row = labRow('Robin Fx Lab', 'https://www.example.edu/fx-labs');
+    expect(isUnbackedLabNameShell(row, 'Robin Fx')).toBe(false);
+  });
+
+  it('is backed by a host that runs a two-letter surname into lab', () => {
+    const row = labRow('Robin Fx Lab', 'https://www.fxlabatexample.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fx')).toBe(false);
+  });
+
+  it('is unbacked by a host where a lab-prefixed word precedes the name', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.labelrobin.example.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
+  });
+
+  it('needs the lead to tell the composed form apart', () => {
+    expect(
+      isUnbackedLabNameShell(labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/')),
+    ).toBe(false);
+  });
+});
+
+describe('a person-scoped biography that states no research', () => {
+  const visibility = (fullDescription: string, shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'biography-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription,
+        shortDescription,
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+  const biography =
+    'Robin Fixture is a graphic designer and public artist. She received a B.A. from Example College in 1962 and an M.F.A. from Example University in 1964. She joined the faculty in 1990 and served as chair of the department. She won the example medal in 2004.';
+
+  it('is held for review, not suppressed', () => {
+    const result = visibility(biography, 'Robin Fixture is a graphic designer and public artist.');
+    expect(result.reasons).toContain('biography_without_research');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('is not held when the card names a method applied to a research question', () => {
+    const result = visibility(
+      biography,
+      'Applies lettering analysis and archival survey to study how public signs shape civic memory.',
+    );
+    expect(result.reasons).not.toContain('biography_without_research');
+  });
+
+  it('is not held when the card states the research', () => {
+    const result = visibility(biography, 'Studies graphic design and public art.');
+    expect(result.reasons).not.toContain('biography_without_research');
   });
 });

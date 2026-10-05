@@ -31,6 +31,9 @@ function schoolLabel(entity: DisambiguatableResearchEntity): string {
 
 const DISAMBIGUATOR_LABEL_EXTRACTORS = [departmentLabel, schoolLabel] as const;
 
+export const disambiguatorLabels = (entity: DisambiguatableResearchEntity): string[] =>
+  DISAMBIGUATOR_LABEL_EXTRACTORS.map((extractor) => extractor(entity));
+
 function titleText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }

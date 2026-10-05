@@ -16,7 +16,7 @@ This file claimed a single shadow token and a serif heading stack.
 Both were false in `src/`, one of them from the day it was written, while the brand-color rule held because it is the only one with a CI guard.
 So every visual rule here either carries an executable guard or gets deleted.
 A documented rule with no guard does not describe the product, it describes an intention, and the gap widens silently.
-The three guards are `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`, all in `src/__tests__/`.
+The guards are the `*Guard.test.ts(x)` files in `src/__tests__/`, starting with `brandColorGuard`, `elevationTokenGuard`, and `displayTypeGuard`.
 
 **Judge a change on rendered pixels, not on computed style or a class count.**
 A blanket serif rule on `h1` through `h4` passed every static check and was visibly wrong: it turned a section kicker into a giant serif banner and inflated small sidebar labels.
@@ -55,7 +55,9 @@ It should feel like a trustworthy university publication, not a consumer SaaS da
 
 ## 2. Color Palette and Roles
 
-All colors are defined once as CSS variables in `src/index.css` and aliased into Tailwind in `tailwind.config.js`.
+All colors are defined once as CSS variables in `src/index.css` and aliased into Tailwind by the `@theme inline` block at the top of the same file.
+`inline` makes a utility compile to the `--yr-*` variable itself, which is what the guards that compile Tailwind resolve against `:root`.
+Tailwind's generic palette is restated at its Tailwind 3 values in `src/tailwindPalette.css`, so the categorical and state scales below render exactly as they did before Tailwind 4, whose own palette is a different oklch set.
 Use the Tailwind alias in `className`, or the raw variable in MUI `sx` and inline styles.
 
 | Role | Token | Tailwind alias | Value |
@@ -74,9 +76,11 @@ Use the Tailwind alias in `className`, or the raw variable in MUI `sx` and inlin
 | Muted text | `--yr-muted` | `muted` | `#5f6570` |
 | Hairline border | `--yr-line` | `line` | `#e2e8f0` |
 | Strong border | `--yr-line-strong` | `line-strong` | `#cbd5e1` |
+| Form-control edge | `--yr-line-control` | `line-control` | `#7c8594` |
 | Warm border | `--yr-border-warm` | `line-warm` | `#e7dfd2` |
 | Success | `--yr-green` | `success` | `#23705b` |
 | Success tint | `--yr-green-soft` | `success-soft` | `#e5f4ee` |
+| Overlay scrim | `--yr-scrim` | `scrim` | `--yr-navy` at 50% |
 
 Rules:
 
@@ -95,6 +99,13 @@ This project has no Tailwind forms plugin, so `text-brand` on an `input[type=che
 Use `accent-brand`.
 - Gold is a sparing accent for secondary emphasis, never a second primary.
 - A brand-tinted border uses `line-brand` (`--yr-blue-border`), the same tint `.yr-pill-blue` draws.
+- The edge of an `input`, `select`, `textarea`, or checkbox proxy uses `line-control`, never a hairline.
+A control's fill equals the surface it sits on, so its border is the only thing that identifies it, and WCAG 1.4.11 asks for 3:1 there.
+`line-strong` measures 1.48:1 on `panel` and 1.34:1 on `panel-muted`, which left an unchecked filter option invisible; `line-control` measures 3.72:1 and 3.37:1, and 3.33:1 on `parchment`, the lowest of the four surfaces.
+Its focus state keeps `focus:border-brand`, which sits 3.28:1 from `line-control`, so the state change is still perceptible.
+A checkbox proxy for a visually hidden input takes `.yr-check-proxy`, which carries the size, radius, and edge, and adds only its checked fill at the call site.
+`src/__tests__/controlEdgeContrastGuard.test.tsx` renders the shared filter controls, compiles their classes through the real Tailwind compiler and `index.css`, and fails when a rendered control's resolved border measures under 3:1 on any control surface.
+The same file sweeps every source file and fails on a control drawn with a hairline token or an uncoloured `border`, which is what reaches the operator surfaces the render does not.
 
 ### Categorical, state, and chart-series colors
 
@@ -159,7 +170,7 @@ The floor is what makes it both correct and enforceable, and `src/__tests__/disp
 - Apply the serif through `.yr-display`, never through a tag selector.
 A tag selector cannot tell a page heading from a metric-tile label; see §0.
 - `.yr-display` deliberately declares no `font-weight`.
-It sits in `@layer components`, so a `font-semibold` utility on the same element wins on source order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
+It sits in `@layer components`, so a `font-semibold` utility on the same element wins on cascade-layer order and a weight declared there would be silently dropped, the same trap documented for `focus:outline-none` in §4.
 Set the weight with a utility at the element, and prefer `font-semibold` over `font-bold`: Source Serif 4 at 700 is heavier than this palette wants.
 - Body, controls, labels, and data: `Inter` sans stack (`font-sans`).
 - Text takes one of exactly three neutral steps, and there is no fourth.
@@ -182,16 +193,36 @@ Contrast stays a measured check, so when you add or change a neutral, compute th
 - Choose a hover or state color one step darker than the element's resting step.
 A mechanical sweep onto this scale collapsed 9 hover states into their resting value, because `gray-400` and `gray-600` both map to `muted`, and a hover that paints the resting color is a hover nobody can see.
 - The same ban covers a neutral **surface** and **hairline**: no generic `bg-`, `border-`, `divide-`, or `ring-` in the `gray`, `slate`, `zinc`, or `neutral` families.
-Use `panel`, `panel-muted`, `canvas`, `parchment` for a surface, and `line`, `line-strong`, `line-warm`, `line-brand` for a hairline.
+Use `panel`, `panel-muted`, `canvas`, `parchment` for a surface, and `line`, `line-strong`, `line-warm`, `line-brand` for a hairline, and `line-control` for a form-control edge.
 `--yr-line` is `#e2e8f0`, which is exactly Tailwind's `slate-200`, so most of these swaps change nothing but the name.
 - Two things this surfaced are worth remembering, because neither is a colour-temperature problem.
 A selected filter chip was `bg-slate-900`, a near-black that is not in this palette at all and competed with the brand as a second dark; a selected state belongs on `brand`.
 And the identical 1px divider inside two sibling sort dropdowns was `bg-gray-300` in one and `bg-slate-300` in the other, which no amount of care at a call site prevents and only a token does.
-- A scrim is tinted with the page's own dark, `var(--yr-navy)`, not with `slate-950`.
+- A scrim is tinted with the page's own dark, `var(--yr-navy)`, not with `slate-950` or `black`.
+Every full-screen overlay, the program and comparison modals, the operator modals, and both mobile filter sheets, takes `bg-scrim`, which is `--yr-scrim`: navy at 50%.
+The MUI navigation drawer and the shared alert dialog cannot take a class on their backdrops, so each sets `backgroundColor: 'var(--yr-scrim)'` on the backdrop slot instead.
+There is one step, because a sheet and a modal both mean "the page behind this is inert", and two opacities would only be told apart side by side.
+Never write the scrim, or any colour, as an opacity modifier on a token, such as `bg-[var(--yr-navy)]/30` or `bg-brand-navy/30`.
+Under Tailwind 3 that emitted no rule at all, because every alias is a `var()` with no alpha channel, and the filter sheet's backdrop rendered fully transparent that way while reading correctly in review.
+Tailwind 4 does apply it, through `color-mix`, so the same class now renders a colour the palette does not name, and a navy one is a second scrim step; add a token instead.
+`src/__tests__/overlayScrimGuard.test.ts` compiles every background class in `src/` through the real Tailwind compiler and `index.css`, and fails on one that compiles to a translucent black, such as `bg-black/50`, on any opacity modifier over a `--yr-*` token, and on any opacity-modified colour class that compiles to nothing, and the student-journey smoke checks the rendered scrim on the research sheet, the program sheet, the navigation drawer, and the program modal.
 - `src/__tests__/neutralTextScaleGuard.test.ts` enforces all of this in CI: three distinct declared values, no generic neutral text class in a swept path, and no element carrying the same step at rest and on a state.
-- The sweep so far covers the student-facing surfaces.
-`components/admin`, `components/analytics`, and `pages/analytics.tsx` still hold about 396 generic neutral text classes and are listed in the guard as pending rather than exempt, so widening `SWEPT_PATHS` is how the rest lands.
-Generic neutral *background* and *border* classes are likewise still present and are not yet in scope.
+- The sweep covers the whole tree, so the guard has no path list.
+A path list is honest only while a sweep is in progress; kept afterwards it means the next new file sits quietly outside the rule.
+- Six lines keep a generic neutral, and they are the complete set of grey members of a declared multi-hue or state scale: the `gray` entry in `colorKeyToTailwind`, the fellowship cycle badge, `researchPlanStageMeta` `SAVED` and `CLOSED`, `ROLE_PILL_CLASSES` `staff`, and the grey sibling of an emerald `active` pair in the admin grants table.
+A seventh entry needs a matching row in the scale table above.
+- Do not widen that exemption by predicate.
+A grey background beside grey text also describes an ordinary secondary button, and treating those as scale members is how two `Cancel` buttons kept an untokened hover.
+Those two are now `.yr-secondary-action`, which is the house primitive for a cancel beside a save.
+- A strong button outline uses `muted`, not `line-strong`.
+`line-strong` is a hairline token and disappears when asked to carry a button's edge.
+- **Student-facing text never renders below 12px (`text-xs`).**
+That is the floor for anything a student reads to make a decision: prose, a name, a role, a department, a status badge, a link label.
+The side column on a research profile set a contact's role and department at 9px and their title at 11px, from a ternary that made the narrow variant smaller than the wide one, and 9px is below every common legibility guideline for body text.
+The two exemptions are the tracked uppercase kicker (`.yr-kicker`, 0.72rem), which is a label rather than content, and an operator-only diagnostic surface, which a maintainer reads and a student never sees.
+`src/__tests__/minimumTextSizeGuard.test.ts` enforces it: it fails on any arbitrary `text-[...]` size under 12px outside the operator surfaces it names.
+A kicker is held to its own 0.72rem rather than excused, so shrinking one below that still fails the guard.
+An arbitrary size is the only way to get under the floor, because the smallest size in the Tailwind scale, `text-xs`, is exactly 12px.
 - Keep line length comfortable for reading; prefer measured column widths over full-bleed paragraphs.
 - Display headings carry `.yr-display`, which tightens tracking to `-0.02em`.
 Type set at a display size with default tracking reads as browser default rather than as set type, and it is the highest-signal way a page looks unconsidered.
@@ -205,6 +236,11 @@ Every `<table>` gets this from a base rule; a standalone metric value outside a 
 Do not re-declare either per component.
 - The `y/labs` wordmark is the one exception to the heading rule: it is set in the `Inter` sans stack at weight 700 with `-0.03em` tracking, matching the `y/cs` mark it derives from.
 Always render it through `src/components/Wordmark.tsx` rather than as literal text, so the slash keeps its taller scale.
+- The shared link preview image is the one place the wordmark is a raster, and it is generated rather than drawn.
+`scripts/shareImage/template.html` mirrors the `.yr-wordmark` rules on `brand`, and `yarn --cwd client share-image:generate` renders it to a 1200x630 PNG in `public/assets/`, names the file by its content hash, and rewrites the `og:image` and `twitter:image` URLs in `index.html`.
+The hashed name is what lets the server cache it immutable, so never rename or edit the PNG by hand; change the template and regenerate.
+Changing the wordmark rules in `src/index.css` also requires updating the template and regenerating.
+`src/__tests__/shareImageMeta.test.ts` fails when the tags, the declared size, or the hash drift from the file.
 
 ## 4. Component Stylings
 
@@ -215,21 +251,47 @@ Prefer these over ad hoc styling.
 Do not use a `ring-brand-soft` ring for focus.
 A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, where `brand-soft` measures 1.13:1 against the canvas and reads as no focus indicator at all.
 - Secondary button: `brand` text on `brand-soft` or panel fill with a `line` border.
-- Cards and panels: `panel` surface, `line` border, `shadow-yr` elevation, rounded corners.
+- Cards and panels: `panel` surface, `line` border, `shadow-yr-raised` elevation, rounded corners.
 - Chips and badges: soft tints (`brand-soft`, `gold-soft`, `success-soft`) with the matching strong text color.
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
+- A sort control is `SortMenu` from `src/components/shared/SortMenu.tsx`, a select-only combobox: Enter, Space, and the arrow keys open it on the current option, `aria-activedescendant` names the highlighted option, and Escape closes it with focus kept on the trigger.
+The research and program sort menus were two hand-rolled copies of one listbox, and both drifted off the keyboard contract, so do not write a third.
+- A transient alert or confirmation is `showAlert` or `confirmAction` from `src/utils/appDialogs.tsx`, which renders `src/components/shared/AppDialog.tsx` on an MUI `Dialog` with `role="alertdialog"`.
+The MUI dialog supplies the focus trap, Escape, the backdrop dismissal, and focus return to the trigger; a destructive confirmation opens on Cancel and any other opens on its confirm button.
+Its backdrop takes the scrim and its paper takes the overlay radius and modal shadow, so it reads as one of the operator modals rather than as a library default.
+A surface that a student reaches on first load calls `showWarningDialog` from `src/utils/warningDialog.ts` instead, which fetches the dialog module only when it is needed, and `src/__tests__/entryChunkGuard.test.ts` fails if the dialog reaches the entry chunk.
+- Never call `blur()` to dismiss a control, because it sends keyboard focus to the document body; the Programs page test that presses Enter and Escape in the search input holds this for the one control that did.
 - A card whose whole surface is clickable does not also get a filled primary button.
 The browse card carried three affordances for one destination: a clickable wrapper, a linked title, and a filled navy CTA, so a single viewport showed six filled primary buttons for six cards.
 A filled fill means "this is the one action on this surface"; six of them means none of them.
 Demote the CTA to a text link in `brand` with the shared arrow, which is what the sibling browse card already did, and anchor it on a `border-t border-line` hairline so the CTA row aligns across a row of cards.
+- The hairline needs a floor gap above it, not only the `mt-auto` that pins it to the bottom.
+`mt-auto` resolves to 0 on the tallest card of a row, so a description directly above it sat on the divider on every card at 375px and 768px.
+Put `mt-auto pt-4` on a wrapper and the `border-t` on the row inside it, so the row still pins to the bottom and never sits closer than one `4` spacing step to the content above.
+`components/research/__tests__/ResearchHomeCard.test.tsx` holds the browse card to that.
+- A card that looks clickable is one real target, not a wrapper with a pointer cursor.
+Stretch its one action over the card with `after:absolute after:inset-0` on the action and `relative` on the card, and lift any other control above the overlay with `relative z-[1]`.
+Never put `onClick` on the wrapper instead: the program card lost its wrapper handler for keyboard access and kept `cursor-pointer`, so a 277x319 card promised a target and delivered a 20px button.
+The stretched action also opts out of the base press rule with `[&:not(:disabled):active]:transform-none` and `[&:not(:disabled):active]:filter-none`, because a transform or filter makes the action the overlay's containing block, so the press shrinks the overlay and the release lands outside it.
+A text-height action reaches 44px with `min-h-11` and a matching negative vertical margin, so the target grows without moving the layout.
+`components/shared/__tests__/BrowseCard.test.tsx` renders the browse card and row and holds every action to that.
 - A forward affordance is an icon, never a typed character.
 A literal `→` inherits the font's weight and metrics, so the same affordance rendered at a different size and stroke depending on which card you were looking at.
 `components/shared/ArrowRightIcon.tsx` is the only place the arrow path exists, and `src/__tests__/sharedGlyphGuard.test.ts` keeps it that way.
-- There is no icon set here: 42 inline `<svg>` elements are hand-rolled across 21 files, so a new glyph has nothing to match and stroke weights cannot be consistent by construction.
-Reuse an existing glyph, or extract one to `components/shared/` as `ArrowRightIcon` was, rather than drawing another.
+- A close or remove affordance is `CloseIcon`, never a typed `×`, and its button's accessible name says what it closes or removes.
+`src/__tests__/sharedGlyphGuard.test.ts` fails on a typed close glyph anywhere in component source, and `src/__tests__/closeAffordance.test.tsx` renders the filter chip, the two filter sheets and the fellowship editor and checks each close button carries the icon.
+- Every icon comes from `components/shared/icons.tsx`, and nothing draws an SVG inline.
+The set shares one coordinate system (`0 0 24 24`), one stroke weight, and one sizing mechanism (a `size` prop), because none of those is enforceable at a call site.
+Before it, 40 inline SVG elements across 20 files drew 25 glyphs at five stroke widths and three viewBoxes, and three affordances had two drawings each: the close X as both a pair of `<line>` elements and a `<path>`, the check as a stroked path, a 20x20 solid path and a `<polyline>` at stroke widths 2 and 3, and the chevron as two different solid paths.
+Three stroke icons also carried no `strokeWidth` at all and so rendered at the SVG default of 1, visibly thinner than every sibling.
+- Add a glyph to the set rather than inline, and reuse one before adding.
+`src/__tests__/iconSetGuard.test.ts` fails on an inline SVG anywhere else, and pins that the set keeps one viewBox and one stroke weight.
+- `components/navbar/VennDiagramToggle.tsx` is the one exemption, and it is an illustration rather than an icon: two overlapping circles on a 24x16 canvas whose fill and stroke follow the selected match mode.
+Normalising it into the set would mean redrawing it.
+It does still hardcode three hex colours, which §2 forbids; that is tracked separately rather than quietly folded in here.
 - Every control also has a pressed state, which comes from a base rule on `button` rather than from a component class.
 This client has no button component: all of its buttons are styled ad hoc with utilities, and `bg-brand` alone is repeated 30 times, so there is no primitive to put the rule in.
-Keying it on the element reaches every button at once, and a call site that wants its own press behaviour still wins, because a utility beats `@layer base`.
+Keying it on the element reaches every button at once, and a call site that wants its own press behaviour can still override it, but a plain `active:` utility does not: `button:not(:disabled):active` outranks it on specificity, so repeat the selector with `[&:not(:disabled):active]:`.
 Do not add `active:scale-*` at a call site; it duplicates the base rule.
 - A `Link` or `a` styled as a control takes `.yr-pressable`, which carries the same rule.
 An element selector cannot tell a button-shaped link from a prose link, so this half is opt-in.
@@ -240,8 +302,8 @@ Removing the press state entirely under reduced motion would leave those users w
 - `src/__tests__/pressedStateGuard.test.ts` enforces all three: the base rule exists, the reduced-motion block drops the transform without dropping the filter, and no link styled as a control lacks `.yr-pressable`.
 Before this, 2 of 135 buttons had a pressed state.
 - Keyboard focus: `.yr-focus-ring` (defined in `src/index.css`) is the canonical focus indicator for interactive controls - a `:focus-visible`-only, brand-tinted outset outline. Use it instead of ad hoc `focus-visible:ring-2 focus-visible:ring-blue-*` clusters.
-- Never pair `.yr-focus-ring` with a `focus:outline-none` or `focus-visible:outline-none` utility.
-`.yr-focus-ring` lives in `@layer components`, Tailwind utilities come after it, and the two selectors have equal specificity, so the utility wins on source order and silently removes the focus ring.
+- Never pair `.yr-focus-ring` with a `focus:outline-hidden`, `focus:outline-none`, or `focus-visible:` equivalent utility.
+`.yr-focus-ring` lives in `@layer components` and Tailwind utilities live in the later `utilities` cascade layer, so the utility wins regardless of specificity and silently removes the focus ring.
 `.yr-focus-ring` already suppresses the resting outline itself.
 - Peer-driven focus: a visually hidden `peer` input whose focus must show on a styled proxy element uses `.yr-focus-ring-peer` on the proxy.
 The proxy never receives focus, so `.yr-focus-ring` cannot fire on it.
@@ -254,6 +316,11 @@ Choose inset only when the control sits flush against the clipping edge.
 - Inset is the wrong choice on a saturated fill even when the ancestor does clip.
 The ring color is `color-mix(in srgb, var(--yr-blue) 72%, white)`, which lands near 2:1 when drawn inside `bg-brand` - painted but invisible, the very defect the token exists to prevent.
 An unpadded text or glyph button is the other exclusion: a negative offset strikes the outline through its own glyphs.
+- A segmented control, a row of buttons sharing one bordered, rounded wrapper, takes `.yr-segmented` on the wrapper and no `overflow-hidden`.
+`.yr-segmented` rounds the first and last segment to the wrapper's own radius, which is the only thing the clip was doing, so each segment keeps the outset `.yr-focus-ring`.
+Neither focus token works inside a clipping wrapper there: the outset ring is clipped to nothing, and the selected segment usually carries a saturated fill, which rules out the inset one.
+The dashboard surface tabs painted zero focus pixels and the view-mode toggle kept only the edges drawn over a neighbour until this changed.
+The student-journey smoke (`yarn e2e:smoke`) focuses each segment of both controls by keyboard and fails when any side of the ring paints no pixels, which catches a reintroduced clip and a neighbour painting over the ring alike.
 - MUI controls cannot take the CSS classes, so they use `navFocusRingSx` from `src/utils/focusRing.ts`, with `menuItemFocusRingSx` for popover menu items whose scroll container would clip an outset ring.
 Both share one outline constant with `.yr-focus-ring`; do not hand-roll a `&:focus-visible` block with its own color.
 - `focus:ring-inset` has no effect alongside either class.
@@ -265,6 +332,8 @@ It shapes a ring box-shadow, and the canonical indicators are outlines.
 - Use a consistent max content width and generous gutters rather than edge to edge layouts.
 - Group related controls; separate distinct actions with whitespace, not dividers, where possible.
 - Sidebars and filter rails are sticky but must never trap content below the fold on short viewports.
+- A block inside a sidebar rail is a panel sized to the rail, not a page-wide toolbar: `yr-panel rounded-card p-3`, the same radius and gutter as its neighbours, and no `max-w-*` or `px-6` container.
+The student-journey smoke (`yarn e2e:smoke`) holds the programs quick-filter rail to the search panel's radius and padding, at most three chip rows, and the result count in a header no lower than the first chip row.
 
 ## 5b. Shape and Radius
 
@@ -281,14 +350,15 @@ Rules:
 - **An inner element is tighter than the box holding it.**
 That ordering is the rule; the three numbers are only how it is currently expressed.
 A control inside a card reads as sitting in it, and a control as round as its card reads as floating on it.
-- Do not use Tailwind's generic `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, or `rounded-2xl`, and do not use a bare `rounded`.
+- Do not use Tailwind's generic `rounded-xs`, `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, `rounded-2xl`, `rounded-3xl`, or `rounded-4xl`, and do not use a bare `rounded`.
+The sided forms count too: both mobile filter sheets were `rounded-t-md`, a generic radius the guard could not see until it matched `rounded-t-`, so a sheet now takes `rounded-t-overlay`.
 A bare `rounded` is 0.25rem and means "no radius was chosen"; it was at 28 sites in the swept paths.
 `rounded-full` is still correct for a capsule or an avatar, and `.yr-pill` already sets it.
 - The defect this replaced was not too many values, it was no role assignment.
 The identical card construct, a hairline border over the panel surface, was written with `rounded-md` 37 times and `rounded-lg` 34 times, so one component rendered at two radii essentially at random.
 Separately the operator surfaces put inputs at `rounded-lg`, the container radius, which is the inversion the ordering exists to prevent.
 - Never put a radius utility on a `.yr-pill`, including a bare `rounded`.
-`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on source order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
+`.yr-pill` sets its capsule radius in `@layer components`, so the utility wins on cascade-layer order and squares the pill off, the same layer-order trap recorded for `focus:outline-none` in §4.
 13 elements were doing this and they were two different things, which is why the count mattered more than the symptom.
 - 11 were dense chips carrying `min-h-0 rounded`, overriding both the capsule and the pill's min-height.
 That is a real variant and it meant it, so it is now `.yr-pill-compact`, which states the intent and takes its radius from the control step rather than an arbitrary 4px.
@@ -316,7 +386,7 @@ Elevation is a four-step scale, and the step is chosen by what the surface *is*,
 Rules:
 
 - Reserve elevation for cards, popovers, and modals; flat surfaces are the default.
-- Do not use Tailwind's generic `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl`, or `shadow-2xl`.
+- Do not use Tailwind's generic `shadow-2xs`, `shadow-xs`, `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl`, or `shadow-2xl`.
 Those are untinted black at low opacity, which reads as grey haze over the warm `canvas` rather than as lift.
 Every step above is tinted with `--yr-navy` so the shadow belongs to this palette.
 - Each step is two layers, a tight contact shadow plus a diffuse one.
@@ -348,6 +418,11 @@ Don't:
 Breakpoints follow the MUI theme values: `sm` 640, `md` 768, `lg` 1024, `xl` 1280.
 
 - Design mobile first; the single-column layout is the baseline.
+- A responsive grid declares its base column, `grid grid-cols-1 sm:grid-cols-2`, never `grid sm:grid-cols-2` alone.
+Without a base column the implicit track is sized to its widest item's min-content, so one long word in one card widened every card and the page.
+- Served text breaks anywhere rather than widening its box: `[data-scroll-container]` and every `[role='dialog']` set `overflow-wrap: anywhere` in the base layer, and tables inside them keep whole words and scroll in their own wrapper.
+A slash-joined name renders through `components/shared/SlashBreakableText.tsx`, so a display heading breaks after the slash instead of mid-word.
+`src/__tests__/gridBaseColumnGuard.test.ts` fails on a responsive grid with no base column, and the student-journey smoke (`scripts/e2e-student-journey-smoke.mjs`) injects a 120-character token at 320px and fails on sideways scroll.
 - Filter rails collapse into disclosures on small viewports.
 - Verify layouts at 1280 to 1536px where sticky rails are most likely to overflow.
 

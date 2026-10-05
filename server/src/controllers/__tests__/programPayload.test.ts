@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { publicProgramForReader } from '../programPayload';
+import { publicFellowshipForStudent } from '../../services/fellowshipService';
 
 const specificPage =
   'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
@@ -217,6 +218,44 @@ describe('publicProgramForReader redaction placeholder hygiene (#671/#774)', () 
 
     expect(payload.applicationInformation).not.toMatch(/redacted/i);
     expect(payload.applicationInformation).toBe('Submit a personal statement and transcript.');
+  });
+});
+
+describe('a contact direction served as eligibility (#4177)', () => {
+  it('withholds an eligibility that only says who to ask, whichever lane stored it', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58520',
+      title: 'Example Research Fellowship',
+      sourceName: 'yale-college-fellowships-office',
+      eligibility:
+        'Specific questions about projects should be addressed to Quill Fixture, senior administrative assistant for the program.',
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('');
+  });
+
+  it('serves the requirements and drops the contact direction beside them', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58521',
+      title: 'Example Research Fellowship',
+      eligibility:
+        'Open only to sophomores and juniors.Contact Information:For questions about this application, please contact Quill Fixture.',
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('Open only to sophomores and juniors.');
+  });
+
+  it.each([
+    'Open only to sophomores and juniors. Contact: Quill Fixture, Program Coordinator,.',
+    'Open only to sophomores and juniors. Questions? Email Quill Fixture.',
+  ])('drops a stored contact direction whose email was already stripped: %s', (eligibility) => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58522',
+      title: 'Example Research Fellowship',
+      eligibility,
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).toBe('Open only to sophomores and juniors.');
   });
 });
 
@@ -468,5 +507,158 @@ describe('publicProgramForReader sourceLinkHealth (#1022)', () => {
     });
 
     expect(payload.sourceLinkHealth).toBeUndefined();
+  });
+});
+
+describe('publicProgramForReader program role', () => {
+  it('serves the stored program role next to the program kind', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b18e',
+      title: 'Undergraduate Research Opportunities',
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      programRole: 'STARTS_RESEARCH',
+      sourceUrl: specificPage,
+      links: [],
+    });
+
+    expect(payload.programKind).toBe('DEPARTMENT_RESEARCH_GUIDE');
+    expect(payload.programRole).toBe('STARTS_RESEARCH');
+  });
+});
+
+describe('publicProgramForReader department research guidance (#4285)', () => {
+  const studentPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(publicFellowshipForStudent(program));
+  const guidancePage = {
+    _id: '6a6f84d074dd496b1d43b18f',
+    title: 'Fixture Undergraduate Research',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    sourcePageTitle: 'Undergraduate Research Opportunities',
+    sourceUrl: specificPage,
+    applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+    links: [],
+  };
+
+  it('serves guidance as guidance with no application link, because it is not an application', () => {
+    const payload = studentPayload(guidancePage);
+
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.applicationLink).toBeUndefined();
+    expect(payload.sourceUrl).toBe(specificPage);
+  });
+
+  it('derives the guidance next step from the page title when no next step is stored', () => {
+    const payload = studentPayload(guidancePage) as { bestNextStep: string };
+
+    expect(payload.bestNextStep).toBe(
+      "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
+    );
+  });
+
+  it('serves a guidance kind that states an application cycle as an application', () => {
+    const payload = studentPayload({
+      ...guidancePage,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+
+  it('serves a guidance kind whose page title does not name research guidance as an application', () => {
+    const payload = studentPayload({ ...guidancePage, sourcePageTitle: 'Department News' });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+
+  it('keeps the application link of an application program', () => {
+    const payload = studentPayload({
+      _id: '6a6f84d074dd496b1d43b190',
+      title: 'Fixture Research Internship',
+      programKind: 'MENTOR_MATCHING',
+      sourceUrl: specificPage,
+      applicationLink: 'https://fixture.yale.edu/undergraduate/apply-form',
+      links: [],
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+});
+
+describe('publicProgramForReader card line (#3904)', () => {
+  const firstSentence =
+    'The fixture program provides summer term support for undergraduate students who do laboratory research with Yale faculty.';
+  const body = `${firstSentence} Students work full time for ten weeks.`;
+  const deadlineOnly =
+    'Fixture Summer Research Program Deadline: Friday, February 6, 2026 at 11:00pm ET.';
+  const readerPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(
+      publicFellowshipForStudent({ _id: '6a6f84d074dd496b1d43b1a0', title: 'Fixture', ...program }),
+    );
+
+  it('serves a card line from the body in place of a deadline-only summary', () => {
+    const payload = readerPayload({ summary: deadlineOnly, description: body });
+
+    expect(payload.cardSummary).toBe(firstSentence);
+    expect(payload.summary).toBe(deadlineOnly);
+  });
+
+  it('serves a card line from the body when the stored summary is empty', () => {
+    const payload = readerPayload({ summary: '', description: body });
+
+    expect(payload.cardSummary).toBe(firstSentence);
+    expect(payload.summary).toBe('');
+  });
+
+  it('serves an empty card line when a deadline-only summary has no body to derive from', () => {
+    const payload = readerPayload({ summary: deadlineOnly, description: '' });
+
+    expect(payload.cardSummary).toBe('');
+  });
+
+  it('leaves the card line undefined when the program has no summary or description', () => {
+    expect(
+      publicProgramForReader({ _id: '6a6f84d074dd496b1d43b1a1', title: 'Fixture' }).cardSummary,
+    ).toBeUndefined();
+  });
+});
+
+describe('publicProgramForReader serves a deadline from another copy of the fund (#4382)', () => {
+  it('carries the served deadline and accepting status, never the stored window', () => {
+    const springDateOnly = new Date('2027-01-05T04:59:59.999Z');
+    const payload = publicProgramForReader(
+      publicFellowshipForStudent(
+        {
+          _id: '6a6f84d074dd496b1d43b1a0',
+          title: 'Fixture Research Fund',
+          isAcceptingApplications: false,
+          deadline: new Date('2026-07-30T21:00:00.000Z'),
+          upcomingDuplicateWindow: {
+            deadline: springDateOnly,
+            isAcceptingApplications: true,
+            sourceProgramId: '6a6f84d074dd496b1d43b1a1',
+          },
+        },
+        new Date('2026-10-02T12:00:00.000Z'),
+      ),
+    );
+    expect(payload.deadline).toEqual(springDateOnly);
+    expect(payload.isAcceptingApplications).toBe(true);
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload).not.toHaveProperty('upcomingDuplicateWindow');
+  });
+});
+
+describe('the fund Description kept for the classifier (#4232)', () => {
+  it('is never served to a reader', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58530',
+      title: 'Example Senior Research Grant',
+      fullSourceDescription: 'The whole fund Description section as the page states it.',
+    }) as Record<string, unknown>;
+
+    expect(payload).not.toHaveProperty('fullSourceDescription');
   });
 });

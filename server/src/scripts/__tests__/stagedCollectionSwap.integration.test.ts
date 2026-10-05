@@ -27,11 +27,11 @@ describe('applyStagedCollectionSwap atomicity (#2347)', () => {
     await client.connect();
     sourceDb = client.db('swap_source');
     targetDb = client.db('swap_target');
-  }, 60000);
+  });
 
   afterAll(async () => {
     await client.close();
-    await replSet.stop();
+    await replSet?.stop();
   });
 
   beforeEach(async () => {

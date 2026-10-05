@@ -18,32 +18,32 @@ const SCALE_STEP = /(?<![:\w-])text-(ink-soft|ink|muted)\b/g;
 const SCALE_STEP_ON_STATE = /(?:hover|focus|active|group-hover):text-(ink-soft|ink|muted)\b/g;
 
 /**
- * Paths swept onto the three-step scale. The operator surfaces are not here yet
- * and are listed as pending rather than exempt, so widening this list is how the
- * remaining sweep lands. See client/DESIGN.md section 2.
+ * The whole tree is swept now, so there is no path list. The operator surfaces
+ * were the last pending group, and listing paths after that only invites a new
+ * file to be quietly outside the rule. See client/DESIGN.md section 2.
  */
-const SWEPT_PATHS = [
-  'pages/research.tsx',
-  'pages/fellowships.tsx',
-  'pages/labDetail.tsx',
-  'pages/about.tsx',
-  'pages/login.tsx',
-  'pages/loginError.tsx',
-  'pages/notFound.tsx',
-  'components/shared',
-  'components/labs',
-  'components/research',
-  'components/navbar',
-  'components/fellowship',
-  'components/accounts',
-];
 
 /**
- * A grey member of a declared multi-hue scale pairs a hue background with the
- * matching hue text. DESIGN.md section 2 says change such a scale as a whole or
- * not at all, so the grey member keeps its pair.
+ * The grey member of a declared multi-hue or state scale, which pairs a hue
+ * background with the matching hue text. DESIGN.md section 2 says change such a
+ * scale as a whole or not at all, so the grey member keeps its pair. These six
+ * are the complete set; a seventh entry needs a matching row in that section.
+ *
+ * Do not widen this by predicate. A grey background beside grey text also
+ * describes an ordinary secondary button, and treating those as scale members is
+ * how two `Cancel` buttons kept an untokened hover for as long as they did.
  */
-const SCALE_MEMBER_SITES = new Set(['components/labs/LabMembersList.tsx:46']);
+const SCALE_MEMBERS: { file: string; pair: string }[] = [
+  { file: 'providers/ConfigContextProvider.tsx', pair: "bg-gray-200', text: 'text-gray-800" },
+  { file: 'utils/fellowshipCycle.ts', pair: 'bg-gray-100 text-gray-600 border border-gray-200' },
+  { file: 'utils/researchPlanStages.ts', pair: 'border-gray-200 bg-gray-100 text-gray-700' },
+  { file: 'utils/researchPlanStages.ts', pair: 'border-gray-200 bg-gray-100 text-gray-500' },
+  { file: 'components/labs/LabMembersList.tsx', pair: 'bg-slate-100 text-slate-700' },
+  { file: 'pages/analytics.tsx', pair: 'bg-gray-100 text-gray-600' },
+];
+
+const isScaleMember = (file: string, line: string): boolean =>
+  SCALE_MEMBERS.some((member) => member.file === file && line.includes(member.pair));
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
@@ -54,14 +54,10 @@ const sourceFiles = (dir: string): string[] =>
     return /\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry) ? [full] : [];
   });
 
-const sweptFiles = (): string[] =>
-  SWEPT_PATHS.flatMap((path) => {
-    const full = join(SRC, path);
-    return statSync(full).isDirectory() ? sourceFiles(full) : [full];
-  });
+const allSourceFiles = (): string[] => sourceFiles(SRC);
 
 const eachLine = (visit: (site: string, line: string) => void): void => {
-  for (const file of sweptFiles()) {
+  for (const file of allSourceFiles()) {
     readFileSync(file, 'utf8')
       .split('\n')
       .forEach((line, index) => visit(`${relative(SRC, file)}:${index + 1}`, line));
@@ -80,22 +76,22 @@ describe('neutral text scale guard', () => {
     expect(new Set(values).size).toBe(3);
   });
 
-  it('uses no generic neutral text class in a swept path', () => {
+  it('uses no generic neutral text class anywhere in src', () => {
     const sites: string[] = [];
     eachLine((site, line) => {
       if (!GENERIC_NEUTRAL_TEXT.test(line)) return;
-      if (SCALE_MEMBER_SITES.has(site)) return;
+      if (isScaleMember(site.replace(/:\d+$/, ''), line)) return;
       sites.push(site);
     });
 
     expect(sites).toEqual([]);
   });
 
-  it('uses no generic neutral surface or hairline class in a swept path', () => {
+  it('uses no generic neutral surface or hairline class anywhere in src', () => {
     const sites: string[] = [];
     eachLine((site, line) => {
       if (!GENERIC_NEUTRAL_SURFACE.test(line)) return;
-      if (SCALE_MEMBER_SITES.has(site)) return;
+      if (isScaleMember(site.replace(/:\d+$/, ''), line)) return;
       sites.push(site);
     });
 
