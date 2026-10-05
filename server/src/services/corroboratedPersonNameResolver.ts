@@ -43,7 +43,7 @@ function givenNameAgrees(candidateGiven: string[], nihGiven: string[]): boolean 
 }
 
 function urlLeafPieces(url: string): { pieces: string[]; joined: string } {
-  let path = '';
+  let path: string;
   try {
     path = new URL(url).pathname;
   } catch {

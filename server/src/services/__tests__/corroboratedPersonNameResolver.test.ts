@@ -103,4 +103,18 @@ describe('resolveResearcherIdByCorroboratedName', () => {
       'absent',
     );
   });
+  it('refuses when the surname fetch reaches the candidate cap', async () => {
+    const capped = async () =>
+      Array.from({ length: SURNAME_FETCH_LIMIT }, () =>
+        candidate('Blair Placeholder', profile('avery-blair-placeholder')),
+      );
+    expect(
+      (
+        await resolveResearcherIdByCorroboratedName(
+          { first: 'AVERY', middle: 'BLAIR', last: 'PLACEHOLDER' },
+          capped,
+        )
+      ).status,
+    ).toBe('ambiguous');
+  });
 });
