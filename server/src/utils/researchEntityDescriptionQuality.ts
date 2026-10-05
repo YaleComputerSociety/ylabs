@@ -476,6 +476,9 @@ const isConciseSpecificResearchDescription = (value: string): boolean =>
     /\b[a-z][a-z-]+(?:ics|ology|tion|ment|nance|theory|design|cycles)\b/i.test(value) &&
     (value.match(/,/g)?.length || 0) + (/\band\b/i.test(value) ? 1 : 0) >= 1);
 
+export const isTooShortCardLine = (value: string): boolean =>
+  wordCount(value) < 8 && !isConciseSpecificResearchDescription(value);
+
 /**
  * The bare label-list template flagged by #1616 (a `LAB`/`FACULTY_RESEARCH_AREA`
  * shortDescription that reads as researchAreas tags rather than a description:
@@ -1975,9 +1978,7 @@ function computeShortDescriptionQuality(
   const flags: DescriptionQualityFlag[] = [];
 
   if (!text) flags.push('blank');
-  if (text && wordCount(text) < 8 && !isConciseSpecificResearchDescription(text)) {
-    flags.push('too-short');
-  }
+  if (text && isTooShortCardLine(text)) flags.push('too-short');
   if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');

@@ -1,4 +1,5 @@
 import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
+import { isTooShortCardLine } from './researchEntityDescriptionQuality';
 
 const EM_DASH_ASIDE_BOUNDARY =
   /\s*[—–]\s*(?:including|such as|primarily|particularly|especially|notably|with)\s/gi;
@@ -38,11 +39,11 @@ const TRAILING_PLACEHOLDER_NOUN =
   /(?:\b(?:topics|areas|fields|issues|subjects|themes|questions|aspects|ways|things|targets|figures|institutions|settings)|\b(?:to|and|other)\s+conditions)$/i;
 
 // A boundary with no punctuation before it can follow a word that needs what comes after
-// it ("research has focused on", "aims to understand", "can be used to", "mediated by
-// signaling"), so the head must not end on an auxiliary, a verb that takes "to", an
-// adverb, or a past participle.
+// it ("research has focused on", "aims to understand", "in order to", "teach clinicians
+// how to", "the ability to", "mediated by signaling"), so the head must not end on an
+// auxiliary, a verb or noun that takes "to", a wh-word, an adverb, or a past participle.
 const TRAILING_DEPENDENT_WORD =
-  /\b(?:has|have|had|been|be|being|can|could|may|might|will|would|should|must|aims?|seeks?|works?|strives?|tries|try|hopes?|able|[a-z]+ly|[a-z]+ed)$/i;
+  /\b(?:has|have|had|been|be|being|can|could|may|might|will|would|should|must|aims?|seeks?|works?|strives?|tries|try|hopes?|able|in order|in an effort|in an attempt|how|what|where|when|whether|ability|capacity|needs?|efforts?|approach(?:es)?|ways?|methods?|tools?|strategies|[a-z]+ly|[a-z]+ed)$/i;
 
 const MAX_SHORTENED_LENGTH = 190;
 const MIN_SHORTENED_LENGTH = 35;
@@ -95,6 +96,8 @@ export function shortenCardLineToFitBrowseCard(card: string): string {
       if (/[.!?]$/.test(head)) continue;
       if (!balancedParentheses(head)) continue;
       if (head.split(/\s+/).length < MIN_SHORTENED_WORDS) continue;
+      // The gate holds a row whose card the quality check calls too short.
+      if (isTooShortCardLine(`${head}.`)) continue;
       return `${head}.`;
     }
   }

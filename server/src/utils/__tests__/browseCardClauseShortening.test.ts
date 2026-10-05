@@ -83,17 +83,13 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
   it('does not cut before an em-dash aside that the sentence closes', () => {
     const card =
       'Studies how steroid hormone signaling in the uterus — especially glucocorticoid receptor activity and crosstalk with other receptors — influences early pregnancy events and the growth of uterine fibroids.';
-    expect(shortenCardLineToFitBrowseCard(card)).not.toBe(
-      'Studies how steroid hormone signaling in the uterus.',
-    );
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
   it('does not cut before an en-dash aside that the sentence closes', () => {
     const card =
       'Studies how steroid hormone signaling in the uterus – especially glucocorticoid receptor activity and crosstalk with other receptors – influences early pregnancy events and the growth of uterine fibroids.';
-    expect(shortenCardLineToFitBrowseCard(card)).not.toBe(
-      'Studies how steroid hormone signaling in the uterus.',
-    );
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
   it('cuts before a spaced em-dash aside the sentence leaves open', () => {
@@ -110,24 +106,33 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     'The fixture laboratory aims to understand how cortical circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in rodents, primates, and humans over many decades.',
     'Develops computational methods for cortical recordings that can be used to identify how circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in many model species.',
     'Studies synaptic loss and memory decline in the aging brain mediated by signaling between microglia, astrocytes, and neurons across learning, sleep, stress, and disease states in rodents and in humans worldwide.',
+    'Studies the neural circuits of the zebrafish hindbrain that control eye movements and posture in order to understand how the vertebrate brain integrates sensory signals into motor commands over development.',
+    'Develops machine learning methods for radiology reports and imaging archives that teach clinicians how to recognize early signs of lung disease, cancer, and cardiovascular conditions in routine scans today.',
   ])('does not end a card on a word that needs what follows it: %s', (card) => {
-    const served = shortenCardLineToFitBrowseCard(card);
-    expect(served).not.toMatch(/\b(?:has|primarily|aims|used|mediated)\.$/);
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
+  });
+
+  it('does not cut to a head the card quality check would call too short', () => {
+    const card =
+      'Develops new imaging tools for neurons, including two-photon microscopes, genetically encoded voltage indicators, adaptive optics, and analysis software for recording cortical activity in behaving animals.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
   it('does not cut example lists inside a relative clause or after a placeholder noun', () => {
     const relative =
       'Studies lysosome cell biology in neurodegenerative disease, aiming to define cellular mechanisms that allow specialized cell types such as neurons, microglia and macrophages to meet their physiological demands.';
-    expect(shortenCardLineToFitBrowseCard(relative)).not.toContain('cell types.');
+    expect(shortenCardLineToFitBrowseCard(relative)).toBe(
+      'Studies lysosome cell biology in neurodegenerative disease.',
+    );
     const placeholder =
       'Studies Latin American film and literature, the reception of classical tragedy in Latin America, and topics including sleep and insomnia, gender debates, Third Cinema, and psychoanalysis in the region.';
-    expect(shortenCardLineToFitBrowseCard(placeholder)).not.toMatch(/topics\.$/);
+    expect(shortenCardLineToFitBrowseCard(placeholder)).toBe(placeholder);
   });
 
   it('does not end a card on a linking verb', () => {
     const card =
       'The fixture group primary research interests are: identifying mechanisms that contribute to lung injury in preterm infants and protective strategies that may reduce adverse pulmonary outcomes over time.';
-    expect(shortenCardLineToFitBrowseCard(card)).not.toMatch(/\bare\.$/);
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
   it('leaves a card that already fits untouched', () => {
