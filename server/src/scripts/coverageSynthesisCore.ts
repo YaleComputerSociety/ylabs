@@ -247,6 +247,23 @@ export function buildWriterEvidenceSnippets(
   return [...fromPages, ...grants.slice(0, room)];
 }
 
+/**
+ * The writer's evidence for a merge survivor. A row merged into this one is the same
+ * research, so its page evidence is this row's evidence, but only to fill a row whose
+ * own evidence is empty: #3584 keeps a merged-in row's prose from replacing a survivor's,
+ * and widening every survivor's corpus would re-synthesize bodies that are already right.
+ */
+export function buildWriterEvidenceSnippetsWithMergedInFill(
+  ownObservations: readonly CoverageObservationLike[],
+  mergedInObservations: readonly CoverageObservationLike[],
+  recentGrants: unknown,
+  options: WriterEvidenceOptions = {},
+): CoverageSnippet[] {
+  const own = buildWriterEvidenceSnippets(ownObservations, recentGrants, options);
+  if (own.length > 0 || mergedInObservations.length === 0) return own;
+  return buildWriterEvidenceSnippets(mergedInObservations, recentGrants, options);
+}
+
 export function writerEvidenceHash(snippets: readonly CoverageSnippet[]): string {
   return computeVersionedContentHash(
     snippets.map((snippet) => snippet.text).join('\n'),

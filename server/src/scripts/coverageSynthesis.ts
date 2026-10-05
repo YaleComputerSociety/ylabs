@@ -37,7 +37,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   WRITER_EVIDENCE_FIELDS,
   assertCoverageSynthesisApplyAllowed,
-  buildWriterEvidenceSnippets,
+  buildWriterEvidenceSnippetsWithMergedInFill,
   parseCoverageSynthesisArgs,
   planWriterStep,
   storedWriterEvidenceHash,
@@ -53,6 +53,7 @@ import {
   markIngestVerifiedObservations,
 } from './coverageSynthesisCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
+import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -286,6 +287,9 @@ async function main() {
     await rederiveWrittenBodyCards(entities, args, guard.dbLabel);
     return;
   }
+  const mergedInBySurvivor = await listResearchEntityMergedInRowsBySurvivor(
+    entities.map((entity) => entity._id),
+  );
   const source = args.apply ? await getSourceByName(SOURCE_NAME) : null;
   if (args.apply && !source) {
     throw new Error(
@@ -336,8 +340,23 @@ async function main() {
       .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
       .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>;
 
-    const snippets = buildWriterEvidenceSnippets(
+    const mergedInAnchors = (mergedInBySurvivor.get(String(entity._id)) ?? []).flatMap((row) =>
+      writerObservationAnchors({ entityKey: row.slug, entityId: row._id }),
+    );
+    const mergedInObservations =
+      mergedInAnchors.length > 0
+        ? ((await Observation.find({
+            entityType: 'researchEntity',
+            ...materializationReadScopeFilter(),
+            field: { $in: WRITER_EVIDENCE_FIELDS },
+            $or: mergedInAnchors,
+          })
+            .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
+            .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>)
+        : [];
+    const snippets = buildWriterEvidenceSnippetsWithMergedInFill(
       markIngestVerifiedObservations(observations, verifiedRunIds),
+      markIngestVerifiedObservations(mergedInObservations, verifiedRunIds),
       entity.recentGrants,
       {
         websiteUrl: entity.websiteUrl,
