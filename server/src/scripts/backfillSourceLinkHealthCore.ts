@@ -224,6 +224,11 @@ export function isDecisiveStoredVerdict(entry: unknown): boolean {
   return typeof status === 'string' && status !== 'UNKNOWN';
 }
 
+/** The stored shape a resolution failure leaves: `UNAVAILABLE` with no HTTP status. */
+export function isStoredUnresolvableVerdict(entry: StoredSourceLinkHealthEntry): boolean {
+  return entry.healthStatus === 'UNAVAILABLE' && typeof entry.httpStatusCode !== 'number';
+}
+
 export function storedSourceLinkHealthByUrl(
   storedHealth: unknown,
 ): Map<string, StoredSourceLinkHealthEntry> {
