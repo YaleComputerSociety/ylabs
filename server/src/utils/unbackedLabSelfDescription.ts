@@ -396,29 +396,30 @@ export function isComposedFullNameLabName(
 function urlNamesALab(value: unknown, person: string): boolean {
   try {
     const url = new URL(textValue(value));
-    const nameLetters = personTokens(person)
+    const nameTokens = personTokens(person)
       .map(letters)
-      .filter((token) => token.length >= 3);
+      .filter((token) => token.length >= 2);
+    const strippableNameTokens = nameTokens.filter((token) => token.length >= 3);
     const endsInLab = new RegExp(`${LAB_TOKEN}$`);
     const withoutName = (part: string) =>
-      nameLetters.reduce((rest, token) => rest.replace(token, ''), part);
+      strippableNameTokens.reduce((rest, token) => rest.replace(token, ''), part);
     const hostParts = url.hostname.split('.').map(letters).filter(Boolean);
     const pathParts = url.pathname.split('/').map(letters).filter(Boolean);
-    const startsWithLab = new RegExp(`^${LAB_TOKEN}`);
+    const labRightAfterName = nameTokens.map((token) => new RegExp(`${token}${LAB_TOKEN}`));
+    const isListingOfLabs = (part: string) => {
+      const before = /^(.+)labs$/.exec(part)?.[1];
+      return before !== undefined && !nameTokens.some((token) => before.includes(token));
+    };
     if (
       hostParts.some(
         (part) =>
           endsInLab.test(withoutName(part)) ||
-          (withoutName(part) !== part && startsWithLab.test(withoutName(part))),
+          labRightAfterName.some((pattern) => pattern.test(part)),
       )
     ) {
       return true;
     }
-    return pathParts.some((part) => {
-      const rest = withoutName(part);
-      if (!endsInLab.test(rest)) return false;
-      return !(/.labs$/.test(part) && rest === part);
-    });
+    return pathParts.some((part) => endsInLab.test(withoutName(part)) && !isListingOfLabs(part));
   } catch {
     return false;
   }
