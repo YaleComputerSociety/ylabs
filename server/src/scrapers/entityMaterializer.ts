@@ -280,6 +280,7 @@ import {
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
+  officialProfileDestinationStoredPattern,
 } from '../services/leadProfileIdentity';
 import {
   planStoredUndergradEvidenceQuoteClear,
@@ -399,7 +400,6 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
-import { officialProfileUrlLookupVariants } from '../utils/officialProfileUrlVariants';
 import {
   canonicalRoleForLegacy,
   LEAD_ROLE_LEGACY_LABELS,
@@ -2404,14 +2404,13 @@ function normalizeMemberRole(value: unknown): string {
 async function findUniqueResearcherForRosterMember(
   resolved: Record<string, ResolvedField>,
 ): Promise<any | null> {
-  const profileUrls = officialProfileUrlLookupVariants(textValue(resolved.profileUrl?.value));
-  if (profileUrls.length === 0) return null;
+  const profileUrlPattern = officialProfileDestinationStoredPattern(
+    textValue(resolved.profileUrl?.value),
+  );
+  if (!profileUrlPattern) return null;
   const researchers = await Researcher.find({
     archived: { $ne: true },
-    $or: [
-      { 'profileLinks.url': { $in: profileUrls } },
-      { 'profile.websiteUrl': { $in: profileUrls } },
-    ],
+    $or: [{ 'profileLinks.url': profileUrlPattern }, { 'profile.websiteUrl': profileUrlPattern }],
   })
     .select('_id displayName')
     .limit(2)
@@ -2439,7 +2438,8 @@ async function listingsSharingProfileUrl(
   profileUrl: string,
   scope: RosterListingScope,
 ): Promise<SharedProfileUrlListing[]> {
-  if (!profileUrl || !scope.researchGroupKey || !scope.sourceName) return [];
+  const profileUrlPattern = officialProfileDestinationStoredPattern(profileUrl);
+  if (!profileUrlPattern || !scope.researchGroupKey || !scope.sourceName) return [];
   const readScope = materializationReadScopeFilter();
   const listing = {
     entityType: 'researchGroupMember' as const,
@@ -2449,7 +2449,7 @@ async function listingsSharingProfileUrl(
   const keysCarryingUrl = (await Observation.distinct('entityKey', {
     ...listing,
     field: 'profileUrl',
-    value: profileUrl,
+    value: profileUrlPattern,
   })) as string[];
   if (keysCarryingUrl.length < 2) return [];
   const keysOnThisEntity = (
@@ -2500,27 +2500,16 @@ async function listingsSharingProfileUrl(
 const SITE_LEAD_ROLES: RoleAssignmentRole[] = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'];
 const SITE_ENTITY_LIMIT = 20;
 
-function websiteIdentityUrlKey(value: string): string {
-  try {
-    const url = new URL(value.trim());
-    const host = url.hostname.toLowerCase().replace(/^www\./, '');
-    const pathname = url.pathname.replace(/\/+$/, '').toLowerCase();
-    return host ? `${host}${pathname}` : '';
-  } catch {
-    return '';
-  }
-}
-
 async function liveLeadsOfEntitiesAtWebsite(
   url: string,
   scope: RosterListingScope,
 ): Promise<any[]> {
-  const siteKey = websiteIdentityUrlKey(url);
-  if (!siteKey) return [];
+  const sitePattern = officialProfileDestinationStoredPattern(url);
+  if (!sitePattern) return [];
   const entities = (await ResearchEntity.find({
     archived: { $ne: true },
     slug: { $ne: scope.researchGroupKey },
-    websiteUrl: { $in: officialProfileUrlStoredPatterns([siteKey]) },
+    websiteUrl: sitePattern,
   })
     .select('_id')
     .limit(SITE_ENTITY_LIMIT)

@@ -1,3 +1,4 @@
+import { escapeRegex } from '../utils/regex';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import type { ResearcherProfileLink } from '../models/researcher';
 
@@ -117,6 +118,26 @@ const canonicalOfficialProfilePath = (host: string, path: string): string => {
   if (host !== 'medicine.yale.edu') return path;
   const sectioned = YSM_SECTION_PROFILE_PATH.exec(path);
   return sectioned ? `/profile/${sectioned[1]}` : path;
+};
+
+const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
+
+export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(url || '').trim());
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const path = canonicalOfficialProfilePath(host, parsed.pathname.replace(/\/+$/, ''));
+  const anySection =
+    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
+  return new RegExp(
+    `^https?://(?:www\\.)?${escapeRegex(host)}${anySection}${escapeRegex(path)}/*(?:[?#].*)?$`,
+    'i',
+  );
 };
 
 export const normalizeOfficialProfileDestination = (url?: string | null): string => {
