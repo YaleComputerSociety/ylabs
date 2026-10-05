@@ -828,7 +828,10 @@ export async function resolveMaterializedShortDescription(
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
     isProgramLike: input.isProgramLike,
-    synthesize: currentIsCutCard && !input.resynthesizeCutCards ? undefined : input.synthesize,
+    synthesize:
+      currentIsCutCard && !input.resynthesizeCutCards && !(input.weakCard?.(current) ?? false)
+        ? undefined
+        : input.synthesize,
     refuseCandidate: (candidate) => !sanitizeResearchEntityShortDescription(candidate),
   });
   if (
@@ -8182,7 +8185,7 @@ export async function projectFromLog(
           ? undefined
           : (set.shortDescription ?? entityDoc?.shortDescription),
         reconsiderCurrentShortDescription: fullRestatesCurrentCard,
-        resynthesizeCutCards: input.resynthesizeCutCards || !!weakCardTest,
+        resynthesizeCutCards: input.resynthesizeCutCards,
         weakCard: weakCardTest,
         researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
         isProgramLike: isProgramLikeEntity,

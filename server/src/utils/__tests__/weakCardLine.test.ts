@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { resolveWrittenBodyCard } from '../../scrapers/entityMaterializer';
+import {
+  resolveMaterializedShortDescription,
+  resolveWrittenBodyCard,
+} from '../../scrapers/entityMaterializer';
 import { isWeakCardLine } from '../groundedCardSynthesis';
 import { buildResearchAreasCardSummary } from '../researchEntityDescriptionQuality';
 
@@ -73,5 +76,46 @@ describe('resolveWrittenBodyCard with a weak-card test (#4809)', () => {
     });
 
     expect(choice).toEqual({ kind: 'stored', card: SHORT_CARD });
+  });
+});
+
+const LONG_CARD =
+  'Investigates how regulatory T cells, T cell anergy, and tolerogenic antigen-presenting cells shape immune responses in cancer, autoimmunity, transplantation, and reproductive health using genetic and biochemical models.';
+
+describe('resolveMaterializedShortDescription with a weak-card test (#4809)', () => {
+  it('replaces a weak current card with a line that shows whole and is not weak', async () => {
+    const card = await resolveMaterializedShortDescription({
+      fullDescription: BODY,
+      currentShortDescription: SHORT_CARD,
+      weakCard: (line) => isWeakCardLine(line, { researchAreas }),
+      synthesize: vi.fn().mockResolvedValue(FULL_CARD),
+    });
+
+    expect(card).toBeTruthy();
+    expect(isWeakCardLine(card, { researchAreas })).toBe(false);
+  });
+
+  it('keeps a weak current card when every replacement is weak too', async () => {
+    const card = await resolveMaterializedShortDescription({
+      fullDescription: BODY,
+      currentShortDescription: SHORT_CARD,
+      weakCard: () => true,
+      synthesize: vi.fn().mockResolvedValue(SHORT_CARD),
+    });
+
+    expect(card).toBeNull();
+  });
+
+  it('does not send a cut card that is not weak to synthesis', async () => {
+    const synthesize = vi.fn().mockResolvedValue(FULL_CARD);
+    const card = await resolveMaterializedShortDescription({
+      fullDescription: `${LONG_CARD} ${BODY}`,
+      currentShortDescription: LONG_CARD,
+      weakCard: () => false,
+      synthesize,
+    });
+
+    expect(synthesize).not.toHaveBeenCalled();
+    expect(card).not.toBe(FULL_CARD);
   });
 });
