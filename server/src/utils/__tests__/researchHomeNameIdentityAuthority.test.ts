@@ -2170,15 +2170,28 @@ describe('isOffSitePageTitleForPersonScopedName', () => {
     }
   });
 
-  it("keeps a brand-only name the row's own site declares for itself", () => {
+  it("keeps a brand-only name a lab row's own site declares for itself", () => {
     expect(
       isOffSitePageTitleForPersonScopedName({
         candidateName: 'QUILLON',
         sourceUrl: 'https://quillon.example.io/',
         personName,
         siteDeclaredOwnNames: ['QUILLON'],
+        entityType: 'LAB',
       }),
     ).toBe(false);
+  });
+
+  it('refuses the title a faculty research record links even when that page declares it', () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'QUILLON',
+        sourceUrl: 'https://quillon.example.io/',
+        personName,
+        siteDeclaredOwnNames: ['QUILLON'],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe(true);
   });
 
   it('cannot judge a title without the lead', () => {
