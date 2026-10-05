@@ -59,6 +59,16 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     ).toBe(true);
   });
 
+  it('opts into card synthesis for weak cards only when asked', () => {
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab']).resynthesizeWeakCards,
+    ).toBe(false);
+    expect(
+      parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--resynthesize-weak-cards'])
+        .resynthesizeWeakCards,
+    ).toBe(true);
+  });
+
   it('reads a card model for a repair pass and refuses an empty one (#4809)', () => {
     expect(
       parseRematerializeResearchEntitiesArgs(['--slugs=example-lab', '--card-model=gpt-5'])
@@ -284,6 +294,7 @@ describe('assertRematerializeApplyAllowed', () => {
     unbackedResearchAreas: false,
     accessSignals: false,
     resynthesizeCutCards: false,
+    resynthesizeWeakCards: false,
   };
 
   it('is a no-op for dry-run', () => {

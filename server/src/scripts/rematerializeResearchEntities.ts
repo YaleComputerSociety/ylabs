@@ -6,6 +6,11 @@
  * deterministic derivation only, so run this flag over the rows whose browse card is
  * cut to have their cards rewritten to fit (#4809).
  *
+ * `--resynthesize-weak-cards` does the same for a card that shows whole but does not say
+ * what is studied (`isWeakCardLine`); a replacement must show whole and not be weak.
+ * It repairs only rows whose card follows the written body, because elsewhere a copied
+ * card observation re-asserts the weak card on the next materialize.
+ *
  * `--card-model=<model>` synthesizes those cards with another model for this run only.
  * The description lane keys its content hash on its own card model, so a stronger model
  * for a repair pass belongs here rather than in `CARD_SYNTHESIS_MODEL`: on the cards three
@@ -108,6 +113,7 @@ async function processSlug(
   foreignContact = false,
   resynthesizeCutCards = false,
   cardModel?: string,
+  resynthesizeWeakCards = false,
 ): Promise<RematerializeEntityReport> {
   const writeOnlyFields = foreignContact ? [...RESEARCH_ENTITY_CONTACT_FIELDS] : onlyFields;
   const comparedFields = rematerializeComparedFields(writeOnlyFields);
@@ -146,6 +152,7 @@ async function processSlug(
       ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
       ...(resynthesizeCutCards ? { resynthesizeCutCards } : {}),
       ...(cardModel ? { cardModel } : {}),
+      ...(resynthesizeWeakCards ? { resynthesizeWeakCards } : {}),
     },
   );
 
@@ -428,6 +435,7 @@ async function main() {
           args.foreignContact,
           args.resynthesizeCutCards,
           args.cardModel,
+          args.resynthesizeWeakCards,
         ),
   );
   const failed = entities.filter((entity) => entity.error);

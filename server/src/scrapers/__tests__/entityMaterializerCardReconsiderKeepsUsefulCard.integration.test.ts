@@ -22,7 +22,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
 import { researchEntityDescriptionIsCoherent } from '../../services/studentVisibilityTier';
 import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
-import { cardLineFitsBrowseCard } from '../../utils/groundedCardSynthesis';
+import { cardLineFitsBrowseCard, isWeakCardLine } from '../../utils/groundedCardSynthesis';
 import {
   deriveShortDescriptionFromFullDescription,
   isFullDescriptionRestatementOfShortDescription,
@@ -218,6 +218,29 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
       const stored = (await persisted())?.shortDescription;
       expect(stored).toBe(FITTING_SYNTHESIZED_CARD);
       expect(cardLineFitsBrowseCard(stored)).toBe(true);
+    });
+  });
+
+  describe('a weak card on a row whose card does not follow the written body (#4809)', () => {
+    const storedWeakCard = 'Studies immune tolerance.';
+
+    beforeEach(async () => {
+      expect(isWeakCardLine(storedWeakCard, {})).toBe(true);
+      await seedLab(storedWeakCard);
+      await seedObservation('fullDescription', LONG_LEAD_BODY);
+    });
+
+    it('is left alone by the weak-card flag, which makes no card synthesis call', async () => {
+      const synthesizeCardDescription = vi.fn().mockResolvedValue(FITTING_SYNTHESIZED_CARD);
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription, resynthesizeWeakCards: true },
+      );
+
+      expect(synthesizeCardDescription).not.toHaveBeenCalled();
+      expect((await persisted())?.shortDescription).toBe(storedWeakCard);
     });
   });
 });
