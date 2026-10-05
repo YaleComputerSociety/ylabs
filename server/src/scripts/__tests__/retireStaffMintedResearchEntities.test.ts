@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { descriptionAffirmsNoResearch } from '../../utils/descriptionStatesResearch';
 import {
   descriptionStatesResearch,
   entriesInReasonScope,
@@ -161,5 +162,34 @@ describe('descriptionStatesResearch', () => {
       }),
     ).toBe(false);
     expect(descriptionStatesResearch({})).toBe(false);
+  });
+});
+
+describe('descriptionAffirmsNoResearch (#4916)', () => {
+  it('affirms a description about a practice or an award', () => {
+    for (const entity of [
+      { shortDescription: 'Won a national magazine award for a fixture report.' },
+      {
+        shortDescription: 'Leads cleanup of fixture contamination at remediation sites.',
+        fullDescription: 'Has worked in a state remediation division for twenty years.',
+      },
+    ]) {
+      expect(descriptionAffirmsNoResearch(entity)).toBe(true);
+    }
+  });
+
+  it('never affirms an empty row, a research verb in the full text, or stated scholarship', () => {
+    for (const entity of [
+      {},
+      { shortDescription: '   ', fullDescription: '' },
+      {
+        shortDescription: 'Writes about fixture policy for magazines.',
+        fullDescription: 'Studies injury prevention and fixture policy.',
+      },
+      { shortDescription: 'Works on an eighteenth-century fixture reformer.' },
+      { fullDescription: 'My academic province is the eighteenth century.' },
+    ]) {
+      expect(descriptionAffirmsNoResearch(entity)).toBe(false);
+    }
   });
 });

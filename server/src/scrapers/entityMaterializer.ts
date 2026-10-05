@@ -84,6 +84,7 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   namesAScholarlyEventSeries,
+  personScopedNameIsACampusBuilding,
   facultyResearchNameFromUnassertedLabSuffix,
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
@@ -7187,6 +7188,11 @@ function enforceResearchEntityNameAuthority(input: {
     // prominent title on the page is a monthly speaker series that several faculty
     // co-lead rather than this person's research record.
     (isPersonScopedResearchEntity(recordIdentity) && namesAScholarlyEventSeries(candidateName)) ||
+    (isPersonScopedResearchEntity(recordIdentity) &&
+      personScopedNameIsACampusBuilding({
+        candidateName,
+        personName: recordIdentity.personName,
+      })) ||
     (isPersonScopedResearchEntity(recordIdentity) &&
       isOffSitePageTitleForPersonScopedName({
         candidateName,

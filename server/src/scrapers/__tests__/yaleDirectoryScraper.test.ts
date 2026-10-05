@@ -12,7 +12,9 @@ import {
   isResearchSupportStaffTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
+  mintsNoResearchEntityAsTeachingAppointment,
   personToObservations,
+  statesOnlyATeachingAppointment,
   YaleDirectoryScraper,
 } from '../sources/yaleDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -502,6 +504,57 @@ describe('isSubordinateResearchRank (#2304)', () => {
   it('keeps a trainee inside the researcher-identity vocabulary', () => {
     expect(isFacultyTitle('Postdoctoral Associate')).toBe(true);
     expect(looksLikeNonResearchTitle('Postdoctoral Associate')).toBe(false);
+  });
+});
+
+describe('statesOnlyATeachingAppointment (#4916)', () => {
+  it('reads a lecturer or lector rank with only a field after it', () => {
+    for (const title of [
+      'Lecturer',
+      'Lecturer in English',
+      'Senior Lecturer in Theater Management',
+      'Lector of Modern Fixture Languages',
+      'Senior Lector II of Modern Fixture',
+      'Lecturer in Public Health (Health Policy)',
+    ]) {
+      expect(statesOnlyATeachingAppointment(title)).toBe(true);
+    }
+  });
+
+  it('spares any title that names another rank or role beside the teaching one', () => {
+    for (const title of [
+      'Professor of English',
+      'Assistant Professor and Lecturer',
+      'Senior Lecturer and Research Scholar',
+      'Associate Research Scholar and Lecturer',
+      'Lecturer and Research Affiliate',
+      'Lecturer and Ph.D. Student',
+      'Visiting Fellow and Lecturer in Law',
+      'Postdoctoral Associate & Lecturer',
+      'Lecturer in American Religious History; Special Collections Librarian',
+      'Senior Lecturer and Senior Essay Coordinator',
+      'Epidemiologist 3 and Lecturer',
+      'Instructor in Medicine',
+      undefined,
+      '',
+    ]) {
+      expect(statesOnlyATeachingAppointment(title)).toBe(false);
+    }
+  });
+
+  it('refuses a mint only when the description is about something other than research', () => {
+    const practice = {
+      fullDescription:
+        'Principal tubist of a fixture orchestra who performs as a soloist worldwide.',
+    };
+    expect(mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', practice)).toBe(true);
+    expect(
+      mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', {
+        fullDescription: 'Studies the acoustics of low brass fixtures.',
+      }),
+    ).toBe(false);
+    expect(mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', {})).toBe(false);
+    expect(mintsNoResearchEntityAsTeachingAppointment('Professor of Music', practice)).toBe(false);
   });
 });
 

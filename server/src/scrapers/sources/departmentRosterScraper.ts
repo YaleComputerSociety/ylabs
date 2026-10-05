@@ -108,6 +108,8 @@ import {
   isFacultyTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
+  mintedDescriptionOf,
+  mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
 import {
@@ -3998,7 +4000,11 @@ export function rosterResearchEntityMint(
   // entry's subheading is the person's stated title, and a stated title that fails a
   // screen refuses; absence of a title is absence of evidence and still mints
   // (#3410).
-  if (observations.length > 0 && ownsNoResearchEntityByTitle(entry.title)) {
+  if (
+    observations.length > 0 &&
+    (ownsNoResearchEntityByTitle(entry.title) ||
+      mintsNoResearchEntityAsTeachingAppointment(entry.title, mintedDescriptionOf(observations)))
+  ) {
     return { observations: [], refusedByTitle: true };
   }
   return { observations, refusedByTitle: false };
