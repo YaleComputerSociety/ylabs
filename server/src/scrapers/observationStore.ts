@@ -970,6 +970,11 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  * differently must replace its earlier name; other sources emit several `name` rows per
  * run, which is why the global list cannot hold it. A read that names nothing inserts
  * nothing, so it leaves the earlier name live (#2647, #3925).
+ *
+ * The profile backfill lane states at most one `entityType` and `kind` per row per read for the
+ * same reason, so value-keyed rows left its own earlier typings live to outvote the newest one
+ * at resolve; another source's type is a rival claim rather than a restatement, so it stays
+ * value-keyed (#4884).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
