@@ -975,6 +975,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
+  'official-profile-pi-backfill': new Set(['entityType', 'kind']),
 };
 
 export function usesLatestWinsFingerprint(input: {
