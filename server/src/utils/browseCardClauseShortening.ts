@@ -7,7 +7,7 @@ const CLAUSE_BOUNDARIES: readonly RegExp[] = [
   /,\s+(?:including|such as|particularly|especially|notably|with (?:a|an) (?:focus|emphasis) on|focusing on|with attention to|ranging from)\s/gi,
   /;\s+/g,
   /,\s+(?:which|where|while|whereas)\s/gi,
-  /\s+(?:using|through|via|by combining|by integrating|with the goal of)\s/gi,
+  /\s+(?:using|by combining|by integrating|with the goal of)\s/gi,
 ];
 
 const TRAILING_FUNCTION_WORD = /\b(?:a|an|the|of|and|or|in|on|for|to|with|by|at|from|as|its|their|his|her)$/i;
@@ -44,7 +44,7 @@ export function shortenCardLineToFitBrowseCard(card: string): string {
       if (TRAILING_FUNCTION_WORD.test(head)) continue;
       if (!balancedParentheses(head)) continue;
       if (head.split(/\s+/).length < MIN_SHORTENED_WORDS) continue;
-      return `${head}.`;
+      return /[.!?]$/.test(head) ? head : `${head}.`;
     }
   }
   return text;

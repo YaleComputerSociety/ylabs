@@ -25,6 +25,20 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
   });
 
+  it('does not cut before a through that is not a method clause', () => {
+    const card =
+      'Investigates how mood, sleep and cognition change from adolescence through early adulthood in large community cohorts followed over many years, measuring daily affect, sleep timing, executive function and peer relationships.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
+  });
+
+  it('does not double the period when the head ends in an abbreviation', () => {
+    const card =
+      'Investigates social and economic determinants of cardiovascular health outcomes among older adults in the U.S., including neighborhood deprivation, insurance coverage, food access, and long-term exposure to air pollution.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(
+      'Investigates social and economic determinants of cardiovascular health outcomes among older adults in the U.S.',
+    );
+  });
+
   it('leaves a card that already fits untouched', () => {
     const card = 'Studies how cells divide during early development.';
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
