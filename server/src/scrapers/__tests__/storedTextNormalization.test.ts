@@ -29,6 +29,12 @@ describe('planStoredTextNormalization', () => {
     });
   });
 
+  it('never re-stages a stored field this pass clears', () => {
+    expect(plan({ fullDescription: GLUED_PROSE }, { unset: { fullDescription: '' } }).set).toEqual(
+      {},
+    );
+  });
+
   it('strips an invisible format character from a stored name', () => {
     expect(plan({ name: `Synthetic${SOFT_HYPHEN} Imaging Core` }).set).toEqual({
       name: 'Synthetic Imaging Core',

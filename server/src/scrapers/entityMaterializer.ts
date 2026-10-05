@@ -226,6 +226,7 @@ import {
   planNeverBackedFieldProvenanceRetirement,
   planUnrecordedProvenanceObservationRelink,
 } from './neverBackedFieldProvenance';
+import { planRetiredEvidenceFieldClears } from './retiredEvidenceFieldClear';
 import {
   planCollectivePageStoredDescriptionClears,
   planRefusedStoredDescriptionClears,
@@ -8725,6 +8726,27 @@ export async function projectFromLog(
       unset[field] = '';
       delete confidenceByField[field];
     }
+    const retiredEvidenceClears = input.readRowUnderOwnIdentity
+      ? await planRetiredEvidenceFieldClears({
+          stored: entityDoc as Record<string, unknown>,
+          staged: set,
+          unset,
+          fieldsWithLiveObservation,
+          lockedFields: manuallyLockedFields,
+          storedForm: (field, value) => sanitizeProjectedField(entityType, field, value),
+          mergedInRows: input.mergedInRows,
+        })
+      : [];
+    for (const field of retiredEvidenceClears) {
+      console.log(
+        `[retired-evidence] cleared a ${field} whose every backing observation is retired`,
+      );
+      delete set[field];
+      delete set[`fieldProvenance.${field}`];
+      unset[field] = '';
+      unset[`fieldProvenance.${field}`] = '';
+      delete confidenceByField[field];
+    }
   }
 
   // Runs last of the field stages, because it reads the value this pass will leave
@@ -8734,6 +8756,7 @@ export async function projectFromLog(
     entityType,
     stored: entityDoc as Record<string, unknown> | null,
     staged: set,
+    unset,
     lockedFields: manuallyLockedFields,
   });
   Object.assign(set, storedTextNormalization.set);
