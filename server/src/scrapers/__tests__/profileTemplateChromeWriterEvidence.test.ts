@@ -64,6 +64,26 @@ describe('profile template widget labels are never writer evidence (#4914 follow
     expect(isWriterEvidenceObservation(observation(MESH_RUN))).toBe(true);
   });
 
+  it('leaves ordinary prose that only echoes a widget phrase byte for byte', () => {
+    for (const value of [
+      'Key research topics the lab is interested in exploring include ion channel gating and membrane transport.',
+      'The lab maps frequent collaborators of the institute whose published research shapes its agenda.',
+      'The group gives a big-picture view of how the field shapes research output across the region.',
+    ]) {
+      const observation = {
+        field: 'fullDescription',
+        value,
+        sourceUrl: PAGE,
+        sourceName: 'lab-microsite-description-llm',
+        ingestVerifiedAgainstPage: true,
+      };
+      expect(gatherCoverageSnippets([observation]).map((s) => s.text)).toEqual([value]);
+      expect(cardDescriptionEvidence([{ ...observation, confidence: 0.55 } as never])).toEqual([
+        value,
+      ]);
+    }
+  });
+
   it('leaves the writer with no snippet when widgets are all the row has', () => {
     expect(
       gatherCoverageSnippets([

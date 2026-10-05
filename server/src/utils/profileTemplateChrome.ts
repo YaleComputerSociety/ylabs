@@ -29,11 +29,11 @@ export function isProfileTemplateChrome(value: unknown): boolean {
 const PROFILE_TEMPLATE_WIDGET_LABELS = [
   /\bresearch\s+at\s+a\s+glance\b/gi,
   /\byale\s+co-authors\b/gi,
-  /\bfrequent\s+collaborators\s+of\s+.{1,80}?\bpublished\s+research\b\.?/gi,
+  /\b[Ff]requent\s+collaborators\s+of\s+.{1,80}?\bpublished\s+research\b\.?(?=\s+[A-Z]|\s*$)/g,
   /\bpublications\s+timeline\b/gi,
-  /\ba\s+big-picture\s+view\s+of\s+.{1,80}?\bresearch\s+output(?:\s+by\s+year)?\b\.?/gi,
+  /\b[Aa]\s+big-picture\s+view\s+of\s+.{1,80}?\bresearch\s+output(?:\s+by\s+year)?\b\.?(?=\s+[A-Z]|\s*$)/g,
   /\bView Project(?=\s+(?:ORCID|[A-Z])|\s*$)/g,
-  /\bresearch\s+topics\s+.{1,80}?\bis\s+interested\s+in\s+exploring\b\.?/gi,
+  /\b[Rr]esearch\s+topics\s+.{1,80}?\bis\s+interested\s+in\s+exploring\b\.?(?=\s+[A-Z]|\s*$)/g,
   /\borcid\s+\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/gi,
 ];
 
