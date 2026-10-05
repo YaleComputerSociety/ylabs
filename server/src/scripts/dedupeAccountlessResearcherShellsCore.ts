@@ -133,6 +133,7 @@ export const SHELL_FOLD_IDENTITIES = [
   'netid',
   'roster-identity',
   'verified-profile',
+  'shared-row',
   'name',
 ] as const;
 export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
@@ -239,6 +240,11 @@ function decideNetidFold(
 
 export interface RosterIdentityCandidate extends CanonicalCandidate {
   displayName?: unknown;
+}
+
+export interface SharedRowCandidate extends CanonicalCandidate {
+  displayName?: unknown;
+  title?: unknown;
 }
 
 /**
@@ -376,12 +382,57 @@ function titlesStateConflictingRanks(left: unknown, right: unknown): boolean {
   return verdicts.has('owns_research') && verdicts.has('works_in_another_group');
 }
 
+/**
+ * A shell and a stronger record that both hold a role on the same live research row are
+ * one person when their names agree, because a row lists its own lead twice only when two
+ * lanes minted that lead under two spellings (a middle initial, a middle or short given
+ * name). The row joins them; the name, rank and identifiers only veto, and two agreeing
+ * candidates resolve to nobody (#4911).
+ */
+function decideSharedRowFold(
+  shell: ShellIdentity,
+  sharedRowCandidates: ReadonlyArray<SharedRowCandidate>,
+): ShellMergeDecision | undefined {
+  const shellName = typeof shell.displayName === 'string' ? shell.displayName : '';
+  if (!shellName) return undefined;
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const agreeing = new Map<string, SharedRowCandidate>();
+  for (const candidate of sharedRowCandidates) {
+    if (candidate.id === shell.id) continue;
+    if (identityTierStrength(candidate.tier) <= shellStrength) continue;
+    if (!observedPersonNameAgreesWith(candidate.displayName, shellName)) continue;
+    if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
+    agreeing.set(candidate.id, candidate);
+  }
+  if (agreeing.size === 0) return undefined;
+  const strongestStrength = Math.max(
+    ...[...agreeing.values()].map((candidate) => identityTierStrength(candidate.tier)),
+  );
+  const strongest = [...agreeing.values()].filter(
+    (candidate) => identityTierStrength(candidate.tier) === strongestStrength,
+  );
+  if (strongest.length > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'shared-row' };
+  }
+  const [target] = strongest;
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' };
+  }
+  const shellNetid = bareNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'shared-row' };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'shared-row' };
+}
+
 export function decideShellMerge(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
   canonicalNetidIndex: Map<string, CanonicalCandidate[]> = new Map(),
   rosterIdentityCandidates: ReadonlyArray<RosterIdentityCandidate> = [],
   verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]> = new Map(),
+  sharedRowCandidates: ReadonlyArray<SharedRowCandidate> = [],
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
@@ -389,6 +440,8 @@ export function decideShellMerge(
   if (byRosterIdentity) return byRosterIdentity;
   const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
   if (byVerifiedProfile) return byVerifiedProfile;
+  const bySharedRow = decideSharedRowFold(shell, sharedRowCandidates);
+  if (bySharedRow) return bySharedRow;
 
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
@@ -419,6 +472,22 @@ export function decideShellMerge(
   }
 
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' };
+}
+
+export function resolveFinalMergeTargets(
+  mergeTargetByShellId: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const resolved = new Map<string, string>();
+  for (const [shellId, firstTargetId] of mergeTargetByShellId) {
+    const visited = new Set([shellId]);
+    let targetId = firstTargetId;
+    while (mergeTargetByShellId.has(targetId) && !visited.has(targetId)) {
+      visited.add(targetId);
+      targetId = mergeTargetByShellId.get(targetId)!;
+    }
+    if (targetId !== shellId) resolved.set(shellId, targetId);
+  }
+  return resolved;
 }
 
 export interface RoleAssignmentEdge {

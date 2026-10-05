@@ -20,6 +20,7 @@ import {
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
+  resolveFinalMergeTargets,
   roleAssignmentEdgeKey,
   rosterMembershipEdgeKey,
   RESEARCHER_UNIQUE_IDENTIFIER_FIELDS,
@@ -27,6 +28,7 @@ import {
   SHELL_FOLD_IDENTITIES,
   type ResearcherAttributeSnapshot,
   type RosterIdentityCandidate,
+  type SharedRowCandidate,
   type ShellFoldIdentity,
   type ShellMergeReason,
 } from './dedupeAccountlessResearcherShellsCore';
@@ -228,6 +230,82 @@ async function loadRosterIdentityCandidates(
   return candidatesByShellId;
 }
 
+async function loadSharedRowCandidates(
+  RoleAssignment: mongoose.mongo.Collection,
+  ResearchEntities: mongoose.mongo.Collection,
+  shellIds: string[],
+  researcherIdentities: ReadonlyArray<{
+    id: string;
+    displayName?: unknown;
+    accountId?: unknown;
+    orcid?: unknown;
+    netid?: unknown;
+    title?: unknown;
+  }>,
+  netidByAccountId: Map<string, unknown>,
+): Promise<Map<string, SharedRowCandidate[]>> {
+  const candidatesByShellId = new Map<string, SharedRowCandidate[]>();
+  if (shellIds.length === 0) return candidatesByShellId;
+  const projection = { projection: { personId: 1, target: 1 } };
+  const shellEdges = (await RoleAssignment.find(
+    {
+      ...LIVE_ROSTER_EDGE_FILTER,
+      personId: { $in: shellIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    },
+    projection,
+  ).toArray()) as any[];
+  const targetIds = [...new Set(shellEdges.map((edge) => idKey(edge.target?.id)).filter(Boolean))];
+  if (targetIds.length === 0) return candidatesByShellId;
+  const liveTargets = new Set(
+    (
+      await ResearchEntities.find(
+        {
+          _id: { $in: targetIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          archived: { $ne: true },
+        },
+        { projection: { _id: 1 } },
+      ).toArray()
+    ).map((row: any) => idKey(row._id)),
+  );
+  const holderEdges = (await RoleAssignment.find(
+    {
+      ...LIVE_ROSTER_EDGE_FILTER,
+      'target.id': { $in: [...liveTargets].map((id) => new mongoose.Types.ObjectId(id)) },
+    },
+    projection,
+  ).toArray()) as any[];
+  const holdersByTarget = new Map<string, Set<string>>();
+  for (const edge of holderEdges) {
+    const target = idKey(edge.target?.id);
+    const holders = holdersByTarget.get(target) ?? new Set<string>();
+    holders.add(idKey(edge.personId));
+    holdersByTarget.set(target, holders);
+  }
+  const identityById = new Map(researcherIdentities.map((entry) => [entry.id, entry]));
+  for (const edge of shellEdges) {
+    const shellId = idKey(edge.personId);
+    const target = idKey(edge.target?.id);
+    if (!liveTargets.has(target)) continue;
+    const list = candidatesByShellId.get(shellId) ?? [];
+    for (const personId of holdersByTarget.get(target) ?? []) {
+      const identity = identityById.get(personId);
+      if (!identity || personId === shellId || list.some((entry) => entry.id === personId))
+        continue;
+      const netid = identity.netid ?? netidByAccountId.get(idKey(identity.accountId));
+      list.push({
+        id: personId,
+        displayName: identity.displayName,
+        title: identity.title,
+        orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
+        netid: bareNetid(netid),
+        tier: researcherIdentityTier({ accountId: identity.accountId, netid }),
+      });
+    }
+    candidatesByShellId.set(shellId, list);
+  }
+  return candidatesByShellId;
+}
+
 export async function dedupeAccountlessResearcherShells(options: {
   apply: boolean;
 }): Promise<DedupeAccountlessResearcherShellsResult> {
@@ -309,7 +387,15 @@ export async function dedupeAccountlessResearcherShells(options: {
     netidByAccountId,
   );
 
-  const mergeTargetByShellId = new Map<string, string>();
+  const sharedRowCandidatesByShellId = await loadSharedRowCandidates(
+    RoleAssignment,
+    mongoose.connection.collection('research_entities'),
+    foldableShells.map((entry) => entry.id),
+    researcherIdentities,
+    netidByAccountId,
+  );
+
+  const decidedTargetByShellId = new Map<string, string>();
   const foldsByMatchedIdentity = Object.fromEntries(
     SHELL_FOLD_IDENTITIES.map((identity) => [identity, 0]),
   ) as Record<ShellFoldIdentity, number>;
@@ -320,13 +406,15 @@ export async function dedupeAccountlessResearcherShells(options: {
       canonicalNetidIndex,
       rosterIdentityCandidatesByShellId.get(shell.id),
       verifiedProfileIndex,
+      sharedRowCandidatesByShellId.get(shell.id),
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
-      mergeTargetByShellId.set(shell.id, decision.canonicalId);
+      decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
   }
+  const mergeTargetByShellId = resolveFinalMergeTargets(decidedTargetByShellId);
 
   const outrankingCanonicalIds = new Set(mergeTargetByShellId.values());
   const clusterCandidates = foldableShells.filter(
