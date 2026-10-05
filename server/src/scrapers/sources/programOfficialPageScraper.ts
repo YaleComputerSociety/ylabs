@@ -29,6 +29,7 @@ export interface ProgramOfficialPageCandidate {
   sourceKey: string;
   title: string;
   pageUrl: string;
+  hasLiveCitation?: boolean;
   storedSourceLinkHealth?: unknown;
 }
 
@@ -117,6 +118,7 @@ export async function readProgramOfficialPageCandidates(options: {
       sourceKey,
       title,
       pageUrl,
+      ...(ownCited.get(sourceKey) ? { hasLiveCitation: true } : {}),
       ...(row.sourceLinkHealth ? { storedSourceLinkHealth: row.sourceLinkHealth } : {}),
     });
   }
@@ -209,14 +211,20 @@ export class ProgramOfficialPageScraper implements IScraper {
         tally.unread += 1;
         partialFailures.push(`${candidate.sourceKey}: official page landed away from itself`);
       } else {
-        const naming = officialPageNamesFund(candidate.title, officialPageText(read.html));
+        const naming = officialPageNamesFund(
+          candidate.title,
+          officialPageText(read.html),
+          new URL(read.finalUrl).hostname,
+        );
         observations.push(
           lanePageHealthObservation(
             { entityType: 'fellowship', entityKey: candidate.sourceKey },
             lanePageReadVerdict(candidate.pageUrl, read.finalUrl),
           ),
-          officialPageCitationObservation(candidate, naming.named, observedAt),
         );
+        if (naming.named || candidate.hasLiveCitation) {
+          observations.push(officialPageCitationObservation(candidate, naming.named, observedAt));
+        }
         if (naming.named) tally.cited += 1;
         else tally.notNamed += 1;
         context.log(

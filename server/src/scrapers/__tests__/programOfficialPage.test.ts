@@ -165,7 +165,19 @@ describe('ProgramOfficialPageScraper', () => {
     });
   });
 
-  it('records a withdrawal when the page it read does not name the fund', async () => {
+  it('withdraws its own live citation when the page it read no longer names the fund', async () => {
+    const emitted: ObservationInput[] = [];
+    const scraper = new ProgramOfficialPageScraper(
+      async () => [candidate({ hasLiveCitation: true })],
+      async (url) => ({ html: '<p>Other awards</p>', finalUrl: url }),
+    );
+
+    await scraper.run(context(emitted));
+
+    expect(emitted.find((o) => o.field === 'sourceUrl')).toMatchObject({ value: '' });
+  });
+
+  it('asserts no citation for a page that never named the fund and that it never cited', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new ProgramOfficialPageScraper(
       async () => [candidate()],
@@ -174,7 +186,22 @@ describe('ProgramOfficialPageScraper', () => {
 
     await scraper.run(context(emitted));
 
-    expect(emitted.find((o) => o.field === 'sourceUrl')).toMatchObject({ value: '' });
+    expect(emitted.map((o) => o.field)).toEqual([LANE_PAGE_HEALTH_FIELD]);
+  });
+
+  it('reads the fund name against the host the page was served from', async () => {
+    const emitted: ObservationInput[] = [];
+    await new ProgramOfficialPageScraper(
+      async () => [candidate({ title: 'Elmhurst Quillon Summer Fellowship' })],
+      async () => ({
+        html: '<p>The Quillon fellowship supports summer research.</p>',
+        finalUrl: 'https://elmhurst.yale.edu/fellowships',
+      }),
+    ).run(context(emitted));
+
+    expect(emitted.find((o) => o.field === 'sourceUrl')?.value).toBe(
+      'https://fixture.yale.edu/fellowships',
+    );
   });
 
   it('records a gone verdict only when a confirming probe agrees the page is gone', async () => {

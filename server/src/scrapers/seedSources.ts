@@ -397,7 +397,7 @@ const SOURCES: SourceSeed[] = [
     name: 'program-official-page',
     displayName: 'Program official page citation',
     description:
-      "Reads the official page each Yale fellowship database program already cites, or the page its curated seed names, and observes that page as the program's sourceUrl only when the page itself names the fund. A page that does not name the fund records a withdrawal, and a page confirmed gone records a gone verdict, so neither keeps backing the citation. Mints no program and writes no other field.",
+      "Reads the official page each Yale fellowship database program already cites, or the page its curated seed names, and observes that page as the program's sourceUrl only when the page itself names the fund. A page that no longer names a fund it cited records a withdrawal, and a page confirmed gone records a gone verdict, so neither keeps backing the citation. Mints no program and writes no other field.",
     baseUrl: 'https://funding.yale.edu',
     defaultWeight: 0.9,
     cadence: 'weekly',
