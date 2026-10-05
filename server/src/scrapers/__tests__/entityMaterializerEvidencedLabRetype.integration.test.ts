@@ -171,10 +171,12 @@ describe('materializeEntity retypes a faculty research row its own evidence name
     await seedOfficialBody();
 
     await materialize();
+    await materialize();
 
-    const after = await persisted();
-    expect(after.entityType).toBe('LAB');
-    expect(after.name).toBe('Rafferty Duchamp Lab');
+    const after = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<Record<string, any>>();
+    expect(after?.entityType).toBe('LAB');
+    expect(after?.name).toBe('Rafferty Duchamp Lab');
+    expect(isUnbackedLabNameShell(after ?? {}, 'Rafferty Duchamp')).toBe(false);
   });
 
   it('leaves the row for a merge when the lead already has a lab row', async () => {

@@ -13,7 +13,10 @@ import {
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { servedDescriptionCitationIsGone } from './descriptionGrounding';
-import { labNameBackedByOwnOfficialText } from '../utils/unbackedLabSelfDescription';
+import {
+  isComposedFullNameLabName,
+  labNameBackedByOwnOfficialText,
+} from '../utils/unbackedLabSelfDescription';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   servedBodyIsBiographyWithoutResearch,
@@ -451,7 +454,9 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
  * (`reclassifyUnbackedLabAsFacultyResearch`), so a row reaches the gate held here
  * only when the materializer leaves it a lab: a live `name` or `displayName`
  * observation asserts the lab, its `entityType`, `kind` or `name` is locked, or its
- * name is not the row's own lead's name plus "Lab".
+ * name is not the row's own lead's name plus "Lab". A full-name heading
+ * (`isComposedFullNameLabName`) is decided by that predicate instead, and its live
+ * observations do not exempt it.
  *
  * The absence of a lab-named URL is the discriminator rather than the presence of
  * a person-page one, because a paginated department listing
@@ -461,16 +466,22 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
  * `name` observation after all, so the row-local reading agrees with the
  * observation log on 57 of 58.
  */
-export function isUnbackedLabNameShell(entity: Record<string, any>): boolean {
+export function isUnbackedLabNameShell(
+  entity: Record<string, any>,
+  leadPersonName?: unknown,
+): boolean {
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
+  if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
+  if (isComposedFullNameLabName(entity, leadPersonName)) {
+    return !labNameBackedByOwnOfficialText(entity);
+  }
   if (
     [entity.websiteUrl, entity.website].some((value) => isSpecificResearchWebsite(value, entity))
   ) {
     return false;
   }
   if (labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
-  if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
   if (labNameBackedByOwnOfficialText(entity)) return false;
   return !citedUrls(entity).some(urlNamesALaboratory);
 }
@@ -1034,7 +1045,10 @@ export function computeResearchEntityStudentVisibility({
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
   const uncorroboratedGrantOnly = isUncorroboratedGrantOnlyEntity(entity);
   const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
-  const unbackedLabName = isUnbackedLabNameShell(entity);
+  const unbackedLabName = isUnbackedLabNameShell(
+    entity,
+    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean),
+  );
   const missingFacetSignal = missingFacultyResearchAreaFacetSignal(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);

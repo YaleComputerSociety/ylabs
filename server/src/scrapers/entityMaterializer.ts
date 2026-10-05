@@ -100,7 +100,7 @@ import {
   loadResearchEntitySoleLeadPersonId,
   normalizedLabRowName,
 } from '../utils/researchHomeNameIdentityRoster';
-import { ownLabEvidence } from '../utils/unbackedLabSelfDescription';
+import { isComposedFullNameLabName, ownLabEvidence } from '../utils/unbackedLabSelfDescription';
 import {
   resolveAllFields,
   resolveField,
@@ -7458,12 +7458,19 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
   leadPersonName: unknown;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
-  if (input.labAssertedByLiveObservation) return 0;
   if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
     return 0;
   }
   const projected = documentAsProjected(set, unset, entityDoc);
-  if (!isUnbackedLabNameShell(projected)) return 0;
+  // A composed full-name heading is what the live name observations repeat, so their
+  // assertion of a lab is not evidence of one.
+  if (
+    input.labAssertedByLiveObservation &&
+    !isComposedFullNameLabName(projected, input.leadPersonName)
+  ) {
+    return 0;
+  }
+  if (!isUnbackedLabNameShell(projected, input.leadPersonName)) return 0;
 
   const facultyResearchIdentity = {
     entityType: 'FACULTY_RESEARCH_AREA',

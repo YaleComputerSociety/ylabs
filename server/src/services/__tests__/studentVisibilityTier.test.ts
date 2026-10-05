@@ -3411,6 +3411,85 @@ describe('a lab name backed only by a school section page', () => {
   });
 });
 
+describe("a lab heading composed from the lead's full name", () => {
+  const labRow = (name: string, websiteUrl: string) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name,
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+    fieldProvenance: {
+      name: { sourceName: 'lab-microsite-description-llm', sourceUrl: websiteUrl },
+      entityType: { sourceName: 'lab-microsite-description-llm', sourceUrl: websiteUrl },
+    },
+  });
+
+  it('is unbacked when the only site is a personal page that names no lab', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
+  });
+
+  it('is backed when a cited site is lab-named', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.fixturelab.example.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it.each([
+    'https://medicine.yale.edu/lab/rfix/',
+    'https://www.example.org/labs/',
+    'https://fixturelaboratory.example.org/',
+  ])('is backed by a lab segment or lab-ending site: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(false);
+  });
+
+  it.each([
+    'https://www.example.org/available/',
+    'https://www.example.org/collaborators/',
+    'https://www.example.org/syllabus/',
+    'https://www.example.org/label/',
+    'https://www.example.org/labor/',
+  ])('is unbacked when a path word only contains the letters lab: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(true);
+  });
+
+  it("is unbacked when the only lab letters are the lead's own surname", () => {
+    const row = labRow('Robin Fixturelab Lab', 'https://www.robinfixturelab.example.com/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixturelab')).toBe(true);
+  });
+
+  it('leaves a surname heading and a multi-word surname to the existing rules', () => {
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Fixture Lab', 'https://www.rfixsite.example.com/'),
+        'Robin Fixture',
+      ),
+    ).toBe(false);
+    expect(
+      isUnbackedLabNameShell(
+        labRow('da Costa Fixture Lab', 'https://www.rfixsite.example.com/'),
+        'Robin Ana da Costa Fixture',
+      ),
+    ).toBe(false);
+  });
+
+  it('is backed when a recorded non-LLM description names the surname lab', () => {
+    const row = {
+      ...labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/'),
+      fullDescription: 'The Fixture Lab studies tidal sediment transport in estuaries.',
+      fieldProvenance: {
+        fullDescription: { sourceName: 'ysm-faculty-directory', sourceUrl: 'https://x.example/' },
+      },
+    };
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it('needs the lead to tell the composed form apart', () => {
+    expect(
+      isUnbackedLabNameShell(labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/')),
+    ).toBe(false);
+  });
+});
+
 describe('a person-scoped biography that states no research', () => {
   const visibility = (fullDescription: string, shortDescription: string) =>
     computeResearchEntityStudentVisibility({
