@@ -10,7 +10,8 @@ const CLAUSE_BOUNDARIES: readonly RegExp[] = [
   /\s+(?:using|by combining|by integrating|with the goal of)\s/gi,
 ];
 
-const TRAILING_FUNCTION_WORD = /\b(?:a|an|the|of|and|or|in|on|for|to|with|by|at|from|as|its|their|his|her)$/i;
+const TRAILING_FUNCTION_WORD =
+  /\b(?:a|an|the|of|and|or|in|on|for|to|with|by|at|from|as|its|their|his|her)$/i;
 
 const MAX_SHORTENED_LENGTH = 190;
 const MIN_SHORTENED_LENGTH = 60;
