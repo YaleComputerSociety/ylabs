@@ -20,6 +20,7 @@ import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { NehGrantScraper } from './sources/nehGrantScraper';
 import { CrossrefGrantScraper } from './sources/crossrefGrantScraper';
 import { DoeOstiGrantScraper } from './sources/doeOstiGrantScraper';
+import { DoeScienceAwardScraper } from './sources/doeScienceAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
 import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
@@ -61,6 +62,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new NehGrantScraper());
   o.register(new CrossrefGrantScraper());
   o.register(new DoeOstiGrantScraper());
+  o.register(new DoeScienceAwardScraper());
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
   o.register(new YaleCollegeFellowshipsOfficeScraper());
