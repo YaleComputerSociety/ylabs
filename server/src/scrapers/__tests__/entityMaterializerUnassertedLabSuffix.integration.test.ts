@@ -165,6 +165,7 @@ describe('materializeEntity derives the faculty research name when nothing asser
 
   it('leaves a LAB row alone when it links its own website', async () => {
     const seeded = await seedEntity({
+      name: 'Duchamp Lab',
       kind: 'lab',
       entityType: 'LAB',
       websiteUrl: 'https://www.example.com/rafferty-duchamp/',
@@ -175,7 +176,7 @@ describe('materializeEntity derives the faculty research name when nothing asser
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
     const entity = await persisted();
-    expect(entity.name).toBe(LAB_NAME);
+    expect(entity.name).toBe('Duchamp Lab');
     expect(entity.entityType).toBe('LAB');
   });
 
@@ -225,13 +226,13 @@ describe('materializeEntity derives the faculty research name when nothing asser
   });
 
   it('keeps a LAB row whose live name observation asserts the lab', async () => {
-    await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
-    await seedObservation({ field: 'name', value: LAB_NAME });
+    await seedLead((await seedEntity({ name: 'Duchamp Lab', kind: 'lab', entityType: 'LAB' }))._id);
+    await seedObservation({ field: 'name', value: 'Duchamp Lab' });
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
     const entity = await persisted();
-    expect(entity.name).toBe(LAB_NAME);
+    expect(entity.name).toBe('Duchamp Lab');
     expect(entity.entityType).toBe('LAB');
   });
 

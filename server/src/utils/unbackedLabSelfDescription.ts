@@ -360,6 +360,36 @@ export function ownLabEvidence(
 }
 
 /**
+ * Whether a lab row's name is the lead's full name plus "Lab" with no lab-named site to
+ * back it, which is a name a lane composed rather than read.
+ *
+ * Lanes mint "<given names> <surname> Lab" whenever a profile's website slot is filled,
+ * whatever the slot links, and the description lanes repeat the row's own heading, so a
+ * live observation carrying this form is not evidence that the lab exists. The same
+ * reasoning that keeps the full-name form out of descriptions (#4707) applies to the
+ * heading. A cited site whose host or path is lab-named still backs the row, whoever's
+ * name the site carries, because the lab then exists under some name.
+ */
+export function isComposedFullNameLabName(
+  entity: Record<string, any> | null | undefined,
+  leadPersonName: unknown,
+): boolean {
+  if (!entity) return false;
+  const person = textValue(leadPersonName);
+  const run = textValue(entity.name || entity.displayName).replace(/\s+Lab(?:oratory)?$/i, '');
+  if (!person || !run || run === textValue(entity.name || entity.displayName)) return false;
+  const runTokens = personTokens(run);
+  if (runTokens.length < 2 || !runNamesOnlyThisPerson(run, person)) return false;
+  if (runTokens[0].toLowerCase() !== personTokens(person)[0]?.toLowerCase()) return false;
+  const urls = [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ];
+  return !urls.some((url) => labNamedUrlTokens(url).length > 0);
+}
+
+/**
  * Whether a `LAB` row's own lab name is backed by a recorded, non-LLM description that
  * names it, read off the row's name. The gate's `unbacked_lab_name` predicate reads this
  * so a row retyped on that evidence is not held, and re-derived back, on the next pass.

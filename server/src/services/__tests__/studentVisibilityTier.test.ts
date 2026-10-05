@@ -3411,6 +3411,62 @@ describe('a lab name backed only by a school section page', () => {
   });
 });
 
+describe("a lab heading composed from the lead's full name", () => {
+  const labRow = (name: string, websiteUrl: string) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name,
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+    fieldProvenance: {
+      name: { sourceName: 'lab-microsite-description-llm', sourceUrl: websiteUrl },
+      entityType: { sourceName: 'lab-microsite-description-llm', sourceUrl: websiteUrl },
+    },
+  });
+
+  it('is unbacked when the only site is a personal page that names no lab', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
+  });
+
+  it('is backed when a cited site is lab-named', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.fixturelab.example.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it('leaves a surname heading and a multi-word surname to the existing rules', () => {
+    expect(
+      isUnbackedLabNameShell(
+        labRow('Fixture Lab', 'https://www.rfixsite.example.com/'),
+        'Robin Fixture',
+      ),
+    ).toBe(false);
+    expect(
+      isUnbackedLabNameShell(
+        labRow('da Costa Fixture Lab', 'https://www.rfixsite.example.com/'),
+        'Robin Ana da Costa Fixture',
+      ),
+    ).toBe(false);
+  });
+
+  it('is backed when a recorded non-LLM description names the surname lab', () => {
+    const row = {
+      ...labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/'),
+      fullDescription: 'The Fixture Lab studies tidal sediment transport in estuaries.',
+      fieldProvenance: {
+        fullDescription: { sourceName: 'ysm-faculty-directory', sourceUrl: 'https://x.example/' },
+      },
+    };
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
+  it('needs the lead to tell the composed form apart', () => {
+    expect(
+      isUnbackedLabNameShell(labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/')),
+    ).toBe(false);
+  });
+});
+
 describe('a person-scoped biography that states no research', () => {
   const visibility = (fullDescription: string, shortDescription: string) =>
     computeResearchEntityStudentVisibility({
