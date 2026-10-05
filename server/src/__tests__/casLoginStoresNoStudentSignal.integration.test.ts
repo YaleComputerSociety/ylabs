@@ -192,8 +192,21 @@ describe('a CAS login measures signal coverage without storing any student value
         for (const key of keysDeep(session)) expect(RETIRED_KEYS.has(key)).toBe(false);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
       const db = mongoose.connection.db!;
+      const sumBuckets = (rows: Record<string, unknown>[]) =>
+        Object.fromEntries(
+          loginSignalBuckets.map((bucket) => [
+            bucket,
+            rows.reduce((total, row) => total + Number(row[bucket] ?? 0), 0),
+          ]),
+        );
+      await vi.waitFor(async () => {
+        const rows = await db.collection('login_signal_tallies').find({}).toArray();
+        expect(sumBuckets(rows)).toMatchObject({
+          undergrad_usable_major: 2,
+          grad_with_curriculum: 1,
+        });
+      });
       const collections = await db.listCollections().toArray();
       for (const { name } of collections) {
         const documents = await db.collection(name).find({}).toArray();
@@ -203,10 +216,12 @@ describe('a CAS login measures signal coverage without storing any student value
       }
 
       const tallies = await db.collection('login_signal_tallies').find({}).toArray();
-      expect(tallies).toHaveLength(1);
       const allowedTallyKeys = new Set(['_id', 'date', ...loginSignalBuckets]);
-      for (const key of Object.keys(tallies[0])) expect(allowedTallyKeys.has(key)).toBe(true);
-      expect(tallies[0]).toMatchObject({ undergrad_usable_major: 2, grad_with_curriculum: 1 });
+      for (const tally of tallies) {
+        for (const key of Object.keys(tally)) expect(allowedTallyKeys.has(key)).toBe(true);
+      }
+      const totalLogins = Object.values(sumBuckets(tallies)).reduce((sum, count) => sum + count, 0);
+      expect(totalLogins).toBe(3);
       expect(JSON.stringify(tallies)).not.toMatch(/fixture|example\.invalid/);
 
       const output = logged.join('\n');
