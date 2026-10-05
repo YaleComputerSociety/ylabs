@@ -1374,7 +1374,7 @@ const profileLinkedSurnamePrefixLabWebsiteHtml = `
       <main>
         <h1>Quinn McFixture</h1>
         <div>
-          <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>McFixture and DiSample LabsSynthetic Circuits Group
+          <svg><title>Lab Whisk Cup Streamline Icon: https://streamlinehq.com</title></svg>McFixture and DiSample LabsSynthetic Circuits GroupMcSample Unit
           <a href="https://mcfixturelab.example.org/">View Lab Website</a>
         </div>
       </main>
@@ -4823,6 +4823,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     expect(homes[0]?.name).toContain('McFixture and DiSample Labs Synthetic');
+    expect(homes[0]?.name).toContain('Group McSample Unit');
     expect(homes.map((home) => home.name).join(' ')).not.toMatch(/\b(?:Mc|Di) [A-Z]/);
   });
 

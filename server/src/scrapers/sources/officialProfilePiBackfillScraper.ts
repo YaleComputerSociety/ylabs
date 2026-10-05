@@ -1237,7 +1237,7 @@ function dedupeRepeatedProfileCardLabel(value: string): string {
 
 // A surname such as McCormick or DiMaio carries its own case boundary, and splitting it
 // forks one person into two researchers downstream (#4879).
-const RUN_TOGETHER_WORD_BOUNDARY = /(?<=[a-z])(?<!\b(?:Mc|Mac|Di|De|La|Le|Du))(?=[A-Z])/g;
+const RUN_TOGETHER_WORD_BOUNDARY = /(?<=[a-z])(?<!(?:\b|[a-z])(?:Mc|Mac|Di|De|La|Le|Du))(?=[A-Z])/g;
 
 function cleanProfileCardLabWebsiteLabel(value: string): string {
   return dedupeRepeatedProfileCardLabel(
