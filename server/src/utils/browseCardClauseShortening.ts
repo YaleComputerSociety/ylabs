@@ -1,15 +1,17 @@
 import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
 
-// Clause-level boundaries only. A cut at a bare comma, at ", and", or before a
-// parenthesis lands inside a list or leaves a clause dangling ("...to study central,
-// autonomic."), which reads worse than a card that runs long.
+// Clause-level boundaries only. A cut at a bare comma, before a parenthesis, or at an
+// "and" not followed by a verb or wh-word that opens a clause lands inside a list or
+// leaves a clause dangling ("...to study central, autonomic."), which reads worse than a
+// card that runs long.
 const CLAUSE_BOUNDARIES: readonly RegExp[] = [
   /,\s+(?:including|such as|particularly|especially|notably|with (?:a|an) (?:focus|emphasis) on|with emphasis on|emphasizing|focusing on|with attention to|ranging from)\s/gi,
   /;\s+/g,
   /,\s+(?:which|where|while|whereas)\s/gi,
   // A second coordinated clause ("..., and how ...", "... and develops ...") leaves the
-  // first clause whole when cut before it.
-  /,?\s+and\s+(?:how|why|whether|what|develops|investigates|studies|examines|explores|uses|builds|designs|evaluates|tests|applies|leads|conducts|performs|provides|creates|supports|identifies)\s/gi,
+  // first clause whole when cut before it. Words that also read as plural nouns
+  // ("uses", "studies", "tests") are left out, since they continue a noun list.
+  /,?\s+and\s+(?:how|why|whether|what|develops|investigates|examines|explores|evaluates|conducts|performs|identifies|creates|provides|applies)\s/gi,
   /,\s+plus\s/gi,
   /\s+(?:using|by combining|by integrating|with the goal of)\s/gi,
 ];

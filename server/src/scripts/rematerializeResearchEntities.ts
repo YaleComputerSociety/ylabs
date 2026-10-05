@@ -19,10 +19,6 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  defaultCardSynthesisLLM,
-  synthesizeGroundedCardDescription,
-} from '../utils/groundedCardSynthesis';
 import { Observation } from '../models/observation';
 import { Signal } from '../models/signal';
 import {
@@ -103,25 +99,6 @@ function provenanceAfterPlan(
   return planned;
 }
 
-async function cardSynthesizerFor(
-  slug: string,
-  model: string,
-): Promise<(fullDescription: string) => Promise<string>> {
-  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) return () => Promise.resolve('');
-  const row = (await ResearchEntity.findOne({ slug }, { name: 1, displayName: 1 }).lean()) as {
-    name?: string;
-    displayName?: string;
-  } | null;
-  const entityName = row?.displayName || row?.name || '';
-  return (fullDescription) =>
-    synthesizeGroundedCardDescription({
-      fullDescription,
-      entityName,
-      callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
-    });
-}
-
 async function processSlug(
   slug: string,
   apply: boolean,
@@ -168,9 +145,7 @@ async function processSlug(
       ...(writeOnlyFields.length > 0 ? { writeOnlyFields } : {}),
       ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
       ...(resynthesizeCutCards ? { resynthesizeCutCards } : {}),
-      ...(cardModel
-        ? { synthesizeCardDescription: await cardSynthesizerFor(slug, cardModel) }
-        : {}),
+      ...(cardModel ? { cardModel } : {}),
     },
   );
 

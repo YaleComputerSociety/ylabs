@@ -51,6 +51,12 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     );
   });
 
+  it('does not cut before an and that continues a noun list', () => {
+    const card =
+      'Characterizes membrane transporters in bacterial cell envelopes, examining the structure, function and uses of these proteins in antibiotic resistance and drug delivery across many clinically relevant pathogen species.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
+  });
+
   it('leaves a card that already fits untouched', () => {
     const card = 'Studies how cells divide during early development.';
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
