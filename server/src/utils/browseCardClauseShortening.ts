@@ -43,7 +43,7 @@ const TRAILING_PLACEHOLDER_NOUN =
 // how to", "the ability to", "mediated by signaling"), so the head must not end on an
 // auxiliary, a verb or noun that takes "to", a wh-word, an adverb, or a past participle.
 const TRAILING_DEPENDENT_WORD =
-  /\b(?:has|have|had|been|be|being|can|could|may|might|will|would|should|must|aims?|seeks?|works?|strives?|tries|try|hopes?|able|in order|in an effort|in an attempt|how|what|where|when|whether|ability|capacity|needs?|efforts?|approach(?:es)?|ways?|methods?|tools?|strategies|[a-z]+ly|[a-z]+ed)$/i;
+  /\b(?:has|have|had|been|be|being|can|could|may|might|will|would|should|must|aims?|seeks?|works?|strives?|tries|try|hopes?|able|in order|in an effort|in an attempt|how|what|where|when|whether|ability|capacity|needs?|efforts?|approach(?:es)?|ways?|methods?|tools?|strategies|[a-z]+ly|[a-z]+ed|driven|shown|known|given|taken|made|grown|led|held|built|drawn|seen|done|found|thought|brought|caught|taught|understood|written|chosen)$/i;
 
 const MAX_SHORTENED_LENGTH = 190;
 const MIN_SHORTENED_LENGTH = 35;

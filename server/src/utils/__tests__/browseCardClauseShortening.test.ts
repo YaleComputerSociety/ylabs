@@ -107,6 +107,7 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
     'Develops computational methods for cortical recordings that can be used to identify how circuits encode reward and punishment across learning, sleep, stress, aging, and disease states in many model species.',
     'Studies synaptic loss and memory decline in the aging brain mediated by signaling between microglia, astrocytes, and neurons across learning, sleep, stress, and disease states in rodents and in humans worldwide.',
     'Studies the neural circuits of the zebrafish hindbrain that control eye movements and posture in order to understand how the vertebrate brain integrates sensory signals into motor commands over development.',
+    'Studies how chronic inflammation in the gut is driven by signaling between immune cells, epithelial cells, and resident microbes across infection, injury, and inflammatory bowel disease in mice and humans.',
     'Develops machine learning methods for radiology reports and imaging archives that teach clinicians how to recognize early signs of lung disease, cancer, and cardiovascular conditions in routine scans today.',
   ])('does not end a card on a word that needs what follows it: %s', (card) => {
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
