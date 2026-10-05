@@ -167,6 +167,18 @@ describe('formatTopicChipLabel', () => {
     );
   });
 
+  it('leaves a comma inside parentheses alone, because it lists items in a gloss', () => {
+    const label = formatTopicChipLabel('transcription factor evolution (Hoxa11, CEBP-B)');
+    expect(label.toLowerCase()).toBe('transcription factor evolution (hoxa11, cebp-b)');
+    expect(label.indexOf('(')).toBeLessThan(label.indexOf(')'));
+  });
+
+  it('still un-inverts a heading whose own parenthetical is balanced on one side', () => {
+    expect(formatTopicChipLabel('Carcinoma (Renal), Clear Cell')).toBe(
+      'Clear Cell Carcinoma (Renal)',
+    );
+  });
+
   it('leaves a lower-case comma phrase alone, because that is prose and not a heading', () => {
     expect(formatTopicChipLabel('Colonialism, slavery')).toBe('Colonialism, Slavery');
   });
