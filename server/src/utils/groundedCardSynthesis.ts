@@ -665,7 +665,7 @@ const WEAK_CARD_MAX_WORDS = 8;
 /**
  * A card line that does not tell a student what is studied: the row's topic chips
  * restated as a sentence, eight words or fewer ("Studies human behavior."), or a line
- * that stops on the colon introducing a list it left out. Used only
+ * that stops on a trailing colon, semicolon or comma. Used only
  * to choose which cards a repair pass re-synthesizes, never to refuse a card. A line
  * naming none of the row's extracted methods is deliberately not weak: on a 25-row
  * Development sample on 2026-10-05 that test flagged cards that already said what and
