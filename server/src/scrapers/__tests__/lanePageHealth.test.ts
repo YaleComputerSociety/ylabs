@@ -37,6 +37,52 @@ const verdict = (healthStatus: string, httpStatusCode: number | undefined, day: 
 });
 
 describe('withoutGoneLanePageObservations', () => {
+  it('withdraws a page-borrowing lane value on any lane gone verdict for the cited page', () => {
+    const borrowed = read('fullDescription', 'A synthesis.', 1, 'coverage-synthesis-llm');
+    const school = read('school', 'Synthetic School', 1, 'school-profile-host-backfill');
+    const result = withoutGoneLanePageObservations(
+      [borrowed, school, verdict('UNAVAILABLE', 404, 5)],
+      ROW,
+    );
+    expect(result.observations).toEqual([]);
+    expect(result.withdrawnValuesByField.get('fullDescription')).toEqual(['A synthesis.']);
+    expect(result.withdrawnValuesByField.get('school')).toEqual(['Synthetic School']);
+  });
+
+  it('keeps a page-borrowing lane value when any lane later reads the page live', () => {
+    const borrowed = read('fullDescription', 'A synthesis.', 1, 'coverage-synthesis-llm');
+    const result = withoutGoneLanePageObservations(
+      [
+        borrowed,
+        verdict('UNAVAILABLE', 404, 5),
+        { ...verdict('HEALTHY', 200, 7), sourceName: RIVAL },
+      ],
+      ROW,
+    );
+    expect(result.observations).toEqual([borrowed]);
+  });
+
+  it('keeps a page-borrowing lane value on an UNKNOWN verdict from any lane', () => {
+    const borrowed = read('fullDescription', 'A synthesis.', 1, 'coverage-synthesis-llm');
+    const result = withoutGoneLanePageObservations(
+      [borrowed, verdict('UNKNOWN', 403, 5), verdict('UNAVAILABLE', undefined, 6)],
+      ROW,
+    );
+    expect(result.observations).toEqual([borrowed]);
+  });
+
+  it('keeps a page-borrowing lane value read after the gone verdict', () => {
+    const borrowed = read('fullDescription', 'A synthesis.', 9, 'coverage-synthesis-llm');
+    const result = withoutGoneLanePageObservations([borrowed, verdict('UNAVAILABLE', 404, 5)], ROW);
+    expect(result.observations).toEqual([borrowed]);
+  });
+
+  it('still lets only its own verdicts withdraw a page-reading lane', () => {
+    const rival = read('fullDescription', 'A rival reading.', 1, RIVAL);
+    const result = withoutGoneLanePageObservations([rival, verdict('UNAVAILABLE', 404, 5)], ROW);
+    expect(result.observations).toEqual([rival]);
+  });
+
   it('withdraws the lane own earlier reads of a page whose newest verdict is gone', () => {
     const result = withoutGoneLanePageObservations(
       [read('fullDescription', 'Studies synthetic signaling.', 1), verdict('UNAVAILABLE', 404, 5)],
