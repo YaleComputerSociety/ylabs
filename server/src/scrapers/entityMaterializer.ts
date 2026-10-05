@@ -756,6 +756,16 @@ export type WrittenBodyCardChoice =
  * card only under --resynthesize-cut-cards, so a routine re-materialize of an unchanged
  * body with an acceptable stored card stays stable and makes no call.
  */
+/**
+ * A card the browse card shows as written: it fits, and the serve chain will not surrender
+ * it as ungrounded for the body's longer lead. A card synthesized from page evidence can
+ * name what the body does not, and 89 of 120 cut served cards on Development on
+ * 2026-10-05 were fitting stored cards surrendered that way (#4809).
+ */
+export function writtenBodyCardShowsWhole(card: string, body: string): boolean {
+  return cardLineFitsBrowseCard(card) && !isUngroundedSynthesizedCard({ card, body });
+}
+
 export async function resolveWrittenBodyCard(input: {
   body: string;
   storedCard: unknown;
@@ -767,7 +777,7 @@ export async function resolveWrittenBodyCard(input: {
   isWeak?: (card: string) => boolean;
 }): Promise<WrittenBodyCardChoice> {
   const preferred = (card: string): boolean =>
-    cardLineFitsBrowseCard(card) && !(input.isWeak?.(card) ?? false);
+    writtenBodyCardShowsWhole(card, input.body) && !(input.isWeak?.(card) ?? false);
   const acceptable = (card: string, requireGrounding: boolean): boolean =>
     isAcceptableWrittenBodyCard({
       card,
@@ -8171,7 +8181,9 @@ export async function projectFromLog(
         synthesize:
           writtenBodyChanged ||
           storedCardUnacceptable ||
-          (input.resynthesizeCutCards && !!storedCard && !cardLineFitsBrowseCard(storedCard)) ||
+          (input.resynthesizeCutCards &&
+            !!storedCard &&
+            !writtenBodyCardShowsWhole(storedCard, fullDescription)) ||
           (!!weakCardTest && !!storedCard && weakCardTest(storedCard))
             ? cardSynthesizer
             : undefined,
