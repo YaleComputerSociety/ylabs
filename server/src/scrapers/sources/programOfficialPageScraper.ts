@@ -210,6 +210,9 @@ export class ProgramOfficialPageScraper implements IScraper {
       } else if (landsAwayFromRequestedResource(candidate.pageUrl, read.finalUrl)) {
         tally.unread += 1;
         partialFailures.push(`${candidate.sourceKey}: official page landed away from itself`);
+        if (candidate.hasLiveCitation) {
+          observations.push(officialPageCitationObservation(candidate, false, observedAt));
+        }
       } else {
         const naming = officialPageNamesFund(
           candidate.title,

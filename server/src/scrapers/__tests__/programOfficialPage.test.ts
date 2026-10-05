@@ -177,6 +177,42 @@ describe('ProgramOfficialPageScraper', () => {
     expect(emitted.find((o) => o.field === 'sourceUrl')).toMatchObject({ value: '' });
   });
 
+  it('withdraws its own live citation when the cited page now lands away from itself', async () => {
+    const emitted: ObservationInput[] = [];
+    const result = await new ProgramOfficialPageScraper(
+      async () => [candidate({ hasLiveCitation: true })],
+      async () => ({
+        html: '<p>The Fixture Sample Travel Fellowship</p>',
+        finalUrl: 'https://fixture.yale.edu/',
+      }),
+    ).run(context(emitted));
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      field: 'sourceUrl',
+      entityKey: 'student-grants-database:fixture-fund',
+      value: '',
+      sourceUrl: 'https://fixture.yale.edu/fellowships',
+    });
+    expect(result.partialFailures).toHaveLength(1);
+    expect(result.notes).toContain('unread=1');
+  });
+
+  it('emits nothing for a page it never cited that lands away from itself', async () => {
+    const emitted: ObservationInput[] = [];
+    const result = await new ProgramOfficialPageScraper(
+      async () => [candidate()],
+      async () => ({
+        html: '<p>The Fixture Sample Travel Fellowship</p>',
+        finalUrl: 'https://fixture.yale.edu/',
+      }),
+    ).run(context(emitted));
+
+    expect(emitted).toHaveLength(0);
+    expect(result.partialFailures).toHaveLength(1);
+    expect(result.notes).toContain('unread=1');
+  });
+
   it('asserts no citation for a page that never named the fund and that it never cited', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new ProgramOfficialPageScraper(
