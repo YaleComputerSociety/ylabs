@@ -299,7 +299,7 @@ describe('scraperIntegrityGate CLI helpers', () => {
         {
           researchEntityId: 'entity-2',
           signalType: 'POSTED_OPENING',
-          identityField: 'observationId',
+          identityField: 'sourceEvidenceId',
           identityValue: 'obs-1',
           signalIds: ['signal-c'],
         },

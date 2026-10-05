@@ -57,7 +57,7 @@ export interface DuplicatePersonGroup {
 export interface DuplicateAccessSignalGroup {
   researchEntityId: string;
   signalType: string;
-  identityField: 'derivationKey' | 'sourceEvidenceId' | 'observationId';
+  identityField: 'derivationKey' | 'sourceEvidenceId';
   identityValue: string;
   signalIds: string[];
 }
@@ -672,11 +672,8 @@ async function loadCurrentMembersOnArchivedEntities(
   }));
 }
 
-const DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS: DuplicateAccessSignalGroup['identityField'][] = [
-  'derivationKey',
-  'sourceEvidenceId',
-  'observationId',
-];
+export const DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS: DuplicateAccessSignalGroup['identityField'][] =
+  ['derivationKey', 'sourceEvidenceId'];
 
 const DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH: Record<
   DuplicateAccessSignalGroup['identityField'],
@@ -684,10 +681,9 @@ const DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH: Record<
 > = {
   derivationKey: 'derivationKey',
   sourceEvidenceId: 'source.evidenceIds',
-  observationId: 'source.evidenceIds',
 };
 
-const duplicateAccessSignalPipeline = (
+export const duplicateAccessSignalPipeline = (
   field: DuplicateAccessSignalGroup['identityField'],
 ): mongoose.PipelineStage[] => {
   const path = DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH[field];

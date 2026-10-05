@@ -5,9 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
-import { accessSignalTypes } from '../models/researchAccessTypes';
 import {
   buildDuplicateAccessSignalGroupsFromRows,
+  DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS,
+  duplicateAccessSignalPipeline,
   type DuplicateAccessSignalGroup,
 } from '../scrapers/integrityGate';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -33,7 +34,6 @@ export interface DuplicateAccessSignalRecord {
   researchEntityId?: unknown;
   signalType?: string;
   sourceEvidenceId?: unknown;
-  observationId?: unknown;
   derivationKey?: string | null;
   archived?: boolean;
   createdAt?: Date;
@@ -337,53 +337,11 @@ export function writeDuplicateAccessSignalRepairOutput(
 async function loadDuplicateAccessSignalGroups(
   limit: number,
 ): Promise<DuplicateAccessSignalGroup[]> {
-  const fields: DuplicateAccessSignalGroup['identityField'][] = [
-    'derivationKey',
-    'sourceEvidenceId',
-    'observationId',
-  ];
-  const identityFieldPath: Record<DuplicateAccessSignalGroup['identityField'], string> = {
-    derivationKey: 'derivationKey',
-    sourceEvidenceId: 'source.evidenceIds',
-    observationId: 'source.evidenceIds',
-  };
   const groups: DuplicateAccessSignalGroup[] = [];
 
-  for (const field of fields) {
-    const fieldPath = identityFieldPath[field];
-    const identityExpr =
-      field === 'derivationKey'
-        ? { $toString: `$${fieldPath}` }
-        : { $toString: { $arrayElemAt: [`$${fieldPath}`, 0] } };
+  for (const field of DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS) {
     const rows = await Signal.aggregate([
-      {
-        $match: {
-          archived: { $ne: true },
-          researchEntityId: { $exists: true, $ne: null },
-          type: { $in: [...accessSignalTypes] },
-          [fieldPath]: { $exists: true, $ne: null },
-        },
-      },
-      {
-        $project: {
-          researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$type',
-          identityValue: identityExpr,
-          signalId: { $toString: '$_id' },
-        },
-      },
-      { $match: { identityValue: { $nin: ['', 'null', 'undefined'] } } },
-      {
-        $group: {
-          _id: {
-            researchEntityId: '$researchEntityId',
-            signalType: '$signalType',
-            identityValue: '$identityValue',
-          },
-          signalIds: { $addToSet: '$signalId' },
-        },
-      },
-      { $match: { 'signalIds.1': { $exists: true } } },
+      ...duplicateAccessSignalPipeline(field),
       { $limit: Math.max(1, limit - groups.length) },
     ]);
 
