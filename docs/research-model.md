@@ -313,7 +313,9 @@ It folds a shell into a record that outranks it when both hold a non-historical 
 A shell whose target is itself folded in the same run follows the chain to the record that survives, so no live edge lands on a record the run archives.
 Measured on Development on 2026-10-04 in dry run it planned 26 folds where the exact-name arm planned 3, and a read of all 26 pairs found each to be one person under two spellings.
 A group of accountless records with no account-backed member has nobody to outrank, so the five arms cannot fold it, and an ambiguous group stops a PI key from resolving to anybody.
-The same stage therefore folds such a group into a survivor chosen among its own members: the records that share a healthy verified primary profile, or the same normalized full name together with the same stated primary department.
+The same stage therefore folds such a group into a survivor chosen among its own members: the records that share a healthy verified primary profile, the same normalized full name together with the same stated primary department, or the same normalized full name together with a non-historical role on the same live research row.
+The row key exists because a roster lane that mints a person twice leaves one copy with no profile and so no department, which the department key never joins (#4939).
+Measured on Development on 2026-10-05 in dry run it raised the folded groups from 1 to 46, and a read of all 46 found each to be one person, none carrying two ORCIDs or two netids.
 The survivor is the record with the most live role edges, then the most healthy verified primary links, then the record an ORCID identifies, then the oldest, so the choice is reproducible and never alphabetical.
 The ORCID step keeps the identified record's name when an older copy holds a name a label cleaner damaged (#4879).
 A page or name that any record outside the group also holds joins nobody, because the outranking arms already found it unable to tell those records apart.

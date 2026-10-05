@@ -710,6 +710,7 @@ export interface AccountlessClusterMember {
   primaryDepartment?: unknown;
   profileLinks?: unknown;
   liveRoleEdges: number;
+  liveRowIds?: readonly string[];
 }
 
 export type AccountlessClusterRefusal =
@@ -740,10 +741,10 @@ function clusterKeys(
     .filter((key) => !heldElsewhere.pages.has(key))
     .map((key) => `page::${key}`);
   const name = normalizeResearcherName(member.displayName);
+  if (!name || heldElsewhere.names.has(name)) return pageKeys;
   const department = departmentKey(member.primaryDepartment);
-  return name && department && !heldElsewhere.names.has(name)
-    ? [...pageKeys, `name::${name}::${department}`]
-    : pageKeys;
+  const rowKeys = (member.liveRowIds ?? []).map((rowId) => `name-row::${name}::${rowId}`);
+  return [...pageKeys, ...(department ? [`name::${name}::${department}`] : []), ...rowKeys];
 }
 
 function distinctNonEmpty(values: ReadonlyArray<string | undefined>): number {
