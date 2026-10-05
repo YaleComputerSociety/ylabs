@@ -628,6 +628,46 @@ describe('descriptionPageNamesRowLead (#4809)', () => {
     ).toBe(true);
   });
 
+  it('takes the surname from a display name that carries a credential suffix', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        personName: 'Robin Fixturely, MD',
+        pageUrl: 'https://medicine.example.edu/psychiatry/',
+        pageText: 'The department offers clinical services across the lifespan.',
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        ...base,
+        personName: 'Robin Fixturely, MD',
+        pageUrl: 'https://medicine.example.edu/psychiatry/',
+        pageText: 'Dr. Fixturely leads work on cellular signaling.',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not read a two-letter surname inside an unrelated address word', () => {
+    expect(
+      descriptionPageNamesRowLead({
+        personName: 'Robin Ma',
+        rowName: 'Ma Lab',
+        kind: 'lab',
+        pageUrl: 'https://medicine.example.edu/dermatology/clinical/',
+        pageText: 'The section offers clinical services across the lifespan.',
+      }),
+    ).toBe(false);
+    expect(
+      descriptionPageNamesRowLead({
+        personName: 'Robin Ma',
+        rowName: 'Ma Lab',
+        kind: 'lab',
+        pageUrl: 'https://medicine.example.edu/lab/ma-lab/',
+        pageText: 'We study cellular signaling with live imaging.',
+      }),
+    ).toBe(true);
+  });
+
   it('applies to no row without a known lead', () => {
     expect(
       descriptionPageNamesRowLead({ pageUrl: 'https://example.edu/', pageText: 'Anything.' }),

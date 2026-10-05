@@ -1892,3 +1892,74 @@ describe('deeply nested microsite pages (#3558)', () => {
     ]);
   });
 });
+
+describe('a person-named row takes its description only from a cited page that names its lead (#4809)', () => {
+  const RESEARCH_PROSE =
+    'investigates parametric amplification in superconducting circuits, characterising gain, bandwidth, and added noise across a range of pump powers and device geometries.';
+
+  async function runRow(
+    row: { websiteUrl: string; sourceUrls?: string[] },
+    researchHref: string,
+    crawledText: string,
+  ) {
+    const homeUrl = row.sourceUrls?.[0] ?? row.websiteUrl;
+    const researchUrl = new URL(researchHref, homeUrl).toString();
+    const { ctx, emitted } = makeContext();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      identityCorpusLoader: async () => ({
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+        leadPersonNameByEntityId: new Map([['entity-1', 'Robin Fixturely']]),
+      }),
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-1',
+          slug: 'fixturely-lab',
+          name: 'Fixturely Lab',
+          kind: 'lab',
+          ...row,
+          manuallyLockedFields: [],
+        },
+      ],
+      fetchPage: vi.fn(async (url: string) => {
+        if (url === homeUrl) {
+          return { url: homeUrl, html: `<main><a href="${researchHref}">Research</a></main>` };
+        }
+        if (url === researchUrl) {
+          return { url: researchUrl, html: `<main><p>${crawledText}</p></main>` };
+        }
+        throw new Error('not found');
+      }),
+      callLLM: vi
+        .fn()
+        .mockResolvedValue({ fullDescription: '', shortDescription: '', topics: [], methods: [] }),
+    });
+    await scraper.run(ctx);
+    return emitted.find((obs) => obs.field === 'fullDescription');
+  }
+
+  it('refuses a winning crawled department index that never names the lead', async () => {
+    const row = { websiteUrl: 'https://medicine.example.edu/lab/fixturely/' };
+    const departmentIndex = await runRow(
+      row,
+      '/psychiatry/research',
+      `Work here ${RESEARCH_PROSE}`,
+    );
+    expect(departmentIndex).toBeUndefined();
+    const namingPage = await runRow(
+      row,
+      '/psychiatry/research',
+      `The Fixturely group ${RESEARCH_PROSE}`,
+    );
+    expect(namingPage?.sourceUrl).toBe('https://medicine.example.edu/psychiatry/research');
+  });
+
+  it('accepts a winning crawled page that names the lead when the primary page does not', async () => {
+    const row = {
+      websiteUrl: 'https://fixturely.example.org/',
+      sourceUrls: ['https://medicine.example.edu/programs/signal-group/'],
+    };
+    const full = await runRow(row, 'research', `The Fixturely group ${RESEARCH_PROSE}`);
+    expect(full?.sourceUrl).toBe('https://medicine.example.edu/programs/signal-group/research');
+  });
+});
