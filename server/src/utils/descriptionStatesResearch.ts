@@ -1,4 +1,5 @@
 import { researchStatementSentences } from './careerBiographyDescription';
+import { creativePracticeEvidence } from './creativePracticeDescription';
 
 // The verbs that state what a person researches, in any inflection. The card-lead verb list behind
 // `describesResearchFocus` also counts "supports" and "uses", which open an office's card
@@ -12,6 +13,10 @@ const textOf = (value: unknown): string => (typeof value === 'string' ? value : 
 // verbs, so "currently working on William Cobbett" has to read as research too.
 const STATES_SCHOLARSHIP =
   /\b(?:works?|working|worked)\s+on\b|\b(?:academic|scholar\w*|monographs?|dissertations?)\b/i;
+
+// Program evaluation is how a public-health or education lecturer states research, and an
+// archive is irreversible, so "designing and evaluating programs" must not read as practice.
+const STATES_EVALUATION = /\bevaluat(?:e|es|ed|ing|ion|ions)\b/i;
 
 /**
  * Whether a row's own description states research, the second witness a title screen
@@ -41,7 +46,26 @@ export function descriptionAffirmsNoResearch(entity: {
   const card = textOf(entity.shortDescription).trim();
   const full = textOf(entity.fullDescription).trim();
   if (!card && !full) return false;
-  if ([card, full].some((text) => STATES_SCHOLARSHIP.test(text))) return false;
+  if ([card, full].some((text) => STATES_SCHOLARSHIP.test(text) || STATES_EVALUATION.test(text))) {
+    return false;
+  }
   if (CARD_STATES_RESEARCH.test(full)) return false;
   return !descriptionStatesResearch(entity);
+}
+
+/**
+ * Whether either description carries any kind of creative-practice evidence, by the
+ * creative-practice module's own evidence test (#4916). Owner decision #4519 serves
+ * creative-practice faculty, so a teaching-appointment screen yields to it. Any one kind
+ * is enough, and no arts department is required, because the screen it spares is a mint
+ * refusal or an irreversible archive and a lecturer's appointment can sit in a writing
+ * program outside that module's arts-department list.
+ */
+export function descriptionStatesCreativePracticeEvidence(entity: {
+  shortDescription?: unknown;
+  fullDescription?: unknown;
+}): boolean {
+  return [entity.shortDescription, entity.fullDescription].some(
+    (value) => creativePracticeEvidence(value).length > 0,
+  );
 }

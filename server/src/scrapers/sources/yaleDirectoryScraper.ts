@@ -35,7 +35,10 @@ import dotenv from 'dotenv';
 import { listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
-import { descriptionAffirmsNoResearch } from '../../utils/descriptionStatesResearch';
+import {
+  descriptionAffirmsNoResearch,
+  descriptionStatesCreativePracticeEvidence,
+} from '../../utils/descriptionStatesResearch';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -309,7 +312,11 @@ export function mintsNoResearchEntityAsTeachingAppointment(
   title: string | undefined | null,
   description: { shortDescription?: unknown; fullDescription?: unknown },
 ): boolean {
-  return statesOnlyATeachingAppointment(title) && descriptionAffirmsNoResearch(description);
+  return (
+    statesOnlyATeachingAppointment(title) &&
+    descriptionAffirmsNoResearch(description) &&
+    !descriptionStatesCreativePracticeEvidence(description)
+  );
 }
 
 /**

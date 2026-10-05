@@ -83,7 +83,8 @@ export type StaffMintedEntityRefusal =
   | 'has-foreign-website'
   | 'has-foreign-role-edge'
   | 'description-states-research'
-  | 'description-does-not-affirm-teaching-only';
+  | 'description-does-not-affirm-teaching-only'
+  | 'description-states-creative-practice';
 
 export interface StaffMintedEntityCandidate {
   id: string;
@@ -100,6 +101,8 @@ export interface StaffMintedEntityCandidate {
   descriptionStatesResearch?: boolean;
   /** Whether the row has a description and it states no research; a teaching title needs it true. */
   descriptionAffirmsNoResearch?: boolean;
+  /** Whether the row's evidence is creative practice (#4519); a teaching title needs it false. */
+  descriptionStatesCreativePractice?: boolean;
   identityPersonIds?: readonly string[];
   roleEdgePersonIds?: readonly string[];
 }
@@ -315,6 +318,13 @@ export function planStaffMintedEntityRetirement(
       refuse('description-does-not-affirm-teaching-only');
       continue;
     }
+    if (
+      reason === 'teaching_appointment_title' &&
+      candidate.descriptionStatesCreativePractice !== false
+    ) {
+      refuse('description-states-creative-practice');
+      continue;
+    }
     if ((candidate.manuallyLockedFields || []).length > 0) {
       refuse('manually-locked');
       continue;
@@ -379,6 +389,7 @@ export function summarizeStaffMintedEntityRefusals(
     'has-foreign-role-edge': 0,
     'description-states-research': 0,
     'description-does-not-affirm-teaching-only': 0,
+    'description-states-creative-practice': 0,
   };
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;

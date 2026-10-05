@@ -544,16 +544,26 @@ describe('statesOnlyATeachingAppointment (#4916)', () => {
 
   it('refuses a mint only when the description is about something other than research', () => {
     const practice = {
-      fullDescription:
-        'Principal tubist of a fixture orchestra who performs as a soloist worldwide.',
+      fullDescription: 'Practises commercial litigation for fixture clients in federal courts.',
     };
-    expect(mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', practice)).toBe(true);
+    expect(mintsNoResearchEntityAsTeachingAppointment('Lecturer in Law', practice)).toBe(true);
     expect(
-      mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', {
-        fullDescription: 'Studies the acoustics of low brass fixtures.',
+      mintsNoResearchEntityAsTeachingAppointment('Lecturer in Law', {
+        fullDescription: 'Studies how appellate courts weigh fixture evidence.',
       }),
     ).toBe(false);
-    expect(mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', {})).toBe(false);
+    expect(mintsNoResearchEntityAsTeachingAppointment('Lecturer in Law', {})).toBe(false);
+    expect(
+      mintsNoResearchEntityAsTeachingAppointment('Lecturer in Tuba', {
+        fullDescription:
+          'Principal tubist of a fixture orchestra who performs as a soloist worldwide.',
+      }),
+    ).toBe(false);
+    expect(
+      mintsNoResearchEntityAsTeachingAppointment('Lecturer in Writing', {
+        fullDescription: 'The author of three novels and a collection of short stories.',
+      }),
+    ).toBe(false);
     expect(mintsNoResearchEntityAsTeachingAppointment('Professor of Music', practice)).toBe(false);
   });
 });

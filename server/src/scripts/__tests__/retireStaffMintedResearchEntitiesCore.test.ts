@@ -489,6 +489,7 @@ describe('teaching appointment titles (#4916)', () => {
           storedTitles: ['Lecturer in English'],
           descriptionStatesResearch: false,
           descriptionAffirmsNoResearch,
+          descriptionStatesCreativePractice: false,
         }),
       ]);
     expect(lecturer(true).toArchive.map((entry) => entry.reason)).toEqual([
@@ -510,5 +511,28 @@ describe('teaching appointment titles (#4916)', () => {
         }),
       ]).refused,
     ).toEqual([{ id: 'a'.repeat(24), reason: 'title-evidence-disagrees' }]);
+  });
+});
+
+describe('teaching appointment titles and creative practice (#4916, #4519)', () => {
+  const lecturer = (descriptionStatesCreativePractice?: boolean) =>
+    planStaffMintedEntityRetirement([
+      candidate({
+        storedTitles: ['Senior Lecturer in English'],
+        descriptionStatesResearch: false,
+        descriptionAffirmsNoResearch: true,
+        descriptionStatesCreativePractice,
+      }),
+    ]);
+
+  it('never archives a teaching row whose evidence is creative practice', () => {
+    for (const witness of [true, undefined]) {
+      expect(lecturer(witness).refused).toEqual([
+        { id: 'a'.repeat(24), reason: 'description-states-creative-practice' },
+      ]);
+    }
+    expect(lecturer(false).toArchive.map((entry) => entry.reason)).toEqual([
+      'teaching_appointment_title',
+    ]);
   });
 });
