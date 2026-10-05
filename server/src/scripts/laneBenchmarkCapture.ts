@@ -16,6 +16,7 @@ import {
   assertBenchmarkableLane,
   assertLaneHonorsSourceConcurrency,
   currentCodeSha,
+  isFrozenMetadataPage,
   runLaneDry,
   slugsForPlannedEntities,
 } from './laneBenchmarkRun';
@@ -154,6 +155,13 @@ export function emptySuccessorRefusal(
 ): string | undefined {
   if (recapturedPlanned > 0 || (supersededPlanned ?? 0) === 0) return undefined;
   return `The recapture of ${supersededId} planned no values where it planned ${supersededPlanned}, so it would measure nothing; capture a new scope instead`;
+}
+
+export function emptyCaptureRefusal(
+  pages: readonly { sourceName: string; requestKey: string }[],
+): string | undefined {
+  if (pages.some((page) => !isFrozenMetadataPage(page))) return undefined;
+  return 'The capture fetched no pages; refusing to store an empty benchmark';
 }
 
 export function goldCarryRefusal(
@@ -430,8 +438,8 @@ async function main(): Promise<void> {
   };
 
   if (!args.dryRun) {
-    if (pages.length === 0)
-      throw new Error('The capture fetched no pages; refusing to store an empty benchmark');
+    const emptyRefusal = emptyCaptureRefusal(pages);
+    if (emptyRefusal) throw new Error(emptyRefusal);
     try {
       await LaneBenchmarkPage.insertMany(
         pages.map((page) => ({ ...page, benchmarkId: args.benchmarkId })),

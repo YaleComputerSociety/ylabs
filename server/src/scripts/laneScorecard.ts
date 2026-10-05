@@ -13,13 +13,11 @@ import {
   MODEL_RESPONSE_NAMESPACE,
   type CapturedPage,
 } from '../scrapers/snapshotBenchmarkMode';
-import {
-  isRenderedFetchMetadataKey,
-  RENDERED_FETCH_BENCHMARK_NAMESPACE,
-} from '../scrapers/renderedFetch';
+import { RENDERED_FETCH_BENCHMARK_NAMESPACE } from '../scrapers/renderedFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   currentCodeSha,
+  isFrozenMetadataPage,
   runClockFieldsFor,
   runLaneDry,
   slugsForPlannedEntities,
@@ -152,7 +150,7 @@ export function unresolvedReplayReason(
   pages: readonly Pick<CapturedPage, 'sourceName' | 'requestKey'>[],
   replay: { pagesServed: number; servedByNamespace: Record<string, number> },
 ): string | undefined {
-  const frozenPages = pages.filter((page) => !isRenderedFetchMetadataKey(page.requestKey));
+  const frozenPages = pages.filter((page) => !isFrozenMetadataPage(page));
   if (frozenPages.length > 0 && replay.pagesServed === 0) {
     return `replay served none of the ${frozenPages.length} frozen pages`;
   }
