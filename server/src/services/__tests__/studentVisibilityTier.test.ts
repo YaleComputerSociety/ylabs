@@ -3434,6 +3434,29 @@ describe("a lab heading composed from the lead's full name", () => {
     expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
   });
 
+  it.each([
+    'https://medicine.yale.edu/lab/rfix/',
+    'https://www.example.org/labs/',
+    'https://fixturelaboratory.example.org/',
+  ])('is backed by a lab segment or lab-ending site: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(false);
+  });
+
+  it.each([
+    'https://www.example.org/available/',
+    'https://www.example.org/collaborators/',
+    'https://www.example.org/syllabus/',
+    'https://www.example.org/label/',
+    'https://www.example.org/labor/',
+  ])('is unbacked when a path word only contains the letters lab: %s', (url) => {
+    expect(isUnbackedLabNameShell(labRow('Robin Fixture Lab', url), 'Robin Fixture')).toBe(true);
+  });
+
+  it("is unbacked when the only lab letters are the lead's own surname", () => {
+    const row = labRow('Robin Fixturelab Lab', 'https://www.robinfixturelab.example.com/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixturelab')).toBe(true);
+  });
+
   it('leaves a surname heading and a multi-word surname to the existing rules', () => {
     expect(
       isUnbackedLabNameShell(

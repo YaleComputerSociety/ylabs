@@ -386,7 +386,23 @@ export function isComposedFullNameLabName(
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
-  return !urls.some((url) => labNamedUrlTokens(url).length > 0);
+  return !urls.some((url) => urlNamesALab(url, person));
+}
+
+function urlNamesALab(value: unknown, person: string): boolean {
+  try {
+    const url = new URL(textValue(value));
+    const nameLetters = personTokens(person).map(letters).filter(Boolean);
+    const endsInLab = new RegExp(`${LAB_TOKEN}$`);
+    return [...url.hostname.split('.'), ...url.pathname.split('/')]
+      .map(letters)
+      .filter(Boolean)
+      .some((part) =>
+        endsInLab.test(nameLetters.reduce((rest, token) => rest.replace(token, ''), part)),
+      );
+  } catch {
+    return false;
+  }
 }
 
 /**
