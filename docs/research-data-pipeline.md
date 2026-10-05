@@ -63,7 +63,13 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
 `federal-award-usaspending` was manual-only and is now removed (#4548).
 USAspending publishes no principal-investigator field, so across the 293 Yale DOE, NASA and DoD awards its request returned, 1 description embedded a PI name and that name resolved ambiguously (#3542).
 Development held 4 runs for it and 0 observations, so its name is in `RETIRED_SOURCE_NAMES`: `scrape:seed-sources` disables the `sources` row and the historical `scrape_runs` stay for audit.
-DOE funding reaches the corpus through `doe-osti` instead.
+DOE funding reaches the corpus through `doe-osti` and `doe-science-awards` instead.
+
+`doe-science-awards` reads the DOE Office of Science public award search (PAMS) for Yale University through the search's own Excel export, which names the principal investigator on every award (#4546).
+`doe-osti` sees a DOE award only once its PI files a technical report with OSTI, so PAMS is the DOE record that reaches an award from its first year.
+Both lanes label the funder `DOE`, so an award the two report is listed and counted once.
+The lane fails closed with no writes when the export serves fewer awards than the search reports or is missing a column it reads.
+On 2026-10-05 the export held 151 Yale awards, 50 of them running in the six-year window, and they enriched 28 rows, 13 of them served rows that carried no grant before, all in Arts and Sciences or Engineering.
 
 `crossref-grants` reads the grant records funders register with Crossref for Yale-affiliated lead investigators (#4593).
 It reaches private and international funders no federal lane covers, such as the American Cancer Society, the American Heart Association and the Human Frontier Science Program, and each record resolves to the funder's own public award page.

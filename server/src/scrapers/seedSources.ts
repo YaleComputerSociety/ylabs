@@ -446,6 +446,16 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'doe-science-awards',
+    displayName: 'DOE Office of Science awards (Yale PIs)',
+    description:
+      'Exports the DOE Office of Science public award search (PAMS) for Yale University and enriches the existing research row of each resolved principal investigator with the award, its project period and amount. Fails closed on an incomplete export and never mints a row.',
+    baseUrl:
+      'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
     name: 'official-research-home-roster',
     displayName: 'Official research-home current rosters',
     description:

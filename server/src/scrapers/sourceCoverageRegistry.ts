@@ -455,6 +455,15 @@ export const sourceCoverageRegistry = {
     notes:
       'DOE physical-sciences funding activity via OSTI technical reports; enriches entity context but is not undergraduate-access evidence alone.',
   },
+  'doe-science-awards': {
+    priority: 6,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'DOE Office of Science awards from the PAMS public award search, which names the PI on every award; enriches entity context but is not undergraduate-access evidence alone.',
+  },
   'grant-corpus-synthesis-llm': {
     priority: 7,
     tier: 'THIRD_PARTY_ENRICHMENT',

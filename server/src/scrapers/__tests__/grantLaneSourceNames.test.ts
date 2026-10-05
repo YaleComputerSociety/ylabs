@@ -16,6 +16,7 @@ import {
 import { buildOrchestrator } from '../registry';
 import { buildResearchEntityObservations as crossrefObservations } from '../sources/crossrefGrantScraper';
 import { buildResearchEntityObservations as doeObservations } from '../sources/doeOstiGrantScraper';
+import { buildResearchEntityObservations as doeScienceObservations } from '../sources/doeScienceAwardScraper';
 import { buildResearchEntityObservations as nehObservations } from '../sources/nehGrantScraper';
 import { piGrantsToObservations as nihObservations } from '../sources/nihReporterScraper';
 import { buildResearchEntityObservations as nsfObservations } from '../sources/nsfAwardScraper';
@@ -130,6 +131,22 @@ const OBSERVATIONS_BY_LANE: Record<
       },
       SYNTHETIC_ROW,
     ),
+  'doe-science-awards': () =>
+    doeScienceObservations({
+      slug: SYNTHETIC_ROW,
+      researcherIds: new Set([SYNTHETIC_RESEARCHER]),
+      awards: [
+        {
+          awardNumber: 'DE-SC0000001',
+          title: 'Synthetic award',
+          abstract: '',
+          programOffice: 'Synthetic office',
+          startDate: new Date('2025-01-01'),
+          endDate: new Date('2029-12-31'),
+          pi: { firstName: 'Synthetic', lastName: 'Investigator' },
+        },
+      ],
+    }),
   'crossref-grants': () =>
     crossrefObservations({
       slug: SYNTHETIC_ROW,

@@ -148,6 +148,7 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'neh-funded-projects', phase: 'funding' },
   { name: 'doe-osti', phase: 'funding' },
+  { name: 'doe-science-awards', phase: 'funding' },
   { name: 'crossref-grants', phase: 'funding' },
   // Identity work, but deliberately not in the `identity` phase: the aliases it resolves are
   // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever

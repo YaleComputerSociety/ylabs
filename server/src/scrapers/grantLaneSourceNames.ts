@@ -5,6 +5,7 @@ export const GRANT_LANE_SOURCE_NAMES = [
   'nsf-award-search',
   'neh-funded-projects',
   'doe-osti',
+  'doe-science-awards',
   'crossref-grants',
 ] as const;
 
