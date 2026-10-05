@@ -132,6 +132,7 @@ describe('NihReporterScraper multi-PI run', () => {
 
   const scraperWith = (affiliations: Map<number, ContactPiAffiliation> | Error) =>
     new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId,
       loadResearcherProfileTitle: async () => undefined,
       researchHomeResolver: async (researcherId) => ({
@@ -203,6 +204,7 @@ describe('NihReporterScraper multi-PI run', () => {
     });
     const { ctx } = makeContext();
     await new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId,
       loadResearcherProfileTitle: async () => undefined,
       researchHomeResolver: async (researcherId) => ({
@@ -233,6 +235,7 @@ describe('NihReporterScraper multi-PI run', () => {
     });
     const scraper = () =>
       new NihReporterScraper({
+        resolveCorroborated: async () => ({ status: 'absent' as const }),
         fiscalYears: [2026],
         resolveResearcherId,
         loadResearcherProfileTitle: async () => undefined,
@@ -267,6 +270,7 @@ describe('NihReporterScraper multi-PI run', () => {
     stubYaleGrants([multiPiGrant]);
     const { ctx, emitted } = makeContext();
     await new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId,
       loadResearcherProfileTitle: async () => undefined,
       researchHomeResolver: async () => ({ status: 'canonical', slug: 'shared-row' }),

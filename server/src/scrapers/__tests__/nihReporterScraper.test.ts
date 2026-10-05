@@ -756,6 +756,7 @@ describe('NihReporterScraper.run', () => {
         : { status: 'absent' as const };
 
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId,
       loadResearcherProfileTitle: async () => undefined,
       researchHomeResolver: existingRowPerResearcher,
@@ -782,6 +783,7 @@ describe('NihReporterScraper.run', () => {
     async (_l, person, row, note) => {
       stubReporter([grantRoster]);
       const scraper = new NihReporterScraper({
+        resolveCorroborated: async () => ({ status: 'absent' as const }),
         resolveResearcherId: async () =>
           person === 'matched'
             ? { status: 'matched' as const, researcherId: new mongoose.Types.ObjectId() }
@@ -801,6 +803,7 @@ describe('NihReporterScraper.run', () => {
   it('fails the run when the researcher lookup itself fails, instead of counting every PI ambiguous', async () => {
     stubReporter([grantArnsten, grantRoster]);
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => {
         throw new Error('MongoServerSelectionError: connection refused');
       },
@@ -816,6 +819,7 @@ describe('NihReporterScraper.run', () => {
   it('fails the run when the profile-title lookup fails', async () => {
     stubReporter([grantRoster]);
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({
         status: 'matched' as const,
         researcherId: new mongoose.Types.ObjectId(),
@@ -833,6 +837,7 @@ describe('NihReporterScraper.run', () => {
   it('fails the run when the first RePORTER page cannot be read', async () => {
     vi.spyOn(axios, 'post').mockRejectedValue(new Error('ETIMEDOUT'));
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({ status: 'absent' as const }),
       researchHomeResolver: existingRowPerResearcher,
     });
@@ -849,6 +854,7 @@ describe('NihReporterScraper.run', () => {
       } as any;
     });
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({ status: 'absent' as const }),
       researchHomeResolver: existingRowPerResearcher,
     });
@@ -862,6 +868,7 @@ describe('NihReporterScraper.run', () => {
     stubReporter([grantRoster]);
     const researchHomeResolver = vi.fn();
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({
         status: 'matched' as const,
         researcherId: new mongoose.Types.ObjectId(),
@@ -880,6 +887,7 @@ describe('NihReporterScraper.run', () => {
   it('never attributes an individual trainee-fellowship award (#739)', async () => {
     stubReporter([grantArnsten, grantTrainee]);
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({
         status: 'matched' as const,
         researcherId: new mongoose.Types.ObjectId(),
@@ -900,6 +908,7 @@ describe('NihReporterScraper.run', () => {
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
     stubReporter([grantArnsten, grantArnsten2, grantRoster]);
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({
         status: 'matched' as const,
         researcherId: new mongoose.Types.ObjectId(),
@@ -919,6 +928,7 @@ describe('NihReporterScraper.run', () => {
       data: { meta: { total: 0, offset: 0, limit: 500 }, results: [] },
     } as any);
     const scraper = new NihReporterScraper({
+      resolveCorroborated: async () => ({ status: 'absent' as const }),
       resolveResearcherId: async () => ({ status: 'absent' as const }),
     });
     const { ctx } = makeContext({ limit: 9007199254740992 });

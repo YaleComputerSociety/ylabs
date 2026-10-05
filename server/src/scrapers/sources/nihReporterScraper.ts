@@ -39,6 +39,10 @@ import {
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import {
+  resolveResearcherIdByCorroboratedName,
+  type StructuredPersonName,
+} from '../../services/corroboratedPersonNameResolver';
+import {
   countGrantAttach,
   emptyGrantAttachTally,
   grantAttachSummary,
@@ -290,6 +294,23 @@ export function latestContactPiAffiliations(
     }
   }
   return latest;
+}
+
+export function structuredNameFor(
+  piName: string,
+  grants: readonly NihGrant[],
+): StructuredPersonName | undefined {
+  for (const grant of grants) {
+    for (const pi of grant.principal_investigators || []) {
+      const matchesName = pi.is_contact_pi
+        ? pickContactPiName(grant) === piName
+        : principalInvestigatorName(pi) === piName;
+      if (matchesName && (pi.last_name || '').trim()) {
+        return { first: pi.first_name, middle: pi.middle_name, last: pi.last_name };
+      }
+    }
+  }
+  return undefined;
 }
 
 export function groupGrantsByCreditedPi(
@@ -599,12 +620,16 @@ export async function findUserForPi(
 }
 
 export type NihPiUserResolution =
-  | { status: 'matched'; user: { _id: string; netid?: string; researchHomeEligible?: boolean } }
+  | {
+      status: 'matched';
+      user: { _id: string; netid?: string; researchHomeEligible?: boolean; corroborated?: boolean };
+    }
   | { status: 'absent' }
   | { status: 'ambiguous' };
 
 export interface NihPiResolverDeps {
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  resolveCorroborated?: typeof resolveResearcherIdByCorroboratedName;
   loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
 }
 
@@ -619,12 +644,22 @@ async function defaultLoadResearcherProfileTitle(
 export async function resolveUserForPi(
   canonicalName: string,
   deps: NihPiResolverDeps = {},
+  structuredName?: StructuredPersonName,
 ): Promise<NihPiUserResolution> {
   if (!canonicalName) return { status: 'absent' };
   const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
   const loadResearcherProfileTitle =
     deps.loadResearcherProfileTitle ?? defaultLoadResearcherProfileTitle;
-  const resolution = await resolveResearcherId(canonicalName);
+  let resolution = await resolveResearcherId(canonicalName);
+  let corroborated = false;
+  if (resolution.status !== 'matched' && structuredName) {
+    const resolveCorroborated = deps.resolveCorroborated ?? resolveResearcherIdByCorroboratedName;
+    const settled = await resolveCorroborated(structuredName);
+    if (settled.status === 'matched') {
+      resolution = settled;
+      corroborated = true;
+    }
+  }
   if (resolution.status === 'ambiguous') return { status: 'ambiguous' };
   if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
   const researcherId = resolution.researcherId.toString();
@@ -634,6 +669,7 @@ export async function resolveUserForPi(
     user: {
       _id: researcherId,
       researchHomeEligible: researchHomeEligibleUserTitle(title),
+      ...(corroborated ? { corroborated: true } : {}),
     },
   };
 }
@@ -808,6 +844,7 @@ export interface NihReporterScraperOptions {
   /** Override fiscal years (defaults to current FY plus the two prior FYs). */
   fiscalYears?: number[];
   resolveResearcherId?: typeof resolveResearcherIdForPersonName;
+  resolveCorroborated?: typeof resolveResearcherIdByCorroboratedName;
   loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
   lookupContactPiAffiliations?: ContactPiAffiliationLookup;
@@ -913,15 +950,22 @@ export class NihReporterScraper implements IScraper {
 
     const attach = emptyGrantAttachTally();
     let ineligibleLeadTitle = 0;
+    let corroboratedPis = 0;
     let totalObs = 0;
     let processed = 0;
     const rows = new Map<string, { researcherIds: Set<string>; grants: NihGrant[] }>();
     for (const [piName, grants] of piEntries) {
       processed++;
-      const person = await resolveUserForPi(piName, {
-        resolveResearcherId: this.opts.resolveResearcherId,
-        loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
-      });
+      const person = await resolveUserForPi(
+        piName,
+        {
+          resolveResearcherId: this.opts.resolveResearcherId,
+          resolveCorroborated: this.opts.resolveCorroborated,
+          loadResearcherProfileTitle: this.opts.loadResearcherProfileTitle,
+        },
+        structuredNameFor(piName, grants),
+      );
+      if (person.status === 'matched' && person.user.corroborated) corroboratedPis++;
       if (person.status === 'matched' && person.user.researchHomeEligible === false) {
         ineligibleLeadTitle++;
         continue;
@@ -960,7 +1004,8 @@ export class NihReporterScraper implements IScraper {
           : 'never a contact PI, so no affiliation evidence'
       }); ` +
       `${rows.size} distinct row(s) enriched; ${grantAttachSummary(attach)}; ` +
-      `${ineligibleLeadTitle} held for a non-lead title`;
+      `${ineligibleLeadTitle} held for a non-lead title; ` +
+      `${corroboratedPis} PI(s) settled by a corroborating profile URL`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {
