@@ -216,6 +216,37 @@ const hostOf = (url: string): string => {
 };
 
 /**
+ * The one resolver breaker wiring every link-health pass shares, so a pass cannot
+ * be added that trips on distinct failures alone without the control probe (#4865).
+ */
+export function createSourceLinkResolverBreaker(options: {
+  resolverBreaker?: ResolverCircuitBreaker;
+  resolverControlProbe?: ResolverControlProbe;
+  sleep: (ms: number) => Promise<void>;
+}): ResolverCircuitBreaker {
+  return (
+    options.resolverBreaker ??
+    new ResolverCircuitBreaker({
+      controlProbe: options.resolverControlProbe ?? (() => probeResolverControl()),
+      sleep: options.sleep,
+    })
+  );
+}
+
+export function noteStoredSourceLinkVerdicts(
+  resolverBreaker: ResolverCircuitBreaker,
+  storedSourceLinkHealth: unknown,
+): void {
+  for (const [url, stored] of storedSourceLinkHealthByUrl(storedSourceLinkHealth)) {
+    resolverBreaker.noteStoredHostVerdict(hostOf(url), isStoredUnresolvableVerdict(stored));
+  }
+}
+
+export function describeResolverBreakerStats(stats: ResolverBreakerStats): string {
+  return `Resolver breaker: ${stats.controlChecks} control check(s), ${stats.tripsAvoided} trip(s) avoided, ${stats.trips} trip(s), ${stats.knownUnresolvableFailuresIgnored} failure(s) on hosts already stored as unresolvable not counted.`;
+}
+
+/**
  * Probes every not-yet-cached URL, serially within a host and in parallel only
  * ACROSS hosts, mirroring `verifyOfficialProfileLinks` (#2292).
  *
@@ -361,12 +392,11 @@ export async function runSourceLinkHealthBackfill(options: {
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
     options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
-  const resolverBreaker =
-    options.resolverBreaker ??
-    new ResolverCircuitBreaker({
-      controlProbe: options.resolverControlProbe ?? (() => probeResolverControl()),
-      sleep,
-    });
+  const resolverBreaker = createSourceLinkResolverBreaker({
+    resolverBreaker: options.resolverBreaker,
+    resolverControlProbe: options.resolverControlProbe,
+    sleep,
+  });
 
   const result: SourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -492,9 +522,7 @@ export async function runSourceLinkHealthBackfill(options: {
                 options.reprobeHealthyAfterDays,
                 planNow,
               );
-        for (const [url, stored] of storedSourceLinkHealthByUrl(entity.sourceLinkHealth)) {
-          resolverBreaker.noteStoredHostVerdict(hostOf(url), isStoredUnresolvableVerdict(stored));
-        }
+        noteStoredSourceLinkVerdicts(resolverBreaker, entity.sourceLinkHealth);
         plans.push({ entity, candidates, toProbe, carried, tlsFallbacks: [] });
       } catch (error) {
         result.errors += 1;
@@ -638,9 +666,7 @@ async function main(): Promise<void> {
       console.log(`Saved source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
-    console.log(
-      `Resolver breaker: ${result.resolver.controlChecks} control check(s), ${result.resolver.tripsAvoided} trip(s) avoided, ${result.resolver.trips} trip(s), ${result.resolver.knownUnresolvableFailuresIgnored} failure(s) on hosts already stored as unresolvable not counted.`,
-    );
+    console.log(describeResolverBreakerStats(result.resolver));
     if (result.indexSyncDeferred > 0) {
       console.log(
         `${result.indexSyncDeferred} updated row(s) were not resynced: index writes are deferred by SEARCH_INDEX_WRITES=deferred; re-sync the index from a checkout that reaches it (docs/data-refresh-runbook.md)`,
