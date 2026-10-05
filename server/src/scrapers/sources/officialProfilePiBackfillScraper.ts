@@ -1054,6 +1054,20 @@ function classifyResearchHome(
   return null;
 }
 
+/**
+ * A linked home whose name and URL carry no type word. A research team's own name says
+ * so ("<Surname> Group", "<Topic> Unit"); a name that does not is a project, program or
+ * community effort ("<Topic> Practice at Yale", "<Topic> in Women"), and calling it a
+ * lab tells a student it is a laboratory they could join.
+ */
+function untypedResearchHome(
+  name: string,
+): Pick<OfficialProfileResearchHome, 'kind' | 'entityType'> {
+  if (/\b(?:labs|laboratories|group|team|unit)\b/i.test(name))
+    return { kind: 'lab', entityType: 'LAB' };
+  return { kind: 'initiative', entityType: 'INITIATIVE' };
+}
+
 function genericOrganizationName(name: string): boolean {
   return (
     /^(?:yale medicine|yale university|yale school of medicine|yale new haven health system)$/i.test(
@@ -1368,10 +1382,7 @@ function profileLinkedLabWebsitesFromHtml(
     ) {
       return;
     }
-    const classification = classifyResearchHome(name, url) || {
-      kind: 'lab' as const,
-      entityType: 'LAB' as const,
-    };
+    const classification = classifyResearchHome(name, url) || untypedResearchHome(name);
 
     homes.push({
       name,
