@@ -746,7 +746,7 @@ export type WrittenBodyCardChoice =
  * name what the body does not, and 89 of 120 cut served cards on Development on
  * 2026-10-05 were fitting stored cards surrendered that way (#4809).
  */
-export function writtenBodyCardShowsWhole(card: string, body: string): boolean {
+export function writtenBodyCardShowsWhole(card: string, body: unknown): boolean {
   return cardLineFitsBrowseCard(card) && !isUngroundedSynthesizedCard({ card, body });
 }
 
