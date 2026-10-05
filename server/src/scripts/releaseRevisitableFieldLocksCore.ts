@@ -96,6 +96,7 @@ export interface FieldLockReleaseDecision {
   provenInert?: boolean;
   neverBacked?: boolean;
   acceptsEngineValue?: boolean;
+  acceptsEngineSilence?: boolean;
 }
 
 /**
@@ -222,12 +223,21 @@ export function decideFieldLockReleases(
       return { ...base, verdict: 'keep_engine_silent' as const, engineValue: undefined };
     }
     if (!revisitable) {
+      const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(field));
       if (!projectionNamesField(answer, field)) {
-        return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
+        const movedSiblings = movedSiblingValuesFor(entity, answer, field);
+        if (!acceptedByOperator || Object.keys(movedSiblings).length > 0) {
+          return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
+        }
+        return {
+          ...base,
+          engineValue: undefined,
+          verdict: 'release' as const,
+          acceptsEngineSilence: true,
+        };
       }
       const plannedValue = plannedFieldValue(answer, field, storedValue);
       const agrees = fieldLockReleaseAgrees(plannedValue, storedValue);
-      const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(field));
       if (!agrees && !acceptedByOperator) {
         return { ...base, engineValue: plannedValue, verdict: 'keep_engine_disagrees' as const };
       }
@@ -457,7 +467,7 @@ export function describeFieldLockReleaseDecision(decision: FieldLockReleaseDecis
   }`;
   const qualifiers = `${decision.provenInert ? ' (proven inert)' : ''}${
     decision.acceptsEngineValue ? ' (accepts the engine value)' : ''
-  }${
+  }${decision.acceptsEngineSilence ? ' (the engine plans no value; the stored value stays)' : ''}${
     decision.movedSiblingFields?.length
       ? ` (would move ${decision.movedSiblingFields.join(', ')})`
       : ''

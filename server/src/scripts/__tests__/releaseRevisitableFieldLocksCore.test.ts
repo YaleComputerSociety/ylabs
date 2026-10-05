@@ -359,11 +359,21 @@ describe('a lock that records no reason, under the proven-inert rule', () => {
     expect(otherField[0].verdict).toBe('keep_engine_disagrees');
   });
 
-  it('still keeps an accepted field the plan is silent about', () => {
+  it('releases an accepted field the plan is silent about, keeping the stored value', () => {
     const decisions = decideFieldLockReleases(
       unrecordedLock,
       { plannedSet: { departments: ['Fictional Studies'] } },
       { releaseProvenInert: true, acceptEngineValueFields: ['name'] },
+    );
+    expect(decisions[0]).toMatchObject({ verdict: 'release', acceptsEngineSilence: true });
+    expect(decisions[0].engineValue).toBeUndefined();
+  });
+
+  it('keeps an unaccepted field the plan is silent about', () => {
+    const decisions = decideFieldLockReleases(
+      unrecordedLock,
+      { plannedSet: { departments: ['Fictional Studies'] } },
+      { releaseProvenInert: true, acceptEngineValueFields: ['displayName'] },
     );
     expect(decisions.map((decision) => decision.verdict)).toEqual(['keep_not_revisitable']);
   });
