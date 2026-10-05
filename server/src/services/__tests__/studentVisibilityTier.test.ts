@@ -3483,6 +3483,24 @@ describe("a lab heading composed from the lead's full name", () => {
     expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
   });
 
+  it('is unbacked when the only lab-named citation is a listing of many labs', () => {
+    const row = {
+      ...labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/'),
+      sourceUrls: ['https://www.rfixsite.example.com/', 'https://dept.example.edu/faculty-labs'],
+    };
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(true);
+  });
+
+  it('is backed by a bare lab path segment when the lead carries a middle initial', () => {
+    const row = labRow('Robin L. Fixture Lab', 'https://www.example.edu/lab/rfixture/');
+    expect(isUnbackedLabNameShell(row, 'Robin L. Fixture')).toBe(false);
+  });
+
+  it('is backed by a host that runs the surname into lab', () => {
+    const row = labRow('Robin Fixture Lab', 'https://www.fixturelabatexample.org/');
+    expect(isUnbackedLabNameShell(row, 'Robin Fixture')).toBe(false);
+  });
+
   it('needs the lead to tell the composed form apart', () => {
     expect(
       isUnbackedLabNameShell(labRow('Robin Fixture Lab', 'https://www.rfixsite.example.com/')),
