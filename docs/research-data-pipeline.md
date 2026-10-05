@@ -276,19 +276,19 @@ The `fellowship-development-full` mode runs the fellowship engine's own post-run
 
 1. `program-visibility-gate` (`student-visibility:gate --collection=programs --apply`)
 2. `global-regions-backfill` (`programs:backfill-global-regions --apply`)
-3. `official-sources-backfill` (`programs:backfill-official-sources --apply`, opt-in and off by default)
-4. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
-5. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
-6. `source-link-health` (`programs:backfill-source-link-health --apply`)
-7. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
-8. `freshness-audit` (`programs:audit-freshness`, report-only)
-9. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+3. `link-labels-backfill` (`programs:backfill-link-labels --apply`)
+4. `accepting-applications-invariant` (`programs:backfill-accepting-applications-invariant --apply`)
+5. `source-link-health` (`programs:backfill-source-link-health --apply`)
+6. `research-relevance-audit` (`programs:audit-research-relevance`, report-only)
+7. `freshness-audit` (`programs:audit-freshness`, report-only)
+8. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Each backfill applies with the script's own confirm flag (production writes are blocked by each script's own apply guard, so the Development mode is safe), and the two audits run report-only.
 `source-link-health` probes every program link through the resolver breaker before it writes any verdict, so a local resolver outage exits the stage nonzero with no report and leaves stored program verdicts untouched rather than recording good links as unreachable (#4882).
 `program-visibility-gate` re-gates every program row after the lanes have written, because a fellowship's classification is derived during materialization (see "Program classification is a projection derivation" below) and the tier reads it.
 Every stage that takes an `--output` path is held to a report contract: a stage that exits successfully without a readable, valid JSON report at the path recorded in `summary.json` fails loud, and a stage that writes no report records no `artifactPath` at all.
-`official-sources-backfill` is opt-in via `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` because `programs:backfill-official-sources` is not a general recomputation: with no `--input` it replays the committed one-shot curated change-set at `server/src/scripts/data/programOfficialSourceBackfill.json`, so running it on every sweep would overwrite each listed record's freshly scraped `sourceUrl` with a frozen hand-researched value.
+The curated official-source replay (`programs:backfill-official-sources`) is retired (#4601): it wrote `sourceUrl` straight onto rows, so no observation backed what it wrote.
+The `program-official-page` lane replaces it, observing a Yale fellowship database program's official page as its `sourceUrl` only when the page names the fund, and its former change-set survives only as the lane's seed list, `server/src/scrapers/data/programOfficialPageSeeds.json`.
 The former `catalog-refresh` stage and its `fellowships:refresh` command wrote the fellowship catalog straight into Beta or Production, so both were removed with the Beta sweep modes; the catalog now reaches Beta and Production the same way the research corpus does, through promotion.
 No `Fellowship`/`/programs` Meilisearch rebuild stage is wired because there is no programs search-index script; `researchEntity` is the only Meilisearch-syncable type.
 The two engines can therefore be scheduled, gated, and reasoned about on independent cadences.

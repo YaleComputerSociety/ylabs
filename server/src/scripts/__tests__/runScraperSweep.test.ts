@@ -178,6 +178,7 @@ describe('runScraperSweep', () => {
   it('keeps the fellowship catalog sources in the fellowship engine', () => {
     expect(FELLOWSHIP_SWEEP_SOURCES.map((source) => source.name).sort()).toEqual(
       [
+        'program-official-page',
         'student-grants-database',
         'yale-college-fellowships-office',
         'yale-health-sciences-summer-programs',
@@ -1018,7 +1019,7 @@ describe('runScraperSweep', () => {
     'development-full',
     'development-incremental',
   ] as const)('produces no fellowship post-run stage options for the %s mode', (mode) => {
-    expect(resolveFellowshipPostRunOptions(mode, {})).toBeUndefined();
+    expect(resolveFellowshipPostRunOptions(mode)).toBeUndefined();
   });
 
   it('builds the fellowship post-run pipeline wiring the existing programs scripts in order', () => {
@@ -1061,29 +1062,13 @@ describe('runScraperSweep', () => {
     ]);
   });
 
-  it('keeps the one-shot official-source change-set replay opt-in', () => {
-    expect(resolveFellowshipPostRunOptions('fellowship-development-full', {})).toMatchObject({
-      applyOfficialSourceChangeSet: false,
-    });
+  it('runs no curated official-source replay, because a lane observes official pages instead', () => {
     expect(
-      buildFellowshipPostRunStages('/tmp/fellowship-sweep').map((stage) => stage.name),
-    ).not.toContain('official-sources-backfill');
-    const optedIn = resolveFellowshipPostRunOptions('fellowship-development-full', {
-      SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET: 'yes',
-    });
-    expect(
-      buildFellowshipPostRunStages('/tmp/fellowship-sweep', optedIn).find(
-        (stage) => stage.name === 'official-sources-backfill',
-      )?.args,
-    ).toEqual([
-      '--cwd',
-      'server',
-      'programs:backfill-official-sources',
-      '--apply',
-      '--confirm-program-official-source-backfill',
-      '--limit=10000',
-      '--output=/tmp/fellowship-sweep/fellowship-official-sources-backfill.json',
-    ]);
+      buildFellowshipPostRunStages(
+        '/tmp/fellowship-sweep',
+        resolveFellowshipPostRunOptions('fellowship-development-full'),
+      ).map((stage) => stage.args.join(' ')),
+    ).not.toEqual(expect.arrayContaining([expect.stringContaining('backfill-official-sources')]));
   });
 
   it('fails a fellowship stage whose declared report artifact is missing or malformed', () => {

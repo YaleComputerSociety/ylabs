@@ -1613,3 +1613,31 @@ describe('pastUndergradAdvisees from lab roster alumni rank below a fellowship h
     );
   });
 });
+
+describe('a Yale fellowship database fund page as a program sourceUrl (#4601)', () => {
+  const now = new Date('2026-10-01T00:00:00Z');
+  const fundPage = {
+    field: 'sourceUrl',
+    value: 'https://yale.communityforce.com/Funds/FundDetails.aspx?FIXTURE',
+    sourceName: 'student-grants-database',
+    confidence: 0.95,
+    observedAt: now,
+  };
+  const officialPage = {
+    field: 'sourceUrl',
+    value: 'https://fixture.yale.edu/fellowships',
+    sourceName: 'program-official-page',
+    confidence: 0.5,
+    observedAt: new Date('2026-06-01T00:00:00Z'),
+  };
+
+  it('ranks below any other lane’s observed page', () => {
+    expect(resolveField('sourceUrl', [fundPage, officialPage], { now })?.value).toBe(
+      officialPage.value,
+    );
+  });
+
+  it('still resolves when no other lane states a page', () => {
+    expect(resolveField('sourceUrl', [fundPage], { now })?.value).toBe(fundPage.value);
+  });
+});

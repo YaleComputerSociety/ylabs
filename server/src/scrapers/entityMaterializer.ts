@@ -170,6 +170,8 @@ import {
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
+  storedFellowshipSourceUrlIsUnbacked,
+  isWithdrawnFellowshipCitation,
   newestFundTitle,
 } from './fellowshipSourcePrecedence';
 import {
@@ -1680,6 +1682,9 @@ export function shouldIgnoreObservationForEntityMaterialization(
     return true;
   }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
+    return true;
+  }
+  if (entityType === 'fellowship' && isWithdrawnFellowshipCitation(observation)) {
     return true;
   }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
@@ -8879,6 +8884,11 @@ export async function projectFromLog(
       staged: set,
       resolved,
       fundSpeaksForRow: fundSpeaksForFellowship(entityDoc, newestFundTitle(materializationObs)),
+      storedSourceUrlUnbacked: storedFellowshipSourceUrlIsUnbacked({
+        stored: entityDoc as Record<string, unknown> | null,
+        liveObservations: resolverObs,
+        readRowUnderOwnIdentity: input.readRowUnderOwnIdentity === true,
+      }),
     })) {
       delete set[field];
       delete set[`fieldProvenance.${field}`];
@@ -9579,16 +9589,17 @@ export async function materializeEntity(
       .map((value) => String(value || ''))
       .filter(Boolean),
   );
-  const gonePageWithdrawal = isResearchEntityObservationType(entityType)
-    ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
-    : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
+  const gonePageWithdrawal =
+    isResearchEntityObservationType(entityType) || entityType === 'fellowship'
+      ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
+      : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
     ? withoutLaneRefusedWebsiteUrls(gonePageWithdrawal.observations, laneScopedRowIdentities)
     : { observations: obs, withdrawnValues: [] };
   const fellowshipEvidence =
     entityType === 'fellowship'
       ? preferFundFacetObservations(
-          obs,
+          gonePageWithdrawal.observations,
           await fundFacetObservationsCitedBy(
             entityDoc ?? fellowshipCitationsObservedIn(obs),
             options.chunkPrefetch,
