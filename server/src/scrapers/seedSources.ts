@@ -208,6 +208,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
+    name: 'roster-bio-research-evidence',
+    displayName: 'Roster biography research evidence',
+    description:
+      "Mints a faculty-research row for a department roster person whose stored profile biography states research they do now, read from the roster lane's stored observations without fetching. The biography's research sentences are writer evidence only, never the served description. Manual-only and out of the sweep until the owner reviews a sample of the rows a run produces.",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'monthly',
+  },
+  {
     name: 'directory-alias-resolution',
     displayName: 'Directory alias resolution',
     description:

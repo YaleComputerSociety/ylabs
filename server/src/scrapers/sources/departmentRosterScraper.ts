@@ -4028,6 +4028,17 @@ export function rosterResearchEntityMint(
  */
 export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig): string {
   const nameSlug = rosterIdentityNameSlug(entry) || (entry.labUrl ? slugify(entry.labUrl) : '');
+  return deptResearchEntitySlug(nameSlug, dept);
+}
+
+export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptConfig): string {
+  const prefix = `dept:${namespacedDeptKey(dept.deptKey)}:`;
+  if (!userKey.startsWith(prefix)) return '';
+  const nameSlug = userKey.slice(prefix.length);
+  return nameSlug === 'unknown' ? '' : deptResearchEntitySlug(nameSlug, dept);
+}
+
+function deptResearchEntitySlug(nameSlug: string, dept: DeptConfig): string {
   if (!nameSlug) return '';
   return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
 }
