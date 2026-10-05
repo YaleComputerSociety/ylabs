@@ -43,7 +43,7 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'accounts:purge-retired-login-profile-fields':
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
   'accounts:merge-local-part-netid-twins':
-    'merges and archives login accounts that share one person, an operator decision about account identity run on Development only (#4773)',
+    'merges and archives login accounts that share one person, folds their researcher records when the names agree, and archives a lone local-part account that holds nothing, an operator decision about account identity run on Development only (#4773, #4917)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
   'observations:nonfetching-lane-gone-pages':

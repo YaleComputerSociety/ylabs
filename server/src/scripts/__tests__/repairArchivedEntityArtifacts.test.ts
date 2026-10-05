@@ -53,6 +53,7 @@ describe('repairArchivedEntityArtifacts CLI helpers', () => {
       limitProvided: true,
       maxApply: 5,
       output: '/tmp/ylabs-archived-artifact-repair.json',
+      roleEdgeDisposition: 'settle',
     });
   });
 

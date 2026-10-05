@@ -10,6 +10,8 @@ import {
   archivedEntityArtifactPlanWriteCount,
   archivedEntityRepairClasses,
   buildArchivedEntityArtifactRepairPlan,
+  disputedDetachmentReviewNote,
+  isOperatorArchivedReason,
   dispositionMatchesScope,
   accessSignalSettlementsFromRepairPlan,
   resolveArchivedEntityDispositions,
@@ -22,11 +24,13 @@ import {
   type ArchivedEntityNode,
   type ArchivedEntityRepairClass,
   type ArchivedEntityRepairScope,
+  type RoleEdgeDisposition,
 } from './repairArchivedEntityArtifactsCore';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  applyDisputedRoleEdgeDetachments,
   applyRoleEdgeSettlements,
   LIVE_ROLE_EDGE_FILTER,
   SURVIVOR_HOLDING_ROLE_EDGE_FILTER,
@@ -61,7 +65,10 @@ export interface RepairArchivedEntityArtifactsCliOptions {
   archivedBefore?: string;
   entityIds?: string[];
   artifactTypes?: ArchivedEntityArtifactType[];
+  roleEdgeDisposition?: RoleEdgeDisposition;
 }
+
+export const DETACH_DISPUTED_FLAG = '--detach-disputed';
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -245,6 +252,7 @@ export function parseRepairArchivedEntityArtifactsArgs(
     limit: 100,
     limitProvided: false,
     maxApply: 25,
+    roleEdgeDisposition: 'settle',
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -260,6 +268,10 @@ export function parseRepairArchivedEntityArtifactsArgs(
     }
     if (arg.startsWith('--confirm-archived-artifact-repair=')) {
       throw new Error('--confirm-archived-artifact-repair does not accept a value');
+    }
+    if (arg === DETACH_DISPUTED_FLAG) {
+      options.roleEdgeDisposition = 'detach-disputed';
+      continue;
     }
     if (arg === '--mode=dry-run' || arg === '--dry-run') {
       options.apply = false;
@@ -359,6 +371,37 @@ export function assertArchivedEntityArtifactRepairApplyAllowed({
   }
 }
 
+export function assertDisputedDetachmentScope(
+  options: Pick<
+    RepairArchivedEntityArtifactsCliOptions,
+    'roleEdgeDisposition' | 'archivedReasons' | 'artifactTypes'
+  >,
+): void {
+  if (options.roleEdgeDisposition !== 'detach-disputed') return;
+  const reasons = options.archivedReasons || [];
+  if (reasons.length !== 1 || !isOperatorArchivedReason(reasons[0])) {
+    throw new Error(
+      `${DETACH_DISPUTED_FLAG} requires exactly one --archived-reason that an operator recorded (operator:<reason>)`,
+    );
+  }
+  if (options.artifactTypes?.length !== 1 || options.artifactTypes[0] !== 'RoleAssignment') {
+    throw new Error(`${DETACH_DISPUTED_FLAG} requires --artifact-type=role-assignment`);
+  }
+}
+
+export function assertDisputedDetachmentApplyTarget(
+  options: Pick<RepairArchivedEntityArtifactsCliOptions, 'apply' | 'roleEdgeDisposition'>,
+  databaseName: string | undefined,
+): void {
+  if (!options.apply || options.roleEdgeDisposition !== 'detach-disputed') return;
+  // Beta and Production receive role edges only through promotion.
+  if (databaseName !== 'Development') {
+    throw new Error(
+      `${DETACH_DISPUTED_FLAG} apply is restricted to the Development database (resolved: ${databaseName || 'unknown'}).`,
+    );
+  }
+}
+
 export function writeRepairArchivedEntityArtifactsOutput(
   report: Record<string, unknown>,
   output?: string,
@@ -431,6 +474,7 @@ export async function loadArchivedEntityArtifactPlan(
   limit: number,
   scope: ArchivedEntityRepairScope,
   artifactTypes: ArchivedEntityArtifactType[] | undefined,
+  roleEdgeDisposition: RoleEdgeDisposition = 'settle',
 ): Promise<{
   scopedArchivedEntities: number;
   artifacts: ArchivedEntityArtifact[];
@@ -492,6 +536,7 @@ export async function loadArchivedEntityArtifactPlan(
       artifacts,
       dispositions: scoped,
       canonicalArtifacts,
+      roleEdgeDisposition,
     }),
   };
 }
@@ -501,6 +546,7 @@ function planSummary(plan: ArchivedEntityArtifactRepairPlan) {
     relink: plan.relink.length,
     mergeAndArchive: plan.mergeAndArchive.length,
     archiveWithoutCanonical: plan.archiveWithoutCanonical.length,
+    detachDisputed: plan.detachDisputed.length,
     skipped: plan.skipped.length,
   };
 }
@@ -517,8 +563,17 @@ export async function applyArchivedEntityArtifactRepairPlan(
     mergedCanonicalArtifacts: 0,
     archivedMergedDuplicates: 0,
     archivedWithoutCanonical: 0,
+    detachedDisputed: 0,
   };
   if (!db) return counts;
+
+  counts.detachedDisputed = await applyDisputedRoleEdgeDetachments(
+    plan.detachDisputed.map((item) => ({
+      edgeId: item.id,
+      archivedEntityId: item.archivedEntityId,
+      reviewNotes: disputedDetachmentReviewNote(item.archivedReason),
+    })),
+  );
 
   const roleEdges = await applyRoleEdgeSettlements(roleEdgeSettlementsFromRepairPlan(plan), now);
   counts.relinked += roleEdges.repointed;
@@ -547,6 +602,7 @@ async function main() {
     classes: options.classes,
   };
   assertArchivedEntityArtifactRepairApplyAllowed({ ...applyGuardInput, plannedWrites: 0 });
+  assertDisputedDetachmentScope(options);
   const guard = assertScriptApplyAllowed({
     apply: options.apply,
     scriptName: 'research-entity:repair-archived-artifacts',
@@ -554,10 +610,12 @@ async function main() {
   });
 
   await initializeConnections();
+  assertDisputedDetachmentApplyTarget(options, mongoose.connection.db?.databaseName);
   const { scopedArchivedEntities, artifacts, plan } = await loadArchivedEntityArtifactPlan(
     options.limit,
     archivedEntityRepairScopeFromOptions(options),
     options.artifactTypes,
+    options.roleEdgeDisposition,
   );
   const plannedWrites = archivedEntityArtifactPlanWriteCount(plan);
   assertArchivedEntityArtifactRepairApplyAllowed({ ...applyGuardInput, plannedWrites });
