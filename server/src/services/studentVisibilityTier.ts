@@ -454,7 +454,9 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
  * (`reclassifyUnbackedLabAsFacultyResearch`), so a row reaches the gate held here
  * only when the materializer leaves it a lab: a live `name` or `displayName`
  * observation asserts the lab, its `entityType`, `kind` or `name` is locked, or its
- * name is not the row's own lead's name plus "Lab".
+ * name is not the row's own lead's name plus "Lab". A full-name heading
+ * (`isComposedFullNameLabName`) is decided by that predicate instead, and its live
+ * observations do not exempt it.
  *
  * The absence of a lab-named URL is the discriminator rather than the presence of
  * a person-page one, because a paginated department listing
