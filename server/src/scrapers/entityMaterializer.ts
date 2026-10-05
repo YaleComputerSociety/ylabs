@@ -7337,6 +7337,16 @@ function enforceResearchEntityNameAuthority(input: {
     manuallyLockedFields: input.manuallyLockedFields,
     authority: input.nameIdentityAuthority,
   });
+  // A heading composed from a bare person name gains its suffix here, after the
+  // observation normalizer ran on the suffix-less value.
+  for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
+    if (input.manuallyLockedFields.includes(field) || field in unset) continue;
+    const servedValue = textValue(set[field] ?? entityDoc?.[field]);
+    const recased = recaseAllCapsResearchEntityName(servedValue);
+    if (!servedValue || recased === servedValue) continue;
+    set[field] = recased;
+    fieldsWritten++;
+  }
   return fieldsWritten;
 }
 

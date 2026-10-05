@@ -184,9 +184,10 @@ function titleCaseHeadingWord(word: string, isParticleSlot: boolean): string {
  * acronyms and lowercase name particles. Only a person-or-surname heading ending in a research
  * suffix is recased, because a center or program name in capitals ("YALE MRI CENTER") carries
  * acronyms a word rule cannot tell from names. A heading with any lowercase letter before its
- * suffix is the source's own casing and is left alone, as is a single all-caps word, which is
- * as likely an acronym as a shout. A particle is lowercased only before another name word, so
- * a surname such as Le or Du in last place keeps its capital.
+ * suffix is the source's own casing and is left alone, as is a single all-caps word before a
+ * suffix the source wrote in normal case, which is an acronym the source chose rather than a
+ * shout. A particle is lowercased only before another name word, so a surname such as Le or Du
+ * in last place keeps its capital.
  */
 export function recaseAllCapsResearchEntityName(value: string): string {
   if (typeof value !== 'string') return value;
@@ -197,6 +198,9 @@ export function recaseAllCapsResearchEntityName(value: string): string {
   const letters = head.replace(/[^\p{L}]/gu, '');
   if (letters.length < 3 || letters !== letters.toUpperCase()) return value;
   const words = head.split(/\s+/).filter(Boolean);
+  // One capitalised word before a suffix the source wrote in normal case is an acronym the
+  // source chose ("<ACRONYM> Lab"), not a shouted heading.
+  if (words.length === 1 && suffix !== suffix.toUpperCase()) return value;
   const recasedHead = words.map((word, index) =>
     titleCaseHeadingWord(word, index > 0 && index < words.length - 1),
   );
