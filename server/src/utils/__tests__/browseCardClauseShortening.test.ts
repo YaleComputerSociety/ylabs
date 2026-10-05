@@ -53,8 +53,54 @@ describe('shortenCardLineToFitBrowseCard (#4809)', () => {
 
   it('does not cut before an and that continues a noun list', () => {
     const card =
-      'Characterizes membrane transporters in bacterial cell envelopes, examining the structure, function and uses of these proteins in antibiotic resistance and drug delivery across many clinically relevant pathogen species.';
+      'Characterizes the structure, function and uses of membrane transporters in bacterial cell envelopes in antibiotic resistance and drug delivery across many clinically relevant pathogen species and their hosts.';
     expect(shortenCardLineToFitBrowseCard(card)).toBe(card);
+  });
+
+  it('cuts before an example list that has no comma', () => {
+    const card =
+      'Studies how environmental exposures, metabolism and antioxidant systems contribute to human diseases such as liver disease, obesity and diabetes, cancer, and neurodegenerative disorders of aging in large human cohorts.';
+    expect(shortenCardLineToFitBrowseCard(card)).toBe(
+      'Studies how environmental exposures, metabolism and antioxidant systems contribute to human diseases.',
+    );
+  });
+
+  it('cuts before a focus phrase without an article and before a purpose clause', () => {
+    expect(
+      shortenCardLineToFitBrowseCard(
+        'Studies the genetic and epigenetic architecture of psychiatric disorders, with focus on substance use disorders, post-traumatic stress disorder, major depression, anxiety, and related traits in large cohorts.',
+      ),
+    ).toBe('Studies the genetic and epigenetic architecture of psychiatric disorders.');
+    expect(
+      shortenCardLineToFitBrowseCard(
+        'Studies the pathogenesis of congenital hydrocephalus by using frog embryos as an in vivo model to analyze how ependymal cilia and embryonic cerebrospinal fluid circulation regulate brain and ventricle development.',
+      ),
+    ).toBe(
+      'Studies the pathogenesis of congenital hydrocephalus by using frog embryos as an in vivo model.',
+    );
+  });
+
+  it('does not cut before an em-dash aside that the sentence closes', () => {
+    const card =
+      'Studies how steroid hormone signaling in the uterus — especially glucocorticoid receptor activity and crosstalk with other receptors — influences early pregnancy events and the growth of uterine fibroids.';
+    expect(shortenCardLineToFitBrowseCard(card)).not.toBe(
+      'Studies how steroid hormone signaling in the uterus.',
+    );
+  });
+
+  it('does not cut example lists inside a relative clause or after a placeholder noun', () => {
+    const relative =
+      'Studies lysosome cell biology in neurodegenerative disease, aiming to define cellular mechanisms that allow specialized cell types such as neurons, microglia and macrophages to meet their physiological demands.';
+    expect(shortenCardLineToFitBrowseCard(relative)).not.toContain('cell types.');
+    const placeholder =
+      'Studies Latin American film and literature, the reception of classical tragedy in Latin America, and topics including sleep and insomnia, gender debates, Third Cinema, and psychoanalysis in the region.';
+    expect(shortenCardLineToFitBrowseCard(placeholder)).not.toMatch(/topics\.$/);
+  });
+
+  it('does not end a card on a linking verb', () => {
+    const card =
+      'The fixture group primary research interests are: identifying mechanisms that contribute to lung injury in preterm infants and protective strategies that may reduce adverse pulmonary outcomes over time.';
+    expect(shortenCardLineToFitBrowseCard(card)).not.toMatch(/\bare\.$/);
   });
 
   it('leaves a card that already fits untouched', () => {
