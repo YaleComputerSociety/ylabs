@@ -73,12 +73,12 @@ async function collectionExists(db: Db, name: string): Promise<boolean> {
   return db.listCollections({ name }, { nameOnly: true }).hasNext();
 }
 
-export async function countWhere(db: Db, collection: string, filter: Document): Promise<number> {
+async function countWhere(db: Db, collection: string, filter: Document): Promise<number> {
   if (!(await collectionExists(db, collection))) return 0;
   return db.collection(collection).countDocuments(filter);
 }
 
-export async function netidKeyedReferenceCount(db: Db, netid: string): Promise<number> {
+async function netidKeyedReferenceCount(db: Db, netid: string): Promise<number> {
   let total = 0;
   for (const { collection, field } of NETID_KEYED_REFERENCE_FIELDS) {
     total += await countWhere(db, collection, { [field]: netid });
@@ -92,7 +92,7 @@ function emptyRefusals(): Record<LocalPartMergeRefusalReason, number> {
   ) as Record<LocalPartMergeRefusalReason, number>;
 }
 
-export async function localPartMergeRefusal(
+async function localPartMergeRefusal(
   db: Db,
   localPart: Document,
   netidAccount: Document,
@@ -109,12 +109,12 @@ export async function localPartMergeRefusal(
   return undefined;
 }
 
-export interface LiveEmailGroup {
+interface LiveEmailGroup {
   _id: string;
   accounts: Document[];
 }
 
-export async function loadLiveEmailGroups(db: Db): Promise<LiveEmailGroup[]> {
+async function loadLiveEmailGroups(db: Db): Promise<LiveEmailGroup[]> {
   return db
     .collection('accounts')
     .aggregate<LiveEmailGroup>([
@@ -133,7 +133,7 @@ export async function loadLiveEmailGroups(db: Db): Promise<LiveEmailGroup[]> {
     .toArray();
 }
 
-export function localPartPairOf(
+function localPartPairOf(
   group: LiveEmailGroup,
 ): { localPart: Document; netidAccount: Document } | undefined {
   const localParts = group.accounts.filter(isLocalPartAccount);
