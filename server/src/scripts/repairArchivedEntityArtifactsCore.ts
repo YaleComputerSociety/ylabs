@@ -27,6 +27,22 @@ export type ArchivedEntityRepairClass = (typeof archivedEntityRepairClasses)[num
 
 export const ARCHIVED_REASON_ABSENT = '(none)';
 
+export const OPERATOR_ARCHIVED_REASON_PREFIX = 'operator:';
+
+export const roleEdgeDispositions = ['settle', 'detach-disputed'] as const;
+export type RoleEdgeDisposition = (typeof roleEdgeDispositions)[number];
+
+export function isOperatorArchivedReason(archivedReason: string): boolean {
+  return (
+    archivedReason.startsWith(OPERATOR_ARCHIVED_REASON_PREFIX) &&
+    archivedReason.length > OPERATOR_ARCHIVED_REASON_PREFIX.length
+  );
+}
+
+export function disputedDetachmentReviewNote(archivedReason: string): string {
+  return `Detached by an operator: the research row was archived as ${archivedReason}, so its lead claim is disputed rather than ended (#4917).`;
+}
+
 export interface ArchivedEntityNode {
   id: string;
   archived: boolean;
@@ -75,8 +91,12 @@ export interface ArchivedEntityArtifactRepairPlan {
     PlanItemBase & { duplicateId: string; canonicalId: string; canonicalResearchEntityId: string }
   >;
   archiveWithoutCanonical: Array<PlanItemBase & { id: string }>;
+  detachDisputed: Array<PlanItemBase & { id: string }>;
   skipped: Array<
-    PlanItemBase & { id: string; reason: 'merge-chain-dead-end' | 'missing-disposition' }
+    PlanItemBase & {
+      id: string;
+      reason: 'merge-chain-dead-end' | 'missing-disposition' | 'not-an-operator-archive';
+    }
   >;
 }
 
@@ -84,6 +104,7 @@ export interface ArchivedEntityRepairClassSummary {
   relink: number;
   mergeAndArchive: number;
   archiveWithoutCanonical: number;
+  detachDisputed: number;
   skipped: number;
   archivedEntities: number;
   byArtifactType: Partial<Record<ArchivedEntityArtifactType, number>>;
@@ -167,15 +188,18 @@ export function buildArchivedEntityArtifactRepairPlan({
   artifacts,
   dispositions,
   canonicalArtifacts = [],
+  roleEdgeDisposition = 'settle',
 }: {
   artifacts: ArchivedEntityArtifact[];
   dispositions: ReadonlyMap<string, ArchivedEntityDisposition>;
   canonicalArtifacts?: ArchivedEntityArtifact[];
+  roleEdgeDisposition?: RoleEdgeDisposition;
 }): ArchivedEntityArtifactRepairPlan {
   const plan: ArchivedEntityArtifactRepairPlan = {
     relink: [],
     mergeAndArchive: [],
     archiveWithoutCanonical: [],
+    detachDisputed: [],
     skipped: [],
   };
   const settleableRoleEdges: ArchivedEntityArtifact[] = [];
@@ -203,6 +227,16 @@ export function buildArchivedEntityArtifactRepairPlan({
 
     if (disposition.repairClass === 'merge-dead-end') {
       plan.skipped.push({ ...base, id: artifact.id, reason: 'merge-chain-dead-end' });
+      continue;
+    }
+    if (artifact.artifactType === 'RoleAssignment' && roleEdgeDisposition === 'detach-disputed') {
+      // A disputed detachment records the operator's judgement about the lead, so it is only
+      // offered where an operator, not a lane, archived the row.
+      if (!isOperatorArchivedReason(disposition.archivedReason)) {
+        plan.skipped.push({ ...base, id: artifact.id, reason: 'not-an-operator-archive' });
+      } else {
+        plan.detachDisputed.push({ ...base, id: artifact.id });
+      }
       continue;
     }
     if (artifact.artifactType === 'RoleAssignment') {
@@ -394,12 +428,13 @@ export function summarizeArchivedEntityArtifactRepairPlanByClass(
   const entitiesByClass = new Map<ArchivedEntityRepairClass, Set<string>>();
   const record = (
     item: PlanItemBase,
-    action: 'relink' | 'mergeAndArchive' | 'archiveWithoutCanonical' | 'skipped',
+    action: 'relink' | 'mergeAndArchive' | 'archiveWithoutCanonical' | 'detachDisputed' | 'skipped',
   ) => {
     const summary = (summaries[item.repairClass] ||= {
       relink: 0,
       mergeAndArchive: 0,
       archiveWithoutCanonical: 0,
+      detachDisputed: 0,
       skipped: 0,
       archivedEntities: 0,
       byArtifactType: {},
@@ -418,6 +453,7 @@ export function summarizeArchivedEntityArtifactRepairPlanByClass(
   plan.relink.forEach((item) => record(item, 'relink'));
   plan.mergeAndArchive.forEach((item) => record(item, 'mergeAndArchive'));
   plan.archiveWithoutCanonical.forEach((item) => record(item, 'archiveWithoutCanonical'));
+  plan.detachDisputed.forEach((item) => record(item, 'detachDisputed'));
   plan.skipped.forEach((item) => record(item, 'skipped'));
   return summaries;
 }
@@ -425,5 +461,10 @@ export function summarizeArchivedEntityArtifactRepairPlanByClass(
 export function archivedEntityArtifactPlanWriteCount(
   plan: ArchivedEntityArtifactRepairPlan,
 ): number {
-  return plan.relink.length + plan.mergeAndArchive.length + plan.archiveWithoutCanonical.length;
+  return (
+    plan.relink.length +
+    plan.mergeAndArchive.length +
+    plan.archiveWithoutCanonical.length +
+    plan.detachDisputed.length
+  );
 }
