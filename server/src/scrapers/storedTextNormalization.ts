@@ -90,6 +90,7 @@ export function planStoredTextNormalization(input: {
   entityType: ObservedEntityType;
   stored: Record<string, unknown> | null | undefined;
   staged?: Record<string, unknown>;
+  unset?: Record<string, unknown>;
   lockedFields: readonly string[];
 }): StoredTextNormalizationPlan {
   if (!input.stored && !input.staged) return EMPTY_PLAN;
@@ -97,6 +98,7 @@ export function planStoredTextNormalization(input: {
   const locked = new Set(input.lockedFields);
   const staged = input.staged ?? {};
   for (const field of normalizableStoredTextFields(input.entityType)) {
+    if (input.unset && field in input.unset) continue;
     const current = field in staged ? staged[field] : input.stored?.[field];
     if (typeof current !== 'string' || current.length === 0) continue;
     const corrected = normalizedText(field, current);
