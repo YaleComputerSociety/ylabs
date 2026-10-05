@@ -399,6 +399,7 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
+import { officialProfileUrlLookupVariants } from '../utils/officialProfileUrlVariants';
 import {
   canonicalRoleForLegacy,
   LEAD_ROLE_LEGACY_LABELS,
@@ -2403,11 +2404,14 @@ function normalizeMemberRole(value: unknown): string {
 async function findUniqueResearcherForRosterMember(
   resolved: Record<string, ResolvedField>,
 ): Promise<any | null> {
-  const profileUrl = textValue(resolved.profileUrl?.value);
-  if (!profileUrl) return null;
+  const profileUrls = officialProfileUrlLookupVariants(textValue(resolved.profileUrl?.value));
+  if (profileUrls.length === 0) return null;
   const researchers = await Researcher.find({
     archived: { $ne: true },
-    $or: [{ 'profileLinks.url': profileUrl }, { 'profile.websiteUrl': profileUrl }],
+    $or: [
+      { 'profileLinks.url': { $in: profileUrls } },
+      { 'profile.websiteUrl': { $in: profileUrls } },
+    ],
   })
     .select('_id displayName')
     .limit(2)
