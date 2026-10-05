@@ -679,13 +679,20 @@ export type WrittenBodyCardChoice =
   | { kind: 'none' };
 
 /**
- * The card a written body serves with: the stored card when it is grounded in the
- * written body and the serving bar accepts the pair, else a copied card observation
- * that is, else the body's own lead sentence when it is a card rather than the whole
- * body, else a card synthesized from the written body. Never a topic-chip echo and
- * never the body itself, so a row with none of those keeps no card rather than a wrong
- * one. Keeping an acceptable stored card first is what keeps a re-materialize stable
- * and spends no synthesis.
+ * The card a written body serves with. A candidate is acceptable when it is not a
+ * topic-chip echo or the body itself and the serving bar accepts it; stored and observed
+ * cards must also be grounded in the written body. The order is: the first acceptable
+ * candidate (stored, then each copied card observation, then the body's own lead
+ * sentence) that fits the browse card; else a synthesized line that fits; else the first
+ * acceptable candidate even though the browse card cuts it; else a synthesized line that
+ * does not fit; else no card rather than a wrong one.
+ *
+ * Synthesis is spent only when a candidate fitting the browse card is missing and the
+ * caller hands over `synthesize`, at most WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS calls. The
+ * materializer hands it over when the written body changed or the stored card is
+ * unacceptable, which bounds the spend to once per body version, and for a stored cut
+ * card only under --resynthesize-cut-cards, so a routine re-materialize of an unchanged
+ * body with an acceptable stored card stays stable and makes no call.
  */
 export async function resolveWrittenBodyCard(input: {
   body: string;
