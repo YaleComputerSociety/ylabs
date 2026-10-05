@@ -141,6 +141,7 @@ The row holds the date and integer counts only, with no netid, account id, major
 A tally write never blocks or fails a login.
 The collection is environment-local and is read with `yarn --cwd server auth:login-signal-tally --environment=production --from <date> --to <date>`.
 It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
+The report shows a bucket only when the range holds at least 3 logins in it, the #4159 threshold, and leaves a smaller bucket out of every total and share, so the reading cannot single out a student; it never prints a per-day row.
 Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
 
 ## 2026-10-04: A Thin Description That Is Accurate Serves Whatever Wrote It (#4766)

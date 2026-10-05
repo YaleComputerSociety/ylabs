@@ -31,6 +31,11 @@ Accounts stored before the fix that never sign in again keep the values until a 
 Count it in Production rather than Development, because a Development login does not go through CAS and so never wrote these values: on 2026-10-01, 0 of 4,179 Development accounts held any of the three.
 Each CAS login also increments one per-UTC-day bucket in `login_signal_tallies` (`services/loginSignalTallyService.ts`), counting how many logins carry a usable major or graduate curriculum for browse personalization (#4744).
 The bucket is computed inside `yaliesService.ts` by `classifyStudentLoginSignal`, so the major and curriculum never leave it; the row stores the date and counts only, the write is fire-and-forget and skipped while Mongo is disconnected, and `yarn --cwd server auth:login-signal-tally` reads it.
+The report prints aggregates over the whole range only, never a per-day row, and that holds for `--json` too.
+A bucket with fewer than 3 logins over the range, zero included, prints as `<3` (`fewer_than_3` in JSON) and is left out of every total and share, so no printed number can be subtracted to recover it; this is the same threshold of 3 that admin search analytics uses (#4159).
+The threshold counts logins rather than students, because the tally cannot tell two logins by one student apart without storing who logged in, so a shown count of 3 can still be one student signing in three times.
+The stored per-day rows are not suppressed, so read them only through the report.
+`server/src/__tests__/casLoginStoresNoStudentSignal.integration.test.ts` drives a stub-CAS login with synthetic Yalies records and fails if a major, college, year or curriculum reaches the session cookie, any collection, or the console, or if a netid or email reaches the console.
 It is temporary: it goes once the personalization decision in `docs/decisions.md` is made.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
 One scraper path still mints an `Account`: `resolveOrCreateAccountId` in `scrapers/canonicalMembershipMaterializer.ts` upserts one with status `UNKNOWN` for a roster identity that carries both a netid and an email.
