@@ -20,6 +20,7 @@ import {
   planResearcherAttributeUnion,
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
+  resolveFinalMergeTargets,
   roleAssignmentEdgeKey,
   rosterMembershipEdgeKey,
   RESEARCHER_UNIQUE_IDENTIFIER_FIELDS,
@@ -394,7 +395,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     netidByAccountId,
   );
 
-  const mergeTargetByShellId = new Map<string, string>();
+  const decidedTargetByShellId = new Map<string, string>();
   const foldsByMatchedIdentity = Object.fromEntries(
     SHELL_FOLD_IDENTITIES.map((identity) => [identity, 0]),
   ) as Record<ShellFoldIdentity, number>;
@@ -409,10 +410,11 @@ export async function dedupeAccountlessResearcherShells(options: {
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
-      mergeTargetByShellId.set(shell.id, decision.canonicalId);
+      decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
   }
+  const mergeTargetByShellId = resolveFinalMergeTargets(decidedTargetByShellId);
 
   const outrankingCanonicalIds = new Set(mergeTargetByShellId.values());
   const clusterCandidates = foldableShells.filter(

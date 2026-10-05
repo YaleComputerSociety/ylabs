@@ -405,10 +405,16 @@ function decideSharedRowFold(
     agreeing.set(candidate.id, candidate);
   }
   if (agreeing.size === 0) return undefined;
-  if (agreeing.size > 1) {
+  const strongestStrength = Math.max(
+    ...[...agreeing.values()].map((candidate) => identityTierStrength(candidate.tier)),
+  );
+  const strongest = [...agreeing.values()].filter(
+    (candidate) => identityTierStrength(candidate.tier) === strongestStrength,
+  );
+  if (strongest.length > 1) {
     return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'shared-row' };
   }
-  const [target] = agreeing.values();
+  const [target] = strongest;
   const shellOrcid = cleanOrcid(shell.orcid);
   if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
     return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' };
@@ -466,6 +472,22 @@ export function decideShellMerge(
   }
 
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' };
+}
+
+export function resolveFinalMergeTargets(
+  mergeTargetByShellId: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const resolved = new Map<string, string>();
+  for (const [shellId, firstTargetId] of mergeTargetByShellId) {
+    const visited = new Set([shellId]);
+    let targetId = firstTargetId;
+    while (mergeTargetByShellId.has(targetId) && !visited.has(targetId)) {
+      visited.add(targetId);
+      targetId = mergeTargetByShellId.get(targetId)!;
+    }
+    if (targetId !== shellId) resolved.set(shellId, targetId);
+  }
+  return resolved;
 }
 
 export interface RoleAssignmentEdge {

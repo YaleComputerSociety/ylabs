@@ -13,6 +13,7 @@ import {
   shellProfileLinkKindsReleasedWith,
   buildVerifiedPrimaryProfileIndex,
   planAccountlessClusterFolds,
+  resolveFinalMergeTargets,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -677,6 +678,27 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
     ).toEqual({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'shared-row' });
   });
 
+  it('folds into the account when a weaker netid record on the row also agrees', () => {
+    expect(
+      decideShellMerge(
+        { id: 'shell', displayName: 'Avery Placeholder' },
+        new Map(),
+        new Map(),
+        [],
+        new Map(),
+        [
+          { id: 'netid-record', displayName: 'Avery Q. Placeholder', tier: 'NETID' },
+          account('acct', 'Avery Placeholder'),
+        ],
+      ),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'acct',
+      reason: 'MERGEABLE',
+      matchedOn: 'shared-row',
+    });
+  });
+
   it('refuses a conflicting ORCID and a professor folded onto a trainee', () => {
     expect(
       decide({ displayName: 'Avery Placeholder', orcid: '0000-0000-0000-0028' }, [
@@ -696,5 +718,25 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
         account('acct', 'Avery Placeholder'),
       ]),
     ).toEqual({ merge: false, reason: 'NO_CANONICAL' });
+  });
+});
+
+describe('resolveFinalMergeTargets', () => {
+  it('follows a fold onto a record that is itself folded to the surviving record', () => {
+    expect(
+      resolveFinalMergeTargets(
+        new Map([
+          ['name-shell', 'netid-record'],
+          ['netid-record', 'acct'],
+          ['other-shell', 'acct'],
+        ]),
+      ),
+    ).toEqual(
+      new Map([
+        ['name-shell', 'acct'],
+        ['netid-record', 'acct'],
+        ['other-shell', 'acct'],
+      ]),
+    );
   });
 });
