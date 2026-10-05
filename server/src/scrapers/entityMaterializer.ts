@@ -57,6 +57,7 @@ import {
   isHighConfidencePersonBio,
 } from '../utils/researchHomeDescriptionSelection';
 import {
+  isWeakCardLine,
   cardLineFitsBrowseCard,
   CARD_SYNTHESIS_MODEL,
   cardGroundingScore,
@@ -416,6 +417,7 @@ interface MaterializeOptions {
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
+  resynthesizeWeakCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
   /**
@@ -566,6 +568,12 @@ export interface MaterializedShortDescriptionInput {
    * `resolveGroundedCardDescription` falls back to.
    */
   reconsiderCurrentShortDescription?: boolean;
+  /**
+   * A repair pass's test for a card that clears the bar but does not say what is studied
+   * (`isWeakCardLine`). Set only by `--resynthesize-weak-cards`; a weak current
+   * card is then reconsidered and replaced only by a line that shows whole and is not weak.
+   */
+  weakCard?: (card: string) => boolean;
   /**
    * Lets a stored card that clears the bar but is cut on the browse card reach card
    * synthesis. Off by default because a synthesis that yields no fitting line writes
@@ -746,7 +754,10 @@ export async function resolveWrittenBodyCard(input: {
   servingBarAccepts: (card: string) => boolean;
   evidenceTexts?: readonly string[];
   synthesize?: CardSynthesizer;
+  isWeak?: (card: string) => boolean;
 }): Promise<WrittenBodyCardChoice> {
+  const preferred = (card: string): boolean =>
+    cardLineFitsBrowseCard(card) && !(input.isWeak?.(card) ?? false);
   const acceptable = (card: string, requireGrounding: boolean): boolean =>
     isAcceptableWrittenBodyCard({
       card,
@@ -769,14 +780,14 @@ export async function resolveWrittenBodyCard(input: {
   if (derived && acceptable(derived, false)) candidates.push({ kind: 'derived', card: derived });
   // A card the browse card would cut mid-sentence is held back while a line that shows
   // whole is sought, and is still the answer when none is found (#4809).
-  const fitting = candidates.find((choice) => cardLineFitsBrowseCard(choice.card));
+  const fitting = candidates.find((choice) => preferred(choice.card));
   if (fitting) return fitting;
   if (input.synthesize) {
     let longSynthesized = '';
     for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
       const card = textValue(await input.synthesize(input.body, input.evidenceTexts));
       if (!card || !acceptable(card, false)) continue;
-      if (cardLineFitsBrowseCard(card)) return { kind: 'synthesized', card };
+      if (preferred(card)) return { kind: 'synthesized', card };
       longSynthesized ||= card;
     }
     if (candidates[0]) return candidates[0];
@@ -806,7 +817,8 @@ export async function resolveMaterializedShortDescription(
   const shownWholeOnBrowseCard = (card: string): boolean =>
     cardLineFitsBrowseCard(card) &&
     !isUngroundedSynthesizedCard({ card, body: input.fullDescription });
-  const currentFitsBrowseCard = shownWholeOnBrowseCard(current);
+  const currentFitsBrowseCard =
+    shownWholeOnBrowseCard(current) && !(input.weakCard?.(current) ?? false);
   if (currentClearsCardBar && currentFitsBrowseCard && !input.reconsiderCurrentShortDescription) {
     return null;
   }
@@ -835,7 +847,12 @@ export async function resolveMaterializedShortDescription(
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
   // A current card reconsidered only because the browse card cuts it is replaced
   // only by a line that shows whole; trading one cut line for another is churn.
-  if (reconsideredOnlyBecauseCut && !shownWholeOnBrowseCard(grounded)) return null;
+  if (
+    reconsideredOnlyBecauseCut &&
+    (!shownWholeOnBrowseCard(grounded) || (input.weakCard?.(grounded) ?? false))
+  ) {
+    return null;
+  }
   // Reconsidering is triggered by a body that restates the current card, so a replacement
   // that restates the body too is no upgrade: a single-sentence body derives itself as its
   // card, and served beside its own body that card reads as empty and refuses the row (#3866).
@@ -6673,6 +6690,7 @@ export interface ProjectFromLogInput {
   now: Date;
   synthesizeCardDescription?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
+  resynthesizeWeakCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
@@ -8077,6 +8095,12 @@ export async function projectFromLog(
     const cardSynthesizer =
       input.synthesizeCardDescription ??
       defaultMaterializerCardSynthesizer(entityName, input.cardModel);
+    const weakCardTest = input.resynthesizeWeakCards
+      ? (card: string) =>
+          isWeakCardLine(card, {
+            researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+          })
+      : undefined;
     let groundedShortDescription: string | null = null;
     if (writtenCard.followsWrittenBody) {
       delete set.shortDescription;
@@ -8122,9 +8146,11 @@ export async function projectFromLog(
         synthesize:
           writtenBodyChanged ||
           storedCardUnacceptable ||
-          (input.resynthesizeCutCards && !!storedCard && !cardLineFitsBrowseCard(storedCard))
+          (input.resynthesizeCutCards && !!storedCard && !cardLineFitsBrowseCard(storedCard)) ||
+          (!!weakCardTest && !!storedCard && weakCardTest(storedCard))
             ? cardSynthesizer
             : undefined,
+        isWeak: weakCardTest,
       });
       if (choice.kind === 'observed') {
         const candidate = observedCards[choice.index];
@@ -8156,7 +8182,8 @@ export async function projectFromLog(
           ? undefined
           : (set.shortDescription ?? entityDoc?.shortDescription),
         reconsiderCurrentShortDescription: fullRestatesCurrentCard,
-        resynthesizeCutCards: input.resynthesizeCutCards,
+        resynthesizeCutCards: input.resynthesizeCutCards || !!weakCardTest,
+        weakCard: weakCardTest,
         researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
         isProgramLike: isProgramLikeEntity,
         manuallyLocked: manuallyLockedFields.includes('shortDescription'),
@@ -9802,6 +9829,7 @@ export async function materializeEntity(
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
     resynthesizeCutCards: options.resynthesizeCutCards,
+    resynthesizeWeakCards: options.resynthesizeWeakCards,
     cardModel: options.cardModel,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,

@@ -652,6 +652,38 @@ export function cardLineFitsBrowseCard(card: unknown): boolean {
   return !browseCardIsCutMidSentence(browseCardSummary(textValue(card)));
 }
 
+const comparableCardWords = (value: unknown): string[] =>
+  textValue(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+
+const WEAK_CARD_MAX_WORDS = 8;
+
+/**
+ * A card line that does not tell a student what is studied: the row's topic chips
+ * restated as a sentence, eight words or fewer ("Studies human behavior."), or a line
+ * that stops on the colon introducing a list it left out. Used only
+ * to choose which cards a repair pass re-synthesizes, never to refuse a card. A line
+ * naming none of the row's extracted methods is deliberately not weak: on a 25-row
+ * Development sample on 2026-10-05 that test flagged cards that already said what and
+ * how, and its replacements padded a generic "using empirical methods" (#4809).
+ */
+export function isWeakCardLine(card: unknown, context: { researchAreas?: unknown }): boolean {
+  const words = comparableCardWords(card);
+  if (words.length === 0) return false;
+  if (/[:;,]\s*[.!?]?$/.test(textValue(card))) return true;
+  const topicEcho = comparableCardWords(
+    buildResearchAreasCardSummary(
+      Array.isArray(context.researchAreas) ? context.researchAreas : [],
+    ),
+  );
+  if (topicEcho.length > 0 && topicEcho.join(' ') === words.join(' ')) return true;
+  return words.length <= WEAK_CARD_MAX_WORDS;
+}
+
 // Under the 200-character render, so a line that runs a little long still fits.
 export const CARD_SYNTHESIS_MAX_CHARACTERS = 170;
 

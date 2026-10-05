@@ -19,6 +19,7 @@ export interface RematerializeResearchEntitiesArgs {
   unbackedResearchAreas: boolean;
   accessSignals: boolean;
   resynthesizeCutCards: boolean;
+  resynthesizeWeakCards: boolean;
   cardModel?: string;
   onlyFields: string[];
   includeArchived: boolean;
@@ -137,6 +138,7 @@ export function parseRematerializeResearchEntitiesArgs(
     unbackedResearchAreas: false,
     accessSignals: false,
     resynthesizeCutCards: false,
+    resynthesizeWeakCards: false,
     onlyFields: [],
     includeArchived: false,
   };
@@ -178,6 +180,10 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--resynthesize-cut-cards') {
       args.resynthesizeCutCards = true;
+      continue;
+    }
+    if (arg === '--resynthesize-weak-cards') {
+      args.resynthesizeWeakCards = true;
       continue;
     }
     if (arg.startsWith('--card-model=')) {
