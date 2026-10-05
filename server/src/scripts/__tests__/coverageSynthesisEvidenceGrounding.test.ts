@@ -4,6 +4,7 @@ import {
   buildWriterEvidenceSnippets,
   eligibleWriterGrants,
   orderWriterEvidence,
+  storedPageRequestKeys,
   storedPayloadPageText,
   writerEvidenceRank,
 } from '../coverageSynthesisCore';
@@ -110,6 +111,36 @@ describe('writer evidence order (#4867)', () => {
     expect(writerEvidenceRank(site, 'https://marsh.example.edu/')).toBe(0);
     expect(writerEvidenceRank({ sourceName: 'nih-reporter', sourceUrl: '' })).toBe(3);
   });
+
+  it('treats only pages under a shared-host site path as the row site', () => {
+    const websiteUrl = 'https://medicine.yale.edu/lab/marsh/';
+    const rank = (sourceUrl: string, sourceName = 'yale-research-official') =>
+      writerEvidenceRank({ sourceName, sourceUrl }, websiteUrl);
+    expect(rank('https://medicine.yale.edu/lab/marsh/research/')).toBe(0);
+    expect(rank('https://medicine.yale.edu/lab/marsh')).toBe(0);
+    expect(rank('https://medicine.yale.edu/lab/marshland/')).toBe(2);
+    expect(rank('https://medicine.yale.edu/lab/reef/')).toBe(2);
+    expect(rank('https://medicine.yale.edu/news/story/')).toBe(2);
+    expect(rank('https://medicine.yale.edu/profile/someone/')).toBe(1);
+  });
+
+  it('does not rank a page as the row site because its lane reads lab sites', () => {
+    expect(
+      writerEvidenceRank(
+        { sourceName: 'yse-centers-index', sourceUrl: 'https://center.example.edu/' },
+        'https://marsh.example.edu/',
+      ),
+    ).toBe(2);
+  });
+});
+
+describe('stored page copies (#4867)', () => {
+  it('looks a page up under the URL a lane normalizes before fetching', () => {
+    expect(storedPageRequestKeys('https://Marsh.example.edu')).toContain(
+      'page:https://marsh.example.edu/',
+    );
+    expect(storedPageRequestKeys('not a url')).toEqual([]);
+  });
 });
 
 describe('the grant rule (#4867, owner direction)', () => {
@@ -133,6 +164,18 @@ describe('the grant rule (#4867, owner direction)', () => {
 
   it('never makes one funded project the whole evidence', () => {
     expect(buildWriterEvidenceSnippets([], [grant({})], { now: NOW })).toEqual([]);
+  });
+
+  it('reads no single grant beside thin page text', () => {
+    const thin = observation(
+      'Coastal marsh ecology and restoration',
+      'yale-research-official',
+      'https://marsh.example.edu/',
+    );
+    const snippets = buildWriterEvidenceSnippets([thin], [grant({})], { now: NOW });
+    expect(snippets.map((snippet) => snippet.text)).toEqual([
+      'Coastal marsh ecology and restoration',
+    ]);
   });
 
   it('reads only grants the lead holds as PI that are active or ended within five years', () => {

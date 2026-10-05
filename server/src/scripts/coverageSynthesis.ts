@@ -110,25 +110,32 @@ type EntityRow = Record<string, any>;
 async function loadStoredPageText(
   observations: ReadonlyArray<CoverageObservationLike>,
 ): Promise<Map<string, string>> {
-  const urls = [
-    ...new Set(
-      observations
-        .filter((obs) => isModelTextSource(obs.sourceName) && obs.sourceUrl)
-        .map((obs) => String(obs.sourceUrl)),
-    ),
-  ];
+  const keysBySource = new Map<string, Set<string>>();
+  const urlsByKey = new Map<string, Set<string>>();
+  for (const obs of observations) {
+    if (!isModelTextSource(obs.sourceName) || !obs.sourceUrl) continue;
+    const url = String(obs.sourceUrl);
+    const sourceKeys = keysBySource.get(String(obs.sourceName)) ?? new Set<string>();
+    keysBySource.set(String(obs.sourceName), sourceKeys);
+    for (const key of storedPageRequestKeys(url)) {
+      sourceKeys.add(key);
+      urlsByKey.set(key, (urlsByKey.get(key) ?? new Set<string>()).add(url));
+    }
+  }
   const texts = new Map<string, string>();
-  if (urls.length === 0) return texts;
-  const keyToUrl = new Map(
-    urls.flatMap((url) => storedPageRequestKeys(url).map((key) => [key, url])),
+  const filters = [...keysBySource].flatMap(([sourceName, keys]) =>
+    keys.size > 0 ? [{ sourceName, requestKey: { $in: [...keys] } }] : [],
   );
-  const rows = (await ScrapeSnapshot.find({ requestKey: { $in: [...keyToUrl.keys()] } })
+  if (filters.length === 0) return texts;
+  const rows = (await ScrapeSnapshot.find({ $or: filters })
     .select('requestKey payload')
     .lean()) as Array<{ requestKey: string; payload: unknown }>;
   for (const row of rows) {
-    const url = keyToUrl.get(row.requestKey);
     const text = storedPayloadPageText(row.payload);
-    if (url && text) texts.set(url, `${texts.get(url) ?? ''} ${text}`.trim());
+    if (!text) continue;
+    for (const url of urlsByKey.get(row.requestKey) ?? []) {
+      texts.set(url, `${texts.get(url) ?? ''} ${text}`.trim());
+    }
   }
   return texts;
 }

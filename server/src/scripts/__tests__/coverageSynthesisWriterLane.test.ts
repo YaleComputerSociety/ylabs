@@ -37,7 +37,7 @@ describe('the writer lane runs over every live row (#4788)', () => {
     const b = observation(PROFILE, 'ysm-faculty-directory', 0.55);
     const forward = buildWriterEvidenceSnippets([a, b], undefined);
     const reversed = buildWriterEvidenceSnippets([b, a], undefined);
-    expect(forward.map((snippet) => snippet.text)).toEqual([LAB, PROFILE]);
+    expect(forward.map((snippet) => snippet.text)).toEqual([PROFILE, LAB]);
     expect(writerEvidenceHash(forward)).toBe(writerEvidenceHash(reversed));
   });
 

@@ -99,13 +99,23 @@ const observationText = (value: unknown): string =>
 
 export type WriterEvidenceRank = 0 | 1 | 2 | 3;
 
-const urlHost = (value: unknown): string => {
+const urlHostAndPath = (value: unknown): { host: string; path: string } | undefined => {
   try {
-    return new URL(String(value ?? '')).hostname.replace(/^www\./, '').toLowerCase();
+    const url = new URL(String(value ?? ''));
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+    return host ? { host, path: url.pathname.replace(/\/+$/, '') } : undefined;
   } catch {
-    return '';
+    return undefined;
   }
 };
+
+/** Whether a page sits under the row's own site: same host, and under its path. */
+export function isOnOwnResearchSite(sourceUrl: unknown, websiteUrl: unknown): boolean {
+  const site = urlHostAndPath(websiteUrl);
+  const page = urlHostAndPath(sourceUrl);
+  if (!site || !page || page.host !== site.host) return false;
+  return !site.path || page.path === site.path || page.path.startsWith(`${site.path}/`);
+}
 
 const hasCategory = (sourceName: unknown, category: string): boolean =>
   Boolean(
@@ -125,19 +135,18 @@ export function isGrantEvidenceSource(sourceName: unknown): boolean {
 /**
  * Which kind of page a piece of evidence is (#4867): 0 the row's own research site, 1 an
  * official profile, 2 any other page, 3 a grant record. The row's own site is decided by
- * the cited host first, because a lane that reads many kinds of page cannot say which
- * one a value came from.
+ * the cited URL rather than the lane, because a lane that reads many kinds of page
+ * cannot say which one a value came from, and many Yale sites are paths on a shared
+ * host, so a person page on that host is a profile before it is the site.
  */
 export function writerEvidenceRank(
   obs: Pick<CoverageObservationLike, 'sourceName' | 'sourceUrl'>,
   websiteUrl?: unknown,
 ): WriterEvidenceRank {
   if (isGrantEvidenceSource(obs.sourceName)) return 3;
-  const siteHost = urlHost(websiteUrl);
-  if (siteHost && urlHost(obs.sourceUrl) === siteHost) return 0;
   if (isOfficialYalePersonPageUrl(obs.sourceUrl)) return 1;
+  if (isOnOwnResearchSite(obs.sourceUrl, websiteUrl)) return 0;
   if (hasCategory(obs.sourceName, 'OFFICIAL_PROFILE')) return 1;
-  if (hasCategory(obs.sourceName, 'LAB_WEBSITE')) return 0;
   return 2;
 }
 
@@ -162,7 +171,7 @@ export function orderWriterEvidence(
 }
 
 export const WRITER_GRANT_RECENCY_YEARS = 5;
-/** With no research prose of the row's own, one funded project would become the whole focus. */
+/** Without research prose of the row's own, one funded project would become the whole focus. */
 export const MIN_GRANTS_WITHOUT_OWN_PROSE = 2;
 
 interface WriterGrantLike {
@@ -231,7 +240,7 @@ export function buildWriterEvidenceSnippets(
     seen.add(key);
     return true;
   });
-  if (fromPages.length === 0 && grants.length < MIN_GRANTS_WITHOUT_OWN_PROSE) return [];
+  if (grants.length < MIN_GRANTS_WITHOUT_OWN_PROSE) return fromPages;
   return [...fromPages, ...grants.slice(0, room)];
 }
 
@@ -341,9 +350,18 @@ export function writtenBodyCardRepairFilter(sourceName: string): Record<string, 
   };
 }
 
-/** The fetch-cache keys a stored copy of one page can sit under. */
+/**
+ * The fetch-cache keys a stored copy of one page can sit under, for the URL as cited and
+ * as a lane normalizes it before fetching.
+ */
 export function storedPageRequestKeys(url: string): string[] {
-  return [url, `page:${url}`, `rendered-page:v1:${url}`];
+  const forms = new Set([url]);
+  try {
+    forms.add(new URL(url).toString());
+  } catch {
+    return [];
+  }
+  return [...forms].flatMap((form) => [form, `page:${form}`, `rendered-page:v1:${form}`]);
 }
 
 /**
