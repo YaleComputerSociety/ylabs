@@ -192,6 +192,12 @@ describe('the evidence states a method only where it names one (#4914 follow-up)
         none,
       ).text,
     ).toBe('Studies fixture obesity.');
+    expect(
+      strips('Studies fixture injury (using zebrafish models) and fixture repair.', none).text,
+    ).toBe('Studies fixture injury and fixture repair.');
+    expect(
+      strips('Studies fixture injury (modeled using zebrafish) and fixture repair.', none).text,
+    ).toBe('Studies fixture injury (modeled) and fixture repair.');
   });
 });
 

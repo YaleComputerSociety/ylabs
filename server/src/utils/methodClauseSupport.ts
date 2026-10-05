@@ -419,9 +419,10 @@ export function withoutUnsupportedMethodClauses(
       stripped += 1;
     }
     return withoutDanglingFragment(result)
-      .replace(/(?:[\s,]+(?:while|and|or|by|to|for|with|of|in|from))+\s*(?=[.;:!?]|$)/gi, '')
-      .replace(/\s*,\s*(?=[.;:!?]|$)/g, '')
-      .replace(/\s+([.;:!?,])/g, '$1')
+      .replace(/(?:[\s,]+(?:while|and|or|by|to|for|with|of|in|from))+\s*(?=[.;:!?)]|$)/gi, '')
+      .replace(/\s*,\s*(?=[.;:!?)]|$)/g, '')
+      .replace(/\s*\(\s*\)/g, '')
+      .replace(/\s+([.;:!?,)])/g, '$1')
       .replace(/\s{2,}/g, ' ')
       .trim();
   });
