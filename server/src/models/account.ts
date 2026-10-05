@@ -10,7 +10,10 @@ export const accountSchemaVersion = defineCanonicalSchemaVersion({ currentVersio
 export const accountStatuses = ['ACTIVE', 'DISABLED', 'UNKNOWN'] as const;
 export type AccountStatus = (typeof accountStatuses)[number];
 
-export const accountArchivedReasons = ['merged-local-part-netid-twin'] as const;
+export const accountArchivedReasons = [
+  'merged-local-part-netid-twin',
+  'lone-local-part-netid-account',
+] as const;
 export type AccountArchivedReason = (typeof accountArchivedReasons)[number];
 
 export interface AccountProfile {

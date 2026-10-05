@@ -31,6 +31,9 @@ export interface ResearcherProfileLink {
 }
 
 export const researcherStatuses = ['ACTIVE', 'DEPARTED', 'UNKNOWN'] as const;
+
+export const researcherDedupedReasons = ['local-part-netid-twin-account'] as const;
+export type ResearcherDedupedReason = (typeof researcherDedupedReasons)[number];
 export type ResearcherStatus = (typeof researcherStatuses)[number];
 
 export interface ResearcherIdentifiers {
@@ -56,6 +59,7 @@ export interface ResearcherRecord {
   archived: boolean;
   dedupedIntoResearcherId?: mongoose.Types.ObjectId;
   dedupedAt?: Date;
+  dedupedReason?: ResearcherDedupedReason;
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -293,6 +297,11 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
     },
     dedupedAt: {
       type: Date,
+      required: false,
+    },
+    dedupedReason: {
+      type: String,
+      enum: [...researcherDedupedReasons],
       required: false,
     },
   },

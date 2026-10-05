@@ -73,12 +73,12 @@ async function collectionExists(db: Db, name: string): Promise<boolean> {
   return db.listCollections({ name }, { nameOnly: true }).hasNext();
 }
 
-async function countWhere(db: Db, collection: string, filter: Document): Promise<number> {
+export async function countWhere(db: Db, collection: string, filter: Document): Promise<number> {
   if (!(await collectionExists(db, collection))) return 0;
   return db.collection(collection).countDocuments(filter);
 }
 
-async function netidKeyedReferenceCount(db: Db, netid: string): Promise<number> {
+export async function netidKeyedReferenceCount(db: Db, netid: string): Promise<number> {
   let total = 0;
   for (const { collection, field } of NETID_KEYED_REFERENCE_FIELDS) {
     total += await countWhere(db, collection, { [field]: netid });
@@ -92,7 +92,7 @@ function emptyRefusals(): Record<LocalPartMergeRefusalReason, number> {
   ) as Record<LocalPartMergeRefusalReason, number>;
 }
 
-async function refusalFor(
+export async function localPartMergeRefusal(
   db: Db,
   localPart: Document,
   netidAccount: Document,
@@ -109,10 +109,15 @@ async function refusalFor(
   return undefined;
 }
 
-export async function planLocalPartNetidMerges(db: Db): Promise<LocalPartMergePlan> {
-  const groups = await db
+export interface LiveEmailGroup {
+  _id: string;
+  accounts: Document[];
+}
+
+export async function loadLiveEmailGroups(db: Db): Promise<LiveEmailGroup[]> {
+  return db
     .collection('accounts')
-    .aggregate<{ _id: string; accounts: Document[] }>([
+    .aggregate<LiveEmailGroup>([
       { $match: { archived: { $ne: true } } },
       {
         $group: {
@@ -123,8 +128,24 @@ export async function planLocalPartNetidMerges(db: Db): Promise<LocalPartMergePl
         },
       },
       { $match: { _id: { $ne: '' } } },
+      { $sort: { _id: 1 } },
     ])
     .toArray();
+}
+
+export function localPartPairOf(
+  group: LiveEmailGroup,
+): { localPart: Document; netidAccount: Document } | undefined {
+  const localParts = group.accounts.filter(isLocalPartAccount);
+  const netidAccounts = group.accounts.filter((account) => looksLikeYaleNetid(account.netid));
+  if (group.accounts.length !== 2 || localParts.length !== 1 || netidAccounts.length !== 1) {
+    return undefined;
+  }
+  return { localPart: localParts[0], netidAccount: netidAccounts[0] };
+}
+
+export async function planLocalPartNetidMerges(db: Db): Promise<LocalPartMergePlan> {
+  const groups = await loadLiveEmailGroups(db);
 
   const plan: LocalPartMergePlan = {
     sharedEmailGroups: 0,
@@ -139,15 +160,13 @@ export async function planLocalPartNetidMerges(db: Db): Promise<LocalPartMergePl
       continue;
     }
     plan.sharedEmailGroups += 1;
-    const localParts = group.accounts.filter(isLocalPartAccount);
-    const netidAccounts = group.accounts.filter((account) => looksLikeYaleNetid(account.netid));
-    if (group.accounts.length !== 2 || localParts.length !== 1 || netidAccounts.length !== 1) {
+    const pair = localPartPairOf(group);
+    if (!pair) {
       plan.refusals['off-shape-pair'] += 1;
       continue;
     }
-    const [localPart] = localParts;
-    const [netidAccount] = netidAccounts;
-    const refusal = await refusalFor(db, localPart, netidAccount);
+    const { localPart, netidAccount } = pair;
+    const refusal = await localPartMergeRefusal(db, localPart, netidAccount);
     if (refusal) {
       plan.refusals[refusal] += 1;
       continue;
@@ -252,4 +271,116 @@ export async function countReferencesToRepoint(
 
 export function projectedSharedEmailGroupsAfterApply(plan: LocalPartMergePlan): number {
   return plan.sharedEmailGroups - plan.merges.length;
+}
+
+export const LONE_LOCAL_PART_ARCHIVED_REASON: AccountArchivedReason =
+  'lone-local-part-netid-account';
+
+export const LONE_LOCAL_PART_HOLD_REASONS = [
+  'linked-to-a-researcher',
+  'has-login',
+  'holds-research-plan',
+  'holds-reviewer-stamp',
+  'holds-admin-grant',
+  'netid-keyed-references',
+  'researcher-identifier-holds-local-part',
+] as const;
+export type LoneLocalPartHoldReason = (typeof LONE_LOCAL_PART_HOLD_REASONS)[number];
+
+const REVIEWER_STAMP_REFERENCES = ACCOUNT_ID_REFERENCE_FIELDS.filter(
+  ({ field }) => field === 'studentVisibilityReviewedByAccountId',
+);
+
+const isAdminGrantReference = ({ collection }: { collection: string }) =>
+  collection === 'admin_grants';
+
+export interface LoneLocalPartArchivePlan {
+  loneLocalPartAccounts: number;
+  archives: ObjectId[];
+  held: Record<LoneLocalPartHoldReason, number>;
+}
+
+async function netidReferenceCountWhere(
+  db: Db,
+  netid: string,
+  include: (reference: { collection: string; field: string }) => boolean,
+): Promise<number> {
+  let total = 0;
+  for (const reference of NETID_KEYED_REFERENCE_FIELDS.filter(include)) {
+    total += await countWhere(db, reference.collection, { [reference.field]: netid });
+  }
+  return total;
+}
+
+async function loneLocalPartHoldReason(
+  db: Db,
+  account: Document,
+): Promise<LoneLocalPartHoldReason | undefined> {
+  if ((await countWhere(db, 'researchers', { accountId: account._id })) > 0) {
+    return 'linked-to-a-researcher';
+  }
+  if (account.lastLoginAt != null) return 'has-login';
+  if ((await countWhere(db, 'research_plans', { accountId: account._id })) > 0) {
+    return 'holds-research-plan';
+  }
+  for (const { collection, field } of REVIEWER_STAMP_REFERENCES) {
+    if ((await countWhere(db, collection, { [field]: account._id })) > 0) {
+      return 'holds-reviewer-stamp';
+    }
+  }
+  if ((await netidReferenceCountWhere(db, account.netid, isAdminGrantReference)) > 0) {
+    return 'holds-admin-grant';
+  }
+  if (
+    (await netidReferenceCountWhere(db, account.netid, (ref) => !isAdminGrantReference(ref))) > 0
+  ) {
+    return 'netid-keyed-references';
+  }
+  if ((await countWhere(db, 'researchers', { 'identifiers.netid': account.netid })) > 0) {
+    return 'researcher-identifier-holds-local-part';
+  }
+  return undefined;
+}
+
+export async function planLoneLocalPartArchives(db: Db): Promise<LoneLocalPartArchivePlan> {
+  const plan: LoneLocalPartArchivePlan = {
+    loneLocalPartAccounts: 0,
+    archives: [],
+    held: Object.fromEntries(LONE_LOCAL_PART_HOLD_REASONS.map((reason) => [reason, 0])) as Record<
+      LoneLocalPartHoldReason,
+      number
+    >,
+  };
+  for (const group of await loadLiveEmailGroups(db)) {
+    if (group.accounts.length !== 1 || !isLocalPartAccount(group.accounts[0])) continue;
+    plan.loneLocalPartAccounts += 1;
+    const [account] = group.accounts;
+    const hold = await loneLocalPartHoldReason(db, account);
+    if (hold) plan.held[hold] += 1;
+    else plan.archives.push(account._id as ObjectId);
+  }
+  return plan;
+}
+
+export async function applyLoneLocalPartArchives(
+  db: Db,
+  accountIds: readonly ObjectId[],
+  now: Date = new Date(),
+): Promise<{ archived: number }> {
+  let archived = 0;
+  for (const accountId of accountIds) {
+    const result = await db.collection('accounts').updateOne(
+      { _id: accountId, archived: { $ne: true }, lastLoginAt: null },
+      {
+        $set: {
+          archived: true,
+          archivedReason: LONE_LOCAL_PART_ARCHIVED_REASON,
+          archivedAt: now,
+          updatedAt: now,
+        },
+      },
+    );
+    archived += result.matchedCount;
+  }
+  return { archived };
 }
