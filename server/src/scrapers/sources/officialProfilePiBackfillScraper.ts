@@ -1582,7 +1582,7 @@ export function profileLinkedHomeRefusal(
   if (linksAnOrganizationThePersonDoesNotLead(home, personName)) {
     return 'affiliated-organization-without-leadership';
   }
-  if (home.entityType === 'LAB') {
+  if (home.entityType === 'LAB' || !classifyResearchHome(home.name, home.url)) {
     return homeNamesAnotherPersonsLab(entity, home, personName)
       ? 'names-another-persons-lab'
       : null;

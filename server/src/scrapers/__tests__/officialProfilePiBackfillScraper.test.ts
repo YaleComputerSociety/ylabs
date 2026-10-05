@@ -2033,6 +2033,17 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(home).toMatchObject({ kind: 'initiative', entityType: 'INITIATIVE' });
     });
 
+    it('still adopts the untyped home onto a shell keyed only to that person', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(home).toMatchObject({ entityType: 'INITIATIVE' });
+      for (const slug of ['ysm-faculty-quinn-marlowfixture', 'nih-pi-quinn-marlowfixture']) {
+        expect(profileLinkedHomeRefusal({ slug }, home, 'Quinn Marlowfixture')).toBeNull();
+      }
+    });
+
     it('keeps a research team named as a group a lab', () => {
       const [home] = extractOfficialProfileResearchHomes(
         cardHtml('Marlowfixture Research Group', 'https://marlowfixture.yale.edu/'),
