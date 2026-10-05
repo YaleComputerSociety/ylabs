@@ -13,6 +13,7 @@ import { isDescriptionGroundedInSource } from '../utils/officialResearchDescript
 import { isModelTextSource } from './sourceCoverageRegistry';
 import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
+import { isProfileTemplateChrome } from '../utils/profileTemplateChrome';
 import {
   statesPersonalPastFraming,
   restatesPastFramedEvidence,
@@ -85,13 +86,16 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
  * near-verbatim in a stored copy of the page it cites, or when the lane itself verified it
  * against its fetched page at ingest (`ingestVerifiedAgainstPage`). The writer's
  * own output is model text, so it is never its own input. A `manual-admin-edit`
- * description is ordinary evidence unless it narrates its sources (#4788).
+ * description is ordinary evidence unless it narrates its sources (#4788). A profile
+ * template's widget labels are on the page verbatim yet describe no one, so they are
+ * never evidence, whichever lane stored them (`isProfileTemplateChrome`).
  */
 export function isWriterEvidenceObservation(
   obs: CoverageObservationLike,
   storedPageText: StoredPageTextLookup = () => undefined,
 ): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
+  if (isProfileTemplateChrome(obs.value)) return false;
   if (isModelTextSource(obs.sourceName)) {
     if (obs.ingestVerifiedAgainstPage === true) return true;
     const page = storedPageText(obs.sourceUrl);

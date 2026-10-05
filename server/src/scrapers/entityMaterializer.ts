@@ -714,13 +714,13 @@ const WRITTEN_BODY_CARD_EVIDENCE_FIELDS = new Set([
 const INGEST_CHECKED_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
 
 /**
- * The page text a written body was built from, as the row's other description evidence,
- * so a method a card names is checked against what the pages say rather than against the
- * body alone (#4914). The written body itself is passed separately. Model-written values
- * are left out as the writer leaves them out, except the extraction lane's body, which
- * that lane checks against its fetched page.
+ * The page text a card is checked against, beside the body it serves with, so a method a
+ * card names is checked against what the pages say rather than against the body alone
+ * (#4914). The body itself is passed separately. Model-written values are left out as the
+ * writer leaves them out, except the extraction lane's body, which that lane checks
+ * against its fetched page, and a profile template's widget labels describe no one.
  */
-export function writtenBodyCardEvidence(observations: readonly ResolverObservation[]): string[] {
+export function cardDescriptionEvidence(observations: readonly ResolverObservation[]): string[] {
   return observations
     .filter(
       (obs) =>
@@ -728,9 +728,27 @@ export function writtenBodyCardEvidence(observations: readonly ResolverObservati
         (!isModelTextSource(obs.sourceName) ||
           (obs.sourceName === INGEST_CHECKED_DESCRIPTION_SOURCE &&
             obs.field === 'fullDescription')) &&
-        typeof obs.value === 'string',
+        typeof obs.value === 'string' &&
+        !isProfileTemplateChrome(obs.value),
     )
     .map((obs) => obs.value as string);
+}
+
+/**
+ * A card the body does not write, a lane's copied card or one stored before the method
+ * rule, held to the rule a written body's card is (#4914): an unsupported method clause
+ * is stripped, leaving the claim it modified, and `card` is null when nothing is left.
+ */
+export function methodCheckedCopiedCard(
+  card: unknown,
+  body: string,
+  evidenceTexts: readonly string[],
+): { card: string | null; changed: boolean } {
+  const text = textValue(card);
+  if (!text) return { card: text || null, changed: false };
+  const outcome = withoutUnsupportedMethodClauses(text, [body, ...evidenceTexts]);
+  if (outcome.stripped === 0) return { card: text, changed: false };
+  return { card: outcome.text, changed: true };
 }
 
 export type WrittenBodyCardChoice =
@@ -8154,7 +8172,7 @@ export async function projectFromLog(
           card,
           input.nameIdentityAuthority.leadPersonName,
         );
-      const cardEvidenceTexts = writtenBodyCardEvidence(resolverObs);
+      const cardEvidenceTexts = cardDescriptionEvidence(resolverObs);
       const storedCardUnacceptable =
         !!storedCard &&
         !isAcceptableWrittenBodyCard({
@@ -8205,6 +8223,25 @@ export async function projectFromLog(
         fieldsWritten++;
       }
     } else {
+      const cardLocked = manuallyLockedFields.includes('shortDescription');
+      const copiedCard =
+        fullDescriptionShellGated || cardLocked
+          ? { card: null, changed: false }
+          : methodCheckedCopiedCard(
+              set.shortDescription ?? entityDoc?.shortDescription,
+              fullDescription,
+              cardDescriptionEvidence(resolverObs),
+            );
+      if (copiedCard.changed) {
+        if (copiedCard.card) {
+          if (!Object.hasOwn(set, 'shortDescription')) fieldsWritten++;
+          set.shortDescription = copiedCard.card;
+        } else {
+          delete set.shortDescription;
+          delete set['fieldProvenance.shortDescription'];
+          delete confidenceByField.shortDescription;
+        }
+      }
       groundedShortDescription = await resolveMaterializedShortDescription({
         fullDescription,
         // When the single-PI-shell guard just rejected fullDescription in favor
@@ -8214,14 +8251,27 @@ export async function projectFromLog(
         // fixed full (issue #1595).
         currentShortDescription: fullDescriptionShellGated
           ? undefined
-          : (set.shortDescription ?? entityDoc?.shortDescription),
-        reconsiderCurrentShortDescription: fullRestatesCurrentCard,
+          : copiedCard.changed
+            ? (copiedCard.card ?? undefined)
+            : (set.shortDescription ?? entityDoc?.shortDescription),
+        reconsiderCurrentShortDescription:
+          fullRestatesCurrentCard || (copiedCard.changed && !copiedCard.card),
         resynthesizeCutCards: input.resynthesizeCutCards,
         researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
         isProgramLike: isProgramLikeEntity,
-        manuallyLocked: manuallyLockedFields.includes('shortDescription'),
+        manuallyLocked: cardLocked,
         synthesize: cardSynthesizer,
       });
+      if (
+        copiedCard.changed &&
+        !copiedCard.card &&
+        !groundedShortDescription &&
+        textValue(entityDoc?.shortDescription)
+      ) {
+        unset.shortDescription = '';
+        unset['fieldProvenance.shortDescription'] = '';
+        fieldsWritten++;
+      }
     }
     if (groundedShortDescription) {
       set.shortDescription = groundedShortDescription;
