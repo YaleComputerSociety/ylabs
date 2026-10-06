@@ -78,6 +78,7 @@ export type StaffMintedEntityRefusal =
   | 'no-stored-title'
   | 'title-owns-research'
   | 'title-evidence-disagrees'
+  | 'title-holds-lecturer-rank'
   | 'manually-locked'
   | 'operator-intent'
   | 'has-foreign-website'
@@ -273,6 +274,8 @@ export function staffMintedEntityReasonFor(
  * from any other source does refuse, and one such field is enough, because that
  * identity did not come from here.
  */
+const LECTURER_RANK_PATTERN = /\blecturer\b/i;
+
 export function planStaffMintedEntityRetirement(
   candidates: readonly StaffMintedEntityCandidate[],
 ): StaffMintedEntityRetirementPlan {
@@ -300,6 +303,12 @@ export function planStaffMintedEntityRetirement(
     }
     if (reasons.some((value) => value === undefined)) {
       refuse('title-evidence-disagrees');
+      continue;
+    }
+    // Owner rule (2026-10-04): a lecturer hosts students because students reach out to
+    // them, so any title naming that rank spares the row, whatever rank it is paired with.
+    if (titles.some((value) => LECTURER_RANK_PATTERN.test(value))) {
+      refuse('title-holds-lecturer-rank');
       continue;
     }
     // Screen precedence rather than whichever title the cursor returned first, so the
@@ -383,6 +392,7 @@ export function summarizeStaffMintedEntityRefusals(
     'no-stored-title': 0,
     'title-owns-research': 0,
     'title-evidence-disagrees': 0,
+    'title-holds-lecturer-rank': 0,
     'manually-locked': 0,
     'operator-intent': 0,
     'has-foreign-website': 0,

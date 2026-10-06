@@ -483,11 +483,11 @@ describe('teaching appointment titles (#4916)', () => {
     expect(staffMintedEntityReasonFor('Senior Lecturer and Research Scholar')).toBeUndefined();
   });
 
-  it('archives a teaching row only when its own description affirms no research', () => {
+  it('archives a lector row only when its own description affirms no research', () => {
     const lecturer = (descriptionAffirmsNoResearch?: boolean) =>
       planStaffMintedEntityRetirement([
         candidate({
-          storedTitles: ['Lecturer in English'],
+          storedTitles: ['Senior Lector I of Modern Fixture'],
           descriptionStatesResearch: false,
           descriptionAffirmsNoResearch,
           descriptionStatesCreativePractice: false,
@@ -519,14 +519,14 @@ describe('teaching appointment titles and creative practice (#4916, #4519)', () 
   const lecturer = (descriptionStatesCreativePractice?: boolean) =>
     planStaffMintedEntityRetirement([
       candidate({
-        storedTitles: ['Senior Lecturer in English'],
+        storedTitles: ['Senior Lector I of Modern Fixture'],
         descriptionStatesResearch: false,
         descriptionAffirmsNoResearch: true,
         descriptionStatesCreativePractice,
       }),
     ]);
 
-  it('never archives a teaching row whose evidence is creative practice', () => {
+  it('never archives a lector row whose evidence is creative practice', () => {
     for (const witness of [true, undefined]) {
       expect(lecturer(witness).refused).toEqual([
         { id: 'a'.repeat(24), reason: 'description-states-creative-practice' },
@@ -586,6 +586,35 @@ describe('mintKeyIdentityFor', () => {
         roleEdgePersonIds: [],
         descriptionStatesResearch: false,
       }),
+    ]);
+    expect(plan.toArchive).toHaveLength(1);
+  });
+});
+
+describe('lecturer rank spares a row', () => {
+  it('keeps a lecturer row even when its own description affirms no research', () => {
+    const plan = planStaffMintedEntityRetirement([
+      candidate({
+        storedTitles: ['Lecturer in English'],
+        descriptionAffirmsNoResearch: true,
+        descriptionStatesCreativePractice: false,
+      }),
+    ]);
+    expect(plan.toArchive).toHaveLength(0);
+    expect(plan.refused.map((entry) => entry.reason)).toEqual(['title-holds-lecturer-rank']);
+  });
+
+  it('keeps a row whose titles pair a lecturer rank with a support-staff title', () => {
+    const plan = planStaffMintedEntityRetirement([
+      candidate({ storedTitles: ['Lecturer', 'Research and Education Librarian'] }),
+    ]);
+    expect(plan.toArchive).toHaveLength(0);
+    expect(plan.refused).toEqual([{ id: 'a'.repeat(24), reason: 'title-holds-lecturer-rank' }]);
+  });
+
+  it('still retires a support-staff title with no lecturer rank', () => {
+    const plan = planStaffMintedEntityRetirement([
+      candidate({ storedTitles: ['Research and Education Librarian'] }),
     ]);
     expect(plan.toArchive).toHaveLength(1);
   });
