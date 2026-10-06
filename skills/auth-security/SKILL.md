@@ -242,6 +242,9 @@ A route param is typed `string | string[]` because a `*name` wildcard captures s
 The CORS policy is an allowlist in every runtime.
 `allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward, with an API port from `4000` upward) talk to the API with credentials.
 Nothing reflects an arbitrary `Origin`, so an allowlist entry is the only way in from a browser.
+A Render deploy also trusts its own origin, read from the platform-set `RENDER_EXTERNAL_URL` by `renderServiceOwnOrigin` in `server/src/middleware/corsOrigin.ts`, and only when that is an `https` origin on `onrender.com` with no port or path.
+That is what lets a pull request preview such as `yalelabs-beta-pr-<n>.onrender.com` load its own module scripts, which a browser fetches with an `Origin` header even from the same origin, so without it every asset answered 403 and the page rendered blank.
+It never widens trust to a sibling preview or to `*.onrender.com`, and the same set feeds `csrfOriginGuard`, so a preview accepts writes only from itself.
 
 ### Static client files
 

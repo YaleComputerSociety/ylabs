@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CorsOriginError, createCorsOriginHandler, isAllowedCorsOrigin } from '../corsOrigin';
+import {
+  CorsOriginError,
+  createCorsOriginHandler,
+  isAllowedCorsOrigin,
+  renderServiceOwnOrigin,
+} from '../corsOrigin';
 
 const allowedOrigins = new Set(['https://yalelabs.io', 'https://ylabs-gr4v.onrender.com']);
 
@@ -157,5 +162,31 @@ describe('corsOrigin', () => {
       expect(callbackAllow).toBeUndefined();
       expect(callbackError).toBeInstanceOf(CorsOriginError);
     }
+  });
+
+  describe('renderServiceOwnOrigin', () => {
+    const ownOrigin = (value: string | undefined) =>
+      renderServiceOwnOrigin({ RENDER_EXTERNAL_URL: value } as NodeJS.ProcessEnv);
+
+    it('trusts the https onrender.com origin the platform assigns to this service', () => {
+      expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com')).toBe(
+        'https://yalelabs-beta-pr-1.onrender.com',
+      );
+      expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com/')).toBe(
+        'https://yalelabs-beta-pr-1.onrender.com',
+      );
+    });
+
+    it('trusts nothing when the variable is absent or not a Render service origin', () => {
+      expect(ownOrigin(undefined)).toBeUndefined();
+      expect(ownOrigin('')).toBeUndefined();
+      expect(ownOrigin('http://yalelabs-beta-pr-1.onrender.com')).toBeUndefined();
+      expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com:8443')).toBeUndefined();
+      expect(ownOrigin('https://example.com')).toBeUndefined();
+      expect(ownOrigin('https://onrender.com.example.com')).toBeUndefined();
+      expect(ownOrigin('https://user:pass@yalelabs-beta-pr-1.onrender.com')).toBeUndefined();
+      expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com/path')).toBeUndefined();
+      expect(ownOrigin('not a url')).toBeUndefined();
+    });
   });
 });

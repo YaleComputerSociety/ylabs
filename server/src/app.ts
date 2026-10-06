@@ -18,7 +18,7 @@ import { securityHeaders } from './middleware/securityHeaders';
 import { createClientStaticAssets } from './middleware/clientStaticAssets';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
-import { createCorsOriginHandler } from './middleware/corsOrigin';
+import { createCorsOriginHandler, renderServiceOwnOrigin } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
 import { SESSION_LIFETIME_MS } from './utils/sessionClaim';
 import { parseTrustedProxyCidrs } from './utils/trustedProxyCidrs';
@@ -94,11 +94,13 @@ if (!bypassRuntimeSecurity && trustedProxyAddresses.count === 0) {
 
 assertDeployedMeiliConnectionConfig();
 
+const serviceOwnOrigin = renderServiceOwnOrigin();
 const deployedBrowserOrigins = new Set([
   'https://yalelabs.onrender.com',
   'https://ylabs-gr4v.onrender.com',
   'https://yalelabs.io',
   'https://www.yalelabs.io',
+  ...(serviceOwnOrigin ? [serviceOwnOrigin] : []),
 ]);
 const localDevelopmentOrigins = ['http://localhost:3000'];
 const allowsLoopbackBrowserOrigins = bypassRuntimeSecurity;
