@@ -1,3 +1,5 @@
+import { benchmarksToReplay } from '../scripts/laneScorecardCore';
+
 export interface LaneBenchmarkGoldDto {
   field: string;
   labeled: number;
@@ -32,6 +34,7 @@ export type LaneBenchmarkChange =
 export interface LaneBenchmarkTrendDto {
   benchmarkId: string;
   sourceName: string;
+  supersedes: string | null;
   runs: number;
   latest: LaneBenchmarkRunDto;
   previous: LaneBenchmarkRunDto | null;
@@ -97,6 +100,7 @@ export function buildLaneBenchmarkTrend(
   benchmarkId: string,
   rowsNewestFirst: readonly Record<string, unknown>[],
   runs: number,
+  supersedes: string | null = null,
 ): LaneBenchmarkTrendDto | null {
   const [latestRow, previousRow] = rowsNewestFirst;
   if (!latestRow) return null;
@@ -105,9 +109,60 @@ export function buildLaneBenchmarkTrend(
   return {
     benchmarkId,
     sourceName: text(latestRow.sourceName),
+    supersedes,
     runs,
     latest,
     previous,
     change: classifyLaneBenchmarkChange(latest, previous),
   };
+}
+
+export interface StoredLaneBenchmarkRef {
+  benchmarkId: string;
+  sourceName?: string | null;
+  supersedes?: string | null;
+}
+
+export interface LaneBenchmarkAwaitingReplayDto {
+  benchmarkId: string;
+  sourceName: string;
+  supersedes: string | null;
+}
+
+export interface LaneBenchmarkPanelEntries {
+  benchmarks: LaneBenchmarkTrendDto[];
+  awaitingReplay: LaneBenchmarkAwaitingReplayDto[];
+  supersededCount: number;
+}
+
+/**
+ * The panel shows the benchmarks a sweep replays, so a recapture replaces its predecessor
+ * here exactly as it does in `lane:scorecard`. A replaced capture froze different input,
+ * so its replays are not comparable with the successor's and are left out rather than merged.
+ */
+export function laneBenchmarkPanelEntries(
+  stored: readonly StoredLaneBenchmarkRef[],
+  scoredRunsNewestFirst: ReadonlyMap<string, readonly Record<string, unknown>[]>,
+): LaneBenchmarkPanelEntries {
+  const { replay, superseded } = benchmarksToReplay(stored);
+  const benchmarks: LaneBenchmarkTrendDto[] = [];
+  const awaitingReplay: LaneBenchmarkAwaitingReplayDto[] = [];
+  for (const benchmark of [...replay].sort((a, b) => a.benchmarkId.localeCompare(b.benchmarkId))) {
+    const runs = scoredRunsNewestFirst.get(benchmark.benchmarkId) ?? [];
+    const supersedes = benchmark.supersedes || null;
+    const trend = buildLaneBenchmarkTrend(
+      benchmark.benchmarkId,
+      runs.slice(0, 2),
+      runs.length,
+      supersedes,
+    );
+    if (trend) benchmarks.push(trend);
+    else
+      awaitingReplay.push({
+        benchmarkId: benchmark.benchmarkId,
+        sourceName: text(benchmark.sourceName),
+        supersedes,
+      });
+  }
+  return { benchmarks, awaitingReplay, supersededCount: superseded.length };
 }

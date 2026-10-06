@@ -82,4 +82,21 @@ describe('EngineBenchmarkRows', () => {
 
     expect(screen.getByText('No engine benchmark has been replayed yet.')).toBeInTheDocument();
   });
+
+  it('says how many one-off probe benchmarks are left off the engine panel', () => {
+    render(
+      <LaneBenchmarkPanel
+        isLoading={false}
+        error={null}
+        laneBenchmarks={response({
+          measurementCollection: 'engine_benchmark_snapshots',
+          refreshCommand: 'yarn --cwd server engine:benchmark',
+          benchmarks: [],
+          oneOffBenchmarkCount: 4,
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/4 one-off probe benchmarks are not shown/)).toBeInTheDocument();
+  });
 });

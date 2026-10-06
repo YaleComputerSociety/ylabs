@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildLaneBenchmarkTrend, classifyLaneBenchmarkChange } from '../laneBenchmarkTrendCore';
+import {
+  buildLaneBenchmarkTrend,
+  classifyLaneBenchmarkChange,
+  laneBenchmarkPanelEntries,
+} from '../laneBenchmarkTrendCore';
 
 const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   measuredAt: new Date('2026-09-28T00:00:00Z'),
@@ -79,5 +83,65 @@ describe('classifyLaneBenchmarkChange', () => {
     ['new output with no recorded code', dto(null, 'fp-2'), dto('aaa', 'fp-1'), 'unattributed'],
   ] as const)('reads %s', (_label, latest, previous, expected) => {
     expect(classifyLaneBenchmarkChange(latest, previous)).toBe(expected);
+  });
+});
+
+describe('laneBenchmarkPanelEntries', () => {
+  const stored = [
+    { benchmarkId: 'lane-a-v1', sourceName: 'lane-a' },
+    { benchmarkId: 'lane-a-v2', sourceName: 'lane-a', supersedes: 'lane-a-v1' },
+    { benchmarkId: 'lane-b-v1', sourceName: 'lane-b' },
+    { benchmarkId: 'lane-b-v2', sourceName: 'lane-b', supersedes: 'lane-b-v1' },
+  ];
+
+  it('shows only the newest benchmark of each recapture chain and names what it replaces', () => {
+    const entries = laneBenchmarkPanelEntries(
+      stored,
+      new Map([
+        ['lane-a-v1', [row({ sourceName: 'lane-a' })]],
+        ['lane-a-v2', [row({ sourceName: 'lane-a' })]],
+        ['lane-b-v1', [row({ sourceName: 'lane-b' })]],
+      ]),
+    );
+
+    expect(entries.benchmarks.map((trend) => trend.benchmarkId)).toEqual(['lane-a-v2']);
+    expect(entries.benchmarks[0].supersedes).toBe('lane-a-v1');
+    expect(entries.supersededCount).toBe(2);
+  });
+
+  it('lists a current benchmark with no replay yet instead of hiding it', () => {
+    const entries = laneBenchmarkPanelEntries(
+      stored,
+      new Map([['lane-b-v1', [row({ sourceName: 'lane-b' })]]]),
+    );
+
+    expect(entries.benchmarks).toEqual([]);
+    expect(entries.awaitingReplay).toEqual([
+      { benchmarkId: 'lane-a-v2', sourceName: 'lane-a', supersedes: 'lane-a-v1' },
+      { benchmarkId: 'lane-b-v2', sourceName: 'lane-b', supersedes: 'lane-b-v1' },
+    ]);
+  });
+
+  it('builds the trend from the two newest scored runs and counts every scored run', () => {
+    const entries = laneBenchmarkPanelEntries(
+      [{ benchmarkId: 'lane-c', sourceName: 'lane-c' }],
+      new Map([
+        [
+          'lane-c',
+          [
+            row({ codeSha: 'ccc', outputFingerprint: 'fp-3' }),
+            row({ codeSha: 'bbb', outputFingerprint: 'fp-2' }),
+            row({ codeSha: 'aaa', outputFingerprint: 'fp-1' }),
+          ],
+        ],
+      ]),
+    );
+
+    expect(entries.benchmarks[0]).toMatchObject({
+      runs: 3,
+      supersedes: null,
+      change: 'code-changed',
+    });
+    expect(entries.benchmarks[0].previous?.codeSha).toBe('bbb');
   });
 });

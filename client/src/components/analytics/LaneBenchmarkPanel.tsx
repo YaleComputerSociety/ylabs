@@ -11,6 +11,7 @@ import {
   pagesMissedDelta,
 } from './laneBenchmarkMetrics';
 import type {
+  LaneBenchmarkAwaitingReplay,
   LaneBenchmarkChange,
   LaneBenchmarkResponse,
   LaneBenchmarkTrend,
@@ -54,6 +55,9 @@ const BenchmarkRow = ({ trend }: { trend: LaneBenchmarkTrend }) => {
             {formatDateTime(latest.measuredAt)}
             {latest.codeSha ? ` at ${latest.codeSha.slice(0, 9)}` : ''}
           </p>
+          {trend.supersedes ? (
+            <p className="text-xs text-muted">Replaces {trend.supersedes}</p>
+          ) : null}
         </div>
         <p className={`text-xs ${CHANGE_CLASS[trend.change]}`}>
           {LANE_BENCHMARK_CHANGE_LABEL[trend.change]}
@@ -121,6 +125,20 @@ export interface LaneBenchmarkPanelProps {
   error: string | null;
 }
 
+const AwaitingReplayRows = ({ awaiting }: { awaiting: LaneBenchmarkAwaitingReplay[] }) => (
+  <div className="py-3">
+    <p className="text-sm font-medium text-ink">Awaiting a first replay</p>
+    <ul className="mt-1 space-y-0.5 text-xs text-muted">
+      {awaiting.map((benchmark) => (
+        <li key={benchmark.benchmarkId}>
+          <span className="text-ink">{benchmark.benchmarkId}</span> · {benchmark.sourceName}
+          {benchmark.supersedes ? ` · replaces ${benchmark.supersedes}` : ''}
+        </li>
+      ))}
+    </ul>
+  </div>
+);
+
 const LaneBenchmarkPanel = ({ laneBenchmarks, isLoading, error }: LaneBenchmarkPanelProps) => {
   if (isLoading) {
     return (
@@ -138,6 +156,10 @@ const LaneBenchmarkPanel = ({ laneBenchmarks, isLoading, error }: LaneBenchmarkP
     );
   }
 
+  const awaiting = laneBenchmarks.awaitingReplay ?? [];
+  const supersededCount = laneBenchmarks.supersededCount ?? 0;
+  const hasNoBenchmark = laneBenchmarks.benchmarks.length === 0 && awaiting.length === 0;
+
   return (
     <div className="overflow-hidden rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-raised">
       <div className="border-b border-[var(--yr-line)] p-4">
@@ -154,15 +176,27 @@ const LaneBenchmarkPanel = ({ laneBenchmarks, isLoading, error }: LaneBenchmarkP
           </code>
           .
         </p>
+        {supersededCount > 0 ? (
+          <p className="mt-1 text-xs text-muted">
+            {formatNumber(supersededCount)} replaced{' '}
+            {supersededCount === 1 ? 'benchmark is' : 'benchmarks are'} not shown; their replays
+            stay in{' '}
+            <code className="rounded bg-panel-muted px-1 py-0.5">
+              {laneBenchmarks.measurementCollection}
+            </code>
+            .
+          </p>
+        ) : null}
       </div>
       <div className="px-4 pb-2">
-        {laneBenchmarks.benchmarks.length === 0 ? (
+        {hasNoBenchmark ? (
           <p className="py-3 text-sm text-muted">No benchmark has been replayed yet.</p>
         ) : (
           laneBenchmarks.benchmarks.map((trend) => (
             <BenchmarkRow key={trend.benchmarkId} trend={trend} />
           ))
         )}
+        {awaiting.length > 0 ? <AwaitingReplayRows awaiting={awaiting} /> : null}
       </div>
       {laneBenchmarks.engine ? <EngineBenchmarkRows engine={laneBenchmarks.engine} /> : null}
     </div>
