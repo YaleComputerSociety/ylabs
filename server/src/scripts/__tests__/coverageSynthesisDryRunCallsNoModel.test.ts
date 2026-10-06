@@ -53,8 +53,8 @@ describe('writer dry run calls no model', () => {
   });
 
   it('refuses an apply run with no key before any row is read', () => {
-    expect(() =>
-      writerModelClientFor({ apply: true, apiKey: undefined, create: vi.fn() }),
-    ).toThrow('requires OPENAI_API_KEY');
+    expect(() => writerModelClientFor({ apply: true, apiKey: undefined, create: vi.fn() })).toThrow(
+      'requires OPENAI_API_KEY',
+    );
   });
 });
