@@ -168,6 +168,17 @@ async function materializeWrittenRow(entity: EntityRow): Promise<string | undefi
   return typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
 }
 
+async function servesWrittenBody(entityId: string): Promise<boolean> {
+  const fresh = (await ResearchEntity.findById(entityId)
+    .select('fullDescription fieldProvenance.fullDescription.sourceName')
+    .lean()) as { fullDescription?: unknown; fieldProvenance?: any } | null;
+  return (
+    fresh?.fieldProvenance?.fullDescription?.sourceName === SOURCE_NAME &&
+    typeof fresh?.fullDescription === 'string' &&
+    fresh.fullDescription.trim().length > 0
+  );
+}
+
 interface CardRederivationReport {
   slug: string;
   cardPlanned?: boolean;
@@ -411,7 +422,10 @@ async function main() {
         );
         resetDescriptionOwnershipCitersCache();
         const materializedId = await materializeWrittenRow(entity);
-        if (materializedId) materializedEntityIds.push(materializedId);
+        if (!materializedId) return;
+        materializedEntityIds.push(materializedId);
+        report.adopted = await servesWrittenBody(materializedId);
+        if (report.adopted) adopted += 1;
       } catch (error) {
         entityErrors += 1;
         console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
@@ -507,13 +521,7 @@ async function main() {
         );
       }
       if (!materializedId) return;
-      const fresh = (await ResearchEntity.findById(materializedId)
-        .select('fullDescription fieldProvenance.fullDescription.sourceName')
-        .lean()) as { fullDescription?: unknown; fieldProvenance?: any } | null;
-      report.adopted =
-        fresh?.fieldProvenance?.fullDescription?.sourceName === SOURCE_NAME &&
-        typeof fresh?.fullDescription === 'string' &&
-        fresh.fullDescription.trim().length > 0;
+      report.adopted = await servesWrittenBody(materializedId);
       if (report.adopted) adopted += 1;
     } catch (error) {
       entityErrors += 1;
