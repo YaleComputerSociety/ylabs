@@ -445,12 +445,13 @@ const sourceQualifierRun = (min: number) =>
  * in source)."). The note names no research, and the sentence it ends is itself a
  * fragment, so the body is refused rather than trimmed to it.
  *
- * Both a truncation word and a word for the document have to be inside the same
- * parenthetical, because "truncated" is ordinary research prose on its own: a truncated
- * protein, receptor or transcript is the subject matter, not a note about the page.
+ * The note has to close the body and has to bind the truncation word to the document
+ * itself ("text truncated", "truncated in source"), because "truncated" is ordinary
+ * research prose: a truncated isoform lacking the binding site or a truncated expression
+ * profile is the subject matter, not a note about the page.
  */
 const SOURCE_TRUNCATION_NOTE =
-  /\((?=[^)]{0,60}\b(?:source|page|text|website|site|profile|listing)\b)[^)]{0,60}\b(?:truncated|cut\s+off)\b[^)]{0,60}\)|\b(?:text|content)\s+truncated\b|\btruncated\s+in\s+(?:the\s+)?source\b/i;
+  /\([^)]{0,40}\b(?:(?:text|content|source|page)\s+(?:was\s+)?(?:truncated|cut\s+off)|truncated\s+in\s+(?:the\s+)?source)\b[^)]{0,40}\)[\s.]*$/i;
 
 /**
  * The possessive and next-source shapes of the same failure (#4788): "Her Yale profile

@@ -44,8 +44,19 @@ describe('a body reporting its own evidence was cut short is refused', () => {
     const researchProse = [
       'Studies how a truncated receptor isoform alters downstream signaling in epithelial cells.',
       'Examines truncated protein variants that escape degradation.',
+      'Studies receptor signaling (a truncated isoform lacking the ligand-binding site).',
+      'Characterizes tumors (truncated expression profile).',
+      'Models ischemia (tissue cut off from blood supply at the site of injury).',
     ];
     for (const text of researchProse) expect(isSourcePageNarrationDescription(text)).toBe(false);
+  });
+
+  it('reads the note only where it closes the body', () => {
+    expect(
+      isSourcePageNarrationDescription(
+        'Studies membrane remodeling (text truncated in source). The lab also maps lipid transport in neurons.',
+      ),
+    ).toBe(false);
   });
 
   it('refuses the writer body that carries the note, naming the source-narration arm', async () => {
