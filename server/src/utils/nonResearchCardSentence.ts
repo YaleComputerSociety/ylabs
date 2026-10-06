@@ -37,6 +37,20 @@ const websiteNewsNotePattern =
 
 const programRenameNotePattern = /\s*\(now\s+[A-Z][A-Z0-9&-]{2,}\)/g;
 
+/**
+ * A card that opens by dating itself rather than by naming the research ("In the last few
+ * years, the lab's clinical research focus has been ...", "Since 2006, her clinical
+ * practice has focused on ..."). The clause reads as a page's news framing, and it pushes
+ * the subject past the point a browse card is cut, so the student sees a date instead of a
+ * topic.
+ *
+ * Checked ahead of the research-activity exemption below: both measured cards name
+ * research or a focus somewhere in the sentence, so the exemption would otherwise keep
+ * them.
+ */
+const temporalFramingOpenerPattern =
+  /^(?:(?:in|over|during|for)\s+the\s+(?:last|past)\s+(?:few\s+)?(?:\w+\s+)?(?:years?|decades?|months?)|in\s+recent\s+years|recently|since\s+(?:19|20)\d\d)\s*,/i;
+
 function namesResearchActivity(value: string): boolean {
   return researchActivityVerbPattern.test(value.replace(capitalizedNounUsePattern, ' '));
 }
@@ -46,6 +60,7 @@ export function isNonResearchCardSentence(text: unknown): boolean {
   if (!value) return false;
   if (strayLeadingPunctuationPattern.test(value)) return true;
   if (websiteNewsNotePattern.test(value)) return true;
+  if (temporalFramingOpenerPattern.test(value)) return true;
   if (siteTaglinePattern.test(value)) return true;
   if (presentationRemarkPattern.test(value)) return true;
   if (studiesHonorTemplatePattern.test(value)) return true;
