@@ -172,9 +172,6 @@ describe('corsOrigin', () => {
       expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com')).toBe(
         'https://yalelabs-beta-pr-1.onrender.com',
       );
-      expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com/')).toBe(
-        'https://yalelabs-beta-pr-1.onrender.com',
-      );
     });
 
     it('trusts nothing when the variable is absent or not a Render service origin', () => {
@@ -185,6 +182,7 @@ describe('corsOrigin', () => {
       expect(ownOrigin('https://example.com')).toBeUndefined();
       expect(ownOrigin('https://onrender.com.example.com')).toBeUndefined();
       expect(ownOrigin('https://user:pass@yalelabs-beta-pr-1.onrender.com')).toBeUndefined();
+      expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com/')).toBeUndefined();
       expect(ownOrigin('https://yalelabs-beta-pr-1.onrender.com/path')).toBeUndefined();
       expect(ownOrigin('not a url')).toBeUndefined();
     });

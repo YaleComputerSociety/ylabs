@@ -60,7 +60,7 @@ const RENDER_SERVICE_HOST_SUFFIX = '.onrender.com';
 export const renderServiceOwnOrigin = (
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined => {
-  const origin = normalizeCorsOrigin(env.RENDER_EXTERNAL_URL?.trim().replace(/\/$/, ''));
+  const origin = normalizeCorsOrigin(env.RENDER_EXTERNAL_URL);
   if (!origin) return undefined;
 
   const { protocol, hostname, port } = new URL(origin);
