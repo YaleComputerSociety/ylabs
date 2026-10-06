@@ -151,6 +151,7 @@ The panel applies the same recapture rule as an unnamed `lane:scorecard` run, so
 A current benchmark captured since the last replay has no stored row yet and is listed under "Awaiting a first replay", because hiding it would leave the panel showing a replaced capture as the lane's current reading.
 Each benchmark shows its latest stored replay, and each change compares it with the replay stored before it, never with a live run.
 A stored replay that missed more than its capture left unfrozen is left out of both, as "Hand-judged labels" below describes.
+A current benchmark whose every stored replay is left out that way is hidden rather than listed as awaiting, because it has been replayed and needs a recapture instead.
 Known wrong is shown over its labeled population, input coverage as pages served and missed, and each hand-labeled field as precision and recall with their counts.
 Each of those carries its change from the previous replay, so a lane with no hand labels still shows whether it got better or worse.
 
