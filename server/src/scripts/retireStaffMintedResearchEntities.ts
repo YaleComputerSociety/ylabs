@@ -104,7 +104,9 @@ export function parseRetireStaffMintedEntitiesArgs(
     if (arg.startsWith('--record-id=')) {
       const id = arg.slice('--record-id='.length).trim();
       if (!/^[a-f0-9]{24}$/i.test(id)) {
-        throw new Error(`--record-id must be a 24-character object id; received ${JSON.stringify(id)}`);
+        throw new Error(
+          `--record-id must be a 24-character object id; received ${JSON.stringify(id)}`,
+        );
       }
       options.recordIds = [...new Set([...(options.recordIds || []), id])];
       continue;
@@ -446,8 +448,7 @@ async function main(): Promise<void> {
   const leadlessMintIds = [...mintUrlById.entries()]
     .filter(
       ([id, mintUrl]) =>
-        (roleEdgePersonIdsById.get(id) || []).length === 0 &&
-        mintCitationDefersToSoleLead(mintUrl),
+        (roleEdgePersonIdsById.get(id) || []).length === 0 && mintCitationDefersToSoleLead(mintUrl),
     )
     .map(([id]) => id);
   const slugById = new Map<string, string>();
