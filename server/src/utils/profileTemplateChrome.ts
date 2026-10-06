@@ -18,3 +18,36 @@ export function isProfileTemplateChrome(value: unknown): boolean {
     Boolean(text) && (PROFILE_TEMPLATE_CHROME.test(text) || PROJECT_CARD_LINK_LABEL.test(text))
   );
 }
+
+/**
+ * The template's interface widgets, as opposed to its MeSH chip run: the co-author panel,
+ * the publications timeline chart, an empty research-topics panel, a project card's link
+ * label and a bare ORCID iD. A MeSH run lists the topics the profile's publications are
+ * indexed under, so it is thin but real evidence of what the person studies; the widgets
+ * describe no one.
+ */
+const PROFILE_TEMPLATE_WIDGET_LABELS = [
+  /\bresearch\s+at\s+a\s+glance\b/gi,
+  /\byale\s+co-authors\b/gi,
+  /\b[Ff]requent\s+collaborators\s+of\s+.{1,80}?\bpublished\s+research\b\.?(?=\s+[A-Z]|\s*$)/g,
+  /\bpublications\s+timeline\b/gi,
+  /\b[Aa]\s+big-picture\s+view\s+of\s+.{1,80}?\bresearch\s+output(?:\s+by\s+year)?\b\.?(?=\s+[A-Z]|\s*$)/g,
+  /\bView Project(?=\s+(?:ORCID|[A-Z])|\s*$)/g,
+  /\b[Rr]esearch\s+topics\s+.{1,80}?\bis\s+interested\s+in\s+exploring\b\.?(?=\s+[A-Z]|\s*$)/g,
+  /\borcid\s+\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/gi,
+];
+
+const PROFILE_SECTION_HEADING =
+  /^(?:(?:research\s+)?overview\s+)?(?:(?:medical\s+)?research\s+interests|public\s+health\s+interests)?\s*$/i;
+
+/**
+ * The value with the template's widget labels removed, or '' when nothing but widgets and
+ * section headings is left. A MeSH chip run under its heading is kept.
+ */
+export function withoutProfileTemplateWidgets(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  let text = value;
+  for (const label of PROFILE_TEMPLATE_WIDGET_LABELS) text = text.replace(label, ' ');
+  text = text.replace(/\s+/g, ' ').trim();
+  return PROFILE_SECTION_HEADING.test(text) ? '' : text;
+}

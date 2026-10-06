@@ -6,7 +6,10 @@
  * entityKey, e.g. netid).
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
-import { isProfileTemplateChrome } from '../utils/profileTemplateChrome';
+import {
+  isProfileTemplateChrome,
+  withoutProfileTemplateWidgets,
+} from '../utils/profileTemplateChrome';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -718,7 +721,8 @@ const INGEST_CHECKED_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
  * card names is checked against what the pages say rather than against the body alone
  * (#4914). The body itself is passed separately. Model-written values are left out as the
  * writer leaves them out, except the extraction lane's body, which that lane checks
- * against its fetched page, and a profile template's widget labels describe no one.
+ * against its fetched page, and a profile template's widget labels, which describe no
+ * one, are removed.
  */
 export function cardDescriptionEvidence(observations: readonly ResolverObservation[]): string[] {
   return observations
@@ -728,10 +732,10 @@ export function cardDescriptionEvidence(observations: readonly ResolverObservati
         (!isModelTextSource(obs.sourceName) ||
           (obs.sourceName === INGEST_CHECKED_DESCRIPTION_SOURCE &&
             obs.field === 'fullDescription')) &&
-        typeof obs.value === 'string' &&
-        !isProfileTemplateChrome(obs.value),
+        typeof obs.value === 'string',
     )
-    .map((obs) => obs.value as string);
+    .map((obs) => withoutProfileTemplateWidgets(obs.value))
+    .filter(Boolean);
 }
 
 /**
