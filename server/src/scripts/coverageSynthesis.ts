@@ -13,6 +13,7 @@ import {
   retireObservations,
 } from '../scrapers/observationStore';
 import { contentHashObservation } from '../scrapers/contentHashGate';
+import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
 import {
   defaultMaterializerCardSynthesizer,
   materializeEntity,
@@ -23,6 +24,7 @@ import { appendSynthesizedDescription } from './synthesizedDescriptionObservatio
 import {
   COVERAGE_CONFIDENCE,
   WRITTEN_DESCRIPTION_SOURCE_NAME,
+  adoptedWrittenBodyStillSupported,
   defaultCoverageSynthesisLLM,
   coverageSynthesisDecision,
   countCoverageSynthesisRefusals,
@@ -40,12 +42,16 @@ import {
   buildWriterEvidenceSnippetsWithMergedInFill,
   parseCoverageSynthesisArgs,
   planWriterStep,
+  liveWrittenBody,
+  reinstateStepFor,
   storedWriterEvidenceHash,
   writerEvidenceHash,
+  writerStoredHashFor,
   writerObservationAnchors,
   writerWritesAfterBodyAttempt,
   writerWritesFor,
   writtenBodyCardRepairFilter,
+  type ReinstateStep,
   type WriterStep,
   INGEST_VERIFIED_EXTRACTION_SOURCE,
   PAGE_GROUNDING_VERIFIED_SINCE,
@@ -70,7 +76,7 @@ const ENTITY_READ_CHUNK = 200;
 export interface CoverageEntityReport {
   slug: string;
   snippets: number;
-  step?: WriterStep | 'fullDescription-locked';
+  step?: WriterStep | ReinstateStep | 'fullDescription-locked';
   synthesized: boolean;
   written: boolean;
   retired?: number;
@@ -160,6 +166,17 @@ async function materializeWrittenRow(entity: EntityRow): Promise<string | undefi
     writtenRowMaterializeOptions(typeof entity.name === 'string' ? entity.name : ''),
   );
   return typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
+}
+
+async function servesWrittenBody(entityId: string): Promise<boolean> {
+  const fresh = (await ResearchEntity.findById(entityId)
+    .select('fullDescription fieldProvenance.fullDescription.sourceName')
+    .lean()) as { fullDescription?: unknown; fieldProvenance?: any } | null;
+  return (
+    fresh?.fieldProvenance?.fullDescription?.sourceName === SOURCE_NAME &&
+    typeof fresh?.fullDescription === 'string' &&
+    fresh.fullDescription.trim().length > 0
+  );
 }
 
 interface CardRederivationReport {
@@ -268,7 +285,7 @@ async function main() {
 
   deferSearchIndexWritesWhenSkipping(args);
   const callLLM = writerModelClientFor({
-    apply: args.apply,
+    apply: args.apply && !args.reinstateRetiredBodies,
     apiKey: process.env.OPENAI_API_KEY,
     create: defaultCoverageSynthesisLLM,
   });
@@ -374,10 +391,51 @@ async function main() {
       },
     );
     report.snippets = snippets.length;
+    if (args.reinstateRetiredBodies) {
+      const retired = (await Observation.findOne({
+        entityType: 'researchEntity',
+        sourceName: SOURCE_NAME,
+        field: 'fullDescription',
+        'rollback.reason': RETIRE_REASON,
+        $or: anchors,
+      })
+        .sort({ observedAt: -1 })
+        .select('_id value')
+        .lean()) as { _id: unknown; value?: unknown } | null;
+      const retiredBody = typeof retired?.value === 'string' ? retired.value : undefined;
+      const reinstate = reinstateStepFor({
+        liveBody: liveWrittenBody(observations, SOURCE_NAME),
+        retiredBody,
+        retiredBodyStillSupported: adoptedWrittenBodyStillSupported({
+          body: retiredBody,
+          snippets,
+          researchAreas: entity.researchAreas,
+          entityType: entity.entityType,
+        }),
+      });
+      report.step = reinstate;
+      if (reinstate !== 'reinstated' || !args.apply || !retired) return;
+      try {
+        await Observation.updateOne(
+          { _id: retired._id },
+          { $set: { superseded: false }, $unset: { rollback: '' } },
+        );
+        resetDescriptionOwnershipCitersCache();
+        const materializedId = await materializeWrittenRow(entity);
+        if (!materializedId) return;
+        materializedEntityIds.push(materializedId);
+        report.adopted = await servesWrittenBody(materializedId);
+        if (report.adopted) adopted += 1;
+      } catch (error) {
+        entityErrors += 1;
+        console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
+      }
+      return;
+    }
     const freshHash = writerEvidenceHash(snippets);
     const step = planWriterStep({
       snippets,
-      storedHash: storedWriterEvidenceHash(observations, SOURCE_NAME),
+      storedHash: writerStoredHashFor(args, storedWriterEvidenceHash(observations, SOURCE_NAME)),
       freshHash,
     });
     report.step = step;
@@ -406,7 +464,14 @@ async function main() {
     }
     if (!args.apply || !context) return;
     try {
-      let writes = writerWritesFor(step, decision);
+      let writes = writerWritesFor(step, decision, {
+        adoptedBodyStillSupported: adoptedWrittenBodyStillSupported({
+          body: liveWrittenBody(observations, SOURCE_NAME),
+          snippets,
+          researchAreas: entity.researchAreas,
+          entityType: entity.entityType,
+        }),
+      });
       let changed = false;
       if (writes.writeBody && decision?.result) {
         const stored = await appendSynthesizedDescription(
@@ -456,13 +521,7 @@ async function main() {
         );
       }
       if (!materializedId) return;
-      const fresh = (await ResearchEntity.findById(materializedId)
-        .select('fullDescription fieldProvenance.fullDescription.sourceName')
-        .lean()) as { fullDescription?: unknown; fieldProvenance?: any } | null;
-      report.adopted =
-        fresh?.fieldProvenance?.fullDescription?.sourceName === SOURCE_NAME &&
-        typeof fresh?.fullDescription === 'string' &&
-        fresh.fullDescription.trim().length > 0;
+      report.adopted = await servesWrittenBody(materializedId);
       if (report.adopted) adopted += 1;
     } catch (error) {
       entityErrors += 1;
@@ -487,6 +546,8 @@ async function main() {
     llmCalls: args.apply ? countBy('synthesize') : 0,
     plannedLlmCalls: countBy('synthesize'),
     evidenceUnchanged: countBy('evidence-unchanged'),
+    reinstated: countBy('reinstated'),
+    reinstateRefused: countBy('reinstate-refused'),
     noEvidence: countBy('no-evidence'),
     fullDescriptionLocked: countBy('fullDescription-locked'),
     synthesized: reports.filter((r) => r.synthesized).length,
