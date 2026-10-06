@@ -51,6 +51,9 @@ import {
   PAGE_GROUNDING_VERIFIED_SINCE,
   ingestVerifiedRunIds,
   markIngestVerifiedObservations,
+  deferSearchIndexWritesWhenSkipping,
+  synthesizeWithWriterModel,
+  writerModelClientFor,
 } from './coverageSynthesisCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
@@ -234,6 +237,7 @@ async function rederiveWrittenBodyCards(
     tierChanged: regates.reduce((sum, entry) => sum + entry.tierChanged, 0),
     tierTransitions: regates.flatMap((entry) => entry.tierTransitions),
     indexSyncFailures: regates.reduce((sum, entry) => sum + entry.indexSyncFailures, 0),
+    indexSyncSkipped: regates.reduce((sum, entry) => sum + entry.indexSyncDeferred, 0),
     entities: reports,
   };
   console.log(
@@ -262,9 +266,12 @@ async function main() {
   });
   assertCoverageSynthesisApplyAllowed(args, guard.dbLabel);
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('research-entity:coverage-synthesis requires OPENAI_API_KEY');
-  const callLLM = defaultCoverageSynthesisLLM(apiKey);
+  deferSearchIndexWritesWhenSkipping(args);
+  const callLLM = writerModelClientFor({
+    apply: args.apply,
+    apiKey: process.env.OPENAI_API_KEY,
+    create: defaultCoverageSynthesisLLM,
+  });
 
   await initializeConnections();
 
@@ -379,12 +386,17 @@ async function main() {
     let decision: CoverageSynthesisDecision | null = null;
     if (step === 'synthesize') {
       try {
-        decision = await synthesizeDecisionIntoCoverageReport(report, {
-          snippets,
-          entityName: typeof entity.name === 'string' ? entity.name : '',
-          entityType: entity.entityType,
-          researchAreas: entity.researchAreas,
+        decision = await synthesizeWithWriterModel({
+          step,
           callLLM,
+          synthesize: (writerModel) =>
+            synthesizeDecisionIntoCoverageReport(report, {
+              snippets,
+              entityName: typeof entity.name === 'string' ? entity.name : '',
+              entityType: entity.entityType,
+              researchAreas: entity.researchAreas,
+              callLLM: writerModel,
+            }),
         });
       } catch (error) {
         entityErrors += 1;
@@ -472,7 +484,8 @@ async function main() {
     db: guard.dbLabel,
     scope: args.slugs.length > 0 ? 'slugs' : args.all ? 'all-live' : `first-${args.limit}`,
     scanned: reports.length,
-    llmCalls: countBy('synthesize'),
+    llmCalls: args.apply ? countBy('synthesize') : 0,
+    plannedLlmCalls: countBy('synthesize'),
     evidenceUnchanged: countBy('evidence-unchanged'),
     noEvidence: countBy('no-evidence'),
     fullDescriptionLocked: countBy('fullDescription-locked'),
@@ -486,6 +499,7 @@ async function main() {
     regated: regates.reduce((sum, entry) => sum + entry.scopedEntities, 0),
     tierChanged: regates.reduce((sum, entry) => sum + entry.tierChanged, 0),
     indexSyncFailures: regates.reduce((sum, entry) => sum + entry.indexSyncFailures, 0),
+    indexSyncSkipped: regates.reduce((sum, entry) => sum + entry.indexSyncDeferred, 0),
     entities: reports,
   };
   console.log(JSON.stringify({ ...report, entities: `${reports.length} rows` }, null, 2));

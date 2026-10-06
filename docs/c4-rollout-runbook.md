@@ -63,7 +63,7 @@ The canonical-alias ledger is retired (#3027), so resolve-at-mint resolves only 
 Run from `server/`.
 Data-writing CLIs are dry-run by default and require an explicit confirm flag plus a Development database guard to apply.
 
-- `yarn research-entity:coverage-synthesis` (dry-run; `--apply --confirm-coverage-synthesis` on Development): the one writer of every live research row's description since #4788, grounded gpt-5-mini synthesis over the row's live evidence; requires the `coverage-synthesis-llm` source row, which `scrape:seed-sources` seeds.
+- `yarn research-entity:coverage-synthesis` (dry-run; `--apply --confirm-coverage-synthesis` on Development): the one writer of every live research row's description since #4788, grounded gpt-5-mini synthesis over the row's live evidence; requires the `coverage-synthesis-llm` source row, which `scrape:seed-sources` seeds. Its dry run calls no model and reports `plannedLlmCalls`; add `--skip-index-sync` to an `--all` apply and rebuild the index once afterwards.
 - `yarn fuzzy:labeled-set`: report the labeled positives and negatives and their counts.
 - `yarn fuzzy:residual-report`: run the fuzzy matcher over a scope and report pair-completeness and precision and recall against the labeled set.
 - `yarn eval:pipeline --sample=<N> [--llm] [--gate]`: score C0 through C3 (efficiency, accuracy, churn) over a seeded sample.
