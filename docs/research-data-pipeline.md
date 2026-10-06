@@ -1255,6 +1255,9 @@ The first apply wrote those two shapes, because the copied-card path fell back t
 A written body is also no longer judged against the stored card before its own card is chosen, because a card that restated the written body handed the field back to copied text.
 `research-entity:coverage-synthesis --rederive-cards` re-projects only the live rows serving the written body and held on `missing_card_description` (`writtenBodyCardRepairFilter`), with no writer model call; with `--all` it re-projects every live row serving the written body, which is how a card rule change reaches them.
 The prompt is shared with the grant-corpus and faculty-research-area lanes, so they write in the same voice and pass the same arms.
+A dry run builds no model client and calls the writer model for no row: each row reports the `step` it would take, `plannedLlmCalls` counts the rows that would call the model, and `llmCalls` reads 0; before this, a dry run called the model for every planned row and only skipped the write, so the all-live dry run on 2026-10-06 made 3,586 paid calls.
+`research-entity:grant-corpus-synthesis` follows the same rule and reports `plannedLlmCalls` in a dry run.
+`--skip-index-sync` defers every Meilisearch write for the run (it sets `SEARCH_INDEX_WRITES=deferred`, which the materializer, the gate, and the re-gate already read) and reports the re-gated rows it left unsynced as `indexSyncSkipped`; follow an `--all` apply run with it by one `yarn development:search:rebuild`.
 The first full Development run is about 3,900 model calls (3,936 of 4,230 live rows carried evidence when measured on 2026-10-04); later runs call the model only for rows whose evidence changed.
 
 ### Roster biography research evidence (`roster-bio-research-evidence`)

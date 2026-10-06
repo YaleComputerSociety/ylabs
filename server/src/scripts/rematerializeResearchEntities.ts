@@ -337,6 +337,7 @@ export interface RematerializeRegateSummary {
   scopedEntities: number;
   indexResynced: number;
   indexSyncFailures: number;
+  indexSyncDeferred: number;
   tierChanged: number;
   tierTransitions: Array<{ recordId: string; label: string; from: string | null; to: string }>;
   counts: Record<string, number>;
@@ -376,6 +377,7 @@ export async function regateRematerializedEntities(
     scopedEntities: entityIds.length,
     indexResynced: indexSync.resynced,
     indexSyncFailures: indexSync.indexSyncFailures,
+    indexSyncDeferred: indexSync.indexSyncDeferred ?? 0,
     tierChanged: tierTransitions.length,
     tierTransitions,
     counts: gateReport.counts as unknown as Record<string, number>,

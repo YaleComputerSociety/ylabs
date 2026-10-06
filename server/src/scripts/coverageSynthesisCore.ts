@@ -3,6 +3,10 @@ import {
   computeVersionedContentHash,
 } from '../scrapers/contentHashGate';
 import {
+  SEARCH_INDEX_WRITES_DEFERRED,
+  SEARCH_INDEX_WRITES_VARIABLE,
+} from '../utils/searchIndexWrites';
+import {
   COVERAGE_SNIPPET_FIELDS,
   COVERAGE_SYNTHESIS_MODEL,
   MAX_COVERAGE_SNIPPETS,
@@ -28,6 +32,7 @@ export interface CoverageSynthesisArgs {
   rederiveCards: boolean;
   concurrency: number;
   slugs: string[];
+  skipIndexSync: boolean;
   output?: string;
 }
 
@@ -50,6 +55,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     rederiveCards: false,
     concurrency: DEFAULT_COVERAGE_SYNTHESIS_CONCURRENCY,
     slugs: [],
+    skipIndexSync: false,
   };
   for (const token of argv) {
     if (token === '--apply') args.apply = true;
@@ -57,6 +63,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--confirm-coverage-synthesis') args.confirm = true;
     else if (token === '--all') args.all = true;
     else if (token === '--rederive-cards') args.rederiveCards = true;
+    else if (token === '--skip-index-sync') args.skipIndexSync = true;
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
     else if (token.startsWith('--concurrency=')) {
       args.concurrency = Number(token.slice('--concurrency='.length));
@@ -287,6 +294,46 @@ export function planWriterStep(input: {
   if (input.snippets.length === 0) return 'no-evidence';
   if (input.storedHash && input.storedHash === input.freshHash) return 'evidence-unchanged';
   return 'synthesize';
+}
+
+/**
+ * A dry run reports the step it would take and never calls the writer model: every
+ * call is paid, and a dry run is how operators count the work before paying for it.
+ * On 2026-10-06 an all-live dry run made 3,586 paid calls because only the persist
+ * step checked the mode. A dry run therefore builds no model client at all.
+ */
+export function writerModelClientFor<C>(input: {
+  apply: boolean;
+  apiKey: string | undefined;
+  create: (apiKey: string) => C;
+}): C | null {
+  if (!input.apply) return null;
+  if (!input.apiKey) {
+    throw new Error('research-entity:coverage-synthesis apply requires OPENAI_API_KEY');
+  }
+  return input.create(input.apiKey);
+}
+
+/**
+ * `--skip-index-sync` leaves the search index to one `yarn development:search:rebuild`
+ * after an all-rows apply, in place of a Meilisearch sync per re-gated row. It sets the
+ * process-wide switch every index writer already reads (the materializer, the gate and
+ * the re-gate outcome), so no write path can sync a row behind it.
+ */
+export function deferSearchIndexWritesWhenSkipping(
+  args: Pick<CoverageSynthesisArgs, 'skipIndexSync'>,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (args.skipIndexSync) env[SEARCH_INDEX_WRITES_VARIABLE] = SEARCH_INDEX_WRITES_DEFERRED;
+}
+
+export async function synthesizeWithWriterModel<C, T>(input: {
+  step: WriterStep;
+  callLLM: C | null;
+  synthesize: (callLLM: C) => Promise<T>;
+}): Promise<T | null> {
+  if (input.step !== 'synthesize' || input.callLLM === null) return null;
+  return input.synthesize(input.callLLM);
 }
 
 export interface WriterWrites {
