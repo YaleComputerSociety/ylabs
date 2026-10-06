@@ -452,6 +452,39 @@ export function soleLeadIdentityFor(input: {
   };
 }
 
+/**
+ * The identity a lead-less row borrows from the one person key it names (#4969).
+ * A row minted from a shared listing carries no page of its own and, with no lead
+ * edge, no sole lead to speak for it; its live `inferredPiUserKey` still names the
+ * listed person, and that key's live `profileUrls` name that person's own page. Only
+ * one key and only one person-profile destination across its URLs may decide, so a
+ * row naming two people, or a key whose pages disagree, keeps no identity.
+ */
+export function mintKeyIdentityFor(input: {
+  mintUrl: unknown;
+  rolePersonIds: readonly string[];
+  mintKeys: readonly string[];
+  profileUrlsByKey: ReadonlyMap<string, readonly string[]>;
+  observedTitlesByDestination: ReadonlyMap<string, ReadonlySet<string>>;
+}): { url: string; titles: string[]; personIds: string[] } | undefined {
+  if (!mintCitationDefersToSoleLead(input.mintUrl)) return undefined;
+  if (input.rolePersonIds.length > 0) return undefined;
+  const keys = [...new Set(input.mintKeys.filter((key) => key.trim() !== ''))];
+  if (keys.length !== 1) return undefined;
+  const urlsByDestination = new Map<string, string>();
+  for (const url of input.profileUrlsByKey.get(keys[0]) ?? []) {
+    if (!isPersonProfileIdentityUrl(url)) continue;
+    urlsByDestination.set(normalizeOfficialProfileDestination(url), url);
+  }
+  if (urlsByDestination.size !== 1) return undefined;
+  const [[destination, url]] = [...urlsByDestination];
+  return {
+    url,
+    titles: [...(input.observedTitlesByDestination.get(destination) ?? [])],
+    personIds: [],
+  };
+}
+
 export function officialProfileUrlSpellings(url: string): string[] {
   const spellings = new Set([url]);
   let parsed: URL;

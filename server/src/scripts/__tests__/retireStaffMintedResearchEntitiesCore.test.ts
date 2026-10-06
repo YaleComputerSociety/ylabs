@@ -5,6 +5,7 @@ import {
   planStaffMintedEntityRetirement,
   officialProfileUrlSpellings,
   soleLeadIdentityFor,
+  mintKeyIdentityFor,
   staffMintedEntityReasonFor,
   summarizeStaffMintedEntityRefusals,
   type StaffMintedEntityCandidate,
@@ -534,5 +535,58 @@ describe('teaching appointment titles and creative practice (#4916, #4519)', () 
     expect(lecturer(false).toArchive.map((entry) => entry.reason)).toEqual([
       'teaching_appointment_title',
     ]);
+  });
+});
+
+describe('mintKeyIdentityFor', () => {
+  const roster = 'https://dept.example.edu/people/faculty';
+  const page = 'https://dept.example.edu/profile/p-3002/';
+  const borrow = (over: Record<string, unknown> = {}) =>
+    mintKeyIdentityFor({
+      mintUrl: roster,
+      rolePersonIds: [],
+      mintKeys: ['dept:example:p-3002'],
+      profileUrlsByKey: new Map([['dept:example:p-3002', [page]]]),
+      observedTitlesByDestination: new Map([
+        [normalizeOfficialProfileDestination(page), new Set(['Program Manager 2'])],
+      ]),
+      ...over,
+    });
+
+  it("reads a lead-less shared-listing row's identity from its one person key", () => {
+    expect(borrow()).toEqual({ url: page, titles: ['Program Manager 2'], personIds: [] });
+  });
+
+  it('keeps no identity when the row names two person keys', () => {
+    expect(borrow({ mintKeys: ['dept:example:p-3002', 'dept:example:p-3003'] })).toBeUndefined();
+  });
+
+  it("keeps no identity when the key's profile pages disagree", () => {
+    expect(
+      borrow({
+        profileUrlsByKey: new Map([
+          ['dept:example:p-3002', [page, 'https://dept.example.edu/profile/p-3004/']],
+        ]),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('defers to a lead edge and to a row minted from its own page', () => {
+    expect(borrow({ rolePersonIds: ['p'.repeat(24)] })).toBeUndefined();
+    expect(borrow({ mintUrl: page })).toBeUndefined();
+  });
+
+  it('feeds the planner so a non-hosting title on the borrowed page is retired', () => {
+    const identity = borrow()!;
+    const plan = planStaffMintedEntityRetirement([
+      candidate({
+        identityProfileUrl: identity.url,
+        storedTitles: identity.titles,
+        identityPersonIds: [],
+        roleEdgePersonIds: [],
+        descriptionStatesResearch: false,
+      }),
+    ]);
+    expect(plan.toArchive).toHaveLength(1);
   });
 });
