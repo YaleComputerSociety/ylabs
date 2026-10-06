@@ -71,6 +71,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `SENTRY_RELEASE` | No | Falls back to `RENDER_GIT_COMMIT`, which Render sets on every deploy, so leave it unset. | No |
 | `RENDER_GIT_COMMIT` | Set by Render | Reports carry no release. Never set it by hand. | No |
 | `RENDER` | Set by Render | `GET /api/config` reports `provider: unknown` instead of `render`. | No |
+| `RENDER_EXTERNAL_URL` | Set by Render | CORS trusts the service's own origin only through the allowlist, so a pull request preview, whose `onrender.com` origin is on no allowlist, renders a blank page. Only an exact `https` `onrender.com` origin with no port or path is trusted (`server/src/middleware/corsOrigin.ts`). Never set it by hand. | No |
 | `VITE_SENTRY_DSN` | No | The server reads it too: `server/src/middleware/securityHeaders.ts` opens `connect-src` to the Sentry ingest origin only when it is set, so without it the browser cannot deliver reports. | No; it ships in the client bundle by design |
 | `NODE_ENV` | Recommended, `production` | See "Deployed runtime" above. | No |
 | `PORT` | Set by Render | Defaults to 4000. | No |
