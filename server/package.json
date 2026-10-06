@@ -280,7 +280,8 @@
     "postcss": "8.5.23",
     "tar": "7.5.22",
     "qs": "6.16.0",
-    "on-headers": "1.1.0"
+    "on-headers": "1.1.0",
+    "source-map-js": "1.2.2"
   },
   "devDependencies": {
     "@types/cookie-session": "^2.0.49",
