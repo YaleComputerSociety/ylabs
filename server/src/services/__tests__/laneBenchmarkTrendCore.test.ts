@@ -4,6 +4,7 @@ import {
   classifyLaneBenchmarkChange,
   laneBenchmarkPanelEntries,
 } from '../laneBenchmarkTrendCore';
+import { benchmarksToReplay } from '../../scripts/laneScorecardCore';
 
 const row = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   measuredAt: new Date('2026-09-28T00:00:00Z'),
@@ -88,15 +89,25 @@ describe('classifyLaneBenchmarkChange', () => {
 
 describe('laneBenchmarkPanelEntries', () => {
   const stored = [
-    { benchmarkId: 'lane-a-v1', sourceName: 'lane-a' },
-    { benchmarkId: 'lane-a-v2', sourceName: 'lane-a', supersedes: 'lane-a-v1' },
-    { benchmarkId: 'lane-b-v1', sourceName: 'lane-b' },
-    { benchmarkId: 'lane-b-v2', sourceName: 'lane-b', supersedes: 'lane-b-v1' },
+    { benchmarkId: 'lane-a-v1', sourceName: 'lane-a', unfrozenRequestCount: 2 },
+    {
+      benchmarkId: 'lane-a-v2',
+      sourceName: 'lane-a',
+      supersedes: 'lane-a-v1',
+      unfrozenRequestCount: 2,
+    },
+    { benchmarkId: 'lane-b-v1', sourceName: 'lane-b', unfrozenRequestCount: 2 },
+    {
+      benchmarkId: 'lane-b-v2',
+      sourceName: 'lane-b',
+      supersedes: 'lane-b-v1',
+      unfrozenRequestCount: 2,
+    },
   ];
 
   it('shows only the newest benchmark of each recapture chain and names what it replaces', () => {
     const entries = laneBenchmarkPanelEntries(
-      stored,
+      benchmarksToReplay(stored),
       new Map([
         ['lane-a-v1', [row({ sourceName: 'lane-a' })]],
         ['lane-a-v2', [row({ sourceName: 'lane-a' })]],
@@ -111,7 +122,7 @@ describe('laneBenchmarkPanelEntries', () => {
 
   it('lists a current benchmark with no replay yet instead of hiding it', () => {
     const entries = laneBenchmarkPanelEntries(
-      stored,
+      benchmarksToReplay(stored),
       new Map([['lane-b-v1', [row({ sourceName: 'lane-b' })]]]),
     );
 
@@ -124,7 +135,9 @@ describe('laneBenchmarkPanelEntries', () => {
 
   it('builds the trend from the two newest scored runs and counts every scored run', () => {
     const entries = laneBenchmarkPanelEntries(
-      [{ benchmarkId: 'lane-c', sourceName: 'lane-c' }],
+      benchmarksToReplay([
+        { benchmarkId: 'lane-c', sourceName: 'lane-c', unfrozenRequestCount: 2 },
+      ]),
       new Map([
         [
           'lane-c',
@@ -143,5 +156,38 @@ describe('laneBenchmarkPanelEntries', () => {
       change: 'code-changed',
     });
     expect(entries.benchmarks[0].previous?.codeSha).toBe('bbb');
+  });
+
+  it('hides a current benchmark whose stored replays are all stale instead of calling it unreplayed', () => {
+    const entries = laneBenchmarkPanelEntries(
+      benchmarksToReplay([
+        { benchmarkId: 'lane-d', sourceName: 'lane-d', unfrozenRequestCount: 0 },
+      ]),
+      new Map([['lane-d', [row({ pagesMissed: 5 }), row({ pagesMissed: 3 })]]]),
+    );
+
+    expect(entries.benchmarks).toEqual([]);
+    expect(entries.awaitingReplay).toEqual([]);
+  });
+
+  it('leaves stale replays out of the trend and its run count', () => {
+    const entries = laneBenchmarkPanelEntries(
+      benchmarksToReplay([
+        { benchmarkId: 'lane-e', sourceName: 'lane-e', unfrozenRequestCount: 2 },
+      ]),
+      new Map([
+        [
+          'lane-e',
+          [
+            row({ codeSha: 'ccc', pagesMissed: 9, outputFingerprint: 'fp-3' }),
+            row({ codeSha: 'bbb', outputFingerprint: 'fp-2' }),
+            row({ codeSha: 'aaa', outputFingerprint: 'fp-1' }),
+          ],
+        ],
+      ]),
+    );
+
+    expect(entries.benchmarks[0]).toMatchObject({ runs: 2 });
+    expect(entries.benchmarks[0].latest.codeSha).toBe('bbb');
   });
 });

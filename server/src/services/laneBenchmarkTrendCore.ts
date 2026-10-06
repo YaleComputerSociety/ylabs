@@ -1,4 +1,8 @@
-import { benchmarksToReplay } from '../scripts/laneScorecardCore';
+import {
+  allowedReplayMisses,
+  staleReplayReason,
+  type ReplayMissBaselineInput,
+} from '../scripts/laneScorecardCore';
 
 export interface LaneBenchmarkGoldDto {
   field: string;
@@ -117,7 +121,7 @@ export function buildLaneBenchmarkTrend(
   };
 }
 
-export interface StoredLaneBenchmarkRef {
+export interface StoredLaneBenchmarkRef extends ReplayMissBaselineInput {
   benchmarkId: string;
   sourceName?: string | null;
   supersedes?: string | null;
@@ -135,34 +139,47 @@ export interface LaneBenchmarkPanelEntries {
   supersededCount: number;
 }
 
+export interface LaneBenchmarkReplaySelection {
+  replay: readonly StoredLaneBenchmarkRef[];
+  superseded: readonly unknown[];
+}
+
 /**
  * The panel shows the benchmarks a sweep replays, so a recapture replaces its predecessor
  * here exactly as it does in `lane:scorecard`. A replaced capture froze different input,
  * so its replays are not comparable with the successor's and are left out rather than merged.
  */
 export function laneBenchmarkPanelEntries(
-  stored: readonly StoredLaneBenchmarkRef[],
-  scoredRunsNewestFirst: ReadonlyMap<string, readonly Record<string, unknown>[]>,
+  { replay, superseded }: LaneBenchmarkReplaySelection,
+  storedRunsNewestFirst: ReadonlyMap<string, readonly Record<string, unknown>[]>,
 ): LaneBenchmarkPanelEntries {
-  const { replay, superseded } = benchmarksToReplay(stored);
   const benchmarks: LaneBenchmarkTrendDto[] = [];
   const awaitingReplay: LaneBenchmarkAwaitingReplayDto[] = [];
   for (const benchmark of [...replay].sort((a, b) => a.benchmarkId.localeCompare(b.benchmarkId))) {
-    const runs = scoredRunsNewestFirst.get(benchmark.benchmarkId) ?? [];
+    const stored = storedRunsNewestFirst.get(benchmark.benchmarkId) ?? [];
     const supersedes = benchmark.supersedes || null;
-    const trend = buildLaneBenchmarkTrend(
-      benchmark.benchmarkId,
-      runs.slice(0, 2),
-      runs.length,
-      supersedes,
-    );
-    if (trend) benchmarks.push(trend);
-    else
+    if (stored.length === 0) {
       awaitingReplay.push({
         benchmarkId: benchmark.benchmarkId,
         sourceName: text(benchmark.sourceName),
         supersedes,
       });
+      continue;
+    }
+    // A stored row that missed more than its capture left unfrozen measured a changed prompt
+    // or drifted targets rather than the lane, so it is left out of the trend it would
+    // otherwise read as a collapse (#3816).
+    const allowed = allowedReplayMisses(benchmark, stored);
+    const scored = stored.filter(
+      (run) => !staleReplayReason(Number(run.pagesMissed ?? 0), allowed),
+    );
+    const trend = buildLaneBenchmarkTrend(
+      benchmark.benchmarkId,
+      scored.slice(0, 2),
+      scored.length,
+      supersedes,
+    );
+    if (trend) benchmarks.push(trend);
   }
   return { benchmarks, awaitingReplay, supersededCount: superseded.length };
 }

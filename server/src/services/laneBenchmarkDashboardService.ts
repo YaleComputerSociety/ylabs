@@ -7,11 +7,7 @@ import {
   EngineBenchmarkSnapshot,
   ENGINE_BENCHMARK_SNAPSHOT_COLLECTION,
 } from '../models/engineBenchmarkSnapshot';
-import {
-  allowedReplayMisses,
-  benchmarksToReplay,
-  staleReplayReason,
-} from '../scripts/laneScorecardCore';
+import { benchmarksToReplay } from '../scripts/laneScorecardCore';
 import {
   laneBenchmarkPanelEntries,
   type LaneBenchmarkAwaitingReplayDto,
@@ -30,7 +26,7 @@ const LANE_BENCHMARK_RUN_PROJECTION =
   'measuredAt codeSha sourceName pagesServed pagesMissed emitted knownWrong byField outputFingerprint gold';
 
 export const ENGINE_BENCHMARK_REFRESH_COMMAND =
-  'yarn --cwd server engine:benchmark --benchmark=<benchmark-id> --apply --confirm-engine-benchmark';
+  'yarn --cwd server engine:benchmark --apply --confirm-engine-benchmark';
 
 const ENGINE_BENCHMARK_RUN_PROJECTION =
   'measuredAt codeSha rowsReplayed rowsWithIncompleteInput invalidatedRunSetChanged resolved cleared knownWrong labelsMatched labelCount outputFingerprint';
@@ -95,31 +91,23 @@ export async function getLaneBenchmarkDashboard(): Promise<LaneBenchmarkDashboar
     unfrozenRequestCount?: number;
     codeSha?: string;
   }>;
-  const { replay: current } = benchmarksToReplay(stored);
-  const [scoredRuns, engine] = await Promise.all([
+  const selection = benchmarksToReplay(stored);
+  const [storedRuns, engine] = await Promise.all([
     Promise.all(
-      current.map(async (benchmark) => {
-        const allRuns = await LaneScorecardSnapshot.find(
-          { benchmarkId: benchmark.benchmarkId },
+      selection.replay.map(async ({ benchmarkId }) => {
+        const runs = await LaneScorecardSnapshot.find(
+          { benchmarkId },
           LANE_BENCHMARK_RUN_PROJECTION,
         )
           .sort({ measuredAt: -1 })
           .lean();
-        // A stored row that missed more than its capture left unfrozen measured a changed prompt
-        // or drifted targets rather than the lane, so it is left out of the trend it would
-        // otherwise read as a collapse (#3816).
-        const runs = allRuns as Record<string, unknown>[];
-        const allowed = allowedReplayMisses(benchmark, runs);
-        const scored = runs.filter(
-          (run) => !staleReplayReason(Number(run.pagesMissed ?? 0), allowed),
-        );
-        return [benchmark.benchmarkId, scored] as const;
+        return [benchmarkId, runs as Record<string, unknown>[]] as const;
       }),
     ),
     getEngineBenchmarkDashboard(),
   ]);
   return {
-    ...laneBenchmarkPanelEntries(stored, new Map(scoredRuns)),
+    ...laneBenchmarkPanelEntries(selection, new Map(storedRuns)),
     measurementCollection: LANE_SCORECARD_SNAPSHOT_COLLECTION,
     refreshCommand: LANE_BENCHMARK_REFRESH_COMMAND,
     engine,
