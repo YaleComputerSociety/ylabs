@@ -343,6 +343,92 @@ export interface CoverageSynthesisDecision {
   refusal: CoverageSynthesisRefusal | null;
 }
 
+export interface WrittenDescriptionJudgement {
+  description: string | null;
+  refusal: CoverageSynthesisRefusal | null;
+}
+
+/**
+ * Every content arm of the writer, run on one drafted body. It is the single owner of
+ * those arms so a fresh draft and an already-adopted body are judged by the same code:
+ * a second copy for the adopted body would drift from this one the moment an arm moves,
+ * the #3068 shape of a re-derivation that attributes verdicts to gates that did not fire.
+ * The arm order is the attribution order, so it must not change.
+ */
+export function judgeWrittenDescription(input: {
+  drafted: string;
+  snippets: readonly CoverageSnippet[];
+  researchAreas?: unknown;
+  entityType?: ResearchEntityType;
+  citedSnippetCount: number;
+}): WrittenDescriptionJudgement {
+  const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
+    description: null,
+    refusal,
+  });
+  const drafted = redactDirectContactInfo(textValue(input.drafted));
+  if (!drafted) return refuse('empty-description');
+  const stripped = withoutUnsupportedSentences(drafted);
+  if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
+  const snippetTexts = input.snippets.map((snippet) => snippet.text);
+  const currentOnly = withoutPastFramedRestatements(stripped.description, snippetTexts);
+  const methodChecked = withoutUnsupportedMethodClauses(
+    currentOnly ?? stripped.description,
+    snippetTexts,
+  ).text;
+  const description = methodChecked ?? currentOnly ?? stripped.description;
+
+  if (input.citedSnippetCount === 0) return refuse('no-cited-snippets');
+
+  const corpus = snippetTexts.join(' \n ');
+  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
+    return refuse('grounding-overlap-below-floor');
+  }
+  // Before the quality bar, which blanks the same shape through the serve sanitizer and
+  // would otherwise report a narrating body as a generic quality verdict.
+  if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
+  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+    return refuse('quality-bar');
+  }
+  // After the older arms, so every arm above keeps the attribution it had and each
+  // count below is exactly the bodies that would otherwise have been ACCEPTED. A refusal
+  // placed earlier would absorb rows another gate was already refusing and overstate
+  // itself, which is the #2440 shape of a counter that misreports its own outcome.
+  if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
+  if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
+  if (!currentOnly) return refuse('past-framed-restatement');
+  if (!methodChecked) return refuse('unsupported-method-clause');
+  return { description, refusal: null };
+}
+
+const normalizedBody = (value: unknown): string => textValue(value).replace(/\s+/g, ' ').trim();
+
+/**
+ * Whether a body the writer already adopted still clears every content arm against the
+ * row's current evidence, unchanged. A refusal of a new draft judges that draft, not the
+ * body already served: retiring an adopted body on that verdict alone put 97 rows back
+ * on copied text in one all-rows run, when the bodies themselves still passed. It must
+ * pass verbatim, because the served text is the stored text and an arm that would have
+ * trimmed it means the stored body is not what the arms accept.
+ */
+export function adoptedWrittenBodyStillSupported(input: {
+  body: unknown;
+  snippets: readonly CoverageSnippet[];
+  researchAreas?: unknown;
+  entityType?: ResearchEntityType;
+}): boolean {
+  const body = normalizedBody(input.body);
+  if (!body || input.snippets.length === 0) return false;
+  const judged = judgeWrittenDescription({
+    drafted: body,
+    snippets: input.snippets,
+    researchAreas: input.researchAreas,
+    entityType: input.entityType,
+    citedSnippetCount: input.snippets.length,
+  });
+  return judged.refusal === null && normalizedBody(judged.description) === body;
+}
+
 /**
  * Fuse thin/alternate evidence snippets into one description via the LLM, then
  * FAIL CLOSED: the result is discarded unless its distinctive tokens are grounded
@@ -381,43 +467,22 @@ export async function coverageSynthesisDecision(
   }
   if (!raw || typeof raw !== 'object') return refuse('llm-malformed-response');
 
-  const drafted = redactDirectContactInfo(textValue(raw.fullDescription));
-  if (!drafted) return refuse('empty-description');
-  const stripped = withoutUnsupportedSentences(drafted);
-  if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
-  const snippetTexts = snippets.map((snippet) => snippet.text);
-  const currentOnly = withoutPastFramedRestatements(stripped.description, snippetTexts);
-  const methodChecked = withoutUnsupportedMethodClauses(
-    currentOnly ?? stripped.description,
-    snippetTexts,
-  ).text;
-  const description = methodChecked ?? currentOnly ?? stripped.description;
-
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
         (index) => Number.isInteger(index) && index >= 0 && index < snippets.length,
       )
     : [];
-  if (usedSnippetIndexes.length === 0) return refuse('no-cited-snippets');
-
-  const corpus = snippets.map((snippet) => snippet.text).join(' \n ');
-  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
-    return refuse('grounding-overlap-below-floor');
+  const judged = judgeWrittenDescription({
+    drafted: textValue(raw.fullDescription),
+    snippets,
+    researchAreas: input.researchAreas,
+    entityType: input.entityType,
+    citedSnippetCount: usedSnippetIndexes.length,
+  });
+  if (judged.refusal || !judged.description) {
+    return refuse(judged.refusal ?? 'empty-description');
   }
-  // Before the quality bar, which blanks the same shape through the serve sanitizer and
-  // would otherwise report a narrating body as a generic quality verdict.
-  if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
-    return refuse('quality-bar');
-  }
-  // After the older arms, so every arm above keeps the attribution it had and each
-  // count below is exactly the bodies that would otherwise have been ACCEPTED. A refusal
-  // placed earlier would absorb rows another gate was already refusing and overstate
-  // itself, which is the #2440 shape of a counter that misreports its own outcome.
-  if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
-  if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
-  if (!currentOnly) return refuse('past-framed-restatement');
-  if (!methodChecked) return refuse('unsupported-method-clause');
+  const { description } = judged;
 
   const sourceUrls = Array.from(
     new Set(

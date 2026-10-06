@@ -1234,7 +1234,12 @@ Measured read-only on Development before the change, over the 2,999 `student_rea
 Each run is keyed on a hash of the ordered snippet set, the prompt hash and `WRITER_CONTRACT_VERSION`, stored as the lane's `sourceContentHash`, so a re-run calls the model only for a row whose evidence or prompt changed.
 A failed call records no hash, so the next run retries that row.
 A body the store refuses (`appendObservations` drops it) records no hash either and retires the lane's earlier body, so the row falls back to copied text and is judged again next run (`writerWritesAfterBodyAttempt`).
-On a content refusal, and on a row with no evidence left, the lane retires its own earlier body, because a body the current evidence no longer supports must not keep outranking the fallback.
+On a row with no evidence left, the lane retires its own earlier body, because a body the current evidence no longer supports must not keep outranking the fallback.
+On a content refusal it retires the earlier body only when that body itself fails the content arms against the same evidence (`adoptedWrittenBodyStillSupported`, which runs the one shared `judgeWrittenDescription` a fresh draft runs and requires the body to pass verbatim), because the refusal judges the new draft, not the body already served.
+Before this, the all-rows apply on 2026-10-06 retired 180 adopted bodies on a refused redraft, and a model-free read afterwards found 163 of them still cleared every arm.
+The refusal still records the evidence hash, so an unchanged row is not paid for again.
+`--reinstate-retired-bodies --slugs=<list>` brings back a body the lane retired for that reason when it clears the arms today and the row has no live written body, with no model call; it un-retires that one observation and re-materializes the row.
+`--ignore-evidence-hash --slugs=<list>` re-judges named rows whose evidence is unchanged, paying one call each; it is refused with `--all`, so the hash still bounds an all-rows run.
 Every refusal names its arm, including the deterministic arms the writer added: `past-career-clause`, `source-narration`, `over-length`, `unsupported-method-clause` and `past-framed-restatement`.
 In apply mode each changed row is materialized, the touched rows are regated through `regateRematerializedEntities`, which also re-syncs their search documents, and the report counts `written`, `observationDropped`, `retired` and `adopted`.
 Read `adopted`, not `written`, for what students now see.

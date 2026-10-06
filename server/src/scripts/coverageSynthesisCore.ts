@@ -33,6 +33,8 @@ export interface CoverageSynthesisArgs {
   concurrency: number;
   slugs: string[];
   skipIndexSync: boolean;
+  ignoreEvidenceHash: boolean;
+  reinstateRetiredBodies: boolean;
   output?: string;
 }
 
@@ -56,6 +58,8 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     concurrency: DEFAULT_COVERAGE_SYNTHESIS_CONCURRENCY,
     slugs: [],
     skipIndexSync: false,
+    ignoreEvidenceHash: false,
+    reinstateRetiredBodies: false,
   };
   for (const token of argv) {
     if (token === '--apply') args.apply = true;
@@ -64,6 +68,8 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--all') args.all = true;
     else if (token === '--rederive-cards') args.rederiveCards = true;
     else if (token === '--skip-index-sync') args.skipIndexSync = true;
+    else if (token === '--ignore-evidence-hash') args.ignoreEvidenceHash = true;
+    else if (token === '--reinstate-retired-bodies') args.reinstateRetiredBodies = true;
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
     else if (token.startsWith('--concurrency=')) {
       args.concurrency = Number(token.slice('--concurrency='.length));
@@ -84,10 +90,46 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
   return args;
 }
 
+/**
+ * `--ignore-evidence-hash` re-judges rows whose evidence is unchanged, so it pays for a
+ * call the evidence hash exists to save. It is refused with `--all` and allowed only on a
+ * named `--slugs` set, which bounds the spend to rows an operator chose to re-judge.
+ */
+export function assertIgnoreEvidenceHashScoped(args: CoverageSynthesisArgs): void {
+  if (args.reinstateRetiredBodies && args.slugs.length === 0) {
+    throw new Error(
+      'research-entity:coverage-synthesis --reinstate-retired-bodies requires --slugs=<slug,...>',
+    );
+  }
+  if (!args.ignoreEvidenceHash) return;
+  if (args.all) {
+    throw new Error(
+      'research-entity:coverage-synthesis --ignore-evidence-hash is refused with --all; name the rows with --slugs',
+    );
+  }
+  if (args.slugs.length === 0) {
+    throw new Error(
+      'research-entity:coverage-synthesis --ignore-evidence-hash requires --slugs=<slug,...>',
+    );
+  }
+}
+
+/**
+ * The stored evidence hash the writer compares against, or none when the operator asked
+ * to re-judge a named set regardless of it.
+ */
+export function writerStoredHashFor(
+  args: Pick<CoverageSynthesisArgs, 'ignoreEvidenceHash'>,
+  storedHash: string | undefined,
+): string | undefined {
+  return args.ignoreEvidenceHash ? undefined : storedHash;
+}
+
 export function assertCoverageSynthesisApplyAllowed(
   args: CoverageSynthesisArgs,
   dbLabel: string,
 ): void {
+  assertIgnoreEvidenceHashScoped(args);
   if (!args.apply) return;
   if (!args.confirm) {
     throw new Error(
@@ -345,12 +387,16 @@ export interface WriterWrites {
 /**
  * What one writer step stores. The written body is a derivation of the evidence it was
  * written from, so a body the current evidence no longer supports is retired rather than
- * left to outrank the copied fallback: on a refusal, and when the row has no evidence
- * left. A failed call judged nothing, so it records no hash and the next run retries.
+ * left to outrank the copied fallback: when the row has no evidence left, and on a
+ * refusal of the new draft unless the body already adopted still clears every content
+ * arm against the same evidence (`adoptedWrittenBodyStillSupported`). The refusal judges
+ * the draft, not the served body. A failed call judged nothing, so it records no hash and
+ * the next run retries.
  */
 export function writerWritesFor(
   step: WriterStep,
   decision: CoverageSynthesisDecision | null,
+  options: { adoptedBodyStillSupported?: boolean } = {},
 ): WriterWrites {
   if (step === 'evidence-unchanged') {
     return { writeBody: false, retireBody: false, recordHash: false };
@@ -360,7 +406,11 @@ export function writerWritesFor(
     return { writeBody: false, retireBody: false, recordHash: false };
   }
   if (decision.result) return { writeBody: true, retireBody: false, recordHash: true };
-  return { writeBody: false, retireBody: true, recordHash: true };
+  return {
+    writeBody: false,
+    retireBody: !options.adoptedBodyStillSupported,
+    recordHash: true,
+  };
 }
 
 /**
@@ -391,6 +441,41 @@ export function writerObservationAnchors(input: {
   }
   if (input.entityId) anchors.push({ entityId: input.entityId });
   return anchors;
+}
+
+export type ReinstateStep = 'reinstated' | 'reinstate-refused' | 'nothing-to-reinstate';
+
+/**
+ * What `--reinstate-retired-bodies` does with one row. A body the writer retired only
+ * because a later draft was refused comes back when, judged against today's evidence by
+ * the same content arms, it would not be retired under the refusal rule now in force.
+ * A row that already serves a live written body is left alone, and so is one whose
+ * retired body no longer clears the arms. No model is called.
+ */
+export function reinstateStepFor(input: {
+  liveBody: string | undefined;
+  retiredBody: string | undefined;
+  retiredBodyStillSupported: boolean;
+}): ReinstateStep {
+  if (input.liveBody || !input.retiredBody) return 'nothing-to-reinstate';
+  return input.retiredBodyStillSupported ? 'reinstated' : 'reinstate-refused';
+}
+
+/** The newest live body this lane wrote for the row, from observations already read. */
+export function liveWrittenBody(
+  observations: ReadonlyArray<CoverageObservationLike & { observedAt?: Date }>,
+  sourceName: string,
+): string | undefined {
+  const bodies = observations
+    .filter(
+      (obs) =>
+        obs.sourceName === sourceName &&
+        obs.field === 'fullDescription' &&
+        typeof obs.value === 'string' &&
+        obs.value.trim().length > 0,
+    )
+    .sort((a, b) => (b.observedAt?.getTime() ?? 0) - (a.observedAt?.getTime() ?? 0));
+  return bodies[0]?.value as string | undefined;
 }
 
 export function storedWriterEvidenceHash(
