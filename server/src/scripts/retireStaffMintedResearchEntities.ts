@@ -7,12 +7,13 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import { userEntityKeyForInferredPiUserKey } from '../scrapers/entityMaterializer';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -263,8 +264,8 @@ const LIVE_OBSERVATION_FILTER = {
 };
 
 /**
- * Each lead-less row's live `inferredPiUserKey` values. A row's observations carry
- * either its id or its slug as their identity, so both forms are read.
+ * Each lead-less row's live `inferredPiUserKey` values, in `user`-key form. A row's
+ * observations carry either its id or its slug as their identity, so both forms are read.
  */
 async function liveMintKeysById(
   ids: readonly string[],
@@ -281,6 +282,7 @@ async function liveMintKeysById(
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
     .map((id) => new mongoose.Types.ObjectId(id));
   for (const observation of await Observation.find({
+    entityType: { $in: researchEntityObservationSubjects },
     field: 'inferredPiUserKey',
     ...LIVE_OBSERVATION_FILTER,
     $or: [{ entityId: { $in: objectIds } }, { entityKey: { $in: [...idBySlug.keys()] } }],
@@ -290,7 +292,7 @@ async function liveMintKeysById(
     const id =
       serializedDocumentId((observation as { entityId?: unknown }).entityId) ||
       idBySlug.get(String((observation as { entityKey?: unknown }).entityKey ?? ''));
-    const value = typeof observation.value === 'string' ? observation.value.trim() : '';
+    const value = userEntityKeyForInferredPiUserKey(observation.value);
     if (!id || !value) continue;
     const held = keysById.get(id) || [];
     if (!held.includes(value)) held.push(value);
@@ -539,7 +541,8 @@ async function main(): Promise<void> {
 
   const plan = planStaffMintedEntityRetirement(candidates);
   const recordScope = args.recordIds ? new Set(args.recordIds) : null;
-  const toApply = entriesInReasonScope(plan.toArchive, args.reasons)
+  const plannedInReasonScope = entriesInReasonScope(plan.toArchive, args.reasons);
+  const toApply = plannedInReasonScope
     .filter((entry) => !recordScope || recordScope.has(entry.id))
     .slice(0, args.maxApply);
 
@@ -562,7 +565,11 @@ async function main(): Promise<void> {
     refusedByReason: summarizeStaffMintedEntityRefusals(plan.refused),
     appliedLimit: args.maxApply,
     reasonScope: args.reasons || 'all',
-    plannedInReasonScope: entriesInReasonScope(plan.toArchive, args.reasons).length,
+    plannedInReasonScope: plannedInReasonScope.length,
+    recordScope: args.recordIds || 'all',
+    recordIdsNotPlanned: (args.recordIds || []).filter(
+      (id) => !plannedInReasonScope.some((entry) => entry.id === id),
+    ),
     // The pre-apply state of exactly the rows this run touches. A peer session
     // writes Development concurrently, so a post-hoc tier delta over the corpus
     // cannot be attributed to this run without it.
