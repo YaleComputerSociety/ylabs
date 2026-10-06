@@ -146,9 +146,12 @@ Every capture and replay still goes through the orchestrator, so each one leaves
 
 ## The analytics panel
 
-`/analytics` shows every stored benchmark in the "Is each lane getting better?" panel, served by the admin-only `GET /api/analytics/lane-benchmarks` (#3591).
+`/analytics` shows the benchmarks a sweep replays in the "Is each lane getting better?" panel, served by the admin-only `GET /api/analytics/lane-benchmarks` (#3591).
+The panel applies the same recapture rule as an unnamed `lane:scorecard` run, so a successor replaces the benchmark it supersedes and names it as "Replaces <old-id>"; the replaced capture froze different input, so its replays are not comparable with the successor's and are counted as hidden rather than merged (#4970).
+A current benchmark captured since the last replay has no stored row yet and is listed under "Awaiting a first replay", because hiding it would leave the panel showing a replaced capture as the lane's current reading.
 Each benchmark shows its latest stored replay, and each change compares it with the replay stored before it, never with a live run.
 A stored replay that missed more than its capture left unfrozen is left out of both, as "Hand-judged labels" below describes.
+A current benchmark whose every stored replay is left out that way is hidden rather than listed as awaiting, because it has been replayed and needs a recapture instead.
 Known wrong is shown over its labeled population, input coverage as pages served and missed, and each hand-labeled field as precision and recall with their counts.
 Each of those carries its change from the previous replay, so a lane with no hand labels still shows whether it got better or worse.
 
@@ -162,6 +165,7 @@ The panel reads the output fingerprint and the code version together, because a 
 
 A live-model band is never stored, so it never appears here; read it from `--live-model`.
 The same route also serves the engine benchmarks under `engine`, read from `engine_benchmark_snapshots`, which `engineBenchmark.ts` stores keyed by `benchmarkId` and `stage` (#4605).
+Only `SWEEP_ENGINE_BENCHMARK_ID`, the benchmark each sweep replays and the default of `engine:benchmark`, is shown; the rest are one-off probes captured for a single investigation and never replayed again, so their last replay is not a current reading of the engine and the panel reports their count instead (#4970).
 The panel shows each benchmark and stage's latest stored replay and its change from the replay stored before it, with the same fingerprint and code-version reading as the lane rows.
 An engine replay also records whether it read a row the capture did not freeze, or found the quarantined run set moved, and a fingerprint change where either replay did so is shown as unattributable rather than as a code change.
 

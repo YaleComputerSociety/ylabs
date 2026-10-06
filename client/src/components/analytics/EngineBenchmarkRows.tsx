@@ -108,6 +108,13 @@ const EngineBenchmarkRows = ({ engine }: { engine: EngineBenchmarkResponse }) =>
       Refreshed each Development sweep, or by{' '}
       <code className="rounded bg-panel-muted px-1 py-0.5">{engine.refreshCommand}</code>.
     </p>
+    {engine.oneOffBenchmarkCount ? (
+      <p className="mt-1 text-xs text-muted">
+        Showing the benchmark each sweep replays. {formatNumber(engine.oneOffBenchmarkCount)}{' '}
+        one-off probe {engine.oneOffBenchmarkCount === 1 ? 'benchmark is' : 'benchmarks are'} not
+        shown.
+      </p>
+    ) : null}
     {engine.benchmarks.length === 0 ? (
       <p className="py-3 text-sm text-muted">No engine benchmark has been replayed yet.</p>
     ) : (
