@@ -7,12 +7,13 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import { userEntityKeyForInferredPiUserKey } from '../scrapers/entityMaterializer';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -29,6 +30,7 @@ import {
   mintCitationDefersToSoleLead,
   officialProfileUrlSpellings,
   soleLeadIdentityFor,
+  mintKeyIdentityFor,
   type SoleLeadRecord,
   planStaffMintedEntityRetirement,
   summarizeStaffMintedEntityReasons,
@@ -51,6 +53,7 @@ export interface RetireStaffMintedEntitiesCliOptions {
   output?: string;
   outputRequested?: boolean;
   reasons?: StaffMintedEntityReason[];
+  recordIds?: string[];
 }
 
 const isStaffMintedEntityReason = (value: string): value is StaffMintedEntityReason =>
@@ -96,6 +99,16 @@ export function parseRetireStaffMintedEntitiesArgs(
         );
       }
       options.reasons = [...new Set([...(options.reasons || []), reason])];
+      continue;
+    }
+    if (arg.startsWith('--record-id=')) {
+      const id = arg.slice('--record-id='.length).trim();
+      if (!/^[a-f0-9]{24}$/i.test(id)) {
+        throw new Error(
+          `--record-id must be a 24-character object id; received ${JSON.stringify(id)}`,
+        );
+      }
+      options.recordIds = [...new Set([...(options.recordIds || []), id])];
       continue;
     }
     if (arg.startsWith('--output=')) {
@@ -247,6 +260,76 @@ async function addLiveTitlesByDestination(
   }
 }
 
+const LIVE_OBSERVATION_FILTER = {
+  superseded: { $ne: true },
+  'rollback.rolledBackAt': { $exists: false },
+};
+
+/**
+ * Each lead-less row's live `inferredPiUserKey` values, in `user`-key form. A row's
+ * observations carry either its id or its slug as their identity, so both forms are read.
+ */
+async function liveMintKeysById(
+  ids: readonly string[],
+  slugById: ReadonlyMap<string, string>,
+): Promise<Map<string, string[]>> {
+  const keysById = new Map<string, string[]>();
+  if (ids.length === 0) return keysById;
+  const idBySlug = new Map<string, string>();
+  for (const id of ids) {
+    const slug = slugById.get(id);
+    if (slug) idBySlug.set(slug, id);
+  }
+  const objectIds = ids
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  for (const observation of await Observation.find({
+    entityType: { $in: researchEntityObservationSubjects },
+    field: 'inferredPiUserKey',
+    ...LIVE_OBSERVATION_FILTER,
+    $or: [{ entityId: { $in: objectIds } }, { entityKey: { $in: [...idBySlug.keys()] } }],
+  })
+    .select('entityId entityKey value')
+    .lean()) {
+    const id =
+      serializedDocumentId((observation as { entityId?: unknown }).entityId) ||
+      idBySlug.get(String((observation as { entityKey?: unknown }).entityKey ?? ''));
+    const value = userEntityKeyForInferredPiUserKey(observation.value);
+    if (!id || !value) continue;
+    const held = keysById.get(id) || [];
+    if (!held.includes(value)) held.push(value);
+    keysById.set(id, held);
+  }
+  return keysById;
+}
+
+/** Each person key's live `profileUrls`, flattened from the stored object or string. */
+async function liveProfileUrlsByKey(keys: readonly string[]): Promise<Map<string, string[]>> {
+  const urlsByKey = new Map<string, string[]>();
+  if (keys.length === 0) return urlsByKey;
+  for (const observation of await Observation.find({
+    entityType: 'user',
+    field: 'profileUrls',
+    entityKey: { $in: keys },
+    ...LIVE_OBSERVATION_FILTER,
+  })
+    .select('entityKey value')
+    .lean()) {
+    const key = String((observation as { entityKey?: unknown }).entityKey ?? '');
+    const value = observation.value as unknown;
+    const urls = (
+      typeof value === 'string'
+        ? [value]
+        : value && typeof value === 'object'
+          ? Object.values(value as Record<string, unknown>)
+          : []
+    ).filter((url): url is string => typeof url === 'string' && url !== '');
+    if (!key || urls.length === 0) continue;
+    urlsByKey.set(key, [...new Set([...(urlsByKey.get(key) || []), ...urls])]);
+  }
+  return urlsByKey;
+}
+
 async function main(): Promise<void> {
   const args = parseRetireStaffMintedEntitiesArgs(process.argv.slice(2));
   // Resolved before the database is opened, so an unwritable report path fails the
@@ -267,7 +350,7 @@ async function main(): Promise<void> {
 
   const rows = await ResearchEntity.find(LIVE_ENTITY_FILTER)
     .select(
-      '_id archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
+      '_id slug archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
     )
     .lean();
 
@@ -361,7 +444,27 @@ async function main(): Promise<void> {
       .filter((url): url is string => typeof url === 'string' && url !== ''),
   );
   await addLiveTitlesByDestination(titlesByDestination, leadPageUrls);
+
+  const leadlessMintIds = [...mintUrlById.entries()]
+    .filter(
+      ([id, mintUrl]) =>
+        (roleEdgePersonIdsById.get(id) || []).length === 0 && mintCitationDefersToSoleLead(mintUrl),
+    )
+    .map(([id]) => id);
+  const slugById = new Map<string, string>();
+  for (const row of rows) {
+    const id = serializedDocumentId(row._id);
+    if (id && typeof (row as { slug?: unknown }).slug === 'string') {
+      slugById.set(id, (row as { slug: string }).slug);
+    }
+  }
+  const mintKeysById = await liveMintKeysById(leadlessMintIds, slugById);
+  const profileUrlsByKey = await liveProfileUrlsByKey([
+    ...new Set([...mintKeysById.values()].flat()),
+  ]);
+  await addLiveTitlesByDestination(titlesByDestination, [...profileUrlsByKey.values()].flat());
   let identitiesReadFromSoleLead = 0;
+  let identitiesReadFromMintKey = 0;
   const identityFor = (id: string): { url?: string; titles: string[]; personIds: string[] } => {
     const url = identityUrlById.get(id);
     if (url) {
@@ -377,9 +480,20 @@ async function main(): Promise<void> {
       leadById,
       observedTitlesByDestination: titlesByDestination,
     });
-    if (!borrowed) return { titles: [], personIds: [] };
-    identitiesReadFromSoleLead += 1;
-    return borrowed;
+    if (borrowed) {
+      identitiesReadFromSoleLead += 1;
+      return borrowed;
+    }
+    const fromKey = mintKeyIdentityFor({
+      mintUrl: mintUrlById.get(id),
+      rolePersonIds: roleEdgePersonIdsById.get(id) || [],
+      mintKeys: mintKeysById.get(id) || [],
+      profileUrlsByKey,
+      observedTitlesByDestination: titlesByDestination,
+    });
+    if (!fromKey) return { titles: [], personIds: [] };
+    identitiesReadFromMintKey += 1;
+    return fromKey;
   };
 
   const candidates: StaffMintedEntityCandidate[] = rows.flatMap((row) => {
@@ -427,11 +541,16 @@ async function main(): Promise<void> {
   });
 
   const plan = planStaffMintedEntityRetirement(candidates);
-  const toApply = entriesInReasonScope(plan.toArchive, args.reasons).slice(0, args.maxApply);
+  const recordScope = args.recordIds ? new Set(args.recordIds) : null;
+  const plannedInReasonScope = entriesInReasonScope(plan.toArchive, args.reasons);
+  const toApply = plannedInReasonScope
+    .filter((entry) => !recordScope || recordScope.has(entry.id))
+    .slice(0, args.maxApply);
 
   const report: Record<string, unknown> = {
     script: SCRIPT_NAME,
     identitiesReadFromSoleLead,
+    identitiesReadFromMintKey,
     mode: args.apply ? 'apply' : 'dry-run',
     liveRows: rows.length,
     rowsWithAPersonProfileIdentity: identityUrlById.size,
@@ -447,7 +566,11 @@ async function main(): Promise<void> {
     refusedByReason: summarizeStaffMintedEntityRefusals(plan.refused),
     appliedLimit: args.maxApply,
     reasonScope: args.reasons || 'all',
-    plannedInReasonScope: entriesInReasonScope(plan.toArchive, args.reasons).length,
+    plannedInReasonScope: plannedInReasonScope.length,
+    recordScope: args.recordIds || 'all',
+    recordIdsNotPlanned: (args.recordIds || []).filter(
+      (id) => !plannedInReasonScope.some((entry) => entry.id === id),
+    ),
     // The pre-apply state of exactly the rows this run touches. A peer session
     // writes Development concurrently, so a post-hoc tier delta over the corpus
     // cannot be attributed to this run without it.

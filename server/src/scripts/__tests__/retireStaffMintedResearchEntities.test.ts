@@ -116,6 +116,18 @@ describe('parseRetireStaffMintedEntitiesArgs', () => {
 });
 
 describe('reason scope', () => {
+  it('reads each --record-id once and refuses a value that is not an object id', () => {
+    expect(parseRetireStaffMintedEntitiesArgs([]).recordIds).toBeUndefined();
+    const id = '0123456789abcdef01234567';
+    expect(
+      parseRetireStaffMintedEntitiesArgs([`--record-id=${id}`, `--record-id=${id}`]).recordIds,
+    ).toEqual([id]);
+    expect(() => parseRetireStaffMintedEntitiesArgs(['--record-id=not-an-id'])).toThrow(
+      /--record-id/,
+    );
+    expect(() => parseRetireStaffMintedEntitiesArgs(['--record-id='])).toThrow(/--record-id/);
+  });
+
   it('reads each --reason as a scope and refuses a reason the stage does not plan', () => {
     expect(parseRetireStaffMintedEntitiesArgs([]).reasons).toBeUndefined();
     expect(
