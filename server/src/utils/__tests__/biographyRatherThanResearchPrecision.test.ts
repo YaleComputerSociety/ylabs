@@ -4,6 +4,7 @@ import { isBiographyRatherThanResearch } from '../biographyRatherThanResearch';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   servedBodyIsBiographyWithoutResearch,
+  servedBodyIsCareerBiographyWithoutResearch,
 } from '../../services/researchEntityPublicDescription';
 import { gatherCoverageSnippets, writerEvidenceTextOf } from '../../scrapers/coverageSynthesis';
 
@@ -133,7 +134,7 @@ describe('a served career biography that states its research later', () => {
 });
 
 describe('a biography only the precision detector reads', () => {
-  it('stays served rather than held when neither body nor card states research', () => {
+  it('is held under its own reason when neither body nor card states research', () => {
     const body =
       'Sam Example has previously taught at Example College. She enjoys exploring the outdoors.';
 
@@ -146,6 +147,7 @@ describe('a biography only the precision detector reads', () => {
 
     expect(isBiographyRatherThanResearch(body)).toBe(true);
     expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
+    expect(servedBodyIsCareerBiographyWithoutResearch(representation)).toBe(true);
   });
 });
 

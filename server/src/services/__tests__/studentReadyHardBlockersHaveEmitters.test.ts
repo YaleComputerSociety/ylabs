@@ -307,6 +307,20 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
       },
       leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
     }),
+  career_biography_without_research: () =>
+    researchReasons({
+      entity: {
+        name: 'Example Person Faculty Research',
+        slug: 'career-biography-without-research-fixture',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        researchAreas: [],
+        shortDescription: 'Professor at Example University since 2001.',
+        fullDescription:
+          'Example Person has previously taught at Example College. She enjoys exploring the outdoors.',
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+    }),
   inactive_at_yale: () => researchReasons({ entity: { activeAtYaleCache: false } }),
   archive_review: () => programReasons({ studentFacingCategory: 'Archive / review' }),
   not_undergraduate_relevant: () => programReasons({ title: 'Find Funding' }),
