@@ -54,6 +54,7 @@ const LAB_KEY = 'card-reconsider-keeps-useful-card-fixture';
 type PersistedEntity = Record<string, unknown> & {
   fullDescription?: string;
   shortDescription?: string;
+  confidenceByField?: Record<string, number>;
 };
 
 describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', () => {
@@ -242,7 +243,10 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
         { entityKey: LAB_KEY },
         { synthesizeCardDescription, resynthesizeCutCards: true },
       );
-      expect((await persisted())?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      const repaired = await persisted();
+      expect(repaired?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      const repairedCardConfidence = repaired?.confidenceByField?.shortDescription;
+      expect(typeof repairedCardConfidence).toBe('number');
 
       synthesizeCardDescription.mockClear();
       await materializeEntity(
@@ -252,7 +256,9 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
       );
 
       expect(synthesizeCardDescription).not.toHaveBeenCalled();
-      expect((await persisted())?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      const kept = await persisted();
+      expect(kept?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      expect(kept?.confidenceByField?.shortDescription).toBe(repairedCardConfidence);
     });
 
     it('does not keep a stored line that fits when the body no longer supports it', async () => {

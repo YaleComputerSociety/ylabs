@@ -8262,7 +8262,13 @@ export async function projectFromLog(
       if (keepsStoredCard) {
         delete set.shortDescription;
         delete set['fieldProvenance.shortDescription'];
-        delete confidenceByField.shortDescription;
+        const storedCardConfidence = entityDoc?.confidenceByField?.shortDescription;
+        if (typeof storedCardConfidence === 'number') {
+          confidenceByField.shortDescription = storedCardConfidence;
+        } else {
+          delete confidenceByField.shortDescription;
+        }
+        fieldsWritten = Math.max(0, fieldsWritten - 1);
       }
       const copiedCard =
         fullDescriptionShellGated || cardLocked
