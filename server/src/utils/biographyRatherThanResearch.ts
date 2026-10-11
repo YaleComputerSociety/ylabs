@@ -45,16 +45,16 @@ const RESEARCH_VERB =
   /(?<!\b(?:in|of|and)\s+(?:[\p{L}-]+\s+){0,3})\b(?:studies|investigates|examines|explores|researches)\b(?!\s+(?:from|at|program|department|degree)\b)/u;
 
 const RESEARCH_PARTICIPLE =
-  /\b(?:studying|investigating|examining|exploring|researching)\b(?!\s+(?:at|under|with|for|abroad)\b)/;
+  /(?<!\b(?:after|while|before|since|when|began|begun|enjoys?|enjoyed)\s)\b(?:studying|investigating|examining|exploring|researching)\b(?!\s+(?:at|under|with|for|abroad)\b)/i;
 
 const FOCUSES_ON =
-  /(?<!\b(?:practice|care|clinic)\s)\bfocus(?:es|ed)?\s+(?:(?:his|her|their|its|our|my)\s+(?:research|work|scholarship|studies)\s+)?on\b/i;
+  /(?<!\b(?:practice|care|clinic)\s)(?<!\b(?:clinical|practice)\s(?:[\p{L}-]+\s){0,2})\bfocus(?:es|ed)?\s+(?:(?:his|her|their|its|our|my)\s+(?:research|work|scholarship|studies)\s+)?on\b/iu;
 
 const WRITES_IN_THE_AREAS_OF =
   /\b(?:teaches\s+and\s+)?writes\s+(?:and\s+teaches\s+)?in\s+the\s+(?:areas?|fields?)\s+of\b/i;
 
 const SCHOLAR_OF_A_FIELD =
-  /\bis\s+an?\s+(?:[\p{L}-]+\s+){0,2}(?:scholar|specialist)\s+(?:in|of|on)\b/iu;
+  /\bis\s+an?\s+(?:(?!(?:board|fellowship|clinical)\b)[\p{L}-]+\s+){0,2}(?:scholar|specialist)\s+(?:in|of|on)\b/iu;
 
 const statesResearch = (sentence: string): boolean =>
   RESEARCH_SUBJECT_STATEMENT.test(sentence.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' ')) ||

@@ -573,6 +573,7 @@ Decided:
   The serve chain narrows a body to its research sentences when `isBiographyRatherThanResearch` reads it as a biography, and serves a research card in place of one that states no research, so the gate's biography reason and the narrowing read one predicate.
   The writer reads a biography snippet only through `researchStatementSentences`, and drops it when it states none, so an appointment, award or clinical role never becomes a written research claim.
   A biography with no research sentence and no research card still serves, under the rule above.
+  The `biography_without_research` hold keeps its narrower biography tests, so a body only `isBiographyRatherThanResearch` reads as a biography is flagged and served rather than held.
 - **A row serving a biography is flagged, not held.**
   The gate records the soft reason `biography_description_fallback` when the served body is a biography, so it never blocks and is the cohort a research-prose lane should select on.
   The Corpus Quality panel counts it as "Serves a biography as its description", measured by `corpus:snapshot` over the same representation the gate reads.

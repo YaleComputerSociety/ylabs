@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { isBiographyRatherThanResearch } from '../biographyRatherThanResearch';
-import { buildResearchEntityPublicDescriptionRepresentation } from '../../services/researchEntityPublicDescription';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  servedBodyIsBiographyWithoutResearch,
+} from '../../services/researchEntityPublicDescription';
 import { gatherCoverageSnippets, writerEvidenceTextOf } from '../../scrapers/coverageSynthesis';
 
 describe('a research statement the biography detector used to over-flag', () => {
@@ -61,6 +64,26 @@ describe('a career biography stays flagged', () => {
       'a studying clause that describes training rather than research',
       'Sam Example received his M.F.A. from the Synthetic Academy, studying under a renowned director. He has directed internationally since 1989.',
     ],
+    [
+      'a clinical credential named as a specialist',
+      'Dr. Sam Example is a board-certified specialist in internal medicine. Prior to joining the faculty, Dr. Example practiced at Sample Hospital.',
+    ],
+    [
+      'a clinical work sentence that focuses on a procedure',
+      'Prior to joining the faculty, Dr. Example practiced at Sample Hospital. Her clinical work focuses on minimally invasive colon surgery.',
+    ],
+    [
+      'clinical interests that focus on a procedure',
+      'Prior to joining the faculty, Dr. Example practiced at Sample Hospital. His clinical interests focus on breast reconstruction.',
+    ],
+    [
+      'a studying clause framed as past training',
+      'After studying law at Synthetic University, she practiced at Sample Firm. She has previously taught at Example College.',
+    ],
+    [
+      'an exploring clause framed as a hobby',
+      'Sam Example has previously taught at Example College. She enjoys exploring the outdoors.',
+    ],
   ])('flags %s', (_shape, text) => {
     expect(isBiographyRatherThanResearch(text)).toBe(true);
   });
@@ -106,6 +129,23 @@ describe('a served career biography that states its research later', () => {
 
     expect(representation.fullDescription).toBe(card);
     expect(representation.invariant.pass).toBe(true);
+  });
+});
+
+describe('a biography only the precision detector reads', () => {
+  it('stays served rather than held when neither body nor card states research', () => {
+    const body =
+      'Sam Example has previously taught at Example College. She enjoys exploring the outdoors.';
+
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: facultyRow({
+        fullDescription: body,
+        shortDescription: 'Professor at Synthetic University since 2001.',
+      }),
+    });
+
+    expect(isBiographyRatherThanResearch(body)).toBe(true);
+    expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
   });
 });
 
