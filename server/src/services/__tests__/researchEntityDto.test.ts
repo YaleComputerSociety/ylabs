@@ -663,6 +663,57 @@ describe('researchEntityDto', () => {
     );
   });
 
+  describe('the page an undergraduate quote cites (#3569)', () => {
+    const quotedRow = {
+      id: 'entity-cited-quote',
+      slug: 'cited-quote-lab',
+      name: 'Cited Quote Lab',
+      undergradEvidenceQuote: 'Undergraduates are welcome to join the lab for summer projects.',
+      fieldProvenance: {
+        undergradEvidenceQuote: {
+          sourceName: 'synthetic-quote-lane',
+          sourceUrl: 'https://example.yale.edu/join',
+        },
+      },
+    };
+
+    it('serves the cited page beside a served quote on detail and browse', () => {
+      expect(toPublicResearchEntityDto({ ...quotedRow }).undergradEvidenceSourceUrl).toBe(
+        'https://example.yale.edu/join',
+      );
+      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...quotedRow }] });
+      expect(researchEntities[0].undergradEvidenceQuote).toBe(quotedRow.undergradEvidenceQuote);
+      expect(researchEntities[0].undergradEvidenceSourceUrl).toBe('https://example.yale.edu/join');
+    });
+
+    it('serves no cited page when the quote itself is withheld', () => {
+      const note = toPublicResearchEntityDto({
+        ...quotedRow,
+        undergradEvidenceQuote:
+          'No explicit mention of undergraduate students was found on the provided pages.',
+      });
+      expect(note.undergradEvidenceQuote).toBeUndefined();
+      expect(note).not.toHaveProperty('undergradEvidenceSourceUrl');
+    });
+
+    it('serves no cited page that is not a public http url', () => {
+      const dto = toPublicResearchEntityDto({
+        ...quotedRow,
+        fieldProvenance: {
+          undergradEvidenceQuote: { sourceName: 'synthetic-quote-lane', sourceUrl: 'file:///etc' },
+        },
+      });
+      expect(dto.undergradEvidenceQuote).toBe(quotedRow.undergradEvidenceQuote);
+      expect(dto).not.toHaveProperty('undergradEvidenceSourceUrl');
+    });
+
+    it('withholds the quote and its page when an emeritus lead withholds the way in', () => {
+      const dto = toPublicResearchEntityDto({ ...quotedRow, wayInWithheld: true });
+      expect(dto).not.toHaveProperty('undergradEvidenceQuote');
+      expect(dto).not.toHaveProperty('undergradEvidenceSourceUrl');
+    });
+  });
+
   it('serves the hosted-undergraduates flag from the row, not from a stale stored flag (#3593)', () => {
     const hosted = toPublicResearchEntityDto({
       id: 'entity-hosted',

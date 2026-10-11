@@ -164,7 +164,7 @@ Permissive substring lists inflate `precisionAtK`, so a high score against a loo
 
 ## Measuring undergraduate evidence quote precision
 
-The browse card's undergraduate access badge derives almost entirely from `undergradEvidenceQuote`, and whether a quote is right can only be judged by reading the page it cites.
+The browse card shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
 The `undergrad-evidence-quote-precision` case turns that reading into a repeatable measurement without putting any judged row in the repository.
 
 It walks the whole reachable browse, keeps the served rows carrying a non-empty quote, and reads each row's stored `fieldProvenance.undergradEvidenceQuote` to find the rows whose quote came from the judged lane, `lab-microsite-undergrad-llm` by default.
