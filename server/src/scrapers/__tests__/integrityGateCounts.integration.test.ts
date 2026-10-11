@@ -41,7 +41,17 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
       const second = new mongoose.Types.ObjectId();
       await db.collection('research_entities').insertMany([
         { _id: first, slug: `synthetic-a-${index}`, archived: false, websiteUrl: labUrl },
-        { _id: second, slug: `synthetic-b-${index}`, archived: false, sourceUrls: [labUrl] },
+        { _id: second, slug: `synthetic-b-${index}`, archived: false, websiteUrl: labUrl },
+        {
+          slug: `synthetic-member-${index}`,
+          archived: false,
+          sourceUrls: [labUrl, `https://medicine.yale.edu/lab/synthetic-cited-only-${index}/`],
+        },
+        {
+          slug: `synthetic-cited-lab-${index}`,
+          archived: false,
+          websiteUrl: `https://medicine.yale.edu/lab/synthetic-cited-only-${index}/`,
+        },
       ]);
 
       const personId = new mongoose.Types.ObjectId();
