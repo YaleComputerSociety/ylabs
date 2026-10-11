@@ -124,6 +124,12 @@ const SEARCH_FAMILY_EVENT_TYPES = [
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
 ];
 
+const CURRENT_EVENT_TYPES = [...ANALYTICS_EVENT_TYPES];
+
+const NON_SEARCH_EVENT_TYPES = CURRENT_EVENT_TYPES.filter(
+  (eventType) => !SEARCH_FAMILY_EVENT_TYPES.includes(eventType),
+);
+
 export const MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY = 3;
 
 const queryGroupIsShown = { $gte: ['$uniqueSearchers', MIN_DISTINCT_SEARCHERS_TO_SHOW_QUERY] };
@@ -292,10 +298,6 @@ export interface FunnelAnalytics {
   researchComparisons: number;
   researchPlanUpdates: number;
   sourceInspections: number;
-  qualifiedActions: number;
-  officialRouteAttempts: number;
-  applicationOpens: number;
-  qualifiedActionEvents: number;
 }
 
 export interface HighSearchLowResultsAction {
@@ -666,7 +668,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
   const search = validateUserAnalyticsSearch(query.search);
   const sort = query.sort && USER_ANALYTICS_SORTS.has(query.sort) ? query.sort : 'lastActive';
   const direction = query.direction === 'asc' ? 1 : -1;
-  const match: PipelineStage.Match['$match'] = { eventType: { $nin: SEARCH_FAMILY_EVENT_TYPES } };
+  const match: PipelineStage.Match['$match'] = { eventType: { $in: NON_SEARCH_EVENT_TYPES } };
 
   if (netid) {
     match.netid = { $regex: `^${escapeRegex(netid)}$`, $options: 'i' };
@@ -802,7 +804,7 @@ export const getUserAnalyticsDrilldown = async (
 
   const events = await AnalyticsEvent.find({
     netid: { $regex: `^${escapeRegex(normalizedNetid)}$`, $options: 'i' },
-    eventType: { $nin: SEARCH_FAMILY_EVENT_TYPES },
+    eventType: { $in: NON_SEARCH_EVENT_TYPES },
   })
     .sort({ timestamp: -1 })
     .limit(limit)
@@ -971,7 +973,6 @@ const SEARCH_ATTRIBUTION_EVENT_TYPES = [
   AnalyticsEventType.SEARCH,
   AnalyticsEventType.FELLOWSHIP_VIEW,
   AnalyticsEventType.RESEARCH_VIEW,
-  AnalyticsEventType.PATHWAY_SAVE,
   AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   AnalyticsEventType.RESEARCH_SAVE,
 ];
@@ -1511,7 +1512,7 @@ export const getSearchQueryAnalytics = async (
 export const getFunnelAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<FunnelAnalytics> => {
-  const [facet] = await AnalyticsEvent.aggregate([
+  const uniqueActorsByEventType = (await AnalyticsEvent.aggregate([
     {
       $match: {
         eventType: {
@@ -1525,50 +1526,16 @@ export const getFunnelAnalytics = async (
             AnalyticsEventType.RESEARCH_SAVE,
             AnalyticsEventType.RESEARCH_COMPARE,
             AnalyticsEventType.RESEARCH_PLAN_UPDATE,
-            AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
           ],
         },
         ...(await buildUsageMatch(range)),
       },
     },
-    {
-      $facet: {
-        uniqueActorsByEventType: [
-          { $match: { $nor: [researchSaveOfSomethingOtherThanResearchMatch] } },
-          { $group: { _id: { eventType: '$eventType', netid: '$netid' } } },
-          { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
-          { $project: { _id: 0, eventType: '$_id', count: 1 } },
-        ],
-        qualifiedActionEvents: [
-          { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
-          { $count: 'count' },
-        ],
-        qualifiedActorsByCategory: [
-          { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
-          { $group: { _id: { actionCategory: '$metadata.actionCategory', netid: '$netid' } } },
-          {
-            $group: {
-              _id: '$_id.actionCategory',
-              uniqueNetids: { $addToSet: '$_id.netid' },
-            },
-          },
-          { $project: { _id: 0, actionCategory: '$_id', uniqueNetids: 1 } },
-        ],
-      },
-    },
-  ]);
-
-  const uniqueActorsByEventType = (facet?.uniqueActorsByEventType ?? []) as Array<{
-    eventType: AnalyticsEventType;
-    count: number;
-  }>;
-  const qualifiedActorsByCategory = (facet?.qualifiedActorsByCategory ?? []) as Array<{
-    actionCategory?: string;
-    uniqueNetids: string[];
-  }>;
-  const qualifiedActionEvents = Number(
-    (facet?.qualifiedActionEvents as Array<{ count?: number }> | undefined)?.[0]?.count ?? 0,
-  );
+    { $match: { $nor: [researchSaveOfSomethingOtherThanResearchMatch] } },
+    { $group: { _id: { eventType: '$eventType', netid: '$netid' } } },
+    { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
+    { $project: { _id: 0, eventType: '$_id', count: 1 } },
+  ])) as Array<{ eventType: AnalyticsEventType; count: number }>;
 
   const counts = uniqueActorsByEventType.reduce(
     (result: Partial<Record<AnalyticsEventType, number>>, row) => {
@@ -1577,18 +1544,6 @@ export const getFunnelAnalytics = async (
     },
     {},
   );
-  const countQualifiedCategories = (categories: string[]) =>
-    new Set(
-      qualifiedActorsByCategory
-        .filter((row) => categories.includes(row.actionCategory || ''))
-        .flatMap((row) => row.uniqueNetids),
-    ).size;
-  const qualifiedActions = countQualifiedCategories([
-    'open_position',
-    'official_application',
-    'reviewed_route',
-    'qualified_participation',
-  ]);
 
   return {
     logins: counts[AnalyticsEventType.LOGIN] ?? 0,
@@ -1600,14 +1555,6 @@ export const getFunnelAnalytics = async (
     researchComparisons: counts[AnalyticsEventType.RESEARCH_COMPARE] ?? 0,
     researchPlanUpdates: counts[AnalyticsEventType.RESEARCH_PLAN_UPDATE] ?? 0,
     sourceInspections: counts[AnalyticsEventType.RESEARCH_SOURCE_REVIEW] ?? 0,
-    qualifiedActions,
-    officialRouteAttempts: countQualifiedCategories([
-      'open_position',
-      'official_application',
-      'reviewed_route',
-    ]),
-    applicationOpens: countQualifiedCategories(['open_position', 'official_application']),
-    qualifiedActionEvents,
   };
 };
 
@@ -1630,7 +1577,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const rangeTimestampMatch = await buildUsageMatch(range);
 
   const visitorStats = await AnalyticsEvent.aggregate([
-    { $match: { ...rangeTimestampMatch } },
+    { $match: { ...rangeTimestampMatch, eventType: { $in: CURRENT_EVENT_TYPES } } },
     { $sort: { timestamp: -1 } },
     {
       $facet: {
@@ -1801,7 +1748,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   ]);
 
   const engagementStats = await AnalyticsEvent.aggregate([
-    { $match: { ...rangeTimestampMatch } },
+    { $match: { ...rangeTimestampMatch, eventType: { $in: CURRENT_EVENT_TYPES } } },
     {
       $facet: {
         searchStats: [
@@ -1870,7 +1817,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
         ],
         mostActiveUsers: [
-          { $match: { eventType: { $nin: SEARCH_FAMILY_EVENT_TYPES } } },
+          { $match: { eventType: { $in: NON_SEARCH_EVENT_TYPES } } },
           {
             $group: {
               _id: { netid: '$netid', userType: '$userType' },
@@ -1897,12 +1844,10 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
 
   const researchEventTypes = [
     AnalyticsEventType.RESEARCH_VIEW,
-    AnalyticsEventType.PATHWAY_SAVE,
     AnalyticsEventType.WAYS_IN_CLICK,
     AnalyticsEventType.CONTACT_ROUTE_CLICK,
     AnalyticsEventType.SOURCE_LINK_CLICK,
     AnalyticsEventType.RESEARCH_SEARCH,
-    AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
     AnalyticsEventType.RESEARCH_RESULTS_VIEW,
     AnalyticsEventType.RESEARCH_PROFILE_OPEN,
     AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
@@ -1910,7 +1855,6 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     AnalyticsEventType.RESEARCH_SAVE,
     AnalyticsEventType.RESEARCH_COMPARE,
     AnalyticsEventType.RESEARCH_PLAN_UPDATE,
-    AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
   ];
   const researchEventTypeMatch = { $match: { eventType: { $in: researchEventTypes } } };
   const researchStats = await AnalyticsEvent.aggregate([

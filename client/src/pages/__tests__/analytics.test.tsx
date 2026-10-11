@@ -257,7 +257,6 @@ describe('Analytics page', () => {
       if (url === '/analytics/funnel') {
         return Promise.resolve({
           data: {
-            overallConversionRate: 0.25,
             stages: [
               {
                 key: 'research_searches',
@@ -273,8 +272,8 @@ describe('Analytics page', () => {
                 conversionRate: 0.67,
               },
               {
-                key: 'qualified_actions',
-                label: 'Used a qualified route',
+                key: 'plans',
+                label: 'Updated a plan',
                 count: 10,
                 conversionRate: 0.5,
               },
@@ -313,7 +312,8 @@ describe('Analytics page', () => {
     expect(screen.getByText(/Are students finding credible research next steps/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Decision Readout' })).toBeTruthy();
     expect(screen.getByText('Search success')).toBeTruthy();
-    expect(screen.getAllByText('Official next-step rate').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Source reviewers').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Official next-step rate')).toBeNull();
     expect(screen.getByText('Items to review')).toBeTruthy();
     expect(screen.getByText('Supporting Detail')).toBeTruthy();
     const detailNav = screen.getByRole('navigation', { name: 'Analytics detail sections' });
@@ -338,7 +338,7 @@ describe('Analytics page', () => {
     });
 
     expect(screen.getAllByText('quantum materials')).toHaveLength(1);
-    expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
+    expect(screen.getAllByText('Updated a plan')).toHaveLength(1);
     expect(screen.getByText('Returned but ignored')).toBeTruthy();
     const degradedRow = screen.getByText('Degraded, not counted as zero-result').parentElement;
     expect(degradedRow?.textContent).toContain('3');

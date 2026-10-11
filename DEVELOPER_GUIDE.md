@@ -404,18 +404,16 @@ The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 Analytics events are stored in MongoDB with a 3-year TTL.
 Route-level middleware logs successful server-observed events by wrapping `res.send` or `res.json`, so analytics stay outside controller and service business logic.
 
-The canonical research-student journey uses claim-specific events for terminal search outcomes, result-page views, profile opens, source review, filter changes, entity save/removal, comparison, persisted plan updates, and qualified actions.
+The canonical research-student journey uses claim-specific events for terminal search outcomes, result-page views, profile opens, source review, filter changes, entity save/removal, comparison, and persisted plan updates.
 The complete event and payload contract is documented in [`docs/research-journey-analytics.md`](docs/research-journey-analytics.md).
-Legacy `research_view`, `pathway_save`, `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
+Legacy `research_view`, `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
 
 Client interactions are sent to `POST /api/analytics/research/batch` for authenticated users.
 Journey payloads use event-specific allowlists of bounded enums and count buckets, and the server validates canonical entity identifiers before persistence.
 They never retain raw query text, URLs, hostnames, direct contact destinations, private notes, plan contents, filter values, or client-supplied cross-event search identifiers.
 Every interaction uses a bounded idempotency key with per-actor server uniqueness, and client tracking is fire-and-forget so analytics failures cannot change student behavior.
 
-Only `research_qualified_action` counts as access conversion, and the server re-qualifies its category against the current QA-01 planning-context projection.
-Source review, profile open, filters, saves, comparisons, plan updates, and legacy research events never count as action.
-The admin funnel reports source inspections, official-route attempts, application opens, and self-reported outcomes separately.
+No event counts as access conversion since `research_qualified_action` was retired; the funnel and conversion rules live in [`docs/research-journey-analytics.md`](docs/research-journey-analytics.md).
 Beta suppresses real student analytics while permitting fixture and admin validation.
 
 ---

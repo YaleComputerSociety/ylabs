@@ -11,36 +11,6 @@ import type { LogEventParams } from '../analyticsService';
 const user = { netId: 'abc123', userType: 'undergraduate' };
 
 describe('research analytics event emission', () => {
-  it('emits research view events for canonical entities', async () => {
-    const events: LogEventParams[] = [];
-
-    const emitted = await emitResearchEvent(
-      {
-        eventType: AnalyticsEventType.RESEARCH_VIEW,
-        entityType: 'fellowship',
-        entityId: '507f1f77bcf86cd799439010',
-        user,
-        payload: { surface: 'detail' },
-      },
-      async (event) => {
-        events.push(event);
-        return 'recorded' as const;
-      },
-    );
-
-    expect(emitted).toBe('recorded');
-    expect(events[0]).toEqual({
-      eventType: AnalyticsEventType.RESEARCH_VIEW,
-      netid: 'abc123',
-      userType: 'undergraduate',
-      entityType: 'fellowship',
-      entityId: '507f1f77bcf86cd799439010',
-      metadata: {
-        surface: 'detail',
-      },
-    });
-  });
-
   it('emits canonical research surface events with safe common fields', async () => {
     const events: LogEventParams[] = [];
 
@@ -130,46 +100,27 @@ describe('research analytics event emission', () => {
     expect(JSON.stringify(events[0])).not.toContain('secret');
   });
 
-  it('emits pathway save events and rejects invalid research event inputs', async () => {
+  it('rejects a retired or unknown research event type', async () => {
     const events: LogEventParams[] = [];
 
-    const emitted = await emitResearchEvent(
-      {
-        eventType: AnalyticsEventType.PATHWAY_SAVE,
-        entityType: 'fellowship',
-        entityId: '507f1f77bcf86cd799439013',
-        user,
-        payload: {
-          action: 'stage_change',
-          stage: 'Interviewing',
-        },
-      },
-      async (event) => {
-        events.push(event);
-        return 'recorded' as const;
-      },
-    );
-
-    const invalidEmitted = await emitResearchEvent(
-      {
-        eventType: 'listing_view',
-        entityType: 'fellowship',
-        entityId: '507f1f77bcf86cd799439013',
-        user,
-      },
-      async (event) => {
-        events.push(event);
-        return 'recorded' as const;
-      },
-    );
-
-    expect(emitted).toBe('recorded');
-    expect(invalidEmitted).toBe('rejected');
-    expect(events).toHaveLength(1);
-    expect(events[0].metadata).toEqual({
-      action: 'stage_change',
-      stage: 'Interviewing',
-    });
+    for (const eventType of ['pathway_save', 'research_view', 'listing_view']) {
+      await expect(
+        emitResearchEvent(
+          {
+            eventType,
+            entityType: 'fellowship',
+            entityId: '507f1f77bcf86cd799439013',
+            user,
+          },
+          async (event) => {
+            events.push(event);
+            return 'recorded' as const;
+          },
+        ),
+      ).resolves.toBe('rejected');
+      expect(isResearchEventType(eventType)).toBe(false);
+    }
+    expect(events).toHaveLength(0);
   });
 
   it('records one privacy-bounded search outcome without raw query or downstream identifiers', async () => {
@@ -277,11 +228,11 @@ describe('research analytics event emission', () => {
   it('reports a storage failure from the log instead of claiming the event was emitted', async () => {
     const emitted = await emitResearchEvent(
       {
-        eventType: AnalyticsEventType.RESEARCH_VIEW,
-        entityType: 'fellowship',
-        entityId: '507f1f77bcf86cd799439010',
+        eventType: AnalyticsEventType.WAYS_IN_CLICK,
+        entityType: 'profile',
+        entityId: 'fac123',
         user,
-        payload: { surface: 'detail' },
+        payload: { waysInKind: 'best_next_step' },
       },
       async () => 'failed' as const,
     );
@@ -372,7 +323,7 @@ describe('research analytics event emission', () => {
       await expect(
         emitResearchEvent(
           {
-            eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
+            eventType: 'research_qualified_action',
             entityType: 'research_entity',
             entityId: '507f1f77bcf86cd799439010',
             user,
@@ -386,7 +337,7 @@ describe('research analytics event emission', () => {
       ).resolves.toBe('rejected');
     }
     expect(events).toHaveLength(0);
-    expect(isResearchEventType(AnalyticsEventType.RESEARCH_QUALIFIED_ACTION)).toBe(false);
-    expect(isResearchJourneyEventType(AnalyticsEventType.RESEARCH_QUALIFIED_ACTION)).toBe(false);
+    expect(isResearchEventType('research_qualified_action')).toBe(false);
+    expect(isResearchJourneyEventType('research_qualified_action')).toBe(false);
   });
 });

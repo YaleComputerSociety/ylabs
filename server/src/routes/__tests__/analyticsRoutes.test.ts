@@ -514,16 +514,12 @@ describe('analytics routes', () => {
       logins: 486,
       searches: 100,
       fellowshipViews: 50,
-      qualifiedActions: 7,
       researchSearches: 91,
       researchProfileOpens: 40,
       researchSaves: 12,
       researchComparisons: 3,
       researchPlanUpdates: 2,
       sourceInspections: 9,
-      officialRouteAttempts: 5,
-      applicationOpens: 4,
-      qualifiedActionEvents: 7,
     });
 
     const res = await invokeRouteHandler('/funnel');
@@ -536,37 +532,29 @@ describe('analytics routes', () => {
       'Saved research',
       'Compared saved research',
       'Updated a plan',
-      'Used a qualified route',
     ]);
     expect(body.stages.some((stage: any) => /visitor/i.test(stage.label))).toBe(false);
   });
 
-  it('reports the qualified-route numbers as unmeasured when none was recorded', async () => {
+  it('serves no retired qualified-route stage or metric', async () => {
     mocks.getFunnelAnalytics.mockResolvedValue({
       logins: 40,
       searches: 30,
       fellowshipViews: 5,
-      qualifiedActions: 0,
       researchSearches: 20,
       researchProfileOpens: 10,
       researchSaves: 3,
       researchComparisons: 1,
       researchPlanUpdates: 1,
       sourceInspections: 4,
-      officialRouteAttempts: 0,
-      applicationOpens: 0,
-      qualifiedActionEvents: 0,
     });
 
     const body = (await invokeRouteHandler('/funnel')).body as any;
 
     expect(body.stages.map((stage: any) => stage.key)).not.toContain('qualified_actions');
-    expect(body.journeyMetrics).toEqual({
-      sourceInspections: 4,
-      officialRouteAttempts: null,
-      applicationOpens: null,
-    });
-    expect(body.overallConversionRate).toBeNull();
+    expect(body.journeyMetrics).toEqual({ sourceInspections: 4 });
+    expect(body).not.toHaveProperty('overallConversionRate');
+    expect(body).not.toHaveProperty('qualifiedActionEventsRecorded');
   });
 
   it('serves no visitor-shaped alias for the login count', async () => {
@@ -574,16 +562,12 @@ describe('analytics routes', () => {
       logins: 486,
       searches: 100,
       fellowshipViews: 50,
-      qualifiedActions: 7,
       researchSearches: 91,
       researchProfileOpens: 40,
       researchSaves: 12,
       researchComparisons: 3,
       researchPlanUpdates: 2,
       sourceInspections: 9,
-      officialRouteAttempts: 5,
-      applicationOpens: 4,
-      qualifiedActionEvents: 7,
     });
 
     const res = await invokeRouteHandler('/funnel');

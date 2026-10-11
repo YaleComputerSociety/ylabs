@@ -25,8 +25,6 @@ import { routeParam } from '../utils/routeParams';
 
 /** The subset of AnalyticsEventType that describes research-surface activity. */
 export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
-  AnalyticsEventType.RESEARCH_VIEW,
-  AnalyticsEventType.PATHWAY_SAVE,
   AnalyticsEventType.WAYS_IN_CLICK,
   AnalyticsEventType.CONTACT_ROUTE_CLICK,
   AnalyticsEventType.SOURCE_LINK_CLICK,
@@ -146,9 +144,6 @@ export const WAYS_IN_KINDS = [
   'other',
 ] as const;
 
-/** Allowed pathway/save actions and stages (kanban-style tracking). */
-export const PATHWAY_ACTIONS = ['save', 'unsave', 'stage_change'] as const;
-
 const MAX_LABEL_LENGTH = 80;
 const EMAIL_REGEX = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const URL_LIKE_REGEX = /:\/\/|www\.|\.[a-z]{2,}(?:[/?#]|$)/i;
@@ -260,13 +255,6 @@ export const sanitizeResearchPayload = (
       if (label) out.label = label;
       break;
     }
-    case AnalyticsEventType.PATHWAY_SAVE: {
-      out.action = oneOf(input.action, PATHWAY_ACTIONS) ?? 'save';
-      const stage = cleanLabel(input.stage);
-      if (stage) out.stage = stage;
-      break;
-    }
-    case AnalyticsEventType.RESEARCH_VIEW:
     default: {
       const surface = cleanLabel(input.surface);
       if (surface) out.surface = surface;

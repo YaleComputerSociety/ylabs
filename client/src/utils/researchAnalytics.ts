@@ -1,8 +1,7 @@
 import axios from './axios';
 import { getApiBaseUrl } from './apiBaseUrl';
 
-export type LegacyResearchEventType =
-  'research_view' | 'pathway_save' | 'ways_in_click' | 'contact_route_click' | 'source_link_click';
+export type LegacyResearchEventType = 'ways_in_click' | 'contact_route_click' | 'source_link_click';
 
 export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_search',

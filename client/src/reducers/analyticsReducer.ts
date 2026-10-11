@@ -265,12 +265,8 @@ export interface AnalyticsFunnelStage {
 export interface AnalyticsFunnelResponse {
   range?: AnalyticsRange;
   stages?: AnalyticsFunnelStage[];
-  overallConversionRate?: number | null;
-  qualifiedActionEventsRecorded?: number;
   journeyMetrics?: {
     sourceInspections: number;
-    officialRouteAttempts: number | null;
-    applicationOpens: number | null;
   };
 }
 
