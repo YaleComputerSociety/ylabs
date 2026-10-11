@@ -54,6 +54,7 @@ const LAB_KEY = 'card-reconsider-keeps-useful-card-fixture';
 type PersistedEntity = Record<string, unknown> & {
   fullDescription?: string;
   shortDescription?: string;
+  confidenceByField?: Record<string, number>;
 };
 
 describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', () => {
@@ -222,6 +223,62 @@ describe('materializeEntity card reconsideration and the e.g. clamp (#3866)', ()
       const stored = (await persisted())?.shortDescription;
       expect(stored).toBe(FITTING_SYNTHESIZED_CARD);
       expect(cardLineFitsBrowseCard(stored)).toBe(true);
+    });
+  });
+
+  describe('a copied lane card the browse card cuts (#4834)', () => {
+    const laneCutCard = deriveShortDescriptionFromFullDescription(LONG_LEAD_BODY);
+
+    beforeEach(async () => {
+      expect(cardLineFitsBrowseCard(laneCutCard)).toBe(false);
+      await seedLab('');
+      await seedObservation('fullDescription', LONG_LEAD_BODY);
+      await seedObservation('shortDescription', laneCutCard);
+    });
+
+    it('keeps the resynthesized line that fits through a later routine materialize', async () => {
+      const synthesizeCardDescription = vi.fn().mockResolvedValue(FITTING_SYNTHESIZED_CARD);
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription, resynthesizeCutCards: true },
+      );
+      const repaired = await persisted();
+      expect(repaired?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      const repairedCardConfidence = repaired?.confidenceByField?.shortDescription;
+      expect(typeof repairedCardConfidence).toBe('number');
+
+      synthesizeCardDescription.mockClear();
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription },
+      );
+
+      expect(synthesizeCardDescription).not.toHaveBeenCalled();
+      const kept = await persisted();
+      expect(kept?.shortDescription).toBe(FITTING_SYNTHESIZED_CARD);
+      expect(kept?.confidenceByField?.shortDescription).toBe(repairedCardConfidence);
+    });
+
+    it('does not keep a stored line that fits when the body no longer supports it', async () => {
+      const unsupportedStoredCard =
+        'Investigates how regulatory T cells and tolerogenic antigen-presenting cells shape immune responses in pediatric melanoma and lupus.';
+      expect(cardLineFitsBrowseCard(unsupportedStoredCard)).toBe(true);
+      await ResearchEntity.updateOne(
+        { slug: LAB_KEY },
+        { $set: { shortDescription: unsupportedStoredCard } },
+      );
+      const synthesizeCardDescription = vi.fn().mockResolvedValue(FITTING_SYNTHESIZED_CARD);
+
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: LAB_KEY },
+        { synthesizeCardDescription },
+      );
+
+      expect(synthesizeCardDescription).not.toHaveBeenCalled();
+      expect((await persisted())?.shortDescription).toBe(laneCutCard);
     });
   });
 

@@ -755,6 +755,28 @@ export function methodCheckedCopiedCard(
   return { card: outcome.text, changed: true };
 }
 
+/**
+ * A copied card the browse card cuts does not displace a stored card that shows whole and
+ * that the body still supports: every materialize re-projects the lane's card, so without
+ * this a line a `--resynthesize-cut-cards` pass wrote was reverted by the next routine
+ * materialize (#4834).
+ */
+export function storedCardOutranksCutCopiedCard(input: {
+  copiedCard: unknown;
+  storedCard: unknown;
+  body: string;
+  isProgramLike: boolean;
+}): boolean {
+  const copied = textValue(input.copiedCard);
+  const stored = textValue(input.storedCard);
+  if (!copied || !stored || copied === stored) return false;
+  if (writtenBodyCardShowsWhole(copied, input.body)) return false;
+  return (
+    writtenBodyCardShowsWhole(stored, input.body) &&
+    resolvedShortDescriptionCandidateIsUsable(stored, input.body, input.isProgramLike)
+  );
+}
+
 export type WrittenBodyCardChoice =
   | { kind: 'stored'; card: string }
   | { kind: 'observed'; card: string; index: number }
@@ -8229,6 +8251,26 @@ export async function projectFromLog(
       }
     } else {
       const cardLocked = manuallyLockedFields.includes('shortDescription');
+      const keepsStoredCard =
+        !fullDescriptionShellGated &&
+        !cardLocked &&
+        storedCardOutranksCutCopiedCard({
+          copiedCard: set.shortDescription,
+          storedCard: entityDoc?.shortDescription,
+          body: fullDescription,
+          isProgramLike: isProgramLikeEntity,
+        });
+      if (keepsStoredCard) {
+        delete set.shortDescription;
+        delete set['fieldProvenance.shortDescription'];
+        const storedCardConfidence = entityDoc?.confidenceByField?.shortDescription;
+        if (typeof storedCardConfidence === 'number') {
+          confidenceByField.shortDescription = storedCardConfidence;
+        } else {
+          delete confidenceByField.shortDescription;
+        }
+        fieldsWritten = Math.max(0, fieldsWritten - 1);
+      }
       const copiedCard =
         fullDescriptionShellGated || cardLocked
           ? { card: null, changed: false }
@@ -8260,7 +8302,13 @@ export async function projectFromLog(
             ? (copiedCard.card ?? undefined)
             : (set.shortDescription ?? entityDoc?.shortDescription),
         reconsiderCurrentShortDescription:
-          fullRestatesCurrentCard || (copiedCard.changed && !copiedCard.card),
+          (keepsStoredCard
+            ? isFullDescriptionRestatementOfShortDescription(
+                fullDescription,
+                textValue(entityDoc?.shortDescription),
+              )
+            : fullRestatesCurrentCard) ||
+          (copiedCard.changed && !copiedCard.card),
         resynthesizeCutCards: input.resynthesizeCutCards,
         researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
         isProgramLike: isProgramLikeEntity,
