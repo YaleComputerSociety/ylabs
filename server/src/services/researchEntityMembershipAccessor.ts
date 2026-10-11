@@ -213,7 +213,9 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId profile profileLinks identifiers.orcid identifiers.email')
+        .select(
+          '_id displayName accountId profile profileLinks identifiers.orcid identifiers.email',
+        )
         .lean()
     : [];
 

@@ -91,13 +91,11 @@ describe('researchers:backfill-identity-email', () => {
     await seed('zz1@example.invalid');
     await seed(undefined);
     await seed('archived@example.test', { archived: true });
-    await db()
-      .collection('researchers')
-      .insertOne({
-        displayName: 'Dangling',
-        accountId: new mongoose.Types.ObjectId(),
-        archived: false,
-      });
+    await db().collection('researchers').insertOne({
+      displayName: 'Dangling',
+      accountId: new mongoose.Types.ObjectId(),
+      archived: false,
+    });
 
     const plan = await planResearcherIdentityEmailBackfill(db());
 
