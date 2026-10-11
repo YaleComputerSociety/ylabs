@@ -103,3 +103,33 @@ describe('normalizeResearchEntityDetailPayload', () => {
     );
   });
 });
+
+describe('normalizeResearchEntitySearchResponse keeps the undergraduate quote evidence (#3569)', () => {
+  it('passes the served quote and the page it cites through to the browse card', () => {
+    const served = entity({
+      undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+      undergradEvidenceSourceUrl: 'https://example.edu/join',
+    });
+
+    const [normalized] = normalizeResearchEntitySearchResponse({
+      researchEntities: [served],
+    }).researchEntities;
+
+    expect(normalized.undergradEvidenceQuote).toBe('Undergraduates are welcome to join the lab.');
+    expect(normalized.undergradEvidenceSourceUrl).toBe('https://example.edu/join');
+  });
+
+  it('passes them through on the detail payload too', () => {
+    const served = entity({
+      undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+      undergradEvidenceSourceUrl: 'https://example.edu/join',
+    });
+
+    const { researchEntity } = normalizeResearchEntityDetailPayload({ researchEntity: served });
+
+    expect(researchEntity.undergradEvidenceQuote).toBe(
+      'Undergraduates are welcome to join the lab.',
+    );
+    expect(researchEntity.undergradEvidenceSourceUrl).toBe('https://example.edu/join');
+  });
+});

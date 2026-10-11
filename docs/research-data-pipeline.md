@@ -55,12 +55,12 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
   It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.
 - `roster-bio-research-evidence` mints new faculty-research rows from roster biographies, and an agent check of a sample is not a precision review.
   The owner reviewed a 20-row dry-run sample on 2026-10-05 and reviews a sample of the rows the first Development run produces; it joins the research sweep only after a person records that review.
-- `lab-microsite-undergrad-llm` is not precise enough to refresh automatically (#3636).
-  #3569 measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50) and its grounding precision at 18/38 = 0.47.
-  19 of those 50 quotes are an absence note the model wrote rather than text from a page, and that shape matches 299 of the 925 rows the lane serves, so the student-facing badge was withdrawn (#3607).
-  It is also the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 15 to 20 hours of a sweep, and it was deferred from the 2026-09-26 sweep by operator decision.
-  Leaving the sweep also stops its description emits refreshing automatically; a manual run still refreshes both.
-  It returns to the research sweep when #3592 (the quote must appear on a fetched page) lands and a re-measure with `yarn --cwd server journey:eval --case=undergrad-evidence-quote-precision` clears the #3569 thresholds.
+- `lab-microsite-undergrad-llm` stays manual-only for runtime rather than precision, by owner decision on 2026-10-11 (#3569, #3636).
+  #3569 first measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50), mostly because the model's own absence notes were stored as quotes, so the browse badge was withdrawn (#3607).
+  After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with 25/50 showing that undergraduates were hosted.
+  The browse card now shows the quote beside a "Mentions undergraduate research" label and the page it is quoted from (`docs/decisions.md`, 2026-10-11).
+  It is the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 4 to 20 hours, against a weekly sweep of about 8 hours and Render's 12-hour job limit.
+  So it is run scoped by hand when the quotes need refreshing, and a manual run also refreshes its description emits.
 
 `federal-award-usaspending` was manual-only and is now removed (#4548).
 USAspending publishes no principal-investigator field, so across the 293 Yale DOE, NASA and DoD awards its request returned, 1 description embedded a PI name and that name resolved ambiguously (#3542).

@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-11: The Browse Card Shows An Undergraduate Quote With Its Page, Not A Hosting Claim (#3569)
+
+#3607 took the undergraduate badge off the browse card when #3569 measured its quotes at 18/50 = 0.36 badge precision (95% Wilson 0.24 to 0.50), because showing a quote then would have published model-written text with a citation attached.
+After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 like-for-like re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with grounding 49/50.
+That is the middling case #3569 committed to in advance, where the badge carries its evidence rather than asserting, and the owner chose that option.
+Only 25/50 quotes (0.37 to 0.63) show that undergraduates were hosted, because many state an opening rather than a past host, so a quote never lights "Has hosted undergraduate researchers", which stays the server's roster and advisee predicate (#3593).
+Decision: a served quote renders as "Mentions undergraduate research" with the quote and a "Quoted from" link to the page it cites, shortened at a word to 140 characters on the card and shown whole on the detail page.
+The DTO serves that page as `undergradEvidenceSourceUrl` only beside a quote the existing serve-time guards admit, a quote with no public page renders nothing, and the quote is withheld with the way in for an emeritus lead.
+The lane stays manual-only for runtime rather than precision: a full pass takes 4 to 20 hours against a weekly sweep of about 8 hours and Render's 12-hour job limit, so it is run scoped by hand when the quotes need refreshing.
+
 ## 2026-10-11: Analytics Keeps Only Event Types With A Live Emitter (#4992)
 
 This supersedes the 2026-08-29 rule that an analytics enum member with historical rows stays.

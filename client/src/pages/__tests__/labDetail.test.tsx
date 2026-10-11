@@ -913,6 +913,46 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
+  it('shows the whole undergraduate quote with the page it is quoted from (#3569)', async () => {
+    const longQuote = `${'Undergraduate students contribute to field and lab work '.repeat(5)}end.`;
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        undergradEvidenceQuote: longQuote,
+        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('Mentions undergraduate research')).toBeTruthy();
+    expect(container.querySelector('blockquote')?.textContent).toBe(`\u201c${longQuote}\u201d`);
+    expect(
+      screen
+        .getByRole('link', { name: 'example.yale.edu (opens in a new tab)' })
+        .getAttribute('href'),
+    ).toBe('https://example.yale.edu/join');
+  });
+
+  it('shows no undergraduate quote when the way in is withheld for an emeritus lead', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
+        emeritusLed: true,
+        wayInWithheld: true,
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
+    expect(container.querySelector('blockquote')).toBeNull();
+  });
+
   it('points to the lab website instead of a dead end when there is no profile or email', async () => {
     renderLabDetail({
       ...basePayload,

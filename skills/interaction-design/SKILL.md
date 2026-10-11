@@ -46,7 +46,7 @@ Prefer a label naming the destination.
 A card that promises undergraduate access and leads to a page with no such evidence costs the next click too.
 This is the interaction-design reason the visibility gate exists, not just a data-quality reason.
 
-The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics.
+The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics, then any access signal, then a cited undergraduate quote where one is served.
 The kind is omitted when the title already names it, so "Wu Lab" never reads "Lab · ...", while a faculty row titled with a person's name reads "Faculty research · ...".
 The description ends at the last whole sentence that fits about 200 characters (`client/src/utils/cardSummary.ts`) rather than at a line clamp, so a card never stops mid-sentence unless no sentence fits.
 The card has no separate "View profile" action, because the title already names the destination and the whole card opens it.
@@ -140,6 +140,9 @@ The corpus-wide figure was 270 of 800 sampled rows, 33.8%, and every one of thos
 Of the other four fields, `pastUndergradAdvisees` is filled on 5 served rows and the remaining three were empty on every one, so they are no longer served at all (`docs/decisions.md`, 2026-10-01, #3579).
 #3569 then measured that field's dominant source, `lab-microsite-undergrad-llm`, at a badge precision of 0.36 with a Wilson 95% upper bound of 0.50, and found that 19 of 50 sampled quotes were the model's own absence commentary, "No explicit mention of undergraduates on the provided pages", which passed the plausibility regex and switched the badge **on** exactly where the lane had found nothing.
 So the badge is off the browse card again, and it is off for the right reason this time.
+It came back on 2026-10-11 in the form the threshold called for.
+After #3592 kept only quotes found on a fetched page, the re-measure read 0.84 (0.71 to 0.92), which is middling rather than high, so the card shows the quote itself under "Mentions undergraduate research" with the page it is quoted from, and the student judges it.
+The label says less than the old one on purpose: only half the correct quotes show undergraduates were hosted, so "Has hosted undergraduate researchers" stays reserved for roster and advisee evidence (`docs/decisions.md`, 2026-10-11).
 
 Three lessons for this file, which is why this entry is long.
 
@@ -149,6 +152,7 @@ Ask which lane writes a field and what its precision is before putting it in fro
 
 "Show the evidence instead of asserting" is not a universal escape hatch.
 It was the obvious middle option, and it fails here: 20 of the 50 quotes are not on the page they cite, so showing the quote would have published a fabrication with a citation attached.
+It became the right option only once the quotes were grounded, which is a property of the lane, not of the design.
 
 Write down the threshold before you see the number.
 Three cut-points were committed to in advance, so when 0.36 arrived there was nothing to negotiate.
