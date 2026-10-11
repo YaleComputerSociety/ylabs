@@ -95,7 +95,6 @@ export interface AnalyticsUserActivityRow {
   logins: number;
   researchViews: number;
   fellowshipViews: number;
-  profileUpdates: number;
   loginCount: number;
   lastEventAt?: string | null;
   lastLogin?: string | null;

@@ -67,7 +67,7 @@ Splitting by surface keeps one corpus per row: the same word searched on both su
 ## Search engagement
 
 The admin search-success metric is action-aware.
-A search is engaged when the same signed-in user records a `fellowship_view`, `research_view`, `pathway_save`, `research_profile_open`, or `research_save` within 30 minutes and before that user's next search.
+A search is engaged when the same signed-in user records a `fellowship_view`, `research_profile_open`, or `research_save` within 30 minutes and before that user's next search.
 A `research_save` whose `operation` is `remove` is not engagement, because removing a saved row is the student disengaging rather than acting on the search (#4005).
 The next-search boundary avoids attributing an action to multiple earlier queries in the same browsing session.
 

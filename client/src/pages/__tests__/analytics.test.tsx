@@ -42,13 +42,13 @@ const analyticsData: AnalyticsData = {
   },
   research: {
     byEventType: [
-      { eventType: 'research_view', total: 12, last7Days: 5, today: 1 },
-      { eventType: 'pathway_save', total: 4, last7Days: 2, today: 0 },
+      { eventType: 'research_profile_open', total: 12, last7Days: 5, today: 1 },
+      { eventType: 'research_save', total: 4, last7Days: 2, today: 0 },
       { eventType: 'contact_route_click', total: 3, last7Days: 1, today: 0 },
     ],
     byEntityType: [
-      { entityType: 'profile', eventType: 'research_view', count: 7 },
-      { entityType: 'fellowship', eventType: 'pathway_save', count: 4 },
+      { entityType: 'profile', eventType: 'research_profile_open', count: 7 },
+      { entityType: 'fellowship', eventType: 'research_save', count: 4 },
     ],
     byUserType: [{ userType: 'undergraduate', count: 6 }],
     topEntities: [
@@ -819,7 +819,6 @@ describe('Analytics page', () => {
       searches: 4,
       researchViews: 2,
       fellowshipViews: 0,
-      profileUpdates: 0,
       loginCount: 2,
       lastActive: '2026-05-17T00:00:00.000Z',
     });

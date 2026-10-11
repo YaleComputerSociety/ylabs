@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-11: Analytics Keeps Only Event Types With A Live Emitter (#4992)
+
+This supersedes the 2026-08-29 rule that an analytics enum member with historical rows stays.
+The owner chose to delete the history of `research_view` and `profile_update` rather than keep enum members that nothing emits, because a type nothing writes only ever adds stale rows to dashboard totals.
+Every stored row of the two types was deleted from Development and Production with a local backup (Development 242, Production 325; Beta held none), and both enum members, the per-user `profileUpdates` column and their dashboard reads were removed.
+After this, every event type stored in Development and Production has a live emitter.
+Decision: when an analytics event loses its last emitter, delete its stored rows and its enum member together, rather than keeping a member alive for history.
+
 ## 2026-10-05: A Lab Whose Own Site Names A Namesake As Its Lead Is Held For Review (#4916)
 
 This is the first reader of `leadVerification`, and it reads one narrow shape rather than the contradicted verdict the 2026-10-01 entry declined to act on.
@@ -1774,6 +1782,7 @@ A data-model audit of the live databases established that the Listing product su
 The only reader of the `Listing` model was `analyticsService`, which aggregated over the empty collection at six sites and looked up into it once, so its output was structurally zero rather than merely small.
 Decision: delete `server/src/models/listing.ts`, the eight `LISTING_*` and four `OUTREACH_*` members of `AnalyticsEventType`, the `analytics_events.listingId` field, the `'listing'` member of `RESEARCH_ENTITY_TYPES`, and every aggregation, funnel stage, action card, user-summary column, and admin panel that existed only to report them.
 An enum member is removed only when it has no emitter **and** zero rows in every database, which is why `profile_update` and `logout` stay: they have no emitter left but do carry historical rows, and dropping them would hide real data from the admin dashboard rather than remove dead code.
+Superseded on 2026-10-11 (#4992): an event type with no emitter now loses its rows and its enum member together.
 The `API_MODE=productionMigration` dual-connection path goes with it, because `MigrationListing` was the only model it ever bound - a second connection that binds nothing is dead by construction, and the startup banner said as much ("Listings from migration DB, everything else from primary").
 Two smaller pieces of the same lane fell out: the `PUT /listing-claims/:id` admin-audit descriptor named a route that does not exist, and the `{ type: 'listing' }` variant of the client `BrowsableItem` union was never constructed, so its `BrowseCard` and `BrowseListItem` branches were unreachable UI.
 Deliberately out of scope: the physical collection drop, which `legacy:cleanup` already owns and lists; and the audit and migration tooling (`researchModelInventoryCore`, `migrateResearchEntities`, `syncBetaToDevelopment`, the phase-0 hot-path shapes) that still names `listings` on purpose, since removing those specs would blind the residue reporting that found this in the first place.

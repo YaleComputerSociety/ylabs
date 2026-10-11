@@ -9,10 +9,8 @@ export enum AnalyticsEventType {
   VISITOR = 'visitor',
   FELLOWSHIP_VIEW = 'fellowship_view',
   SEARCH = 'search',
-  PROFILE_UPDATE = 'profile_update',
   // Research product surface events. These track engagement with canonical
   // research entities and privacy-safe interaction affordances.
-  RESEARCH_VIEW = 'research_view',
   WAYS_IN_CLICK = 'ways_in_click',
   CONTACT_ROUTE_CLICK = 'contact_route_click',
   SOURCE_LINK_CLICK = 'source_link_click',

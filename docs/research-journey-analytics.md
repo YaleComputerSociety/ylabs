@@ -32,7 +32,7 @@ The only access-conversion event was `research_qualified_action`, and it is reti
 It was qualified against a planning context that no source ever produced (#377), so none could be recorded, and the 2026-08-25 "Simple Directory First" decision retired the planning-context framing; #4581 removed the producer, the planning-context service and the qualification check.
 No row of it was ever stored in any database, so #4985 removed the enum value, the funnel's qualified-route stage, the Official next-step rate, and the Official-route reach and Application opens tiles, which could only ever read as not recorded.
 `pathway_save` went with it for the same reason: no emitter and zero stored rows.
-`research_view` and `profile_update` keep their enum values because they carry historical rows, per the 2026-08-29 rule in `docs/decisions.md`; the batch route refuses a new `research_view`, because nothing emits it after #3766.
+`research_view` and `profile_update` had no emitter either, but carried historical rows, so #4989 kept them; on 2026-10-11 those rows were deleted from Development and Production and #4992 removed both enum values, so every stored event type now has a live emitter.
 
 Source review, profile open, results view, filter, save, compare, and plan events never count as access conversion.
 `outreach_outcome` remains a separate self-reported outcome and is not inferred from any click.

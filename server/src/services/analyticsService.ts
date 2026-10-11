@@ -203,7 +203,6 @@ export interface AnalyticsUserSummary {
   logins: number;
   researchViews: number;
   fellowshipViews: number;
-  profileUpdates: number;
   firstSeen?: Date;
   lastEventAt?: Date;
   lastActive?: Date;
@@ -366,7 +365,6 @@ const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   researchViews: AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
-  profileUpdates: AnalyticsEventType.PROFILE_UPDATE,
 };
 
 const BETA_STUDENT_USER_TYPES = new Set(['student', 'undergraduate', 'graduate']);
@@ -740,7 +738,6 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         logins: 1,
         researchViews: 1,
         fellowshipViews: 1,
-        profileUpdates: 1,
         firstSeen: 1,
         lastEventAt: 1,
         lastActive: 1,
@@ -972,7 +969,6 @@ const SEARCH_ATTRIBUTION_WINDOW_MINUTES = 30;
 const SEARCH_ATTRIBUTION_EVENT_TYPES = [
   AnalyticsEventType.SEARCH,
   AnalyticsEventType.FELLOWSHIP_VIEW,
-  AnalyticsEventType.RESEARCH_VIEW,
   AnalyticsEventType.RESEARCH_PROFILE_OPEN,
   AnalyticsEventType.RESEARCH_SAVE,
 ];
@@ -1843,7 +1839,6 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   ]);
 
   const researchEventTypes = [
-    AnalyticsEventType.RESEARCH_VIEW,
     AnalyticsEventType.WAYS_IN_CLICK,
     AnalyticsEventType.CONTACT_ROUTE_CLICK,
     AnalyticsEventType.SOURCE_LINK_CLICK,

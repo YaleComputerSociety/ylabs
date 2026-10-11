@@ -406,7 +406,7 @@ Route-level middleware logs successful server-observed events by wrapping `res.s
 
 The canonical research-student journey uses claim-specific events for terminal search outcomes, result-page views, profile opens, source review, filter changes, entity save/removal, comparison, and persisted plan updates.
 The complete event and payload contract is documented in [`docs/research-journey-analytics.md`](docs/research-journey-analytics.md).
-Legacy `research_view`, `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
+Legacy `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
 
 Client interactions are sent to `POST /api/analytics/research/batch` for authenticated users.
 Journey payloads use event-specific allowlists of bounded enums and count buckets, and the server validates canonical entity identifiers before persistence.
