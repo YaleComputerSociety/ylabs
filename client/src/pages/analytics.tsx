@@ -742,8 +742,8 @@ const Analytics = () => {
             <h2 className="yr-display text-2xl font-semibold text-ink">Decision Readout</h2>
             <div className="mt-3 space-y-3 text-sm leading-6 text-muted">
               <p>
-                Start with search success and source reviewers: they show whether discovery
-                intent becomes a profile view, a save, or a read of the cited sources.
+                Start with search success and source reviewers: they show whether discovery intent
+                becomes a profile view, a save, or a read of the cited sources.
               </p>
               <p>Treat low-result queries and action cards as the work queue, not just warnings.</p>
               <p>
