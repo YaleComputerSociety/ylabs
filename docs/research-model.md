@@ -25,8 +25,12 @@ Eight live collections carry runtime research data.
 ### `Researcher` (`researchers`)
 
 Public research identity, and a first-class findable entity in its own right: a grad student, PhD student, or researcher is findable even with no lab.
-[`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid` and `identifiers.netid` (the netid disambiguation spine), a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
+[`server/src/models/researcher.ts`](../server/src/models/researcher.ts) defines `displayName`, an optional `accountId` link to the private login principal, `profileLinks[]` (`kind`: `YALE_OFFICIAL` | `LAB_ABOUT` | `PERSONAL_ACADEMIC` | `GOOGLE_SCHOLAR` | `ORCID`, each with `url`, `verifiedAt`, and `healthStatus`), an optional `identifiers.orcid`, `identifiers.netid` (the netid disambiguation spine) and `identifiers.email`, a `profile` display projection (`title`, `primaryDepartment`, `imageUrl`, `websiteUrl`), `status` (`ACTIVE` | `DEPARTED` | `UNKNOWN`), and `archived`.
 `Researcher` rows are created only from Yale-confirmed evidence; an external identifier such as ORCID never creates one by itself.
+
+`identifiers.email` is the researcher's own address, and the roster (`researchEntityMembershipAccessor.ts`) serves it ahead of the linked account's email, falling back to the account only while a researcher has none.
+It exists because `accounts` is becoming login-only (#5000): an account nobody signed into cannot be removed while it is the only place a researcher's email lives.
+`yarn --cwd server researchers:backfill-identity-email` copies each linked account's email onto its researcher, dry-run by default and never over an email the researcher already holds; it carries a non-unique index, because an address can still be claimed by two held alias-twin researchers.
 
 `identifiers.netid` holds the account's own netid, not whatever a source called a netid (#2325).
 A department roster publishes the friendly email alias (`corey.ohern`) rather than the netid (`co54`), and that alias passes the netid shape test, so `materializeUser` resolves identity by netid first, then by display name, then by the observed email, and last by the official profile page the observation cites.

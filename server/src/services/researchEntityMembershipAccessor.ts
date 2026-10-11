@@ -67,7 +67,7 @@ interface RosterEntryBuildContext {
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
-      identifiers?: { orcid?: string };
+      identifiers?: { orcid?: string; email?: string };
     }
   >;
   accountsById: Map<string, { netid?: string; email?: string }>;
@@ -99,7 +99,7 @@ const buildRosterEntry = (
     roleAssignmentId: assignment._id,
     name: person.displayName || '',
     netid: account?.netid || '',
-    email: account?.email || '',
+    email: person.identifiers?.email || account?.email || '',
     ...(person.profile?.title ? { title: person.profile.title } : {}),
     ...(person.profile?.primaryDepartment
       ? { primaryDepartment: person.profile.primaryDepartment }
@@ -213,7 +213,9 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId profile profileLinks identifiers.orcid')
+        .select(
+          '_id displayName accountId profile profileLinks identifiers.orcid identifiers.email',
+        )
         .lean()
     : [];
 
@@ -224,7 +226,7 @@ export async function getResearchEntityRosterByEntityId(
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
-      identifiers?: { orcid?: string };
+      identifiers?: { orcid?: string; email?: string };
     }
   >(people.map((person: any) => [person._id.toString(), person]));
 

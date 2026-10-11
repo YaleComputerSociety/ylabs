@@ -36,6 +36,7 @@ export type ResearcherStatus = (typeof researcherStatuses)[number];
 export interface ResearcherIdentifiers {
   orcid?: string;
   netid?: string;
+  email?: string;
 }
 
 export interface ResearcherDisplayProfile {
@@ -193,6 +194,14 @@ export const researcherIdentifiersSchema = new mongoose.Schema<ResearcherIdentif
       lowercase: true,
       maxlength: 64,
     },
+    email: {
+      type: String,
+      required: false,
+      trim: true,
+      lowercase: true,
+      maxlength: 254,
+      match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    },
   },
   {
     _id: false,
@@ -304,6 +313,7 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
 researcherSchema.index({ accountId: 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.netid': 1 }, { unique: true, sparse: true });
+researcherSchema.index({ 'identifiers.email': 1 }, { sparse: true });
 researcherSchema.index({ displayName: 1, status: 1, archived: 1 });
 /**
  * Identity by profile URL, which the roster member materializer, the PI backfill and the
