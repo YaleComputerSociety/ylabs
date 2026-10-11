@@ -2,6 +2,7 @@ import {
   careerBiographyOpening,
   isCareerBiographyDescription,
   opensOnResearchHomeSubject,
+  splitDescriptionSentences,
 } from './careerBiographyDescription';
 import { isDemotablePersonBio } from './researchHomeDescriptionSelection';
 
@@ -43,9 +44,35 @@ const RESEARCH_SUBJECT_STATEMENT = new RegExp(
 const RESEARCH_VERB =
   /(?<!\b(?:in|of|and)\s+(?:[\p{L}-]+\s+){0,3})\b(?:studies|investigates|examines|explores|researches)\b(?!\s+(?:from|at|program|department|degree)\b)/u;
 
+const RESEARCH_PARTICIPLE =
+  /(?<!\b(?:after|while|before|since|when|began|begun|enjoys?|enjoyed)\s)\b(?:studying|investigating|examining|exploring|researching)\b(?!\s+(?:at|under|with|for|abroad)\b)/i;
+
+const FOCUSES_ON =
+  /(?<!\b(?:practice|care|clinic)\s)(?<!\b(?:clinical|practice)\s(?:[\p{L}-]+\s){0,2})\bfocus(?:es|ed)?\s+(?:(?:his|her|their|its|our|my)\s+(?:research|work|scholarship|studies)\s+)?on\b/iu;
+
+const WRITES_IN_THE_AREAS_OF =
+  /\b(?:teaches\s+and\s+)?writes\s+(?:and\s+teaches\s+)?in\s+the\s+(?:areas?|fields?)\s+of\b/i;
+
+const SCHOLAR_OF_A_FIELD =
+  /\bis\s+an?\s+(?:(?!(?:board|fellowship|clinical)\b)[\p{L}-]+\s+){0,2}(?:scholar|specialist)\s+(?:in|of|on)\b/iu;
+
 const statesResearch = (sentence: string): boolean =>
   RESEARCH_SUBJECT_STATEMENT.test(sentence.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' ')) ||
-  RESEARCH_VERB.test(sentence);
+  RESEARCH_VERB.test(sentence) ||
+  RESEARCH_PARTICIPLE.test(sentence) ||
+  FOCUSES_ON.test(sentence) ||
+  WRITES_IN_THE_AREAS_OF.test(sentence) ||
+  SCHOLAR_OF_A_FIELD.test(sentence);
+
+// A page heading glued onto the body ("<Name>. <Name> is ...") is a sentence by
+// punctuation only, and counting it pushed the research statement out of the opening.
+const NAME_HEADING = /^(?:[A-Z][\p{L}'’.-]*,?\s+){0,5}[A-Z][\p{L}'’-]*\.?$/u;
+
+function openingAfterHeading(text: string): string[] {
+  const sentences = splitDescriptionSentences(text);
+  const firstProse = sentences.findIndex((sentence) => !NAME_HEADING.test(sentence));
+  return careerBiographyOpening(sentences.slice(Math.max(firstProse, 0)).join(' '));
+}
 
 function opensOnCareerFacts(text: string, opening: string): boolean {
   if (isDemotablePersonBio(text) || isCareerBiographyDescription(text)) return true;
@@ -57,7 +84,7 @@ const textOf = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 export function opensByStatingResearch(value: unknown): boolean {
-  return careerBiographyOpening(textOf(value)).some(statesResearch);
+  return openingAfterHeading(textOf(value)).some(statesResearch);
 }
 
 export function isBiographyRatherThanResearch(value: unknown): boolean {

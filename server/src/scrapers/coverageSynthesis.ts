@@ -11,7 +11,11 @@ import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQualit
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
 import { isDescriptionGroundedInSource } from '../utils/officialResearchDescription';
 import { isModelTextSource } from './sourceCoverageRegistry';
-import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
+import {
+  researchStatementSentences,
+  splitDescriptionSentences,
+} from '../utils/careerBiographyDescription';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { withoutProfileTemplateWidgets } from '../utils/profileTemplateChrome';
 import {
@@ -121,6 +125,16 @@ export type CoverageSynthesisLLMFn = (input: {
   entityName: string;
 }) => Promise<CoverageSynthesisLLMResult>;
 
+/**
+ * A career biography is evidence only through the sentences that state the research, so the
+ * writer never reads an appointment, an award or a clinical role as what the person studies
+ * (#4928).
+ */
+export function writerEvidenceTextOf(value: string): string {
+  if (!isBiographyRatherThanResearch(value)) return value;
+  return researchStatementSentences(value, { activityAnchors: true }).join(' ').trim();
+}
+
 export function gatherCoverageSnippets(
   observations: CoverageObservationLike[],
   storedPageText?: StoredPageTextLookup,
@@ -131,7 +145,7 @@ export function gatherCoverageSnippets(
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const raw = withoutProfileTemplateWidgets(textValue(obs.value));
+    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
     if (!raw) continue;
     const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
     if (clean.length < 20) continue;

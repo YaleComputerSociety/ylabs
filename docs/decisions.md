@@ -567,6 +567,13 @@ Decided:
   Hand-read on 169 served Development bodies in three stratified samples (49 biographies), the test #4262 introduced (`isHighConfidencePersonBio || isCareerBiographyDescription`) scored precision 28 of 63 and recall 28 of 49, and the narrower one #4283 ranked on scored 23 of 38 and 23 of 49.
   Every false positive was research prose that opens on an orienting role ("is a cardiologist whose research focuses on"), which is why a research statement in the opening withdraws the verdict.
   On the third sample, read before the last calibration pass, the new test scored precision 9 of 11 and recall 9 of 17, and after that pass 38 of 39 and 38 of 49 across all three; the misses are biographies whose opening names a research activity or that never state a career fact, so the residual errs toward keeping a biography rather than displacing research prose.
+  A 2026-10-11 agent draft over the 32 served rows whose body or card it flagged (#4928) found six more research statements it read as biographies: a name heading glued before the opening, a role sentence that states its fields with a participle ("studying ..."), "teaches and writes in the areas of", "is a specialist in", and a card that "focuses (her research) on".
+  The opening now skips a name-only heading and reads those forms as research.
+- **A biography that states research later serves that research, and a biography is writer evidence only through its research sentences (#4928).**
+  The serve chain narrows a body to its research sentences when `isBiographyRatherThanResearch` reads it as a biography, and serves a research card in place of one that states no research, so the gate's biography reason and the narrowing read one predicate.
+  The writer reads a biography snippet only through `researchStatementSentences`, and drops it when it states none, so an appointment, award or clinical role never becomes a written research claim.
+  A biography with no research sentence and no research card still serves, under the rule above.
+  The `biography_without_research` hold keeps its narrower biography tests, so a body only `isBiographyRatherThanResearch` reads as a biography is flagged and served rather than held.
 - **A row serving a biography is flagged, not held.**
   The gate records the soft reason `biography_description_fallback` when the served body is a biography, so it never blocks and is the cohort a research-prose lane should select on.
   The Corpus Quality panel counts it as "Serves a biography as its description", measured by `corpus:snapshot` over the same representation the gate reads.
