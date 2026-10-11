@@ -65,6 +65,7 @@ export const CANONICAL_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze
     localField: 'source.evidenceIds',
     targetCollectionName: 'observations',
     required: false,
+    targetIsEvidenceTrail: true,
   },
   {
     name: 'research_entity_relationships.sourceResearchEntityId -> research_entities',

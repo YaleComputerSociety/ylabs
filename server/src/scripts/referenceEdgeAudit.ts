@@ -26,6 +26,9 @@ export interface ReferenceEdge {
   targetCollectionName: string;
   required: boolean;
   ownerFilter?: Readonly<Record<string, unknown>>;
+  // Mirrors leave the evidence trail in Development, so on a database holding none
+  // of the target rows these references are expected to dangle (#4996).
+  targetIsEvidenceTrail?: boolean;
 }
 
 async function countFromAggregate(
@@ -110,6 +113,13 @@ async function collectReferenceEdgeSamples(
   return samples;
 }
 
+async function evidenceTrailIsUnmirrored(db: Db, edge: ReferenceEdge): Promise<boolean> {
+  const heldTargetRow = await db
+    .collection(edge.targetCollectionName)
+    .findOne({}, { projection: { _id: 1 } });
+  return heldTargetRow === null;
+}
+
 export async function auditReferenceEdge(
   db: Db,
   edge: ReferenceEdge,
@@ -132,6 +142,16 @@ export async function auditReferenceEdge(
     edge.targetCollectionName,
     ownerFilter,
   );
+
+  if (edge.targetIsEvidenceTrail && (await evidenceTrailIsUnmirrored(db, edge))) {
+    return {
+      name: edge.name,
+      required: edge.required,
+      missingRequired,
+      orphanedPresentRefs: 0,
+      unmirroredEvidenceRefs: orphanedPresentRefs,
+    };
+  }
 
   return {
     name: edge.name,

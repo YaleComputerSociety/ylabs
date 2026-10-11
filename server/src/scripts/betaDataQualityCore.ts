@@ -76,6 +76,7 @@ export interface ReferenceAuditInput {
   required: boolean;
   missingRequired: number;
   orphanedPresentRefs: number;
+  unmirroredEvidenceRefs?: number;
   samples?: ReferenceAuditSample[];
 }
 
