@@ -243,7 +243,11 @@ describe('per-user activity view aggregation', () => {
     expect(countedTypes).toContain(AnalyticsEventType.LOGIN);
     expect(countedTypes).toContain(AnalyticsEventType.RESEARCH_PROFILE_OPEN);
     expect(countedTypes).not.toContain(AnalyticsEventType.SEARCH);
-    for (const retired of ['research_entity_impression', 'pathway_save', 'research_qualified_action']) {
+    for (const retired of [
+      'research_entity_impression',
+      'pathway_save',
+      'research_qualified_action',
+    ]) {
       expect(countedTypes).not.toContain(retired);
     }
   });
@@ -1042,33 +1046,35 @@ describe('getUserAnalyticsDrilldown', () => {
     mocks.analyticsAggregate.mockResolvedValue([
       { users: [{ netid: 'student1', userType: 'undergraduate', totalEvents: 2 }], total: 1 },
     ]);
-    mocks.analyticsFind.mockReturnValue({
+    const storedEvents = [
+      {
+        _id: 'evt1',
+        eventType: 'research_profile_open',
+        userType: 'undergraduate',
+        timestamp: new Date('2026-08-01T00:00:00.000Z'),
+      },
+      {
+        _id: 'evt-retired',
+        eventType: 'pathway_save',
+        userType: 'undergraduate',
+        timestamp: new Date('2026-08-01T12:00:00.000Z'),
+      },
+      {
+        _id: 'evt2',
+        eventType: 'fellowship_view',
+        userType: 'undergraduate',
+        fellowshipId,
+        timestamp: new Date('2026-08-02T00:00:00.000Z'),
+      },
+    ];
+    mocks.analyticsFind.mockImplementation((query: { eventType: { $in: string[] } }) => ({
       sort: () => ({
         limit: () => ({
-          lean: async () => [
-            {
-              _id: 'evt1',
-              eventType: 'research_profile_open',
-              userType: 'undergraduate',
-              timestamp: new Date('2026-08-01T00:00:00.000Z'),
-            },
-            {
-              _id: 'evt-retired',
-              eventType: 'pathway_save',
-              userType: 'undergraduate',
-              timestamp: new Date('2026-08-01T12:00:00.000Z'),
-            },
-            {
-              _id: 'evt2',
-              eventType: 'fellowship_view',
-              userType: 'undergraduate',
-              fellowshipId,
-              timestamp: new Date('2026-08-02T00:00:00.000Z'),
-            },
-          ],
+          lean: async () =>
+            storedEvents.filter((event) => query.eventType.$in.includes(event.eventType)),
         }),
       }),
-    });
+    }));
     const chainableFindReturning = (docs: unknown[]) => () => ({
       select: () => ({ lean: async () => docs }),
       lean: async () => docs,
