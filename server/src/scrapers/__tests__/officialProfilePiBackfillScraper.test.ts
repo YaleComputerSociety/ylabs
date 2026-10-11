@@ -33,6 +33,7 @@ import {
   shouldQueueEntityForPiBackfill,
   sourceUrlResearchHomeUrlsForEntity,
   websiteDuplicateLookupUrls,
+  trailingDirectoryNetidOfProfileSlug,
 } from '../sources/officialProfilePiBackfillScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -5462,5 +5463,74 @@ describe('OfficialProfilePiBackfillScraper.run profile prefetch (#3568)', () => 
     await scraperOver(users, fetcher, delay).run(visibleBioContextFor([]));
 
     expect(started).toEqual([0, 25, 50]);
+  });
+});
+
+describe('a profile page that names its own netid or several ORCIDs (#4994)', () => {
+  const namesakeUrl = 'https://medicine.yale.edu/profile/jules-fixture-jf123/';
+  const pageFor = (url: string, orcids: string[]) =>
+    profileHtml
+      .replace(`href="${profileUrl}"`, `href="${url}"`)
+      .replace(
+        '</main>',
+        `${orcids.map((id) => `<a href="https://orcid.org/${id}">${id}</a>`).join('')}</main>`,
+      );
+  const entity = {
+    name: 'Jules Fixture Research Area',
+    slug: 'faculty-research-area-jules-fixture',
+  };
+  const directory = new Set(['jf123', 'jf456']);
+
+  it('reads a trailing slug token as a netid only when the Yale directory holds it', () => {
+    expect(trailingDirectoryNetidOfProfileSlug(namesakeUrl, directory)).toBe('jf123');
+    expect(
+      trailingDirectoryNetidOfProfileSlug(
+        'https://medicine.yale.edu/profile/jules-kim1/',
+        directory,
+      ),
+    ).toBe('');
+    expect(trailingDirectoryNetidOfProfileSlug(namesakeUrl, undefined)).toBe('');
+  });
+
+  it("refuses a namesake's page for an expected person with a different netid", () => {
+    const html = pageFor(namesakeUrl, []);
+    const options = { requireEmail: false, yaleDirectoryNetids: directory };
+    expect(
+      extractOfficialProfileIdentity(html, namesakeUrl, entity, {
+        ...options,
+        expectedPeople: [{ fname: 'Jules', lname: 'Fixture', netid: 'jf456' }],
+      }),
+    ).toBeNull();
+    expect(
+      extractOfficialProfileIdentity(html, namesakeUrl, entity, {
+        ...options,
+        expectedPeople: [{ fname: 'Jules', lname: 'Fixture', netid: 'jules.fixture.jf123' }],
+      }),
+    ).not.toBeNull();
+  });
+
+  it('writes nothing for a user the page does not name, however the user was found', () => {
+    const identity = extractOfficialProfileIdentity(pageFor(namesakeUrl, []), namesakeUrl, entity, {
+      requireEmail: false,
+      yaleDirectoryNetids: directory,
+    });
+    expect(identity?.profileNetid).toBe('jf123');
+    expect(identityToUserObservations(identity!, { netid: 'jf456' })).toEqual([]);
+    expect(identityToUserObservations(identity!, { netid: 'jf123' }).length).toBeGreaterThan(0);
+  });
+
+  it('claims an ORCID only when the page carries exactly one', () => {
+    const one = extractOfficialProfileIdentity(
+      pageFor(profileUrl, ['0000-0002-1825-0097']),
+      profileUrl,
+      entity,
+    );
+    expect(one?.orcid).toBe('0000-0002-1825-0097');
+    const several = extractOfficialProfileIdentity(
+      pageFor(profileUrl, ['0000-0002-1825-0097', '0000-0001-5109-3700']),
+      profileUrl,
+      entity,
+    );
+    expect(several?.orcid).toBeUndefined();
   });
 });
