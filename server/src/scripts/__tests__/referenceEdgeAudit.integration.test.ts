@@ -12,6 +12,8 @@ const evidenceEdge: ReferenceEdge = {
   required: false,
 };
 
+const mirroredEvidenceEdge: ReferenceEdge = { ...evidenceEdge, targetIsEvidenceTrail: true };
+
 const scalarEdge: ReferenceEdge = {
   name: 'signals.researchEntityId',
   collectionName: 'signals',
@@ -91,6 +93,34 @@ describe('auditReferenceEdge (integration)', () => {
         value: missingObservation.toString(),
       }),
     ]);
+  });
+
+  it('reports evidence refs as unmirrored, not orphaned, on a database holding no observations (#4996)', async () => {
+    await db()
+      .collection('signals')
+      .insertMany([
+        { source: { evidenceIds: [new mongoose.Types.ObjectId()] } },
+        { source: { evidenceIds: [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()] } },
+      ]);
+
+    const audit = await auditReferenceEdge(db(), mirroredEvidenceEdge, { includeSamples: true });
+
+    expect(audit.orphanedPresentRefs).toBe(0);
+    expect(audit.unmirroredEvidenceRefs).toBe(3);
+    expect(audit.samples).toBeUndefined();
+  });
+
+  it('still counts a dangling evidence ref as an orphan where the observations live (#4996)', async () => {
+    const liveObservation = new mongoose.Types.ObjectId();
+    await db().collection('observations').insertOne({ _id: liveObservation });
+    await db()
+      .collection('signals')
+      .insertOne({ source: { evidenceIds: [liveObservation, new mongoose.Types.ObjectId()] } });
+
+    const audit = await auditReferenceEdge(db(), mirroredEvidenceEdge);
+
+    expect(audit.orphanedPresentRefs).toBe(1);
+    expect(audit.unmirroredEvidenceRefs).toBeUndefined();
   });
 
   it('reports zero orphans when every signal carries the schema-default empty array', async () => {
