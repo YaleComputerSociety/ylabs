@@ -5521,13 +5521,13 @@ describe('a profile page that names its own netid or several ORCIDs (#4994)', ()
 
   it('claims an ORCID only when the page carries exactly one', () => {
     const one = extractOfficialProfileIdentity(
-      pageFor(profileUrl, ['0000-0002-1825-0097']),
+      pageFor(profileUrl, ['9999-9000-9999-9005']),
       profileUrl,
       entity,
     );
-    expect(one?.orcid).toBe('0000-0002-1825-0097');
+    expect(one?.orcid).toBe('9999-9000-9999-9005');
     const several = extractOfficialProfileIdentity(
-      pageFor(profileUrl, ['0000-0002-1825-0097', '0000-0001-5109-3700']),
+      pageFor(profileUrl, ['9999-9000-9999-9005', '9999-9000-9999-9013']),
       profileUrl,
       entity,
     );
