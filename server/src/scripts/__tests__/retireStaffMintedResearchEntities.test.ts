@@ -64,6 +64,36 @@ describe('hasForeignWebsite', () => {
     ).toBe(true);
   });
 
+  it('is false for a website the minting lane wrote from the page it minted the row from', () => {
+    const listing = 'https://school.example.edu/faculty/directory/';
+    const mint = { sourceName: 'dept-faculty-roster', sourceUrl: listing };
+    expect(
+      hasForeignWebsite(
+        {
+          websiteUrl: 'https://medicine.example.edu/lab/principal/',
+          fieldProvenance: { slug: mint, websiteUrl: mint },
+        },
+        IDENTITY,
+      ),
+    ).toBe(false);
+  });
+
+  it('is true when another lane wrote the website from the same listing the row was minted from', () => {
+    const listing = 'https://school.example.edu/faculty/directory/';
+    expect(
+      hasForeignWebsite(
+        {
+          websiteUrl: 'https://medicine.example.edu/lab/principal/',
+          fieldProvenance: {
+            slug: { sourceName: 'dept-faculty-roster', sourceUrl: listing },
+            websiteUrl: { sourceName: 'ysm-atoz-index', sourceUrl: listing },
+          },
+        },
+        IDENTITY,
+      ),
+    ).toBe(true);
+  });
+
   it('is false for a row with no website, and true when the identity page is unknown', () => {
     expect(hasForeignWebsite({ fieldProvenance: {} }, IDENTITY)).toBe(false);
     expect(hasForeignWebsite({ websiteUrl: 'https://x.example.org/' }, undefined)).toBe(true);

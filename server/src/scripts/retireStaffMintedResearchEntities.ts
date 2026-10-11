@@ -127,10 +127,13 @@ export function parseRetireStaffMintedEntitiesArgs(
 const provenanceOf = (
   entity: { fieldProvenance?: unknown },
   field: string,
-): { sourceUrl?: unknown } | undefined => {
+): { sourceName?: unknown; sourceUrl?: unknown } | undefined => {
   const provenance =
     entity.fieldProvenance && typeof entity.fieldProvenance === 'object'
-      ? (entity.fieldProvenance as Record<string, { sourceUrl?: unknown } | undefined>)
+      ? (entity.fieldProvenance as Record<
+          string,
+          { sourceName?: unknown; sourceUrl?: unknown } | undefined
+        >)
       : {};
   return provenance[field];
 };
@@ -152,12 +155,16 @@ export function identityProfileUrlOf(entity: { fieldProvenance?: unknown }): str
 }
 
 /**
- * Whether the row populates a website its identity page did not supply.
+ * Whether the row populates a website its mint did not supply.
  *
  * A website whose provenance IS the identity page is the lab link off the person's own
  * profile, which is the graft being retired rather than an identity of the row's own,
- * so it must not spare the row. Anything else is an identity that did not come from
- * this page, and one such field is enough, because archival cannot be undone by
+ * so it must not spare the row. The same holds for a website the minting lane wrote
+ * from the page it minted the row from, read off the `slug` provenance: a roster lane
+ * mints from a shared listing, so its website carries the listing rather than the
+ * identity page, and comparing to the identity page alone spared every roster-minted
+ * row the lane gave a lab link (#4982). Anything else is an identity that did not come
+ * from the mint, and one such field is enough, because archival cannot be undone by
  * re-scraping. A row with no website at all has nothing foreign.
  */
 export function hasForeignWebsite(
@@ -167,7 +174,17 @@ export function hasForeignWebsite(
   const fields = populatedWebsiteFieldsOf(entity);
   if (fields.length === 0) return false;
   if (!identityProfileUrl) return true;
-  return fields.some((field) => provenanceOf(entity, field)?.sourceUrl !== identityProfileUrl);
+  const mint = provenanceOf(entity, 'slug');
+  const cameFromTheMint = (field: (typeof WEBSITE_FIELDS)[number]): boolean => {
+    const provenance = provenanceOf(entity, field);
+    if (provenance?.sourceUrl === identityProfileUrl) return true;
+    return (
+      Boolean(mint?.sourceName && mint.sourceUrl) &&
+      provenance?.sourceName === mint?.sourceName &&
+      provenance?.sourceUrl === mint?.sourceUrl
+    );
+  };
+  return fields.some((field) => !cameFromTheMint(field));
 }
 
 export const WEBSITE_FIELDS = ['websiteUrl', 'website'] as const;
