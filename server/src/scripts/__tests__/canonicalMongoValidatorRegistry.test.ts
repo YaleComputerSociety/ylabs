@@ -135,7 +135,12 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #4940. The only drift is researchers losing dedupedReason, because the twin
+    // Reviewed for #5000. The only drift is researchers.identifiers gaining email, an optional
+    // lowercased string of at most 254 characters, so a researcher's address no longer lives
+    // only on its linked account. Researchers written before it carry none until the
+    // backfill copies the linked account's email. No other collection or property changed.
+    //
+    // Reviewed for #4940 before that. The only drift is researchers losing dedupedReason, because the twin
     // researcher merge that stamped it was removed (#4924). On 2026-10-05, 0 Development
     // researchers carried the field. No other collection or property changed.
     //
@@ -194,6 +199,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('c69c262b8dce7b35d240c86700a31cda0ff9979d63fc6436cfe50fa6849df193');
+    ).toBe('405d9432f4aad56bafe9aeffc94d2138968388e38a878377212f9290447d7855');
   });
 });
