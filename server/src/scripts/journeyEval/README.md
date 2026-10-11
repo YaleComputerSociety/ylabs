@@ -196,7 +196,7 @@ A verdict is exactly one of the following, applied in this order so that each ro
 4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
 5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
 
-`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, which is what the badge text asserts, as opposed to only saying it is open to them.
+`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the card labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
 
 Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
 With judgements supplied it adds three precision rates, and none of the six gates.
