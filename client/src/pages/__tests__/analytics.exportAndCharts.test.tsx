@@ -78,7 +78,6 @@ const userRow = {
   searches: 4,
   researchViews: 2,
   fellowshipViews: 0,
-  profileUpdates: 0,
   loginCount: 2,
   lastActive: '2026-05-17T00:00:00.000Z',
 };
@@ -123,7 +122,6 @@ const mockEndpoints = (funnelOverride?: unknown) => {
       case '/analytics/funnel':
         return Promise.resolve({
           data: funnelOverride ?? {
-            overallConversionRate: 0.25,
             stages: [
               {
                 key: 'research_searches',
@@ -132,8 +130,8 @@ const mockEndpoints = (funnelOverride?: unknown) => {
                 conversionRate: 1,
               },
               {
-                key: 'qualified_actions',
-                label: 'Used a qualified route',
+                key: 'plans',
+                label: 'Updated a plan',
                 count: 10,
                 conversionRate: 0.25,
               },
@@ -165,13 +163,12 @@ describe('Analytics charts and CSV export', () => {
     });
     expect(screen.getByRole('group', { name: 'Student action counts' })).toBeTruthy();
     expect(screen.getByRole('group', { name: /Signed-in visitors by type/ })).toBeTruthy();
-    expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
+    expect(screen.getAllByText('Updated a plan')).toHaveLength(1);
     expect(screen.getByText('Lab')).toBeTruthy();
   });
 
   it('names a student-action stage only from the served funnel, never from the client', async () => {
     mockEndpoints({
-      overallConversionRate: 0.25,
       visitorCount: 486,
       searcherCount: 100,
       viewerCount: 50,

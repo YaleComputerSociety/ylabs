@@ -620,11 +620,7 @@ const Analytics = () => {
   const zeroResultQueries = searchQuality?.zeroResultQueries || [];
   const lowResultQueries = searchQuality?.lowResultQueries || [];
   const actionCards = actions?.cards || [];
-  const journeyMetrics = funnel?.journeyMetrics || {
-    sourceInspections: 0,
-    officialRouteAttempts: 0,
-    applicationOpens: 0,
-  };
+  const journeyMetrics = funnel?.journeyMetrics || { sourceInspections: 0 };
   const selectedRangeLabel =
     analyticsRanges.find((range) => range.value === analyticsRange)?.label || 'Selected range';
   const showSevenDayBreakdown =
@@ -722,19 +718,11 @@ const Analytics = () => {
               tone={searchSuccessRate !== null && searchSuccessRate < 0.75 ? 'amber' : 'green'}
             />
             <DashboardMetric
-              title="Official next-step rate"
-              value={
-                funnel && funnel.overallConversionRate === null
-                  ? 'not recorded'
-                  : formatPercent(funnel?.overallConversionRate ?? undefined)
-              }
-              context={
-                funnel && funnel.overallConversionRate === null
-                  ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this rate is unmeasured rather than zero.`
-                  : `Share of logged-in students who reached an official next step (application, open position, or reviewed route) in ${selectedRangeLabel}.`
-              }
-              definition="Distinct students who reached an official next step, divided by distinct logged-in students, for the selected range. Reads as not recorded when no qualified-action event reached the store."
-              tone={funnel && funnel.overallConversionRate === null ? 'amber' : 'blue'}
+              title="Source reviewers"
+              value={formatNumber(journeyMetrics.sourceInspections)}
+              context={`Students who opened a profile, publication, website, ORCID, or evidence record in ${selectedRangeLabel}.`}
+              definition="Distinct students who opened at least one source detail (profile, publication, website, ORCID, or evidence). Research reads, not applications."
+              tone="blue"
             />
             <DashboardMetric
               title="Student-ready research"
@@ -750,52 +738,12 @@ const Analytics = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 border-t border-[var(--yr-line)] p-5 sm:grid-cols-2 lg:grid-cols-4">
-            <DashboardMetric
-              title="Source reviewers"
-              value={formatNumber(journeyMetrics.sourceInspections)}
-              context={`Students who opened a profile, publication, website, ORCID, or evidence record in ${selectedRangeLabel}.`}
-              definition="Distinct students who opened at least one source detail (profile, publication, website, ORCID, or evidence). Research reads, not applications."
-              tone="blue"
-            />
-            <DashboardMetric
-              title="Official-route reach"
-              value={
-                journeyMetrics.officialRouteAttempts === null
-                  ? 'not recorded'
-                  : formatNumber(journeyMetrics.officialRouteAttempts)
-              }
-              context={
-                journeyMetrics.officialRouteAttempts === null
-                  ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this is unmeasured rather than zero.`
-                  : `Students who clicked an application, open-position, or reviewed-route link in ${selectedRangeLabel}.`
-              }
-              definition="Distinct students who clicked at least one official-route link: application, open position, or reviewed route."
-              tone="blue"
-            />
-            <DashboardMetric
-              title="Application opens"
-              value={
-                journeyMetrics.applicationOpens === null
-                  ? 'not recorded'
-                  : formatNumber(journeyMetrics.applicationOpens)
-              }
-              context={
-                journeyMetrics.applicationOpens === null
-                  ? `No qualified-action events were recorded in ${selectedRangeLabel}, so this is unmeasured rather than zero.`
-                  : `Students who opened an application or open-position link in ${selectedRangeLabel}.`
-              }
-              definition="Distinct students who opened an application or open-position link. A subset of official-route reach."
-              tone="green"
-            />
-          </div>
-
           <div className="border-t border-[var(--yr-line)] p-5">
             <h2 className="yr-display text-2xl font-semibold text-ink">Decision Readout</h2>
             <div className="mt-3 space-y-3 text-sm leading-6 text-muted">
               <p>
-                Start with search success and the official next-step rate: they show whether
-                discovery intent becomes visible next-step behavior.
+                Start with search success and source reviewers: they show whether discovery
+                intent becomes a profile view, a save, or a read of the cited sources.
               </p>
               <p>Treat low-result queries and action cards as the work queue, not just warnings.</p>
               <p>
