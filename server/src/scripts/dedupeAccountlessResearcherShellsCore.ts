@@ -876,3 +876,95 @@ export function planAccountlessClusterFolds(
   }
   return plan;
 }
+
+/**
+ * Whether two records' names are one person: the #4920 surname rule, plus a given name of
+ * one record found among the other's given names, so an initial-led form ("P Mark") and a
+ * middle-initial form ("Mark S.") of one name agree while two people sharing a surname do not.
+ */
+export function sameAddressHolderNamesAgree(left: unknown, right: unknown): boolean {
+  if (!profileHolderSurnamesAgree(left, right)) return false;
+  const leftTokens = foldedNameTokens(left);
+  const rightTokens = foldedNameTokens(right);
+  if (leftTokens.length < 2 || rightTokens.length < 2) return false;
+  return (
+    givenNameAgrees(leftTokens[0], rightTokens.slice(0, -1)) ||
+    givenNameAgrees(rightTokens[0], leftTokens.slice(0, -1))
+  );
+}
+
+export const ALIAS_TWIN_FOLD_REFUSALS = [
+  'twin-account-has-login',
+  'alias-unresolved',
+  'real-account-not-live',
+  'no-real-researcher',
+  'names-disagree',
+] as const;
+export type AliasTwinFoldRefusal = (typeof ALIAS_TWIN_FOLD_REFUSALS)[number];
+
+export interface AliasTwinAccount {
+  id: string;
+  netid: string;
+  live: boolean;
+  hasLogin: boolean;
+}
+
+export interface AliasTwinPlan {
+  targetByTwinResearcherId: Map<string, string>;
+  twinAccountIdByTwinResearcherId: Map<string, string>;
+  refusals: Record<AliasTwinFoldRefusal, number>;
+}
+
+/**
+ * Which local-part twin researchers fold into the real-netid researcher (#4988).
+ *
+ * The directory's alias map is the evidence that the two accounts are one address, but it
+ * reads every `email` observation, including a lane that has attached one person's profile
+ * to a namesake, so it only proposes: the names must also agree. A twin account that has
+ * signed in is refused, because a login is a person acting under that account.
+ */
+export function planAliasTwinFolds(input: {
+  twinAccounts: readonly AliasTwinAccount[];
+  accountsByNetid: ReadonlyMap<string, AliasTwinAccount>;
+  aliasNetidByTwinNetid: ReadonlyMap<string, string>;
+  researcherByAccountId: ReadonlyMap<string, { id: string; displayName?: unknown }>;
+}): AliasTwinPlan {
+  const plan: AliasTwinPlan = {
+    targetByTwinResearcherId: new Map(),
+    twinAccountIdByTwinResearcherId: new Map(),
+    refusals: Object.fromEntries(ALIAS_TWIN_FOLD_REFUSALS.map((reason) => [reason, 0])) as Record<
+      AliasTwinFoldRefusal,
+      number
+    >,
+  };
+  for (const twin of input.twinAccounts) {
+    const twinResearcher = input.researcherByAccountId.get(twin.id);
+    if (!twin.live || !twinResearcher) continue;
+    if (twin.hasLogin) {
+      plan.refusals['twin-account-has-login'] += 1;
+      continue;
+    }
+    const realNetid = input.aliasNetidByTwinNetid.get(twin.netid);
+    if (!realNetid || realNetid === twin.netid) {
+      plan.refusals['alias-unresolved'] += 1;
+      continue;
+    }
+    const real = input.accountsByNetid.get(realNetid);
+    if (!real?.live) {
+      plan.refusals['real-account-not-live'] += 1;
+      continue;
+    }
+    const realResearcher = input.researcherByAccountId.get(real.id);
+    if (!realResearcher || realResearcher.id === twinResearcher.id) {
+      plan.refusals['no-real-researcher'] += 1;
+      continue;
+    }
+    if (!sameAddressHolderNamesAgree(twinResearcher.displayName, realResearcher.displayName)) {
+      plan.refusals['names-disagree'] += 1;
+      continue;
+    }
+    plan.targetByTwinResearcherId.set(twinResearcher.id, realResearcher.id);
+    plan.twinAccountIdByTwinResearcherId.set(twinResearcher.id, twin.id);
+  }
+  return plan;
+}

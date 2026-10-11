@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
+import { resolveNetidForRosterEmailAlias } from '../scrapers/entityMaterializer';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -31,7 +32,10 @@ import {
   type SharedRowCandidate,
   type ShellFoldIdentity,
   type ShellMergeReason,
+  planAliasTwinFolds,
+  type AliasTwinFoldRefusal,
 } from './dedupeAccountlessResearcherShellsCore';
+import { isLocalPartAccount } from './mergeLocalPartNetidAccountsCore';
 
 dotenv.config({ quiet: true });
 
@@ -122,6 +126,7 @@ export interface DedupeAccountlessResearcherShellsResult {
   netidBackedAccountlessResearchers: number;
   byReason: Record<ShellMergeReason, number>;
   shellsMerged: number;
+  aliasTwinFolds: { folded: number; refusals: Record<AliasTwinFoldRefusal, number> };
   /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
   foldsByMatchedIdentity: Record<ShellFoldIdentity, number>;
   /** Groups with no account-backed member, folded into a survivor chosen among themselves. */
@@ -306,6 +311,46 @@ async function loadSharedRowCandidates(
   return candidatesByShellId;
 }
 
+const idText = (value: unknown): string => (value == null ? '' : String(value));
+
+async function planAliasTwinFoldsFor(
+  accounts: Array<Record<string, unknown>>,
+  researchers: ReadonlyArray<{ id: string; accountId?: unknown; displayName?: unknown }>,
+) {
+  const asTwinAccount = (doc: Record<string, unknown>) => ({
+    id: idText(doc._id),
+    netid: typeof doc.netid === 'string' ? doc.netid : '',
+    live: doc.archived !== true && doc.status !== 'DISABLED',
+    hasLogin: doc.lastLoginAt != null,
+  });
+  const twinAccounts = accounts
+    .filter((doc) => isLocalPartAccount(doc as { netid?: unknown; email?: unknown }))
+    .map(asTwinAccount);
+  const aliasNetidByTwinNetid = new Map<string, string>();
+  for (const twin of twinAccounts) {
+    const resolution = await resolveNetidForRosterEmailAlias(twin.netid);
+    if (resolution.status === 'resolved') aliasNetidByTwinNetid.set(twin.netid, resolution.netid);
+  }
+  return planAliasTwinFolds({
+    twinAccounts,
+    accountsByNetid: new Map(
+      accounts
+        .map(asTwinAccount)
+        .filter((account) => account.netid)
+        .map((a) => [a.netid, a]),
+    ),
+    aliasNetidByTwinNetid,
+    researcherByAccountId: new Map(
+      researchers
+        .filter((entry) => entry.accountId)
+        .map((entry) => [
+          idText(entry.accountId),
+          { id: entry.id, displayName: entry.displayName },
+        ]),
+    ),
+  });
+}
+
 export async function dedupeAccountlessResearcherShells(options: {
   apply: boolean;
 }): Promise<DedupeAccountlessResearcherShellsResult> {
@@ -344,7 +389,10 @@ export async function dedupeAccountlessResearcherShells(options: {
   // reachable through the account it is keyed on. Joining through `accounts` is
   // what makes the pair visible at all (#3166).
   const Account = mongoose.connection.collection('accounts');
-  const accounts = await Account.find({}, { projection: { netid: 1 } }).toArray();
+  const accounts = await Account.find(
+    {},
+    { projection: { netid: 1, email: 1, archived: 1, status: 1, lastLoginAt: 1 } },
+  ).toArray();
   const netidByAccountId = new Map<string, unknown>(
     (accounts as any[]).map((doc) => [idKey(doc._id), doc.netid]),
   );
@@ -413,6 +461,10 @@ export async function dedupeAccountlessResearcherShells(options: {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
+  }
+  const aliasTwinPlan = await planAliasTwinFoldsFor(accounts as any[], researcherIdentities);
+  for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
+    decidedTargetByShellId.set(twinId, realId);
   }
   const mergeTargetByShellId = resolveFinalMergeTargets(decidedTargetByShellId);
 
@@ -667,6 +719,11 @@ export async function dedupeAccountlessResearcherShells(options: {
         transferredUniqueIdentifierUnsets[`identifiers.${field}`] = '';
       }
     }
+    // The twin account is merged into the real one next, which repoints `accountId`, and the
+    // index allows one researcher per account, so the archived twin lets go of it (#4988).
+    if (aliasTwinPlan.twinAccountIdByTwinResearcherId.has(shellId)) {
+      transferredUniqueIdentifierUnsets.accountId = '';
+    }
     if (Object.keys(transferredUniqueIdentifierUnsets).length) {
       shellArchiveUpdate.$unset = transferredUniqueIdentifierUnsets;
     }
@@ -735,6 +792,12 @@ export async function dedupeAccountlessResearcherShells(options: {
     netidBackedAccountlessResearchers,
     byReason,
     shellsMerged: mergeTargetByShellId.size,
+    aliasTwinFolds: {
+      folded: [...aliasTwinPlan.targetByTwinResearcherId.keys()].filter((id) =>
+        mergeTargetByShellId.has(id),
+      ).length,
+      refusals: aliasTwinPlan.refusals,
+    },
     foldsByMatchedIdentity,
     accountlessClusters: {
       groups: clusterPlan.groups,

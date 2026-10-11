@@ -859,3 +859,21 @@ describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
     expect(plan.foldTargetById.size).toBe(0);
   });
 });
+
+describe('sameAddressHolderNamesAgree', () => {
+  it('agrees on a middle-initial form, an initial-led form and a compound surname of one name', async () => {
+    const { sameAddressHolderNamesAgree } =
+      await import('../dedupeAccountlessResearcherShellsCore');
+    expect(sameAddressHolderNamesAgree('Robin Q. Example', 'R Robin Example')).toBe(true);
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Example Sample')).toBe(true);
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Example')).toBe(true);
+  });
+
+  it('disagrees on two people who share only a surname or only a given name', async () => {
+    const { sameAddressHolderNamesAgree } =
+      await import('../dedupeAccountlessResearcherShellsCore');
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Casey Example')).toBe(false);
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Sample')).toBe(false);
+    expect(sameAddressHolderNamesAgree('Robin', 'Robin Example')).toBe(false);
+  });
+});

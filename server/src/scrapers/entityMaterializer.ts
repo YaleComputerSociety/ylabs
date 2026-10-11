@@ -3511,16 +3511,21 @@ async function resolveInferredPiKeyIdentity(
 ): Promise<InferredPiKeyResolution> {
   if (identity.netid) {
     const byNetid = await resolveResearcherIdForPersonName('', { netid: identity.netid });
-    if (byNetid.status === 'matched') return byNetid;
-    const aliasMapping = await resolveNetidForRosterEmailAlias(identity.netid);
-    if (aliasMapping.status === 'ambiguous') {
-      return { status: 'ambiguous', aliasNamesSeveralNetids: true };
+    // A local-part netid that matches is the alias's own twin account, so the directory's
+    // map still outranks it, or the twin keeps every observation keyed on the alias (#4988).
+    if (byNetid.status === 'matched' && !isLikelyYaleEmailLocalPart(identity.netid)) {
+      return byNetid;
     }
+    const aliasMapping = await resolveNetidForRosterEmailAlias(identity.netid);
     if (aliasMapping.status === 'resolved' && aliasMapping.netid !== identity.netid) {
       const byHealedNetid = await resolveResearcherIdForPersonName('', {
         netid: aliasMapping.netid,
       });
       if (byHealedNetid.status === 'matched') return byHealedNetid;
+    }
+    if (byNetid.status === 'matched') return byNetid;
+    if (aliasMapping.status === 'ambiguous') {
+      return { status: 'ambiguous', aliasNamesSeveralNetids: true };
     }
   }
   const name = identity.name || identity.emailAliasName || '';
@@ -6021,6 +6026,25 @@ async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefi
   return live.length === 1 ? live[0] : undefined;
 }
 
+/**
+ * The live account a local-part netid resolves to through the directory's alias map, when
+ * that is a different account from the one the netid names.
+ *
+ * An account whose netid is an email local part is the alias's twin of a real-netid account
+ * (#4988). Looked up first, it holds every observation keyed `netid:<local part>`, and it is
+ * still found once archived because the netid lookup does not filter archived accounts, so a
+ * fold of the twin stranded those observations (#4924). The directory's map is its own
+ * statement of whose address this is, so it outranks the twin, and only a live account can
+ * win, which keeps an archived real account from re-opening the split.
+ */
+async function liveAccountTheAliasResolvesTo(netid: string): Promise<any | undefined> {
+  if (!isLikelyYaleEmailLocalPart(netid)) return undefined;
+  const resolution = await resolveNetidForRosterEmailAlias(netid);
+  if (resolution.status !== 'resolved' || resolution.netid === netid) return undefined;
+  const account = await Account.findOne({ netid: resolution.netid }).lean();
+  return account && accountIsLive(account) ? account : undefined;
+}
+
 const OFFICIAL_PROFILE_URL_JOIN_CANDIDATE_LIMIT = 10;
 
 // The stored link is matched on the identity key rather than the literal string, so a
@@ -6249,6 +6273,7 @@ export async function joinUserIdentityToExistingResearcher(
   const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
   let account: any = netid ? await Account.findOne({ netid }).lean() : null;
+  if (account && netid) account = (await liveAccountTheAliasResolvesTo(netid)) ?? account;
   const accountNetid = normalizedAccountNetid(account?.netid);
 
   let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
