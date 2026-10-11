@@ -32,6 +32,7 @@ import {
   researchStatementSentences,
   splitDescriptionSentences,
 } from '../utils/careerBiographyDescription';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
@@ -225,7 +226,8 @@ function researchSentencesOfCurriculumVitaeBody(
     readsAs(isCredentialOrAwardLeadBiography) ||
     readsAs(isCredentialOrTitleLeadBiography) ||
     readsAs(isPersonBiographyOrAdvisingDescription) ||
-    readsAs(opensOnTeachingAppointment);
+    readsAs(opensOnTeachingAppointment) ||
+    readsAs(isBiographyRatherThanResearch);
   if (!curriculumVitae && !biography) return '';
   const research = researchStatementSentences(body, {
     activityAnchors: curriculumVitae || careerBiography,
@@ -580,7 +582,8 @@ function isResearchlessBiographyBody(entity: Record<string, any>, body: string):
     isCredentialOrTitleLeadBiography(body) ||
     isPersonBiographyOrAdvisingDescription(body) ||
     isBibliographicCitationBody(body) ||
-    isTeachingOrPastTraineeWorkBody(body);
+    isTeachingOrPastTraineeWorkBody(body) ||
+    isBiographyRatherThanResearch(body);
   if (!biography) return false;
   // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
   // served and labelled creative practice, never withheld for stating no research.
