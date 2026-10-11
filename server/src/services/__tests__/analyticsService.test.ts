@@ -31,8 +31,6 @@ vi.mock('../../models/analytics', () => ({
     VISITOR: 'visitor',
     FELLOWSHIP_VIEW: 'fellowship_view',
     SEARCH: 'search',
-    PROFILE_UPDATE: 'profile_update',
-    RESEARCH_VIEW: 'research_view',
     WAYS_IN_CLICK: 'ways_in_click',
     CONTACT_ROUTE_CLICK: 'contact_route_click',
     SOURCE_LINK_CLICK: 'source_link_click',
@@ -247,6 +245,8 @@ describe('per-user activity view aggregation', () => {
       'research_entity_impression',
       'pathway_save',
       'research_qualified_action',
+      'research_view',
+      'profile_update',
     ]) {
       expect(countedTypes).not.toContain(retired);
     }

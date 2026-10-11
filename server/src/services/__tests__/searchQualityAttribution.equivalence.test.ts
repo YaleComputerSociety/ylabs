@@ -61,7 +61,6 @@ const legacySelfJoinPipeline = (): mongoose.PipelineStage[] => [
                     [
                       AnalyticsEventType.SEARCH,
                       AnalyticsEventType.FELLOWSHIP_VIEW,
-                      AnalyticsEventType.RESEARCH_VIEW,
                       AnalyticsEventType.RESEARCH_PROFILE_OPEN,
                       AnalyticsEventType.RESEARCH_SAVE,
                     ],
@@ -257,7 +256,7 @@ describe('search-quality attribution single-pass equivalence', () => {
         searchQuery: 'robotics',
         metadata: { entityType: 'fellowship', resultCount: 4 },
       }),
-      event('stud03', AnalyticsEventType.RESEARCH_VIEW, 5),
+      event('stud03', AnalyticsEventType.RESEARCH_PROFILE_OPEN, 5),
       event('stud03', AnalyticsEventType.SEARCH, 10, {
         searchQuery: 'materials',
         metadata: { entityType: 'research_entity', resultCount: 1 },

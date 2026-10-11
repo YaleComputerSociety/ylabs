@@ -85,7 +85,6 @@ const userRow = (netid: string, lname: string, totalEvents: number) => ({
   searches: 1,
   researchViews: 1,
   fellowshipViews: 0,
-  profileUpdates: 0,
   loginCount: 1,
   lastActive: '2026-05-17T10:00:00.000Z',
 });
