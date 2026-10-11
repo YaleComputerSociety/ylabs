@@ -15,6 +15,20 @@ Decision: a served quote renders as "Mentions undergraduate research" with the q
 The DTO serves that page as `undergradEvidenceSourceUrl` only beside a quote the existing serve-time guards admit, a quote with no public page renders nothing, and the quote is withheld with the way in for an emeritus lead.
 The lane stays manual-only for runtime rather than precision: a full pass takes 4 to 20 hours against a weekly sweep of about 8 hours and Render's 12-hour job limit, so it is run scoped by hand when the quotes need refreshing.
 
+## 2026-10-11: A Row Whose Only Description Is A Career Biography Is Held Until Research Evidence Exists (#4928)
+
+This refines the 2026-10-01 rule that a biography serves when no research prose exists, and the 2026-10-04 rule that a thin but accurate description serves.
+After #4999, the rows still serving a body that `isBiographyRatherThanResearch` reads as a biography were career biographies with no research statement, and a biography that states no research is not a research description, so it does not qualify a row to serve.
+Decision (owner, 2026-10-11): the gate holds such a row at `operator_review` with `career_biography_without_research` until research evidence exists.
+It reads the representation the serve chain already produced, so it holds only what remains after the narrowing to research sentences and the research card served in place of a biography.
+A row is not held when its served body has a research sentence, when its served card states research, including a thin "Studies <topics>." line derived from its topics, or when the creative-practice predicate labels it (2026-10-03).
+A body sentence counts as research when it names a research focus and the biography detector does not read that sentence itself as a career fact, because the focus test alone reads a service sentence such as an editorship at a named journal as research.
+The `biography_without_research` hold keeps its narrower tests unchanged and wins when both apply, so each detector's hold is counted on its own.
+The hold is a derivation re-run on every gate pass: it writes no field and takes no lock, so a row returns as soon as a lane stores a research statement or a research card.
+Measured read-only on Development on 2026-10-11 by calling the gate planner in dry-run: of 4,224 research rows, 11 `student_ready` rows served a biography body; the hold moves 2 of them out of `student_ready`, both with no research sentence in the stored body and no research card, and spares 3 creative-practice rows and 5 rows whose served card states research, one of them a topics line.
+One more row the focus test spares is a biography whose only field-naming sentence is a co-founding note, which the per-sentence reading does not flag, so the residual errs toward serving.
+This is a stored-tier change: it reaches students after `student-visibility:gate --apply` runs on Development and the search index is rebuilt.
+
 ## 2026-10-11: Analytics Keeps Only Event Types With A Live Emitter (#4992)
 
 This supersedes the 2026-08-29 rule that an analytics enum member with historical rows stays.
@@ -582,10 +596,11 @@ Decided:
 - **A biography that states research later serves that research, and a biography is writer evidence only through its research sentences (#4928).**
   The serve chain narrows a body to its research sentences when `isBiographyRatherThanResearch` reads it as a biography, and serves a research card in place of one that states no research, so the gate's biography reason and the narrowing read one predicate.
   The writer reads a biography snippet only through `researchStatementSentences`, and drops it when it states none, so an appointment, award or clinical role never becomes a written research claim.
-  A biography with no research sentence and no research card still serves, under the rule above.
-  The `biography_without_research` hold keeps its narrower biography tests, so a body only `isBiographyRatherThanResearch` reads as a biography is flagged and served rather than held.
+  A biography with no research sentence and no research card is held by `career_biography_without_research` since the 2026-10-11 entry above, which supersedes the rule that it still serves.
+  The `biography_without_research` hold keeps its narrower biography tests.
 - **A row serving a biography is flagged, not held.**
   The gate records the soft reason `biography_description_fallback` when the served body is a biography, so it never blocks and is the cohort a research-prose lane should select on.
+  Since the 2026-10-11 entry above, a row whose biography states no research anywhere on the row is also held, under `career_biography_without_research`.
   The Corpus Quality panel counts it as "Serves a biography as its description", measured by `corpus:snapshot` over the same representation the gate reads.
 - **The card follows the same preference.**
   The shared card resolver serves a research card derived from the body in place of a stored biography card when that derived card clears the gate's card bar, and keeps the biography card otherwise, so browse, detail and the gate read one line (#4100, #4127).

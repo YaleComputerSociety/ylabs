@@ -24,6 +24,7 @@ import {
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   servedBodyIsBiographyWithoutResearch,
+  servedBodyIsCareerBiographyWithoutResearch,
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
@@ -866,6 +867,11 @@ export const isStudentReadySoftSignalReason = (reason: string): boolean =>
 // real and the row returns once a source states the research.
 export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
 
+// A person-scoped row whose only served description is a career biography by the current
+// detector, with no research sentence and no research card (owner decision, 2026-10-11,
+// #4928). Separate from `biography_without_research` so each detector's hold is counted.
+export const CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'career_biography_without_research';
+
 // HARD blockers: genuine correctness/quality failures that would MISLEAD a
 // student, so any one holds a card out of `student_ready`. Grouped by the
 // correctness category each belongs to. The structural suppression shells
@@ -911,6 +917,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   // as non-blocking, so a row held by it alone would count as unexplained.
   'citations_identify_no_person',
   BIOGRAPHY_WITHOUT_RESEARCH_REASON,
+  CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON,
 ]);
 
 export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
@@ -1179,6 +1186,10 @@ export function computeResearchEntityStudentVisibility({
   if (unbackedLabName) reasons.push('unbacked_lab_name');
   const biographyWithoutResearch = servedBodyIsBiographyWithoutResearch(publicDescription);
   if (biographyWithoutResearch) reasons.push(BIOGRAPHY_WITHOUT_RESEARCH_REASON);
+  const careerBiographyWithoutResearch =
+    !biographyWithoutResearch && servedBodyIsCareerBiographyWithoutResearch(publicDescription);
+  if (careerBiographyWithoutResearch) reasons.push(CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON);
+  const servesNoResearchStatement = biographyWithoutResearch || careerBiographyWithoutResearch;
   const leadTitleRuledNonHostingRank =
     !missingLead && leadTitlesAreRuledNonHostingRanks(leadMembers);
   if (leadTitleRuledNonHostingRank) reasons.push(LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON);
@@ -1201,7 +1212,9 @@ export function computeResearchEntityStudentVisibility({
 
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
     descriptionCoherent:
-      publicDescription.invariant.pass && hasRequiredResearchFocusCard && !biographyWithoutResearch,
+      publicDescription.invariant.pass &&
+      hasRequiredResearchFocusCard &&
+      !servesNoResearchStatement,
     // Folded in beside the org-type mismatch rather than added as a new
     // correctness field, because it is the same question asked of the other half
     // of the title: a heading claiming a laboratory the row cites no evidence for
@@ -1244,7 +1257,7 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
     !unbackedLabName &&
-    !biographyWithoutResearch &&
+    !servesNoResearchStatement &&
     !leadTitleRuledNonHostingRank &&
     !leadContradictedByNamesake &&
     !duplicateRisk &&
