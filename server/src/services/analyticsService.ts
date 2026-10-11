@@ -162,9 +162,8 @@ const suppressedQueryGroupSummaryStages = [
   { $project: { _id: 0 } },
 ];
 
-const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent | undefined => {
-  const eventType = sanitizeAnalyticsEventType(event?.eventType);
-  if (!eventType) return undefined;
+const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
+  const eventType = event.eventType as AnalyticsEventType;
   const fellowshipId = normalizeAnalyticsStoredObjectIdString(event?.fellowshipId);
   const metadata = sanitizeAnalyticsMetadata(event?.metadata);
 
@@ -811,9 +810,7 @@ export const getUserAnalyticsDrilldown = async (
     .limit(limit)
     .lean();
 
-  const publicEvents = events
-    .map(publicAnalyticsUserEvent)
-    .filter((event): event is AnalyticsUserEvent => event !== undefined);
+  const publicEvents = events.map(publicAnalyticsUserEvent);
   const fellowshipIds = Array.from(
     new Set(
       publicEvents.map((event) => event.fellowshipId).filter((id): id is string => Boolean(id)),
