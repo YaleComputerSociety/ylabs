@@ -5806,6 +5806,7 @@ export async function mergedSurvivorEvidence(
     }
     if (
       storedFieldHasValue(value, storedProvenance[field] !== undefined) &&
+      !valueIsRefused(survivor.fieldValueRefusals, field, value) &&
       !sourceRanksOnlyAsFieldFallback(field, objectRecord(storedProvenance[field]).sourceName)
     ) {
       survivorHeldFields.add(field);
