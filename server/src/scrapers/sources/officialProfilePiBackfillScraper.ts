@@ -106,6 +106,7 @@ const OFFICIAL_PROFILE_MODE_KEYS = new Set([
 const officialProfileDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 export interface OfficialProfileIdentity {
+  profileNetid?: string;
   canonicalUrl: string;
   fetchedUrl: string;
   displayName: string;
@@ -121,6 +122,7 @@ export interface OfficialProfileIdentity {
 
 interface OfficialProfileIdentityOptions {
   requireEmail?: boolean;
+  yaleDirectoryNetids?: ReadonlySet<string>;
   expectedPeople?: Array<{
     fname?: string;
     lname?: string;
@@ -589,6 +591,54 @@ export function netidStyleProfileSlug(value: unknown): string {
   const slug = profileSlug(value).toLowerCase();
   if (!slug || slug.includes('-')) return '';
   return /^[a-z]{1,8}[0-9]{1,6}$/.test(slug) ? slug : '';
+}
+
+const NETID_SHAPE = /^[a-z]{1,8}[0-9]{1,6}$/;
+
+/**
+ * The netid a profile slug ends with, when YSM disambiguates namesakes as `name-<netid>`.
+ *
+ * The shape alone is not evidence: a surname disambiguator such as `kim1` or `zhou19` has the
+ * same shape. Measured on Development, 29 linked profile slugs end in a netid-shaped token and
+ * 21 of those are netids the Yale directory holds, so only a directory netid counts (#4994).
+ */
+export function trailingDirectoryNetidOfProfileSlug(
+  value: unknown,
+  yaleDirectoryNetids: ReadonlySet<string> | undefined,
+): string {
+  const slug = profileSlug(value).toLowerCase();
+  if (!slug.includes('-') || !yaleDirectoryNetids) return '';
+  const tail = slug.split('-').pop() ?? '';
+  return NETID_SHAPE.test(tail) && yaleDirectoryNetids.has(tail) ? tail : '';
+}
+
+const YALE_DIRECTORY_SOURCE_NAMES = ['yale-directory', 'yale-directory-csv'];
+
+/**
+ * Every netid the Yale directory lanes have observed, read once per run so the profile guard can
+ * tell a netid from a surname disambiguator without a query per page. No connection reads as an
+ * empty set, which leaves the guard where it was rather than refusing on silence.
+ */
+export async function loadYaleDirectoryNetids(): Promise<ReadonlySet<string>> {
+  if (mongoose.connection.readyState !== 1) return new Set();
+  const keys = (await Observation.distinct('entityKey', {
+    entityType: 'user',
+    sourceName: { $in: YALE_DIRECTORY_SOURCE_NAMES },
+  })) as unknown[];
+  return new Set(
+    keys
+      .map((key) =>
+        textValue(key)
+          .replace(/^netid:/i, '')
+          .toLowerCase(),
+      )
+      .filter((netid) => NETID_SHAPE.test(netid)),
+  );
+}
+
+/** A local part ending in the netid (`first.last.fl123`) names the same person as the netid. */
+export function expectedNetidMatchesProfileNetid(expected: string, profileNetid: string): boolean {
+  return expected === profileNetid || expected.endsWith(`.${profileNetid}`);
 }
 
 export function expectedNetidsForOfficialProfile(
@@ -2030,7 +2080,11 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
       .text()
       .match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
   candidates.push(...bodyMatches);
-  return candidates.map(normalizeOrcid).find(Boolean);
+  // A page that lists several ORCIDs does not say which is its owner's: a common name's YSM
+  // profile lists namesakes' ORCIDs, and taking the first gave one Yale researcher another
+  // university's ORCID (#4994).
+  const distinct = [...new Set(candidates.map(normalizeOrcid).filter(Boolean))];
+  return distinct.length === 1 ? distinct[0] : undefined;
 }
 
 function nameMatchesEntity(displayName: string, entity: Record<string, any>): boolean {
@@ -2204,10 +2258,17 @@ export function extractOfficialProfileIdentity(
   // the profile URL carries a netid-style slug it must equal a netid we expect
   // for this person. This rejects name-only collisions such as attaching a
   // `/profile/qz990` page to a different `ch51` lead who shares a name (issue #468).
-  const profileNetidSlug = netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
+  const profileNetidSlug =
+    netidStyleProfileSlug(canonicalUrl) ||
+    netidStyleProfileSlug(fetchedUrl) ||
+    trailingDirectoryNetidOfProfileSlug(canonicalUrl, options.yaleDirectoryNetids) ||
+    trailingDirectoryNetidOfProfileSlug(fetchedUrl, options.yaleDirectoryNetids);
   if (profileNetidSlug) {
     const expectedNetids = expectedNetidsForOfficialProfile(entity, options.expectedPeople);
-    if (expectedNetids.length > 0 && !expectedNetids.includes(profileNetidSlug)) {
+    if (
+      expectedNetids.length > 0 &&
+      !expectedNetids.some((netid) => expectedNetidMatchesProfileNetid(netid, profileNetidSlug))
+    ) {
       return null;
     }
   }
@@ -2238,6 +2299,7 @@ export function extractOfficialProfileIdentity(
     departments: extractDepartments($),
     ...(bio ? { bio } : {}),
     researchInterests,
+    ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
     orcid: extractOrcid($),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
   };
@@ -2356,6 +2418,14 @@ export function identityToUserObservations(
 ): ObservationInput[] {
   const netid = textValue(existingUser.netid);
   if (!netid) return [];
+  // The page names its own owner's netid, so a user matched by name or email is a namesake
+  // when the netids differ, whichever path found the user (#4994).
+  if (
+    identity.profileNetid &&
+    !expectedNetidMatchesProfileNetid(netid.toLowerCase(), identity.profileNetid)
+  ) {
+    return [];
+  }
   const { first, last } = splitName(identity.displayName);
   if (!first || !last) return [];
   const includeProfileEnrichment = options.includeProfileEnrichment ?? true;
@@ -3614,6 +3684,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     this.pageReads = new LanePageReads();
+    const yaleDirectoryNetids = await loadYaleDirectoryNetids();
     const onlyValues = (ctx.options.only || [])
       .map((value) => value.toLowerCase().trim())
       .filter(Boolean);
@@ -3816,6 +3887,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 : null;
             const identity = identityForProfile({
               requireEmail: false,
+              yaleDirectoryNetids,
             });
             if (identity) {
               const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
@@ -3853,6 +3925,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (runProfileDescriptionBackfill) {
             const identity = identityForProfile({
               requireEmail: false,
+              yaleDirectoryNetids,
               expectedPeople: entity.leadUsers,
             });
             if (identity) {
@@ -3891,6 +3964,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (runProfileResearchHomeBackfill) {
             const identity = extractOfficialProfileIdentity(html, profileUrl, entity, {
               requireEmail: false,
+              yaleDirectoryNetids,
               expectedPeople: entity.leadUsers,
             });
             const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
