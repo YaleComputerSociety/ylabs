@@ -230,16 +230,17 @@ The two exhaustive Development modes (`development-full`, `development-increment
 14. `pi-attributed-researcher-mint` (`observations:materialize-pi-attributed-users --apply --mint-only`; ordered before `inferred-pi-lead-reclaim` so the researcher a stored PI attribution names exists before the reclaim tries to link it; `--mint-only` applies a key only when its dry-run probe would mint, leaving researchers the same keys already reach to the scrape that observes them)
 15. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741; a key the original netid, alias-map and key-name walk cannot resolve falls back to the `user` materializer's own identity join, and a bare-alias or Yale-email key is read in `netid:` form, both refusing a researcher whose title cannot own a research row or who is not the person an eponymous lab name names, #4697)
 16. `profile-honors` (`research-entity:profile-honors --apply`; after the lead reclaim so a lead linked this sweep has its profile page read this sweep, writing only rows whose honors changed, #4771)
-17. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-18. `search-rebuild` (`meili:rebuild-research-entities --clear`)
-19. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-20. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
-21. `coverage-audit`
-22. `data-quality` (`beta:data-quality --strict`)
-23. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-24. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-25. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-26. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+17. `staff-minted-retirement` (`research-entity:retire-staff-minted-entities --apply`; archives a row whose person's title owns no research, re-read every sweep because a row minted before its title was on file is never revisited by its mint lane, so the roster lane may keep minting an unknown title; capped by `--max-apply`, ordered before the gate and the rebuild, #4983)
+18. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+19. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+20. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+21. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
+22. `coverage-audit`
+23. `data-quality` (`beta:data-quality --strict`)
+24. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+25. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+26. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+27. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
 `integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.

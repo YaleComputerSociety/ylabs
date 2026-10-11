@@ -70,7 +70,6 @@
   "research-entity:retire-dead-citation-entities",
   "research-entity:retire-foreign-lead-grafts",
   "research-entity:retire-program-entities",
-  "research-entity:retire-staff-minted-entities",
   "research-entity:retype-from-declared-page-type",
   "research-entity:retype-grant-minted-lab-shells",
   "research-entity:union-stranded-merge-funding",

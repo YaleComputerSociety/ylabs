@@ -277,6 +277,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'pi-attributed-researcher-mint'
     | 'inferred-pi-lead-reclaim'
     | 'profile-honors'
+    | 'staff-minted-retirement'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'search-index-check'
@@ -1620,6 +1621,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'research-entity:profile-honors',
     artifactName: 'development-profile-honors.json',
     buildArgs: () => ['--apply'],
+    isEnabled: () => true,
+  },
+  {
+    // A mint lane refuses a staff, trainee or student title at mint time, but a row minted
+    // before its title was on file is never revisited by that lane, so the retirement re-reads
+    // every row each sweep. Ordered before the gate and the rebuild so an archived row is
+    // re-gated and leaves the index the same sweep (#4983).
+    name: 'staff-minted-retirement',
+    command: 'research-entity:retire-staff-minted-entities',
+    artifactName: 'development-staff-minted-retirement.json',
+    buildArgs: () => ['--apply', '--confirm-staff-minted-entity-retirement'],
     isEnabled: () => true,
   },
   {
