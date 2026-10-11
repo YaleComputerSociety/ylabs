@@ -163,7 +163,7 @@ const suppressedQueryGroupSummaryStages = [
 ];
 
 const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
-  const eventType = event.eventType as AnalyticsEventType;
+  const eventType = sanitizeAnalyticsEventType(event?.eventType) || AnalyticsEventType.VISITOR;
   const fellowshipId = normalizeAnalyticsStoredObjectIdString(event?.fellowshipId);
   const metadata = sanitizeAnalyticsMetadata(event?.metadata);
 
