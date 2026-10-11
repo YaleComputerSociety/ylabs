@@ -313,6 +313,17 @@ async function loadSharedRowCandidates(
 
 const idText = (value: unknown): string => (value == null ? '' : String(value));
 
+/** An alias twin's `identifiers.netid` is the email local part, never a netid to hand on. */
+function withoutNetidIdentifier(
+  snapshot: ResearcherAttributeSnapshot,
+): ResearcherAttributeSnapshot {
+  const { netid: _localPart, ...identifiers } = (snapshot.identifiers ?? {}) as Record<
+    string,
+    unknown
+  >;
+  return { ...snapshot, identifiers } as ResearcherAttributeSnapshot;
+}
+
 async function planAliasTwinFoldsFor(
   accounts: Array<Record<string, unknown>>,
   researchers: ReadonlyArray<{ id: string; accountId?: unknown; displayName?: unknown }>,
@@ -663,11 +674,14 @@ export async function dedupeAccountlessResearcherShells(options: {
 
     const canonicalState = canonicalMergeState.get(canonicalId) ??
       canonicalSnapshotById.get(canonicalId) ?? { profileLinks: [], identifiers: {}, profile: {} };
-    const shellSnapshot = shellSnapshotById.get(shellId) ?? {
+    const storedShellSnapshot = shellSnapshotById.get(shellId) ?? {
       profileLinks: [],
       identifiers: {},
       profile: {},
     };
+    const shellSnapshot = aliasTwinPlan.twinAccountIdByTwinResearcherId.has(shellId)
+      ? withoutNetidIdentifier(storedShellSnapshot)
+      : storedShellSnapshot;
     const plan = planResearcherAttributeUnion(canonicalState, shellSnapshot);
 
     if (!researcherAttributeUnionIsEmpty(plan)) {
@@ -721,8 +735,12 @@ export async function dedupeAccountlessResearcherShells(options: {
     }
     // The twin account is merged into the real one next, which repoints `accountId`, and the
     // index allows one researcher per account, so the archived twin lets go of it (#4988).
+    // It lets go of a local-part `identifiers.netid` too: the netid resolver does not skip an
+    // archived researcher, so a twin still holding the alias would keep answering for it, and
+    // the account merge refuses while any researcher holds it.
     if (aliasTwinPlan.twinAccountIdByTwinResearcherId.has(shellId)) {
       transferredUniqueIdentifierUnsets.accountId = '';
+      transferredUniqueIdentifierUnsets['identifiers.netid'] = '';
     }
     if (Object.keys(transferredUniqueIdentifierUnsets).length) {
       shellArchiveUpdate.$unset = transferredUniqueIdentifierUnsets;

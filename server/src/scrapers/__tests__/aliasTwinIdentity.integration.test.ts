@@ -73,7 +73,11 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
       await Researcher.create({ displayName: 'Sam Synthetic', accountId: real._id })
     )._id;
     twinResearcherId = (
-      await Researcher.create({ displayName: 'Sam R. Synthetic', accountId: twinAccountId })
+      await Researcher.create({
+        displayName: 'Sam R. Synthetic',
+        accountId: twinAccountId,
+        identifiers: { netid: LOCAL_PART },
+      })
     )._id;
     await Observation.create({
       entityType: 'user',
@@ -113,12 +117,19 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
     const twin = await Researcher.findById(twinResearcherId).lean();
     expect(twin?.archived).toBe(true);
     expect(twin?.accountId).toBeUndefined();
+    expect(twin?.identifiers?.netid).toBeUndefined();
     const edges = await RoleAssignment.find({ archived: { $ne: true } }).lean();
     expect(edges.map((edge) => String(edge.personId))).toEqual([String(realResearcherId)]);
 
     await Account.updateOne({ _id: twinAccountId }, { $set: { archived: true } });
     const result = await join();
     expect(String(result.researcher?._id)).toBe(String(realResearcherId));
+  });
+
+  it('does not hand the local part to a real researcher that has no netid of its own', async () => {
+    await dedupeAccountlessResearcherShells({ apply: true });
+    const real = await Researcher.findById(realResearcherId).lean();
+    expect(real?.identifiers?.netid).not.toBe(LOCAL_PART);
   });
 
   it('leaves a twin alone when the alias map does not resolve', async () => {
