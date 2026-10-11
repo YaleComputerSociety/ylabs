@@ -273,6 +273,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'dead-research-website-clear'
     | 'organization-identity-website-retire'
     | 'shared-roster-website-retire'
+    | 'borrowed-lab-website-retire'
     | 'refusal-lane-attribution'
     | 'pi-attributed-researcher-mint'
     | 'inferred-pi-lead-reclaim'
@@ -1575,6 +1576,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'observations:retire-shared-roster-websites',
     artifactName: 'development-shared-roster-website-retire.json',
     buildArgs: () => ['--apply', '--confirm-retire-shared-roster-websites'],
+    isEnabled: () => true,
+  },
+  {
+    // Relational across lanes: a person-directory lane's lab page is borrowed only when
+    // another row holds it as its own website under leads this row does not share, which
+    // no single lane can see. Ordered with the stage above so its refusals are attributed
+    // the same sweep (#4980).
+    name: 'borrowed-lab-website-retire',
+    command: 'observations:retire-borrowed-lab-websites',
+    artifactName: 'development-borrowed-lab-website-retire.json',
+    buildArgs: () => ['--apply', '--confirm-retire-borrowed-lab-websites'],
     isEnabled: () => true,
   },
   {

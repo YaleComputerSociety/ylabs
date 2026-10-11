@@ -1127,6 +1127,12 @@ It supersedes only this lane's `websiteUrl` observations, keeps the URL on a row
 A row whose `manuallyLockedFields` contains `websiteUrl` still has the lane's claims superseded but is neither refused nor cleared, because the lock is an operator decision.
 The same person listed in two departments is not a sharer, because that is duplicate-row work rather than a wrong URL.
 
+The cross-lane form of the same mistake is a member whose profile links the lab they work in: `dept-faculty-roster` reads any `/lab/<x>/` link as the member's own lab, and `ysm-faculty-directory` cannot refuse a topical slug, so the member's row becomes a second lab on another lead's page.
+No single lane can see it, because the owner's claim comes from a different lane, so the `borrowed-lab-website-retire` sweep stage (`yarn --cwd server observations:retire-borrowed-lab-websites`, #4980) refuses the person-directory claim as `wrong_owner` when another live row holds the page as its own `websiteUrl` and the two rows share no lead.
+The owner must outrank the claimant: a lab-level lane's hold always does, and between two directory claims only a page named for the owner's lead does, so a page neither row is named for is left alone and counted.
+A row that shares a lead with the owner is a co-lead's view of one lab and is left for a merge, and a page whose host or last path segment names the claimant is kept, matched loosely because a wrong keep costs nothing.
+Claims are read under the slug the lane minted and mapped through the merge tombstone to the live row, because a merged row is still observed under its archived slug.
+
 ### Topical research-area evidence
 
 | Scraper | Data |

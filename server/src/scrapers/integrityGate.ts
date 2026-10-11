@@ -511,35 +511,18 @@ export function buildSamePiNameDuplicateGroupsFromDedupeRows(
   }));
 }
 
+/**
+ * Rows that hold one official lab page as their own research website. A row that only
+ * cites the page in `sourceUrls` is not counted: a lab member's row citing the lab page
+ * they appear on is evidence about that member, and merging it into the lab would be
+ * wrong, so it cannot be a missed merge (#4980).
+ */
 const officialLabUrlDuplicatePipeline = (): mongoose.PipelineStage[] => [
-  { $match: { archived: { $ne: true } } },
+  { $match: { archived: { $ne: true }, websiteUrl: { $type: 'string' } } },
   {
     $project: {
+      officialLabUrl: { $trim: { input: { $toLower: '$websiteUrl' } } },
       entityId: { $toString: '$_id' },
-      urls: {
-        $setUnion: [
-          {
-            $cond: [
-              {
-                $and: [
-                  { $ne: ['$websiteUrl', null] },
-                  { $ne: [{ $trim: { input: '$websiteUrl' } }, ''] },
-                ],
-              },
-              ['$websiteUrl'],
-              [],
-            ],
-          },
-          { $ifNull: ['$sourceUrls', []] },
-        ],
-      },
-    },
-  },
-  { $unwind: '$urls' },
-  {
-    $project: {
-      officialLabUrl: { $trim: { input: { $toLower: '$urls' } } },
-      entityId: 1,
     },
   },
   {
