@@ -81,6 +81,43 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.websiteUrl).toBe('https://user.example.test');
   });
 
+  it('reads the roster email from the researcher before the account', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const personId = await seedMember(entityId, undefined, 'cd456');
+    await Researcher.updateOne(
+      { _id: personId },
+      { $set: { 'identifiers.email': 'researcher.identity@example.test' } },
+    );
+
+    const [entry] = await getResearchEntityRoster(entityId);
+
+    expect(entry.email).toBe('researcher.identity@example.test');
+    expect(entry.netid).toBe('cd456');
+  });
+
+  it('serves the researcher email when the researcher links no account', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const person = await Researcher.create({
+      displayName: 'Accountless Person',
+      profileLinks: [],
+      identifiers: { email: 'accountless@example.test' },
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+    });
+
+    const [entry] = await getResearchEntityRoster(entityId);
+
+    expect(entry.email).toBe('accountless@example.test');
+    expect(entry.accountId).toBeUndefined();
+  });
+
   it('omits display fields when the Person has no profile', async () => {
     const entityId = new mongoose.Types.ObjectId();
     await seedMember(entityId, undefined, 'zz999');
