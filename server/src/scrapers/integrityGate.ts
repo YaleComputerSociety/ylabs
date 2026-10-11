@@ -11,6 +11,7 @@ import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
 import { Researcher } from '../models/researcher';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { splitName } from './utils/scraperHelpers';
 import {
   buildResearchEntityPiDedupePlan,
@@ -176,6 +177,17 @@ const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
   string,
   Pick<PostMaterializationIntegrityWarning, 'classification' | 'owner' | 'nextCommand'>
 > = {
+  heldSamePiSameNameResearchEntities: {
+    classification: 'post_promotion_backlog',
+    owner: 'research-entity operator',
+    nextCommand: SAME_PI_DEDUPE_REVIEW_COMMAND,
+  },
+  heldOfficialLabUrlResearchEntities: {
+    classification: 'post_promotion_backlog',
+    owner: 'research-entity operator',
+    nextCommand:
+      'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
+  },
   deadEndTombstoneChains: {
     classification: 'post_promotion_backlog',
     owner: 'research-entity operator',
@@ -424,6 +436,7 @@ async function loadDuplicatePeopleIntegrity(limit: number): Promise<{
 
 async function loadSamePiNameDuplicateGroups(): Promise<{
   groups: SamePiNameDuplicateGroup[];
+  heldGroups: SamePiNameDuplicateGroup[];
   truncated: boolean;
 }> {
   const rows = await RoleAssignment.aggregate([
@@ -470,6 +483,7 @@ async function loadSamePiNameDuplicateGroups(): Promise<{
           sourceUrls: '$entity.sourceUrls',
           departments: '$entity.departments',
           researchAreas: '$entity.researchAreas',
+          studentVisibilityTier: '$entity.studentVisibilityTier',
         },
       },
     },
@@ -485,8 +499,16 @@ async function loadSamePiNameDuplicateGroups(): Promise<{
   ]);
   const truncated = rows.length > SAME_PI_ENTITY_SCAN_LIMIT;
 
-  const groups = buildSamePiNameDuplicateGroupsFromDedupeRows(
-    rows.slice(0, SAME_PI_ENTITY_SCAN_LIMIT).map((row: any) => {
+  const scannedRows = rows.slice(0, SAME_PI_ENTITY_SCAN_LIMIT);
+  const servedEntityIds = new Set<string>(
+    scannedRows.flatMap((row: any) =>
+      (row.entities || [])
+        .filter((entity: any) => isServedTier(entity.studentVisibilityTier))
+        .map((entity: any) => stringId(entity.id)),
+    ),
+  );
+  const allGroups = buildSamePiNameDuplicateGroupsFromDedupeRows(
+    scannedRows.map((row: any) => {
       const personId = stringId(row._id?.personId);
       const { first, last } = splitName(stringId(row.personDisplayName));
       return {
@@ -498,7 +520,13 @@ async function loadSamePiNameDuplicateGroups(): Promise<{
       };
     }),
   );
-  return { groups, truncated };
+  const servedInGroup = (group: SamePiNameDuplicateGroup) =>
+    group.entityIds.filter((id) => servedEntityIds.has(id)).length;
+  return {
+    groups: allGroups.filter((group) => servedInGroup(group) >= 2),
+    heldGroups: allGroups.filter((group) => servedInGroup(group) < 2),
+    truncated,
+  };
 }
 
 export function buildSamePiNameDuplicateGroupsFromDedupeRows(
@@ -517,12 +545,15 @@ export function buildSamePiNameDuplicateGroupsFromDedupeRows(
  * they appear on is evidence about that member, and merging it into the lab would be
  * wrong, so it cannot be a missed merge (#4980).
  */
-const officialLabUrlDuplicatePipeline = (): mongoose.PipelineStage[] => [
+const officialLabUrlDuplicatePipeline = (
+  servedRows: 'served' | 'held',
+): mongoose.PipelineStage[] => [
   { $match: { archived: { $ne: true }, websiteUrl: { $type: 'string' } } },
   {
     $project: {
       officialLabUrl: { $trim: { input: { $toLower: '$websiteUrl' } } },
       entityId: { $toString: '$_id' },
+      served: { $in: ['$studentVisibilityTier', publicStudentVisibilityTiers] },
     },
   },
   {
@@ -534,17 +565,20 @@ const officialLabUrlDuplicatePipeline = (): mongoose.PipelineStage[] => [
     $group: {
       _id: '$officialLabUrl',
       entityIds: { $addToSet: '$entityId' },
+      servedCount: { $sum: { $cond: ['$served', 1, 0] } },
     },
   },
   { $match: { 'entityIds.1': { $exists: true } } },
+  { $match: { servedCount: servedRows === 'served' ? { $gte: 2 } : { $lt: 2 } } },
 ];
 
 async function loadOfficialLabUrlDuplicateGroups(
   limit: number,
+  servedRows: 'served' | 'held' = 'served',
 ): Promise<CountedSample<OfficialLabUrlDuplicateGroup>> {
   const { rows, total } = await countAndSample(
     ResearchEntity,
-    officialLabUrlDuplicatePipeline(),
+    officialLabUrlDuplicatePipeline(servedRows),
     [{ $sort: { _id: 1 } }],
     limit,
   );
@@ -825,6 +859,37 @@ async function loadArchivedEntityPopulationCounts(): Promise<
   return { currentMembersOnArchivedEntities, activeArtifactsOnArchivedEntities };
 }
 
+const isServedTier = (tier: unknown): boolean =>
+  (publicStudentVisibilityTiers as unknown[]).includes(tier);
+
+/**
+ * A duplicate group with at most one served row shows a student one row, so the visibility
+ * gate has already contained it; failing on it made the gate red on every run, because the
+ * remaining URL groups are other people's suppressed rows citing the lab page as their own
+ * website rather than missed merges (#5004). Only a group serving two or more rows fails.
+ */
+function heldDuplicateWarnings(
+  heldSamePiGroups: readonly SamePiNameDuplicateGroup[],
+  heldOfficialLabUrls: CountedSample<OfficialLabUrlDuplicateGroup>,
+): PostMaterializationIntegrityWarning[] {
+  const warnings: PostMaterializationIntegrityWarning[] = [];
+  if (heldSamePiGroups.length > 0) {
+    warnings.push({
+      name: 'heldSamePiSameNameResearchEntities',
+      count: heldSamePiGroups.length,
+      message: `${heldSamePiGroups.length} same-lead same-name group(s) serve at most one row; the others are held by the visibility gate and await a merge decision.`,
+    });
+  }
+  if (heldOfficialLabUrls.total > 0) {
+    warnings.push({
+      name: 'heldOfficialLabUrlResearchEntities',
+      count: heldOfficialLabUrls.total,
+      message: `${heldOfficialLabUrls.total} official lab URL group(s) serve at most one row; the others are held by the visibility gate.`,
+    });
+  }
+  return warnings;
+}
+
 async function loadAmbiguousSameNameWarning(): Promise<PostMaterializationIntegrityWarning[]> {
   return [];
 }
@@ -935,6 +1000,7 @@ export async function runPostMaterializationIntegrityGate(
   const [
     samePiNameDuplicates,
     officialLabUrlDuplicates,
+    heldOfficialLabUrlDuplicates,
     duplicatePersonIntegrity,
     duplicateCurrentMembers,
     currentMembersOnArchivedEntities,
@@ -946,6 +1012,7 @@ export async function runPostMaterializationIntegrityGate(
   ] = await Promise.all([
     loadSamePiNameDuplicateGroups(),
     loadOfficialLabUrlDuplicateGroups(sampleLimit),
+    loadOfficialLabUrlDuplicateGroups(sampleLimit, 'held'),
     loadDuplicatePeopleIntegrity(sampleLimit),
     loadDuplicateCurrentMemberGroups(sampleLimit),
     loadCurrentMembersOnArchivedEntities(sampleLimit),
@@ -964,7 +1031,12 @@ export async function runPostMaterializationIntegrityGate(
     currentMembersOnArchivedEntities,
     duplicateAccessSignalGroups: duplicateAccessSignals.sample,
     activeArtifactsOnArchivedEntities,
-    warnings: [...warnings, ...duplicatePersonIntegrity.warnings, ...deadEndTombstoneChainWarnings],
+    warnings: [
+      ...warnings,
+      ...duplicatePersonIntegrity.warnings,
+      ...deadEndTombstoneChainWarnings,
+      ...heldDuplicateWarnings(samePiNameDuplicates.heldGroups, heldOfficialLabUrlDuplicates),
+    ],
     limit: options.includeSamples ? limit : 0,
     truncatedChecks: samePiNameDuplicates.truncated ? ['samePiSameNameResearchEntities'] : [],
     populationCounts: {
