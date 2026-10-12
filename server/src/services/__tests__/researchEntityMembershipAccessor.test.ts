@@ -95,12 +95,12 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.netid).toBe('cd456');
   });
 
-  it('serves the researcher email when the researcher links no account', async () => {
+  it('serves the researcher netid and email when the researcher links no account', async () => {
     const entityId = new mongoose.Types.ObjectId();
     const person = await Researcher.create({
       displayName: 'Accountless Person',
       profileLinks: [],
-      identifiers: { email: 'accountless@example.test' },
+      identifiers: { netid: 'ef789', email: 'accountless@example.test' },
       status: 'ACTIVE',
       archived: false,
     });
@@ -115,6 +115,7 @@ describe('getResearchEntityRoster display profile projection', () => {
     const [entry] = await getResearchEntityRoster(entityId);
 
     expect(entry.email).toBe('accountless@example.test');
+    expect(entry.netid).toBe('ef789');
     expect(entry.accountId).toBeUndefined();
   });
 
