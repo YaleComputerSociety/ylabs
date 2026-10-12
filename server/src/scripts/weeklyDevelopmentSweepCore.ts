@@ -171,8 +171,64 @@ export interface WeeklySweepModeOutcome {
   summary?: unknown;
 }
 
+export const WEEKLY_SWEEP_BROKEN_SOURCE_SHARE_LIMIT = 0.25;
+
+export type WeeklySweepVerdict = 'succeeded' | 'degraded' | 'failed';
+
+const summaryCount = (summary: unknown, field: string): number => {
+  const value = asRecord(summary)[field];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
+
+/**
+ * Whether the sweep as a whole failed, or completed with some sources or stages failing.
+ *
+ * One broken source or stage used to fail the whole run, so every weekly run read `failed`
+ * and the cron alerted every week while the sweep had done almost everything (#5032). A run
+ * fails only when it cannot vouch for what it did: a mode left no summary, a mode process
+ * was killed, or so many sources failed or never ran that the run measured little. Otherwise
+ * a failure degrades the run and is still recorded and printed by name. Promotion requires
+ * `succeeded`, so a degraded run never unlocks one.
+ */
+export function weeklySweepVerdict(outcomes: WeeklySweepModeOutcome[]): WeeklySweepVerdict {
+  if (outcomes.length === 0) return 'failed';
+  if (outcomes.some((outcome) => !outcome.summaryFound || outcome.exitCode === null)) {
+    return 'failed';
+  }
+  const sources = outcomes.reduce(
+    (sum, outcome) => sum + summaryCount(outcome.summary, 'sourceCount'),
+    0,
+  );
+  const broken = outcomes.reduce(
+    (sum, outcome) =>
+      sum + summaryCount(outcome.summary, 'failed') + summaryCount(outcome.summary, 'notRun'),
+    0,
+  );
+  if (sources > 0 && broken / sources > WEEKLY_SWEEP_BROKEN_SOURCE_SHARE_LIMIT) return 'failed';
+  return outcomes.every((outcome) => outcome.exitCode === 0) ? 'succeeded' : 'degraded';
+}
+
 export function weeklySweepExitCode(outcomes: WeeklySweepModeOutcome[]): number {
-  return outcomes.every((outcome) => outcome.exitCode === 0 && outcome.summaryFound) ? 0 : 1;
+  return weeklySweepVerdict(outcomes) === 'failed' ? 1 : 0;
+}
+
+/** One line per failed source or stage, so a degraded run names what broke in the cron log. */
+export function formatWeeklySweepDegradedLines(outcomes: WeeklySweepModeOutcome[]): string[] {
+  return outcomes.flatMap((outcome) => {
+    const summary = asRecord(outcome.summary);
+    const rows = Array.isArray(summary.rows) ? summary.rows.map(asRecord) : [];
+    const stages = Array.isArray(asRecord(summary.postRun).stages)
+      ? (asRecord(summary.postRun).stages as unknown[]).map(asRecord)
+      : [];
+    return [
+      ...rows
+        .filter((row) => row.status !== 'succeeded')
+        .map((row) => `${outcome.mode} source ${String(row.sourceName)}: ${String(row.status)}`),
+      ...stages
+        .filter((stage) => stage.status !== 'succeeded' && stage.status !== 'skipped')
+        .map((stage) => `${outcome.mode} stage ${String(stage.name)}: ${String(stage.status)}`),
+    ];
+  });
 }
 
 export function formatWeeklySweepSummaryLine(mode: WeeklySweepMode, summary: unknown): string {
@@ -521,9 +577,11 @@ export function weeklySweepRunStatus(
   preflightOk: boolean,
   exitCode: number,
   error?: string,
+  verdict: WeeklySweepVerdict = 'succeeded',
 ): WeeklySweepRunStatus {
   if (!preflightOk && !error) return 'refused';
-  return exitCode === 0 && !error ? 'succeeded' : 'failed';
+  if (exitCode !== 0 || error) return 'failed';
+  return verdict === 'degraded' ? 'degraded' : 'succeeded';
 }
 
 export interface WeeklySweepRunStartRecord {
@@ -578,7 +636,12 @@ export function buildWeeklySweepRunRecord(input: WeeklySweepRunRecordInput): Wee
     environment: 'development' as const,
     databaseName: input.databaseName,
     codeSha: input.codeSha,
-    status: weeklySweepRunStatus(input.preflight.ok, input.exitCode, error),
+    status: weeklySweepRunStatus(
+      input.preflight.ok,
+      input.exitCode,
+      error,
+      input.outcomes.length > 0 ? weeklySweepVerdict(input.outcomes) : 'succeeded',
+    ),
     exitCode: input.exitCode,
     requestedModes: input.requestedModes,
     preflight,

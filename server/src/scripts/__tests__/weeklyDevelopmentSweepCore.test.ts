@@ -25,6 +25,8 @@ import {
   weeklySweepChildEnvironment,
   weeklySweepEnvironmentProblems,
   weeklySweepExitCode,
+  weeklySweepVerdict,
+  formatWeeklySweepDegradedLines,
   weeklySweepRunStatus,
 } from '../weeklyDevelopmentSweepCore';
 import { sweepSummaryFixture } from './fixtures/weeklySweepSummaryFixture';
@@ -208,24 +210,82 @@ describe('findSweepSummaryPath', () => {
   });
 });
 
-describe('weeklySweepExitCode', () => {
-  it('succeeds only when every mode exited zero and left a summary', () => {
-    const ok = { exitCode: 0, summaryFound: true };
+describe('weeklySweepVerdict and weeklySweepExitCode (#5032)', () => {
+  const summary = (failed: number, sourceCount = 24, extra: Record<string, unknown> = {}) => ({
+    sourceCount,
+    failed,
+    notRun: 0,
+    ...extra,
+  });
+  const outcome = (
+    mode: 'development-full' | 'fellowship-development-full',
+    exitCode: number | null,
+    body: unknown,
+    summaryFound = true,
+  ) => ({ mode, exitCode, summaryFound, summary: body });
+
+  it('succeeds when every mode exited zero', () => {
+    const outcomes = [
+      outcome('development-full', 0, summary(0)),
+      outcome('fellowship-development-full', 0, summary(0, 4)),
+    ];
+    expect(weeklySweepVerdict(outcomes)).toBe('succeeded');
+    expect(weeklySweepExitCode(outcomes)).toBe(0);
+  });
+
+  it('degrades rather than fails when one source or stage failed and the sweep completed', () => {
+    const outcomes = [
+      outcome('development-full', 1, summary(0)),
+      outcome('fellowship-development-full', 1, summary(1, 4)),
+    ];
+    expect(weeklySweepVerdict(outcomes)).toBe('degraded');
+    expect(weeklySweepExitCode(outcomes)).toBe(0);
+  });
+
+  it('fails when a mode left no summary, was killed, or lost more than a quarter of its sources', () => {
+    expect(weeklySweepVerdict([outcome('development-full', 0, undefined, false)])).toBe('failed');
+    expect(weeklySweepVerdict([outcome('development-full', null, summary(0))])).toBe('failed');
     expect(
-      weeklySweepExitCode([
-        { mode: 'development-full', ...ok },
-        { mode: 'fellowship-development-full', ...ok },
+      weeklySweepVerdict([
+        outcome('development-full', 1, summary(6)),
+        outcome('fellowship-development-full', 1, summary(2, 4)),
       ]),
-    ).toBe(0);
-    expect(
-      weeklySweepExitCode([
-        { mode: 'development-full', ...ok },
-        { mode: 'fellowship-development-full', exitCode: 1, summaryFound: true },
-      ]),
-    ).toBe(1);
-    expect(
-      weeklySweepExitCode([{ mode: 'development-full', exitCode: 0, summaryFound: false }]),
-    ).toBe(1);
+    ).toBe('failed');
+    expect(weeklySweepExitCode([outcome('development-full', 0, undefined, false)])).toBe(1);
+    expect(weeklySweepVerdict([])).toBe('failed');
+  });
+
+  it('names every failed source and stage of a degraded run', () => {
+    const lines = formatWeeklySweepDegradedLines([
+      outcome(
+        'fellowship-development-full',
+        1,
+        summary(1, 4, {
+          rows: [
+            { sourceName: 'fixture-a', status: 'succeeded' },
+            { sourceName: 'fixture-b', status: 'failed' },
+          ],
+          postRun: {
+            stages: [
+              { name: 'stage-a', status: 'succeeded' },
+              { name: 'stage-b', status: 'failed' },
+              { name: 'stage-c', status: 'skipped' },
+            ],
+          },
+        }),
+      ),
+    ]);
+    expect(lines).toEqual([
+      'fellowship-development-full source fixture-b: failed',
+      'fellowship-development-full stage stage-b: failed',
+    ]);
+  });
+
+  it('records a degraded run as degraded, which is not the succeeded status promotion requires', () => {
+    expect(weeklySweepRunStatus(true, 0, undefined, 'degraded')).toBe('degraded');
+    expect(weeklySweepRunStatus(true, 0, undefined, 'succeeded')).toBe('succeeded');
+    expect(weeklySweepRunStatus(true, 1, undefined, 'degraded')).toBe('failed');
+    expect(weeklySweepRunStatus(false, 1)).toBe('refused');
   });
 });
 
