@@ -50,6 +50,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'researchers:backfill-identity-from-accounts':
     'a one-time migration that moves each researcher netid and email off its linked account before accounts become login-only, so no lane or sweep stage re-derives it (#5000)',
+  'accounts:retire-identity-only':
+    'deletes the accounts nobody signed into once researchers hold their own identity, a one-time operator decision about stored account data run on Development only (#5000)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',

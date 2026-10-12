@@ -496,6 +496,14 @@ Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preser
 The refusal itself sits in `applyStagedCollectionSwap`, the staged swap every whole-collection replacement goes through, so any caller that hands it a clear list naming a preserved collection fails before a single drop, promotion included.
 A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
 
+### Retiring identity-only accounts (#5000)
+
+`yarn --cwd server accounts:retire-identity-only` deletes every account nobody signed into, after copying its netid and email onto each linked researcher that lacks them and unsetting `Researcher.accountId`, so `accounts` holds only logins.
+It holds an account that owns a research plan, is a reviewer stamp, is named by an admin grant, or whose researcher holds a different netid or email, and reports each hold by reason.
+It is dry-run by default, `--apply` needs `--confirm-retire-identity-only-accounts`, it refuses any target but Development, and an apply writes a mode-0600 backup of the deleted rows and unset links to the OS temp directory first.
+Run `beta:refresh-from-development` after it and before any `development:refresh-from-beta`: Beta still holds the retired rows until then, and a Beta-to-Development refresh in between copies them back.
+Production converges on the next `production:promote-beta-copy`, whose account carry keeps every Production login and its plans while the swap drops the rest.
+
 ## One-Command Promotion
 
 The weekly runner does all the scraping, observation, and materialization in Development.
