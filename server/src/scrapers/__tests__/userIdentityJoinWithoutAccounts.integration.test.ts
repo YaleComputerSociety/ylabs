@@ -21,7 +21,7 @@ import { joinUserIdentityToExistingResearcher } from '../entityMaterializer';
 import { clearC4Flags } from './c4FlagTestEnv';
 
 const NETID = 'qz901';
-const EMAIL = 'quinn.synthetic@yale.edu';
+const EMAIL = 'quinn.synthetic901@yale.edu';
 
 const userObservation = (entityKey: string, field: string, value: unknown) => ({
   entityType: 'user',
