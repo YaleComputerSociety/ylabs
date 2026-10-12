@@ -41,12 +41,22 @@ Use the one that matches the environment.
 
 | Environment         | Command                                            | Notes                                                                                                                                               |
 | ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Development (local) | `yarn development:search:rebuild`                  | Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild` through the development data profile. This is the route that works locally. |
+| Development (local) | `yarn development:search:sync`                     | The default. Wraps `meili:sync-research-entities --apply`: diffs every corpus document against the live index, upserts only the ones that differ, and deletes index documents with no live row. |
+| Development (local) | `yarn development:search:rebuild`                  | Only for a settings, embedder, or document-shape change. Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild`, which re-embeds every document. |
 | Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell or as a one-off job (see below). Dry run. Add `--apply` to rebuild.                                                                                  |
 | Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to rebuild. Run Beta first.                                                            |
 
-`reindex:meili`'s own error text points at "the development sweep search-rebuild stage" for local rebuilds.
-That is a description of the pipeline stage, not a command you can type; `yarn development:search:rebuild` is the command.
+`reindex:meili`'s own error text points at "the development sweep search-sync stage" for local rebuilds.
+That is a description of the pipeline stage, not a command you can type; `yarn development:search:sync` is the command.
+
+### Sync, not rebuild, for a stale Development index
+
+A stale index is a data difference, and the sync writes only that difference.
+Meilisearch re-embeds a document only when its rendered `documentTemplate` changes, so a row whose only change is a timestamp, a tier, or a rank costs no embedding call.
+The replacing rebuild builds every document into a fresh `_next` index, which has no vectors, so every rebuild re-embeds the whole corpus.
+Measured on 2026-10-12 (#5023): Development had 23 replacing rebuilds in nine days; one sync of a 4,224-document index after a sweep upserted 4,081 documents and deleted 4 in 25 seconds, and the next run upserted none.
+The sync refuses when the index has no stored embedder, when the corpus yields no documents, or when it would delete more than a fifth of the index, and it never changes index settings.
+Run the rebuild only when the settings, the embedder, or the shape of an index document changed.
 
 Do not use `meili:rebuild-research-entities` directly against Beta or Production.
 It rebuilds the model index but does not reconcile retired indexes, and it does not cross-check the Mongo target against the environment.

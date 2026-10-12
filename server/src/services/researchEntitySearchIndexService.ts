@@ -1215,3 +1215,165 @@ export async function rebuildResearchEntitySearchIndex(
     durationMs: finishedAt.getTime() - startedAt.getTime(),
   };
 }
+
+const RECONCILE_INDEX_READ_PAGE_SIZE = 1000;
+export const RESEARCH_ENTITY_SEARCH_RECONCILE_MAX_DELETE_FRACTION = 0.2;
+
+export interface ResearchEntitySearchIndexReconcileOptions {
+  apply?: boolean;
+  pageSize?: number;
+  maxDeleteFraction?: number;
+  getIndex?: typeof getMeiliIndex;
+  fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
+  fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  warmVocabulary?: () => Promise<unknown>;
+}
+
+export interface ResearchEntitySearchIndexReconcileResult {
+  indexName: string;
+  applied: boolean;
+  corpusDocumentCount: number;
+  indexedDocumentCountBefore: number;
+  unchangedDocumentCount: number;
+  upsertedDocumentCount: number;
+  deletedDocumentCount: number;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+}
+
+const canonicalJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, canonicalJsonValue((value as Record<string, unknown>)[key])]),
+    );
+  }
+  return value;
+};
+
+export const researchEntitySearchDocumentFingerprint = (doc: Record<string, unknown>): string =>
+  JSON.stringify(canonicalJsonValue(JSON.parse(JSON.stringify(doc))));
+
+async function readEveryIndexedDocumentFingerprint(index: any): Promise<Map<string, string>> {
+  const fingerprintById = new Map<string, string>();
+  let offset = 0;
+  for (;;) {
+    const page = (await index.getDocuments({
+      limit: RECONCILE_INDEX_READ_PAGE_SIZE,
+      offset,
+    })) as { results: Array<Record<string, unknown>>; total: number };
+    for (const doc of page.results) {
+      const id = doc[RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY];
+      if (id == null) continue;
+      fingerprintById.set(String(id), researchEntitySearchDocumentFingerprint(doc));
+    }
+    offset += page.results.length;
+    if (page.results.length === 0 || offset >= page.total) break;
+  }
+  return fingerprintById;
+}
+
+async function buildEveryCorpusIndexDocument(
+  pageSize: number,
+  fetchPage: (page: number, pageSize: number) => Promise<any[]>,
+  fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+): Promise<Record<string, any>[]> {
+  const corpus: Record<string, any>[] = [];
+  for (let page = 1; ; page += 1) {
+    const rows = await fetchPage(page, pageSize);
+    if (rows.length === 0) break;
+    corpus.push(
+      ...(await buildResearchEntitySearchIndexDocumentsWithMemberNames(rows, fetchMemberNames)),
+    );
+    if (rows.length < pageSize) break;
+  }
+  return corpus;
+}
+
+/**
+ * Brings the live index in line with the corpus by writing only the difference, so a stale
+ * Development index costs embeddings for the rows that changed rather than for all of them.
+ * A settings, embedder, or document-shape change still needs the replacing rebuild, because
+ * this never touches index settings (#5023).
+ */
+export async function reconcileResearchEntitySearchIndex(
+  options: ResearchEntitySearchIndexReconcileOptions = {},
+): Promise<ResearchEntitySearchIndexReconcileResult> {
+  const pageSize = normalizeRebuildPageSize(options.pageSize);
+  const maxDeleteFraction =
+    options.maxDeleteFraction ?? RESEARCH_ENTITY_SEARCH_RECONCILE_MAX_DELETE_FRACTION;
+  const startedAt = new Date();
+  await (options.warmVocabulary || warmControlledVocabularyHeadings)();
+  const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  if (!(await indexHasStoredEmbedder(index))) {
+    throw new Error(
+      `Refusing to reconcile: ${RESEARCH_ENTITY_SEARCH_INDEX_NAME} has no stored embedder, so upserted documents would carry no vectors. Run the replacing rebuild instead.`,
+    );
+  }
+
+  const indexedFingerprints = await readEveryIndexedDocumentFingerprint(index);
+  const corpus = await buildEveryCorpusIndexDocument(
+    pageSize,
+    options.fetchPage || fetchResearchEntityPage,
+    options.fetchMemberNames || fetchResearchEntitySearchMemberNames,
+  );
+  if (corpus.length === 0) {
+    throw new Error(
+      'Refusing to reconcile: the corpus yields no index documents, so every indexed document would be deleted.',
+    );
+  }
+
+  const corpusIds = new Set<string>();
+  const changed: Record<string, any>[] = [];
+  for (const doc of corpus) {
+    const id = String(doc[RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY]);
+    corpusIds.add(id);
+    if (indexedFingerprints.get(id) !== researchEntitySearchDocumentFingerprint(doc)) {
+      changed.push(doc);
+    }
+  }
+  const orphanIds = [...indexedFingerprints.keys()].filter((id) => !corpusIds.has(id));
+  if (orphanIds.length > indexedFingerprints.size * maxDeleteFraction) {
+    throw new Error(
+      `Refusing to reconcile: it would delete ${orphanIds.length} of ${indexedFingerprints.size} indexed documents, above the ${maxDeleteFraction} limit. Check the Mongo target, or run the replacing rebuild.`,
+    );
+  }
+
+  if (options.apply) {
+    for (let start = 0; start < changed.length; start += pageSize) {
+      await assertMeiliTaskSucceeded(
+        index,
+        await index.addDocuments(changed.slice(start, start + pageSize), {
+          primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+        }),
+        'reconcile addDocuments',
+        MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+      );
+    }
+    if (orphanIds.length > 0) {
+      await assertMeiliTaskSucceeded(
+        index,
+        await index.deleteDocuments(orphanIds),
+        'reconcile deleteDocuments',
+        MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+      );
+    }
+  }
+
+  const finishedAt = new Date();
+  return {
+    indexName: RESEARCH_ENTITY_SEARCH_INDEX_NAME,
+    applied: options.apply === true,
+    corpusDocumentCount: corpus.length,
+    indexedDocumentCountBefore: indexedFingerprints.size,
+    unchangedDocumentCount: corpus.length - changed.length,
+    upsertedDocumentCount: changed.length,
+    deletedDocumentCount: orphanIds.length,
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
+  };
+}

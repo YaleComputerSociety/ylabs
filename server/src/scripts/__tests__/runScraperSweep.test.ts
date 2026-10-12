@@ -613,7 +613,7 @@ describe('runScraperSweep', () => {
       'profile-honors',
       'staff-minted-retirement',
       'visibility-gate',
-      'search-rebuild',
+      'search-sync',
       'search-index-check',
       'lane-scorecard',
       'engine-benchmark',
@@ -764,7 +764,7 @@ describe('runScraperSweep', () => {
     expect(stages.map((stage) => stage.name)).not.toContain('eponymous-fra-merge');
   });
 
-  it('inserts the eponymous FRA merge stage after materialization and before search-rebuild when enabled', () => {
+  it('inserts the eponymous FRA merge stage after materialization and before search-sync when enabled', () => {
     const stages = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       autoMergeEponymousFra: true,
       sinceIso: '2026-08-26T00:00:00.000Z',
@@ -786,7 +786,7 @@ describe('runScraperSweep', () => {
       'profile-honors',
       'staff-minted-retirement',
       'visibility-gate',
-      'search-rebuild',
+      'search-sync',
       'search-index-check',
       'lane-scorecard',
       'engine-benchmark',
@@ -845,7 +845,7 @@ describe('runScraperSweep', () => {
       'profile-honors',
       'staff-minted-retirement',
       'visibility-gate',
-      'search-rebuild',
+      'search-sync',
       'search-index-check',
       'lane-scorecard',
       'engine-benchmark',
@@ -1150,7 +1150,7 @@ describe('runScraperSweep', () => {
     ).toThrow(/local MEILISEARCH_HOST/);
     expect(sweepSearchIndexOutcome(deferredEnv)).toEqual({
       status: 'resync-required',
-      remedy: 'yarn development:search:rebuild',
+      remedy: 'yarn development:search:sync',
     });
     expect(sweepSearchIndexOutcome({})).toEqual({ status: 'written' });
   });
@@ -1158,7 +1158,7 @@ describe('runScraperSweep', () => {
   it('checks the rebuilt index against Mongo, and skips both stages when writes are deferred', () => {
     const names = (stages: Array<{ name: string }>) => stages.map((stage) => stage.name);
     const writing = buildDevelopmentPostRunStages('/tmp/development-sweep');
-    const rebuildAt = names(writing).indexOf('search-rebuild');
+    const rebuildAt = names(writing).indexOf('search-sync');
     expect(names(writing)[rebuildAt + 1]).toBe('search-index-check');
     expect(writing.find((stage) => stage.name === 'search-index-check')?.args).toEqual([
       '--cwd',
@@ -1173,7 +1173,7 @@ describe('runScraperSweep', () => {
     vi.stubEnv('SEARCH_INDEX_WRITES', 'deferred');
     try {
       const deferred = names(buildDevelopmentPostRunStages('/tmp/development-sweep'));
-      expect(deferred).not.toContain('search-rebuild');
+      expect(deferred).not.toContain('search-sync');
       expect(deferred).not.toContain('search-index-check');
       expect(deferred).toContain('visibility-gate');
     } finally {
@@ -1240,7 +1240,7 @@ describe('runScraperSweep', () => {
     expect(withOptional).toEqual(registryNames);
   });
 
-  it('gates the url-identity dedupe stage behind its flag and runs it before search-rebuild', () => {
+  it('gates the url-identity dedupe stage behind its flag and runs it before search-sync', () => {
     expect(
       buildDevelopmentPostRunStages('/tmp/development-sweep').map((stage) => stage.name),
     ).not.toContain('url-identity-dedupe');
@@ -1249,7 +1249,7 @@ describe('runScraperSweep', () => {
       maxUrlIdentityMerges: 300,
     }).map((stage) => stage.name);
     expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('visibility-gate'));
-    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('search-rebuild'));
+    expect(names.indexOf('url-identity-dedupe')).toBeLessThan(names.indexOf('search-sync'));
     const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       mergeUrlIdentityDuplicates: true,
       maxUrlIdentityMerges: 300,
@@ -1280,9 +1280,7 @@ describe('runScraperSweep', () => {
     expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
       names.indexOf('visibility-gate'),
     );
-    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(
-      names.indexOf('search-rebuild'),
-    );
+    expect(names.indexOf('website-url-identity-dedupe')).toBeLessThan(names.indexOf('search-sync'));
     const stage = stages.find((entry) => entry.name === 'website-url-identity-dedupe');
     expect(stage?.args).toEqual(
       expect.arrayContaining([

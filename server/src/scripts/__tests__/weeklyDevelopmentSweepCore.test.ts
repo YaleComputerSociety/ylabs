@@ -346,13 +346,13 @@ describe('buildWeeklySweepRunRecord', () => {
     };
     const record = recordFrom({
       preflight: { ...okPreflight, codeFreshness },
-      searchIndex: { status: 'resync-required', remedy: 'yarn development:search:rebuild' },
+      searchIndex: { status: 'resync-required', remedy: 'yarn development:search:sync' },
     });
 
     expect(record.preflight.codeFreshness).toEqual(codeFreshness);
     expect(record.searchIndex).toEqual({
       status: 'resync-required',
-      remedy: 'yarn development:search:rebuild',
+      remedy: 'yarn development:search:sync',
     });
   });
 

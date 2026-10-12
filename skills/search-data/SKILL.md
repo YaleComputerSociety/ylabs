@@ -188,7 +188,8 @@ A canonical name that contains a filler word (`ecology and evolutionary biology`
 
 | Command                                                 | Effect                                                               |
 | ------------------------------------------------------- | -------------------------------------------------------------------- |
-| `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
+| `yarn development:search:sync`                          | Default refresh for a stale Development index: upsert only the documents that differ from Mongo and delete orphans, then run the sorted-browse check. Costs embeddings only for rows whose embedded text changed (#5023). |
+| `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index. With `--clear` it re-embeds every document, so use it only for a settings, embedder, or document-shape change. |
 | `yarn --cwd server research-search:relevance`           | Read-only: measure served search relevance and typo robustness against Development. See "Measuring search quality" below. |
 | `yarn --cwd server reindex:meili`                       | Guarded post-copy rebuild for beta/production; verifies `SCRAPER_ENV`, `MEILISEARCH_HOST`, non-empty `MEILISEARCH_INDEX_PREFIX`, and a matching Mongo database with non-archived documents before rebuilding into a fresh index and swapping it in; dry-run default, apply requires `--confirm`. |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |

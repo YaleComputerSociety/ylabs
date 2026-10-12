@@ -62,7 +62,7 @@ describe('scraper sweep checkpoint', () => {
       restart: false,
     }).store;
     first.markDone(sourceStepId('yale-directory'), 'source', 0, now());
-    first.markFailed(stageStepId('search-rebuild'), 'stage', 1, now());
+    first.markFailed(stageStepId('search-sync'), 'stage', 1, now());
 
     const { store: resumedStore, resumed } = SweepCheckpointStore.start({
       mode: 'development-full',
@@ -74,7 +74,7 @@ describe('scraper sweep checkpoint', () => {
     expect(resumed).toBe(true);
     expect(resumedStore.outputDirectory).toBe(path.join(dir, 'out'));
     expect(resumedStore.isDone(sourceStepId('yale-directory'))).toBe(true);
-    expect(resumedStore.isDone(stageStepId('search-rebuild'))).toBe(false);
+    expect(resumedStore.isDone(stageStepId('search-sync'))).toBe(false);
   });
 
   it('does not resume a checkpoint recorded for a different mode', () => {
@@ -297,17 +297,15 @@ describe('scraper sweep checkpoint', () => {
     });
     store.markDone(sourceStepId('yale-directory'), 'source', 0, now());
     store.markDone(stageStepId('visibility-gate'), 'stage', 0, now());
-    store.markDone(stageStepId('search-rebuild'), 'stage', 0, now());
+    store.markDone(stageStepId('search-sync'), 'stage', 0, now());
 
     expect(store.clearStageSteps(now()).sort()).toEqual([
-      stageStepId('search-rebuild'),
+      stageStepId('search-sync'),
       stageStepId('visibility-gate'),
     ]);
     expect(store.isDone(stageStepId('visibility-gate'))).toBe(false);
     expect(store.isDone(sourceStepId('yale-directory'))).toBe(true);
-    expect(
-      readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-rebuild')],
-    ).toBeUndefined();
+    expect(readSweepCheckpoint(checkpointPath)?.steps[stageStepId('search-sync')]).toBeUndefined();
     expect(store.clearStageSteps(now())).toEqual([]);
   });
 });

@@ -38,7 +38,7 @@ test('only beta and production are accepted, and dev is redirected rather than r
   }
   // A reader who typed the wrong environment should be told the right command,
   // not just refused.
-  assert.throws(() => parseReindexArgs(['development']), /development:search:rebuild/);
+  assert.throws(() => parseReindexArgs(['development']), /development:search:sync/);
 });
 
 test('argument shape is enforced', () => {

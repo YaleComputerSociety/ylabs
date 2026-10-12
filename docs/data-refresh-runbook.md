@@ -110,19 +110,19 @@ Until #4755 the entrypoint started a throwaway Meilisearch inside the container,
 Measured on 2026-10-04 while a hosted run was materializing: 3,871 of 4,249 Development index documents held an older `lastObservedAt` than their stored row, and 88 that the index read as `student_ready` were no longer served.
 
 The entrypoint now starts no index, unsets every `MEILISEARCH_*` variable, and sets `SEARCH_INDEX_WRITES=deferred` (`server/src/utils/searchIndexWrites.ts`).
-With that set, the Meilisearch client refuses to open any connection, every materializer and repair sync records the row as not synced instead of writing, the visibility gate skips its index read and resync and reports `indexDeferred`, and the sweep skips its `search-rebuild` and `search-index-check` stages.
+With that set, the Meilisearch client refuses to open any connection, every materializer and repair sync records the row as not synced instead of writing, the visibility gate skips its index read and resync and reports `indexDeferred`, and the sweep skips its `search-sync` and `search-index-check` stages.
 A resync skipped that way is counted as `indexSyncDeferred` (`entitiesResyncDeferred` in the two text-repair scripts), never as an `indexSyncFailures` failure, so `source-link-health`, `research-homes:backfill-browse-rank` and the other scripts that exit nonzero on an unsynced row do not fail a hosted run for a write it deferred on purpose; the materializer still records such a row as stale.
 Each mode's `summary.json` and the run's `weekly_sweep_runs` row then carry `searchIndex.status: resync-required` with the remedy, and the job's log says the index was not updated.
 
 So a hosted run ends with a re-sync from a checkout whose `server/.env` reaches the Development index:
 
 ```bash
-yarn development:search:rebuild
+yarn development:search:sync
 ```
 
-That rebuilds the index with `--clear` and then runs `yarn development:search:check`, which is `journey:eval` limited to its two sorted-browse cases; their `indexed-sort-key-is-fresh` invariant (#4751) compares the indexed sort key of each served row in a 100-row window with what the stored row derives, and fails the command when any differs, or when no served row settled long enough before the read to be compared.
+That reconciles the index with Mongo, writing only the documents that differ and deleting the ones with no live row, and then runs `yarn development:search:check`, which is `journey:eval` limited to its two sorted-browse cases; their `indexed-sort-key-is-fresh` invariant (#4751) compares the indexed sort key of each served row in a 100-row window with what the stored row derives, and fails the command when any differs, or when no served row settled long enough before the read to be compared.
 Until the re-sync runs, a sorted browse serves each changed card at its old position and a page can come back short.
-A laptop sweep writes the real index, so it runs the same check as its `search-index-check` stage right after `search-rebuild` and fails the sweep when the index it wrote disagrees with Mongo.
+A laptop sweep writes the real index, so it runs the same check as its `search-index-check` stage right after `search-sync` and fails the sweep when the index it wrote disagrees with Mongo.
 
 The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --confirm-weekly-development-sweep` (`server/src/scripts/weeklyDevelopmentSweep.ts`), which in order:
 
@@ -476,10 +476,10 @@ Apply the reviewed sync:
 yarn development:refresh-from-beta:apply
 ```
 
-Rebuild local ResearchEntity search from the synchronized Atlas Development MongoDB:
+Bring local ResearchEntity search in line with the synchronized Atlas Development MongoDB:
 
 ```bash
-yarn development:search:rebuild
+yarn development:search:sync
 ```
 
 This is a snapshot refresh rather than continuous replication.

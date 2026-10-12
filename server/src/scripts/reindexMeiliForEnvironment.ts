@@ -125,7 +125,7 @@ export function assertReindexMeiliEnvironment(
   const environment = resolveScraperEnvironment(env);
   if (environment !== 'beta' && environment !== 'production') {
     throw new Error(
-      `reindex:meili targets beta or production only; SCRAPER_ENV resolved to "${environment}". Use the development sweep search-rebuild stage for the local index.`,
+      `reindex:meili targets beta or production only; SCRAPER_ENV resolved to "${environment}". Use the development sweep search-sync stage for the local index.`,
     );
   }
 

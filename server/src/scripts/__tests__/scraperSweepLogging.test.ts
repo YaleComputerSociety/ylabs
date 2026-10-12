@@ -95,12 +95,12 @@ describe('scraper sweep logging', () => {
     expect(readLogTail(path.join(dir, 'missing.log'))).toEqual([]);
     const entry = formatErrorLogEntry({
       at: now().toISOString(),
-      stepId: 'stage:search-rebuild',
+      stepId: 'stage:search-sync',
       exitCode: 1,
       tail: [],
     });
     expect(entry).toContain('(no captured output)');
-    expect(entry).toContain('stage:search-rebuild');
+    expect(entry).toContain('stage:search-sync');
   });
 
   describe('failure tail (#4852)', () => {
