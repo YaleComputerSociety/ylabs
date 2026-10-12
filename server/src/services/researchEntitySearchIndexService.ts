@@ -20,7 +20,7 @@ import {
 import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
-  MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+  MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
   MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   type MeiliTaskWaitingIndex,
 } from '../utils/meiliTask';
@@ -989,7 +989,7 @@ async function addEveryResearchEntityDocument(
         index,
         addTask,
         'addDocuments',
-        MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+        MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
       );
       indexedDocumentCount += indexDocs.length;
     }
@@ -1029,7 +1029,7 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
       liveIndex,
       await liveIndex.deleteDocuments(archivedIds),
       'catch-up deleteDocuments',
-      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+      MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
     );
   }
 
@@ -1044,7 +1044,7 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
         primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
       }),
       'catch-up addDocuments',
-      MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+      MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
     );
   }
 
