@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Account, type AccountProfile } from '../models/account';
-import { Researcher } from '../models/researcher';
 import { normalizedSessionVersion } from '../utils/sessionClaim';
+import { researchersByNetid } from './researcherNetidLookup';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -118,13 +118,21 @@ export const resolveReporterIdentityByNetid = async (netid: unknown): Promise<Re
   if (!normalizedNetid) return { email: '', name: '' };
   const account: any = await Account.findOne({ netid: normalizedNetid }).select('_id email').lean();
   if (!account?._id) return { email: '', name: '' };
-  const researcher: any = await Researcher.findOne({ accountId: account._id })
-    .select('displayName')
-    .lean();
+  const researcher = (await researchersByNetid([normalizedNetid])).get(normalizedNetid);
   return {
     email: typeof account.email === 'string' ? account.email : '',
     name: typeof researcher?.displayName === 'string' ? researcher.displayName : '',
   };
+};
+
+const activateUnknownAccount = async (account: any): Promise<any> => {
+  if (account?.status !== 'UNKNOWN') return account;
+  const activated = await Account.findOneAndUpdate(
+    { _id: account._id, status: 'UNKNOWN' },
+    { $set: { status: 'ACTIVE' } },
+    { returnDocument: 'after' },
+  ).lean();
+  return activated ?? (await Account.findById(account._id).lean()) ?? account;
 };
 
 export const recordAccountLogin = async (input: AccountLoginInput): Promise<AccountRecordView> => {
@@ -157,5 +165,5 @@ export const recordAccountLogin = async (input: AccountLoginInput): Promise<Acco
     },
   ).lean();
 
-  return toAccountView(account);
+  return toAccountView(await activateUnknownAccount(account));
 };

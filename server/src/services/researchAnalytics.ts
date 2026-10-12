@@ -19,6 +19,7 @@ import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '.
 import { Fellowship, ResearchEntity } from '../models/index';
 import { Account } from '../models/account';
 import { logEvent } from './analyticsService';
+import { liveResearcherHoldsNetid } from './researcherNetidLookup';
 import type { AnalyticsWriteOutcome, LogEventParams } from './analyticsService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { routeParam } from '../utils/routeParams';
@@ -298,7 +299,7 @@ export const researchEntityExists = async (
   const id = entityId.trim();
 
   if (entityType === 'profile') {
-    return Boolean(await Account.exists({ netid: id }));
+    return (await liveResearcherHoldsNetid(id)) || Boolean(await Account.exists({ netid: id }));
   }
 
   if (entityType === 'research_entity') {
