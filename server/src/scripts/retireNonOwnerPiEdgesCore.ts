@@ -67,12 +67,12 @@ export function summarizeNonOwnerPiEdgeRefusals(
 export interface TraineeRosterRow {
   id: string;
   title: string;
-  hasAccount: boolean;
+  holdsDirectoryIdentity: boolean;
   hasAnyRoleEdge: boolean;
 }
 
 /**
- * The trainee rows that can be archived: no Yale account behind them and no role
+ * The trainee rows that can be archived: no Yale directory identity behind them and no role
  * edge anywhere, ever.
  *
  * Deliberately narrow. 230 of 398 trainee-titled researchers back a real account, so
@@ -87,12 +87,12 @@ export function planTraineeRosterArchive(
   const archive: string[] = [];
   const keptBecause: Record<string, number> = {
     'lead can host': 0,
-    'backs a yale account': 0,
+    'holds a yale directory identity': 0,
     'holds a role edge': 0,
   };
   for (const row of rows) {
     if (!isTraineeLevelTitle(row.title)) keptBecause['lead can host'] += 1;
-    else if (row.hasAccount) keptBecause['backs a yale account'] += 1;
+    else if (row.holdsDirectoryIdentity) keptBecause['holds a yale directory identity'] += 1;
     else if (row.hasAnyRoleEdge) keptBecause['holds a role edge'] += 1;
     else archive.push(row.id);
   }

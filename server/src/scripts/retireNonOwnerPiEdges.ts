@@ -13,6 +13,10 @@ import {
 import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  researcherHoldsDirectoryIdentity,
+  type ResearcherIdentitySource,
+} from '../utils/researcherIdentity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -105,13 +109,13 @@ async function main(): Promise<void> {
 
   const plan = planNonOwnerPiEdgeRetirement(edges, cannotOwnResearchHome, titleByPersonId);
 
-  const accountByPersonId = new Map<string, boolean>();
-  const accountRows = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id accountId')
-    .lean()) as unknown as Array<{ _id: unknown; accountId?: unknown }>;
-  for (const row of accountRows) {
+  const directoryIdentityByPersonId = new Map<string, boolean>();
+  const identityRows = (await Researcher.find({ archived: { $ne: true } })
+    .select('_id accountId identifiers.email')
+    .lean()) as unknown as Array<{ _id: unknown } & ResearcherIdentitySource>;
+  for (const row of identityRows) {
     const id = serializedDocumentId(row._id);
-    if (id) accountByPersonId.set(id, Boolean(row.accountId));
+    if (id) directoryIdentityByPersonId.set(id, researcherHoldsDirectoryIdentity(row));
   }
   const anyRoleEdge = new Set(
     (
@@ -126,7 +130,7 @@ async function main(): Promise<void> {
     [...titleByPersonId.entries()].map(([id, title]) => ({
       id,
       title,
-      hasAccount: accountByPersonId.get(id) === true,
+      holdsDirectoryIdentity: directoryIdentityByPersonId.get(id) === true,
       hasAnyRoleEdge: anyRoleEdge.has(id),
     })),
     isTraineeLevelTitle,

@@ -5,6 +5,7 @@ import {
   summarizeNonOwnerPiEdgeRefusals,
   type NonOwnerPiEdgeRow,
 } from '../retireNonOwnerPiEdgesCore';
+import { researcherHoldsDirectoryIdentity } from '../../utils/researcherIdentity';
 
 const isTrainee = (title?: string) => /postdoc|student/i.test(title || '');
 
@@ -84,7 +85,7 @@ describe('planTraineeRosterArchive', () => {
   const row = (over: Partial<Parameters<typeof planTraineeRosterArchive>[0][number]> = {}) => ({
     id: 'r1',
     title: 'Postdoctoral Associate',
-    hasAccount: false,
+    holdsDirectoryIdentity: false,
     hasAnyRoleEdge: false,
     ...over,
   });
@@ -95,9 +96,18 @@ describe('planTraineeRosterArchive', () => {
   });
 
   it('keeps a row that backs a Yale account, since removing it breaks that person access', () => {
-    const plan = planTraineeRosterArchive([row({ hasAccount: true })], isTrainee);
+    const plan = planTraineeRosterArchive([row({ holdsDirectoryIdentity: true })], isTrainee);
     expect(plan.archive).toEqual([]);
-    expect(plan.keptBecause['backs a yale account']).toBe(1);
+    expect(plan.keptBecause['holds a yale directory identity']).toBe(1);
+  });
+
+  it('keeps a trainee row that holds its own directory email with no account linked (#5000)', () => {
+    const holdsDirectoryIdentity = researcherHoldsDirectoryIdentity({
+      identifiers: { netid: 'pd1', email: 'postdoc.fixture@example.test' },
+    });
+    const plan = planTraineeRosterArchive([row({ holdsDirectoryIdentity })], isTrainee);
+    expect(plan.archive).toEqual([]);
+    expect(plan.keptBecause['holds a yale directory identity']).toBe(1);
   });
 
   it('keeps a row holding any role edge, since a postdoc belongs on a lab member list', () => {

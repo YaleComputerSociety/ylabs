@@ -9,7 +9,6 @@ import {
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
-import { Account } from '../models/account';
 import { Researcher } from '../models/researcher';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { splitName } from './utils/scraperHelpers';
@@ -370,7 +369,9 @@ async function loadIdentityCollisionGroups(
   };
 }
 
-const researcherNetidCollisionPipeline = (): mongoose.PipelineStage[] => [
+const researcherIdentityCollisionPipeline = (
+  identityField: 'netid' | 'email',
+): mongoose.PipelineStage[] => [
   { $match: { archived: { $ne: true } } },
   {
     $lookup: {
@@ -383,34 +384,41 @@ const researcherNetidCollisionPipeline = (): mongoose.PipelineStage[] => [
   {
     $project: {
       personId: { $toString: '$_id' },
-      identityValues: {
-        $setUnion: [
-          [normalizedIdentityValue('$identifiers.netid')],
-          [normalizedIdentityValue({ $arrayElemAt: ['$account.netid', 0] })],
+      researcherValue: normalizedIdentityValue(`$identifiers.${identityField}`),
+      accountValue: normalizedIdentityValue({ $arrayElemAt: [`$account.${identityField}`, 0] }),
+    },
+  },
+  {
+    $project: {
+      personId: 1,
+      identityValue: {
+        $cond: [
+          { $in: ['$researcherValue', PLACEHOLDER_IDENTITY_VALUES] },
+          '$accountValue',
+          '$researcherValue',
         ],
       },
     },
   },
-  { $unwind: '$identityValues' },
-  { $project: { personId: 1, identityValue: '$identityValues' } },
   { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
   { $group: { _id: '$identityValue', personIds: { $addToSet: '$personId' } } },
   { $match: { 'personIds.1': { $exists: true } } },
 ];
 
-async function loadResearcherNetidCollisionGroups(
+async function loadResearcherIdentityCollisionGroups(
+  identityField: 'netid' | 'email',
   limit: number,
 ): Promise<CountedSample<DuplicatePersonGroup>> {
   const { rows, total } = await countAndSample(
     Researcher,
-    researcherNetidCollisionPipeline(),
+    researcherIdentityCollisionPipeline(identityField),
     [],
     limit,
   );
   return {
     total,
     sample: rows.map((row: any) => ({
-      identityField: 'netid' as const,
+      identityField,
       identityValue: stringId(row._id),
       userIds: row.personIds || [],
     })),
@@ -423,9 +431,9 @@ async function loadDuplicatePeopleIntegrity(limit: number): Promise<{
   warnings: PostMaterializationIntegrityWarning[];
 }> {
   const byField = await Promise.all([
-    loadIdentityCollisionGroups(Account, 'email', 'email', limit),
+    loadResearcherIdentityCollisionGroups('email', limit),
     loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid', limit),
-    loadResearcherNetidCollisionGroups(limit),
+    loadResearcherIdentityCollisionGroups('netid', limit),
   ]);
   return {
     groups: byField.flatMap((field) => field.sample),

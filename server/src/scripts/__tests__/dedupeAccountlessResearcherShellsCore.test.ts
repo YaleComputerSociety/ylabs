@@ -29,9 +29,15 @@ describe('normalizeResearcherName', () => {
 
 describe('researcherIdentityTier', () => {
   it('ranks an account link above a netid and a netid above a bare name', () => {
-    expect(researcherIdentityTier({ accountId: 'account-1', netid: 'ab12' })).toBe('ACCOUNT');
+    expect(researcherIdentityTier({ accountId: 'account-1', netid: 'ab12' })).toBe('DIRECTORY');
     expect(researcherIdentityTier({ netid: 'ab12' })).toBe('NETID');
     expect(researcherIdentityTier({})).toBe('NAME_ONLY');
+  });
+
+  it('ranks a researcher holding its own directory email as directory-backed with no account', () => {
+    expect(researcherIdentityTier({ email: 'ab12@example.test', netid: 'ab12' })).toBe('DIRECTORY');
+    expect(researcherIdentityTier({ email: 'ab12@example.test' })).toBe('DIRECTORY');
+    expect(researcherIdentityTier({ email: '   ', netid: 'ab12' })).toBe('NETID');
   });
 
   it('treats a blank or non-string netid as no identity at all', () => {
@@ -430,6 +436,25 @@ describe('decideShellMerge verified-profile arm', () => {
     });
   });
 
+  it('folds into a directory record that holds its own email and links no account', () => {
+    const directoryRecord = account({
+      accountId: undefined,
+      email: 'sample.fixture@example.test',
+      netid: 'sf1',
+    });
+    expect(decide(shell(), [directoryRecord])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it('does not fold into a record that holds only a netid', () => {
+    const netidRecord = account({ accountId: undefined, netid: 'sf1' });
+    expect(decide(shell(), [netidRecord]).reason).toBe('NO_CANONICAL');
+  });
+
   it.each(['UNKNOWN', 'UNAVAILABLE', undefined])(
     'ignores an account link whose health is %s',
     (status) => {
@@ -713,7 +738,7 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
   const account = (id: string, displayName: string, extra: Record<string, unknown> = {}) => ({
     id,
     displayName,
-    tier: 'ACCOUNT' as const,
+    tier: 'DIRECTORY' as const,
     ...extra,
   });
   const decide = (shell: Record<string, unknown>, candidates: ReturnType<typeof account>[]) =>

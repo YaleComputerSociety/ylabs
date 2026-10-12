@@ -14,6 +14,7 @@ import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueI
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
+import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import {
   claimsAnotherPersonsLabByUrlPath,
@@ -499,9 +500,9 @@ function userIdentityMatchEntity(
   };
 }
 
-function researcherAccountToProfileUser(
+function researcherToProfileUser(
   researcher: Record<string, any>,
-  account: Record<string, any> | undefined,
+  linkedAccount: Record<string, any> | undefined,
 ): Record<string, any> {
   const displayName = textValue(researcher.displayName);
   const split = splitName(displayName);
@@ -520,8 +521,8 @@ function researcherAccountToProfileUser(
   const websiteUrl = textValue(profile.websiteUrl);
   return {
     _id: idValue(researcher._id),
-    netid: textValue(account?.netid),
-    email: textValue(account?.email),
+    netid: researcherNetid(researcher, linkedAccount),
+    email: researcherEmail(researcher, linkedAccount),
     fname: split.first,
     lname: split.last,
     name: displayName,
@@ -534,25 +535,61 @@ function researcherAccountToProfileUser(
   };
 }
 
-async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
-  const normalized = uniqueStrings(netids);
-  if (normalized.length === 0) return [];
-  const accounts = (await Account.find({ netid: { $in: normalized } })
-    .collation({ locale: 'en', strength: 2 })
-    .select('_id netid email')
-    .lean()) as Array<Record<string, any>>;
-  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
-  const accountIds = accounts.map((account) => account._id);
-  const researchers = accountIds.length
-    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
-        .select('_id accountId displayName profile profileLinks identifiers')
+const PROFILE_USER_RESEARCHER_SELECT = '_id accountId displayName profile profileLinks identifiers';
+
+async function linkedAccountsById(
+  researchers: Array<Record<string, any>>,
+): Promise<Map<string, Record<string, any>>> {
+  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
+  const accounts = accountIds.length
+    ? ((await Account.find({ _id: { $in: accountIds } })
+        .select('_id netid email')
         .lean()) as Array<Record<string, any>>)
     : [];
-  return researchers
-    .map((researcher) =>
-      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-    )
-    .filter((user) => user.netid);
+  return new Map(accounts.map((account) => [idValue(account._id), account]));
+}
+
+async function profileUsersForResearchers(
+  researchers: Array<Record<string, any>>,
+): Promise<Array<Record<string, any>>> {
+  const accountById = await linkedAccountsById(researchers);
+  return researchers.map((researcher) =>
+    researcherToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+  );
+}
+
+export async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
+  const normalized = uniqueStrings(netids);
+  if (normalized.length === 0) return [];
+  const caseInsensitive = { locale: 'en', strength: 2 };
+  const [researchersHoldingNetid, accountsHoldingNetid] = await Promise.all([
+    Researcher.find({ 'identifiers.netid': { $in: normalized }, archived: { $ne: true } })
+      .collation(caseInsensitive)
+      .select(PROFILE_USER_RESEARCHER_SELECT)
+      .lean() as Promise<Array<Record<string, any>>>,
+    Account.find({ netid: { $in: normalized } })
+      .collation(caseInsensitive)
+      .select('_id')
+      .lean() as Promise<Array<Record<string, any>>>,
+  ]);
+  const accountIds = accountsHoldingNetid.map((account) => account._id);
+  const researchersLinkingNetid = accountIds.length
+    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
+        .select(PROFILE_USER_RESEARCHER_SELECT)
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  const researchersById = new Map<string, Record<string, any>>();
+  for (const researcher of [...researchersHoldingNetid, ...researchersLinkingNetid]) {
+    researchersById.set(idValue(researcher._id), researcher);
+  }
+  const wanted = new Set(normalized.map((netid) => netid.toLowerCase()));
+  const usersByNetid = new Map<string, Array<Record<string, any>>>();
+  for (const user of await profileUsersForResearchers([...researchersById.values()])) {
+    const netid = textValue(user.netid).toLowerCase();
+    if (!netid || !wanted.has(netid)) continue;
+    usersByNetid.set(netid, [...(usersByNetid.get(netid) || []), user]);
+  }
+  return [...usersByNetid.values()].filter((users) => users.length === 1).map(([user]) => user);
 }
 
 export function generatedOfficialProfileUrlCandidatesForPerson(
@@ -2852,7 +2889,7 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
   return annotatedEntities.filter(shouldQueueEntityForPiBackfill).slice(0, limit);
 }
 
-async function selectDirectVisibleProfileBioUserTargets(
+export async function selectDirectVisibleProfileBioUserTargets(
   limit: number,
   excludedUserIds: Set<string>,
 ): Promise<Array<Record<string, any>>> {
@@ -2861,30 +2898,29 @@ async function selectDirectVisibleProfileBioUserTargets(
   const researchers = (await applyFiniteCandidateLimit(
     Researcher.find({
       archived: { $ne: true },
-      accountId: { $exists: true, $ne: null },
-      $or: [
-        { 'profileLinks.kind': 'YALE_OFFICIAL' },
-        { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+      $and: [
+        {
+          $or: [
+            { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
+            { accountId: { $exists: true, $ne: null } },
+          ],
+        },
+        {
+          $or: [
+            { 'profileLinks.kind': 'YALE_OFFICIAL' },
+            { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+          ],
+        },
       ],
     })
-      .select('_id accountId displayName profile profileLinks identifiers')
+      .select(PROFILE_USER_RESEARCHER_SELECT)
       .sort({ updatedAt: 1 }),
     limit,
     4,
     50,
   ).lean()) as Array<Record<string, any>>;
-  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
-  const accounts = accountIds.length
-    ? ((await Account.find({ _id: { $in: accountIds } })
-        .select('_id netid email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
 
-  return researchers
-    .map((researcher) =>
-      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-    )
+  return (await profileUsersForResearchers(researchers))
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
     .map((user) => {
       const urls = visibleBioProfileUrlsForUser(user);
@@ -3533,7 +3569,6 @@ export async function resolveExistingUserForIdentity(
   const addResearchers = (docs: Array<Record<string, any>>) => {
     for (const doc of docs) researchersById.set(idValue(doc._id), doc);
   };
-  const researcherSelect = '_id accountId displayName profile profileLinks identifiers';
 
   if (urls.length) {
     addResearchers(
@@ -3541,12 +3576,18 @@ export async function resolveExistingUserForIdentity(
         archived: { $ne: true },
         $or: [{ 'profileLinks.url': { $in: urls } }, { 'profile.websiteUrl': { $in: urls } }],
       })
-        .select(researcherSelect)
+        .select(PROFILE_USER_RESEARCHER_SELECT)
         .limit(10)
         .lean()) as Array<Record<string, any>>,
     );
   }
   if (email) {
+    addResearchers(
+      (await Researcher.find({ archived: { $ne: true }, 'identifiers.email': email })
+        .select(PROFILE_USER_RESEARCHER_SELECT)
+        .limit(10)
+        .lean()) as Array<Record<string, any>>,
+    );
     const emailAccounts = (await Account.find({ email }).select('_id').lean()) as Array<
       Record<string, any>
     >;
@@ -3554,7 +3595,7 @@ export async function resolveExistingUserForIdentity(
     if (emailAccountIds.length) {
       addResearchers(
         (await Researcher.find({ archived: { $ne: true }, accountId: { $in: emailAccountIds } })
-          .select(researcherSelect)
+          .select(PROFILE_USER_RESEARCHER_SELECT)
           .limit(10)
           .lean()) as Array<Record<string, any>>,
       );
@@ -3562,17 +3603,7 @@ export async function resolveExistingUserForIdentity(
   }
   if (researchersById.size === 0) return null;
 
-  const researchers = Array.from(researchersById.values());
-  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
-  const accounts = accountIds.length
-    ? ((await Account.find({ _id: { $in: accountIds } })
-        .select('_id netid email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
-  const candidates = researchers.map((researcher) =>
-    researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-  );
+  const candidates = await profileUsersForResearchers(Array.from(researchersById.values()));
 
   const matchingCandidates =
     candidates.length <= 1

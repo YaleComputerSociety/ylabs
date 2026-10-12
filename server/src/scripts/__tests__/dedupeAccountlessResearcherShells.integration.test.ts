@@ -455,9 +455,9 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(result.byReason.MERGEABLE).toBe(2);
     expect(result.byReason.AMBIGUOUS_MULTIPLE_CANONICAL).toBe(0);
     expect(result.roleAssignmentsRepointed).toBe(2);
-    expect(result.netidBackedAccountlessResearchers).toBe(1);
-    expect(result.accountLinkedResearchers).toBe(1);
-    expect(result.accountlessResearchers).toBe(2);
+    expect(result.netidBackedShellResearchers).toBe(1);
+    expect(result.directoryIdentifiedResearchers).toBe(1);
+    expect(result.shellResearchers).toBe(2);
 
     for (const shellId of [netidTwin, nameOnlyShell]) {
       const shell = await db.collection('researchers').findOne({ _id: shellId });
@@ -477,6 +477,78 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       expect(String(edge!.personId)).toBe(String(accountCanonical));
       expect(edge!.archived).toBe(false);
     }
+  });
+
+  it('folds a netid twin and a name-only shell into a directory record that links no account (#5000)', async () => {
+    const directoryCanonical = new mongoose.Types.ObjectId();
+    const netidTwin = new mongoose.Types.ObjectId();
+    const nameOnlyShell = new mongoose.Types.ObjectId();
+    const db = mongoose.connection.db!;
+    await db.collection('accounts').deleteMany({});
+    await db.collection('researchers').insertMany([
+      {
+        _id: directoryCanonical,
+        displayName: 'Jane Roe',
+        archived: false,
+        identifiers: { email: 'jane.roe@example.test' },
+        profileLinks: [],
+      },
+      {
+        _id: netidTwin,
+        displayName: 'Jane Roe',
+        archived: false,
+        identifiers: { netid: 'jr55' },
+        profileLinks: [],
+      },
+      {
+        _id: nameOnlyShell,
+        displayName: 'Jane Roe',
+        archived: false,
+        identifiers: {},
+        profileLinks: [],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: false });
+
+    expect(await db.collection('accounts').countDocuments({})).toBe(0);
+    expect(result.directoryIdentifiedResearchers).toBe(1);
+    expect(result.shellResearchers).toBe(2);
+    expect(result.netidBackedShellResearchers).toBe(1);
+    expect(result.byReason.MERGEABLE).toBe(2);
+    expect(result.merges.map((merge) => merge.canonicalId)).toEqual([
+      String(directoryCanonical),
+      String(directoryCanonical),
+    ]);
+    expect(result.merges.map((merge) => merge.shellId).sort()).toEqual(
+      [String(netidTwin), String(nameOnlyShell)].sort(),
+    );
+  });
+
+  it('never treats a directory record that links no account as a shell (#5000)', async () => {
+    const db = mongoose.connection.db!;
+    await db.collection('accounts').deleteMany({});
+    await db.collection('researchers').insertMany([
+      {
+        displayName: 'Kim Lee',
+        archived: false,
+        identifiers: { netid: 'kl10', email: 'kim.lee@example.test' },
+        profileLinks: [],
+      },
+      {
+        displayName: 'Kim Lee',
+        archived: false,
+        identifiers: { netid: 'kl99', email: 'kim.lee2@example.test' },
+        profileLinks: [],
+      },
+    ]);
+
+    const result = await dedupeAccountlessResearcherShells({ apply: false });
+
+    expect(result.directoryIdentifiedResearchers).toBe(2);
+    expect(result.shellResearchers).toBe(0);
+    expect(result.shellsMerged).toBe(0);
+    expect(result.accountlessClusters.groups).toBe(0);
   });
 
   it('leaves a netid-backed twin unmerged when its netid conflicts with the canonical', async () => {
