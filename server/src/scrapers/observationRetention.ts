@@ -47,7 +47,6 @@ export interface SupersededObservationPruneResult {
   retainedRuns: number;
   sourceName?: string;
   referenceSpecs: ObservationReferenceSpecCoverage[];
-  supersessionClosureRounds: number;
 }
 
 type ObservationReferenceKind = 'field' | 'provenance-map';
@@ -168,7 +167,6 @@ export async function pruneSupersededObservations(
     retainedRuns: keptRunIds.length,
     sourceName: options.sourceName,
     referenceSpecs: referenceScan.specs,
-    supersessionClosureRounds: referenceScan.supersessionClosureRounds,
   };
 }
 
@@ -194,7 +192,6 @@ export interface DeadObservationPruneResult {
   retainedRuns: number;
   sourceName?: string;
   referenceSpecs: ObservationReferenceSpecCoverage[];
-  supersessionClosureRounds: number;
 }
 
 export async function pruneDeadObservations(
@@ -232,7 +229,6 @@ export async function pruneDeadObservations(
     retainedRuns: keptRunIds.length,
     sourceName: options.sourceName,
     referenceSpecs: referenceScan.specs,
-    supersessionClosureRounds: referenceScan.supersessionClosureRounds,
   };
 }
 
@@ -241,9 +237,7 @@ export const OBSERVATION_PRUNE_DELETE_BATCH_SIZE = 5000;
 /**
  * Protected ids are excluded in memory rather than sent as an `_id: { $nin }` filter,
  * because the protected set grows with the corpus and passed the 16 MB BSON command
- * limit on Development at about one million ids (#3733). Deletes run as the cursor
- * advances so the deletable ids are never all held at once; a row already returned is
- * the only kind removed, so the open cursor is not disturbed.
+ * limit on Development at about one million ids (#3733).
  */
 async function pruneUnreferencedEligibleObservations(input: {
   eligibleFilter: Record<string, unknown>;
@@ -251,36 +245,32 @@ async function pruneUnreferencedEligibleObservations(input: {
   apply: boolean;
 }): Promise<{ eligibleCandidates: number; candidates: number; deleted: number }> {
   let eligibleCandidates = 0;
-  let candidates = 0;
-  let deleted = 0;
-  let pending: unknown[] = [];
-  const deletePending = async () => {
-    if (input.apply && pending.length > 0) {
-      const result = await Observation.deleteMany({
-        ...input.eligibleFilter,
-        _id: { $in: pending },
-      });
-      deleted += result.deletedCount || 0;
-    }
-    pending = [];
-  };
+  const unreferencedIds: unknown[] = [];
   const cursor = Observation.find(input.eligibleFilter).select('_id').lean().cursor();
   for await (const row of cursor) {
     eligibleCandidates += 1;
-    if (input.protectedObservationKeys.has(String(row._id))) continue;
-    candidates += 1;
-    pending.push(row._id);
-    if (pending.length >= OBSERVATION_PRUNE_DELETE_BATCH_SIZE) await deletePending();
+    if (!input.protectedObservationKeys.has(String(row._id))) unreferencedIds.push(row._id);
   }
-  await deletePending();
-  return { eligibleCandidates, candidates, deleted };
+  let deleted = 0;
+  if (input.apply) {
+    for (
+      let start = 0;
+      start < unreferencedIds.length;
+      start += OBSERVATION_PRUNE_DELETE_BATCH_SIZE
+    ) {
+      const batch = unreferencedIds.slice(start, start + OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
+      const result = await Observation.deleteMany({ ...input.eligibleFilter, _id: { $in: batch } });
+      deleted += result.deletedCount || 0;
+    }
+  }
+  return { eligibleCandidates, candidates: unreferencedIds.length, deleted };
 }
 
-export function isSupersessionReferenceSpec(spec: ObservationReferenceSpec): boolean {
+function isSupersessionReferenceSpec(spec: ObservationReferenceSpec): boolean {
   return spec.collection === 'observations' && spec.field === 'supersededBy';
 }
 
-export function buildSurvivingSupersessionReferencePipeline(
+function buildSurvivingSupersessionReferencePipeline(
   eligibleFilter: Record<string, unknown>,
 ): Record<string, unknown>[] {
   return [
@@ -292,7 +282,6 @@ export function buildSurvivingSupersessionReferencePipeline(
 interface ProtectedObservationScan {
   protectedKeys: Set<string>;
   specs: ObservationReferenceSpecCoverage[];
-  supersessionClosureRounds: number;
 }
 
 /**
@@ -331,9 +320,7 @@ async function scanProtectedObservations(
     frontier.push(row._id);
   }
 
-  let supersessionClosureRounds = 0;
   while (frontier.length > 0) {
-    supersessionClosureRounds += 1;
     const next: unknown[] = [];
     for (let start = 0; start < frontier.length; start += OBSERVATION_PRUNE_DELETE_BATCH_SIZE) {
       const batch = frontier.slice(start, start + OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
@@ -374,7 +361,7 @@ async function scanProtectedObservations(
       referencedObservations: supersessionProtectedKeys.size,
     };
   });
-  return { protectedKeys, specs, supersessionClosureRounds };
+  return { protectedKeys, specs };
 }
 
 export interface ReferencedObservationScan {

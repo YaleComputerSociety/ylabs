@@ -169,7 +169,6 @@ describe('observation retention', () => {
       retainedRuns: 3,
       sourceName: undefined,
       referenceSpecs: ALL_REFERENCE_SPEC_COVERAGE(0),
-      supersessionClosureRounds: 0,
     });
   });
 
@@ -315,7 +314,6 @@ describe('observation retention', () => {
         retainedRuns: 3,
         sourceName: undefined,
         referenceSpecs: ALL_REFERENCE_SPEC_COVERAGE(1),
-        supersessionClosureRounds: 1,
       });
     });
 
