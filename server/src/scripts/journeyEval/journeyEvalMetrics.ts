@@ -467,7 +467,7 @@ export function checkIndexedSortKeyMatchesStored(
       : {
           ...tally,
           remedy:
-            'The index predates these rows, so rebuild it per docs/meilisearch-reindex-runbook.md',
+            'The index predates these rows; on Development run yarn development:search:sync, elsewhere rebuild it per docs/meilisearch-reindex-runbook.md',
         },
   );
 }

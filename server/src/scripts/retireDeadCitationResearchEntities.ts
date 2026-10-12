@@ -166,8 +166,7 @@ async function main(): Promise<void> {
     accessSignals,
     search: {
       ...search,
-      rebuildGuidance:
-        'If search documents were not deleted, rebuild with meili:rebuild-research-entities --clear --confirm-meili-rebuild.',
+      rebuildGuidance: 'If search documents were not deleted, run yarn development:search:sync.',
     },
   };
 

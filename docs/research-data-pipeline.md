@@ -233,7 +233,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
 17. `profile-honors` (`research-entity:profile-honors --apply`; after the lead reclaim so a lead linked this sweep has its profile page read this sweep, writing only rows whose honors changed, #4771)
 18. `staff-minted-retirement` (`research-entity:retire-staff-minted-entities --apply`; archives a row whose person's title owns no research, re-read every sweep because a row minted before its title was on file is never revisited by its mint lane, so the roster lane may keep minting an unknown title; capped by `--max-apply`, ordered before the gate and the rebuild, #4983)
 19. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-20. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+20. `search-sync` (`meili:sync-research-entities --apply`)
 21. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
 22. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
 23. `coverage-audit`
@@ -1266,7 +1266,7 @@ A written body is also no longer judged against the stored card before its own c
 The prompt is shared with the grant-corpus and faculty-research-area lanes, so they write in the same voice and pass the same arms.
 A dry run builds no model client and calls the writer model for no row: each row reports the `step` it would take, `plannedLlmCalls` counts the rows that would call the model, and `llmCalls` reads 0; before this, a dry run called the model for every planned row and only skipped the write, so the all-live dry run on 2026-10-06 made 3,586 paid calls.
 `research-entity:grant-corpus-synthesis` follows the same rule and reports `plannedLlmCalls` in a dry run.
-`--skip-index-sync` defers every Meilisearch write for the run (it sets `SEARCH_INDEX_WRITES=deferred`, which the materializer, the gate, and the re-gate already read) and reports the re-gated rows it left unsynced as `indexSyncSkipped`; follow an `--all` apply run with it by one `yarn development:search:rebuild`.
+`--skip-index-sync` defers every Meilisearch write for the run (it sets `SEARCH_INDEX_WRITES=deferred`, which the materializer, the gate, and the re-gate already read) and reports the re-gated rows it left unsynced as `indexSyncSkipped`; follow an `--all` apply run with it by one `yarn development:search:sync`.
 The first full Development run is about 3,900 model calls (3,936 of 4,230 live rows carried evidence when measured on 2026-10-04); later runs call the model only for rows whose evidence changed.
 
 ### Roster biography research evidence (`roster-bio-research-evidence`)
@@ -1818,7 +1818,7 @@ The release queue is written by `yarn --cwd server student-visibility:gate`. Scr
 The gate recomputes visibility for the whole corpus on every run rather than tracking a version stamp.
 A per-plan write guard, `isStudentVisibilityGatePlanMateriallyChanged`, means only records whose recomputed plan actually changes are written, so an unconditional recompute stays cheap in writes (issue #2044 retired the former `STUDENT_VISIBILITY_VERSION` stamp and its stale-version sweep in favor of this model; do not reintroduce a version).
 The exhaustive Development sweep runs one full-corpus `--collection=all` apply gate as its `visibility-gate` post-run stage, immediately after the `inferred-pi-lead-reclaim` stage so the gate judges the leads that stage links in the same sweep (#3741).
-The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-syncs entities to Meilisearch so the index reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-rebuild` stage.
+The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-syncs entities to Meilisearch so the index reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-sync` stage.
 That sync is keyed on a read of the index rather than on the plan's changed flag (#3049).
 After the corpus write the gate projects the indexed `studentVisibilityTier` for every planned row and syncs the materially-changed rows plus every row the index disagrees with, so a sync that failed during a Meilisearch outage is repaired by the next run instead of being invisible to it: a plan that has already been written is no longer materially changed, so the old plan-keyed arm had nothing left to push and reported a clean `changed: 0` over a permanently stale index.
 Both modes report an `index` block. `divergentTierRecordIds` is the drift the run found, `unsyncedRecordIds` is the rows the index refused, `missingFromIndex` counts planned rows the index does not hold at all, and `indexReadFailed` says the probe could not run.

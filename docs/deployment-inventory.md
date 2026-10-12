@@ -156,7 +156,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `ATLAS_DEVELOPMENT_MONGODBURL` | The copy pairs: `database:verify-names --pair <pair>`, the two mirrors, and `production:promote-beta-copy` | Yes |
 | `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs | Yes |
 | `RENDER_BETA_OPERATOR_SERVICE_ID`, `RENDER_PRODUCTION_OPERATOR_SERVICE_ID` | The same | No |
-| `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:rebuild` | Yes |
+| `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:sync` or `:rebuild` | Yes |
 | `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX`, `MEILISEARCH_WRITE_API_KEY`, `MEILISEARCH_API_KEY` | Local Development search, where the prefix is unset | Local keys only |
 | `TAVILY_API_KEY`, `EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY` | `server/src/scripts/findLabWebsites.ts`, the lab-site discovery script | Yes |
 | `YALIES_OLD_API_KEY`, `YALIES_NEW_API_KEY` | `yarn security:verify-yalies-rotation`, set only for that one command | Yes |

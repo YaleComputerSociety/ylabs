@@ -901,7 +901,7 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 
 The weekly Development sweep runs on Render from `deploy/sweep-runner/Dockerfile`, but the image is only the toolchain: its entrypoint clones `beta` HEAD at start and runs the whole sweep from that one commit, and the job refuses to start when that commit lacks the newest `beta` commit touching the scrapers or a materializer (#4743).
 A change to a lane, the engine, a materializer or a post-run stage needs no image change.
-A hosted run sets `SEARCH_INDEX_WRITES=deferred`, so it writes no search index and ends with `yarn development:search:rebuild` from the laptop (#4755).
+A hosted run sets `SEARCH_INDEX_WRITES=deferred`, so it writes no search index and ends with `yarn development:search:sync` from the laptop (#4755, #5023).
 The image needs a matching change only when a lane starts depending on something outside `server/` and its Node dependencies:
 
 - a new system binary, Python package, or browser requirement (the image pins the Scrapling version);

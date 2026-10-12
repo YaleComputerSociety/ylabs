@@ -70,7 +70,7 @@ export function parseReindexArgs(argv) {
   const environment = positional[0];
   if (!REINDEX_ENVIRONMENTS.includes(environment)) {
     throw new Error(
-      `Unsupported environment "${environment}". Supported: ${REINDEX_ENVIRONMENTS.join(', ')}. The local index is rebuilt with "yarn development:search:rebuild" instead.`,
+      `Unsupported environment "${environment}". Supported: ${REINDEX_ENVIRONMENTS.join(', ')}. The local index is synced with "yarn development:search:sync" instead.`,
     );
   }
 
