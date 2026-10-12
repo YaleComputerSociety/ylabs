@@ -11,6 +11,7 @@ import {
   setResearchAnalyticsEnabled,
 } from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
+import { expectNoAxeViolations } from '../../testUtils/axe';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 
@@ -933,6 +934,8 @@ describe('LabDetail page', () => {
         .getByRole('link', { name: 'example.yale.edu (opens in a new tab)' })
         .getAttribute('href'),
     ).toBe('https://example.yale.edu/join');
+    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
+    await expectNoAxeViolations(container);
   });
 
   it('shows no undergraduate quote when the way in is withheld for an emeritus lead', async () => {

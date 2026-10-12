@@ -164,7 +164,7 @@ Permissive substring lists inflate `precisionAtK`, so a high score against a loo
 
 ## Measuring undergraduate evidence quote precision
 
-The browse card shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
+The detail page shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
 The `undergrad-evidence-quote-precision` case turns that reading into a repeatable measurement without putting any judged row in the repository.
 
 It walks the whole reachable browse, keeps the served rows carrying a non-empty quote, and reads each row's stored `fieldProvenance.undergradEvidenceQuote` to find the rows whose quote came from the judged lane, `lab-microsite-undergrad-llm` by default.
@@ -196,7 +196,7 @@ A verdict is exactly one of the following, applied in this order so that each ro
 4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
 5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
 
-`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the card labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
+`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the detail page labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
 
 Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
 With judgements supplied it adds three precision rates, and none of the six gates.

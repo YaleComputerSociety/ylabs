@@ -46,7 +46,8 @@ Prefer a label naming the destination.
 A card that promises undergraduate access and leads to a page with no such evidence costs the next click too.
 This is the interaction-design reason the visibility gate exists, not just a data-quality reason.
 
-The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics, then any access signal, then a cited undergraduate quote where one is served.
+The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics, then any access signal.
+A served undergraduate quote is left to the detail page, because it is the one item a student has to read and judge rather than scan (`docs/decisions.md`, 2026-10-12).
 The kind is omitted when the title already names it, so "Wu Lab" never reads "Lab · ...", while a faculty row titled with a person's name reads "Faculty research · ...".
 The description ends at the last whole sentence that fits about 200 characters (`client/src/utils/cardSummary.ts`) rather than at a line clamp, so a card never stops mid-sentence unless no sentence fits.
 The card has no separate "View profile" action, because the title already names the destination and the whole card opens it.
@@ -143,6 +144,7 @@ So the badge is off the browse card again, and it is off for the right reason th
 It came back on 2026-10-11 in the form the threshold called for.
 After #3592 kept only quotes found on a fetched page, the re-measure read 0.84 (0.71 to 0.92), which is middling rather than high, so the card shows the quote itself under "Mentions undergraduate research" with the page it is quoted from, and the student judges it.
 The label says less than the old one on purpose: only half the correct quotes show undergraduates were hosted, so "Has hosted undergraduate researchers" stays reserved for roster and advisee evidence (`docs/decisions.md`, 2026-10-11).
+On 2026-10-12 the quote left the card for the detail page, where it reads at full width below the topics, because on the card it was the heaviest block and the one a student could not scan (#5022).
 
 Three lessons for this file, which is why this entry is long.
 
