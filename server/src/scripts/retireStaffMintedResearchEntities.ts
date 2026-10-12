@@ -68,7 +68,8 @@ export function parseRetireStaffMintedEntitiesArgs(
     maxApply: DEFAULT_MAX_APPLY,
   };
 
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--' || arg === '') continue;
     if (arg === '--apply') {
       options.apply = true;
@@ -109,6 +110,14 @@ export function parseRetireStaffMintedEntitiesArgs(
         );
       }
       options.recordIds = [...new Set([...(options.recordIds || []), id])];
+      continue;
+    }
+    // The research sweep passes `--output <path>` as two arguments and the fellowship sweep
+    // passes `--output=<path>`, so a stage script must take both (#4983's first run crashed).
+    if (arg === '--output') {
+      options.output = argv[index + 1] ?? '';
+      options.outputRequested = true;
+      index += 1;
       continue;
     }
     if (arg.startsWith('--output=')) {
