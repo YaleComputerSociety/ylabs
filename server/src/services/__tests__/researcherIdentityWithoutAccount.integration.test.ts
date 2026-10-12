@@ -141,12 +141,12 @@ describe('researcher identity read from the researcher row, with no account behi
     await seedResearcherWithoutAccount();
     await Account.create({
       netid: RESEARCHER_NETID,
-      email: 'login.address@yale.edu',
+      email: 'reporter1@yale.edu',
       lastLoginAt: new Date(),
     });
 
     await expect(resolveReporterIdentityByNetid(RESEARCHER_NETID)).resolves.toEqual({
-      email: 'login.address@yale.edu',
+      email: 'reporter1@yale.edu',
       name: RESEARCHER_NAME,
     });
   });
