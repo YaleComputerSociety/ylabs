@@ -645,6 +645,39 @@ export function buildRefOrphanMatchPipeline(
   return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
 }
 
+/**
+ * The orphan count, with one lookup per distinct reference rather than one per referencing row.
+ *
+ * `observations.sourceId` is millions of rows pointing at a few dozen sources, so the per-row
+ * `$lookup` in `buildRefOrphanMatchPipeline` exceeded the server's time limit and crashed the
+ * sweep's `data-quality` stage once observations passed 3.4 million (it had passed at 307s and
+ * 515s the week before). Grouping first gives the same count: the sum, over references with no
+ * target, of how many rows hold them.
+ */
+export function buildRefOrphanCountPipeline(
+  localField: string,
+  targetCollectionName: string,
+  ownerFilter: Record<string, unknown> = {},
+): Array<Record<string, unknown>> {
+  const pipeline: Array<Record<string, unknown>> = [
+    { $project: { ref: { $ifNull: [`$${localField}`, []] } } },
+    { $unwind: '$ref' },
+    { $match: { ref: { $nin: [null, ''] } } },
+    { $group: { _id: '$ref', rows: { $sum: 1 } } },
+    {
+      $lookup: {
+        from: targetCollectionName,
+        localField: '_id',
+        foreignField: '_id',
+        as: '_refTarget',
+      },
+    },
+    { $match: { _refTarget: { $size: 0 } } },
+    { $group: { _id: null, count: { $sum: '$rows' } } },
+  ];
+  return Object.keys(ownerFilter).length > 0 ? [{ $match: ownerFilter }, ...pipeline] : pipeline;
+}
+
 export function buildRefOrphanSamplePipeline(
   localField: string,
   targetCollectionName: string,
