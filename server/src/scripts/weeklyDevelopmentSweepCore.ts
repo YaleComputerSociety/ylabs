@@ -144,6 +144,7 @@ export function buildWeeklySweepArgs(mode: WeeklySweepMode): string[] {
     `--mode=${mode}`,
     WEEKLY_SWEEP_CONFIRMATIONS[mode],
     '--restart',
+    '--prune-between-phases',
   ];
 }
 

@@ -132,6 +132,9 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 4. Measures the cluster's dataSize plus indexSize, and when headroom is below what a sweep needs it runs `observations:prune-dead --apply --drop-snapshot-cache` once, which also deletes dead superseded observations, and measures again, refusing if headroom is still short (#3536).
 5. Runs the requested modes one after the other, each with `--restart`: both `development-full` and `fellowship-development-full` by default, or only the ones `--mode` names (repeatable, also `--mode=<mode>`).
 They run serially because they share the per-host fetch budget and the storage quota.
+Each mode also runs with `--prune-between-phases`, so every weekly run prunes dead observations after each sweep phase and again as the final `dead-data-prune` post-run stage, by the owner's decision (2026-10-11) that the storage quota cannot wait for headroom to run short.
+`docs/research-data-pipeline.md` owns what the prune deletes, what it retains, and when it refuses.
+The post-run stage is recorded in the run's `weekly_sweep_runs` row like every other stage, while a failed between-phases prune only logs a warning and lets the sweep continue.
 6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when any requested mode failed or wrote no summary.
 7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per successful run.
 The single weekly job runs both modes, so that is one point a week, taken after both refreshes.
