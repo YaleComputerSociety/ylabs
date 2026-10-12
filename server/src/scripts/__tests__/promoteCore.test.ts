@@ -257,6 +257,9 @@ describe('remote phase', () => {
     const readiness = remotePhaseSteps('beta', { confirmBetaBackup: true }).at(-1)!;
     expect(readiness.args).toContain('--confirm-beta-backup');
     expect(remotePhaseSteps('beta').at(-1)!.args).not.toContain('--confirm-beta-backup');
+    const trust = remotePhaseSteps('beta').find((step) => step.label === 'trust contract')!;
+    expect(trust.args).toContain('--fail-on-public-visibility-violation');
+    expect(trust.args).not.toContain('--strict');
   });
 
   it('confirms the production reindex and smokes after it', () => {

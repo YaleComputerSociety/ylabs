@@ -7,6 +7,7 @@ import { initializeConnections } from '../db/connections';
 import {
   runLaunchTrustContractAudit,
   type LaunchTrustContractOptions,
+  type LaunchTrustContractReport,
   type LaunchTrustMode,
 } from '../services/launchTrustContractService';
 import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
@@ -17,6 +18,7 @@ dotenv.config({ quiet: true });
 
 interface CliOptions extends LaunchTrustContractOptions {
   strict: boolean;
+  failOnPublicVisibilityViolation?: boolean;
   output?: string;
 }
 
@@ -56,6 +58,8 @@ export function parseLaunchTrustContractArgs(argv: string[]): CliOptions {
     const arg = argv[index];
     if (arg === '--strict') {
       options.strict = true;
+    } else if (arg === '--fail-on-public-visibility-violation') {
+      options.failOnPublicVisibilityViolation = true;
     } else if (arg === '--mode=student-ready-only' || arg === '--student-ready-only') {
       options.mode = 'student-ready-only';
     } else if (arg === '--mode=public-safe' || arg === '--public-safe') {
@@ -111,6 +115,17 @@ export function buildLaunchTrustContractOutput(
   };
 }
 
+export function launchTrustContractExitCode(
+  options: Pick<CliOptions, 'strict' | 'failOnPublicVisibilityViolation'>,
+  report: Pick<LaunchTrustContractReport, 'pass' | 'counts'>,
+): number {
+  if (options.strict && !report.pass) return 1;
+  if (options.failOnPublicVisibilityViolation && report.counts.publicVisibilityViolations > 0) {
+    return 1;
+  }
+  return 0;
+}
+
 async function main() {
   const options = parseLaunchTrustContractArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
@@ -129,9 +144,7 @@ async function main() {
   writeLaunchTrustContractOutput(output, options.output);
   console.log(JSON.stringify(output, null, 2));
 
-  if (options.strict && !report.pass) {
-    process.exitCode = 1;
-  }
+  process.exitCode = launchTrustContractExitCode(options, report);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
