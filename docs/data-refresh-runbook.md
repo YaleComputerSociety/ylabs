@@ -510,7 +510,8 @@ It prints which run satisfied each mode.
 5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
 6. Applies the mirror and stops unless it reports `"status": "applied"`.
 7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
-That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the strict trust contract, rebuilds the Beta index, and runs `beta:readiness`, stopping at the first step that fails.
+That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, rebuilds the Beta index, and runs `beta:readiness`, stopping at the first step that fails.
+The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
 
 ### What `yarn promote:production` does
 
@@ -758,7 +759,7 @@ SCRAPER_ENV=beta   yarn --cwd server beta:data-quality   --strict   --include-sa
 
 SCRAPER_ENV=beta   yarn --cwd server scraper:integrity-gate   --include-samples
 
-SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   --mode=student-ready-only   --strict
+SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   --mode=student-ready-only   --fail-on-public-visibility-violation
 ```
 
 Create and verify the required Beta Meilisearch restore point or export.

@@ -328,7 +328,7 @@ export function remotePhaseSteps(
           'launch:trust-contract',
           '--collection=all',
           '--mode=student-ready-only',
-          '--strict',
+          '--fail-on-public-visibility-violation',
         ],
       },
       {

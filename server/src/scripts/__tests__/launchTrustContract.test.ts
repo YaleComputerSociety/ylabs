@@ -4,6 +4,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   buildLaunchTrustContractOutput,
+  launchTrustContractExitCode,
   parseLaunchTrustContractArgs,
   writeLaunchTrustContractOutput,
 } from '../launchTrustContract';
@@ -30,6 +31,18 @@ describe('launchTrustContract CLI helpers', () => {
       strict: true,
       output: '/tmp/ylabs-launch-trust-contract.json',
     });
+  });
+
+  it('fails on a public visibility violation but not on held rows when asked to', () => {
+    const options = parseLaunchTrustContractArgs(['--fail-on-public-visibility-violation']);
+    const heldOnly = { pass: false, counts: { publicVisibilityViolations: 0 } } as never;
+    const publicViolation = { pass: false, counts: { publicVisibilityViolations: 1 } } as never;
+
+    expect(options.failOnPublicVisibilityViolation).toBe(true);
+    expect(launchTrustContractExitCode(options, heldOnly)).toBe(0);
+    expect(launchTrustContractExitCode(options, publicViolation)).toBe(1);
+    expect(launchTrustContractExitCode({ strict: true }, heldOnly)).toBe(1);
+    expect(launchTrustContractExitCode({ strict: false }, publicViolation)).toBe(0);
   });
 
   it('rejects malformed launch trust contract bounds', () => {
