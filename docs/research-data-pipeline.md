@@ -2356,6 +2356,7 @@ It is deliberately left at 3 rather than lowered here, because `OBSERVATION_REFE
 `--keep-runs=<n>` overrides the default, and `--keep-runs=0` explicitly forfeits claim-local rollback for every source; only pass it when rollback for the retained window is no longer needed.
 It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and routes through the shared `applyObservationPruneEnvironmentGuards`, so it enforces `SCRAPER_ENV`/Mongo-target coherence, downgrades to dry-run outside production without `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and is unconditionally blocked when the resolved environment is production, independent of how the database happens to be named.
 The sweep runs it between phases and as the final `dead-data-prune` post-run stage of both engines, only when invoked with `--prune-between-phases` on a Development-database write mode.
+The weekly hosted runner (`buildWeeklySweepArgs` in `server/src/scripts/weeklyDevelopmentSweepCore.ts`) passes it for both of its modes, so every weekly run prunes.
 
 Both pruners are coupled to the materializer's read scope, because `superseded: true` only means "not projected" while that scope excludes superseded rows (#2944).
 `supersededPruneIsProjectionNeutral` reads `materializationReadScopeFilter()` rather than restating the assumption, so with `C4_LOSSLESS_INGEST` set the pruners throw on `--apply` and report `projectionNeutral: false` in a dry run, and a sweep invoked with `--prune-between-phases` fails its prune stage instead of deleting evidence the materializer still reads.
