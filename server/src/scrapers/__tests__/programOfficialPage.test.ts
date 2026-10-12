@@ -7,6 +7,7 @@ import {
 import {
   ProgramOfficialPageScraper,
   type ProgramOfficialPageCandidate,
+  unreadShareIsAnOutage,
 } from '../sources/programOfficialPageScraper';
 import { LANE_PAGE_HEALTH_FIELD } from '../lanePageHealth';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -194,7 +195,10 @@ describe('ProgramOfficialPageScraper', () => {
       value: '',
       sourceUrl: 'https://fixture.yale.edu/fellowships',
     });
-    expect(result.partialFailures).toHaveLength(1);
+    expect(result.partialFailures).toEqual([
+      '1 of 1 official pages could not be read',
+      expect.stringContaining('landed away from itself'),
+    ]);
     expect(result.notes).toContain('unread=1');
   });
 
@@ -209,7 +213,10 @@ describe('ProgramOfficialPageScraper', () => {
     ).run(context(emitted));
 
     expect(emitted).toHaveLength(0);
-    expect(result.partialFailures).toHaveLength(1);
+    expect(result.partialFailures).toEqual([
+      '1 of 1 official pages could not be read',
+      expect.stringContaining('landed away from itself'),
+    ]);
     expect(result.notes).toContain('unread=1');
   });
 
@@ -298,5 +305,38 @@ describe('ProgramOfficialPageScraper', () => {
       'https://fixture.yale.edu/fellowships',
       'https://fixture.yale.edu/fellowships',
     ]);
+  });
+});
+
+describe('unreadShareIsAnOutage (#5028)', () => {
+  it('lets the few pages that are down each week through, and fails a run that reads almost nothing', () => {
+    expect(unreadShareIsAnOutage(0, 100)).toBe(false);
+    expect(unreadShareIsAnOutage(3, 100)).toBe(false);
+    expect(unreadShareIsAnOutage(10, 100)).toBe(false);
+    expect(unreadShareIsAnOutage(11, 100)).toBe(true);
+    expect(unreadShareIsAnOutage(4, 20)).toBe(false);
+    expect(unreadShareIsAnOutage(5, 20)).toBe(true);
+    expect(unreadShareIsAnOutage(2, 2)).toBe(true);
+  });
+
+  it('keeps a run with one unreadable page among many a success, still counting it', async () => {
+    const emitted: ObservationInput[] = [];
+    const pages = Array.from({ length: 20 }, (_, index) =>
+      candidate({
+        sourceKey: `student-grants-database:fixture-fund-${index}`,
+        pageUrl: `https://fixture.yale.edu/fellowships/fund-${index}`,
+      }),
+    );
+    let call = 0;
+    const result = await new ProgramOfficialPageScraper(
+      async () => pages,
+      async (url: string) => {
+        call += 1;
+        if (call === 1) throw Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' });
+        return { html: '<p>The Fixture Sample Travel Fellowship</p>', finalUrl: url };
+      },
+    ).run(context(emitted));
+    expect(result.partialFailures).toBeUndefined();
+    expect(result.notes).toContain('unread=1');
   });
 });
