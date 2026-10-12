@@ -252,6 +252,10 @@ A failure that reads as success or as a legitimate verdict is worse than a crash
   A `partial` run prints a warning and exits zero.
   When row errors skip the student visibility gate, the command says so, because a silently skipped gate leaves every row the run touched un-regated.
   The sweep fails the step on a nonzero exit, a non-`success` status, or materialization errors.
+- The weekly sweep wrapper turns those step failures into a run verdict rather than failing the run on any one of them (#5032).
+  The run is `failed`, and exits nonzero, only when a mode left no summary, a mode process was killed, or more than a quarter of the sources failed or did not run.
+  Otherwise a failed source or stage makes the run `degraded`: it exits zero, records every failure by name, and prints a `DEGRADED` line per failure.
+  Promotion requires `succeeded`, so a degraded run never unlocks one.
 
 ### Killing a scraper process
 
