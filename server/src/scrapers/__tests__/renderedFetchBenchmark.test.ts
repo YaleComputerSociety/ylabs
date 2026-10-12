@@ -12,6 +12,7 @@ import {
   finishBenchmarkCapture,
   finishBenchmarkCaptureWithCoverage,
   finishBenchmarkReplay,
+  SSRF_HOST_REFUSAL_NAMESPACE,
 } from '../snapshotBenchmarkMode';
 import { unresolvedReplayReason } from '../../scripts/laneScorecard';
 
@@ -155,6 +156,21 @@ describe('unresolvedReplayReason (#3590)', () => {
         { pagesServed: 1, servedByNamespace: { lane: 1 } },
       ),
     ).toMatch(/renderer never engaged/);
+  });
+
+  it('does not count frozen host refusals as frozen pages', () => {
+    expect(
+      unresolvedReplayReason(
+        [page('lane', 'page:1'), page(SSRF_HOST_REFUSAL_NAMESPACE, 'lab.example.org')],
+        { pagesServed: 0, servedByNamespace: {} },
+      ),
+    ).toMatch(/none of the 1 frozen pages/);
+    expect(
+      unresolvedReplayReason([page(SSRF_HOST_REFUSAL_NAMESPACE, 'lab.example.org')], {
+        pagesServed: 0,
+        servedByNamespace: {},
+      }),
+    ).toBeUndefined();
   });
 
   it('accepts a replay that resolved its pages and renders', () => {

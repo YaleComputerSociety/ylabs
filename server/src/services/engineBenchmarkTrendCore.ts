@@ -93,3 +93,22 @@ export function buildEngineBenchmarkTrend(
     change: classifyEngineBenchmarkChange(latest, previous),
   };
 }
+
+/** The engine benchmark the Development sweep replays; `engine:benchmark` defaults to it. */
+export const SWEEP_ENGINE_BENCHMARK_ID = 'engine-known-defect-arms';
+
+/**
+ * Other engine benchmarks are one-off probes captured for a single investigation and never
+ * replayed again, so their last replay is not a current reading of the engine.
+ */
+export function sweepEngineBenchmarkKeys<T extends { benchmarkId: string }>(
+  keys: readonly T[],
+): { replayed: T[]; oneOffBenchmarkCount: number } {
+  const replayed = keys.filter((key) => key.benchmarkId === SWEEP_ENGINE_BENCHMARK_ID);
+  const oneOff = new Set(
+    keys
+      .filter((key) => key.benchmarkId !== SWEEP_ENGINE_BENCHMARK_ID)
+      .map((key) => key.benchmarkId),
+  );
+  return { replayed, oneOffBenchmarkCount: oneOff.size };
+}

@@ -61,6 +61,7 @@ import {
   isResearchSupportStaffTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
+  mintsNoResearchEntityAsTeachingAppointment,
 } from './yaleDirectoryScraper';
 import { withoutMeshNonSubjectDescriptors } from '../utils/meshNonSubjectDescriptors';
 import { normalizeYsmProfileUrl } from './ysmMeshKeywordScraper';
@@ -438,6 +439,11 @@ function researchEntityKeyOf(faculty: Pick<RawYsmFaculty, 'slug'>): string {
   return `ysm-faculty-${faculty.slug}`.slice(0, 100);
 }
 
+export function ysmFacultyResearchEntityKeyForProfileUrl(profileUrl: string): string {
+  const slug = profileSlugFromUrl(profileUrl.replace(/[?#].*$/, ''));
+  return slug ? researchEntityKeyOf({ slug }) : '';
+}
+
 export function skippedProfileRefusedWebsiteObservations(
   profile: YsmFacultyProfile,
 ): ObservationInput[] {
@@ -648,6 +654,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     let entityCount = 0;
     let subordinateRankSkipped = 0;
     let supportStaffSkipped = 0;
+    let teachingAppointmentSkipped = 0;
     let labCount = 0;
     let withdrawnLabCount = 0;
     let areaCount = 0;
@@ -714,6 +721,16 @@ export class YsmFacultyDirectoryScraper implements IScraper {
           return;
         }
 
+        if (
+          mintsNoResearchEntityAsTeachingAppointment(profile.title, {
+            fullDescription: profile.description,
+          })
+        ) {
+          teachingAppointmentSkipped += 1;
+          totalObs += await emitSkippedProfileRefusal(profile);
+          return;
+        }
+
         const entityObs = facultyToResearchEntityObservations(
           profile,
           entityKey,
@@ -762,7 +779,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site the corpus refuses, ` +
         `${areaCount} with research areas) of ${profilesScanned} profiles scanned; ` +
         `${subordinateRankSkipped} skipped as subordinate research ranks, ` +
-        `${supportStaffSkipped} skipped as research-support staff; ` +
+        `${supportStaffSkipped} skipped as research-support staff, ` +
+        `${teachingAppointmentSkipped} skipped as teaching appointments; ` +
         `${refusedProfiles.length} refused on the first pass, ${refusedProfilesRecovered} recovered on the retry, ${refusedProfilesLost} lost`,
     );
 
@@ -774,6 +792,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `${entityCount} research homes (${labCount} labs, ${areaCount} with areas) of ${profilesScanned} profiles scanned, ` +
         `${subordinateRankSkipped} subordinate ranks skipped, ` +
         `${supportStaffSkipped} research-support staff skipped, ` +
+        `${teachingAppointmentSkipped} teaching appointments skipped, ` +
         `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass`,
     };
   }

@@ -20,12 +20,14 @@ import { NsfAwardScraper } from './sources/nsfAwardScraper';
 import { NehGrantScraper } from './sources/nehGrantScraper';
 import { CrossrefGrantScraper } from './sources/crossrefGrantScraper';
 import { DoeOstiGrantScraper } from './sources/doeOstiGrantScraper';
+import { DoeScienceAwardScraper } from './sources/doeScienceAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
 import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
 import { YaleReuProgramsScraper } from './sources/yaleReuProgramsScraper';
 import { YaleHealthSciencesSummerProgramsScraper } from './sources/yaleHealthSciencesSummerProgramsScraper';
 import { StudentGrantsDatabaseScraper } from './sources/studentGrantsDatabaseScraper';
+import { ProgramOfficialPageScraper } from './sources/programOfficialPageScraper';
 import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescriptionLLMExtractor';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
@@ -35,6 +37,7 @@ import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHom
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
 import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificationScraper';
 import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
+import { RosterBioResearchEvidenceScraper } from './sources/rosterBioResearchEvidenceScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -60,12 +63,14 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new NehGrantScraper());
   o.register(new CrossrefGrantScraper());
   o.register(new DoeOstiGrantScraper());
+  o.register(new DoeScienceAwardScraper());
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
   o.register(new YaleCollegeFellowshipsOfficeScraper());
   o.register(new YaleReuProgramsScraper());
   o.register(new YaleHealthSciencesSummerProgramsScraper());
   o.register(new StudentGrantsDatabaseScraper());
+  o.register(new ProgramOfficialPageScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
   o.register(new CenterAffiliationLLMExtractor());
@@ -75,5 +80,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new ResearchAreaSourceExtractor());
   o.register(new LabSiteLeadVerificationScraper());
   o.register(new DirectoryAliasResolutionScraper());
+  o.register(new RosterBioResearchEvidenceScraper());
   return o;
 }

@@ -17,6 +17,7 @@ The immutable form is the security-relevant part: a plain install resolves depen
 The command this page used to give, `corepack enable && yarn install:all:immutable`, fails on a clean build for two independent reasons: Node 25 and later ship no Corepack, so `corepack enable` alone exits non-zero, and Yarn cannot run a `package.json` script such as `install:all:immutable` before an install has created its state file (#4035).
 A service still configured with that command builds only while Render's build cache happens to hold an earlier install, so read each service's Build Command in the dashboard and replace it, then run a clear-cache deploy on Beta first.
 This repository declares no Render blueprint, so nothing here can enforce that build command; set it in the dashboard and check it when a service is created or its build settings change.
+Every service, its branch, and the environment variables it needs are recorded by name in [the deployment inventory](./deployment-inventory.md), which also holds the service rebuild checklist.
 
 The Node major is declared once, in `.node-version` at the repository root.
 CI's `setup-node` reads it with `node-version-file`, and Render reads the same file, so the tested runtime and the deployed runtime cannot drift apart (#3915).
@@ -218,7 +219,8 @@ Production is a serve-only environment: evidence accumulates in Development and 
 Beta's accounts never carry a Production login, so a plain swap deleted every account a real login had created and orphaned the plans that pointed at it: on 2026-09-30, 277 of 319 Production plans referenced an account that no longer existed (#4091).
 Beta does hold its own logins, though, and has since #4139 made the Development-to-Beta sync carry the target's login rows across the swap, so "Beta is a pseudonymized staging copy that holds no student data" is no longer true of `accounts` and must not be relied on.
 The promotion therefore carries every Production account with login evidence (`lastLoginAt`, or an owned research plan) from the pre-swap backup into the swapped collection before verification, and keeps its Production `_id`.
-Where the promoted row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile` and `sessionVersion` onto it, because the promoted row is reduced to the mirrored allow-list and holds none of them.
+Where the promoted row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile`, `sessionVersion` and `status` onto it, because the promoted row is reduced to the mirrored allow-list and holds none of the first three.
+`status` is carried even though the allow-list holds it, because Production is authoritative for its own logins' status: before #5000 a promotion overwrote a Production status fix with the mirrored row's value.
 `sessionVersion` is what sign-out increments to revoke every session, so a swap that dropped it would reset it to `0` and revive every cookie minted at `0` that a later sign-out revoked (#4575).
 The synthetic-user exclusion applies only to the Beta rows being promoted, so a Production account with login evidence is carried whatever its netid or email looks like and its plans never lose their owner.
 Where Beta holds the same netid under another `_id`, the Beta row is re-keyed to the Production `_id` and every account reference follows it.
@@ -227,7 +229,9 @@ Because Beta holds real logins, the promotion also constrains what crosses in th
 Every promoted account row is reduced to the same allow-list the Development mirror uses, `MIRRORED_ACCOUNT_FIELDS` and `MIRRORED_ACCOUNT_PROFILE_FIELDS` in `server/src/scripts/mirroredAccountFields.ts`, so a Beta `lastLoginAt` and the student profile fields `college`, `year` and `major` never leave Beta.
 A Beta account that carries login evidence and that no promoted collection references is not promoted at all, because such a row describes a Beta login rather than the identity spine.
 Reachability is measured over the promoted collections only, which is why owning a Beta `research_plans` row is login evidence rather than spine membership: `research_plans` is not promoted, so keeping the account would leave nothing in Production pointing at it.
-That exclusion is deliberately narrower than "every Beta login": an account a promoted `researchers` row reaches is the identity spine and still crosses, reduced to the allow-list.
+That exclusion is deliberately narrower than "every Beta login": an account a promoted `researchers` row reaches still crosses, reduced to the allow-list, so no promoted `accountId` dangles.
+Researchers carry their own `identifiers.netid` and `identifiers.email`, and #5000 moves every service read of researcher identity onto them, so `accounts` is becoming login-only rather than an identity spine.
+The carry is safe in both worlds: it carries only Production rows with login evidence, so a non-login account deleted in Development and absent from Beta is replaced by the swap rather than brought back.
 Without both halves a promoted Beta login becomes permanent, because its promoted `lastLoginAt` makes the carry read it as a Production login and re-carry it on every later promotion.
 The dry-run report's `productionAccountCarry` counts what will be carried; an `inserted` of 0 while Production has logged-in users is a stop.
 `excludedBetaLoginAccounts` counts the Beta logins the promotion will leave behind and `excludedSyntheticUsers` counts the synthetic rows, the two disjoint parts of the `accounts` row's `excludedCount`.
@@ -309,3 +313,6 @@ Record the monitor's provider here when it is created.
 
 To roll back, prefer the Render dashboard rollback to the previous deploy.
 Otherwise revert the promotion merge on `main` with `git revert -m 1 <merge-commit>` through a pull request, and Render redeploys automatically.
+A revert removes everything that promotion carried, so a hotfix on `main` is usually the better fix forward.
+Neither moves a document: a code rollback is not a data rollback, and no Production restore point exists (#4148).
+[The incident runbook](./incident-runbook.md) owns the full procedure for a site outage, bad data that reached students, and a leaked credential.

@@ -95,7 +95,6 @@ export interface AnalyticsUserActivityRow {
   logins: number;
   researchViews: number;
   fellowshipViews: number;
-  profileUpdates: number;
   loginCount: number;
   lastEventAt?: string | null;
   lastLogin?: string | null;
@@ -265,12 +264,8 @@ export interface AnalyticsFunnelStage {
 export interface AnalyticsFunnelResponse {
   range?: AnalyticsRange;
   stages?: AnalyticsFunnelStage[];
-  overallConversionRate?: number | null;
-  qualifiedActionEventsRecorded?: number;
   journeyMetrics?: {
     sourceInspections: number;
-    officialRouteAttempts: number | null;
-    applicationOpens: number | null;
   };
 }
 

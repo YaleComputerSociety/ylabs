@@ -99,11 +99,24 @@ const COORDINATE_PARTS = /[&]|\b(?:and|or)\b/i;
  */
 const MAX_INVERTED_MODIFIER_WORDS = 2;
 
+const hasBalancedParentheses = (value: string): boolean => {
+  let depth = 0;
+  for (const character of value) {
+    if (character === '(') depth += 1;
+    else if (character === ')') depth -= 1;
+    if (depth < 0) return false;
+  }
+  return depth === 0;
+};
+
 export const unInvertControlledVocabularyHeading = (value: string): string => {
   const collapsed = value.replace(/\s+/g, ' ').trim();
   const match = INVERTED_HEADING.exec(collapsed);
   if (!match) return collapsed;
   const [, head, modifier] = match;
+  // A comma inside parentheses lists items in a gloss ("(Hoxa11, CEBP-B)"); swapping
+  // around it scrambles the label and splits its brackets.
+  if (!hasBalancedParentheses(head) || !hasBalancedParentheses(modifier)) return collapsed;
   if (COORDINATE_PARTS.test(modifier)) return collapsed;
   const modifierWords = modifier.split(' ').filter(Boolean);
   if (modifierWords.length === 0 || modifierWords.length > MAX_INVERTED_MODIFIER_WORDS) {

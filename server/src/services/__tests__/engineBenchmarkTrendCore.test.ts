@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SWEEP_ENGINE_BENCHMARK_ID,
   classifyEngineBenchmarkChange,
+  sweepEngineBenchmarkKeys,
   toEngineBenchmarkRunDto,
 } from '../engineBenchmarkTrendCore';
 
@@ -47,5 +49,21 @@ describe('classifyEngineBenchmarkChange', () => {
         run({ invalidatedRunSetChanged: true }),
       ),
     ).toBe('input-incomplete');
+  });
+});
+
+describe('sweepEngineBenchmarkKeys', () => {
+  it('keeps the benchmark the sweep replays and counts each one-off probe once', () => {
+    const { replayed, oneOffBenchmarkCount } = sweepEngineBenchmarkKeys([
+      { benchmarkId: 'probe-a', stage: 'resolve-and-gate' },
+      { benchmarkId: 'probe-a', stage: 'other-stage' },
+      { benchmarkId: SWEEP_ENGINE_BENCHMARK_ID, stage: 'resolve-and-gate' },
+      { benchmarkId: 'probe-b', stage: 'resolve-and-gate' },
+    ]);
+
+    expect(replayed).toEqual([
+      { benchmarkId: SWEEP_ENGINE_BENCHMARK_ID, stage: 'resolve-and-gate' },
+    ]);
+    expect(oneOffBenchmarkCount).toBe(2);
   });
 });

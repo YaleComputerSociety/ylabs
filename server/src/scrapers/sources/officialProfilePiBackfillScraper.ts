@@ -14,6 +14,7 @@ import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueI
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
+import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import {
   claimsAnotherPersonsLabByUrlPath,
@@ -106,6 +107,7 @@ const OFFICIAL_PROFILE_MODE_KEYS = new Set([
 const officialProfileDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 export interface OfficialProfileIdentity {
+  profileNetid?: string;
   canonicalUrl: string;
   fetchedUrl: string;
   displayName: string;
@@ -121,6 +123,7 @@ export interface OfficialProfileIdentity {
 
 interface OfficialProfileIdentityOptions {
   requireEmail?: boolean;
+  yaleDirectoryNetids?: ReadonlySet<string>;
   expectedPeople?: Array<{
     fname?: string;
     lname?: string;
@@ -497,9 +500,9 @@ function userIdentityMatchEntity(
   };
 }
 
-function researcherAccountToProfileUser(
+function researcherToProfileUser(
   researcher: Record<string, any>,
-  account: Record<string, any> | undefined,
+  linkedAccount: Record<string, any> | undefined,
 ): Record<string, any> {
   const displayName = textValue(researcher.displayName);
   const split = splitName(displayName);
@@ -518,8 +521,8 @@ function researcherAccountToProfileUser(
   const websiteUrl = textValue(profile.websiteUrl);
   return {
     _id: idValue(researcher._id),
-    netid: textValue(account?.netid),
-    email: textValue(account?.email),
+    netid: researcherNetid(researcher, linkedAccount),
+    email: researcherEmail(researcher, linkedAccount),
     fname: split.first,
     lname: split.last,
     name: displayName,
@@ -532,25 +535,61 @@ function researcherAccountToProfileUser(
   };
 }
 
-async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
-  const normalized = uniqueStrings(netids);
-  if (normalized.length === 0) return [];
-  const accounts = (await Account.find({ netid: { $in: normalized } })
-    .collation({ locale: 'en', strength: 2 })
-    .select('_id netid email')
-    .lean()) as Array<Record<string, any>>;
-  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
-  const accountIds = accounts.map((account) => account._id);
-  const researchers = accountIds.length
-    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
-        .select('_id accountId displayName profile profileLinks identifiers')
+const PROFILE_USER_RESEARCHER_SELECT = '_id accountId displayName profile profileLinks identifiers';
+
+async function linkedAccountsById(
+  researchers: Array<Record<string, any>>,
+): Promise<Map<string, Record<string, any>>> {
+  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
+  const accounts = accountIds.length
+    ? ((await Account.find({ _id: { $in: accountIds } })
+        .select('_id netid email')
         .lean()) as Array<Record<string, any>>)
     : [];
-  return researchers
-    .map((researcher) =>
-      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-    )
-    .filter((user) => user.netid);
+  return new Map(accounts.map((account) => [idValue(account._id), account]));
+}
+
+async function profileUsersForResearchers(
+  researchers: Array<Record<string, any>>,
+): Promise<Array<Record<string, any>>> {
+  const accountById = await linkedAccountsById(researchers);
+  return researchers.map((researcher) =>
+    researcherToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
+  );
+}
+
+export async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
+  const normalized = uniqueStrings(netids);
+  if (normalized.length === 0) return [];
+  const caseInsensitive = { locale: 'en', strength: 2 };
+  const [researchersHoldingNetid, accountsHoldingNetid] = await Promise.all([
+    Researcher.find({ 'identifiers.netid': { $in: normalized }, archived: { $ne: true } })
+      .collation(caseInsensitive)
+      .select(PROFILE_USER_RESEARCHER_SELECT)
+      .lean() as Promise<Array<Record<string, any>>>,
+    Account.find({ netid: { $in: normalized } })
+      .collation(caseInsensitive)
+      .select('_id')
+      .lean() as Promise<Array<Record<string, any>>>,
+  ]);
+  const accountIds = accountsHoldingNetid.map((account) => account._id);
+  const researchersLinkingNetid = accountIds.length
+    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
+        .select(PROFILE_USER_RESEARCHER_SELECT)
+        .lean()) as Array<Record<string, any>>)
+    : [];
+  const researchersById = new Map<string, Record<string, any>>();
+  for (const researcher of [...researchersHoldingNetid, ...researchersLinkingNetid]) {
+    researchersById.set(idValue(researcher._id), researcher);
+  }
+  const wanted = new Set(normalized.map((netid) => netid.toLowerCase()));
+  const usersByNetid = new Map<string, Array<Record<string, any>>>();
+  for (const user of await profileUsersForResearchers([...researchersById.values()])) {
+    const netid = textValue(user.netid).toLowerCase();
+    if (!netid || !wanted.has(netid)) continue;
+    usersByNetid.set(netid, [...(usersByNetid.get(netid) || []), user]);
+  }
+  return [...usersByNetid.values()].filter((users) => users.length === 1).map(([user]) => user);
 }
 
 export function generatedOfficialProfileUrlCandidatesForPerson(
@@ -589,6 +628,54 @@ export function netidStyleProfileSlug(value: unknown): string {
   const slug = profileSlug(value).toLowerCase();
   if (!slug || slug.includes('-')) return '';
   return /^[a-z]{1,8}[0-9]{1,6}$/.test(slug) ? slug : '';
+}
+
+const NETID_SHAPE = /^[a-z]{1,8}[0-9]{1,6}$/;
+
+/**
+ * The netid a profile slug ends with, when YSM disambiguates namesakes as `name-<netid>`.
+ *
+ * The shape alone is not evidence: a surname disambiguator such as `kim1` or `zhou19` has the
+ * same shape. Measured on Development, 29 linked profile slugs end in a netid-shaped token and
+ * 21 of those are netids the Yale directory holds, so only a directory netid counts (#4994).
+ */
+export function trailingDirectoryNetidOfProfileSlug(
+  value: unknown,
+  yaleDirectoryNetids: ReadonlySet<string> | undefined,
+): string {
+  const slug = profileSlug(value).toLowerCase();
+  if (!slug.includes('-') || !yaleDirectoryNetids) return '';
+  const tail = slug.split('-').pop() ?? '';
+  return NETID_SHAPE.test(tail) && yaleDirectoryNetids.has(tail) ? tail : '';
+}
+
+const YALE_DIRECTORY_SOURCE_NAMES = ['yale-directory', 'yale-directory-csv'];
+
+/**
+ * Every netid the Yale directory lanes have observed, read once per run so the profile guard can
+ * tell a netid from a surname disambiguator without a query per page. No connection reads as an
+ * empty set, which leaves the guard where it was rather than refusing on silence.
+ */
+export async function loadYaleDirectoryNetids(): Promise<ReadonlySet<string>> {
+  if (mongoose.connection.readyState !== 1) return new Set();
+  const keys = (await Observation.distinct('entityKey', {
+    entityType: 'user',
+    sourceName: { $in: YALE_DIRECTORY_SOURCE_NAMES },
+  })) as unknown[];
+  return new Set(
+    keys
+      .map((key) =>
+        textValue(key)
+          .replace(/^netid:/i, '')
+          .toLowerCase(),
+      )
+      .filter((netid) => NETID_SHAPE.test(netid)),
+  );
+}
+
+/** A local part ending in the netid (`first.last.fl123`) names the same person as the netid. */
+export function expectedNetidMatchesProfileNetid(expected: string, profileNetid: string): boolean {
+  return expected === profileNetid || expected.endsWith(`.${profileNetid}`);
 }
 
 export function expectedNetidsForOfficialProfile(
@@ -2030,7 +2117,11 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
       .text()
       .match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
   candidates.push(...bodyMatches);
-  return candidates.map(normalizeOrcid).find(Boolean);
+  // A page that lists several ORCIDs does not say which is its owner's: a common name's YSM
+  // profile lists namesakes' ORCIDs, and taking the first gave one Yale researcher another
+  // university's ORCID (#4994).
+  const distinct = [...new Set(candidates.map(normalizeOrcid).filter(Boolean))];
+  return distinct.length === 1 ? distinct[0] : undefined;
 }
 
 function nameMatchesEntity(displayName: string, entity: Record<string, any>): boolean {
@@ -2204,10 +2295,17 @@ export function extractOfficialProfileIdentity(
   // the profile URL carries a netid-style slug it must equal a netid we expect
   // for this person. This rejects name-only collisions such as attaching a
   // `/profile/qz990` page to a different `ch51` lead who shares a name (issue #468).
-  const profileNetidSlug = netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
+  const profileNetidSlug =
+    netidStyleProfileSlug(canonicalUrl) ||
+    netidStyleProfileSlug(fetchedUrl) ||
+    trailingDirectoryNetidOfProfileSlug(canonicalUrl, options.yaleDirectoryNetids) ||
+    trailingDirectoryNetidOfProfileSlug(fetchedUrl, options.yaleDirectoryNetids);
   if (profileNetidSlug) {
     const expectedNetids = expectedNetidsForOfficialProfile(entity, options.expectedPeople);
-    if (expectedNetids.length > 0 && !expectedNetids.includes(profileNetidSlug)) {
+    if (
+      expectedNetids.length > 0 &&
+      !expectedNetids.some((netid) => expectedNetidMatchesProfileNetid(netid, profileNetidSlug))
+    ) {
       return null;
     }
   }
@@ -2238,6 +2336,7 @@ export function extractOfficialProfileIdentity(
     departments: extractDepartments($),
     ...(bio ? { bio } : {}),
     researchInterests,
+    ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
     orcid: extractOrcid($),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
   };
@@ -2356,6 +2455,14 @@ export function identityToUserObservations(
 ): ObservationInput[] {
   const netid = textValue(existingUser.netid);
   if (!netid) return [];
+  // The page names its own owner's netid, so a user matched by name or email is a namesake
+  // when the netids differ, whichever path found the user (#4994).
+  if (
+    identity.profileNetid &&
+    !expectedNetidMatchesProfileNetid(netid.toLowerCase(), identity.profileNetid)
+  ) {
+    return [];
+  }
   const { first, last } = splitName(identity.displayName);
   if (!first || !last) return [];
   const includeProfileEnrichment = options.includeProfileEnrichment ?? true;
@@ -2782,7 +2889,7 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
   return annotatedEntities.filter(shouldQueueEntityForPiBackfill).slice(0, limit);
 }
 
-async function selectDirectVisibleProfileBioUserTargets(
+export async function selectDirectVisibleProfileBioUserTargets(
   limit: number,
   excludedUserIds: Set<string>,
 ): Promise<Array<Record<string, any>>> {
@@ -2791,30 +2898,29 @@ async function selectDirectVisibleProfileBioUserTargets(
   const researchers = (await applyFiniteCandidateLimit(
     Researcher.find({
       archived: { $ne: true },
-      accountId: { $exists: true, $ne: null },
-      $or: [
-        { 'profileLinks.kind': 'YALE_OFFICIAL' },
-        { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+      $and: [
+        {
+          $or: [
+            { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
+            { accountId: { $exists: true, $ne: null } },
+          ],
+        },
+        {
+          $or: [
+            { 'profileLinks.kind': 'YALE_OFFICIAL' },
+            { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+          ],
+        },
       ],
     })
-      .select('_id accountId displayName profile profileLinks identifiers')
+      .select(PROFILE_USER_RESEARCHER_SELECT)
       .sort({ updatedAt: 1 }),
     limit,
     4,
     50,
   ).lean()) as Array<Record<string, any>>;
-  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
-  const accounts = accountIds.length
-    ? ((await Account.find({ _id: { $in: accountIds } })
-        .select('_id netid email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
 
-  return researchers
-    .map((researcher) =>
-      researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-    )
+  return (await profileUsersForResearchers(researchers))
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
     .map((user) => {
       const urls = visibleBioProfileUrlsForUser(user);
@@ -3463,7 +3569,6 @@ export async function resolveExistingUserForIdentity(
   const addResearchers = (docs: Array<Record<string, any>>) => {
     for (const doc of docs) researchersById.set(idValue(doc._id), doc);
   };
-  const researcherSelect = '_id accountId displayName profile profileLinks identifiers';
 
   if (urls.length) {
     addResearchers(
@@ -3471,12 +3576,18 @@ export async function resolveExistingUserForIdentity(
         archived: { $ne: true },
         $or: [{ 'profileLinks.url': { $in: urls } }, { 'profile.websiteUrl': { $in: urls } }],
       })
-        .select(researcherSelect)
+        .select(PROFILE_USER_RESEARCHER_SELECT)
         .limit(10)
         .lean()) as Array<Record<string, any>>,
     );
   }
   if (email) {
+    addResearchers(
+      (await Researcher.find({ archived: { $ne: true }, 'identifiers.email': email })
+        .select(PROFILE_USER_RESEARCHER_SELECT)
+        .limit(10)
+        .lean()) as Array<Record<string, any>>,
+    );
     const emailAccounts = (await Account.find({ email }).select('_id').lean()) as Array<
       Record<string, any>
     >;
@@ -3484,7 +3595,7 @@ export async function resolveExistingUserForIdentity(
     if (emailAccountIds.length) {
       addResearchers(
         (await Researcher.find({ archived: { $ne: true }, accountId: { $in: emailAccountIds } })
-          .select(researcherSelect)
+          .select(PROFILE_USER_RESEARCHER_SELECT)
           .limit(10)
           .lean()) as Array<Record<string, any>>,
       );
@@ -3492,17 +3603,7 @@ export async function resolveExistingUserForIdentity(
   }
   if (researchersById.size === 0) return null;
 
-  const researchers = Array.from(researchersById.values());
-  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
-  const accounts = accountIds.length
-    ? ((await Account.find({ _id: { $in: accountIds } })
-        .select('_id netid email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  const accountById = new Map(accounts.map((account) => [idValue(account._id), account]));
-  const candidates = researchers.map((researcher) =>
-    researcherAccountToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-  );
+  const candidates = await profileUsersForResearchers(Array.from(researchersById.values()));
 
   const matchingCandidates =
     candidates.length <= 1
@@ -3614,6 +3715,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     this.pageReads = new LanePageReads();
+    const yaleDirectoryNetids = await loadYaleDirectoryNetids();
     const onlyValues = (ctx.options.only || [])
       .map((value) => value.toLowerCase().trim())
       .filter(Boolean);
@@ -3816,6 +3918,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 : null;
             const identity = identityForProfile({
               requireEmail: false,
+              yaleDirectoryNetids,
             });
             if (identity) {
               const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
@@ -3853,6 +3956,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (runProfileDescriptionBackfill) {
             const identity = identityForProfile({
               requireEmail: false,
+              yaleDirectoryNetids,
               expectedPeople: entity.leadUsers,
             });
             if (identity) {
@@ -3891,6 +3995,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           if (runProfileResearchHomeBackfill) {
             const identity = extractOfficialProfileIdentity(html, profileUrl, entity, {
               requireEmail: false,
+              yaleDirectoryNetids,
               expectedPeople: entity.leadUsers,
             });
             const [home] = extractOfficialProfileResearchHomes(html, profileUrl);

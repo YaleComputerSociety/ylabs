@@ -22,7 +22,10 @@ import {
   ENGINE_BENCHMARK_STAGE,
   replayEngineBenchmark,
 } from './engineBenchmarkRun';
-import { fingerprintChangeIsAttributable } from '../services/engineBenchmarkTrendCore';
+import {
+  SWEEP_ENGINE_BENCHMARK_ID,
+  fingerprintChangeIsAttributable,
+} from '../services/engineBenchmarkTrendCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +33,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'engine:benchmark';
 export const CONFIRM_FLAG = '--confirm-engine-benchmark';
-const DEFAULT_BENCHMARK_ID = 'engine-known-defect-arms';
 const DEFAULT_PER_SCOPE_LIMIT = 20;
 
 export interface EngineBenchmarkArgs {
@@ -48,7 +50,7 @@ export function parseEngineBenchmarkArgs(argv: string[]): EngineBenchmarkArgs {
     dryRun: true,
     confirmed: false,
     capture: false,
-    benchmarkId: DEFAULT_BENCHMARK_ID,
+    benchmarkId: SWEEP_ENGINE_BENCHMARK_ID,
     perScopeLimit: DEFAULT_PER_SCOPE_LIMIT,
     replays: 1,
   };

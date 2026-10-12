@@ -69,31 +69,115 @@ export function sumLoginSignalTallies(
   return totals;
 }
 
-const percent = (count: number, total: number): string =>
-  total === 0 ? '-' : `${((100 * count) / total).toFixed(1)}%`;
+export const MIN_LOGINS_TO_SHOW_BUCKET = 3;
 
-export function formatLoginSignalTallies(rows: StoredLoginSignalTally[]): string {
-  if (rows.length === 0) return 'No login signal tallies in this range.';
+export const WITHHELD = 'fewer_than_3' as const;
+
+export type ShownCount = number | typeof WITHHELD;
+
+const UNDERGRADUATE_BUCKETS = [
+  'undergrad_usable_major',
+  'undergrad_undeclared',
+  'undergrad_no_major',
+  'undergrad_leave_or_visitor',
+] as const satisfies readonly LoginSignalBucket[];
+
+const GRADUATE_BUCKETS = [
+  'grad_with_curriculum',
+  'grad_without_curriculum',
+] as const satisfies readonly LoginSignalBucket[];
+
+export interface LoginSignalCoverage {
+  from: string;
+  to: string;
+  daysWithLogins: number;
+  minLoginsToShowBucket: number;
+  buckets: Record<LoginSignalBucket, ShownCount>;
+  shownLogins: number;
+  shownUndergraduateLogins: number;
+  shownGraduateLogins: number;
+  undergraduateUsableMajorShare: number | null;
+  graduateCurriculumShare: number | null;
+}
+
+const showCount = (count: number): ShownCount =>
+  count >= MIN_LOGINS_TO_SHOW_BUCKET ? count : WITHHELD;
+
+const sumShown = (
+  buckets: Record<LoginSignalBucket, ShownCount>,
+  members: readonly LoginSignalBucket[],
+): number =>
+  members.reduce((sum, bucket) => {
+    const shown = buckets[bucket];
+    return shown === WITHHELD ? sum : sum + shown;
+  }, 0);
+
+const shareOf = (count: ShownCount, total: number): number | null =>
+  count === WITHHELD || total === 0 ? null : count / total;
+
+export function summarizeLoginSignalCoverage(
+  rows: StoredLoginSignalTally[],
+): LoginSignalCoverage | null {
+  if (rows.length === 0) return null;
+  const dates = rows.map((row) => row.date).sort();
   const totals = sumLoginSignalTallies(rows);
-  const logins = loginSignalBuckets.reduce((sum, bucket) => sum + totals[bucket], 0);
-  const undergrads =
-    totals.undergrad_usable_major +
-    totals.undergrad_undeclared +
-    totals.undergrad_no_major +
-    totals.undergrad_leave_or_visitor;
-  const grads = totals.grad_with_curriculum + totals.grad_without_curriculum;
+  const buckets = Object.fromEntries(
+    loginSignalBuckets.map((bucket) => [bucket, showCount(totals[bucket])]),
+  ) as Record<LoginSignalBucket, ShownCount>;
+  const shownUndergraduateLogins = sumShown(buckets, UNDERGRADUATE_BUCKETS);
+  const shownGraduateLogins = sumShown(buckets, GRADUATE_BUCKETS);
+  return {
+    from: dates[0],
+    to: dates[dates.length - 1],
+    daysWithLogins: rows.length,
+    minLoginsToShowBucket: MIN_LOGINS_TO_SHOW_BUCKET,
+    buckets,
+    shownLogins: sumShown(buckets, loginSignalBuckets),
+    shownUndergraduateLogins,
+    shownGraduateLogins,
+    undergraduateUsableMajorShare: shareOf(
+      buckets.undergrad_usable_major,
+      shownUndergraduateLogins,
+    ),
+    graduateCurriculumShare: shareOf(buckets.grad_with_curriculum, shownGraduateLogins),
+  };
+}
+
+const percent = (share: number | null): string =>
+  share === null ? '-' : `${(100 * share).toFixed(1)}%`;
+
+const countText = (count: ShownCount): string =>
+  count === WITHHELD ? `<${MIN_LOGINS_TO_SHOW_BUCKET}` : String(count);
+
+const shareLine = (label: string, count: ShownCount, total: number, share: number | null) =>
+  `${label}: ${countText(count)} of ${total} (${percent(share)})`;
+
+export function formatLoginSignalCoverage(coverage: LoginSignalCoverage | null): string {
+  if (!coverage) return 'No login signal tallies in this range.';
   const width = Math.max(...loginSignalBuckets.map((bucket) => bucket.length));
   const lines = [
-    `Dates ${rows[0].date} to ${rows[rows.length - 1].date} (${rows.length} days with logins)`,
-    `Logins ${logins}`,
+    `Dates ${coverage.from} to ${coverage.to} (${coverage.daysWithLogins} days with logins)`,
+    `Logins in shown buckets ${coverage.shownLogins}`,
+    `A bucket with fewer than ${coverage.minLoginsToShowBucket} logins prints as <${coverage.minLoginsToShowBucket} and is left out of every total and share.`,
     '',
-    ...loginSignalBuckets.map(
-      (bucket) =>
-        `${bucket.padEnd(width)}  ${String(totals[bucket]).padStart(7)}  ${percent(totals[bucket], logins).padStart(6)}`,
+    ...loginSignalBuckets.map((bucket) => {
+      const count = coverage.buckets[bucket];
+      const share = percent(shareOf(count, coverage.shownLogins));
+      return `${bucket.padEnd(width)}  ${countText(count).padStart(7)}  ${share.padStart(6)}`;
+    }),
+    '',
+    shareLine(
+      'Undergraduate logins with a usable major',
+      coverage.buckets.undergrad_usable_major,
+      coverage.shownUndergraduateLogins,
+      coverage.undergraduateUsableMajorShare,
     ),
-    '',
-    `Undergraduate logins with a usable major: ${totals.undergrad_usable_major} of ${undergrads} (${percent(totals.undergrad_usable_major, undergrads)})`,
-    `Graduate logins with a curriculum: ${totals.grad_with_curriculum} of ${grads} (${percent(totals.grad_with_curriculum, grads)})`,
+    shareLine(
+      'Graduate logins with a curriculum',
+      coverage.buckets.grad_with_curriculum,
+      coverage.shownGraduateLogins,
+      coverage.graduateCurriculumShare,
+    ),
   ];
   return lines.join('\n');
 }

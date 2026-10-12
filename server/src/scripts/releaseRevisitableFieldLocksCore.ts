@@ -96,6 +96,7 @@ export interface FieldLockReleaseDecision {
   provenInert?: boolean;
   neverBacked?: boolean;
   acceptsEngineValue?: boolean;
+  acceptsEngineSilence?: boolean;
 }
 
 /**
@@ -118,8 +119,10 @@ export interface FieldLockReleaseDecision {
  * `acceptEngineValueFields` widens both paths to a value the operator read and
  * accepted: a named field the plan names with a different value, or a sibling the
  * release moves. Such a release carries `acceptsEngineValue` rather than
- * `provenInert`, because it changes what a student reads; a plan silent about the
- * field still keeps the lock.
+ * `provenInert`, because it changes what a student reads. A named field the plan is
+ * silent about is released with `acceptsEngineSilence` only when no sibling moves, and
+ * the stored value stays until evidence resolves the field; an unnamed silent field
+ * keeps the lock.
  */
 export interface FieldLockReleaseRules {
   releaseProvenInert?: boolean;
@@ -222,12 +225,29 @@ export function decideFieldLockReleases(
       return { ...base, verdict: 'keep_engine_silent' as const, engineValue: undefined };
     }
     if (!revisitable) {
+      const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(field));
       if (!projectionNamesField(answer, field)) {
-        return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
+        if (!acceptedByOperator) {
+          return { ...base, verdict: 'keep_not_revisitable' as const, engineValue: undefined };
+        }
+        const movedSiblings = movedSiblingValuesFor(entity, answer, field);
+        if (Object.keys(movedSiblings).length > 0) {
+          return {
+            ...base,
+            engineValue: undefined,
+            verdict: 'keep_sibling_field_moves' as const,
+            ...siblingMoves(movedSiblings),
+          };
+        }
+        return {
+          ...base,
+          engineValue: undefined,
+          verdict: 'release' as const,
+          acceptsEngineSilence: true,
+        };
       }
       const plannedValue = plannedFieldValue(answer, field, storedValue);
       const agrees = fieldLockReleaseAgrees(plannedValue, storedValue);
-      const acceptedByOperator = Boolean(rules.acceptEngineValueFields?.includes(field));
       if (!agrees && !acceptedByOperator) {
         return { ...base, engineValue: plannedValue, verdict: 'keep_engine_disagrees' as const };
       }
@@ -457,7 +477,7 @@ export function describeFieldLockReleaseDecision(decision: FieldLockReleaseDecis
   }`;
   const qualifiers = `${decision.provenInert ? ' (proven inert)' : ''}${
     decision.acceptsEngineValue ? ' (accepts the engine value)' : ''
-  }${
+  }${decision.acceptsEngineSilence ? ' (the engine plans no value; the stored value stays)' : ''}${
     decision.movedSiblingFields?.length
       ? ` (would move ${decision.movedSiblingFields.join(', ')})`
       : ''

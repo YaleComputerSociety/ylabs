@@ -100,6 +100,7 @@ const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
     localField: 'source.evidenceIds',
     targetCollectionName: 'observations',
     required: false,
+    targetIsEvidenceTrail: true,
   },
   {
     name: 'research_entity_members.userId',

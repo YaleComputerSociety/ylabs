@@ -93,11 +93,12 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
   it('plans the fold and attributes it to the netid, not the name', async () => {
     const result = await dedupeAccountlessResearcherShells({ apply: false });
 
-    expect(result.netidBackedAccountlessResearchers).toBe(1);
+    expect(result.netidBackedShellResearchers).toBe(1);
     expect(result.shellsMerged).toBe(1);
     expect(result.foldsByMatchedIdentity).toEqual({
       netid: 1,
       'roster-identity': 0,
+      'shared-row': 0,
       'verified-profile': 0,
       name: 0,
     });
@@ -147,6 +148,7 @@ describe('a netid twin is folded even though no name links it (#3166)', () => {
     expect(result.foldsByMatchedIdentity).toEqual({
       netid: 0,
       'roster-identity': 0,
+      'shared-row': 0,
       'verified-profile': 0,
       name: 0,
     });

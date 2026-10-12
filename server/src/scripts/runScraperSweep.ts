@@ -61,7 +61,7 @@ import {
   isUrlIdentityDedupeStageEnabled,
   type UrlIdentityDedupeStageDelta,
 } from './dedupeResearchEntitiesByPi';
-import { isSweepStageEnabledByDefault, isSweepStageOptedIn } from './sweepStageFlags';
+import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import {
   SweepCheckpointStore,
   checkpointPathForMode,
@@ -117,6 +117,11 @@ export const FELLOWSHIP_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'yale-reu-programs', phase: 'discovery' },
   { name: 'yale-health-sciences-summer-programs', phase: 'discovery' },
   { name: 'student-grants-database', phase: 'discovery' },
+  {
+    name: 'program-official-page',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['student-grants-database'],
+  },
 ];
 
 export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
@@ -143,6 +148,7 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'neh-funded-projects', phase: 'funding' },
   { name: 'doe-osti', phase: 'funding' },
+  { name: 'doe-science-awards', phase: 'funding' },
   { name: 'crossref-grants', phase: 'funding' },
   // Identity work, but deliberately not in the `identity` phase: the aliases it resolves are
   // minted by `dept-faculty-roster` during `discovery`, so running earlier would only ever
@@ -267,10 +273,12 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'dead-research-website-clear'
     | 'organization-identity-website-retire'
     | 'shared-roster-website-retire'
+    | 'borrowed-lab-website-retire'
     | 'refusal-lane-attribution'
     | 'pi-attributed-researcher-mint'
     | 'inferred-pi-lead-reclaim'
     | 'profile-honors'
+    | 'staff-minted-retirement'
     | 'visibility-gate'
     | 'search-rebuild'
     | 'search-index-check'
@@ -434,7 +442,6 @@ export interface FellowshipPostRunStage extends SweepStepTiming, PostRunStageDia
   name:
     | 'program-visibility-gate'
     | 'global-regions-backfill'
-    | 'official-sources-backfill'
     | 'link-labels-backfill'
     | 'accepting-applications-invariant'
     | 'source-link-health'
@@ -448,7 +455,6 @@ export interface FellowshipPostRunStage extends SweepStepTiming, PostRunStageDia
 }
 
 export interface FellowshipPostRunStageOptions {
-  applyOfficialSourceChangeSet?: boolean;
   applyLimit?: number;
   pruneDeadObservations?: boolean;
 }
@@ -1573,6 +1579,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     isEnabled: () => true,
   },
   {
+    // Relational across lanes: a person-directory lane's lab page is borrowed only when
+    // another row holds it as its own website under leads this row does not share, which
+    // no single lane can see. Ordered with the stage above so its refusals are attributed
+    // the same sweep (#4980).
+    name: 'borrowed-lab-website-retire',
+    command: 'observations:retire-borrowed-lab-websites',
+    artifactName: 'development-borrowed-lab-website-retire.json',
+    buildArgs: () => ['--apply', '--confirm-retire-borrowed-lab-websites'],
+    isEnabled: () => true,
+  },
+  {
     // After every stage that records a refusal, so a refusal written this sweep is
     // attributed this sweep. It writes only the derived `attributedSourceNames` on a
     // refusal, never a field a student sees, and plans nothing once the corpus is
@@ -1616,6 +1633,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'research-entity:profile-honors',
     artifactName: 'development-profile-honors.json',
     buildArgs: () => ['--apply'],
+    isEnabled: () => true,
+  },
+  {
+    // A mint lane refuses a staff, trainee or student title at mint time, but a row minted
+    // before its title was on file is never revisited by that lane, so the retirement re-reads
+    // every row each sweep. Ordered before the gate and the rebuild so an archived row is
+    // re-gated and leaves the index the same sweep (#4983).
+    name: 'staff-minted-retirement',
+    command: 'research-entity:retire-staff-minted-entities',
+    artifactName: 'development-staff-minted-retirement.json',
+    buildArgs: () => ['--apply', '--confirm-staff-minted-entity-retirement'],
     isEnabled: () => true,
   },
   {
@@ -1982,21 +2010,13 @@ async function runDevelopmentPostRunStages(
   };
 }
 
-export const SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV =
-  'SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET';
-
 const DEFAULT_FELLOWSHIP_POST_RUN_APPLY_LIMIT = 10000;
 
 export function resolveFellowshipPostRunOptions(
   mode: ScraperSweepMode,
-  env: NodeJS.ProcessEnv,
 ): FellowshipPostRunStageOptions | undefined {
   if (!isFellowshipSweepMode(mode)) return undefined;
-  return {
-    applyOfficialSourceChangeSet: isSweepStageOptedIn(
-      env[SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET_ENV],
-    ),
-  };
+  return {};
 }
 
 interface FellowshipPostRunStageDefinition {
@@ -2036,18 +2056,6 @@ export const FELLOWSHIP_POST_RUN_STAGE_DEFINITIONS: FellowshipPostRunStageDefini
       `--limit=${fellowshipApplyLimit(options)}`,
     ],
     isEnabled: () => true,
-    appendsOutputArtifact: true,
-  },
-  {
-    name: 'official-sources-backfill',
-    command: 'programs:backfill-official-sources',
-    artifactName: 'fellowship-official-sources-backfill.json',
-    buildArgs: (options) => [
-      '--apply',
-      '--confirm-program-official-source-backfill',
-      `--limit=${fellowshipApplyLimit(options)}`,
-    ],
-    isEnabled: (options) => Boolean(options.applyOfficialSourceChangeSet),
     appendsOutputArtifact: true,
   },
   {
@@ -2562,7 +2570,7 @@ export async function runScraperSweep(
   if (developmentPostRunOptions && options.fullLinkHealthReprobe) {
     developmentPostRunOptions.fullLinkHealthReprobe = true;
   }
-  const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode, process.env);
+  const fellowshipPostRunOptions = resolveFellowshipPostRunOptions(options.mode);
   if (fellowshipPostRunOptions && pruneDeadObservations) {
     fellowshipPostRunOptions.pruneDeadObservations = true;
   }

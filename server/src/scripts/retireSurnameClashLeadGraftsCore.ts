@@ -1,4 +1,22 @@
 import { givenNamesAgree, surnameCoreKey } from '../scrapers/utils/piNameMatch';
+import {
+  researcherHoldsDirectoryIdentity,
+  researcherNetid,
+  type ResearcherIdentitySource,
+} from '../utils/researcherIdentity';
+
+export interface SurnameClashPersonRecord extends ResearcherIdentitySource {
+  profile?: { title?: unknown; primaryDepartment?: unknown } | null;
+}
+
+export function researcherIdentityAnchored(row: SurnameClashPersonRecord): boolean {
+  return Boolean(
+    researcherNetid(row) ||
+    researcherHoldsDirectoryIdentity(row) ||
+    String(row.profile?.title || '').trim() ||
+    String(row.profile?.primaryDepartment || '').trim(),
+  );
+}
 
 export interface SurnameClashLeadRow {
   assignmentId: string;
@@ -7,7 +25,7 @@ export interface SurnameClashLeadRow {
   reviewStatus?: string;
   /**
    * Whether the corpus knows this person as a Yale identity rather than as a bare
-   * name: a netid, an account, a title, or a department.
+   * name: a netid, a directory identity, a title, or a department.
    */
   identityAnchored: boolean;
   /**

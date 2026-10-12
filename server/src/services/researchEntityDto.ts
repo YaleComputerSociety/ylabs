@@ -498,7 +498,7 @@ export interface PublicResearchEntityDtoOptions {
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradEvidenceQuote']);
 
 function publicTextValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -625,7 +625,11 @@ function derivePublicResearchEntityDto(
           (fromMicrositeLane &&
             (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
               quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
-        if (!withheld) dto[field] = publicTextValue(group[field]);
+        if (!withheld) {
+          dto[field] = publicTextValue(group[field]);
+          const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
+          if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
+        }
         continue;
       }
       if (field === 'currentUndergradCount') {

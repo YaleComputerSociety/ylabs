@@ -155,11 +155,38 @@ export function fellowshipAbsenceClearWithheldBySourcePrecedence(input: {
   return isEnrichOnlyWriteOnAnotherLanesRow(input.stored, input.assertedBy);
 }
 
+export function isWithdrawnFellowshipCitation(observation: {
+  field?: unknown;
+  value?: unknown;
+}): boolean {
+  return observation.field === 'sourceUrl' && text(observation.value) === '';
+}
+
+function sameCitation(a: unknown, b: unknown): boolean {
+  const left = text(a).replace(/\/+$/, '').toLowerCase();
+  return left !== '' && left === text(b).replace(/\/+$/, '').toLowerCase();
+}
+
+export function storedFellowshipSourceUrlIsUnbacked(input: {
+  stored: Record<string, unknown> | null | undefined;
+  liveObservations: ReadonlyArray<{ field?: unknown; value?: unknown }>;
+  readRowUnderOwnIdentity: boolean;
+}): boolean {
+  if (!input.readRowUnderOwnIdentity) return false;
+  const storedSourceUrl = text(input.stored?.sourceUrl);
+  if (!storedSourceUrl) return false;
+  return !input.liveObservations.some(
+    (observation) =>
+      observation.field === 'sourceUrl' && sameCitation(observation.value, storedSourceUrl),
+  );
+}
+
 export function fellowshipFieldsWithheldBySourcePrecedence(input: {
   stored: Record<string, unknown> | null | undefined;
   staged: Record<string, unknown>;
   resolved: Readonly<Record<string, { contributingSources?: readonly string[] } | undefined>>;
   fundSpeaksForRow: boolean;
+  storedSourceUrlUnbacked?: boolean;
 }): string[] {
   const withheld = new Set<string>();
   const fundAuthority = input.fundSpeaksForRow
@@ -179,7 +206,8 @@ export function fellowshipFieldsWithheldBySourcePrecedence(input: {
     stagedSourceUrl &&
     isProgramApplicationPortalUrl(stagedSourceUrl) &&
     storedSourceUrl &&
-    !isProgramApplicationPortalUrl(storedSourceUrl)
+    !isProgramApplicationPortalUrl(storedSourceUrl) &&
+    input.storedSourceUrlUnbacked !== true
   ) {
     withheld.add('sourceUrl');
   }

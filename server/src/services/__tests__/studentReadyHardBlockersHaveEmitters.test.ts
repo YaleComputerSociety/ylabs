@@ -254,6 +254,22 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
       leadMembers: [],
       relatedEntityAccessPathCount: 1,
     }),
+  lead_contradicted_by_namesake: () =>
+    researchReasons({
+      entity: {
+        leadVerification: {
+          checkedUrl: 'https://example.yale.edu/labs/example/',
+          leads: [
+            {
+              personId: 'user-example-lead',
+              verdict: 'CONTRADICTED',
+              matchedBy: 'NONE',
+              contradictedBy: 'NAMESAKE',
+            },
+          ],
+        },
+      },
+    }),
   lead_title_ruled_non_hosting_rank: () =>
     researchReasons({
       leadMembers: [{ userId: 'user-example-lead', role: 'pi', title: 'Clinical Fellow' }],
@@ -288,6 +304,20 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
         shortDescription: 'Example Person is a graphic designer and public artist.',
         fullDescription:
           'Example Person is a graphic designer and public artist. She received a B.A. from Example College in 1962 and an M.F.A. from Example University in 1964. She joined the faculty in 1990 and served as chair of the department. She won the example medal in 2004.',
+      },
+      leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
+    }),
+  career_biography_without_research: () =>
+    researchReasons({
+      entity: {
+        name: 'Example Person Faculty Research',
+        slug: 'career-biography-without-research-fixture',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        researchAreas: [],
+        shortDescription: 'Professor at Example University since 2001.',
+        fullDescription:
+          'Example Person has previously taught at Example College. She enjoys exploring the outdoors.',
       },
       leadMembers: [{ user: { fname: 'Example', lname: 'Person' }, role: 'pi' }],
     }),

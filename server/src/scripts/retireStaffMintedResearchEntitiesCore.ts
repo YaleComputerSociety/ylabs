@@ -1,14 +1,16 @@
 /**
  * Which live rows the mint gate would refuse today because the person profile that
  * gave the row its identity carries a research-support or technical title, a
- * non-research staff role (#3410), a student or graduate title, or a trainee rank the
- * owner ruled cannot host a student's research.
+ * non-research staff role (#3410), a student or graduate title, a trainee rank the
+ * owner ruled cannot host a student's research, an administrative office, or a teaching
+ * appointment (#4916).
  *
- * Those four classes are the whole population. The trainee class is decided before the
- * faculty-keyword yield below, because `FACULTY_KEYWORDS` spells `postdoctoral` and a
- * hyphen would otherwise decide an irreversible archive; the student class runs after
- * it, because no faculty keyword spells a student rank. Each has its own predicate, and
- * `docs/research-data-pipeline.md` records why.
+ * Those classes are the whole population. The trainee and teaching classes are decided
+ * before the faculty-keyword yield below, because `FACULTY_KEYWORDS` spells `postdoctoral`
+ * and `lecturer`, and a hyphen would otherwise decide an irreversible archive; the student
+ * class runs after it, because no faculty keyword spells a student rank. The administrative
+ * and teaching classes each need the row's own description as a second witness. Each has
+ * its own predicate, and `docs/research-data-pipeline.md` records why.
  *
  * The pass is strictly more conservative than the mint gate: any title that states a
  * faculty appointment anywhere yields, because minting is reversible by the next run
@@ -39,6 +41,7 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   statesAnyFacultyAppointment,
+  statesOnlyATeachingAppointment,
 } from '../scrapers/sources/yaleDirectoryScraper';
 import {
   namesARankItServesRatherThanHolds,
@@ -58,7 +61,8 @@ export type StaffMintedEntityReason =
   | 'research_support_staff_title'
   | 'student_title'
   | 'non_hosting_trainee_title'
-  | 'administrative_staff_title';
+  | 'administrative_staff_title'
+  | 'teaching_appointment_title';
 
 export const STAFF_MINTED_ENTITY_REASON_PRECEDENCE: readonly StaffMintedEntityReason[] = [
   'non_research_staff_title',
@@ -66,6 +70,7 @@ export const STAFF_MINTED_ENTITY_REASON_PRECEDENCE: readonly StaffMintedEntityRe
   'student_title',
   'non_hosting_trainee_title',
   'administrative_staff_title',
+  'teaching_appointment_title',
 ];
 
 export type StaffMintedEntityRefusal =
@@ -73,11 +78,14 @@ export type StaffMintedEntityRefusal =
   | 'no-stored-title'
   | 'title-owns-research'
   | 'title-evidence-disagrees'
+  | 'title-holds-lecturer-rank'
   | 'manually-locked'
   | 'operator-intent'
   | 'has-foreign-website'
   | 'has-foreign-role-edge'
-  | 'description-states-research';
+  | 'description-states-research'
+  | 'description-does-not-affirm-teaching-only'
+  | 'description-states-creative-practice';
 
 export interface StaffMintedEntityCandidate {
   id: string;
@@ -92,6 +100,10 @@ export interface StaffMintedEntityCandidate {
   hasForeignWebsite?: boolean;
   /** Whether the row's own description states research; an administrative title needs it false. */
   descriptionStatesResearch?: boolean;
+  /** Whether the row has a description and it states no research; a teaching title needs it true. */
+  descriptionAffirmsNoResearch?: boolean;
+  /** Whether the row's evidence is creative practice (#4519); a teaching title needs it false. */
+  descriptionStatesCreativePractice?: boolean;
   identityPersonIds?: readonly string[];
   roleEdgePersonIds?: readonly string[];
 }
@@ -207,6 +219,7 @@ export function staffMintedEntityReasonFor(
   title: string | undefined | null,
 ): StaffMintedEntityReason | undefined {
   if (statesOnlyANonHostingTraineeRank(title)) return 'non_hosting_trainee_title';
+  if (statesOnlyATeachingAppointment(title)) return 'teaching_appointment_title';
   if (statesAnyFacultyAppointment(title)) return undefined;
   if (looksLikeNonResearchTitle(title)) return 'non_research_staff_title';
   if (isResearchSupportStaffTitle(title)) return 'research_support_staff_title';
@@ -261,6 +274,8 @@ export function staffMintedEntityReasonFor(
  * from any other source does refuse, and one such field is enough, because that
  * identity did not come from here.
  */
+const LECTURER_RANK_PATTERN = /\blecturer\b/i;
+
 export function planStaffMintedEntityRetirement(
   candidates: readonly StaffMintedEntityCandidate[],
 ): StaffMintedEntityRetirementPlan {
@@ -290,6 +305,12 @@ export function planStaffMintedEntityRetirement(
       refuse('title-evidence-disagrees');
       continue;
     }
+    // Owner rule (2026-10-04): a lecturer hosts students because students reach out to
+    // them, so any title naming that rank spares the row, whatever rank it is paired with.
+    if (titles.some((value) => LECTURER_RANK_PATTERN.test(value))) {
+      refuse('title-holds-lecturer-rank');
+      continue;
+    }
     // Screen precedence rather than whichever title the cursor returned first, so the
     // report's reason breakdown is reproducible across runs.
     const reason = STAFF_MINTED_ENTITY_REASON_PRECEDENCE.find((value) =>
@@ -297,6 +318,20 @@ export function planStaffMintedEntityRetirement(
     ) as StaffMintedEntityReason;
     if (reason === 'administrative_staff_title' && candidate.descriptionStatesResearch !== false) {
       refuse('description-states-research');
+      continue;
+    }
+    if (
+      reason === 'teaching_appointment_title' &&
+      candidate.descriptionAffirmsNoResearch !== true
+    ) {
+      refuse('description-does-not-affirm-teaching-only');
+      continue;
+    }
+    if (
+      reason === 'teaching_appointment_title' &&
+      candidate.descriptionStatesCreativePractice !== false
+    ) {
+      refuse('description-states-creative-practice');
       continue;
     }
     if ((candidate.manuallyLockedFields || []).length > 0) {
@@ -343,6 +378,7 @@ export function summarizeStaffMintedEntityReasons(
     student_title: 0,
     non_hosting_trainee_title: 0,
     administrative_staff_title: 0,
+    teaching_appointment_title: 0,
   };
   for (const entry of planned) counts[entry.reason] += 1;
   return counts;
@@ -356,11 +392,14 @@ export function summarizeStaffMintedEntityRefusals(
     'no-stored-title': 0,
     'title-owns-research': 0,
     'title-evidence-disagrees': 0,
+    'title-holds-lecturer-rank': 0,
     'manually-locked': 0,
     'operator-intent': 0,
     'has-foreign-website': 0,
     'has-foreign-role-edge': 0,
     'description-states-research': 0,
+    'description-does-not-affirm-teaching-only': 0,
+    'description-states-creative-practice': 0,
   };
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;
@@ -372,7 +411,18 @@ export interface SoleLeadRecord {
 }
 
 /**
- * The identity a row minted from a shared roster listing borrows from the one person on it.
+ * Whether a row's mint citation leaves its identity to its sole lead: a shared roster
+ * listing, which names many people, or no recorded mint citation at all, which a row
+ * predating slug provenance carries (#4916). A citation of any other page keeps that page
+ * as the row's identity, so the lead never speaks for it.
+ */
+export function mintCitationDefersToSoleLead(mintUrl: unknown): boolean {
+  if (mintUrl === undefined || mintUrl === null) return true;
+  return typeof mintUrl === 'string' && isSharedPeopleRosterUrl(mintUrl);
+}
+
+/**
+ * The identity a row borrows from the one person on it when `mintCitationDefersToSoleLead`.
  * A listing names many people, so it cannot say whose title applies; the sole person with a
  * live edge on the row can, through their own single verified primary page. That page's live
  * titles decide, and the person's stored title stands in only when the page has none. Two or
@@ -384,8 +434,7 @@ export function soleLeadIdentityFor(input: {
   leadById: ReadonlyMap<string, SoleLeadRecord>;
   observedTitlesByDestination: ReadonlyMap<string, ReadonlySet<string>>;
 }): { url: string; titles: string[]; personIds: string[] } | undefined {
-  if (typeof input.mintUrl !== 'string' || !isSharedPeopleRosterUrl(input.mintUrl))
-    return undefined;
+  if (!mintCitationDefersToSoleLead(input.mintUrl)) return undefined;
   const people = [...new Set(input.rolePersonIds)];
   if (people.length !== 1) return undefined;
   const lead = input.leadById.get(people[0]);
@@ -410,6 +459,39 @@ export function soleLeadIdentityFor(input: {
     url,
     titles: observed.length > 0 ? observed : stored ? [stored] : [],
     personIds: people,
+  };
+}
+
+/**
+ * The identity a lead-less row borrows from the one person key it names (#4969).
+ * A row minted from a shared listing carries no page of its own and, with no lead
+ * edge, no sole lead to speak for it; its live `inferredPiUserKey` still names the
+ * listed person, and that key's live `profileUrls` name that person's own page. Only
+ * one key and only one person-profile destination across its URLs may decide, so a
+ * row naming two people, or a key whose pages disagree, keeps no identity.
+ */
+export function mintKeyIdentityFor(input: {
+  mintUrl: unknown;
+  rolePersonIds: readonly string[];
+  mintKeys: readonly string[];
+  profileUrlsByKey: ReadonlyMap<string, readonly string[]>;
+  observedTitlesByDestination: ReadonlyMap<string, ReadonlySet<string>>;
+}): { url: string; titles: string[]; personIds: string[] } | undefined {
+  if (!mintCitationDefersToSoleLead(input.mintUrl)) return undefined;
+  if (input.rolePersonIds.length > 0) return undefined;
+  const keys = [...new Set(input.mintKeys.filter((key) => key.trim() !== ''))];
+  if (keys.length !== 1) return undefined;
+  const urlsByDestination = new Map<string, string>();
+  for (const url of input.profileUrlsByKey.get(keys[0]) ?? []) {
+    if (!isPersonProfileIdentityUrl(url)) continue;
+    urlsByDestination.set(normalizeOfficialProfileDestination(url), url);
+  }
+  if (urlsByDestination.size !== 1) return undefined;
+  const [[destination, url]] = [...urlsByDestination];
+  return {
+    url,
+    titles: [...(input.observedTitlesByDestination.get(destination) ?? [])],
+    personIds: [],
   };
 }
 

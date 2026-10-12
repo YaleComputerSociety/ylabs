@@ -31,6 +31,7 @@ import {
   parseGrantCorpusSynthesisArgs,
   type FullDescriptionObservationLike,
 } from './grantCorpusSynthesisCore';
+import { writerModelClientFor } from './coverageSynthesisCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,9 +83,11 @@ async function main() {
   });
   assertGrantCorpusSynthesisApplyAllowed(args, guard.dbLabel);
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('research-entity:grant-corpus-synthesis requires OPENAI_API_KEY');
-  const callLLM = defaultCoverageSynthesisLLM(apiKey);
+  const callLLM = writerModelClientFor({
+    apply: args.apply,
+    apiKey: process.env.OPENAI_API_KEY,
+    create: defaultCoverageSynthesisLLM,
+  });
 
   await initializeConnections();
 
@@ -111,6 +114,7 @@ async function main() {
   const runId = new mongoose.Types.ObjectId().toString();
 
   const reports: GrantCorpusEntityReport[] = [];
+  let plannedLlmCalls = 0;
   const materializedEntityIds: string[] = [];
   const beforeTierByEntityId = new Map<string, string>();
   const reportByEntityId = new Map<string, GrantCorpusEntityReport>();
@@ -166,6 +170,12 @@ async function main() {
       continue;
     }
 
+    if (!callLLM) {
+      report.skipped = 'dry-run: would synthesize';
+      plannedLlmCalls += 1;
+      reports.push(report);
+      continue;
+    }
     const result = await synthesizeIntoGrantCorpusReport(report, {
       snippets,
       entityName: typeof entity.name === 'string' ? entity.name : '',
@@ -266,6 +276,7 @@ async function main() {
     db: guard.dbLabel,
     limit: args.limit,
     scanned: reports.length,
+    plannedLlmCalls,
     synthesized: reports.filter((r) => r.synthesized).length,
     synthesisRefusals: summarizeGrantCorpusSynthesisRefusals(reports),
     written,

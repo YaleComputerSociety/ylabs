@@ -11,7 +11,11 @@ import http from 'http';
 import https from 'https';
 import type { LookupFunction } from 'net';
 import type { Duplex } from 'stream';
-import { isBenchmarkReplayActive } from '../scrapers/snapshotBenchmarkMode';
+import {
+  freezeHostRefusal,
+  frozenHostRefusal,
+  isBenchmarkReplayActive,
+} from '../scrapers/snapshotBenchmarkMode';
 import { containsAsciiControl } from './asciiControl';
 
 const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
@@ -268,6 +272,13 @@ const isAllowedPublicHttpPort = (url: URL): boolean =>
   (url.protocol === 'http:' && url.port === '80') ||
   (url.protocol === 'https:' && url.port === '443');
 
+const NON_PUBLIC_ADDRESS_MESSAGE = 'URL resolves to a private or non-public address';
+
+const isHostPropertyResolution = (
+  kind: string,
+): kind is Exclude<HostnameResolution['kind'], 'public' | 'resolver-failure'> =>
+  kind === 'private-address' || kind === 'unresolvable';
+
 /**
  * Validate an outbound URL before fetching: must be http(s), carry no embedded credentials, and
  * resolve to a public address. Throws SsrfBlockedError otherwise. Pair with ssrfSafeAgents() so
@@ -301,10 +312,18 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   if (!isAllowedPublicHttpPort(parsed)) {
     throw new SsrfBlockedError('URL port is not allowed', 'port');
   }
-  if (isBenchmarkReplayActive() && !net.isIP(stripIpv6Brackets(parsed.hostname))) return parsed;
+  if (isBenchmarkReplayActive() && !net.isIP(stripIpv6Brackets(parsed.hostname))) {
+    const frozenRefusal = frozenHostRefusal(parsed.hostname);
+    if (frozenRefusal && isHostPropertyResolution(frozenRefusal)) {
+      throw new SsrfBlockedError(NON_PUBLIC_ADDRESS_MESSAGE, frozenRefusal);
+    }
+    return parsed;
+  }
   const resolution = await classifyHostnameResolution(parsed.hostname);
+  if (isHostPropertyResolution(resolution.kind))
+    freezeHostRefusal(parsed.hostname, resolution.kind);
   if (resolution.kind !== 'public') {
-    throw new SsrfBlockedError('URL resolves to a private or non-public address', resolution.kind);
+    throw new SsrfBlockedError(NON_PUBLIC_ADDRESS_MESSAGE, resolution.kind);
   }
   return parsed;
 };

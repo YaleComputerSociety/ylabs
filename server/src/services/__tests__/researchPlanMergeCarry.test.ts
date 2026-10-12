@@ -17,6 +17,9 @@ import { MAX_RESEARCH_PLAN_NOTES_LENGTH } from '../../models/researchPlan';
 const oid = () => new mongoose.Types.ObjectId();
 const NOW = new Date('2026-10-04T12:00:00.000Z');
 const daysFromNow = (days: number) => new Date(NOW.getTime() + days * 24 * 60 * 60 * 1000);
+// `applyResearchEntityDedupeMergeGroup` reads the wall clock, so a deadline it judges must be
+// relative to the wall clock rather than to the pinned NOW, or the case expires once NOW + days passes.
+const daysFromWallClock = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
 const storedPlan = (overrides: Partial<StoredResearchPlan> = {}): StoredResearchPlan => ({
   _id: oid(),
@@ -221,7 +224,7 @@ describe('research plans carried through a dedupe merge', () => {
       stage: 'CONTACTED',
       privateNotes: 'synthetic outreach notes',
       checklist: [{ _id: oid(), label: 'Send follow-up', completed: false }],
-      deadlines: [{ _id: oid(), label: 'Reply by', dueAt: daysFromNow(10) }],
+      deadlines: [{ _id: oid(), label: 'Reply by', dueAt: daysFromWallClock(10) }],
       archived: false,
     });
 
@@ -257,7 +260,7 @@ describe('research plans carried through a dedupe merge', () => {
         stage: 'EXPLORING',
         privateNotes: 'survivor side notes',
         checklist: [{ _id: oid(), label: 'Read papers', completed: false }],
-        deadlines: [{ _id: oid(), label: 'Apply', dueAt: daysFromNow(30) }],
+        deadlines: [{ _id: oid(), label: 'Apply', dueAt: daysFromWallClock(30) }],
         archived: false,
       },
       {
@@ -267,7 +270,7 @@ describe('research plans carried through a dedupe merge', () => {
         stage: 'APPLIED',
         privateNotes: 'duplicate side notes',
         checklist: [{ _id: oid(), label: 'Email lab manager', completed: false }],
-        deadlines: [{ _id: oid(), label: 'Apply', dueAt: daysFromNow(7) }],
+        deadlines: [{ _id: oid(), label: 'Apply', dueAt: daysFromWallClock(7) }],
         archived: false,
       },
     ]);
@@ -291,7 +294,9 @@ describe('research plans carried through a dedupe merge', () => {
       'Email lab manager',
     ]);
     expect(combined.deadlines).toHaveLength(1);
-    expect(new Date(combined.deadlines[0].dueAt).getTime()).toBeLessThan(daysFromNow(20).getTime());
+    expect(new Date(combined.deadlines[0].dueAt).getTime()).toBeLessThan(
+      daysFromWallClock(20).getTime(),
+    );
     expect(result.researchPlanCarry).toMatchObject({ plansOnDuplicates: 1, merged: 1 });
   });
 

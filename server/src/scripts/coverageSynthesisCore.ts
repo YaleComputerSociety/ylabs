@@ -3,6 +3,10 @@ import {
   computeVersionedContentHash,
 } from '../scrapers/contentHashGate';
 import {
+  SEARCH_INDEX_WRITES_DEFERRED,
+  SEARCH_INDEX_WRITES_VARIABLE,
+} from '../utils/searchIndexWrites';
+import {
   COVERAGE_SNIPPET_FIELDS,
   COVERAGE_SYNTHESIS_MODEL,
   MAX_COVERAGE_SNIPPETS,
@@ -15,6 +19,7 @@ import {
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { getSourceCoverage } from '../scrapers/sourceCoverageRegistry';
+import { refusedResolverObservations } from '../utils/researchEntityFieldValueRefusals';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { buildGrantCorpusSnippets } from './grantCorpusSynthesisCore';
 import { isOfficialYalePersonPageUrl } from './fraProfileSynthesisCore';
@@ -27,6 +32,9 @@ export interface CoverageSynthesisArgs {
   rederiveCards: boolean;
   concurrency: number;
   slugs: string[];
+  skipIndexSync: boolean;
+  ignoreEvidenceHash: boolean;
+  reinstateRetiredBodies: boolean;
   output?: string;
 }
 
@@ -38,7 +46,7 @@ const MAX_COVERAGE_SYNTHESIS_CONCURRENCY = 8;
  * Folded into the evidence hash beside the prompt hash, so a change to the code-side
  * refusal arms re-judges every row once, the way a prompt edit already does.
  */
-export const WRITER_CONTRACT_VERSION = 'written-description-4867-v1';
+export const WRITER_CONTRACT_VERSION = 'written-description-4915-v2';
 
 export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArgs {
   const args: CoverageSynthesisArgs = {
@@ -49,6 +57,9 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     rederiveCards: false,
     concurrency: DEFAULT_COVERAGE_SYNTHESIS_CONCURRENCY,
     slugs: [],
+    skipIndexSync: false,
+    ignoreEvidenceHash: false,
+    reinstateRetiredBodies: false,
   };
   for (const token of argv) {
     if (token === '--apply') args.apply = true;
@@ -56,6 +67,9 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--confirm-coverage-synthesis') args.confirm = true;
     else if (token === '--all') args.all = true;
     else if (token === '--rederive-cards') args.rederiveCards = true;
+    else if (token === '--skip-index-sync') args.skipIndexSync = true;
+    else if (token === '--ignore-evidence-hash') args.ignoreEvidenceHash = true;
+    else if (token === '--reinstate-retired-bodies') args.reinstateRetiredBodies = true;
     else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
     else if (token.startsWith('--concurrency=')) {
       args.concurrency = Number(token.slice('--concurrency='.length));
@@ -76,10 +90,46 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
   return args;
 }
 
+/**
+ * `--ignore-evidence-hash` re-judges rows whose evidence is unchanged, so it pays for a
+ * call the evidence hash exists to save. It is refused with `--all` and allowed only on a
+ * named `--slugs` set, which bounds the spend to rows an operator chose to re-judge.
+ */
+export function assertIgnoreEvidenceHashScoped(args: CoverageSynthesisArgs): void {
+  if (args.reinstateRetiredBodies && args.slugs.length === 0) {
+    throw new Error(
+      'research-entity:coverage-synthesis --reinstate-retired-bodies requires --slugs=<slug,...>',
+    );
+  }
+  if (!args.ignoreEvidenceHash) return;
+  if (args.all) {
+    throw new Error(
+      'research-entity:coverage-synthesis --ignore-evidence-hash is refused with --all; name the rows with --slugs',
+    );
+  }
+  if (args.slugs.length === 0) {
+    throw new Error(
+      'research-entity:coverage-synthesis --ignore-evidence-hash requires --slugs=<slug,...>',
+    );
+  }
+}
+
+/**
+ * The stored evidence hash the writer compares against, or none when the operator asked
+ * to re-judge a named set regardless of it.
+ */
+export function writerStoredHashFor(
+  args: Pick<CoverageSynthesisArgs, 'ignoreEvidenceHash'>,
+  storedHash: string | undefined,
+): string | undefined {
+  return args.ignoreEvidenceHash ? undefined : storedHash;
+}
+
 export function assertCoverageSynthesisApplyAllowed(
   args: CoverageSynthesisArgs,
   dbLabel: string,
 ): void {
+  assertIgnoreEvidenceHashScoped(args);
   if (!args.apply) return;
   if (!args.confirm) {
     throw new Error(
@@ -211,6 +261,8 @@ export interface WriterEvidenceOptions {
   websiteUrl?: unknown;
   storedPageText?: StoredPageTextLookup;
   now?: Date;
+  /** The row's own refusals, so a value an operator refused never becomes evidence again. */
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -224,7 +276,8 @@ export function buildWriterEvidenceSnippets(
   recentGrants: unknown,
   options: WriterEvidenceOptions = {},
 ): CoverageSnippet[] {
-  const ordered = orderWriterEvidence(observations, options.websiteUrl);
+  const admissible = refusedResolverObservations(observations, options.fieldValueRefusals).kept;
+  const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText);
   if (hasOwnResearchProse(fromPages)) return fromPages;
@@ -241,6 +294,27 @@ export function buildWriterEvidenceSnippets(
   });
   if (grants.length < MIN_GRANTS_WITHOUT_OWN_PROSE) return fromPages;
   return [...fromPages, ...grants.slice(0, room)];
+}
+
+/**
+ * The writer's evidence for a merge survivor. A row merged into this one is the same
+ * research, so its page evidence is this row's evidence, but only to fill a row whose
+ * own evidence is empty: #3584 keeps a merged-in row's prose from replacing a survivor's,
+ * and widening every survivor's corpus would re-synthesize bodies that are already right.
+ * "Own" is every observation anchored to the survivor's slug or id, so a merged-in row's
+ * observation the PI dedupe relinked to the survivor's id already counts as the survivor's.
+ */
+export async function buildWriterEvidenceSnippetsWithMergedInFill(
+  ownObservations: readonly CoverageObservationLike[],
+  loadMergedInObservations: () => Promise<readonly CoverageObservationLike[]>,
+  recentGrants: unknown,
+  options: WriterEvidenceOptions = {},
+): Promise<CoverageSnippet[]> {
+  const own = buildWriterEvidenceSnippets(ownObservations, recentGrants, options);
+  if (own.length > 0) return own;
+  const mergedInObservations = await loadMergedInObservations();
+  if (mergedInObservations.length === 0) return own;
+  return buildWriterEvidenceSnippets(mergedInObservations, recentGrants, options);
 }
 
 export function writerEvidenceHash(snippets: readonly CoverageSnippet[]): string {
@@ -264,6 +338,46 @@ export function planWriterStep(input: {
   return 'synthesize';
 }
 
+/**
+ * A dry run reports the step it would take and never calls the writer model: every
+ * call is paid, and a dry run is how operators count the work before paying for it.
+ * On 2026-10-06 an all-live dry run made 3,586 paid calls because only the persist
+ * step checked the mode. A dry run therefore builds no model client at all.
+ */
+export function writerModelClientFor<C>(input: {
+  apply: boolean;
+  apiKey: string | undefined;
+  create: (apiKey: string) => C;
+}): C | null {
+  if (!input.apply) return null;
+  if (!input.apiKey) {
+    throw new Error('research-entity:coverage-synthesis apply requires OPENAI_API_KEY');
+  }
+  return input.create(input.apiKey);
+}
+
+/**
+ * `--skip-index-sync` leaves the search index to one `yarn development:search:rebuild`
+ * after an all-rows apply, in place of a Meilisearch sync per re-gated row. It sets the
+ * process-wide switch every index writer already reads (the materializer, the gate and
+ * the re-gate outcome), so no write path can sync a row behind it.
+ */
+export function deferSearchIndexWritesWhenSkipping(
+  args: Pick<CoverageSynthesisArgs, 'skipIndexSync'>,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (args.skipIndexSync) env[SEARCH_INDEX_WRITES_VARIABLE] = SEARCH_INDEX_WRITES_DEFERRED;
+}
+
+export async function synthesizeWithWriterModel<C, T>(input: {
+  step: WriterStep;
+  callLLM: C | null;
+  synthesize: (callLLM: C) => Promise<T>;
+}): Promise<T | null> {
+  if (input.step !== 'synthesize' || input.callLLM === null) return null;
+  return input.synthesize(input.callLLM);
+}
+
 export interface WriterWrites {
   writeBody: boolean;
   retireBody: boolean;
@@ -273,12 +387,16 @@ export interface WriterWrites {
 /**
  * What one writer step stores. The written body is a derivation of the evidence it was
  * written from, so a body the current evidence no longer supports is retired rather than
- * left to outrank the copied fallback: on a refusal, and when the row has no evidence
- * left. A failed call judged nothing, so it records no hash and the next run retries.
+ * left to outrank the copied fallback: when the row has no evidence left, and on a
+ * refusal of the new draft unless the body already adopted still clears every content
+ * arm against the same evidence (`adoptedWrittenBodyStillSupported`). The refusal judges
+ * the draft, not the served body. A failed call judged nothing, so it records no hash and
+ * the next run retries.
  */
 export function writerWritesFor(
   step: WriterStep,
   decision: CoverageSynthesisDecision | null,
+  options: { adoptedBodyStillSupported?: boolean } = {},
 ): WriterWrites {
   if (step === 'evidence-unchanged') {
     return { writeBody: false, retireBody: false, recordHash: false };
@@ -288,7 +406,11 @@ export function writerWritesFor(
     return { writeBody: false, retireBody: false, recordHash: false };
   }
   if (decision.result) return { writeBody: true, retireBody: false, recordHash: true };
-  return { writeBody: false, retireBody: true, recordHash: true };
+  return {
+    writeBody: false,
+    retireBody: !options.adoptedBodyStillSupported,
+    recordHash: true,
+  };
 }
 
 /**
@@ -321,6 +443,41 @@ export function writerObservationAnchors(input: {
   return anchors;
 }
 
+export type ReinstateStep = 'reinstated' | 'reinstate-refused' | 'nothing-to-reinstate';
+
+/**
+ * What `--reinstate-retired-bodies` does with one row. A body the writer retired only
+ * because a later draft was refused comes back when, judged against today's evidence by
+ * the same content arms, it would not be retired under the refusal rule now in force.
+ * A row that already serves a live written body is left alone, and so is one whose
+ * retired body no longer clears the arms. No model is called.
+ */
+export function reinstateStepFor(input: {
+  liveBody: string | undefined;
+  retiredBody: string | undefined;
+  retiredBodyStillSupported: boolean;
+}): ReinstateStep {
+  if (input.liveBody || !input.retiredBody) return 'nothing-to-reinstate';
+  return input.retiredBodyStillSupported ? 'reinstated' : 'reinstate-refused';
+}
+
+/** The newest live body this lane wrote for the row, from observations already read. */
+export function liveWrittenBody(
+  observations: ReadonlyArray<CoverageObservationLike & { observedAt?: Date }>,
+  sourceName: string,
+): string | undefined {
+  const bodies = observations
+    .filter(
+      (obs) =>
+        obs.sourceName === sourceName &&
+        obs.field === 'fullDescription' &&
+        typeof obs.value === 'string' &&
+        obs.value.trim().length > 0,
+    )
+    .sort((a, b) => (b.observedAt?.getTime() ?? 0) - (a.observedAt?.getTime() ?? 0));
+  return bodies[0]?.value as string | undefined;
+}
+
 export function storedWriterEvidenceHash(
   observations: ReadonlyArray<CoverageObservationLike & { observedAt?: Date }>,
   sourceName: string,
@@ -339,12 +496,68 @@ export function storedWriterEvidenceHash(
 /**
  * The rows whose card the written-body card defect left unservable: live, serving the
  * written body, and held on `missing_card_description`. `--rederive-cards` re-projects
- * only these, and calls the writer model for none of them.
+ * only these, and calls the writer model for none of them; with `--all` it re-projects
+ * every live row serving the written body, which is how a card rule change reaches them.
  */
-export function writtenBodyCardRepairFilter(sourceName: string): Record<string, unknown> {
+export function writtenBodyCardRepairFilter(
+  sourceName: string,
+  options: { allWrittenRows?: boolean } = {},
+): Record<string, unknown> {
   return {
     archived: { $ne: true },
     'fieldProvenance.fullDescription.sourceName': sourceName,
-    studentVisibilityReasons: 'missing_card_description',
+    ...(options.allWrittenRows ? {} : { studentVisibilityReasons: 'missing_card_description' }),
   };
+}
+
+/**
+ * The one model lane whose values are admitted as writer evidence, and only for the
+ * field it verifies: before storing a `fullDescription` it requires every sentence of
+ * four or more words to be present in the fetched page text (`groundDescriptionExtraction`,
+ * landed in #528). Its `shortDescription` can be a synthesized card, so it is not admitted.
+ */
+export const INGEST_VERIFIED_EXTRACTION_SOURCE = 'lab-microsite-description-llm';
+export const INGEST_VERIFIED_EXTRACTION_FIELDS: ReadonlySet<string> = new Set(['fullDescription']);
+/** When the ingest check reached the lane (#528 merged to beta), so earlier runs were not verified. */
+export const PAGE_GROUNDING_VERIFIED_SINCE = new Date('2026-08-22T19:15:50Z');
+
+interface RecordedRunLike {
+  _id: unknown;
+  sourceName?: unknown;
+  startedAt?: unknown;
+  invalidated?: unknown;
+}
+
+/**
+ * The recorded runs of the extraction lane that ran with the ingest check. A run id is
+ * the durable per-observation marker: the lane's own runs are recorded in `scrape_runs`,
+ * while the description backfill script stores rewrites and syntheses under the same
+ * source name with a fresh run id it never records, so its values match no run here.
+ */
+export function ingestVerifiedRunIds(runs: readonly RecordedRunLike[]): Set<string> {
+  return new Set(
+    runs
+      .filter((run) => {
+        if (run.sourceName !== INGEST_VERIFIED_EXTRACTION_SOURCE) return false;
+        if (run.invalidated === true) return false;
+        const started = grantTime(run.startedAt);
+        return started !== undefined && started >= PAGE_GROUNDING_VERIFIED_SINCE.getTime();
+      })
+      .map((run) => String(run._id)),
+  );
+}
+
+export function markIngestVerifiedObservations<T extends CoverageObservationLike>(
+  observations: readonly T[],
+  verifiedRunIds: ReadonlySet<string>,
+): T[] {
+  return observations.map((obs) =>
+    obs.sourceName === INGEST_VERIFIED_EXTRACTION_SOURCE &&
+    INGEST_VERIFIED_EXTRACTION_FIELDS.has(obs.field) &&
+    obs.scrapeRunId !== undefined &&
+    obs.scrapeRunId !== null &&
+    verifiedRunIds.has(String(obs.scrapeRunId))
+      ? { ...obs, ingestVerifiedAgainstPage: true }
+      : { ...obs, ingestVerifiedAgainstPage: false },
+  );
 }

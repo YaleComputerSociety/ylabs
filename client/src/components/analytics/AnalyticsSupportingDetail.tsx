@@ -577,19 +577,6 @@ const AnalyticsSupportingDetail = ({
               </p>
             </div>
             <div className="p-4">
-              <div className="mb-4 rounded-md bg-[var(--yr-blue-soft)] p-3">
-                <p className="text-sm text-brand">Official next-step rate</p>
-                <p className="yr-num text-2xl font-semibold text-brand-navy">
-                  {funnel && funnel.overallConversionRate === null
-                    ? 'not recorded'
-                    : formatPercent(funnel?.overallConversionRate ?? undefined)}
-                </p>
-                <p className="mt-1 text-xs text-brand">
-                  {funnel && funnel.overallConversionRate === null
-                    ? 'No qualified-action event reached the store, so this is unmeasured rather than zero.'
-                    : 'Students reaching an official next step, as a share of logged-in students.'}
-                </p>
-              </div>
               <BarChart
                 ariaLabel="Student action counts"
                 emptyMessage="No student actions returned."

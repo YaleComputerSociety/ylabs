@@ -159,6 +159,42 @@ export async function applyRoleEdgeSettlements(
   return counts;
 }
 
+export interface DisputedRoleEdgeDetachment {
+  edgeId: string;
+  archivedEntityId: string;
+  reviewNotes: string;
+}
+
+// Detached rather than ended: `HISTORICAL` would record a past lead the operator rejected,
+// and only `DISPUTED` stops `roleAssignmentReattachWrite` reviving the edge on re-observation.
+export async function applyDisputedRoleEdgeDetachments(
+  detachments: readonly DisputedRoleEdgeDetachment[],
+): Promise<number> {
+  let detached = 0;
+  for (const detachment of detachments) {
+    const edgeId = objectIdOf(detachment.edgeId);
+    const archivedEntityId = objectIdOf(detachment.archivedEntityId);
+    if (!edgeId || !archivedEntityId) continue;
+    const result = await RoleAssignment.updateOne(
+      {
+        _id: edgeId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': archivedEntityId,
+        ...LIVE_ROLE_EDGE_FILTER,
+      },
+      {
+        $set: {
+          archived: true,
+          reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+          reviewNotes: detachment.reviewNotes,
+        },
+      },
+    );
+    detached += result.modifiedCount ?? 0;
+  }
+  return detached;
+}
+
 // Only rows that are archived, so an archive write that matched nothing cannot end the
 // edges of a row that is still live.
 export async function loadLiveRoleEdgesOnArchivedEntities(

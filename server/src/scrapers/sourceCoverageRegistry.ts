@@ -76,6 +76,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
+  'roster-bio-research-evidence': {
+    priority: 2,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Reads the roster lane's stored profile biographies, keeps the present-tense research sentences of people whose title can host a student's research, and mints a faculty-research row with those sentences as writer evidence. Refuses past research, CV records, clinical-service and teaching-only sentences, students, trainees, staff, and anyone the corpus already covers by profile URL, person key, or name.",
+  },
   'directory-alias-resolution': {
     priority: 2,
     tier: 'DERIVED_OFFICIAL',
@@ -401,6 +410,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Yale's comprehensive officially-curated student funding catalog (studentgrants.yale.edu -> yale.communityforce.com). Browsing/detail is public; only applying requires login. Enumerates each fund from the rendered (headless) fund search and cites the fund's own /Funds/FundDetails.aspx page - never the search/index root (#516/#549). Fails closed when the rendered fetcher is disabled or the catalog degrades to a login/auth shell; contact is fail-closed (sponsoring org only, no scraped emails). Funds already linked from public fellowship pages merge via the record-specific application-link dedupe rather than duplicating. Runs in the fellowship sweep as an official Yale source.",
   },
+  'program-official-page': {
+    priority: 4,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Fellowship', 'Observation'],
+    evidenceCategories: ['FELLOWSHIP_COMPATIBILITY'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Backs a Yale fellowship database program's official page as its sourceUrl with an observation, so the citation is evidence rather than a stored value no lane reads (#4601). The page is cited only when it names the fund; a page that does not records a withdrawal, a confirmed gone page withdraws it through lanePageHealth, and an official page no observation backs loses to the fund page on resolve.",
+  },
   'nih-reporter': {
     priority: 6,
     tier: 'THIRD_PARTY_ENRICHMENT',
@@ -445,6 +463,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'MEDIUM',
     notes:
       'DOE physical-sciences funding activity via OSTI technical reports; enriches entity context but is not undergraduate-access evidence alone.',
+  },
+  'doe-science-awards': {
+    priority: 6,
+    tier: 'THIRD_PARTY_ENRICHMENT',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'DOE Office of Science awards from the PAMS public award search, which names the PI on every award; enriches entity context but is not undergraduate-access evidence alone.',
   },
   'grant-corpus-synthesis-llm': {
     priority: 7,

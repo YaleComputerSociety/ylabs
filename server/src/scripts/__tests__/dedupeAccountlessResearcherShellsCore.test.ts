@@ -13,6 +13,7 @@ import {
   shellProfileLinkKindsReleasedWith,
   buildVerifiedPrimaryProfileIndex,
   planAccountlessClusterFolds,
+  resolveFinalMergeTargets,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -28,9 +29,15 @@ describe('normalizeResearcherName', () => {
 
 describe('researcherIdentityTier', () => {
   it('ranks an account link above a netid and a netid above a bare name', () => {
-    expect(researcherIdentityTier({ accountId: 'account-1', netid: 'ab12' })).toBe('ACCOUNT');
+    expect(researcherIdentityTier({ accountId: 'account-1', netid: 'ab12' })).toBe('DIRECTORY');
     expect(researcherIdentityTier({ netid: 'ab12' })).toBe('NETID');
     expect(researcherIdentityTier({})).toBe('NAME_ONLY');
+  });
+
+  it('ranks a researcher holding its own directory email as directory-backed with no account', () => {
+    expect(researcherIdentityTier({ email: 'ab12@example.test', netid: 'ab12' })).toBe('DIRECTORY');
+    expect(researcherIdentityTier({ email: 'ab12@example.test' })).toBe('DIRECTORY');
+    expect(researcherIdentityTier({ email: '   ', netid: 'ab12' })).toBe('NETID');
   });
 
   it('treats a blank or non-string netid as no identity at all', () => {
@@ -429,10 +436,70 @@ describe('decideShellMerge verified-profile arm', () => {
     });
   });
 
-  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])('ignores a link whose health is %s', (status) => {
+  it('folds into a directory record that holds its own email and links no account', () => {
+    const directoryRecord = account({
+      accountId: undefined,
+      email: 'sample.fixture@example.test',
+      netid: 'sf1',
+    });
+    expect(decide(shell(), [directoryRecord])).toEqual({
+      merge: true,
+      canonicalId: 'c'.repeat(24),
+      reason: 'MERGEABLE',
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it('does not fold into a record that holds only a netid', () => {
+    const netidRecord = account({ accountId: undefined, netid: 'sf1' });
+    expect(decide(shell(), [netidRecord]).reason).toBe('NO_CANONICAL');
+  });
+
+  it.each(['UNKNOWN', 'UNAVAILABLE', undefined])(
+    'ignores an account link whose health is %s',
+    (status) => {
+      const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
+      expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+    },
+  );
+
+  it.each(['UNAVAILABLE', undefined])('ignores a shell link whose health is %s', (status) => {
     const unhealthy = verified(page).map((link) => ({ ...link, healthStatus: status }));
     expect(decide(shell({ profileLinks: unhealthy }), [account()]).reason).toBe('NO_CANONICAL');
-    expect(decide(shell(), [account({ profileLinks: unhealthy })]).reason).toBe('NO_CANONICAL');
+  });
+
+  it('lets an unprobed shell link borrow the account copy of the same page (#4920)', () => {
+    const unprobed = verified(page).map((link) => ({ ...link, healthStatus: 'UNKNOWN' }));
+    expect(decide(shell({ profileLinks: unprobed }), [account()])).toMatchObject({
+      merge: true,
+      matchedOn: 'verified-profile',
+    });
+  });
+
+  it.each([
+    ['Sam Fixture', 'Sam Fixture-Sample'],
+    ['Sam Fixture-Sample', 'Sam Fixture'],
+    ['Sam Fixture', 'Sam Fixture Sample'],
+    ['Sam Fixture', 'Samuel Fixture Sample'],
+    ['Lee Fixture', 'Ana-Lee Fixture Sample'],
+    ['Sam Fíxture', 'Sam Fixture Sample'],
+  ])('accepts a compound surname that contains the other (%s, %s)', (shellName, accountName) => {
+    expect(
+      decide(shell({ displayName: shellName }), [account({ displayName: accountName })]),
+    ).toMatchObject({ merge: true, matchedOn: 'verified-profile' });
+  });
+
+  it.each([
+    ['Sam Alpha-Fixture', 'Sam Beta-Fixture'],
+    ['Sam Alpha Fixture', 'Sam Fixture Beta'],
+    ['Sam Fixture Beta', 'Sam Alpha Fixture'],
+    ['Sam Fixture', 'Kim Fixture Sample'],
+    ['Sam Fixture', 'Fixture Sample'],
+    ['Sam Other', 'Sam Fixture Sample'],
+  ])('still refuses surnames that do not agree (%s, %s)', (shellName, accountName) => {
+    expect(
+      decide(shell({ displayName: shellName }), [account({ displayName: accountName })]).reason,
+    ).toBe('NO_CANONICAL');
   });
 
   it('ignores a non-primary link', () => {
@@ -619,6 +686,35 @@ describe('planAccountlessClusterFolds', () => {
     ).toBe(1);
   });
 
+  it('groups an unprobed copy of a page another record holds healthy (#4920)', () => {
+    const unprobed = page(13).map((link) => ({ ...link, healthStatus: 'UNKNOWN' }));
+    const grouped = planAccountlessClusterFolds(
+      [
+        member('29', { profileLinks: page(13), liveRoleEdges: 1 }),
+        member('30', { profileLinks: unprobed, displayName: 'Sam Fixture Jr.' }),
+      ],
+      [],
+    );
+    expect(grouped.foldTargetById.get('30'.padStart(24, '0'))).toBe('29'.padStart(24, '0'));
+    const nobodyProbed = planAccountlessClusterFolds(
+      [member('31', { profileLinks: unprobed }), member('32', { profileLinks: unprobed })],
+      [],
+    );
+    expect(nobodyProbed.groups).toBe(0);
+  });
+
+  it('folds a group whose surnames differ only by a compound part (#4920)', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('33', { profileLinks: page(14), displayName: 'Sam Fixture' }),
+        member('34', { profileLinks: page(14), displayName: 'Sam Fixture-Sample' }),
+      ],
+      [],
+    );
+    expect(plan.refusedGroups.SURNAME_CONFLICT).toBe(0);
+    expect(plan.foldedGroups).toBe(1);
+  });
+
   it('joins nobody on a page or name a record outside the group also holds', () => {
     expect(
       planAccountlessClusterFolds(
@@ -635,5 +731,174 @@ describe('planAccountlessClusterFolds', () => {
         [{ displayName: 'Sam Fixture' }],
       ).groups,
     ).toBe(0);
+  });
+});
+
+describe('decideShellMerge shared-row fold (#4911)', () => {
+  const account = (id: string, displayName: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName,
+    tier: 'DIRECTORY' as const,
+    ...extra,
+  });
+  const decide = (shell: Record<string, unknown>, candidates: ReturnType<typeof account>[]) =>
+    decideShellMerge({ id: 'shell', ...shell }, new Map(), new Map(), [], new Map(), candidates);
+
+  it('folds a shell spelled with a middle initial into the account on the same row', () => {
+    expect(
+      decide({ displayName: 'Avery Q. Placeholder' }, [account('acct', 'Avery Placeholder')]),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'acct',
+      reason: 'MERGEABLE',
+      matchedOn: 'shared-row',
+    });
+  });
+
+  it('does not fold a different given name on the same row', () => {
+    expect(
+      decide({ displayName: 'Morgan Placeholder' }, [account('acct', 'Avery Placeholder')]),
+    ).toEqual({
+      merge: false,
+      reason: 'NO_CANONICAL',
+    });
+  });
+
+  it('refuses two agreeing records on the row', () => {
+    expect(
+      decide({ displayName: 'Avery Placeholder' }, [
+        account('acct-1', 'Avery Placeholder'),
+        account('acct-2', 'Avery Q. Placeholder'),
+      ]),
+    ).toEqual({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'shared-row' });
+  });
+
+  it('folds into the account when a weaker netid record on the row also agrees', () => {
+    expect(
+      decideShellMerge(
+        { id: 'shell', displayName: 'Avery Placeholder' },
+        new Map(),
+        new Map(),
+        [],
+        new Map(),
+        [
+          { id: 'netid-record', displayName: 'Avery Q. Placeholder', tier: 'NETID' },
+          account('acct', 'Avery Placeholder'),
+        ],
+      ),
+    ).toEqual({
+      merge: true,
+      canonicalId: 'acct',
+      reason: 'MERGEABLE',
+      matchedOn: 'shared-row',
+    });
+  });
+
+  it('refuses a conflicting ORCID and a professor folded onto a trainee', () => {
+    expect(
+      decide({ displayName: 'Avery Placeholder', orcid: '0000-0000-0000-0028' }, [
+        account('acct', 'Avery Placeholder', { orcid: '0000-0000-0000-0036' }),
+      ]),
+    ).toEqual({ merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' });
+    expect(
+      decide({ displayName: 'Avery Placeholder', title: 'Postdoctoral Associate' }, [
+        account('acct', 'Avery Placeholder', { title: 'Professor of Synthetic Studies' }),
+      ]).merge,
+    ).toBe(false);
+  });
+
+  it('never folds a record into one that does not outrank it', () => {
+    expect(
+      decide({ displayName: 'Avery Placeholder', accountId: 'a' }, [
+        account('acct', 'Avery Placeholder'),
+      ]),
+    ).toEqual({ merge: false, reason: 'NO_CANONICAL' });
+  });
+});
+
+describe('resolveFinalMergeTargets', () => {
+  it('follows a fold onto a record that is itself folded to the surviving record', () => {
+    expect(
+      resolveFinalMergeTargets(
+        new Map([
+          ['name-shell', 'netid-record'],
+          ['netid-record', 'acct'],
+          ['other-shell', 'acct'],
+        ]),
+      ),
+    ).toEqual(
+      new Map([
+        ['name-shell', 'acct'],
+        ['netid-record', 'acct'],
+        ['other-shell', 'acct'],
+      ]),
+    );
+  });
+});
+
+describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
+  const member = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName: 'Avery Placeholder',
+    liveRoleEdges: 1,
+    ...extra,
+  });
+
+  it('groups two same-name records on the same live row even when one has no department', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('a', { primaryDepartment: 'Synthetic Studies', liveRowIds: ['row-1'] }),
+        member('b', { liveRowIds: ['row-1'] }),
+      ],
+      [],
+    );
+    expect(plan.foldedGroups).toBe(1);
+    expect(plan.foldTargetById.size).toBe(1);
+  });
+
+  it('does not group same-name records that share no row and no department', () => {
+    const plan = planAccountlessClusterFolds(
+      [member('a', { liveRowIds: ['row-1'] }), member('b', { liveRowIds: ['row-2'] })],
+      [],
+    );
+    expect(plan.groups).toBe(0);
+  });
+
+  it('keys nothing on a name a stronger record already holds', () => {
+    const plan = planAccountlessClusterFolds(
+      [member('a', { liveRowIds: ['row-1'] }), member('b', { liveRowIds: ['row-1'] })],
+      [{ displayName: 'Avery Placeholder' }],
+    );
+    expect(plan.groups).toBe(0);
+  });
+
+  it('still refuses a shared-row group whose records carry two different ORCIDs', () => {
+    const plan = planAccountlessClusterFolds(
+      [
+        member('a', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0028' }),
+        member('b', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0036' }),
+      ],
+      [],
+    );
+    expect(plan.refusedGroups.ORCID_CONFLICT).toBe(1);
+    expect(plan.foldTargetById.size).toBe(0);
+  });
+});
+
+describe('sameAddressHolderNamesAgree', () => {
+  it('agrees on a middle-initial form, an initial-led form and a compound surname of one name', async () => {
+    const { sameAddressHolderNamesAgree } =
+      await import('../dedupeAccountlessResearcherShellsCore');
+    expect(sameAddressHolderNamesAgree('Robin Q. Example', 'R Robin Example')).toBe(true);
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Example Sample')).toBe(true);
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Example')).toBe(true);
+  });
+
+  it('disagrees on two people who share only a surname or only a given name', async () => {
+    const { sameAddressHolderNamesAgree } =
+      await import('../dedupeAccountlessResearcherShellsCore');
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Casey Example')).toBe(false);
+    expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Sample')).toBe(false);
+    expect(sameAddressHolderNamesAgree('Robin', 'Robin Example')).toBe(false);
   });
 });

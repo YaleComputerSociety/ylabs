@@ -1506,3 +1506,57 @@ describe('a roster member profile link is latest-wins only on a roster member (#
     );
   });
 });
+
+describe('collapseLatestWins on a profile-linked home retyped by a re-read (#4884)', () => {
+  const typing = (sourceName: string, field: string, value: string, observedAt: string) => ({
+    field,
+    sourceName,
+    observedAt: new Date(observedAt),
+    value,
+  });
+
+  it('keeps only the newest profile-backfill typing so earlier reads cannot outvote it', () => {
+    const observations = [
+      typing('official-profile-pi-backfill', 'entityType', 'LAB', '2026-06-05T00:00:00.000Z'),
+      typing('official-profile-pi-backfill', 'kind', 'lab', '2026-06-05T00:00:00.000Z'),
+      typing('official-profile-pi-backfill', 'entityType', 'LAB', '2026-10-04T00:00:00.000Z'),
+      typing(
+        'official-profile-pi-backfill',
+        'entityType',
+        'INITIATIVE',
+        '2026-10-05T00:00:00.000Z',
+      ),
+      typing('official-profile-pi-backfill', 'kind', 'initiative', '2026-10-05T00:00:00.000Z'),
+      typing('ysm-faculty-directory', 'entityType', 'LAB', '2026-10-04T00:00:00.000Z'),
+    ];
+
+    const collapsed = collapseLatestWins(observations, 'researchEntity');
+
+    expect(
+      collapsed
+        .filter((observation) => observation.sourceName === 'official-profile-pi-backfill')
+        .map((observation) => [observation.field, observation.value])
+        .sort(),
+    ).toEqual([
+      ['entityType', 'INITIATIVE'],
+      ['kind', 'initiative'],
+    ]);
+    expect(
+      collapsed.filter((observation) => observation.sourceName === 'ysm-faculty-directory'),
+    ).toHaveLength(1);
+  });
+
+  it('keeps every typing another source states, since it is not latest-wins there', () => {
+    const observations = [
+      typing('ysm-faculty-directory', 'entityType', 'LAB', '2026-09-24T00:00:00.000Z'),
+      typing(
+        'ysm-faculty-directory',
+        'entityType',
+        'FACULTY_RESEARCH_AREA',
+        '2026-10-04T00:00:00.000Z',
+      ),
+    ];
+
+    expect(collapseLatestWins(observations, 'researchEntity')).toHaveLength(2);
+  });
+});

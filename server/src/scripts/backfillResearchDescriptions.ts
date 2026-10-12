@@ -56,6 +56,7 @@
  * production blocked.
  */
 import axios from 'axios';
+import { withSynthesisFidelityRules } from '../scrapers/prompts';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -296,8 +297,9 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
       messages: [
         {
           role: 'system',
-          content:
+          content: withSynthesisFidelityRules(
             'You rewrite the RESEARCH content found in an official Yale source bio into a concise third-person research description. Use ONLY facts present in the source text. Describe what the person/lab STUDIES (topics, methods, questions). Do NOT include biography, training, degrees, titles, awards, or contact info. Do NOT invent topics. If the source contains no research focus, return empty strings.',
+          ),
         },
         {
           role: 'user',

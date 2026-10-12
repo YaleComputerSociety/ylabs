@@ -27,6 +27,7 @@ export type LaneBenchmarkChange =
 export interface LaneBenchmarkTrend {
   benchmarkId: string;
   sourceName: string;
+  supersedes?: string | null;
   runs: number;
   latest: LaneBenchmarkRun;
   previous: LaneBenchmarkRun | null;
@@ -60,12 +61,21 @@ export interface EngineBenchmarkTrend {
 
 export interface EngineBenchmarkResponse {
   benchmarks: EngineBenchmarkTrend[];
+  oneOffBenchmarkCount?: number;
   measurementCollection: string;
   refreshCommand: string;
 }
 
+export interface LaneBenchmarkAwaitingReplay {
+  benchmarkId: string;
+  sourceName: string;
+  supersedes: string | null;
+}
+
 export interface LaneBenchmarkResponse {
   benchmarks: LaneBenchmarkTrend[];
+  awaitingReplay?: LaneBenchmarkAwaitingReplay[];
+  supersededCount?: number;
   measurementCollection: string;
   refreshCommand: string;
   engine?: EngineBenchmarkResponse;

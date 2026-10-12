@@ -8,6 +8,21 @@ import { Fellowship } from '../models/fellowship';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import type {
+  ResolverBreakerStats,
+  ResolverCircuitBreaker,
+  ResolverControlProbe,
+} from '../scrapers/utils/resolverCircuitBreaker';
+import type { HostSlotLimiter, HostThrottle } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  createSourceLinkResolverBreaker,
+  DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY,
+  DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,
+  describeResolverBreakerStats,
+  measuredHostBudget,
+  noteStoredSourceLinkVerdicts,
+  probeUncachedUrlsByHost,
+} from './backfillSourceLinkHealth';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,6 +110,7 @@ export interface FellowshipSourceLinkHealthBackfillResult {
   checked: number;
   updated: number;
   errors: number;
+  resolver: ResolverBreakerStats;
   byStatus: Record<string, number>;
   samples: Array<{
     id: string;
@@ -108,13 +124,26 @@ export interface FellowshipSourceLinkHealthBackfillResult {
 export async function runFellowshipSourceLinkHealthBackfill(options: {
   dryRun: boolean;
   limit?: number;
-  checkLink?: (url: string) => Promise<SourceLinkHealth>;
+  checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
+  hostConcurrency?: number;
+  paceDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  resolverBreaker?: ResolverCircuitBreaker;
+  resolverControlProbe?: ResolverControlProbe;
+  hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<FellowshipSourceLinkHealthBackfillResult> {
   const checkLink = options.checkLink ?? checkSourceLinkHealth;
-  const fellowships = await Fellowship.find(
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const resolverBreaker = createSourceLinkResolverBreaker({
+    resolverBreaker: options.resolverBreaker,
+    resolverControlProbe: options.resolverControlProbe,
+    sleep,
+  });
+  const fellowships = (await Fellowship.find(
     { archived: { $ne: true } },
-    { _id: 1, title: 1, sourceUrl: 1 },
-  ).lean();
+    { _id: 1, title: 1, sourceUrl: 1, sourceLinkHealth: 1 },
+  ).lean()) as Array<Record<string, unknown>>;
 
   const result: FellowshipSourceLinkHealthBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -122,24 +151,42 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
     checked: 0,
     updated: 0,
     errors: 0,
+    resolver: resolverBreaker.stats,
     byStatus: {},
     samples: [],
   };
 
-  const healthCache = new Map<string, SourceLinkHealth>();
-
-  for (const fellowship of fellowships as Array<Record<string, unknown>>) {
+  const planned: Array<{ fellowship: Record<string, unknown>; url: string }> = [];
+  for (const fellowship of fellowships) {
     if (options.limit && result.scanned >= options.limit) break;
     result.scanned += 1;
     const url = normalizeFellowshipSourceUrl(fellowship.sourceUrl);
     if (!url) continue;
+    noteStoredSourceLinkVerdicts(resolverBreaker, [fellowship.sourceLinkHealth]);
+    planned.push({ fellowship, url });
+  }
+
+  // Every probe settles before any write, so a resolver outage throws here and
+  // leaves every stored program verdict untouched (#4882).
+  const healthCache = new Map<string, SourceLinkHealth>();
+  await probeUncachedUrlsByHost(
+    planned.map(({ url }) => url),
+    healthCache,
+    {
+      checkLink,
+      hostConcurrency: options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY,
+      paceDelayMs: options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,
+      sleep,
+      result,
+      resolverBreaker,
+      hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+    },
+  );
+
+  for (const { fellowship, url } of planned) {
+    const health = healthCache.get(url);
+    if (!health) continue;
     try {
-      let health = healthCache.get(url);
-      if (!health) {
-        health = await checkLink(url);
-        healthCache.set(url, health);
-        result.checked += 1;
-      }
       result.byStatus[health.healthStatus] = (result.byStatus[health.healthStatus] ?? 0) + 1;
       const sourceLinkHealth = {
         url,
@@ -172,6 +219,7 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
       );
     }
   }
+  result.resolver = resolverBreaker.stats;
   return result;
 }
 
@@ -209,6 +257,7 @@ async function main(): Promise<void> {
       console.log(`Saved fellowship source-link-health backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
+    console.log(describeResolverBreakerStats(result.resolver));
   } finally {
     await mongoose.disconnect();
   }

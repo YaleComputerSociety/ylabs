@@ -32,6 +32,7 @@ import {
   researchStatementSentences,
   splitDescriptionSentences,
 } from '../utils/careerBiographyDescription';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
@@ -225,7 +226,8 @@ function researchSentencesOfCurriculumVitaeBody(
     readsAs(isCredentialOrAwardLeadBiography) ||
     readsAs(isCredentialOrTitleLeadBiography) ||
     readsAs(isPersonBiographyOrAdvisingDescription) ||
-    readsAs(opensOnTeachingAppointment);
+    readsAs(opensOnTeachingAppointment) ||
+    readsAs(isBiographyRatherThanResearch);
   if (!curriculumVitae && !biography) return '';
   const research = researchStatementSentences(body, {
     activityAnchors: curriculumVitae || careerBiography,
@@ -570,18 +572,28 @@ const isResearchFocusSentenceOutsideTheRecord = (sentence: string): boolean =>
   !isTeachingOrPastTraineeSentence(sentence) &&
   !CITATION_LIKE_CARD.test(sentence);
 
-function isResearchlessBiographyBody(entity: Record<string, any>, body: string): boolean {
+const readsAsHeldBiography = (body: string): boolean =>
+  isCurriculumVitaeShapedBody(body) ||
+  opensOnCareerFact(body) ||
+  isCredentialOrAwardLeadBiography(body) ||
+  isCredentialOrTitleLeadBiography(body) ||
+  isPersonBiographyOrAdvisingDescription(body) ||
+  isBibliographicCitationBody(body) ||
+  isTeachingOrPastTraineeWorkBody(body);
+
+// The narrower test keeps `biography_without_research` on the shapes it was measured on;
+// a body only `isBiographyRatherThanResearch` flags is held under its own reason.
+const readsAsBiographyACardMayReplace = (body: string): boolean =>
+  readsAsHeldBiography(body) || isBiographyRatherThanResearch(body);
+
+function isResearchlessBiographyBody(
+  entity: Record<string, any>,
+  body: string,
+  readsAsBiography: (body: string) => boolean,
+): boolean {
   if (!isFacultyResearchTextEntity(entity) && !isLabResearchTextEntity(entity)) return false;
   if (!body) return false;
-  const biography =
-    isCurriculumVitaeShapedBody(body) ||
-    opensOnCareerFact(body) ||
-    isCredentialOrAwardLeadBiography(body) ||
-    isCredentialOrTitleLeadBiography(body) ||
-    isPersonBiographyOrAdvisingDescription(body) ||
-    isBibliographicCitationBody(body) ||
-    isTeachingOrPastTraineeWorkBody(body);
-  if (!biography) return false;
+  if (!readsAsBiography(body)) return false;
   // Owner decision 2026-10-03 (#4519): an arts faculty member's practice biography is
   // served and labelled creative practice, never withheld for stating no research.
   if (decideCreativePractice({ ...entity, fullDescription: body }).creativePractice) return false;
@@ -595,7 +607,9 @@ function cardServedInPlaceOfAResearchlessBiography(
   representation: ResearchEntityPublicDescriptionRepresentation,
 ): string {
   const body = textValue(representation.entity.fullDescription);
-  if (!isResearchlessBiographyBody(representation.entity, body)) return '';
+  if (!isResearchlessBiographyBody(representation.entity, body, readsAsBiographyACardMayReplace)) {
+    return '';
+  }
   // A citation's title words read as a research focus sentence, but the whole body is one
   // bibliography entry, so none of its sentences is research prose outside the record.
   if (
@@ -617,14 +631,43 @@ function cardServedInPlaceOfAResearchlessBiography(
 export function servedBodyIsBiographyWithoutResearch(
   representation: ResearchEntityPublicDescriptionRepresentation,
 ): boolean {
+  return servedBodyStatesNoResearch(representation, readsAsHeldBiography, statesResearchFocus);
+}
+
+/**
+ * A person-scoped row whose served body, after the narrowing and card substitution
+ * above, is still a career biography by `isBiographyRatherThanResearch` and states no
+ * research anywhere on the row: no research sentence in the body and no card that
+ * states the research. Such a row has no research description to serve, so it is held
+ * until research evidence exists (owner decision, 2026-10-11, #4928).
+ */
+export function servedBodyIsCareerBiographyWithoutResearch(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  return servedBodyStatesNoResearch(
+    representation,
+    isBiographyRatherThanResearch,
+    statesResearchFocusRatherThanCareer,
+  );
+}
+
+const statesResearchFocus = (sentence: string): boolean =>
+  describesResearchFocus(sentence) && !isTeachingOrPastTraineeSentence(sentence);
+
+// The focus test reads a service or appointment sentence as research because it names
+// fields ("Associate Editor at the Review of ..."). Reading the sentence with the
+// biography detector itself drops those and keeps every research sentence measured on
+// the Development cohort (#4928).
+const statesResearchFocusRatherThanCareer = (sentence: string): boolean =>
+  statesResearchFocus(sentence) && !isBiographyRatherThanResearch(sentence);
+
+function servedBodyStatesNoResearch(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+  readsAsBiography: (body: string) => boolean,
+  sentenceStatesResearch: (sentence: string) => boolean,
+): boolean {
   const body = textValue(representation.entity.fullDescription);
-  if (!isResearchlessBiographyBody(representation.entity, body)) return false;
-  if (
-    splitDescriptionSentences(body).some(
-      (sentence) => describesResearchFocus(sentence) && !isTeachingOrPastTraineeSentence(sentence),
-    )
-  ) {
-    return false;
-  }
+  if (!isResearchlessBiographyBody(representation.entity, body, readsAsBiography)) return false;
+  if (splitDescriptionSentences(body).some(sentenceStatesResearch)) return false;
   return !cardStatesResearchItself(representation.servedCard);
 }

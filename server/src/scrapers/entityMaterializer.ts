@@ -6,6 +6,10 @@
  * entityKey, e.g. netid).
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
+import {
+  isProfileTemplateChrome,
+  withoutProfileTemplateWidgets,
+} from '../utils/profileTemplateChrome';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -57,6 +61,7 @@ import {
   isHighConfidencePersonBio,
 } from '../utils/researchHomeDescriptionSelection';
 import {
+  isWeakCardLine,
   cardLineFitsBrowseCard,
   CARD_SYNTHESIS_MODEL,
   cardGroundingScore,
@@ -84,6 +89,7 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   namesAScholarlyEventSeries,
+  personScopedNameIsACampusBuilding,
   facultyResearchNameFromUnassertedLabSuffix,
   labResearchEntityNameFromStaleFacultyResearchSuffix,
   personScopedResearchEntityNameFromLeadPersonName,
@@ -91,6 +97,7 @@ import {
   personScopedResearchEntityNameNamesSomethingElse,
   personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
+  isOffSitePageTitleForPersonScopedName,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -167,6 +174,8 @@ import {
   YALE_FELLOWSHIP_DATABASE_SOURCE,
   fellowshipAbsenceClearWithheldBySourcePrecedence,
   fellowshipFieldsWithheldBySourcePrecedence,
+  storedFellowshipSourceUrlIsUnbacked,
+  isWithdrawnFellowshipCitation,
   newestFundTitle,
 } from './fellowshipSourcePrecedence';
 import {
@@ -229,6 +238,7 @@ import {
 import { planRetiredEvidenceFieldClears } from './retiredEvidenceFieldClear';
 import {
   planCollectivePageStoredDescriptionClears,
+  planProfileTemplateChromeStoredDescriptionClears,
   planRefusedStoredDescriptionClears,
 } from './refusedStoredDescription';
 import {
@@ -242,6 +252,12 @@ import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacte
 import { stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
+import { isModelTextSource } from './sourceCoverageRegistry';
+import {
+  statesPersonalPastFraming,
+  restatesPastFramedEvidence,
+} from './utils/extractedDescriptionScope';
 import {
   isResearchAreaEchoDescription,
   isStudiesResearchAreaEchoDescription,
@@ -410,8 +426,9 @@ interface MaterializeOptions {
   dryRun?: boolean;
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
-  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  synthesizeCardDescription?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
+  resynthesizeWeakCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
   /**
@@ -476,15 +493,21 @@ interface MaterializeOptions {
   nameIdentityAuthority?: ResearchEntityNameIdentityAuthority;
 }
 
+export type CardSynthesizer = (
+  fullDescription: string,
+  evidenceTexts?: readonly string[],
+) => Promise<string>;
+
 export function defaultMaterializerCardSynthesizer(
   entityName: string,
   model: string = CARD_SYNTHESIS_MODEL,
-): (fullDescription: string) => Promise<string> {
+): CardSynthesizer {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) return () => Promise.resolve('');
-  return (fullDescription) =>
+  return (fullDescription, evidenceTexts) =>
     synthesizeGroundedCardDescription({
       fullDescription,
+      evidenceTexts,
       entityName,
       callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
     });
@@ -556,6 +579,12 @@ export interface MaterializedShortDescriptionInput {
    * `resolveGroundedCardDescription` falls back to.
    */
   reconsiderCurrentShortDescription?: boolean;
+  /**
+   * A repair pass's test for a card that clears the bar but does not say what is studied
+   * (`isWeakCardLine`). Set only by `--resynthesize-weak-cards`; a weak current
+   * card is then reconsidered and replaced only by a line that shows whole and is not weak.
+   */
+  weakCard?: (card: string) => boolean;
   /**
    * Lets a stored card that clears the bar but is cut on the browse card reach card
    * synthesis. Off by default because a synthesis that yields no fitting line writes
@@ -661,12 +690,90 @@ export function isAcceptableWrittenBodyCard(input: {
   researchAreas: unknown;
   servingBarAccepts: (card: string) => boolean;
   requireGrounding: boolean;
+  evidenceTexts?: readonly string[];
 }): boolean {
   return (
     !isRefusedWrittenBodyCard(input.card, input.body, input.researchAreas) &&
+    withoutUnsupportedMethodClauses(input.card, [input.body, ...(input.evidenceTexts ?? [])])
+      .stripped === 0 &&
+    !statesPersonalPastFraming(input.card) &&
+    !restatesPastFramedEvidence(input.card, [input.body, ...(input.evidenceTexts ?? [])]) &&
     (!input.requireGrounding ||
       cardGroundingScore(input.card, input.body) >= WRITTEN_BODY_KEPT_CARD_MIN_GROUNDING) &&
     input.servingBarAccepts(input.card)
+  );
+}
+
+const WRITTEN_BODY_CARD_EVIDENCE_FIELDS = new Set([
+  'fullDescription',
+  'shortDescription',
+  'description',
+  'summary',
+  'bio',
+  'researchInterestSummary',
+  'researchSummary',
+]);
+
+const INGEST_CHECKED_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
+
+/**
+ * The page text a card is checked against, beside the body it serves with, so a method a
+ * card names is checked against what the pages say rather than against the body alone
+ * (#4914). The body itself is passed separately. Model-written values are left out as the
+ * writer leaves them out, except the extraction lane's body, which that lane checks
+ * against its fetched page, and a profile template's widget labels, which describe no
+ * one, are removed.
+ */
+export function cardDescriptionEvidence(observations: readonly ResolverObservation[]): string[] {
+  return observations
+    .filter(
+      (obs) =>
+        WRITTEN_BODY_CARD_EVIDENCE_FIELDS.has(obs.field) &&
+        (!isModelTextSource(obs.sourceName) ||
+          (obs.sourceName === INGEST_CHECKED_DESCRIPTION_SOURCE &&
+            obs.field === 'fullDescription')) &&
+        typeof obs.value === 'string',
+    )
+    .map((obs) => withoutProfileTemplateWidgets(obs.value))
+    .filter(Boolean);
+}
+
+/**
+ * A card the body does not write, a lane's copied card or one stored before the method
+ * rule, held to the rule a written body's card is (#4914): an unsupported method clause
+ * is stripped, leaving the claim it modified, and `card` is null when nothing is left.
+ */
+export function methodCheckedCopiedCard(
+  card: unknown,
+  body: string,
+  evidenceTexts: readonly string[],
+): { card: string | null; changed: boolean } {
+  const text = textValue(card);
+  if (!text) return { card: text || null, changed: false };
+  const outcome = withoutUnsupportedMethodClauses(text, [body, ...evidenceTexts]);
+  if (outcome.stripped === 0) return { card: text, changed: false };
+  return { card: outcome.text, changed: true };
+}
+
+/**
+ * A copied card the browse card cuts does not displace a stored card that shows whole and
+ * that the body still supports: every materialize re-projects the lane's card, so without
+ * this a line a `--resynthesize-cut-cards` pass wrote was reverted by the next routine
+ * materialize (#4834).
+ */
+export function storedCardOutranksCutCopiedCard(input: {
+  copiedCard: unknown;
+  storedCard: unknown;
+  body: string;
+  isProgramLike: boolean;
+}): boolean {
+  const copied = textValue(input.copiedCard);
+  const stored = textValue(input.storedCard);
+  if (!copied || !stored || copied === stored) return false;
+  if (writtenBodyCardShowsWhole(copied, input.body)) return false;
+  return (
+    writtenBodyCardShowsWhole(stored, input.body) &&
+    resolvedShortDescriptionCandidateIsUsable(stored, input.body, input.isProgramLike)
   );
 }
 
@@ -678,13 +785,30 @@ export type WrittenBodyCardChoice =
   | { kind: 'none' };
 
 /**
- * The card a written body serves with: the stored card when it is grounded in the
- * written body and the serving bar accepts the pair, else a copied card observation
- * that is, else the body's own lead sentence when it is a card rather than the whole
- * body, else a card synthesized from the written body. Never a topic-chip echo and
- * never the body itself, so a row with none of those keeps no card rather than a wrong
- * one. Keeping an acceptable stored card first is what keeps a re-materialize stable
- * and spends no synthesis.
+ * A card the browse card shows as written: it fits, and the serve chain will not surrender
+ * it as ungrounded for the body's longer lead. A card synthesized from page evidence can
+ * name what the body does not, and 89 of 120 cut served cards on Development on
+ * 2026-10-05 were fitting stored cards surrendered that way (#4809).
+ */
+export function writtenBodyCardShowsWhole(card: string, body: unknown): boolean {
+  return cardLineFitsBrowseCard(card) && !isUngroundedSynthesizedCard({ card, body });
+}
+
+/**
+ * The card a written body serves with. A candidate is acceptable when it is not a
+ * topic-chip echo or the body itself and the serving bar accepts it; stored and observed
+ * cards must also be grounded in the written body. The order is: the first acceptable
+ * candidate (stored, then each copied card observation, then the body's own lead
+ * sentence) that shows whole on the browse card; else a synthesized line that shows whole;
+ * else the first acceptable candidate even though the browse card cuts it; else a
+ * synthesized line that does not show whole; else no card rather than a wrong one.
+ *
+ * Synthesis is spent only when a candidate showing whole on the browse card is missing and the
+ * caller hands over `synthesize`, at most WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS calls. The
+ * materializer hands it over when the written body changed or the stored card is
+ * unacceptable, which bounds the spend to once per body version, and for a stored cut
+ * card only under --resynthesize-cut-cards, so a routine re-materialize of an unchanged
+ * body with an acceptable stored card stays stable and makes no call.
  */
 export async function resolveWrittenBodyCard(input: {
   body: string;
@@ -692,8 +816,12 @@ export async function resolveWrittenBodyCard(input: {
   observedCards: readonly unknown[];
   researchAreas: unknown;
   servingBarAccepts: (card: string) => boolean;
-  synthesize?: (fullDescription: string) => Promise<string>;
+  evidenceTexts?: readonly string[];
+  synthesize?: CardSynthesizer;
+  isWeak?: (card: string) => boolean;
 }): Promise<WrittenBodyCardChoice> {
+  const preferred = (card: string): boolean =>
+    writtenBodyCardShowsWhole(card, input.body) && !(input.isWeak?.(card) ?? false);
   const acceptable = (card: string, requireGrounding: boolean): boolean =>
     isAcceptableWrittenBodyCard({
       card,
@@ -701,23 +829,35 @@ export async function resolveWrittenBodyCard(input: {
       researchAreas: input.researchAreas,
       servingBarAccepts: input.servingBarAccepts,
       requireGrounding,
+      evidenceTexts: input.evidenceTexts,
     });
   const stored = textValue(input.storedCard);
-  if (stored && acceptable(stored, true)) return { kind: 'stored', card: stored };
+  const candidates: Exclude<WrittenBodyCardChoice, { kind: 'none' }>[] = [];
+  if (stored && acceptable(stored, true)) candidates.push({ kind: 'stored', card: stored });
   for (const [index, value] of input.observedCards.entries()) {
     const card = textValue(value);
     if (card && card !== stored && acceptable(card, true)) {
-      return { kind: 'observed', card, index };
+      candidates.push({ kind: 'observed', card, index });
     }
   }
   const derived = textValue(deriveShortDescriptionFromFullDescription(input.body));
-  if (derived && acceptable(derived, false)) return { kind: 'derived', card: derived };
-  if (!input.synthesize) return { kind: 'none' };
-  for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
-    const card = textValue(await input.synthesize(input.body));
-    if (card && acceptable(card, false)) return { kind: 'synthesized', card };
+  if (derived && acceptable(derived, false)) candidates.push({ kind: 'derived', card: derived });
+  // A card the browse card would cut mid-sentence is held back while a line that shows
+  // whole is sought, and is still the answer when none is found (#4809).
+  const fitting = candidates.find((choice) => preferred(choice.card));
+  if (fitting) return fitting;
+  if (input.synthesize) {
+    let longSynthesized = '';
+    for (let attempt = 0; attempt < WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS; attempt += 1) {
+      const card = textValue(await input.synthesize(input.body, input.evidenceTexts));
+      if (!card || !acceptable(card, false)) continue;
+      if (preferred(card)) return { kind: 'synthesized', card };
+      longSynthesized ||= card;
+    }
+    if (candidates[0]) return candidates[0];
+    if (longSynthesized) return { kind: 'synthesized', card: longSynthesized };
   }
-  return { kind: 'none' };
+  return candidates[0] ?? { kind: 'none' };
 }
 
 export async function resolveMaterializedShortDescription(
@@ -736,12 +876,9 @@ export async function resolveMaterializedShortDescription(
     !isBareResearchAreasFallback &&
     Boolean(sanitizeResearchEntityShortDescription(current)) &&
     shortQuality(input.currentShortDescription, input.fullDescription).isUseful;
-  // Shown whole: it fits the browse card and the serve chain will not surrender it as an
-  // ungrounded synthesized card in favour of a longer line derived from the body (#4809).
-  const shownWholeOnBrowseCard = (card: string): boolean =>
-    cardLineFitsBrowseCard(card) &&
-    !isUngroundedSynthesizedCard({ card, body: input.fullDescription });
-  const currentFitsBrowseCard = shownWholeOnBrowseCard(current);
+  const currentFitsBrowseCard =
+    writtenBodyCardShowsWhole(current, input.fullDescription) &&
+    !(input.weakCard?.(current) ?? false);
   if (currentClearsCardBar && currentFitsBrowseCard && !input.reconsiderCurrentShortDescription) {
     return null;
   }
@@ -751,8 +888,12 @@ export async function resolveMaterializedShortDescription(
     fullDescription: input.fullDescription,
     researchAreas: input.researchAreas,
     isProgramLike: input.isProgramLike,
-    synthesize: currentIsCutCard && !input.resynthesizeCutCards ? undefined : input.synthesize,
+    synthesize:
+      currentIsCutCard && !input.resynthesizeCutCards && !(input.weakCard?.(current) ?? false)
+        ? undefined
+        : input.synthesize,
     refuseCandidate: (candidate) => !sanitizeResearchEntityShortDescription(candidate),
+    isWeak: input.weakCard,
   });
   if (
     !grounded ||
@@ -770,7 +911,13 @@ export async function resolveMaterializedShortDescription(
   if (currentClearsCardBar && groundedIsBareResearchAreasEcho) return null;
   // A current card reconsidered only because the browse card cuts it is replaced
   // only by a line that shows whole; trading one cut line for another is churn.
-  if (reconsideredOnlyBecauseCut && !shownWholeOnBrowseCard(grounded)) return null;
+  if (
+    reconsideredOnlyBecauseCut &&
+    (!writtenBodyCardShowsWhole(grounded, input.fullDescription) ||
+      (input.weakCard?.(grounded) ?? false))
+  ) {
+    return null;
+  }
   // Reconsidering is triggered by a body that restates the current card, so a replacement
   // that restates the body too is no upgrade: a single-sentence body derives itself as its
   // card, and served beside its own body that card reads as empty and refuses the row (#3866).
@@ -1615,6 +1762,9 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
     return true;
   }
+  if (entityType === 'fellowship' && isWithdrawnFellowshipCitation(observation)) {
+    return true;
+  }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
     return true;
   }
@@ -1643,6 +1793,14 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     isResearchEntityObservationType(entityType) &&
     isGrantLaneObservationOutsideEnrichment(observation)
+  ) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    !!observation.field &&
+    MATERIALIZED_DESCRIPTION_FIELDS.has(observation.field) &&
+    isProfileTemplateChrome(observation.value)
   ) {
     return true;
   }
@@ -2607,6 +2765,12 @@ async function liveResearcherForAccount(accountId: unknown): Promise<any | null>
     .lean();
 }
 
+async function liveResearcherById(researcherId: unknown): Promise<any | null> {
+  return Researcher.findOne({ _id: researcherId, archived: { $ne: true } })
+    .select('_id displayName')
+    .lean();
+}
+
 async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
   const accounts: any[] = await Account.find({ netid })
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
@@ -2638,8 +2802,8 @@ async function researchersNamedByIdentityEvidence(
     if (claimants.length === 1) add(claimants[0]);
   }
   for (const email of evidence.emails) {
-    const account = await soleLiveAccountClaimingEmail(email);
-    add(await liveResearcherForAccount(account?._id));
+    const claimant = await soleLiveResearcherClaimingEmail(email);
+    add(claimant?._id ? await liveResearcherById(claimant._id) : null);
   }
   for (const netid of evidence.netids) {
     for (const researcher of await liveResearchersHoldingNetid(netid)) add(researcher);
@@ -3375,16 +3539,21 @@ async function resolveInferredPiKeyIdentity(
 ): Promise<InferredPiKeyResolution> {
   if (identity.netid) {
     const byNetid = await resolveResearcherIdForPersonName('', { netid: identity.netid });
-    if (byNetid.status === 'matched') return byNetid;
-    const aliasMapping = await resolveNetidForRosterEmailAlias(identity.netid);
-    if (aliasMapping.status === 'ambiguous') {
-      return { status: 'ambiguous', aliasNamesSeveralNetids: true };
+    // A local-part netid that matches is the alias's own twin account, so the directory's
+    // map still outranks it, or the twin keeps every observation keyed on the alias (#4988).
+    if (byNetid.status === 'matched' && !isLikelyYaleEmailLocalPart(identity.netid)) {
+      return byNetid;
     }
+    const aliasMapping = await resolveNetidForRosterEmailAlias(identity.netid);
     if (aliasMapping.status === 'resolved' && aliasMapping.netid !== identity.netid) {
       const byHealedNetid = await resolveResearcherIdForPersonName('', {
         netid: aliasMapping.netid,
       });
       if (byHealedNetid.status === 'matched') return byHealedNetid;
+    }
+    if (byNetid.status === 'matched') return byNetid;
+    if (aliasMapping.status === 'ambiguous') {
+      return { status: 'ambiguous', aliasNamesSeveralNetids: true };
     }
   }
   const name = identity.name || identity.emailAliasName || '';
@@ -3524,12 +3693,12 @@ async function canonicalResearcherIdentity(
     .select('displayName accountId identifiers')
     .lean();
   if (!researcher) return { displayName: '' };
-  let netid: string | undefined;
-  let email: string | undefined;
-  if (researcher.accountId) {
+  let netid = textValue(researcher.identifiers?.netid) || undefined;
+  let email = textValue(researcher.identifiers?.email) || undefined;
+  if ((!netid || !email) && researcher.accountId) {
     const account: any = await Account.findById(researcher.accountId).select('netid email').lean();
-    netid = textValue(account?.netid) || undefined;
-    email = textValue(account?.email) || undefined;
+    netid ??= textValue(account?.netid) || undefined;
+    email ??= textValue(account?.email) || undefined;
   }
   return {
     netid,
@@ -5607,12 +5776,17 @@ export async function mergedSurvivorEvidence(
   const namesADepartment = await departmentValueNamesADepartment(survivor.school);
   const holdsNoDepartment = (observation: any): boolean =>
     observation.field === 'departments' && !namesADepartment(observation.value);
+  // A refused value is not evidence for the survivor, so it cannot hold a field against a
+  // loser's admissible fill: the row would serve nothing while the loser's statement waited.
+  const isRefusedForSurvivor = (observation: any): boolean =>
+    valueIsRefused(survivor.fieldValueRefusals, String(observation.field || ''), observation.value);
   const survivorHeldFields = new Set(
     entryPointIndependentOrder
       .filter(
         (observation: any) =>
           !loserOrigin(observation) &&
           !holdsNoDepartment(observation) &&
+          !isRefusedForSurvivor(observation) &&
           !sourceRanksOnlyAsFieldFallback(String(observation.field || ''), observation.sourceName),
       )
       .map((observation: any) => String(observation.field || '')),
@@ -5665,6 +5839,7 @@ export async function mergedSurvivorEvidence(
     }
     if (
       storedFieldHasValue(value, storedProvenance[field] !== undefined) &&
+      !valueIsRefused(survivor.fieldValueRefusals, field, value) &&
       !sourceRanksOnlyAsFieldFallback(field, objectRecord(storedProvenance[field]).sourceName)
     ) {
       survivorHeldFields.add(field);
@@ -5864,19 +6039,99 @@ function accountIsLive(account: { archived?: boolean; status?: string } | undefi
 }
 
 /**
- * `accountSchema.index({ email: 1 })` is not unique and accounts are minted with a
- * synthetic `${netid}@yale.edu`, so one address can be claimed by several rows (a
- * student and a staff netid, a recycled `first.last` alias, a departed account next
- * to its replacement). An arbitrary index-order pick would join person evidence to
- * whichever row came first, so this fails closed unless exactly one live account
- * claims the address.
+ * The one person an address names, counting a researcher's own `identifiers.email` and every
+ * live account that claims it as claimants of one identity space, so the join fails closed
+ * exactly as it did when every address lived on an account (#5000). An account and the
+ * researcher it is linked to are one claimant, and an account linked to no researcher still
+ * counts, because it is still a second person holding the address.
  */
-async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefined> {
-  const candidates: any[] = await Account.find({ email })
+async function soleLiveResearcherClaimingEmail(email: string): Promise<any | undefined> {
+  const accounts: any[] = (
+    await Account.find({ email }).limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT).lean()
+  ).filter(accountIsLive);
+  const linked: any[] = accounts.length
+    ? await Researcher.find({ accountId: { $in: accounts.map((account) => account._id) } })
+        .select('_id displayName accountId')
+        .lean()
+    : [];
+  const holders: any[] = await Researcher.find({
+    'identifiers.email': email,
+    archived: { $ne: true },
+  })
+    .select('_id displayName accountId')
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
-  const live = candidates.filter(accountIsLive);
-  return live.length === 1 ? live[0] : undefined;
+  const claimants = new Map<string, any>();
+  for (const researcher of [...linked, ...holders])
+    claimants.set(String(researcher._id), researcher);
+  const linkedAccountIds = new Set(linked.map((researcher) => String(researcher.accountId)));
+  const unlinkedAccounts = accounts.filter((account) => !linkedAccountIds.has(String(account._id)));
+  if (claimants.size + unlinkedAccounts.length !== 1) return undefined;
+  return claimants.values().next().value;
+}
+
+/**
+ * The researcher a `user` key's netid reaches: the researcher linked to the account holding
+ * the netid, then a researcher holding it as `identifiers.netid`. An alias the directory maps
+ * to another live holder's netid resolves to that holder, as it did when every alias twin was
+ * an account (#4988), and either side may hold the alias or its target (#5000).
+ */
+async function researcherReachedByIdentityNetid(netid: string): Promise<any | null> {
+  const target = (await aliasNetidWithLiveHolder(netid)) ?? netid;
+  const account: any = await Account.findOne({ netid: target }).lean();
+  const linked = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
+  return linked ?? Researcher.findOne({ 'identifiers.netid': target });
+}
+
+async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefined> {
+  if (!isLikelyYaleEmailLocalPart(netid)) return undefined;
+  const aliasAccountHeld = Boolean(await Account.exists({ netid }));
+  const aliasResearcher: any = aliasAccountHeld
+    ? null
+    : await Researcher.findOne({ 'identifiers.netid': netid }).select('displayName').lean();
+  if (!aliasAccountHeld && !aliasResearcher) return undefined;
+  const resolution = await resolveNetidForRosterEmailAlias(netid);
+  if (resolution.status !== 'resolved' || resolution.netid === netid) return undefined;
+  const targetAccount: any = await Account.findOne({ netid: resolution.netid }).lean();
+  const targetResearcher: any =
+    (targetAccount?._id
+      ? await Researcher.findOne({ accountId: targetAccount._id }).select('displayName').lean()
+      : null) ??
+    (await Researcher.findOne({
+      'identifiers.netid': resolution.netid,
+      archived: { $ne: true },
+    })
+      .select('displayName')
+      .lean());
+  if (aliasAccountHeld) {
+    const liveTarget = accountIsLive(targetAccount ?? undefined) || Boolean(targetResearcher);
+    return liveTarget ? resolution.netid : undefined;
+  }
+  // An alias only a researcher holds was never redirected while alias twins were accounts,
+  // and the directory map can name another person, so the redirect needs agreeing names.
+  return targetResearcher &&
+    observedPersonNameAgreesWith(targetResearcher.displayName, aliasResearcher.displayName)
+    ? resolution.netid
+    : undefined;
+}
+
+/**
+ * The live account a local-part netid resolves to through the directory's alias map, when
+ * that is a different account from the one the netid names.
+ *
+ * An account whose netid is an email local part is the alias's twin of a real-netid account
+ * (#4988). Looked up first, it holds every observation keyed `netid:<local part>`, and it is
+ * still found once archived because the netid lookup does not filter archived accounts, so a
+ * fold of the twin stranded those observations (#4924). The directory's map is its own
+ * statement of whose address this is, so it outranks the twin, and only a live account can
+ * win, which keeps an archived real account from re-opening the split.
+ */
+async function liveAccountTheAliasResolvesTo(netid: string): Promise<any | undefined> {
+  if (!isLikelyYaleEmailLocalPart(netid)) return undefined;
+  const resolution = await resolveNetidForRosterEmailAlias(netid);
+  if (resolution.status !== 'resolved' || resolution.netid === netid) return undefined;
+  const account = await Account.findOne({ netid: resolution.netid }).lean();
+  return account && accountIsLive(account) ? account : undefined;
 }
 
 const OFFICIAL_PROFILE_URL_JOIN_CANDIDATE_LIMIT = 10;
@@ -6107,9 +6362,10 @@ export async function joinUserIdentityToExistingResearcher(
   const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
   let account: any = netid ? await Account.findOne({ netid }).lean() : null;
+  if (account && netid) account = (await liveAccountTheAliasResolvesTo(netid)) ?? account;
   const accountNetid = normalizedAccountNetid(account?.netid);
 
-  let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
+  let researcher: any = netid ? await researcherReachedByIdentityNetid(netid) : null;
   let identityJoin: UserIdentityJoin | undefined = researcher ? 'account-netid' : undefined;
   let personNameHeldByNobody = false;
   if (!researcher && displayName) {
@@ -6141,15 +6397,15 @@ export async function joinUserIdentityToExistingResearcher(
    */
   let identityJoinedOnEmailAlone = false;
   if (!researcher && !account && observedEmail) {
-    const emailAccount = await soleLiveAccountClaimingEmail(observedEmail);
-    const emailResearcher = emailAccount?._id
-      ? await Researcher.findOne({ accountId: emailAccount._id })
-      : null;
+    const claimant = await soleLiveResearcherClaimingEmail(observedEmail);
+    const emailResearcher = claimant?._id ? await Researcher.findById(claimant._id) : null;
     const emailAccountNamesThisPerson =
       !displayName || observedPersonNameAgreesWith(emailResearcher?.displayName, displayName);
     if (emailResearcher && emailAccountNamesThisPerson) {
       researcher = emailResearcher;
-      account = emailAccount;
+      account = emailResearcher.accountId
+        ? ((await Account.findById(emailResearcher.accountId).lean()) ?? null)
+        : null;
       identityJoinedOnEmailAlone = true;
       identityJoin = 'account-email';
     }
@@ -6601,8 +6857,9 @@ export interface ProjectFromLogInput {
   chunkPrefetch?: MaterializationReadSource;
   mergedInRows?: ReadonlyArray<Pick<MergedInResearchEntityRow, '_id' | 'slug'>>;
   now: Date;
-  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  synthesizeCardDescription?: CardSynthesizer;
   resynthesizeCutCards?: boolean;
+  resynthesizeWeakCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
   provenanceOnly?: boolean;
@@ -7168,6 +7425,19 @@ function enforceResearchEntityNameAuthority(input: {
     // prominent title on the page is a monthly speaker series that several faculty
     // co-lead rather than this person's research record.
     (isPersonScopedResearchEntity(recordIdentity) && namesAScholarlyEventSeries(candidateName)) ||
+    (isPersonScopedResearchEntity(recordIdentity) &&
+      personScopedNameIsACampusBuilding({
+        candidateName,
+        personName: recordIdentity.personName,
+      })) ||
+    (isPersonScopedResearchEntity(recordIdentity) &&
+      isOffSitePageTitleForPersonScopedName({
+        candidateName,
+        sourceUrl: websiteUrl,
+        personName: recordIdentity.personName,
+        siteDeclaredOwnNames,
+        entityType: recordIdentity.entityType,
+      })) ||
     // Roster-corroborated rather than path-only, because this is a write
     // chokepoint: a lab name whose eponym appears nowhere in the URL path
     // ("The Mougous Lab" on `mougouslab.org`) is refused at harvest and was still
@@ -7994,6 +8264,12 @@ export async function projectFromLog(
     const cardSynthesizer =
       input.synthesizeCardDescription ??
       defaultMaterializerCardSynthesizer(entityName, input.cardModel);
+    const weakCardTest = input.resynthesizeWeakCards
+      ? (card: string) =>
+          isWeakCardLine(card, {
+            researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
+          })
+      : undefined;
     let groundedShortDescription: string | null = null;
     if (writtenCard.followsWrittenBody) {
       delete set.shortDescription;
@@ -8015,6 +8291,7 @@ export async function projectFromLog(
           card,
           input.nameIdentityAuthority.leadPersonName,
         );
+      const cardEvidenceTexts = cardDescriptionEvidence(resolverObs);
       const storedCardUnacceptable =
         !!storedCard &&
         !isAcceptableWrittenBodyCard({
@@ -8023,6 +8300,7 @@ export async function projectFromLog(
           researchAreas: writtenBodyResearchAreas,
           servingBarAccepts,
           requireGrounding: true,
+          evidenceTexts: cardEvidenceTexts,
         });
       const writtenBodyChanged =
         fullDescription !==
@@ -8033,7 +8311,17 @@ export async function projectFromLog(
         observedCards: observedCards.map((candidate) => candidate.value),
         researchAreas: writtenBodyResearchAreas,
         servingBarAccepts,
-        synthesize: writtenBodyChanged || storedCardUnacceptable ? cardSynthesizer : undefined,
+        evidenceTexts: cardEvidenceTexts,
+        synthesize:
+          writtenBodyChanged ||
+          storedCardUnacceptable ||
+          (input.resynthesizeCutCards &&
+            !!storedCard &&
+            !writtenBodyCardShowsWhole(storedCard, fullDescription)) ||
+          (!!weakCardTest && !!storedCard && weakCardTest(storedCard))
+            ? cardSynthesizer
+            : undefined,
+        isWeak: weakCardTest,
       });
       if (choice.kind === 'observed') {
         const candidate = observedCards[choice.index];
@@ -8054,6 +8342,45 @@ export async function projectFromLog(
         fieldsWritten++;
       }
     } else {
+      const cardLocked = manuallyLockedFields.includes('shortDescription');
+      const keepsStoredCard =
+        !fullDescriptionShellGated &&
+        !cardLocked &&
+        storedCardOutranksCutCopiedCard({
+          copiedCard: set.shortDescription,
+          storedCard: entityDoc?.shortDescription,
+          body: fullDescription,
+          isProgramLike: isProgramLikeEntity,
+        });
+      if (keepsStoredCard) {
+        delete set.shortDescription;
+        delete set['fieldProvenance.shortDescription'];
+        const storedCardConfidence = entityDoc?.confidenceByField?.shortDescription;
+        if (typeof storedCardConfidence === 'number') {
+          confidenceByField.shortDescription = storedCardConfidence;
+        } else {
+          delete confidenceByField.shortDescription;
+        }
+        fieldsWritten = Math.max(0, fieldsWritten - 1);
+      }
+      const copiedCard =
+        fullDescriptionShellGated || cardLocked
+          ? { card: null, changed: false }
+          : methodCheckedCopiedCard(
+              set.shortDescription ?? entityDoc?.shortDescription,
+              fullDescription,
+              cardDescriptionEvidence(resolverObs),
+            );
+      if (copiedCard.changed) {
+        if (copiedCard.card) {
+          if (!Object.hasOwn(set, 'shortDescription')) fieldsWritten++;
+          set.shortDescription = copiedCard.card;
+        } else {
+          delete set.shortDescription;
+          delete set['fieldProvenance.shortDescription'];
+          delete confidenceByField.shortDescription;
+        }
+      }
       groundedShortDescription = await resolveMaterializedShortDescription({
         fullDescription,
         // When the single-PI-shell guard just rejected fullDescription in favor
@@ -8063,14 +8390,33 @@ export async function projectFromLog(
         // fixed full (issue #1595).
         currentShortDescription: fullDescriptionShellGated
           ? undefined
-          : (set.shortDescription ?? entityDoc?.shortDescription),
-        reconsiderCurrentShortDescription: fullRestatesCurrentCard,
+          : copiedCard.changed
+            ? (copiedCard.card ?? undefined)
+            : (set.shortDescription ?? entityDoc?.shortDescription),
+        reconsiderCurrentShortDescription:
+          (keepsStoredCard
+            ? isFullDescriptionRestatementOfShortDescription(
+                fullDescription,
+                textValue(entityDoc?.shortDescription),
+              )
+            : fullRestatesCurrentCard) ||
+          (copiedCard.changed && !copiedCard.card),
         resynthesizeCutCards: input.resynthesizeCutCards,
         researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
         isProgramLike: isProgramLikeEntity,
-        manuallyLocked: manuallyLockedFields.includes('shortDescription'),
+        manuallyLocked: cardLocked,
         synthesize: cardSynthesizer,
       });
+      if (
+        copiedCard.changed &&
+        !copiedCard.card &&
+        !groundedShortDescription &&
+        textValue(entityDoc?.shortDescription)
+      ) {
+        unset.shortDescription = '';
+        unset['fieldProvenance.shortDescription'] = '';
+        fieldsWritten++;
+      }
     }
     if (groundedShortDescription) {
       set.shortDescription = groundedShortDescription;
@@ -8544,18 +8890,33 @@ export async function projectFromLog(
       set[clear.field] = '';
       fieldsWritten++;
     }
-    for (const clear of planCollectivePageStoredDescriptionClears({
-      stored: entityDoc,
-      staged: set,
-      lockedFields: manuallyLockedFields,
-    })) {
+    const storedDescriptionClears = [
+      ...planCollectivePageStoredDescriptionClears({
+        stored: entityDoc,
+        staged: set,
+        lockedFields: manuallyLockedFields,
+      }).map((clear) => ({
+        clear,
+        tag: 'collective-page-description',
+        reason: 'narrated from a department page',
+      })),
+      ...planProfileTemplateChromeStoredDescriptionClears({
+        stored: entityDoc,
+        staged: set,
+        lockedFields: manuallyLockedFields,
+      }).map((clear) => ({
+        clear,
+        tag: 'profile-template-chrome-description',
+        reason: 'that is profile template chrome',
+      })),
+    ];
+    for (const { clear, tag, reason } of storedDescriptionClears) {
       if (clear.skipped) {
-        console.log(`[collective-page-description] kept ${clear.field}: ${clear.skipped}`);
+        console.log(`[${tag}] kept ${clear.field}: ${clear.skipped}`);
         continue;
       }
-      console.log(
-        `[collective-page-description] cleared ${clear.field} narrated from a department page`,
-      );
+      if (set[clear.field] === '') continue;
+      console.log(`[${tag}] cleared ${clear.field} ${reason}`);
       set[clear.field] = '';
       fieldsWritten++;
       if (clear.field === 'shortDescription') {
@@ -8763,6 +9124,11 @@ export async function projectFromLog(
       staged: set,
       resolved,
       fundSpeaksForRow: fundSpeaksForFellowship(entityDoc, newestFundTitle(materializationObs)),
+      storedSourceUrlUnbacked: storedFellowshipSourceUrlIsUnbacked({
+        stored: entityDoc as Record<string, unknown> | null,
+        liveObservations: resolverObs,
+        readRowUnderOwnIdentity: input.readRowUnderOwnIdentity === true,
+      }),
     })) {
       delete set[field];
       delete set[`fieldProvenance.${field}`];
@@ -9463,16 +9829,17 @@ export async function materializeEntity(
       .map((value) => String(value || ''))
       .filter(Boolean),
   );
-  const gonePageWithdrawal = isResearchEntityObservationType(entityType)
-    ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
-    : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
+  const gonePageWithdrawal =
+    isResearchEntityObservationType(entityType) || entityType === 'fellowship'
+      ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
+      : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
     ? withoutLaneRefusedWebsiteUrls(gonePageWithdrawal.observations, laneScopedRowIdentities)
     : { observations: obs, withdrawnValues: [] };
   const fellowshipEvidence =
     entityType === 'fellowship'
       ? preferFundFacetObservations(
-          obs,
+          gonePageWithdrawal.observations,
           await fundFacetObservationsCitedBy(
             entityDoc ?? fellowshipCitationsObservedIn(obs),
             options.chunkPrefetch,
@@ -9711,6 +10078,7 @@ export async function materializeEntity(
     now: projectionNow,
     synthesizeCardDescription: options.synthesizeCardDescription,
     resynthesizeCutCards: options.resynthesizeCutCards,
+    resynthesizeWeakCards: options.resynthesizeWeakCards,
     cardModel: options.cardModel,
     writeOnlyFields: options.writeOnlyFields,
     provenanceOnly: options.onlyReconcileFieldProvenance,

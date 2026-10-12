@@ -17,7 +17,8 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
         employee -> professor when isFacultyTitle(title), otherwise staff
         unavailable -> the userType a previous login stored on Account.profile, else "unknown"
         not_found -> "unknown"
-     -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
+     -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt,
+        set an UNKNOWN status to ACTIVE (DISABLED is never changed)
      -> cookie-session carrying a session claim, httpOnly, secure in prod, sameSite lax
      -> deserializeUser refuses it after sign-out or 30 days (SESSION_LIFETIME_MS)
 ```
@@ -31,15 +32,27 @@ Accounts stored before the fix that never sign in again keep the values until a 
 Count it in Production rather than Development, because a Development login does not go through CAS and so never wrote these values: on 2026-10-01, 0 of 4,179 Development accounts held any of the three.
 Each CAS login also increments one per-UTC-day bucket in `login_signal_tallies` (`services/loginSignalTallyService.ts`), counting how many logins carry a usable major or graduate curriculum for browse personalization (#4744).
 The bucket is computed inside `yaliesService.ts` by `classifyStudentLoginSignal`, so the major and curriculum never leave it; the row stores the date and counts only, the write is fire-and-forget and skipped while Mongo is disconnected, and `yarn --cwd server auth:login-signal-tally` reads it.
+The report prints aggregates over the whole range only, never a per-day row, and that holds for `--json` too.
+A bucket with fewer than 3 logins over the range, zero included, prints as `<3` (`fewer_than_3` in JSON) and is left out of every total and share, so no printed number can be subtracted to recover it; this is the same threshold of 3 that admin search analytics uses (#4159).
+The threshold counts logins rather than students, because the tally cannot tell two logins by one student apart without storing who logged in, so a shown count of 3 can still be one student signing in three times.
+The stored per-day rows are not suppressed, so read them only through the report.
+`server/src/__tests__/casLoginStoresNoStudentSignal.integration.test.ts` drives a stub-CAS login with synthetic Yalies records and fails if a major, college, year or curriculum reaches the session cookie, any collection, or the console, or if a netid or email reaches the console.
 It is temporary: it goes once the personalization decision in `docs/decisions.md` is made.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
-One scraper path still mints an `Account`: `resolveOrCreateAccountId` in `scrapers/canonicalMembershipMaterializer.ts` upserts one with status `UNKNOWN` for a roster identity that carries both a netid and an email.
+No scraper path writes `accounts` (#5000): `canonicalMembershipMaterializer` used to upsert an `UNKNOWN` account for a roster identity carrying both a netid and an email, and now resolves the researcher holding that netid or mints the researcher alone with `identifiers.netid` and `identifiers.email`.
+A person who later signs into one of the `UNKNOWN` rows it left is set to `ACTIVE` by the login, atomically and only from `UNKNOWN`, so a `DISABLED` account stays disabled; before #5000 the row stayed `UNKNOWN` and read as an unconfirmed user on `/analytics`.
+Services read a researcher's identity from the researcher row, `identifiers.netid` and `identifiers.email`, and fall back to the linked account only where the identifiers are absent (`services/researcherNetidLookup.ts`), so `accounts` can become login-only without changing what admin grants, analytics, journey-event validation, correction reports or rosters show (#5000).
 An account netid must be a Yale netid (`looksLikeYaleNetid` in `utils/yaleNetid.ts`), and `models/account.ts` enforces that with hooks on every Mongoose write path, `save`, `insertMany` and the update and replace queries, rather than with the schema `match`, so an upsert without `runValidators` is refused too (#4773).
 That is the shape of the defect: on 2026-08-27, between #2122 and #2129, the user-identity materializer upserted 170 accounts keyed on an email local part, because the user observations were keyed `netid:<local part>` (#2831) and that upsert ran no validators.
 152 of them share an email with the person's real-netid account, which made two live accounts claim one address, so the email joins in `entityMaterializer.ts` refused that person.
 `yarn --cwd server accounts:merge-local-part-netid-twins` repairs a pair whose twin is unambiguous: it repoints every reference in `ACCOUNT_ID_REFERENCE_FIELDS` to the real-netid account, leaves a research plan whose target the twin already holds on the archived account, and archives the local-part account with `archivedReason` and `mergedIntoAccountId`.
 It never deletes, and it reports rather than merges a pair where both accounts link a researcher, the local part has a login, a researcher holds the local part as `identifiers.netid`, any netid-keyed history row names it, or the pair is off-shape.
-It is dry-run by default; `--apply` needs `--confirm-merge-local-part-netid-twins`, a `--max-apply` cap and the Development database, because Beta and Production receive accounts only through sync and promotion.
+A pair where both accounts link a researcher is deliberately left held, and no mode folds the two researchers (#4924).
+The local part is a live `netid:<local part>` observation join key, so folding its researcher into the netid twin leaves those observations resolving to nobody; the one such fold run on Development was reverted, and the `--scope=researcher-twins` mode #4931 added for it was removed (#4940).
+One scoped mode clears what the refusals leave (#4917).
+`--scope=lone-accounts` archives a live local-part account with no twin, with `archivedReason: 'lone-local-part-netid-account'`, only when no researcher, research plan, reviewer stamp, admin grant, netid-keyed history row or login names it, and reports the rest by reason.
+A pair of two well-shaped netids sharing an email stays held as `off-shape-pair`, because the data cannot say which netid owns the address.
+It is dry-run by default, and every dry run reports both scopes; `--apply` needs `--confirm-merge-local-part-netid-twins`, a `--max-apply` cap and the Development database, because Beta and Production receive accounts only through sync and promotion.
 The raw-driver copies in promotion and sync bypass the hooks on purpose, since they copy stored rows rather than mint them.
 `userType` is a classification/analytics dimension only; it does not authorize anything, whether read from the session or the persisted profile.
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
@@ -232,6 +245,9 @@ A route param is typed `string | string[]` because a `*name` wildcard captures s
 The CORS policy is an allowlist in every runtime.
 `allowList` in `app.ts` holds the deployed browser origins, and outside a deployed runtime `createCorsOriginHandler` additionally accepts an `http` origin whose hostname is a loopback form, which is what lets a client dev server on any port (`scripts/new-agent-worktree.sh` hands out `3000` upward, with an API port from `4000` upward) talk to the API with credentials.
 Nothing reflects an arbitrary `Origin`, so an allowlist entry is the only way in from a browser.
+A Render deploy also trusts its own origin, read from the platform-set `RENDER_EXTERNAL_URL` by `renderServiceOwnOrigin` in `server/src/middleware/corsOrigin.ts`, and only when that is an `https` origin on `onrender.com` with no port or path.
+That is what lets a pull request preview such as `yalelabs-beta-pr-<n>.onrender.com` load its own module scripts, which a browser fetches with an `Origin` header even from the same origin, so without it every asset answered 403 and the page rendered blank.
+It never widens trust to a sibling preview or to `*.onrender.com`, and the same set feeds `csrfOriginGuard`, so a preview accepts writes only from itself.
 
 ### Static client files
 
@@ -241,6 +257,20 @@ The router skips every `/api` path, so a file in the build can never shadow an A
 Only content-hashed files directly under `/assets/` are served `public, max-age=31536000, immutable`; `index.html`, the SPA fallback, and unhashed files such as `/assets/developers/*` and `/brand/*` keep `max-age=0` so a deploy is seen on the next load.
 The Passport `regenerate`/`save` shim defines its methods as non-enumerable, because cookie-session writes a new session that has any own enumerable key, and an enumerable shim issued an empty session cookie to every anonymous response.
 `server/src/__tests__/appStaticAssetCaching.test.ts` pins all of this through the mounted app.
+
+The SPA fallback writes per-page share metadata into the shell, because link preview fetchers never run the client (#4240).
+`resolvePageShell` in `server/src/services/pageShellMetadataService.ts` decides the head and `renderPageShell` in `server/src/utils/pageShellHead.ts` writes it, HTML-escaping every value.
+`/`, `/research`, `/programs` and `/about` get a page title and a query-free canonical URL on `https://yalelabs.io` whatever the request host.
+`/research/:slug` reads the row through `getResearchGroupDetail` with no operator authority, so it can only show what the anonymous detail endpoint serves, which is `student_ready` rows: the served title, the served short description, and the canonical page.
+A description carrying an email address or phone number is dropped rather than shared, and no member, roster or contact field is ever read.
+A slug the endpoint withholds or does not know answers `404` with the generic shell, a merged shell answers `301` to its canonical page, and a lookup that throws or outlasts `PAGE_SHELL_LOOKUP_TIMEOUT_MS` serves the unmodified shell with `200`.
+Each normalized slug's `200`, `404` or `301` resolution is cached in memory for `PAGE_SHELL_CACHE_TTL_MS` (five minutes), at most `PAGE_SHELL_CACHE_MAX_ENTRIES` slugs with the oldest evicted first, and concurrent requests for one slug share a single in-flight detail read.
+A lookup that throws or times out is never cached, so the next request reads again.
+The SPA fallback is mounted outside the `/api` limiters, so a cache miss spends a per-client budget of `PAGE_SHELL_LOOKUPS_PER_CLIENT_WINDOW` lookups per minute keyed on `getPeerIpKey`, the same masked per-IP key the `/api` per-IP limiters use, so it reads `req.ip` through the trusted proxy setting and groups an IPv6 client by its subnet.
+A client over that budget gets the unmodified shell with `200` and no lookup rather than a `429`, and the limiter never touches `req.session` or sets a cookie.
+Program pages get only the page-level head, because `/api/programs` is sign-in only and a program's fields are not public.
+The site-wide share image, the `robots` meta and the CSP are untouched, and nothing inline is added to the head.
+`server/src/__tests__/pageShellMetadata.integration.test.ts` pins this through the mounted app, and `server/src/utils/__tests__/pageShellHead.test.ts` fails if `client/index.html` stops carrying a tag the renderer rewrites.
 
 SSRF protection lives in `server/src/utils/ssrfGuard.ts`.
 Any outbound fetch to a host derived from user input or stored data must go through it.
@@ -271,6 +301,8 @@ Any HTTP status, or a split-horizon `private-address` refusal, counts as a worki
 A passing check clears the window, the control is asked at most once per window, and the pass waits at `settle()` rather than probing on while a check is due, so a genuine outage still halts before the page's verdicts are written.
 Hosts whose every stored verdict is a no-status `UNAVAILABLE` are not counted, because a host already stored as unresolvable failing again changes nothing stored.
 The run's report carries `result.resolver` (control checks, trips avoided, trips, uncounted failures), and `ResolverUnhealthyError` names the control failure.
+`programs:backfill-source-link-health` takes the same breaker through `createSourceLinkResolverBreaker` and probes through `probeUncachedUrlsByHost`, both in `backfillSourceLinkHealth.ts`, and probes every program link before it writes any verdict, so an outage halts the stage with every stored program verdict untouched (#4882).
+A new link-health pass should reuse that pair rather than construct its own breaker, because a breaker built without the control probe trips on distinct failures alone.
 This distinction is load-bearing rather than cosmetic: a bare `catch { return false }` made "this name has no record" indistinguishable from "this resolves somewhere we refuse to go", so `sourceLinkHealth` recorded a host that had stopped existing as `UNKNOWN` and `ENOTFOUND` in its `DEAD_LINK_ERROR_CODES` was unreachable (#2709).
 When adding a refusal path, give it a reason and keep the security answer unchanged: a private or loopback address must still be refused and must still read as inconclusive, because that is a fact about our network position and not about whether the page exists.
 Inconclusive is not the same as uninformative, though.
@@ -397,6 +429,9 @@ The posture, including why every `dataCollection` category is set off explicitly
 
 ## Environment variables
 
+`docs/deployment-inventory.md` is the per-service inventory: which service reads each name, whether it is required, what breaks without it, and whether it is a secret; `scripts/deployment-inventory.test.mjs` fails when code reads a name it does not list.
+Rotating a leaked secret is owned by `docs/incident-runbook.md`.
+
 ### Server
 
 | Variable | Required | Purpose |
@@ -415,7 +450,7 @@ The posture, including why every `dataCollection` category is set off explicitly
 | `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | No | How long the query-embedding breaker stays open after an upstream rejection or repeated failures; defaults to 60000 and is floored at 1000. |
 | `MEILISEARCH_HOST` | Deployed | Meilisearch host; defaults to `http://localhost:7700` only outside deployed runtimes, and the server refuses to start without it when deployed. |
 | `MEILISEARCH_SEARCH_API_KEY` | Deployed web service | Search-only Meilisearch key used by the request path (#4014). |
-| `MEILISEARCH_WRITE_API_KEY` | Reindex shell | Meilisearch write key for the reindex and scripts; never stored on the web service. |
+| `MEILISEARCH_WRITE_API_KEY` | Reindex shell and operator services | Meilisearch write key for the reindex and scripts; also stored on the Beta web service, never on the Production web service. |
 | `MEILISEARCH_API_KEY` | No | Legacy single key, the fallback for either role; a deployed fallback logs a warning. Remove from the web service once the search key is set. |
 | `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |

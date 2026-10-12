@@ -134,4 +134,48 @@ describe('LaneBenchmarkPanel', () => {
     rerender(<LaneBenchmarkPanel isLoading={false} error={null} laneBenchmarks={response([])} />);
     expect(screen.getByText('No benchmark has been replayed yet.')).toBeInTheDocument();
   });
+
+  it('names the benchmark a recapture replaces and says how many replaced ones are hidden', () => {
+    render(
+      <LaneBenchmarkPanel
+        isLoading={false}
+        error={null}
+        laneBenchmarks={{
+          ...response([
+            {
+              benchmarkId: 'lane-a-v2',
+              sourceName: 'lane-a',
+              supersedes: 'lane-a-v1',
+              runs: 1,
+              change: 'first-run',
+              latest: run({ gold: [] }),
+              previous: null,
+            },
+          ]),
+          supersededCount: 2,
+        }}
+      />,
+    );
+    expect(screen.getByText('Replaces lane-a-v1')).toBeInTheDocument();
+    expect(screen.getByText(/2 replaced benchmarks are not shown/)).toBeInTheDocument();
+  });
+
+  it('lists a recapture with no replay yet rather than reporting an empty panel', () => {
+    render(
+      <LaneBenchmarkPanel
+        isLoading={false}
+        error={null}
+        laneBenchmarks={{
+          ...response([]),
+          awaitingReplay: [
+            { benchmarkId: 'lane-b-v2', sourceName: 'lane-b', supersedes: 'lane-b-v1' },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText('Awaiting a first replay')).toBeInTheDocument();
+    expect(screen.getByText('lane-b-v2')).toBeInTheDocument();
+    expect(screen.getByText(/replaces lane-b-v1/)).toBeInTheDocument();
+    expect(screen.queryByText('No benchmark has been replayed yet.')).not.toBeInTheDocument();
+  });
 });

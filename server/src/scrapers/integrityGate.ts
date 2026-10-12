@@ -9,8 +9,8 @@ import {
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
-import { Account } from '../models/account';
 import { Researcher } from '../models/researcher';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { splitName } from './utils/scraperHelpers';
 import {
   buildResearchEntityPiDedupePlan,
@@ -57,7 +57,7 @@ export interface DuplicatePersonGroup {
 export interface DuplicateAccessSignalGroup {
   researchEntityId: string;
   signalType: string;
-  identityField: 'derivationKey' | 'sourceEvidenceId' | 'observationId';
+  identityField: 'derivationKey' | 'sourceEvidenceId';
   identityValue: string;
   signalIds: string[];
 }
@@ -176,6 +176,17 @@ const INTEGRITY_WARNING_OPERATOR_METADATA: Record<
   string,
   Pick<PostMaterializationIntegrityWarning, 'classification' | 'owner' | 'nextCommand'>
 > = {
+  heldSamePiSameNameResearchEntities: {
+    classification: 'post_promotion_backlog',
+    owner: 'research-entity operator',
+    nextCommand: SAME_PI_DEDUPE_REVIEW_COMMAND,
+  },
+  heldOfficialLabUrlResearchEntities: {
+    classification: 'post_promotion_backlog',
+    owner: 'research-entity operator',
+    nextCommand:
+      'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --official-lab-url-only --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
+  },
   deadEndTombstoneChains: {
     classification: 'post_promotion_backlog',
     owner: 'research-entity operator',
@@ -358,7 +369,9 @@ async function loadIdentityCollisionGroups(
   };
 }
 
-const researcherNetidCollisionPipeline = (): mongoose.PipelineStage[] => [
+const researcherIdentityCollisionPipeline = (
+  identityField: 'netid' | 'email',
+): mongoose.PipelineStage[] => [
   { $match: { archived: { $ne: true } } },
   {
     $lookup: {
@@ -371,34 +384,41 @@ const researcherNetidCollisionPipeline = (): mongoose.PipelineStage[] => [
   {
     $project: {
       personId: { $toString: '$_id' },
-      identityValues: {
-        $setUnion: [
-          [normalizedIdentityValue('$identifiers.netid')],
-          [normalizedIdentityValue({ $arrayElemAt: ['$account.netid', 0] })],
+      researcherValue: normalizedIdentityValue(`$identifiers.${identityField}`),
+      accountValue: normalizedIdentityValue({ $arrayElemAt: [`$account.${identityField}`, 0] }),
+    },
+  },
+  {
+    $project: {
+      personId: 1,
+      identityValue: {
+        $cond: [
+          { $in: ['$researcherValue', PLACEHOLDER_IDENTITY_VALUES] },
+          '$accountValue',
+          '$researcherValue',
         ],
       },
     },
   },
-  { $unwind: '$identityValues' },
-  { $project: { personId: 1, identityValue: '$identityValues' } },
   { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },
   { $group: { _id: '$identityValue', personIds: { $addToSet: '$personId' } } },
   { $match: { 'personIds.1': { $exists: true } } },
 ];
 
-async function loadResearcherNetidCollisionGroups(
+async function loadResearcherIdentityCollisionGroups(
+  identityField: 'netid' | 'email',
   limit: number,
 ): Promise<CountedSample<DuplicatePersonGroup>> {
   const { rows, total } = await countAndSample(
     Researcher,
-    researcherNetidCollisionPipeline(),
+    researcherIdentityCollisionPipeline(identityField),
     [],
     limit,
   );
   return {
     total,
     sample: rows.map((row: any) => ({
-      identityField: 'netid' as const,
+      identityField,
       identityValue: stringId(row._id),
       userIds: row.personIds || [],
     })),
@@ -411,9 +431,9 @@ async function loadDuplicatePeopleIntegrity(limit: number): Promise<{
   warnings: PostMaterializationIntegrityWarning[];
 }> {
   const byField = await Promise.all([
-    loadIdentityCollisionGroups(Account, 'email', 'email', limit),
+    loadResearcherIdentityCollisionGroups('email', limit),
     loadIdentityCollisionGroups(Researcher, 'orcid', 'identifiers.orcid', limit),
-    loadResearcherNetidCollisionGroups(limit),
+    loadResearcherIdentityCollisionGroups('netid', limit),
   ]);
   return {
     groups: byField.flatMap((field) => field.sample),
@@ -424,6 +444,7 @@ async function loadDuplicatePeopleIntegrity(limit: number): Promise<{
 
 async function loadSamePiNameDuplicateGroups(): Promise<{
   groups: SamePiNameDuplicateGroup[];
+  heldGroups: SamePiNameDuplicateGroup[];
   truncated: boolean;
 }> {
   const rows = await RoleAssignment.aggregate([
@@ -470,6 +491,7 @@ async function loadSamePiNameDuplicateGroups(): Promise<{
           sourceUrls: '$entity.sourceUrls',
           departments: '$entity.departments',
           researchAreas: '$entity.researchAreas',
+          studentVisibilityTier: '$entity.studentVisibilityTier',
         },
       },
     },
@@ -485,8 +507,16 @@ async function loadSamePiNameDuplicateGroups(): Promise<{
   ]);
   const truncated = rows.length > SAME_PI_ENTITY_SCAN_LIMIT;
 
-  const groups = buildSamePiNameDuplicateGroupsFromDedupeRows(
-    rows.slice(0, SAME_PI_ENTITY_SCAN_LIMIT).map((row: any) => {
+  const scannedRows = rows.slice(0, SAME_PI_ENTITY_SCAN_LIMIT);
+  const servedEntityIds = new Set<string>(
+    scannedRows.flatMap((row: any) =>
+      (row.entities || [])
+        .filter((entity: any) => isServedTier(entity.studentVisibilityTier))
+        .map((entity: any) => stringId(entity.id)),
+    ),
+  );
+  const allGroups = buildSamePiNameDuplicateGroupsFromDedupeRows(
+    scannedRows.map((row: any) => {
       const personId = stringId(row._id?.personId);
       const { first, last } = splitName(stringId(row.personDisplayName));
       return {
@@ -498,7 +528,13 @@ async function loadSamePiNameDuplicateGroups(): Promise<{
       };
     }),
   );
-  return { groups, truncated };
+  const servedInGroup = (group: SamePiNameDuplicateGroup) =>
+    group.entityIds.filter((id) => servedEntityIds.has(id)).length;
+  return {
+    groups: allGroups.filter((group) => servedInGroup(group) >= 2),
+    heldGroups: allGroups.filter((group) => servedInGroup(group) < 2),
+    truncated,
+  };
 }
 
 export function buildSamePiNameDuplicateGroupsFromDedupeRows(
@@ -511,35 +547,21 @@ export function buildSamePiNameDuplicateGroupsFromDedupeRows(
   }));
 }
 
-const officialLabUrlDuplicatePipeline = (): mongoose.PipelineStage[] => [
-  { $match: { archived: { $ne: true } } },
+/**
+ * Rows that hold one official lab page as their own research website. A row that only
+ * cites the page in `sourceUrls` is not counted: a lab member's row citing the lab page
+ * they appear on is evidence about that member, and merging it into the lab would be
+ * wrong, so it cannot be a missed merge (#4980).
+ */
+const officialLabUrlDuplicatePipeline = (
+  servedRows: 'served' | 'held',
+): mongoose.PipelineStage[] => [
+  { $match: { archived: { $ne: true }, websiteUrl: { $type: 'string' } } },
   {
     $project: {
+      officialLabUrl: { $trim: { input: { $toLower: '$websiteUrl' } } },
       entityId: { $toString: '$_id' },
-      urls: {
-        $setUnion: [
-          {
-            $cond: [
-              {
-                $and: [
-                  { $ne: ['$websiteUrl', null] },
-                  { $ne: [{ $trim: { input: '$websiteUrl' } }, ''] },
-                ],
-              },
-              ['$websiteUrl'],
-              [],
-            ],
-          },
-          { $ifNull: ['$sourceUrls', []] },
-        ],
-      },
-    },
-  },
-  { $unwind: '$urls' },
-  {
-    $project: {
-      officialLabUrl: { $trim: { input: { $toLower: '$urls' } } },
-      entityId: 1,
+      served: { $in: ['$studentVisibilityTier', publicStudentVisibilityTiers] },
     },
   },
   {
@@ -551,17 +573,20 @@ const officialLabUrlDuplicatePipeline = (): mongoose.PipelineStage[] => [
     $group: {
       _id: '$officialLabUrl',
       entityIds: { $addToSet: '$entityId' },
+      servedCount: { $sum: { $cond: ['$served', 1, 0] } },
     },
   },
   { $match: { 'entityIds.1': { $exists: true } } },
+  { $match: { servedCount: servedRows === 'served' ? { $gte: 2 } : { $lt: 2 } } },
 ];
 
 async function loadOfficialLabUrlDuplicateGroups(
   limit: number,
+  servedRows: 'served' | 'held' = 'served',
 ): Promise<CountedSample<OfficialLabUrlDuplicateGroup>> {
   const { rows, total } = await countAndSample(
     ResearchEntity,
-    officialLabUrlDuplicatePipeline(),
+    officialLabUrlDuplicatePipeline(servedRows),
     [{ $sort: { _id: 1 } }],
     limit,
   );
@@ -672,11 +697,8 @@ async function loadCurrentMembersOnArchivedEntities(
   }));
 }
 
-const DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS: DuplicateAccessSignalGroup['identityField'][] = [
-  'derivationKey',
-  'sourceEvidenceId',
-  'observationId',
-];
+export const DUPLICATE_ACCESS_SIGNAL_IDENTITY_FIELDS: DuplicateAccessSignalGroup['identityField'][] =
+  ['derivationKey', 'sourceEvidenceId'];
 
 const DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH: Record<
   DuplicateAccessSignalGroup['identityField'],
@@ -684,10 +706,9 @@ const DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH: Record<
 > = {
   derivationKey: 'derivationKey',
   sourceEvidenceId: 'source.evidenceIds',
-  observationId: 'source.evidenceIds',
 };
 
-const duplicateAccessSignalPipeline = (
+export const duplicateAccessSignalPipeline = (
   field: DuplicateAccessSignalGroup['identityField'],
 ): mongoose.PipelineStage[] => {
   const path = DUPLICATE_ACCESS_SIGNAL_IDENTITY_PATH[field];
@@ -846,6 +867,37 @@ async function loadArchivedEntityPopulationCounts(): Promise<
   return { currentMembersOnArchivedEntities, activeArtifactsOnArchivedEntities };
 }
 
+const isServedTier = (tier: unknown): boolean =>
+  (publicStudentVisibilityTiers as unknown[]).includes(tier);
+
+/**
+ * A duplicate group with at most one served row shows a student one row, so the visibility
+ * gate has already contained it; failing on it made the gate red on every run, because the
+ * remaining URL groups are other people's suppressed rows citing the lab page as their own
+ * website rather than missed merges (#5004). Only a group serving two or more rows fails.
+ */
+function heldDuplicateWarnings(
+  heldSamePiGroups: readonly SamePiNameDuplicateGroup[],
+  heldOfficialLabUrls: CountedSample<OfficialLabUrlDuplicateGroup>,
+): PostMaterializationIntegrityWarning[] {
+  const warnings: PostMaterializationIntegrityWarning[] = [];
+  if (heldSamePiGroups.length > 0) {
+    warnings.push({
+      name: 'heldSamePiSameNameResearchEntities',
+      count: heldSamePiGroups.length,
+      message: `${heldSamePiGroups.length} same-lead same-name group(s) serve at most one row; the others are held by the visibility gate and await a merge decision.`,
+    });
+  }
+  if (heldOfficialLabUrls.total > 0) {
+    warnings.push({
+      name: 'heldOfficialLabUrlResearchEntities',
+      count: heldOfficialLabUrls.total,
+      message: `${heldOfficialLabUrls.total} official lab URL group(s) serve at most one row; the others are held by the visibility gate.`,
+    });
+  }
+  return warnings;
+}
+
 async function loadAmbiguousSameNameWarning(): Promise<PostMaterializationIntegrityWarning[]> {
   return [];
 }
@@ -956,6 +1008,7 @@ export async function runPostMaterializationIntegrityGate(
   const [
     samePiNameDuplicates,
     officialLabUrlDuplicates,
+    heldOfficialLabUrlDuplicates,
     duplicatePersonIntegrity,
     duplicateCurrentMembers,
     currentMembersOnArchivedEntities,
@@ -967,6 +1020,7 @@ export async function runPostMaterializationIntegrityGate(
   ] = await Promise.all([
     loadSamePiNameDuplicateGroups(),
     loadOfficialLabUrlDuplicateGroups(sampleLimit),
+    loadOfficialLabUrlDuplicateGroups(sampleLimit, 'held'),
     loadDuplicatePeopleIntegrity(sampleLimit),
     loadDuplicateCurrentMemberGroups(sampleLimit),
     loadCurrentMembersOnArchivedEntities(sampleLimit),
@@ -985,7 +1039,12 @@ export async function runPostMaterializationIntegrityGate(
     currentMembersOnArchivedEntities,
     duplicateAccessSignalGroups: duplicateAccessSignals.sample,
     activeArtifactsOnArchivedEntities,
-    warnings: [...warnings, ...duplicatePersonIntegrity.warnings, ...deadEndTombstoneChainWarnings],
+    warnings: [
+      ...warnings,
+      ...duplicatePersonIntegrity.warnings,
+      ...deadEndTombstoneChainWarnings,
+      ...heldDuplicateWarnings(samePiNameDuplicates.heldGroups, heldOfficialLabUrlDuplicates),
+    ],
     limit: options.includeSamples ? limit : 0,
     truncatedChecks: samePiNameDuplicates.truncated ? ['samePiSameNameResearchEntities'] : [],
     populationCounts: {

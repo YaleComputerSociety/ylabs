@@ -1,0 +1,293 @@
+{
+  "description": "Candidate official pages for Yale fellowship database programs, carried over from the retired curated official-source backfill. A seed only decides which page the program-official-page lane reads; the lane cites a page only when the page itself names the fund.",
+  "seeds": [
+    {
+      "recordId": "6982c1cf781efc3253d58450",
+      "pageUrl": "https://macmillan.yale.edu/latam/student-grants-and-prizes"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58451",
+      "pageUrl": "https://slifkacenter.org/grants/"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58458",
+      "pageUrl": "https://chc.yale.edu/awards-fellowships/mellon-programs"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58459",
+      "pageUrl": "https://chc.yale.edu/awards-fellowships-0/richter-fund"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5845a",
+      "pageUrl": "https://berkeley.yale.edu/college-resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5845b",
+      "pageUrl": "https://berkeley.yale.edu/college-resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5845f",
+      "pageUrl": "https://branford.yale.edu/head-of-branford-college/student-project-funding"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58460",
+      "pageUrl": "https://branford.yale.edu/head-of-branford-college/student-project-funding"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58461",
+      "pageUrl": "https://lgbts.yale.edu/Cohen"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58463",
+      "pageUrl": "https://macmillan.yale.edu/canada/summer-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58465",
+      "pageUrl": "https://funding.yale.edu/find-funding/yale-fellowships-offered-through"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5846b",
+      "pageUrl": "https://branford.yale.edu/head-of-branford-college/student-project-funding"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5846d",
+      "pageUrl": "https://davenport.yale.edu/student-info/fellowships-awards"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5846e",
+      "pageUrl": "https://macmillan.yale.edu/middleeast/grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5846f",
+      "pageUrl": "https://macmillan.yale.edu/middleeast/grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58475",
+      "pageUrl": "https://macmillan.yale.edu/eastasia/ceas-student-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58479",
+      "pageUrl": "https://macmillan.yale.edu/southeast-asia/council-southeast-asia-studies-grant"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5847c",
+      "pageUrl": "https://davenport.yale.edu/student-info/fellowships-awards"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5847d",
+      "pageUrl": "https://davenport.yale.edu/student-info/fellowships-awards"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5847e",
+      "pageUrl": "https://davenport.yale.edu/student-info/fellowships-awards"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5847f",
+      "pageUrl": "https://classics.yale.edu/undergraduate-program-0"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58482",
+      "pageUrl": "https://funding.yale.edu/find-funding/yale-fellowships-offered-through"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58487",
+      "pageUrl": "https://slifkacenter.org/grants/"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5848a",
+      "pageUrl": "https://macmillan.yale.edu/europe/eustudies/european-union-studies-grants-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5848b",
+      "pageUrl": "https://ezrastiles.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5848c",
+      "pageUrl": "https://ezrastiles.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58493",
+      "pageUrl": "https://frankeprogram.yale.edu/event/franke-fellowship-science-and-humanities"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58498",
+      "pageUrl": "https://macmillan.yale.edu/leitner/research-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58499",
+      "pageUrl": "https://silliman.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5849c",
+      "pageUrl": "https://medicine.yale.edu/yigh/students/awards-and-fellowships/"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5849d",
+      "pageUrl": "https://medicine.yale.edu/yigh/students/awards-and-fellowships/"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584a2",
+      "pageUrl": "https://gracehopper.yalecollege.yale.edu/heads-office/hopper-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584a3",
+      "pageUrl": "https://gracehopper.yalecollege.yale.edu/heads-office/hopper-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584a8",
+      "pageUrl": "https://jackson.yale.edu/academics/grand-strategy-program/summer-research/"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584aa",
+      "pageUrl": "https://macmillan.yale.edu/southeast-asia/harold-c-conklin-research-fellowship"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584b6",
+      "pageUrl": "https://ie.yale.edu/opportunities-ie/inclusion-economics-internships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584ba",
+      "pageUrl": "https://silliman.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584c0",
+      "pageUrl": "https://funding.yale.edu/find-funding/yale-fellowships-offered-through"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584c7",
+      "pageUrl": "https://macmillan.yale.edu/europe/baltic/keggi-berzins-fellowship-baltic-studies"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584cc",
+      "pageUrl": "https://macmillan.yale.edu/latam/student-grants-and-prizes"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584d1",
+      "pageUrl": "https://macmillan.yale.edu/leitner/research-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584e2",
+      "pageUrl": "https://yalecollege.yale.edu/get-know-yale-college/office-dean/committees/mellon-mays-and-bouchet-undergraduate-fellowship"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584e3",
+      "pageUrl": "https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584ea",
+      "pageUrl": "https://morse.yale.edu/head-colleges-office/fellowships-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584eb",
+      "pageUrl": "https://morse.yale.edu/head-colleges-office/fellowships-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584f7",
+      "pageUrl": "https://paulimurray.yalecollege.yale.edu/student-information/fellowships-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584f8",
+      "pageUrl": "https://paulimurray.yalecollege.yale.edu/student-information/fellowships-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584f9",
+      "pageUrl": "https://pierson.yale.edu/people/deans-office/fellowships-and-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584fa",
+      "pageUrl": "https://pierson.yale.edu/people/deans-office/fellowships-and-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d584fb",
+      "pageUrl": "https://politicalscience.yale.edu/academics/undergraduate-program/funds"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58511",
+      "pageUrl": "https://saybrook.yalecollege.yale.edu/student-control-center/saybrook-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58513",
+      "pageUrl": "https://saybrook.yalecollege.yale.edu/student-control-center/saybrook-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58516",
+      "pageUrl": "https://library.yale.edu/senior-exhibit-program"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58519",
+      "pageUrl": "https://silliman.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5851b",
+      "pageUrl": "https://silliman.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5851c",
+      "pageUrl": "https://silliman.yale.edu/resources/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58522",
+      "pageUrl": "https://macmillan.yale.edu/southasia/undergraduate-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58523",
+      "pageUrl": "https://macmillan.yale.edu/southasia/undergraduate-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58525",
+      "pageUrl": "https://macmillan.yale.edu/southasia/undergraduate-grants"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58528",
+      "pageUrl": "https://funding.yale.edu/find-funding/yale-fellowships-offered-through"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58530",
+      "pageUrl": "https://macmillan.yale.edu/latam/student-grants-and-prizes"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58532",
+      "pageUrl": "https://macmillan.yale.edu/ppd/research-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58533",
+      "pageUrl": "https://evst.yale.edu/the-evst-newsletter/undergraduate-opportunities/evst-summer-fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58537",
+      "pageUrl": "https://yji.yalecollege.yale.edu/faq"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58538",
+      "pageUrl": "https://funding.yale.edu/find-funding/yale-fellowships-offered-through"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58540",
+      "pageUrl": "https://funding.yale.edu/find-funding/yale-fellowships-offered-through"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58543",
+      "pageUrl": "https://timothydwight.yale.edu/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58545",
+      "pageUrl": "https://timothydwight.yale.edu/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d58549",
+      "pageUrl": "https://tri.yale.edu/fellowships"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5854b",
+      "pageUrl": "https://trumbull.yalecollege.yale.edu/masters-office/trumbull-college-awards"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5854c",
+      "pageUrl": "https://trumbull.yalecollege.yale.edu/masters-office/trumbull-college-awards"
+    },
+    {
+      "recordId": "6982c1cf781efc3253d5854f",
+      "pageUrl": "https://west.yale.edu/funding/western-resources-fellowship-ucross-high-plains-stewardship-initiative-yse"
+    }
+  ]
+}

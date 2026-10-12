@@ -7,24 +7,30 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
 import { Researcher } from '../models/researcher';
-import { Observation } from '../models/observation';
+import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { RESEARCH_ENTITY_SEARCH_INDEX_NAME } from '../services/researchEntitySearchIndexService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import { userEntityKeyForInferredPiUserKey } from '../scrapers/entityMaterializer';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { isSharedPeopleRosterUrl } from '../utils/researchHomeWebsiteUrl';
-import { researchStatementSentences } from '../utils/careerBiographyDescription';
+import {
+  descriptionAffirmsNoResearch,
+  descriptionStatesCreativePracticeEvidence,
+  descriptionStatesResearch,
+} from '../utils/descriptionStatesResearch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   STAFF_MINTED_ENTITY_ARCHIVE_REASON,
   STAFF_MINTED_ENTITY_REASON_PRECEDENCE,
   isPersonProfileIdentityUrl,
+  mintCitationDefersToSoleLead,
   officialProfileUrlSpellings,
   soleLeadIdentityFor,
+  mintKeyIdentityFor,
   type SoleLeadRecord,
   planStaffMintedEntityRetirement,
   summarizeStaffMintedEntityReasons,
@@ -34,6 +40,8 @@ import {
 } from './retireStaffMintedResearchEntitiesCore';
 
 dotenv.config({ quiet: true });
+
+export { descriptionStatesResearch };
 
 const SCRIPT_NAME = 'research-entity:retire-staff-minted-entities';
 const DEFAULT_MAX_APPLY = 200;
@@ -45,6 +53,7 @@ export interface RetireStaffMintedEntitiesCliOptions {
   output?: string;
   outputRequested?: boolean;
   reasons?: StaffMintedEntityReason[];
+  recordIds?: string[];
 }
 
 const isStaffMintedEntityReason = (value: string): value is StaffMintedEntityReason =>
@@ -92,6 +101,16 @@ export function parseRetireStaffMintedEntitiesArgs(
       options.reasons = [...new Set([...(options.reasons || []), reason])];
       continue;
     }
+    if (arg.startsWith('--record-id=')) {
+      const id = arg.slice('--record-id='.length).trim();
+      if (!/^[a-f0-9]{24}$/i.test(id)) {
+        throw new Error(
+          `--record-id must be a 24-character object id; received ${JSON.stringify(id)}`,
+        );
+      }
+      options.recordIds = [...new Set([...(options.recordIds || []), id])];
+      continue;
+    }
     if (arg.startsWith('--output=')) {
       // The raw value, empty included, so `--output=` reaches the resolver and throws
       // rather than silently producing no report for a whole apply (#3380).
@@ -108,35 +127,16 @@ export function parseRetireStaffMintedEntitiesArgs(
 const provenanceOf = (
   entity: { fieldProvenance?: unknown },
   field: string,
-): { sourceUrl?: unknown } | undefined => {
+): { sourceName?: unknown; sourceUrl?: unknown } | undefined => {
   const provenance =
     entity.fieldProvenance && typeof entity.fieldProvenance === 'object'
-      ? (entity.fieldProvenance as Record<string, { sourceUrl?: unknown } | undefined>)
+      ? (entity.fieldProvenance as Record<
+          string,
+          { sourceName?: unknown; sourceUrl?: unknown } | undefined
+        >)
       : {};
   return provenance[field];
 };
-
-// The verbs that state what a person researches, in any inflection. The card-lead verb list behind
-// `describesResearchFocus` also counts "supports" and "uses", which open an office's card
-// as readily as a lab's, so it cannot be the witness that a row states no research.
-const CARD_STATES_RESEARCH =
-  /\b(?:stud(?:y|ies|ying)|investigat(?:e|es|ing)|examin(?:e|es|ing)|explor(?:e|es|ing)|develop(?:s|ing)?|analy[sz](?:e|es|ing)|research(?:es|ers?|ing)?)\b/i;
-
-/**
- * Whether the row's own description states research, the second witness an
- * administrative title needs before the row can be archived: an explicit research
- * statement in either description, or a research verb or the word research on the card.
- */
-export function descriptionStatesResearch(entity: {
-  shortDescription?: unknown;
-  fullDescription?: unknown;
-}): boolean {
-  const card = typeof entity.shortDescription === 'string' ? entity.shortDescription : '';
-  if (CARD_STATES_RESEARCH.test(card)) return true;
-  return [entity.shortDescription, entity.fullDescription].some(
-    (value) => researchStatementSentences(value).length > 0,
-  );
-}
 
 /**
  * The citation that gave the row its identity, which is the only one whose person's
@@ -155,12 +155,16 @@ export function identityProfileUrlOf(entity: { fieldProvenance?: unknown }): str
 }
 
 /**
- * Whether the row populates a website its identity page did not supply.
+ * Whether the row populates a website its mint did not supply.
  *
  * A website whose provenance IS the identity page is the lab link off the person's own
  * profile, which is the graft being retired rather than an identity of the row's own,
- * so it must not spare the row. Anything else is an identity that did not come from
- * this page, and one such field is enough, because archival cannot be undone by
+ * so it must not spare the row. The same holds for a website the minting lane wrote
+ * from the page it minted the row from, read off the `slug` provenance: a roster lane
+ * mints from a shared listing, so its website carries the listing rather than the
+ * identity page, and comparing to the identity page alone spared every roster-minted
+ * row the lane gave a lab link (#4982). Anything else is an identity that did not come
+ * from the mint, and one such field is enough, because archival cannot be undone by
  * re-scraping. A row with no website at all has nothing foreign.
  */
 export function hasForeignWebsite(
@@ -170,7 +174,17 @@ export function hasForeignWebsite(
   const fields = populatedWebsiteFieldsOf(entity);
   if (fields.length === 0) return false;
   if (!identityProfileUrl) return true;
-  return fields.some((field) => provenanceOf(entity, field)?.sourceUrl !== identityProfileUrl);
+  const mint = provenanceOf(entity, 'slug');
+  const cameFromTheMint = (field: (typeof WEBSITE_FIELDS)[number]): boolean => {
+    const provenance = provenanceOf(entity, field);
+    if (provenance?.sourceUrl === identityProfileUrl) return true;
+    return (
+      Boolean(mint?.sourceName && mint.sourceUrl) &&
+      provenance?.sourceName === mint?.sourceName &&
+      provenance?.sourceUrl === mint?.sourceUrl
+    );
+  };
+  return fields.some((field) => !cameFromTheMint(field));
 }
 
 export const WEBSITE_FIELDS = ['websiteUrl', 'website'] as const;
@@ -263,6 +277,76 @@ async function addLiveTitlesByDestination(
   }
 }
 
+const LIVE_OBSERVATION_FILTER = {
+  superseded: { $ne: true },
+  'rollback.rolledBackAt': { $exists: false },
+};
+
+/**
+ * Each lead-less row's live `inferredPiUserKey` values, in `user`-key form. A row's
+ * observations carry either its id or its slug as their identity, so both forms are read.
+ */
+async function liveMintKeysById(
+  ids: readonly string[],
+  slugById: ReadonlyMap<string, string>,
+): Promise<Map<string, string[]>> {
+  const keysById = new Map<string, string[]>();
+  if (ids.length === 0) return keysById;
+  const idBySlug = new Map<string, string>();
+  for (const id of ids) {
+    const slug = slugById.get(id);
+    if (slug) idBySlug.set(slug, id);
+  }
+  const objectIds = ids
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  for (const observation of await Observation.find({
+    entityType: { $in: researchEntityObservationSubjects },
+    field: 'inferredPiUserKey',
+    ...LIVE_OBSERVATION_FILTER,
+    $or: [{ entityId: { $in: objectIds } }, { entityKey: { $in: [...idBySlug.keys()] } }],
+  })
+    .select('entityId entityKey value')
+    .lean()) {
+    const id =
+      serializedDocumentId((observation as { entityId?: unknown }).entityId) ||
+      idBySlug.get(String((observation as { entityKey?: unknown }).entityKey ?? ''));
+    const value = userEntityKeyForInferredPiUserKey(observation.value);
+    if (!id || !value) continue;
+    const held = keysById.get(id) || [];
+    if (!held.includes(value)) held.push(value);
+    keysById.set(id, held);
+  }
+  return keysById;
+}
+
+/** Each person key's live `profileUrls`, flattened from the stored object or string. */
+async function liveProfileUrlsByKey(keys: readonly string[]): Promise<Map<string, string[]>> {
+  const urlsByKey = new Map<string, string[]>();
+  if (keys.length === 0) return urlsByKey;
+  for (const observation of await Observation.find({
+    entityType: 'user',
+    field: 'profileUrls',
+    entityKey: { $in: keys },
+    ...LIVE_OBSERVATION_FILTER,
+  })
+    .select('entityKey value')
+    .lean()) {
+    const key = String((observation as { entityKey?: unknown }).entityKey ?? '');
+    const value = observation.value as unknown;
+    const urls = (
+      typeof value === 'string'
+        ? [value]
+        : value && typeof value === 'object'
+          ? Object.values(value as Record<string, unknown>)
+          : []
+    ).filter((url): url is string => typeof url === 'string' && url !== '');
+    if (!key || urls.length === 0) continue;
+    urlsByKey.set(key, [...new Set([...(urlsByKey.get(key) || []), ...urls])]);
+  }
+  return urlsByKey;
+}
+
 async function main(): Promise<void> {
   const args = parseRetireStaffMintedEntitiesArgs(process.argv.slice(2));
   // Resolved before the database is opened, so an unwritable report path fails the
@@ -283,7 +367,7 @@ async function main(): Promise<void> {
 
   const rows = await ResearchEntity.find(LIVE_ENTITY_FILTER)
     .select(
-      '_id archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
+      '_id slug archived entityType studentVisibilityTier studentVisibilityOverrideTier fieldProvenance manuallyLockedFields websiteUrl website shortDescription fullDescription',
     )
     .lean();
 
@@ -351,7 +435,7 @@ async function main(): Promise<void> {
   const soleLeadIds = new Set<string>();
   for (const [id, mintUrl] of mintUrlById) {
     const people = new Set(roleEdgePersonIdsById.get(id) || []);
-    if (people.size === 1 && typeof mintUrl === 'string' && isSharedPeopleRosterUrl(mintUrl)) {
+    if (people.size === 1 && mintCitationDefersToSoleLead(mintUrl)) {
       soleLeadIds.add([...people][0]);
     }
   }
@@ -377,7 +461,27 @@ async function main(): Promise<void> {
       .filter((url): url is string => typeof url === 'string' && url !== ''),
   );
   await addLiveTitlesByDestination(titlesByDestination, leadPageUrls);
+
+  const leadlessMintIds = [...mintUrlById.entries()]
+    .filter(
+      ([id, mintUrl]) =>
+        (roleEdgePersonIdsById.get(id) || []).length === 0 && mintCitationDefersToSoleLead(mintUrl),
+    )
+    .map(([id]) => id);
+  const slugById = new Map<string, string>();
+  for (const row of rows) {
+    const id = serializedDocumentId(row._id);
+    if (id && typeof (row as { slug?: unknown }).slug === 'string') {
+      slugById.set(id, (row as { slug: string }).slug);
+    }
+  }
+  const mintKeysById = await liveMintKeysById(leadlessMintIds, slugById);
+  const profileUrlsByKey = await liveProfileUrlsByKey([
+    ...new Set([...mintKeysById.values()].flat()),
+  ]);
+  await addLiveTitlesByDestination(titlesByDestination, [...profileUrlsByKey.values()].flat());
   let identitiesReadFromSoleLead = 0;
+  let identitiesReadFromMintKey = 0;
   const identityFor = (id: string): { url?: string; titles: string[]; personIds: string[] } => {
     const url = identityUrlById.get(id);
     if (url) {
@@ -393,9 +497,20 @@ async function main(): Promise<void> {
       leadById,
       observedTitlesByDestination: titlesByDestination,
     });
-    if (!borrowed) return { titles: [], personIds: [] };
-    identitiesReadFromSoleLead += 1;
-    return borrowed;
+    if (borrowed) {
+      identitiesReadFromSoleLead += 1;
+      return borrowed;
+    }
+    const fromKey = mintKeyIdentityFor({
+      mintUrl: mintUrlById.get(id),
+      rolePersonIds: roleEdgePersonIdsById.get(id) || [],
+      mintKeys: mintKeysById.get(id) || [],
+      profileUrlsByKey,
+      observedTitlesByDestination: titlesByDestination,
+    });
+    if (!fromKey) return { titles: [], personIds: [] };
+    identitiesReadFromMintKey += 1;
+    return fromKey;
   };
 
   const candidates: StaffMintedEntityCandidate[] = rows.flatMap((row) => {
@@ -426,6 +541,12 @@ async function main(): Promise<void> {
         descriptionStatesResearch: descriptionStatesResearch(
           row as { shortDescription?: unknown; fullDescription?: unknown },
         ),
+        descriptionAffirmsNoResearch: descriptionAffirmsNoResearch(
+          row as { shortDescription?: unknown; fullDescription?: unknown },
+        ),
+        descriptionStatesCreativePractice: descriptionStatesCreativePracticeEvidence(
+          row as { shortDescription?: unknown; fullDescription?: unknown },
+        ),
         hasForeignWebsite: hasForeignWebsite(
           row as { fieldProvenance?: unknown; websiteUrl?: unknown; website?: unknown },
           identityProfileUrl,
@@ -437,11 +558,16 @@ async function main(): Promise<void> {
   });
 
   const plan = planStaffMintedEntityRetirement(candidates);
-  const toApply = entriesInReasonScope(plan.toArchive, args.reasons).slice(0, args.maxApply);
+  const recordScope = args.recordIds ? new Set(args.recordIds) : null;
+  const plannedInReasonScope = entriesInReasonScope(plan.toArchive, args.reasons);
+  const toApply = plannedInReasonScope
+    .filter((entry) => !recordScope || recordScope.has(entry.id))
+    .slice(0, args.maxApply);
 
   const report: Record<string, unknown> = {
     script: SCRIPT_NAME,
     identitiesReadFromSoleLead,
+    identitiesReadFromMintKey,
     mode: args.apply ? 'apply' : 'dry-run',
     liveRows: rows.length,
     rowsWithAPersonProfileIdentity: identityUrlById.size,
@@ -457,7 +583,11 @@ async function main(): Promise<void> {
     refusedByReason: summarizeStaffMintedEntityRefusals(plan.refused),
     appliedLimit: args.maxApply,
     reasonScope: args.reasons || 'all',
-    plannedInReasonScope: entriesInReasonScope(plan.toArchive, args.reasons).length,
+    plannedInReasonScope: plannedInReasonScope.length,
+    recordScope: args.recordIds || 'all',
+    recordIdsNotPlanned: (args.recordIds || []).filter(
+      (id) => !plannedInReasonScope.some((entry) => entry.id === id),
+    ),
     // The pre-apply state of exactly the rows this run touches. A peer session
     // writes Development concurrently, so a post-hoc tier delta over the corpus
     // cannot be attributed to this run without it.

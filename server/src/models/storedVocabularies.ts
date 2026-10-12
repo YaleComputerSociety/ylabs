@@ -38,6 +38,9 @@ export const labSiteLeadMatchReasons = [
 ] as const;
 export type LabSiteLeadMatchReason = (typeof labSiteLeadMatchReasons)[number];
 
+export const labSiteLeadContradictionShapes = ['NAMESAKE', 'NAMED_AS_LEAD'] as const;
+export type LabSiteLeadContradictionShape = (typeof labSiteLeadContradictionShapes)[number];
+
 export const labSiteVerificationStates = [
   'verified',
   'partial',

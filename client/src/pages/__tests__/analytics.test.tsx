@@ -42,13 +42,13 @@ const analyticsData: AnalyticsData = {
   },
   research: {
     byEventType: [
-      { eventType: 'research_view', total: 12, last7Days: 5, today: 1 },
-      { eventType: 'pathway_save', total: 4, last7Days: 2, today: 0 },
+      { eventType: 'research_profile_open', total: 12, last7Days: 5, today: 1 },
+      { eventType: 'research_save', total: 4, last7Days: 2, today: 0 },
       { eventType: 'contact_route_click', total: 3, last7Days: 1, today: 0 },
     ],
     byEntityType: [
-      { entityType: 'profile', eventType: 'research_view', count: 7 },
-      { entityType: 'fellowship', eventType: 'pathway_save', count: 4 },
+      { entityType: 'profile', eventType: 'research_profile_open', count: 7 },
+      { entityType: 'fellowship', eventType: 'research_save', count: 4 },
     ],
     byUserType: [{ userType: 'undergraduate', count: 6 }],
     topEntities: [
@@ -257,7 +257,6 @@ describe('Analytics page', () => {
       if (url === '/analytics/funnel') {
         return Promise.resolve({
           data: {
-            overallConversionRate: 0.25,
             stages: [
               {
                 key: 'research_searches',
@@ -273,8 +272,8 @@ describe('Analytics page', () => {
                 conversionRate: 0.67,
               },
               {
-                key: 'qualified_actions',
-                label: 'Used a qualified route',
+                key: 'plans',
+                label: 'Updated a plan',
                 count: 10,
                 conversionRate: 0.5,
               },
@@ -313,7 +312,8 @@ describe('Analytics page', () => {
     expect(screen.getByText(/Are students finding credible research next steps/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Decision Readout' })).toBeTruthy();
     expect(screen.getByText('Search success')).toBeTruthy();
-    expect(screen.getAllByText('Official next-step rate').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Source reviewers').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Official next-step rate')).toBeNull();
     expect(screen.getByText('Items to review')).toBeTruthy();
     expect(screen.getByText('Supporting Detail')).toBeTruthy();
     const detailNav = screen.getByRole('navigation', { name: 'Analytics detail sections' });
@@ -338,7 +338,7 @@ describe('Analytics page', () => {
     });
 
     expect(screen.getAllByText('quantum materials')).toHaveLength(1);
-    expect(screen.getAllByText('Used a qualified route')).toHaveLength(1);
+    expect(screen.getAllByText('Updated a plan')).toHaveLength(1);
     expect(screen.getByText('Returned but ignored')).toBeTruthy();
     const degradedRow = screen.getByText('Degraded, not counted as zero-result').parentElement;
     expect(degradedRow?.textContent).toContain('3');
@@ -819,7 +819,6 @@ describe('Analytics page', () => {
       searches: 4,
       researchViews: 2,
       fellowshipViews: 0,
-      profileUpdates: 0,
       loginCount: 2,
       lastActive: '2026-05-17T00:00:00.000Z',
     });

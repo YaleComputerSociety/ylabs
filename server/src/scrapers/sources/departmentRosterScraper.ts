@@ -108,6 +108,8 @@ import {
   isFacultyTitle,
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
+  mintedDescriptionOf,
+  mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
 import {
@@ -3998,7 +4000,11 @@ export function rosterResearchEntityMint(
   // entry's subheading is the person's stated title, and a stated title that fails a
   // screen refuses; absence of a title is absence of evidence and still mints
   // (#3410).
-  if (observations.length > 0 && ownsNoResearchEntityByTitle(entry.title)) {
+  if (
+    observations.length > 0 &&
+    (ownsNoResearchEntityByTitle(entry.title) ||
+      mintsNoResearchEntityAsTeachingAppointment(entry.title, mintedDescriptionOf(observations)))
+  ) {
     return { observations: [], refusedByTitle: true };
   }
   return { observations, refusedByTitle: false };
@@ -4022,6 +4028,17 @@ export function rosterResearchEntityMint(
  */
 export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig): string {
   const nameSlug = rosterIdentityNameSlug(entry) || (entry.labUrl ? slugify(entry.labUrl) : '');
+  return deptResearchEntitySlug(nameSlug, dept);
+}
+
+export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptConfig): string {
+  const prefix = `dept:${namespacedDeptKey(dept.deptKey)}:`;
+  if (!userKey.startsWith(prefix)) return '';
+  const nameSlug = userKey.slice(prefix.length);
+  return nameSlug === 'unknown' ? '' : deptResearchEntitySlug(nameSlug, dept);
+}
+
+function deptResearchEntitySlug(nameSlug: string, dept: DeptConfig): string {
   if (!nameSlug) return '';
   return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
 }

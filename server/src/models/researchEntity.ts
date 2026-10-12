@@ -22,6 +22,7 @@ import {
 import { studentVisibilityFields } from './studentVisibility';
 import {
   descriptionGroundingVerdicts,
+  labSiteLeadContradictionShapes,
   labSiteLeadMatchReasons,
   labSiteLeadVerdicts,
   labSiteVerificationStates,
@@ -60,6 +61,11 @@ const leadVerificationJudgementSchema = new mongoose.Schema(
     evidenceUrl: {
       type: String,
       default: '',
+    },
+    contradictedBy: {
+      type: String,
+      enum: [...labSiteLeadContradictionShapes],
+      required: false,
     },
   },
   { _id: false },

@@ -11,7 +11,17 @@ import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQualit
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
 import { isDescriptionGroundedInSource } from '../utils/officialResearchDescription';
 import { isModelTextSource } from './sourceCoverageRegistry';
-import { splitDescriptionSentences } from '../utils/careerBiographyDescription';
+import {
+  researchStatementSentences,
+  splitDescriptionSentences,
+} from '../utils/careerBiographyDescription';
+import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
+import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
+import { withoutProfileTemplateWidgets } from '../utils/profileTemplateChrome';
+import {
+  statesPersonalPastFraming,
+  restatesPastFramedEvidence,
+} from './utils/extractedDescriptionScope';
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
@@ -55,6 +65,13 @@ export interface CoverageObservationLike {
   sourceUrl?: string;
   sourceName?: string;
   confidence?: number;
+  scrapeRunId?: unknown;
+  /**
+   * The lane that wrote this value checked it against the page it fetched before storing
+   * it (owner decision on #4867). Derived by `markIngestVerifiedObservations`, never by
+   * the source name alone.
+   */
+  ingestVerifiedAgainstPage?: boolean;
 }
 
 const MANUAL_ADMIN_EDIT_SOURCE_NAME = 'manual-admin-edit';
@@ -70,16 +87,22 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
  * A written body is grounded only in text that is on a fetched page (#4867). A value a
  * language-model lane wrote is not page text, and reading it as evidence re-asserted an
  * earlier lane's invention as grounded, so such a value is evidence only when it is found
- * near-verbatim in a stored copy of the page it cites, and never without one. The writer's
+ * near-verbatim in a stored copy of the page it cites, or when the lane itself verified it
+ * against its fetched page at ingest (`ingestVerifiedAgainstPage`). The writer's
  * own output is model text, so it is never its own input. A `manual-admin-edit`
- * description is ordinary evidence unless it narrates its sources (#4788).
+ * description is ordinary evidence unless it narrates its sources (#4788). A profile
+ * template's widget labels are on the page verbatim yet describe no one, so a value that
+ * is only widgets is never evidence, whichever lane stored it; a MeSH topic run is
+ * (`withoutProfileTemplateWidgets`).
  */
 export function isWriterEvidenceObservation(
   obs: CoverageObservationLike,
   storedPageText: StoredPageTextLookup = () => undefined,
 ): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
+  if (typeof obs.value === 'string' && !withoutProfileTemplateWidgets(obs.value)) return false;
   if (isModelTextSource(obs.sourceName)) {
+    if (obs.ingestVerifiedAgainstPage === true) return true;
     const page = storedPageText(obs.sourceUrl);
     return Boolean(page) && isDescriptionGroundedInSource(obs.value, page);
   }
@@ -102,6 +125,16 @@ export type CoverageSynthesisLLMFn = (input: {
   entityName: string;
 }) => Promise<CoverageSynthesisLLMResult>;
 
+/**
+ * A career biography is evidence only through the sentences that state the research, so the
+ * writer never reads an appointment, an award or a clinical role as what the person studies
+ * (#4928).
+ */
+export function writerEvidenceTextOf(value: string): string {
+  if (!isBiographyRatherThanResearch(value)) return value;
+  return researchStatementSentences(value, { activityAnchors: true }).join(' ').trim();
+}
+
 export function gatherCoverageSnippets(
   observations: CoverageObservationLike[],
   storedPageText?: StoredPageTextLookup,
@@ -112,7 +145,7 @@ export function gatherCoverageSnippets(
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const raw = textValue(obs.value);
+    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
     if (!raw) continue;
     const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
     if (clean.length < 20) continue;
@@ -160,6 +193,8 @@ export type CoverageSynthesisRefusal =
   | 'internal-vocabulary'
   | 'past-career-clause'
   | 'teaser-attribution'
+  | 'unsupported-method-clause'
+  | 'past-framed-restatement'
   | 'source-narration'
   | 'over-length';
 
@@ -219,7 +254,9 @@ const PAST_CAREER_VERB =
  * Anchored on the clause's subject position rather than on the adverb, because
  * "previously" is ordinary research prose: "combines new and previously developed
  * methods" and "previously uncharacterized genes" must survive. The clause counts at a
- * sentence start, after a subject pronoun, or after a clause break.
+ * sentence start, after a subject pronoun, or after a clause break. The extractor's
+ * markers are read as well (`statesPersonalPastFraming`, #4932); neither list covers the
+ * other, so removing either loses cases.
  */
 const PAST_CAREER_CLAUSE = new RegExp(
   [
@@ -236,7 +273,7 @@ const PAST_CAREER_CLAUSE = new RegExp(
 );
 
 export function isPastCareerClauseSentence(sentence: string): boolean {
-  return PAST_CAREER_CLAUSE.test(sentence);
+  return PAST_CAREER_CLAUSE.test(sentence) || statesPersonalPastFraming(sentence);
 }
 
 /**
@@ -293,6 +330,20 @@ export function withoutUnsupportedSentences(description: string): UnsupportedSen
   };
 }
 
+/**
+ * The body without a sentence that serves, as current work, what its snippets state only
+ * as training or a previous position (#4915). Null when nothing else is left.
+ */
+export function withoutPastFramedRestatements(
+  description: string,
+  snippetTexts: readonly string[],
+): string | null {
+  const sentences = splitDescriptionSentences(description);
+  const kept = sentences.filter((sentence) => !restatesPastFramedEvidence(sentence, snippetTexts));
+  if (kept.length === sentences.length) return description;
+  return kept.join(' ').trim() || null;
+}
+
 const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).length;
 
 export function hasInternalVocabulary(value: unknown): boolean {
@@ -304,6 +355,92 @@ export function hasInternalVocabulary(value: unknown): boolean {
 export interface CoverageSynthesisDecision {
   result: CoverageSynthesisResult | null;
   refusal: CoverageSynthesisRefusal | null;
+}
+
+export interface WrittenDescriptionJudgement {
+  description: string | null;
+  refusal: CoverageSynthesisRefusal | null;
+}
+
+/**
+ * Every content arm of the writer, run on one drafted body. It is the single owner of
+ * those arms so a fresh draft and an already-adopted body are judged by the same code:
+ * a second copy for the adopted body would drift from this one the moment an arm moves,
+ * the #3068 shape of a re-derivation that attributes verdicts to gates that did not fire.
+ * The arm order is the attribution order, so it must not change.
+ */
+export function judgeWrittenDescription(input: {
+  drafted: string;
+  snippets: readonly CoverageSnippet[];
+  researchAreas?: unknown;
+  entityType?: ResearchEntityType;
+  citedSnippetCount: number;
+}): WrittenDescriptionJudgement {
+  const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
+    description: null,
+    refusal,
+  });
+  const drafted = redactDirectContactInfo(textValue(input.drafted));
+  if (!drafted) return refuse('empty-description');
+  const stripped = withoutUnsupportedSentences(drafted);
+  if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
+  const snippetTexts = input.snippets.map((snippet) => snippet.text);
+  const currentOnly = withoutPastFramedRestatements(stripped.description, snippetTexts);
+  const methodChecked = withoutUnsupportedMethodClauses(
+    currentOnly ?? stripped.description,
+    snippetTexts,
+  ).text;
+  const description = methodChecked ?? currentOnly ?? stripped.description;
+
+  if (input.citedSnippetCount === 0) return refuse('no-cited-snippets');
+
+  const corpus = snippetTexts.join(' \n ');
+  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
+    return refuse('grounding-overlap-below-floor');
+  }
+  // Before the quality bar, which blanks the same shape through the serve sanitizer and
+  // would otherwise report a narrating body as a generic quality verdict.
+  if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
+  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+    return refuse('quality-bar');
+  }
+  // After the older arms, so every arm above keeps the attribution it had and each
+  // count below is exactly the bodies that would otherwise have been ACCEPTED. A refusal
+  // placed earlier would absorb rows another gate was already refusing and overstate
+  // itself, which is the #2440 shape of a counter that misreports its own outcome.
+  if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
+  if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
+  if (!currentOnly) return refuse('past-framed-restatement');
+  if (!methodChecked) return refuse('unsupported-method-clause');
+  return { description, refusal: null };
+}
+
+const normalizedBody = (value: unknown): string => textValue(value).replace(/\s+/g, ' ').trim();
+
+/**
+ * Whether a body the writer already adopted still clears every content arm against the
+ * row's current evidence, unchanged. A refusal of a new draft judges that draft, not the
+ * body already served: retiring an adopted body on that verdict alone retired 180 bodies
+ * in one all-rows run, 163 of which still passed every arm themselves. It must
+ * pass verbatim, because the served text is the stored text and an arm that would have
+ * trimmed it means the stored body is not what the arms accept.
+ */
+export function adoptedWrittenBodyStillSupported(input: {
+  body: unknown;
+  snippets: readonly CoverageSnippet[];
+  researchAreas?: unknown;
+  entityType?: ResearchEntityType;
+}): boolean {
+  const body = normalizedBody(input.body);
+  if (!body || input.snippets.length === 0) return false;
+  const judged = judgeWrittenDescription({
+    drafted: body,
+    snippets: input.snippets,
+    researchAreas: input.researchAreas,
+    entityType: input.entityType,
+    citedSnippetCount: input.snippets.length,
+  });
+  return judged.refusal === null && normalizedBody(judged.description) === body;
 }
 
 /**
@@ -344,35 +481,22 @@ export async function coverageSynthesisDecision(
   }
   if (!raw || typeof raw !== 'object') return refuse('llm-malformed-response');
 
-  const drafted = redactDirectContactInfo(textValue(raw.fullDescription));
-  if (!drafted) return refuse('empty-description');
-  const stripped = withoutUnsupportedSentences(drafted);
-  const description = stripped.description;
-  if (!description) return refuse(stripped.refusal ?? 'past-career-clause');
-
   const usedSnippetIndexes = Array.isArray(raw.usedSnippetIndexes)
     ? raw.usedSnippetIndexes.filter(
         (index) => Number.isInteger(index) && index >= 0 && index < snippets.length,
       )
     : [];
-  if (usedSnippetIndexes.length === 0) return refuse('no-cited-snippets');
-
-  const corpus = snippets.map((snippet) => snippet.text).join(' \n ');
-  if (cardGroundingScore(description, corpus) < COVERAGE_MIN_OVERLAP) {
-    return refuse('grounding-overlap-below-floor');
+  const judged = judgeWrittenDescription({
+    drafted: textValue(raw.fullDescription),
+    snippets,
+    researchAreas: input.researchAreas,
+    entityType: input.entityType,
+    citedSnippetCount: usedSnippetIndexes.length,
+  });
+  if (judged.refusal || !judged.description) {
+    return refuse(judged.refusal ?? 'empty-description');
   }
-  // Before the quality bar, which blanks the same shape through the serve sanitizer and
-  // would otherwise report a narrating body as a generic quality verdict.
-  if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
-    return refuse('quality-bar');
-  }
-  // After the older arms, so every arm above keeps the attribution it had and each
-  // count below is exactly the bodies that would otherwise have been ACCEPTED. A refusal
-  // placed earlier would absorb rows another gate was already refusing and overstate
-  // itself, which is the #2440 shape of a counter that misreports its own outcome.
-  if (hasInternalVocabulary(description)) return refuse('internal-vocabulary');
-  if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
+  const { description } = judged;
 
   const sourceUrls = Array.from(
     new Set(

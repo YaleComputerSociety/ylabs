@@ -5405,7 +5405,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/disambiguateSurnameLabNames.ts',
     '../server/src/scripts/studentVisibilityGate.ts',
     '../server/src/scripts/cleanupLegacyMongoCollections.ts',
-    '../server/src/scripts/backfillProgramOfficialSources.ts',
     '../server/src/scripts/gateRefreshScheduler.ts',
     '../server/src/scripts/refreshGateScorecards.ts',
   ];
@@ -6378,15 +6377,7 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
     new URL('../server/src/scripts/auditProgramResearchRelevance.ts', import.meta.url),
     'utf8',
   );
-  const programOfficialSources = fs.readFileSync(
-    new URL('../server/src/scripts/backfillProgramOfficialSources.ts', import.meta.url),
-    'utf8',
-  );
-
-  for (const [name, source] of [
-    ['program research relevance audit', programResearchRelevance],
-    ['program official source backfill', programOfficialSources],
-  ]) {
+  for (const [name, source] of [['program research relevance audit', programResearchRelevance]]) {
     assert.match(
       source,
       /resolveSafeJsonReportOutputPath/,
@@ -6409,16 +6400,6 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
     );
   }
 
-  assert.match(programOfficialSources, /function resolveProgramOfficialSourceInputPath/);
-  assert.match(
-    programOfficialSources,
-    /return resolveSafeJsonReportOutputPath\(input, '--input'\)/,
-  );
-  assert.match(
-    programOfficialSources,
-    /const safeInput = resolveProgramOfficialSourceInputPath\(input\)/,
-  );
-  assert.doesNotMatch(programOfficialSources, /fs\.readFileSync\(input,/);
   assert.match(
     programResearchRelevance,
     /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,

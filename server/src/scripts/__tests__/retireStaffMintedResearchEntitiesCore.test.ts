@@ -5,6 +5,7 @@ import {
   planStaffMintedEntityRetirement,
   officialProfileUrlSpellings,
   soleLeadIdentityFor,
+  mintKeyIdentityFor,
   staffMintedEntityReasonFor,
   summarizeStaffMintedEntityRefusals,
   type StaffMintedEntityCandidate,
@@ -402,6 +403,11 @@ describe('soleLeadIdentityFor', () => {
     ).toEqual([]);
   });
 
+  it('borrows the sole lead for a row that records no mint citation at all (#4916)', () => {
+    expect(borrow({ mintUrl: undefined })?.url).toBe(page);
+    expect(borrow({ mintUrl: null })?.url).toBe(page);
+  });
+
   it('borrows nothing for two people, an unverified page, or a mint citation that is not a shared listing', () => {
     expect(borrow({ rolePersonIds: ['p'.repeat(24), 'q'.repeat(24)] })).toBeUndefined();
     expect(
@@ -465,5 +471,151 @@ describe('administrative staff titles', () => {
     expect(office(undefined).refused).toEqual([
       { id: 'a'.repeat(24), reason: 'description-states-research' },
     ]);
+  });
+});
+
+describe('teaching appointment titles (#4916)', () => {
+  it('names a lecturer or lector title that states no other rank or role', () => {
+    expect(staffMintedEntityReasonFor('Lecturer in English')).toBe('teaching_appointment_title');
+    expect(staffMintedEntityReasonFor('Senior Lector I of Modern Fixture')).toBe(
+      'teaching_appointment_title',
+    );
+    expect(staffMintedEntityReasonFor('Senior Lecturer and Research Scholar')).toBeUndefined();
+  });
+
+  it('archives a lector row only when its own description affirms no research', () => {
+    const lecturer = (descriptionAffirmsNoResearch?: boolean) =>
+      planStaffMintedEntityRetirement([
+        candidate({
+          storedTitles: ['Senior Lector I of Modern Fixture'],
+          descriptionStatesResearch: false,
+          descriptionAffirmsNoResearch,
+          descriptionStatesCreativePractice: false,
+        }),
+      ]);
+    expect(lecturer(true).toArchive.map((entry) => entry.reason)).toEqual([
+      'teaching_appointment_title',
+    ]);
+    for (const witness of [false, undefined]) {
+      expect(lecturer(witness).refused).toEqual([
+        { id: 'a'.repeat(24), reason: 'description-does-not-affirm-teaching-only' },
+      ]);
+    }
+  });
+
+  it('keeps a teaching row when another lane states a research-owning title', () => {
+    expect(
+      planStaffMintedEntityRetirement([
+        candidate({
+          storedTitles: ['Lecturer in English', 'Professor of English'],
+          descriptionAffirmsNoResearch: true,
+        }),
+      ]).refused,
+    ).toEqual([{ id: 'a'.repeat(24), reason: 'title-evidence-disagrees' }]);
+  });
+});
+
+describe('teaching appointment titles and creative practice (#4916, #4519)', () => {
+  const lecturer = (descriptionStatesCreativePractice?: boolean) =>
+    planStaffMintedEntityRetirement([
+      candidate({
+        storedTitles: ['Senior Lector I of Modern Fixture'],
+        descriptionStatesResearch: false,
+        descriptionAffirmsNoResearch: true,
+        descriptionStatesCreativePractice,
+      }),
+    ]);
+
+  it('never archives a lector row whose evidence is creative practice', () => {
+    for (const witness of [true, undefined]) {
+      expect(lecturer(witness).refused).toEqual([
+        { id: 'a'.repeat(24), reason: 'description-states-creative-practice' },
+      ]);
+    }
+    expect(lecturer(false).toArchive.map((entry) => entry.reason)).toEqual([
+      'teaching_appointment_title',
+    ]);
+  });
+});
+
+describe('mintKeyIdentityFor', () => {
+  const roster = 'https://dept.example.edu/people/faculty';
+  const page = 'https://dept.example.edu/profile/p-3002/';
+  const borrow = (over: Record<string, unknown> = {}) =>
+    mintKeyIdentityFor({
+      mintUrl: roster,
+      rolePersonIds: [],
+      mintKeys: ['dept:example:p-3002'],
+      profileUrlsByKey: new Map([['dept:example:p-3002', [page]]]),
+      observedTitlesByDestination: new Map([
+        [normalizeOfficialProfileDestination(page), new Set(['Program Manager 2'])],
+      ]),
+      ...over,
+    });
+
+  it("reads a lead-less shared-listing row's identity from its one person key", () => {
+    expect(borrow()).toEqual({ url: page, titles: ['Program Manager 2'], personIds: [] });
+  });
+
+  it('keeps no identity when the row names two person keys', () => {
+    expect(borrow({ mintKeys: ['dept:example:p-3002', 'dept:example:p-3003'] })).toBeUndefined();
+  });
+
+  it("keeps no identity when the key's profile pages disagree", () => {
+    expect(
+      borrow({
+        profileUrlsByKey: new Map([
+          ['dept:example:p-3002', [page, 'https://dept.example.edu/profile/p-3004/']],
+        ]),
+      }),
+    ).toBeUndefined();
+  });
+
+  it('defers to a lead edge and to a row minted from its own page', () => {
+    expect(borrow({ rolePersonIds: ['p'.repeat(24)] })).toBeUndefined();
+    expect(borrow({ mintUrl: page })).toBeUndefined();
+  });
+
+  it('feeds the planner so a non-hosting title on the borrowed page is retired', () => {
+    const identity = borrow()!;
+    const plan = planStaffMintedEntityRetirement([
+      candidate({
+        identityProfileUrl: identity.url,
+        storedTitles: identity.titles,
+        identityPersonIds: [],
+        roleEdgePersonIds: [],
+        descriptionStatesResearch: false,
+      }),
+    ]);
+    expect(plan.toArchive).toHaveLength(1);
+  });
+});
+
+describe('lecturer rank spares a row', () => {
+  it('keeps a lecturer row even when its own description affirms no research', () => {
+    const plan = planStaffMintedEntityRetirement([
+      candidate({
+        storedTitles: ['Lecturer in English'],
+        descriptionAffirmsNoResearch: true,
+        descriptionStatesCreativePractice: false,
+      }),
+    ]);
+    expect(plan.toArchive).toHaveLength(0);
+    expect(plan.refused.map((entry) => entry.reason)).toEqual(['title-holds-lecturer-rank']);
+  });
+
+  it('keeps a row whose titles pair a lecturer rank with a support-staff title', () => {
+    const plan = planStaffMintedEntityRetirement([
+      candidate({ storedTitles: ['Lecturer', 'Research and Education Librarian'] }),
+    ]);
+    expect(plan.toArchive).toHaveLength(0);
+    expect(plan.refused).toEqual([{ id: 'a'.repeat(24), reason: 'title-holds-lecturer-rank' }]);
+  });
+
+  it('still retires a support-staff title with no lecturer rank', () => {
+    const plan = planStaffMintedEntityRetirement([
+      candidate({ storedTitles: ['Research and Education Librarian'] }),
+    ]);
+    expect(plan.toArchive).toHaveLength(1);
   });
 });

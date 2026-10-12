@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  CONFIRM_FLAG,
-  benchmarksToReplay,
-  parseLaneScorecardArgs,
-  emptyReplayReason,
-} from '../laneScorecard';
+import { CONFIRM_FLAG, parseLaneScorecardArgs, emptyReplayReason } from '../laneScorecard';
+import { benchmarksToReplay } from '../laneScorecardCore';
 
 describe('parseLaneScorecardArgs', () => {
   it('defaults a live-model run to three runs and stays a dry run', () => {

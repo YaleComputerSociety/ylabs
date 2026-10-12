@@ -1,3 +1,4 @@
+import { researchStatementSentences } from './careerBiographyDescription';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import {
   MAX_CARD_SHORT_DESCRIPTION_LENGTH,
@@ -474,6 +475,9 @@ const isConciseSpecificResearchDescription = (value: string): boolean =>
   (/^(?:Research\s+(?:focuses\s+on|fields\s+include)|Studies)\b/i.test(value) &&
     /\b[a-z][a-z-]+(?:ics|ology|tion|ment|nance|theory|design|cycles)\b/i.test(value) &&
     (value.match(/,/g)?.length || 0) + (/\band\b/i.test(value) ? 1 : 0) >= 1);
+
+export const isTooShortCardLine = (value: string): boolean =>
+  wordCount(value) < 8 && !isConciseSpecificResearchDescription(value);
 
 /**
  * The bare label-list template flagged by #1616 (a `LAB`/`FACULTY_RESEARCH_AREA`
@@ -1974,9 +1978,7 @@ function computeShortDescriptionQuality(
   const flags: DescriptionQualityFlag[] = [];
 
   if (!text) flags.push('blank');
-  if (text && wordCount(text) < 8 && !isConciseSpecificResearchDescription(text)) {
-    flags.push('too-short');
-  }
+  if (text && isTooShortCardLine(text)) flags.push('too-short');
   if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
@@ -2079,6 +2081,7 @@ function computeShortDescriptionQuality(
     full &&
     text.toLowerCase() === full.toLowerCase() &&
     !isConciseSpecificResearchDescription(text) &&
+    !isSoleResearchStatementSentence(text) &&
     (sentenceList(full).length > 1 ||
       wordCount(full) > 24 ||
       !/^(?:studies|investigates|examines|explores|supports|develops|advances|fosters|works towards|uses|employs|focuses|creative work)\b/i.test(
@@ -2104,6 +2107,19 @@ function computeShortDescriptionQuality(
     flags: uniqueFlags(flags),
     isUseful: flags.length === 0,
   };
+}
+
+// A body that is one sentence stating what the person researches ("<Name> is a
+// sociologist whose scholarship focuses on ...") is the research statement a CV-shaped
+// profile narrows to, so a card repeating it is the same accurate line, not a lazy copy.
+const SOLE_RESEARCH_STATEMENT_MAX_WORDS = 40;
+
+function isSoleResearchStatementSentence(text: string): boolean {
+  return (
+    sentenceList(text).length === 1 &&
+    wordCount(text) <= SOLE_RESEARCH_STATEMENT_MAX_WORDS &&
+    researchStatementSentences(text).length === 1
+  );
 }
 
 export function shortDescriptionQuality(

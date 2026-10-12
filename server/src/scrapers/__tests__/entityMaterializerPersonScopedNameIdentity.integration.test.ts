@@ -316,6 +316,70 @@ describe('materializeEntity refuses a name that identifies nothing or names some
     expect((await persisted()).name).toBe(OWN_NAME);
   });
 
+  it('replaces a campus building a news story named with the lead research record name (#4916)', async () => {
+    const entity = await seedPersonScopedEntity({ name: 'Widget Econ Hall' });
+    await seedLead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({
+      field: 'name',
+      value: 'Widget Econ Hall',
+      sourceUrl: 'https://news.example.edu/2024/06/05/a-century-of-widget-econ-hall',
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe(OWN_NAME);
+  });
+
+  it('names a faculty research record after its lead even when its linked off-site page declares a brand title (#4909)', async () => {
+    const entity = await seedPersonScopedEntity({ name: 'Velmora Atelier' });
+    await seedLead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({
+      field: 'name',
+      value: OWN_NAME,
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://economics.example.edu/people',
+      confidence: 0.7,
+    });
+    await seedObservation({
+      field: 'name',
+      value: 'Velmora Atelier',
+      sourceUrl: 'https://velmora.example.io/',
+      confidence: 0.96,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe(OWN_NAME);
+    expect(stored.siteDeclaredOwnNames).toEqual(['Velmora Atelier']);
+  });
+
+  it("keeps the brand a lab row's own off-site page declares for itself", async () => {
+    const entity = await seedPersonScopedEntity({
+      entityType: 'LAB',
+      kind: 'lab',
+      name: 'Velmora Atelier',
+    });
+    await seedLead(entity._id, 'Rafferty Duchamp');
+    await seedObservation({
+      field: 'name',
+      value: OWN_NAME,
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://economics.example.edu/people',
+      confidence: 0.7,
+    });
+    await seedObservation({
+      field: 'name',
+      value: 'Velmora Atelier',
+      sourceUrl: 'https://velmora.example.io/',
+      confidence: 0.96,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe('Velmora Atelier Lab');
+  });
+
   it('leaves a manually locked displayName alone', async () => {
     await seedPersonScopedEntity({
       displayName: AFFILIATION_GRAFT,

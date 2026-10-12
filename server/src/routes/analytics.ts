@@ -368,7 +368,6 @@ router.get(
   isAdmin,
   asyncHandler(async (request: Request, response: Response) => {
     const analytics = await getFunnelAnalytics(parseAnalyticsRange(request.query.range));
-    const qualifiedActionsMeasured = analytics.qualifiedActionEvents > 0;
     const stages = [
       { key: 'research_searches', label: 'Searched research', count: analytics.researchSearches },
       { key: 'profile_opens', label: 'Opened a profile', count: analytics.researchProfileOpens },
@@ -379,12 +378,7 @@ router.get(
         count: analytics.researchComparisons,
       },
       { key: 'plans', label: 'Updated a plan', count: analytics.researchPlanUpdates },
-      {
-        key: 'qualified_actions',
-        label: 'Used a qualified route',
-        count: analytics.qualifiedActions,
-      },
-    ].filter((stage) => stage.key !== 'qualified_actions' || qualifiedActionsMeasured);
+    ];
 
     response.status(200).json({
       ...analytics,
@@ -397,19 +391,7 @@ router.get(
       }),
       journeyMetrics: {
         sourceInspections: analytics.sourceInspections,
-        officialRouteAttempts: qualifiedActionsMeasured ? analytics.officialRouteAttempts : null,
-        applicationOpens: qualifiedActionsMeasured ? analytics.applicationOpens : null,
       },
-      qualifiedActionEventsRecorded: analytics.qualifiedActionEvents,
-      // A rate of 0 and a lane that recorded nothing are different facts, and a
-      // dashboard that renders both as "0%" reports an instrumentation gap as a
-      // product failure (#2677). Null means unmeasured; 0 means measured at zero.
-      overallConversionRate:
-        analytics.qualifiedActionEvents === 0
-          ? null
-          : analytics.logins > 0
-            ? analytics.qualifiedActions / analytics.logins
-            : 0,
     });
   }),
 );

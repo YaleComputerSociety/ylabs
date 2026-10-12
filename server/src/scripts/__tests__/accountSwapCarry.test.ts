@@ -139,4 +139,38 @@ describe('planAccountCarry', () => {
 
     expect(plan.rekeys.map((rekey) => rekey.document.sessionVersion)).toEqual([2]);
   });
+
+  it('keeps the Production status of a login when refreshing a promoted row that shares its _id', () => {
+    const plan = planAccountCarry({
+      productionAccounts: [
+        { _id: promotedId, netid: 'fixture-researcher', lastLoginAt, status: 'DISABLED' },
+      ],
+      promotedAccounts,
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.refreshes).toEqual([{ _id: promotedId, set: { lastLoginAt, status: 'DISABLED' } }]);
+  });
+
+  it('keeps the Production status of a login when re-keying a same-netid promoted row', () => {
+    const plan = planAccountCarry({
+      productionAccounts: [
+        { _id: productionTwinId, netid: 'fixture-researcher', lastLoginAt, status: 'DISABLED' },
+      ],
+      promotedAccounts,
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan.rekeys.map((rekey) => rekey.document.status)).toEqual(['DISABLED']);
+  });
+
+  it('carries nothing from a Production account without login evidence, so a deleted identity row stays deleted', () => {
+    const plan = planAccountCarry({
+      productionAccounts: [{ _id: staleId, netid: 'fixture-no-evidence', status: 'UNKNOWN' }],
+      promotedAccounts: [],
+      planOwnerIds: new Set(),
+    });
+
+    expect(plan).toEqual({ refreshes: [], restores: [], rekeys: [], inserts: [] });
+  });
 });

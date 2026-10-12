@@ -29,6 +29,7 @@ import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResea
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
+import { YALE_FELLOWSHIP_DATABASE_SOURCE } from './fellowshipSourcePrecedence';
 
 export interface ResolverObservation {
   field: string;
@@ -111,6 +112,7 @@ const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
 const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string>>> = {
   researchAreas: new Set(['bbs-research-track']),
   pastUndergradAdvisees: new Set(['lab-microsite-undergrad-llm']),
+  sourceUrl: new Set([YALE_FELLOWSHIP_DATABASE_SOURCE]),
 };
 const PROSE_EXTENSION_BONUS = 1.25;
 

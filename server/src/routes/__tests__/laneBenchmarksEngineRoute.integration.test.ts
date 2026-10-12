@@ -13,6 +13,7 @@ vi.mock('../../services/adminGrantService', async (importOriginal) => ({
 
 import router from '../analytics';
 import { EngineBenchmarkSnapshot } from '../../models/engineBenchmarkSnapshot';
+import { SWEEP_ENGINE_BENCHMARK_ID } from '../../services/engineBenchmarkTrendCore';
 
 const route = (router as any).stack
   .map((layer: any) => layer.route)
@@ -49,7 +50,7 @@ const dispatch = () =>
 const snapshot = (overrides: Record<string, unknown>) => ({
   environment: 'test',
   databaseName: 'lane_benchmarks_engine_route_test',
-  benchmarkId: 'engine-synthetic-arms',
+  benchmarkId: SWEEP_ENGINE_BENCHMARK_ID,
   stage: 'resolve-and-gate',
   rowsReplayed: 12,
   rowsWithIncompleteInput: 0,
@@ -97,25 +98,21 @@ describe('GET /api/analytics/lane-benchmarks engine benchmarks (#4605)', () => {
     await memoryServer?.stop();
   });
 
-  it('serves each stored engine snapshot as its latest replay with its change from the previous one', async () => {
+  it('serves the sweep engine benchmark as its latest replay and counts the one-off probe it leaves off', async () => {
     const res = await dispatch();
 
     expect(res.statusCode).toBe(200);
     expect(res.body.benchmarks).toEqual([]);
     expect(res.body.engine.measurementCollection).toBe('engine_benchmark_snapshots');
-    const [arms, leak] = res.body.engine.benchmarks;
-    expect(arms).toMatchObject({
-      benchmarkId: 'engine-synthetic-arms',
+    expect(res.body.engine.benchmarks).toHaveLength(1);
+    expect(res.body.engine.benchmarks[0]).toMatchObject({
+      benchmarkId: SWEEP_ENGINE_BENCHMARK_ID,
       stage: 'resolve-and-gate',
       runs: 2,
       change: 'code-changed',
       latest: { codeSha: 'bbb', resolved: 44, outputFingerprint: 'fingerprint-b' },
       previous: { codeSha: 'aaa', resolved: 40 },
     });
-    expect(leak).toMatchObject({
-      benchmarkId: 'engine-synthetic-leak',
-      change: 'input-incomplete',
-      latest: { rowsWithIncompleteInput: 1 },
-    });
+    expect(res.body.engine.oneOffBenchmarkCount).toBe(1);
   });
 });

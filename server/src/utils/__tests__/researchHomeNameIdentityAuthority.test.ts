@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   NO_SURNAME_ROSTER,
+  isOffSitePageTitleForPersonScopedName,
   bodySubjectOrganizationName,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   claimsAnotherPersonsLab,
@@ -37,6 +38,10 @@ import {
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
+  isClinicalCareServicePageUrl,
+  namesASupportServiceUnit,
+  personScopedNameIsACampusBuilding,
+  personScopedResearchEntityNameFromLeadPersonName,
 } from '../researchHomeNameIdentityAuthority';
 
 describe('namesAServiceFacility', () => {
@@ -2141,5 +2146,167 @@ describe('a unit its own site credits to the lead as Principal Investigator', ()
         siteDeclaredOwnNames: ['Fixture Proteomics Core'],
       }),
     ).toBe(true);
+  });
+});
+
+describe('isOffSitePageTitleForPersonScopedName', () => {
+  const personName = 'Robin Fixture';
+
+  it('refuses an exhibition or squatter title read from a page outside Yale', () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'Quillon Expo 2031',
+        sourceUrl: 'https://www.quillon-expo.example.org/2031',
+        personName,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps a title that names the lead or an organization, or comes from a Yale page', () => {
+    for (const [candidateName, sourceUrl] of [
+      ['Robin Fixture Faculty Research', 'https://robinfixture.example.com/'],
+      ['Estuary Dynamics Lab', 'https://estuary.example.org/'],
+      ['Quillon Expo 2031', 'https://quillon.yale.edu/'],
+    ]) {
+      expect(isOffSitePageTitleForPersonScopedName({ candidateName, sourceUrl, personName })).toBe(
+        false,
+      );
+    }
+  });
+
+  it("keeps a brand-only name a lab row's own site declares for itself", () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'QUILLON',
+        sourceUrl: 'https://quillon.example.io/',
+        personName,
+        siteDeclaredOwnNames: ['QUILLON'],
+        entityType: 'LAB',
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses the title a faculty research record links even when that page declares it', () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'QUILLON',
+        sourceUrl: 'https://quillon.example.io/',
+        personName,
+        siteDeclaredOwnNames: ['QUILLON'],
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe(true);
+  });
+
+  it('cannot judge a title without the lead', () => {
+    expect(
+      isOffSitePageTitleForPersonScopedName({
+        candidateName: 'Quillon Expo 2031',
+        sourceUrl: 'https://www.quillon-expo.example.org/2031',
+        personName: '',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('a profile lab slot that links a service rather than a lab (#4916)', () => {
+  const classify = (harvestedName: string, websiteUrl: string) =>
+    classifyHarvestedResearchHomeName({
+      harvestedName,
+      personName: 'Ada Fixture',
+      websiteUrl,
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+    });
+
+  it('reads a support hub, a consulting firm and a clinical service as affiliations', () => {
+    expect(
+      classify('Bioinformatics Support Hub', 'https://library.example.edu/research-support/x/'),
+    ).toBe('AFFILIATED_ORGANIZATION');
+    expect(classify('Widget Consulting Group', 'https://widget-consulting.example.com/')).toBe(
+      'AFFILIATED_ORGANIZATION',
+    );
+    expect(classify('Widget Transfusion Service', 'https://med.example.edu/widget/')).toBe(
+      'AFFILIATED_ORGANIZATION',
+    );
+    expect(
+      classify('Yale Behavioral Widget', 'https://psych.example.edu/care/services/widget.aspx'),
+    ).toBe('AFFILIATED_ORGANIZATION');
+  });
+
+  it('keeps a lab that names its own person, and a research page under a services section', () => {
+    expect(
+      classify('Fixture Lab | Diagnostic Research', 'https://med.example.edu/lab/fixture/'),
+    ).toBe('OWN_IDENTITY');
+    expect(
+      classify(
+        'Creativity and Fixtures Lab',
+        'https://med.example.edu/center/services/programs/research/creativity/',
+      ),
+    ).toBe('OWN_IDENTITY');
+  });
+
+  it('names only service and support units, never a topic lab', () => {
+    expect(namesASupportServiceUnit('Bioinformatics Support Hub')).toBe(true);
+    expect(namesASupportServiceUnit('Fixture Advisors LLC')).toBe(true);
+    expect(namesASupportServiceUnit('Social Support and Health Lab')).toBe(false);
+    expect(namesASupportServiceUnit('Computational Fixture Lab')).toBe(false);
+    expect(isClinicalCareServicePageUrl('https://med.example.edu/care/fixture/')).toBe(true);
+    expect(isClinicalCareServicePageUrl('https://med.example.edu/research/care/fixture/')).toBe(
+      false,
+    );
+    expect(isClinicalCareServicePageUrl('https://med.example.edu/lab/fixture/')).toBe(false);
+    expect(isClinicalCareServicePageUrl('not a url')).toBe(false);
+  });
+});
+
+describe('a campus building is not a person-scoped name (#4916)', () => {
+  it('reads a building head noun or a laboratory-named campus building', () => {
+    for (const candidateName of [
+      'Sterling Chemistry Laboratory',
+      'Kline Geology Laboratory',
+      'Osborn Memorial Laboratories',
+      'Widget Science Hall',
+      'Widget Biology Tower',
+      'Yale Widget Science Building',
+    ]) {
+      expect(
+        personScopedNameIsACampusBuilding({ candidateName, personName: 'Ada Fixture' }),
+        candidateName,
+      ).toBe(true);
+    }
+  });
+
+  it('spares a research lab name and an eponymous lab that shares a building word', () => {
+    for (const [candidateName, personName] of [
+      ['Fixture Chemistry Laboratory', 'Ada Fixture'],
+      ['Computational Fixture Lab', 'Ada Fixture'],
+      ['Gibbs Laboratory', 'Ada Gibbs'],
+      ['Fixture Hall', 'Ada Hall'],
+      ['Community Capacity Building', 'Ada Fixture'],
+      ['Coalition Building', 'Ada Fixture'],
+    ]) {
+      expect(personScopedNameIsACampusBuilding({ candidateName, personName }), candidateName).toBe(
+        false,
+      );
+    }
+  });
+
+  it('replaces a building name with the lead even when the department key shares its word', () => {
+    expect(
+      personScopedResearchEntityNameFromLeadPersonName({
+        entityType: 'LAB',
+        slug: 'dept-chemistry-ada-fixture',
+        leadPersonName: 'Ada Fixture',
+        currentName: 'Sterling Chemistry Laboratory',
+      }),
+    ).toBe('Ada Fixture Lab');
+    expect(
+      personScopedResearchEntityNameFromLeadPersonName({
+        entityType: 'LAB',
+        slug: 'dept-chemistry-ada-fixture',
+        leadPersonName: 'Ada Fixture',
+        currentName: 'Chemistry Fixture Lab',
+      }),
+    ).toBe('');
   });
 });

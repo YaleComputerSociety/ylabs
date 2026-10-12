@@ -11,7 +11,8 @@ import type { Db, Document, ObjectId } from 'mongodb';
  * `_id` (#4091). An account carries login evidence when it has `lastLoginAt` or
  * owns a research plan. Read against Production that makes it authoritative and
  * carried; read against Beta it marks a Beta login the promotion must leave in
- * Beta rather than write into Production (#4244).
+ * Beta rather than write into Production (#4244). The target is authoritative for
+ * its own logins' `status` too, so a status fixed there survives the swap (#5000).
  *
  * The target's `_id` always survives, because private rows reference it:
  * where the source holds the same netid under another `_id`, the source row is
@@ -20,7 +21,12 @@ import type { Db, Document, ObjectId } from 'mongodb';
  * Otherwise, where the source holds the same `_id` under another netid, it is a
  * pseudonym the mirror minted for this very login, so the target row replaces it.
  */
-const CARRIED_ACCOUNT_LOGIN_FIELDS = ['lastLoginAt', 'profile', 'sessionVersion'] as const;
+const CARRIED_ACCOUNT_LOGIN_FIELDS = [
+  'lastLoginAt',
+  'profile',
+  'sessionVersion',
+  'status',
+] as const;
 
 export const ACCOUNT_ID_REFERENCE_FIELDS: ReadonlyArray<{ collection: string; field: string }> = [
   { collection: 'researchers', field: 'accountId' },

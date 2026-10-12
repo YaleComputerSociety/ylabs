@@ -386,21 +386,11 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   if (!entity) return [];
 
   const badges: string[] = [];
-  // `undergradEvidenceQuote` is deliberately NOT read here. #3569 measured the
-  // badge precision of its dominant source, `lab-microsite-undergrad-llm`, at
-  // 0.36 with a Wilson 95% upper bound of 0.50, over a seeded sample of 50 of
-  // the 925 rows that lane supplies. 19 of those 50 quotes were the model's own
-  // absence commentary, "No explicit mention of undergraduates on the provided
-  // pages", which passed the plausibility regex and switched this badge ON
-  // precisely where the lane had found no evidence.
-  //
-  // Showing the quote instead of asserting does not rescue it either: 20 of the
-  // 50 quotes are not on the page they cite. So the field cannot back a
-  // student-facing claim at all until that lane improves, tracked on #3592.
-  //
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
-  // which read the same server predicate (#3593).
+  // which read the same server predicate (#3593). A quote never sets it: a quote
+  // is shown as its own cited evidence by `undergradQuoteEvidenceFromEntity`,
+  // because only half of served quotes show past hosting (#3569).
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
 
   return badges;

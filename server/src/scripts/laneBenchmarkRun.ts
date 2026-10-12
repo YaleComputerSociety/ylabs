@@ -3,12 +3,17 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ResearchEntity } from '../models/researchEntity';
 import { buildOrchestrator } from '../scrapers/registry';
+import { isRenderedFetchMetadataKey } from '../scrapers/renderedFetch';
+import { SSRF_HOST_REFUSAL_NAMESPACE } from '../scrapers/snapshotBenchmarkMode';
 import type { ScraperOptions } from '../scrapers/types';
 import { installScraperHostConcurrencyInterceptor } from '../scrapers/utils/hostConcurrencyLimiter';
 import { scraperHostSlotLimiter } from '../scrapers/utils/scraperHostSlotLimiter';
 import type { PlannedObservation } from './laneScorecardCore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export const isFrozenMetadataPage = (page: { sourceName: string; requestKey: string }): boolean =>
+  page.sourceName === SSRF_HOST_REFUSAL_NAMESPACE || isRenderedFetchMetadataKey(page.requestKey);
 
 /**
  * Lanes whose output is a function of the pages they fetch, through `getCached`,

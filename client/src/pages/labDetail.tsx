@@ -88,6 +88,10 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
+import {
+  UNDERGRAD_QUOTE_LABEL,
+  undergradQuoteEvidenceFromEntity,
+} from '../utils/undergradQuoteEvidence';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -507,8 +511,10 @@ const DecisionSummary = ({
   const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const hasEvidenceDetail =
+  const undergradQuote = wayInWithheld ? undefined : undergradQuoteEvidenceFromEntity(group);
+  const hasEvidenceList =
     Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
+  const hasEvidenceDetail = hasEvidenceList || Boolean(undergradQuote);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const actionLinks = resolveResearchDetailActionLinks({
@@ -625,13 +631,36 @@ const DecisionSummary = ({
           {hasEvidenceDetail && (
             <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
-              {hasEvidenceDetail && (
+              {hasEvidenceList && (
                 <ul className="mt-3 space-y-1 text-xs text-muted">
                   {grantSummary && <li>• {grantSummary}</li>}
                   {honors.recent && <li>• {honors.recent}</li>}
                   {honors.other && <li>• {honors.other}</li>}
                   {pastAdvisees && <li>• {pastAdvisees}</li>}
                 </ul>
+              )}
+              {undergradQuote && (
+                <figure className="mt-3">
+                  <p className="text-sm font-semibold text-ink">{UNDERGRAD_QUOTE_LABEL}</p>
+                  <blockquote
+                    cite={undergradQuote.sourceUrl}
+                    className="mt-1 border-l-2 border-line-strong pl-3 text-sm leading-relaxed text-ink-soft"
+                  >
+                    <p>&ldquo;{undergradQuote.quote}&rdquo;</p>
+                  </blockquote>
+                  <figcaption className="mt-1 pl-3.5 text-xs text-muted">
+                    Quoted from{' '}
+                    <a
+                      href={undergradQuote.sourceUrl}
+                      aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
+                      target="_blank"
+                      rel={EXTERNAL_LINK_REL}
+                      className="yr-link yr-focus-ring break-words rounded-control"
+                    >
+                      {undergradQuote.sourceHost}
+                    </a>
+                  </figcaption>
+                </figure>
               )}
             </div>
           )}

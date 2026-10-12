@@ -127,12 +127,20 @@ const About = () => {
 
 const currentDevelopers = [
   {
-    name: 'Ryan Fernandes',
+    name: 'Peter Yu',
     position: 'Development Lead',
-    image: '/assets/developers/RyanFernandes.jpeg',
-    location: 'Natick, MA',
-    linkedin: 'https://www.linkedin.com/in/ryan-fernandes-088109284/',
-    github: 'https://github.com/Ryfernandes',
+    image: '/assets/developers/Peter Yu.png',
+    location: 'Choudrant, LA',
+    linkedin:
+      'https://www.linkedin.com/in/peter-yu-395b641b4?utm_source=share_via&utm_content=profile&utm_medium=member_ios',
+  },
+  {
+    name: 'Tanav Prabhu',
+    position: 'Development Lead',
+    image: '/assets/developers/Tanav Prabhu.jpg',
+    location: 'Milton, GA',
+    linkedin:
+      'https://www.linkedin.com/in/tanavprabhu?utm_source=share_via&utm_content=profile&utm_medium=member_ios',
   },
   {
     name: 'Sebastian Gonzalez',
@@ -141,22 +149,6 @@ const currentDevelopers = [
     location: 'Montclair, NJ',
     github: 'https://github.com/Seb-G0',
     linkedin: 'https://www.linkedin.com/in/sebastian-ravi-gonzalez/',
-  },
-  {
-    name: 'Dohun Kim',
-    position: 'Developer',
-    image: '/assets/developers/DohunKim.jpeg',
-    location: 'Anyang-si, South Korea',
-    github: 'https://github.com/rlaehgnss',
-    linkedin: 'https://www.linkedin.com/in/dohun-kim-848028251/',
-  },
-  {
-    name: 'Alan Zhong',
-    image: '/assets/developers/AlanZhong.jpeg',
-    position: 'Developer',
-    location: 'Basking Ridge, NJ',
-    github: 'https://github.com/azh248',
-    linkedin: 'https://www.linkedin.com/in/azhong248/',
   },
   {
     name: 'Quntao Zheng',
@@ -173,6 +165,39 @@ const currentDevelopers = [
     location: 'Marietta, GA',
     github: 'https://github.com/cphanhth',
     linkedin: 'https://linkedin.com/in/christianphanhthourath',
+  },
+];
+
+const pastDevelopers = [
+  {
+    name: 'Julian Lee',
+    position: 'Founder',
+    location: 'New York, NY',
+    github: 'https://github.com/JulianLee123',
+  },
+  {
+    name: 'Ryan Fernandes',
+    position: 'Development Lead',
+    image: '/assets/developers/RyanFernandes.jpeg',
+    location: 'Natick, MA',
+    linkedin: 'https://www.linkedin.com/in/ryan-fernandes-088109284/',
+    github: 'https://github.com/Ryfernandes',
+  },
+  {
+    name: 'Dohun Kim',
+    position: 'Developer',
+    image: '/assets/developers/DohunKim.jpeg',
+    location: 'Anyang-si, South Korea',
+    github: 'https://github.com/rlaehgnss',
+    linkedin: 'https://www.linkedin.com/in/dohun-kim-848028251/',
+  },
+  {
+    name: 'Alan Zhong',
+    image: '/assets/developers/AlanZhong.jpeg',
+    position: 'Developer',
+    location: 'Basking Ridge, NJ',
+    github: 'https://github.com/azh248',
+    linkedin: 'https://www.linkedin.com/in/azhong248/',
   },
   {
     name: 'Christina Xu',
@@ -192,31 +217,6 @@ const currentDevelopers = [
     position: 'Developer',
     image: '/assets/developers/David Sadka.png',
     location: 'Brookline, MA',
-  },
-  {
-    name: 'Peter Yu',
-    position: 'Developer',
-    image: '/assets/developers/Peter Yu.png',
-    location: 'Choudrant, LA',
-    linkedin:
-      'https://www.linkedin.com/in/peter-yu-395b641b4?utm_source=share_via&utm_content=profile&utm_medium=member_ios',
-  },
-  {
-    name: 'Tanav Prabhu',
-    position: 'Developer',
-    image: '/assets/developers/Tanav Prabhu.jpg',
-    location: 'Milton, GA',
-    linkedin:
-      'https://www.linkedin.com/in/tanavprabhu?utm_source=share_via&utm_content=profile&utm_medium=member_ios',
-  },
-];
-
-const pastDevelopers = [
-  {
-    name: 'Julian Lee',
-    position: 'Founder',
-    location: 'New York, NY',
-    github: 'https://github.com/JulianLee123',
   },
   {
     name: 'Miles Yamner',

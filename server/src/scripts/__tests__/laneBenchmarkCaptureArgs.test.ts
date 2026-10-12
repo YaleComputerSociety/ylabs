@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  beginBenchmarkCapture,
+  benchmarkCacheWrite,
+  finishBenchmarkCapture,
+  freezeHostRefusal,
+} from '../../scrapers/snapshotBenchmarkMode';
+import {
   carryUnchangedGoldLabels,
+  emptyCaptureRefusal,
   emptySuccessorRefusal,
   goldCarryRefusal,
   parseCaptureArgs,
@@ -171,6 +178,23 @@ describe('carrying gold labels into a recapture', () => {
     expect(
       goldCarryRefusal({ benchmarkId: 'example-old', goldLabels: [] }, 0, false),
     ).toBeUndefined();
+  });
+});
+
+describe('emptyCaptureRefusal', () => {
+  it('refuses a capture whose only frozen rows are host refusals', () => {
+    beginBenchmarkCapture();
+    freezeHostRefusal('lab.example.org', 'private');
+    const pages = finishBenchmarkCapture();
+    expect(pages).toHaveLength(1);
+    expect(emptyCaptureRefusal(pages)).toMatch(/refusing to store an empty benchmark/);
+  });
+
+  it('stores a capture that froze a page alongside a host refusal', () => {
+    beginBenchmarkCapture();
+    freezeHostRefusal('lab.example.org', 'private');
+    benchmarkCacheWrite('lane', 'page:1', { html: '<p>ok</p>' });
+    expect(emptyCaptureRefusal(finishBenchmarkCapture())).toBeUndefined();
   });
 });
 

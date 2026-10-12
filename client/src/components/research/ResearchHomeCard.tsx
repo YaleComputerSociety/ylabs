@@ -7,6 +7,11 @@ import {
   buildResearchHomeContextLine,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
+import {
+  undergradQuoteEvidenceFromEntity,
+  UNDERGRAD_QUOTE_LABEL,
+  type UndergradQuoteEvidence,
+} from '../../utils/undergradQuoteEvidence';
 import ArrowRightIcon from '../shared/ArrowRightIcon';
 import SlashBreakableText from '../shared/SlashBreakableText';
 import { formatTitleCaseLabel, formatTopicChipLabel } from '../../utils/displayText';
@@ -93,6 +98,31 @@ const adminQualityLabels = (home: ResearchCluster): string[] => {
   return labels;
 };
 
+const UndergradQuote = ({ evidence }: { evidence: UndergradQuoteEvidence }) => (
+  <figure className="mt-3">
+    <p className="text-xs font-semibold text-ink-soft">{UNDERGRAD_QUOTE_LABEL}</p>
+    <blockquote
+      cite={evidence.sourceUrl}
+      className="mt-1 border-l-2 border-line-strong pl-2.5 text-sm leading-relaxed text-ink-soft"
+    >
+      <p>&ldquo;{evidence.cardQuote}&rdquo;</p>
+    </blockquote>
+    <figcaption className="mt-1 pl-3 text-xs text-muted">
+      Quoted from{' '}
+      <a
+        href={evidence.sourceUrl}
+        aria-label={`${evidence.sourceHost} (opens in a new tab)`}
+        target="_blank"
+        rel={EXTERNAL_LINK_REL}
+        className="yr-link yr-focus-ring rounded-control"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {evidence.sourceHost}
+      </a>
+    </figcaption>
+  </figure>
+);
+
 const ResearchHomeCard = ({
   home,
   onSelect,
@@ -119,6 +149,8 @@ const ResearchHomeCard = ({
     ? home.wayInBadges
     : buildWayInBadgesFromEntity(home.entities[0]);
   const orderedAccessSignals = orderAccessSignals(wayInBadges);
+  const undergradQuote =
+    home.entities.length === 1 ? undergradQuoteEvidenceFromEntity(home.entities[0]) : undefined;
   const leadAccessSignal = orderedAccessSignals.find((signal) =>
     ELEVATED_ACCESS_SIGNALS.has(signal),
   );
@@ -389,6 +421,8 @@ const ResearchHomeCard = ({
           ))}
         </div>
       )}
+
+      {undergradQuote && <UndergradQuote evidence={undergradQuote} />}
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">

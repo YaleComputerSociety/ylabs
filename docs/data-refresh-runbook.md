@@ -57,6 +57,8 @@ Before relying on this runbook, the team must have:
 - Production credentials kept out of local scraper profiles and available only to approved promotion operators.
 - A shared record of the source list, expected observation ranges, artifact location, Beta backup, Production restore point, and final gate results for each refresh.
 
+Record the administrator count for each platform, by role, in the [ownership record](./deployment-inventory.md#ownership-record).
+
 Before an operator leaves the team:
 
 1. Transfer ownership of organization resources and confirm that two remaining administrators can access them.
@@ -130,6 +132,9 @@ The entrypoint then runs `yarn --cwd server scrape:sweep:weekly-development --co
 4. Measures the cluster's dataSize plus indexSize, and when headroom is below what a sweep needs it runs `observations:prune-dead --apply --drop-snapshot-cache` once, which also deletes dead superseded observations, and measures again, refusing if headroom is still short (#3536).
 5. Runs the requested modes one after the other, each with `--restart`: both `development-full` and `fellowship-development-full` by default, or only the ones `--mode` names (repeatable, also `--mode=<mode>`).
 They run serially because they share the per-host fetch budget and the storage quota.
+Each mode also runs with `--prune-between-phases`, so every weekly run prunes dead observations after each sweep phase and again as the final `dead-data-prune` post-run stage, by the owner's decision (2026-10-11) that the storage quota cannot wait for headroom to run short.
+`docs/research-data-pipeline.md` owns what the prune deletes, what it retains, and when it refuses.
+The post-run stage is recorded in the run's `weekly_sweep_runs` row like every other stage, while a failed between-phases prune only logs a warning and lets the sweep continue.
 6. Prints each mode's `summary.json` as one log line starting `WEEKLY_SWEEP_SUMMARY`, and exits nonzero when any requested mode failed or wrote no summary.
 7. After every requested mode succeeds, takes a corpus quality snapshot through `corpus:snapshot --environment development`, so the Corpus Quality panel on `/analytics` gets one point per successful run.
 The single weekly job runs both modes, so that is one point a week, taken after both refreshes.
@@ -435,6 +440,7 @@ It never reads Beta analytics, admin grants, admin audit and access-review proje
 Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
 Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
 The target's own logins are never lost to the copy: every target account with login evidence (`lastLoginAt`, or an owned research plan) is carried from the pre-swap backup before verification, keeping its `_id` so the target's `research_plans` still resolve (#4130).
+Where a source row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile`, `sessionVersion` and `status` onto it, because the target is authoritative for its own logins (#5000).
 Where the source holds that `_id` as a `mirrored-<id>` pseudonym, which is what the opposite-direction mirror mints for the target's own login, the target row replaces the pseudonym.
 Where the source also re-created that login's netid under a new `_id`, the source row is re-keyed onto the target `_id` over the pseudonym, so the netid stays unique.
 Read `accountCarry` in the artifact: `restored` counts round-tripped logins, `merged` counts re-created ones, and `inserted` counts target-only ones.
@@ -490,6 +496,14 @@ Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preser
 The refusal itself sits in `applyStagedCollectionSwap`, the staged swap every whole-collection replacement goes through, so any caller that hands it a clear list naming a preserved collection fails before a single drop, promotion included.
 A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
 
+### Retiring identity-only accounts (#5000)
+
+`yarn --cwd server accounts:retire-identity-only` deletes every account nobody signed into, after copying its netid and email onto each linked researcher that lacks them and unsetting `Researcher.accountId`, so `accounts` holds only logins.
+It holds an account that owns a research plan, is a reviewer stamp, is named by an admin grant, or whose researcher holds a different netid or email, and reports each hold by reason.
+It is dry-run by default, `--apply` needs `--confirm-retire-identity-only-accounts`, it refuses any target but Development, and an apply writes a mode-0600 backup of the deleted rows and unset links to the OS temp directory first.
+Run `beta:refresh-from-development` after it and before any `development:refresh-from-beta`: Beta still holds the retired rows until then, and a Beta-to-Development refresh in between copies them back.
+Production converges on the next `production:promote-beta-copy`, whose account carry keeps every Production login and its plans while the swap drops the rest.
+
 ## One-Command Promotion
 
 The weekly runner does all the scraping, observation, and materialization in Development.
@@ -508,7 +522,8 @@ It prints which run satisfied each mode.
 5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
 6. Applies the mirror and stops unless it reports `"status": "applied"`.
 7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
-That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the strict trust contract, rebuilds the Beta index, and runs `beta:readiness`, stopping at the first step that fails.
+That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, rebuilds the Beta index, and runs `beta:readiness`, stopping at the first step that fails.
+The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
 
 ### What `yarn promote:production` does
 
@@ -549,7 +564,7 @@ On the laptop, as environment variables or in `server/.env`, never committed:
 - An authenticated `gh` for the release-hold read.
 
 On Render, one operator service per environment, which is what the one-off job runs on.
-A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the web process must never hold.
+A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the Production web process must never hold.
 Create each as a Cron Job in the same region as that environment's private Meilisearch, from this repository with the root directory left empty, branch `beta` for Beta and `main` for Production, a Node runtime with the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), and a schedule that never matters, such as `0 0 1 1 *` with start command `true`.
 Give it `SCRAPER_ENV` (`beta` or `production`), `MONGODBURL` for that environment, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX` (`beta` or `prod`), `MEILISEARCH_WRITE_API_KEY`, and `OPENAI_API_KEY`, all as secrets, plus `PFR3_MEILI_RESTORE_POINT` on the Production one before each promotion.
 Its outbound ranges need the same Atlas access-list entry as any Render shell.
@@ -656,7 +671,6 @@ yarn scrape:development:fellowships:full
 ```
 
 That command runs only the fellowship catalog sources and the fellowship post-run chain (the `programs:*` backfills plus the two report-only `programs:audit-*` stages), so it never touches `ResearchEntity` data.
-Its one opt-in stage stays off unless you set `SCRAPER_SWEEP_APPLY_OFFICIAL_SOURCE_CHANGE_SET=1` to replay the curated official-source change-set.
 The fellowship catalog reaches Beta and Production through the same mirror and promotion as the research corpus.
 
 Use targeted single-source commands while repairing a failed source:
@@ -757,7 +771,7 @@ SCRAPER_ENV=beta   yarn --cwd server beta:data-quality   --strict   --include-sa
 
 SCRAPER_ENV=beta   yarn --cwd server scraper:integrity-gate   --include-samples
 
-SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   --mode=student-ready-only   --strict
+SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   --mode=student-ready-only   --fail-on-public-visibility-violation
 ```
 
 Create and verify the required Beta Meilisearch restore point or export.
@@ -964,5 +978,5 @@ The refresh is incomplete if any required artifact, restore point, or independen
 
 Local Development is disposable and can be reset from the accepted Beta snapshot or a new scrape.
 Beta recovery uses the recorded Beta backup or a fresh mirror from an accepted Development dataset.
-Production recovery restores the recorded pre-promotion Atlas restore point and then rebuilds Meilisearch.
+No Production restore point exists today, because the free Atlas cluster provides no backups and a successful promotion drops its own (#4148), so Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
 Never use a Development database copy as a Production rollback.

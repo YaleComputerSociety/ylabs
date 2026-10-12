@@ -318,9 +318,10 @@ async function distinctObjectIds(
   );
 }
 
-// An account reachable from a Researcher is a directory identity whose netid and
-// email Yale already publishes. Every other account is somebody's real login, so
-// it crosses environments pseudonymized or not at all.
+// An account reachable from a Researcher carries the directory netid and email
+// Yale already publishes, which the copied researcher row holds anyway. Every
+// other account is somebody's real login, so it crosses environments
+// pseudonymized or not at all.
 export async function researchPersonAccountIds(sourceDb: Db): Promise<ObjectId[]> {
   const accountIds = await distinctObjectIds(sourceDb, 'researchers', 'accountId');
   return [...new Map(accountIds.map((id) => [id.toHexString(), id])).values()];

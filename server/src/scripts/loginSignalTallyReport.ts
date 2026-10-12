@@ -7,9 +7,10 @@ import { LoginSignalTally } from '../models/loginSignalTally';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
 import {
-  formatLoginSignalTallies,
+  formatLoginSignalCoverage,
   loginSignalTallyDateFilter,
   parseLoginSignalTallyReportArgs,
+  summarizeLoginSignalCoverage,
   TALLY_MONGO_URL_ENV_VARS,
   type StoredLoginSignalTally,
 } from './loginSignalTallyReportCore';
@@ -33,7 +34,10 @@ export async function runLoginSignalTallyReport(argv: string[]): Promise<number>
       .sort({ date: 1 })
       .lean()) as unknown as StoredLoginSignalTally[];
     console.log(`Database ${mongoose.connection.db?.databaseName ?? 'unknown'}\n`);
-    console.log(args.json ? JSON.stringify(rows, null, 2) : formatLoginSignalTallies(rows));
+    const coverage = summarizeLoginSignalCoverage(rows);
+    console.log(
+      args.json ? JSON.stringify(coverage, null, 2) : formatLoginSignalCoverage(coverage),
+    );
     return 0;
   } finally {
     await mongoose.disconnect();

@@ -31,14 +31,10 @@ vi.mock('../../models/analytics', () => ({
     VISITOR: 'visitor',
     FELLOWSHIP_VIEW: 'fellowship_view',
     SEARCH: 'search',
-    PROFILE_UPDATE: 'profile_update',
-    RESEARCH_VIEW: 'research_view',
-    PATHWAY_SAVE: 'pathway_save',
     WAYS_IN_CLICK: 'ways_in_click',
     CONTACT_ROUTE_CLICK: 'contact_route_click',
     SOURCE_LINK_CLICK: 'source_link_click',
     RESEARCH_SEARCH: 'research_search',
-    RESEARCH_ENTITY_IMPRESSION: 'research_entity_impression',
     RESEARCH_RESULTS_VIEW: 'research_results_view',
     RESEARCH_PROFILE_OPEN: 'research_profile_open',
     RESEARCH_SOURCE_REVIEW: 'research_source_review',
@@ -46,7 +42,6 @@ vi.mock('../../models/analytics', () => ({
     RESEARCH_SAVE: 'research_save',
     RESEARCH_COMPARE: 'research_compare',
     RESEARCH_PLAN_UPDATE: 'research_plan_update',
-    RESEARCH_QUALIFIED_ACTION: 'research_qualified_action',
   },
   RESEARCH_ENTITY_TYPES: ['profile', 'fellowship', 'research_entity'],
   AnalyticsEvent: {
@@ -234,6 +229,28 @@ describe('per-user activity view aggregation', () => {
     ]);
     expect(fellowshipViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.FELLOWSHIP_VIEW]);
   });
+
+  it('counts only current non-search event types, so a stored retired row adds no events', async () => {
+    mocks.analyticsAggregate.mockResolvedValueOnce([{ users: [], total: 0 }]);
+
+    await getUserAnalytics({});
+
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+    const countedTypes: string[] = pipeline[0].$match.eventType.$in;
+
+    expect(countedTypes).toContain(AnalyticsEventType.LOGIN);
+    expect(countedTypes).toContain(AnalyticsEventType.RESEARCH_PROFILE_OPEN);
+    expect(countedTypes).not.toContain(AnalyticsEventType.SEARCH);
+    for (const retired of [
+      'research_entity_impression',
+      'pathway_save',
+      'research_qualified_action',
+      'research_view',
+      'profile_update',
+    ]) {
+      expect(countedTypes).not.toContain(retired);
+    }
+  });
 });
 
 describe('claim-specific research funnel', () => {
@@ -241,35 +258,18 @@ describe('claim-specific research funnel', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps source inspection, route attempts, application opens, and outcomes separate', async () => {
+  it('reports one distinct-student count per stage and no retired qualified-action metrics', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([
-      {
-        uniqueActorsByEventType: [
-          { eventType: 'research_source_review', count: 7 },
-          { eventType: 'research_qualified_action', count: 6 },
-        ],
-        qualifiedActorsByCategory: [
-          {
-            actionCategory: 'official_application',
-            uniqueNetids: ['student-1', 'student-2', 'student-3'],
-          },
-          { actionCategory: 'reviewed_route', uniqueNetids: ['student-1', 'student-4'] },
-          { actionCategory: 'qualified_participation', uniqueNetids: ['student-5', 'student-6'] },
-        ],
-      },
+      { eventType: 'research_search', count: 9 },
+      { eventType: 'research_source_review', count: 7 },
     ]);
 
     const funnel = await getFunnelAnalytics();
 
-    expect(funnel).toMatchObject({
-      sourceInspections: 7,
-      qualifiedActions: 6,
-      officialRouteAttempts: 4,
-      applicationOpens: 3,
-    });
-    expect(funnel.officialRouteAttempts).not.toBe(funnel.qualifiedActions);
-    expect(funnel.applicationOpens).toBeLessThan(funnel.officialRouteAttempts);
-    expect(funnel.officialRouteAttempts).toBeLessThan(funnel.qualifiedActions);
+    expect(funnel).toMatchObject({ researchSearches: 9, sourceInspections: 7, researchSaves: 0 });
+    expect(funnel).not.toHaveProperty('qualifiedActions');
+    expect(funnel).not.toHaveProperty('officialRouteAttempts');
+    expect(funnel).not.toHaveProperty('applicationOpens');
   });
 });
 
@@ -617,6 +617,7 @@ describe('getAnalytics research coverage and range scoping', () => {
     expect(lookupStages.map((stage: Record<string, any>) => stage.$lookup.from)).toEqual([
       'accounts',
       'researchers',
+      'researchers',
     ]);
     expect(mostActiveStages.some((stage: Record<string, any>) => stage.$unwind)).toBe(false);
     expectNullSafeSingleMatchLookup(mostActiveStages, 'account', {
@@ -627,10 +628,16 @@ describe('getAnalytics research coverage and range scoping', () => {
       foreignField: 'accountId',
       foreignFieldType: 'objectId',
     });
+    expectNullSafeSingleMatchLookup(mostActiveStages, 'netidResearcher', {
+      foreignField: 'identifiers.netid',
+      foreignFieldType: 'string',
+    });
     const projectStage = mostActiveStages.find(
       (stage: Record<string, any>) => stage.$project?.userId,
     );
-    expect(projectStage.$project.displayName).toBe('$researcher.displayName');
+    expect(projectStage.$project.displayName).toEqual({
+      $ifNull: ['$netidResearcher.displayName', '$researcher.displayName'],
+    });
   });
 
   it('resolves the linked display name and still emits one row for a user with no account', async () => {
@@ -812,8 +819,10 @@ describe('getAnalytics research coverage and range scoping', () => {
     mocks.accountFind.mockImplementation(
       chainableFindReturning([{ _id: 'acc-prof', netid: 'prof-netid' }]),
     );
-    mocks.researcherFind.mockImplementation(
-      chainableFindReturning([{ accountId: 'acc-prof', displayName: 'Jane Doe' }]),
+    mocks.researcherFind.mockImplementation((query: Record<string, unknown>) =>
+      chainableFindReturning(
+        query['identifiers.netid'] ? [] : [{ accountId: 'acc-prof', displayName: 'Jane Doe' }],
+      )(),
     );
 
     const analytics = await getAnalytics({
@@ -1046,27 +1055,35 @@ describe('getUserAnalyticsDrilldown', () => {
     mocks.analyticsAggregate.mockResolvedValue([
       { users: [{ netid: 'student1', userType: 'undergraduate', totalEvents: 2 }], total: 1 },
     ]);
-    mocks.analyticsFind.mockReturnValue({
+    const storedEvents = [
+      {
+        _id: 'evt1',
+        eventType: 'research_profile_open',
+        userType: 'undergraduate',
+        timestamp: new Date('2026-08-01T00:00:00.000Z'),
+      },
+      {
+        _id: 'evt-retired',
+        eventType: 'pathway_save',
+        userType: 'undergraduate',
+        timestamp: new Date('2026-08-01T12:00:00.000Z'),
+      },
+      {
+        _id: 'evt2',
+        eventType: 'fellowship_view',
+        userType: 'undergraduate',
+        fellowshipId,
+        timestamp: new Date('2026-08-02T00:00:00.000Z'),
+      },
+    ];
+    mocks.analyticsFind.mockImplementation((query: { eventType: { $in: string[] } }) => ({
       sort: () => ({
         limit: () => ({
-          lean: async () => [
-            {
-              _id: 'evt1',
-              eventType: 'research_view',
-              userType: 'undergraduate',
-              timestamp: new Date('2026-08-01T00:00:00.000Z'),
-            },
-            {
-              _id: 'evt2',
-              eventType: 'fellowship_view',
-              userType: 'undergraduate',
-              fellowshipId,
-              timestamp: new Date('2026-08-02T00:00:00.000Z'),
-            },
-          ],
+          lean: async () =>
+            storedEvents.filter((event) => query.eventType.$in.includes(event.eventType)),
         }),
       }),
-    });
+    }));
     const chainableFindReturning = (docs: unknown[]) => () => ({
       select: () => ({ lean: async () => docs }),
       lean: async () => docs,
@@ -1078,9 +1095,10 @@ describe('getUserAnalyticsDrilldown', () => {
     const result = await getUserAnalyticsDrilldown('student1');
 
     expect(result?.events).toEqual([
-      expect.objectContaining({ eventType: 'research_view' }),
+      expect.objectContaining({ eventType: 'research_profile_open' }),
       expect.objectContaining({ fellowshipId, fellowshipTitle: 'Summer Fellowship' }),
     ]);
+    expect(result?.events.some((event) => event.eventType === 'visitor')).toBe(false);
   });
 });
 

@@ -8,10 +8,11 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   applyLocalPartNetidMerges,
+  applyLoneLocalPartArchives,
   countReferencesToRepoint,
   planLocalPartNetidMerges,
+  planLoneLocalPartArchives,
   projectedSharedEmailGroupsAfterApply,
-  type LocalPartMergeApplyResult,
 } from './mergeLocalPartNetidAccountsCore';
 
 dotenv.config({ quiet: true });
@@ -21,11 +22,24 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 export const SCRIPT_NAME = 'accounts:merge-local-part-netid-twins';
 export const MERGE_CONFIRM_FLAG = '--confirm-merge-local-part-netid-twins';
 
+// No scope folds the researchers of a pair whose accounts both link one: the local part is a live
+// observation join key, so a fold leaves those observations resolving to nobody (#4924).
+export const MERGE_SCOPES = ['account-twins', 'lone-accounts'] as const;
+export type MergeScope = (typeof MERGE_SCOPES)[number];
+
 export interface MergeLocalPartNetidAccountsArgs {
   apply: boolean;
   confirm: boolean;
   maxApply?: number;
   output?: string;
+  scope: MergeScope;
+}
+
+function parseScope(value: string | undefined): MergeScope {
+  if (!value || !(MERGE_SCOPES as readonly string[]).includes(value)) {
+    throw new Error(`--scope must be one of ${MERGE_SCOPES.join(', ')}`);
+  }
+  return value as MergeScope;
 }
 
 function parseMaxApply(value: string | undefined): number {
@@ -39,13 +53,21 @@ function parseMaxApply(value: string | undefined): number {
 export function parseMergeLocalPartNetidAccountsArgs(
   argv: string[],
 ): MergeLocalPartNetidAccountsArgs {
-  const args: MergeLocalPartNetidAccountsArgs = { apply: false, confirm: false };
+  const args: MergeLocalPartNetidAccountsArgs = {
+    apply: false,
+    confirm: false,
+    scope: 'account-twins',
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     else if (arg === '--apply' || arg === '--mode=apply') args.apply = true;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') args.apply = false;
     else if (arg === MERGE_CONFIRM_FLAG) args.confirm = true;
+    else if (arg === '--scope') {
+      args.scope = parseScope(argv[index + 1]);
+      index += 1;
+    } else if (arg.startsWith('--scope=')) args.scope = parseScope(arg.slice('--scope='.length));
     else if (arg === '--max-apply') {
       args.maxApply = parseMaxApply(argv[index + 1]);
       index += 1;
@@ -78,7 +100,7 @@ export function assertMergeLocalPartNetidAccountsApplyAllowed(
 
 export function assertMergeCountWithinCap(planned: number, maxApply: number | undefined): void {
   if (maxApply !== undefined && planned > maxApply) {
-    throw new Error(`Apply would merge ${planned} accounts, above --max-apply=${maxApply}.`);
+    throw new Error(`Apply would write ${planned} rows, above --max-apply=${maxApply}.`);
   }
 }
 
@@ -92,22 +114,37 @@ async function main(): Promise<void> {
   try {
     const db = mongoose.connection.db!;
     assertMergeLocalPartNetidAccountsApplyAllowed(args, db.databaseName);
-    const plan = await planLocalPartNetidMerges(db);
-    let applied: LocalPartMergeApplyResult | null = null;
+    const twins = await planLocalPartNetidMerges(db);
+    const lone = await planLoneLocalPartArchives(db);
+    const planned: Record<MergeScope, number> = {
+      'account-twins': twins.merges.length,
+      'lone-accounts': lone.archives.length,
+    };
+    let applied: unknown = null;
     if (args.apply) {
-      assertMergeCountWithinCap(plan.merges.length, args.maxApply);
-      applied = await applyLocalPartNetidMerges(db, plan.merges);
+      assertMergeCountWithinCap(planned[args.scope], args.maxApply);
+      applied =
+        args.scope === 'account-twins'
+          ? await applyLocalPartNetidMerges(db, twins.merges)
+          : await applyLoneLocalPartArchives(db, lone.archives);
     }
     const report = {
       script: SCRIPT_NAME,
       db: guard.dbLabel,
       mode: args.apply ? 'apply' : 'dry-run',
-      sharedEmailGroups: plan.sharedEmailGroups,
-      plannedMerges: plan.merges.length,
-      referencesHeldByPlannedMerges: await countReferencesToRepoint(db, plan.merges),
-      refusals: plan.refusals,
-      localPartAccountsWithoutTwin: plan.localPartAccountsWithoutTwin,
-      projectedSharedEmailGroupsAfterApply: projectedSharedEmailGroupsAfterApply(plan),
+      scope: args.scope,
+      sharedEmailGroups: twins.sharedEmailGroups,
+      plannedMerges: twins.merges.length,
+      referencesHeldByPlannedMerges: await countReferencesToRepoint(db, twins.merges),
+      refusals: twins.refusals,
+      localPartAccountsWithoutTwin: twins.localPartAccountsWithoutTwin,
+      projectedSharedEmailGroupsAfterApply: projectedSharedEmailGroupsAfterApply(twins),
+      offShapePairsHeld: twins.refusals['off-shape-pair'],
+      loneAccounts: {
+        loneLocalPartAccounts: lone.loneLocalPartAccounts,
+        plannedArchives: lone.archives.length,
+        held: lone.held,
+      },
       applied,
     };
     if (args.output) {

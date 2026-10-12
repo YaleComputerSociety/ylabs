@@ -108,6 +108,8 @@ export interface ResearchGroup {
   currentUndergradCount?: number;
   /** Verbatim quote from the source page supporting undergraduate access. */
   undergradEvidenceQuote?: string;
+  /** The page `undergradEvidenceQuote` is quoted from, served only beside a served quote. */
+  undergradEvidenceSourceUrl?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
   /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */

@@ -4,6 +4,7 @@ import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreem
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
+import { researcherHoldsDirectoryIdentity } from '../utils/researcherIdentity';
 
 export function normalizeResearcherName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -23,16 +24,24 @@ const cleanNetid = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-export const RESEARCHER_IDENTITY_TIERS = ['NAME_ONLY', 'NETID', 'ACCOUNT'] as const;
+export const RESEARCHER_IDENTITY_TIERS = ['NAME_ONLY', 'NETID', 'DIRECTORY'] as const;
 export type ResearcherIdentityTier = (typeof RESEARCHER_IDENTITY_TIERS)[number];
 
 export interface ResearcherIdentityLike {
   accountId?: unknown;
+  email?: unknown;
   netid?: unknown;
 }
 
 export function researcherIdentityTier(researcher: ResearcherIdentityLike): ResearcherIdentityTier {
-  if (researcher.accountId !== undefined && researcher.accountId !== null) return 'ACCOUNT';
+  if (
+    researcherHoldsDirectoryIdentity({
+      accountId: researcher.accountId,
+      identifiers: { email: researcher.email },
+    })
+  ) {
+    return 'DIRECTORY';
+  }
   if (cleanNetid(researcher.netid)) return 'NETID';
   return 'NAME_ONLY';
 }
@@ -53,6 +62,7 @@ export interface CanonicalNameEntry {
   orcid?: unknown;
   netid?: unknown;
   accountId?: unknown;
+  email?: unknown;
 }
 
 /**
@@ -73,6 +83,7 @@ export interface CanonicalNetidEntry {
   netid?: unknown;
   orcid?: unknown;
   accountId?: unknown;
+  email?: unknown;
 }
 
 /**
@@ -95,7 +106,7 @@ export function buildCanonicalNetidIndex(
       id: entry.id,
       orcid: cleanOrcid(entry.orcid),
       netid,
-      tier: researcherIdentityTier({ accountId: entry.accountId, netid }),
+      tier: researcherIdentityTier({ accountId: entry.accountId, email: entry.email, netid }),
     });
     index.set(netid, list);
   }
@@ -133,6 +144,7 @@ export const SHELL_FOLD_IDENTITIES = [
   'netid',
   'roster-identity',
   'verified-profile',
+  'shared-row',
   'name',
 ] as const;
 export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
@@ -172,14 +184,34 @@ export interface VerifiedProfileEntry extends CanonicalNetidEntry {
  * is why the fold still applies the surname, rank, ORCID, and netid vetoes.
  */
 export function verifiedPrimaryProfileKeys(profileLinks: unknown): string[] {
+  return primaryProfileKeysWithHealth(profileLinks, ['HEALTHY']);
+}
+
+/**
+ * Health is a verdict about a URL, not about the record holding it, so a copy nobody has
+ * probed yet is confirmed by another record's HEALTHY copy of the same page key. Only an
+ * UNKNOWN copy borrows that verdict: a copy probed as anything else disagrees with it.
+ */
+export function confirmedPrimaryProfileKeys(
+  profileLinks: unknown,
+  healthyKeys: ReadonlySet<string>,
+): string[] {
+  return primaryProfileKeysWithHealth(profileLinks, ['HEALTHY', 'UNKNOWN']).filter((key) =>
+    healthyKeys.has(key),
+  );
+}
+
+function primaryProfileKeysWithHealth(
+  profileLinks: unknown,
+  acceptedHealth: ReadonlyArray<string>,
+): string[] {
   if (!Array.isArray(profileLinks)) return [];
   const keys = new Set<string>();
   for (const link of profileLinks) {
     if (!link || typeof link !== 'object') continue;
     const { kind, purpose, healthStatus, url } = link as Record<string, unknown>;
-    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY' || healthStatus !== 'HEALTHY') {
-      continue;
-    }
+    if (kind !== 'YALE_OFFICIAL' || purpose !== 'PRIMARY_IDENTITY') continue;
+    if (typeof healthStatus !== 'string' || !acceptedHealth.includes(healthStatus)) continue;
     const key = officialProfileIdentityUrlKey(url);
     if (key) keys.add(key);
   }
@@ -241,6 +273,11 @@ export interface RosterIdentityCandidate extends CanonicalCandidate {
   displayName?: unknown;
 }
 
+export interface SharedRowCandidate extends CanonicalCandidate {
+  displayName?: unknown;
+  title?: unknown;
+}
+
 /**
  * A roster lane that proved who a listing names (its profile URL, or a Yale profile URL,
  * email or netid the listing's own page states) records that on the edge it writes as
@@ -280,29 +317,31 @@ function decideRosterIdentityFold(
 }
 
 /**
- * A shell and an account-backed record that hold the same healthy official primary
+ * A shell and a directory-backed record that hold the same healthy official primary
  * profile are one person even when their given names differ, because a programme
- * roster mints under a nickname and the directory account under the legal name. The
+ * roster mints under a nickname and the directory record under the legal name. The
  * page decides; the surname and rank only veto, and they veto per holder, so a holder
  * reached through a wrong-person link drops out instead of making the page ambiguous.
- * More than one surviving account-backed holder resolves to nobody, because two accounts
- * are two humans the page cannot split.
+ * More than one surviving directory-backed holder resolves to nobody, because two
+ * directory records are two humans the page cannot split.
  */
 function decideVerifiedProfileFold(
   shell: ShellIdentity,
   verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]>,
 ): ShellMergeDecision | undefined {
-  const keys = verifiedPrimaryProfileKeys(shell.profileLinks);
+  const keys = confirmedPrimaryProfileKeys(
+    shell.profileLinks,
+    new Set(verifiedProfileIndex.keys()),
+  );
   if (keys.length === 0) return undefined;
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
-  const shellSurname = displayNameSurname(shell.displayName);
   const holders = new Map<string, VerifiedProfileCandidate>();
   for (const key of keys) {
     for (const candidate of verifiedProfileIndex.get(key) ?? []) {
       if (candidate.id === shell.id) continue;
-      if (candidate.tier !== 'ACCOUNT') continue;
+      if (candidate.tier !== 'DIRECTORY') continue;
       if (identityTierStrength(candidate.tier) <= shellStrength) continue;
-      if (!surnamesCompatible(shellSurname, displayNameSurname(candidate.displayName))) continue;
+      if (!profileHolderSurnamesAgree(shell.displayName, candidate.displayName)) continue;
       if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
       holders.set(candidate.id, candidate);
     }
@@ -362,8 +401,63 @@ function joinDetachedSurnamePrefixes(tokens: ReadonlyArray<string>): string[] {
   return joined;
 }
 
-function displayNameSurname(displayName: unknown): string {
-  return surnameReadPastRosterNoise(displayName);
+const foldNameToken = (token: string): string =>
+  token
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z']/g, '');
+
+function foldedNameTokens(displayName: unknown): string[] {
+  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
+  return beforeCredentials
+    .split(/[\s-]+/)
+    .map(foldNameToken)
+    .filter((token) => token.length > 1 && !GENERATIONAL_SUFFIX.test(token));
+}
+
+function givenNameAgrees(given: string, otherGivenTokens: ReadonlyArray<string>): boolean {
+  const [otherFirst] = otherGivenTokens;
+  if (!otherFirst) return false;
+  if (given === otherFirst) return true;
+  const [shorter, longer] =
+    given.length <= otherFirst.length ? [given, otherFirst] : [otherFirst, given];
+  if (shorter.length >= 3 && longer.startsWith(shorter)) return true;
+  return otherGivenTokens.includes(given);
+}
+
+// One record carries the whole surname and the other carries part of it: a hyphenated or
+// two-part surname, or a married name added to the birth name.
+function surnameContainedInOtherName(name: unknown, otherName: unknown): boolean {
+  const surnameTokens = foldedNameTokens(surnameReadPastRosterNoise(name));
+  const tokens = foldedNameTokens(name);
+  const otherTokens = foldedNameTokens(otherName);
+  if (surnameTokens.length === 0 || tokens.length < 2 || otherTokens.length < 2) return false;
+  const windowMayStopShortOfLastToken = tokens.length === 2;
+  for (let start = 1; start + surnameTokens.length <= otherTokens.length; start += 1) {
+    const end = start + surnameTokens.length;
+    if (!windowMayStopShortOfLastToken && end !== otherTokens.length) continue;
+    const window = otherTokens.slice(start, end);
+    if (window.every((token, offset) => token === surnameTokens[offset])) {
+      return givenNameAgrees(tokens[0], otherTokens.slice(0, start));
+    }
+  }
+  return false;
+}
+
+/**
+ * The surname veto for two records a shared page already joins. A compound surname reads
+ * as a different last token from its own part, so the veto also accepts one record's
+ * whole surname appearing in the other's name, but only together with an agreeing given
+ * name (#4920). Only a two-token name may match a part before the other name's last
+ * token, so two different compound surnames that share one part still disagree.
+ */
+export function profileHolderSurnamesAgree(left: unknown, right: unknown): boolean {
+  return (
+    surnamesCompatible(surnameReadPastRosterNoise(left), surnameReadPastRosterNoise(right)) ||
+    surnameContainedInOtherName(left, right) ||
+    surnameContainedInOtherName(right, left)
+  );
 }
 
 // A healthy link can still point at the wrong person, and the one measured case was a
@@ -376,12 +470,57 @@ function titlesStateConflictingRanks(left: unknown, right: unknown): boolean {
   return verdicts.has('owns_research') && verdicts.has('works_in_another_group');
 }
 
+/**
+ * A shell and a stronger record that both hold a role on the same live research row are
+ * one person when their names agree, because a row lists its own lead twice only when two
+ * lanes minted that lead under two spellings (a middle initial, a middle or short given
+ * name). The row joins them; the name, rank and identifiers only veto, and two agreeing
+ * candidates resolve to nobody (#4911).
+ */
+function decideSharedRowFold(
+  shell: ShellIdentity,
+  sharedRowCandidates: ReadonlyArray<SharedRowCandidate>,
+): ShellMergeDecision | undefined {
+  const shellName = typeof shell.displayName === 'string' ? shell.displayName : '';
+  if (!shellName) return undefined;
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const agreeing = new Map<string, SharedRowCandidate>();
+  for (const candidate of sharedRowCandidates) {
+    if (candidate.id === shell.id) continue;
+    if (identityTierStrength(candidate.tier) <= shellStrength) continue;
+    if (!observedPersonNameAgreesWith(candidate.displayName, shellName)) continue;
+    if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
+    agreeing.set(candidate.id, candidate);
+  }
+  if (agreeing.size === 0) return undefined;
+  const strongestStrength = Math.max(
+    ...[...agreeing.values()].map((candidate) => identityTierStrength(candidate.tier)),
+  );
+  const strongest = [...agreeing.values()].filter(
+    (candidate) => identityTierStrength(candidate.tier) === strongestStrength,
+  );
+  if (strongest.length > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn: 'shared-row' };
+  }
+  const [target] = strongest;
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' };
+  }
+  const shellNetid = bareNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT', matchedOn: 'shared-row' };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'shared-row' };
+}
+
 export function decideShellMerge(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
   canonicalNetidIndex: Map<string, CanonicalCandidate[]> = new Map(),
   rosterIdentityCandidates: ReadonlyArray<RosterIdentityCandidate> = [],
   verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]> = new Map(),
+  sharedRowCandidates: ReadonlyArray<SharedRowCandidate> = [],
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
@@ -389,6 +528,8 @@ export function decideShellMerge(
   if (byRosterIdentity) return byRosterIdentity;
   const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
   if (byVerifiedProfile) return byVerifiedProfile;
+  const bySharedRow = decideSharedRowFold(shell, sharedRowCandidates);
+  if (bySharedRow) return bySharedRow;
 
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
@@ -419,6 +560,22 @@ export function decideShellMerge(
   }
 
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'name' };
+}
+
+export function resolveFinalMergeTargets(
+  mergeTargetByShellId: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const resolved = new Map<string, string>();
+  for (const [shellId, firstTargetId] of mergeTargetByShellId) {
+    const visited = new Set([shellId]);
+    let targetId = firstTargetId;
+    while (mergeTargetByShellId.has(targetId) && !visited.has(targetId)) {
+      visited.add(targetId);
+      targetId = mergeTargetByShellId.get(targetId)!;
+    }
+    if (targetId !== shellId) resolved.set(shellId, targetId);
+  }
+  return resolved;
 }
 
 export interface RoleAssignmentEdge {
@@ -564,6 +721,7 @@ export interface AccountlessClusterMember {
   primaryDepartment?: unknown;
   profileLinks?: unknown;
   liveRoleEdges: number;
+  liveRowIds?: readonly string[];
 }
 
 export type AccountlessClusterRefusal =
@@ -588,15 +746,16 @@ const departmentKey = (value: unknown): string =>
 function clusterKeys(
   member: AccountlessClusterMember,
   heldElsewhere: { pages: ReadonlySet<string>; names: ReadonlySet<string> },
+  healthyKeys: ReadonlySet<string>,
 ): string[] {
-  const pageKeys = verifiedPrimaryProfileKeys(member.profileLinks)
+  const pageKeys = confirmedPrimaryProfileKeys(member.profileLinks, healthyKeys)
     .filter((key) => !heldElsewhere.pages.has(key))
     .map((key) => `page::${key}`);
   const name = normalizeResearcherName(member.displayName);
+  if (!name || heldElsewhere.names.has(name)) return pageKeys;
   const department = departmentKey(member.primaryDepartment);
-  return name && department && !heldElsewhere.names.has(name)
-    ? [...pageKeys, `name::${name}::${department}`]
-    : pageKeys;
+  const rowKeys = (member.liveRowIds ?? []).map((rowId) => `name-row::${name}::${rowId}`);
+  return [...pageKeys, ...(department ? [`name::${name}::${department}`] : []), ...rowKeys];
 }
 
 function distinctNonEmpty(values: ReadonlyArray<string | undefined>): number {
@@ -620,12 +779,12 @@ function clusterRefusal(
       .filter((verdict) => verdict !== 'states_no_rank'),
   );
   if (verdicts.size > 1) return 'TITLE_CONFLICT';
-  const surnames = members
-    .map((member) => surnameReadPastRosterNoise(member.displayName))
-    .filter(Boolean);
+  const named = members
+    .map((member) => member.displayName)
+    .filter((displayName) => Boolean(surnameReadPastRosterNoise(displayName)));
   if (
-    surnames.some((surname, index) =>
-      surnames.slice(index + 1).some((other) => !surnamesCompatible(surname, other)),
+    named.some((name, index) =>
+      named.slice(index + 1).some((other) => !profileHolderSurnamesAgree(name, other)),
     )
   ) {
     return 'SURNAME_CONFLICT';
@@ -656,10 +815,11 @@ export function accountlessClusterSurvivor(
 }
 
 /**
- * Groups of accountless records with no account-backed member, which the outranking arms
+ * Groups of shell records with no directory-backed member, which the outranking arms
  * cannot fold because nobody outranks anybody. A group is the records that share a
- * healthy verified primary profile, or the same normalized full name together with the
- * same stated primary department. A whole group is refused on any netid, ORCID, title
+ * healthy verified primary profile, the same normalized full name together with the same
+ * stated primary department, or the same normalized full name together with a
+ * non-historical role on the same live research row. A whole group is refused on any netid, ORCID, title
  * rank or surname disagreement, because one wrong join merges two people for good. A page
  * or name that any record outside the group also holds joins nobody: the outranking arms
  * already found it unable to tell those records apart.
@@ -668,8 +828,15 @@ export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
 ): AccountlessClusterPlan {
+  const healthyKeys = new Set(
+    [...members, ...nonMembers].flatMap((record) =>
+      verifiedPrimaryProfileKeys(record.profileLinks),
+    ),
+  );
   const heldElsewhere = {
-    pages: new Set(nonMembers.flatMap((record) => verifiedPrimaryProfileKeys(record.profileLinks))),
+    pages: new Set(
+      nonMembers.flatMap((record) => confirmedPrimaryProfileKeys(record.profileLinks, healthyKeys)),
+    ),
     names: new Set(
       nonMembers
         .map((record) => normalizeResearcherName(record.displayName))
@@ -685,7 +852,7 @@ export function planAccountlessClusterFolds(
   };
   const firstByKey = new Map<string, string>();
   for (const member of members) {
-    for (const key of clusterKeys(member, heldElsewhere)) {
+    for (const key of clusterKeys(member, heldElsewhere, healthyKeys)) {
       const first = firstByKey.get(key);
       if (first) parent.set(find(member.id), find(first));
       else firstByKey.set(key, member.id);
@@ -717,6 +884,98 @@ export function planAccountlessClusterFolds(
       if (member.id !== survivor.id) plan.foldTargetById.set(member.id, survivor.id);
     }
     plan.foldedGroups += 1;
+  }
+  return plan;
+}
+
+/**
+ * Whether two records' names are one person: the #4920 surname rule, plus a given name of
+ * one record found among the other's given names, so an initial-led form ("P Mark") and a
+ * middle-initial form ("Mark S.") of one name agree while two people sharing a surname do not.
+ */
+export function sameAddressHolderNamesAgree(left: unknown, right: unknown): boolean {
+  if (!profileHolderSurnamesAgree(left, right)) return false;
+  const leftTokens = foldedNameTokens(left);
+  const rightTokens = foldedNameTokens(right);
+  if (leftTokens.length < 2 || rightTokens.length < 2) return false;
+  return (
+    givenNameAgrees(leftTokens[0], rightTokens.slice(0, -1)) ||
+    givenNameAgrees(rightTokens[0], leftTokens.slice(0, -1))
+  );
+}
+
+export const ALIAS_TWIN_FOLD_REFUSALS = [
+  'twin-account-has-login',
+  'alias-unresolved',
+  'real-account-not-live',
+  'no-real-researcher',
+  'names-disagree',
+] as const;
+export type AliasTwinFoldRefusal = (typeof ALIAS_TWIN_FOLD_REFUSALS)[number];
+
+export interface AliasTwinAccount {
+  id: string;
+  netid: string;
+  live: boolean;
+  hasLogin: boolean;
+}
+
+export interface AliasTwinPlan {
+  targetByTwinResearcherId: Map<string, string>;
+  twinAccountIdByTwinResearcherId: Map<string, string>;
+  refusals: Record<AliasTwinFoldRefusal, number>;
+}
+
+/**
+ * Which local-part twin researchers fold into the real-netid researcher (#4988).
+ *
+ * The directory's alias map is the evidence that the two accounts are one address, but it
+ * reads every `email` observation, including a lane that has attached one person's profile
+ * to a namesake, so it only proposes: the names must also agree. A twin account that has
+ * signed in is refused, because a login is a person acting under that account.
+ */
+export function planAliasTwinFolds(input: {
+  twinAccounts: readonly AliasTwinAccount[];
+  accountsByNetid: ReadonlyMap<string, AliasTwinAccount>;
+  aliasNetidByTwinNetid: ReadonlyMap<string, string>;
+  researcherByAccountId: ReadonlyMap<string, { id: string; displayName?: unknown }>;
+}): AliasTwinPlan {
+  const plan: AliasTwinPlan = {
+    targetByTwinResearcherId: new Map(),
+    twinAccountIdByTwinResearcherId: new Map(),
+    refusals: Object.fromEntries(ALIAS_TWIN_FOLD_REFUSALS.map((reason) => [reason, 0])) as Record<
+      AliasTwinFoldRefusal,
+      number
+    >,
+  };
+  for (const twin of input.twinAccounts) {
+    const twinResearcher = input.researcherByAccountId.get(twin.id);
+    if (!twin.live || !twinResearcher) continue;
+    if (twin.hasLogin) {
+      plan.refusals['twin-account-has-login'] += 1;
+      continue;
+    }
+    const realNetid = input.aliasNetidByTwinNetid.get(twin.netid);
+    if (!realNetid || realNetid === twin.netid) {
+      plan.refusals['alias-unresolved'] += 1;
+      continue;
+    }
+    const real = input.accountsByNetid.get(realNetid);
+    if (!real?.live) {
+      plan.refusals['real-account-not-live'] += 1;
+      continue;
+    }
+    const realResearcher = input.researcherByAccountId.get(real.id);
+    if (!realResearcher || realResearcher.id === twinResearcher.id) {
+      plan.refusals['no-real-researcher'] += 1;
+      continue;
+    }
+    if (!sameAddressHolderNamesAgree(twinResearcher.displayName, realResearcher.displayName)) {
+      plan.refusals['names-disagree'] += 1;
+      continue;
+    }
+    plan.targetByTwinResearcherId.set(twinResearcher.id, realResearcher.id);
+    plan.twinAccountIdByTwinResearcherId.set(twinResearcher.id, twin.id);
   }
   return plan;
 }

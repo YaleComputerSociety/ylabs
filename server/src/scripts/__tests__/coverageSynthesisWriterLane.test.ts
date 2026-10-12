@@ -167,4 +167,13 @@ describe('re-deriving written-body cards (#4788 follow-up)', () => {
       studentVisibilityReasons: 'missing_card_description',
     });
   });
+
+  it('selects every live written row with --all', () => {
+    expect(writtenBodyCardRepairFilter('coverage-synthesis-llm', { allWrittenRows: true })).toEqual(
+      {
+        archived: { $ne: true },
+        'fieldProvenance.fullDescription.sourceName': 'coverage-synthesis-llm',
+      },
+    );
+  });
 });

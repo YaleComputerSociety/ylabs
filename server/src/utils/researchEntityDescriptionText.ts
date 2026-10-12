@@ -440,6 +440,20 @@ const sourceQualifierRun = (min: number) =>
   `(?:${SOURCE_DOCUMENT_QUALIFIER}\\s+){${min},${SOURCE_QUALIFIER_RUN_MAX}}`;
 
 /**
+ * An editorial note that the writer, not the researcher, is talking: a body that reports
+ * its own evidence was cut short ("... the molecular machine for membrane (text truncated
+ * in source)."). The note names no research, and the sentence it ends is itself a
+ * fragment, so the body is refused rather than trimmed to it.
+ *
+ * The note has to close the body and has to bind the truncation word to the document
+ * itself ("text truncated", "truncated in source"), because "truncated" is ordinary
+ * research prose: a truncated isoform lacking the binding site or a truncated expression
+ * profile is the subject matter, not a note about the page.
+ */
+const SOURCE_TRUNCATION_NOTE =
+  /\([^)]{0,40}\b(?:(?:text|content|source|page)\s+(?:was\s+)?(?:truncated|cut\s+off)|truncated\s+in\s+(?:the\s+)?source)\b[^)]{0,40}\)[\s.]*$/i;
+
+/**
  * The possessive and next-source shapes of the same failure (#4788): "Her Yale profile
  * lists ...", "X's Yale School of Medicine profile describes ...", "The site presents ...",
  * "the official next source for students to review".
@@ -467,6 +481,7 @@ const SOURCE_PAGE_NARRATION_PATTERNS = [
   ),
   /\b(?:official\s+next|next\s+official)\s+source\b/i,
   /\bfor\s+(?:interested\s+)?students\s+to\s+(?:review|consult|check|read|visit)\b/i,
+  SOURCE_TRUNCATION_NOTE,
 ];
 
 export function isSourcePageNarrationDescription(value: unknown): boolean {

@@ -320,6 +320,29 @@ describe('facultyToResearchEntityObservations', () => {
     expect(obs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('jordan.rivers@yale.edu');
   });
 
+  it('seeds no LAB from a lab slot that links a support service the person works for (#4916)', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        meshKeywords: ['Heart Failure'],
+        labWebsite: {
+          name: 'Bioinformatics Support Hub',
+          url: 'https://library.example.edu/research-support/bioinformatics/',
+        },
+      }),
+      RIVERS,
+    )!;
+    const obs = facultyToResearchEntityObservations(
+      profile,
+      'ysm:jordan-rivers',
+      NO_SURNAME_ROSTER,
+    );
+    const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(byField.websiteUrl).toBeUndefined();
+  });
+
   it('falls back to the synthetic user key for the lead PI when no email was found', () => {
     const profile = extractProfile(
       profileHtml({ fullName: 'Jordan Rivers', meshKeywords: ['Heart Failure'] }),
@@ -502,6 +525,32 @@ describe('YsmFacultyDirectoryScraper.run profile prefetch (#3568)', () => {
     expect(slugs).toEqual(['ysm-faculty-jordan-rivers', 'ysm-faculty-avery-sloan']);
     expect(logs.some((line) => line.includes('[cole-nobody] profile fetch failed'))).toBe(true);
     expect(logs.at(-1)).toContain('of 3 profiles scanned');
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run teaching-appointment mint gate (#4916)', () => {
+  it('mints no research entity for a lecturer whose own description is about a practice', async () => {
+    const html = directoryHtml([
+      { id: 'T', items: [{ url: '/profile/teaching-person/', text: 'Person, Teaching' }] },
+    ]);
+    const profileUrl = 'https://medicine.yale.edu/profile/teaching-person/';
+    const page = profileHtml({
+      fullName: 'Teaching Person',
+      workdayTitle: 'Lecturer in Public Health',
+      researchDescription: 'Writes for fixture magazines and consults for public agencies.',
+    });
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return page;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await new YsmFacultyDirectoryScraper(fetcher).run(ctx);
+
+    expect(
+      emitted.filter((o) => o.entityType === 'researchEntity' && o.field !== 'refusedWebsiteUrl'),
+    ).toEqual([]);
+    expect(result.notes).toMatch(/1 teaching appointments skipped/);
   });
 });
 

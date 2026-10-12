@@ -9,11 +9,8 @@ export enum AnalyticsEventType {
   VISITOR = 'visitor',
   FELLOWSHIP_VIEW = 'fellowship_view',
   SEARCH = 'search',
-  PROFILE_UPDATE = 'profile_update',
   // Research product surface events. These track engagement with canonical
   // research entities and privacy-safe interaction affordances.
-  RESEARCH_VIEW = 'research_view',
-  PATHWAY_SAVE = 'pathway_save',
   WAYS_IN_CLICK = 'ways_in_click',
   CONTACT_ROUTE_CLICK = 'contact_route_click',
   SOURCE_LINK_CLICK = 'source_link_click',
@@ -21,9 +18,6 @@ export enum AnalyticsEventType {
   // source inspection and planning activity can never be mistaken for access
   // conversion.
   RESEARCH_SEARCH = 'research_search',
-  // Retired per-entity impression rows. Kept so stored rows stay valid until the
-  // TTL expires them; clients now send one RESEARCH_RESULTS_VIEW per result page.
-  RESEARCH_ENTITY_IMPRESSION = 'research_entity_impression',
   RESEARCH_RESULTS_VIEW = 'research_results_view',
   RESEARCH_PROFILE_OPEN = 'research_profile_open',
   RESEARCH_SOURCE_REVIEW = 'research_source_review',
@@ -31,7 +25,6 @@ export enum AnalyticsEventType {
   RESEARCH_SAVE = 'research_save',
   RESEARCH_COMPARE = 'research_compare',
   RESEARCH_PLAN_UPDATE = 'research_plan_update',
-  RESEARCH_QUALIFIED_ACTION = 'research_qualified_action',
 }
 
 export const RESEARCH_ENTITY_TYPES = ['profile', 'fellowship', 'research_entity'] as const;

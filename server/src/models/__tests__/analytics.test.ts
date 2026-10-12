@@ -24,7 +24,7 @@ describe('AnalyticsEvent model', () => {
 
   it('accepts canonical journey events and bounds idempotency keys', async () => {
     const event = new AnalyticsEvent({
-      eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
+      eventType: AnalyticsEventType.RESEARCH_SAVE,
       netid: 'test123',
       userType: 'undergraduate',
       entityType: 'research_entity',

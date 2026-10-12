@@ -167,7 +167,6 @@ const buildUserRow = (index: number) => ({
   searches: 4,
   researchViews: 2,
   fellowshipViews: 0,
-  profileUpdates: 0,
   loginCount: 5,
   lastActive: `2026-05-17T${String(index % 24).padStart(2, '0')}:00:00.000Z`,
 });

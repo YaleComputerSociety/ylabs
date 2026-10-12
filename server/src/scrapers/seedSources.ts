@@ -208,6 +208,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
+    name: 'roster-bio-research-evidence',
+    displayName: 'Roster biography research evidence',
+    description:
+      "Mints a faculty-research row for a department roster person whose stored profile biography states research they do now, read from the roster lane's stored observations without fetching. The biography's research sentences are writer evidence only, never the served description. Manual-only and out of the sweep until the owner reviews a sample of the rows a run produces.",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'monthly',
+  },
+  {
     name: 'directory-alias-resolution',
     displayName: 'Directory alias resolution',
     description:
@@ -394,6 +403,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'daily-during-cycle',
   },
   {
+    name: 'program-official-page',
+    displayName: 'Program official page citation',
+    description:
+      "Reads the official page each Yale fellowship database program already cites, or the page its curated seed names, and observes that page as the program's sourceUrl only when the page itself names the fund. A page that no longer names a fund it cited records a withdrawal, and a page confirmed gone records a gone verdict, so neither keeps backing the citation. Mints no program and writes no other field.",
+    baseUrl: 'https://funding.yale.edu',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
     name: 'nih-reporter',
     displayName: 'NIH RePORTER',
     description: 'Pulls active NIH grants by Yale PI to identify funded labs and recent activity.',
@@ -433,6 +451,16 @@ const SOURCES: SourceSeed[] = [
     description:
       'Pulls DOE-funded Yale technical reports from OSTI, attributing each to its Yale faculty PI to add physical-sciences funding activity and recency.',
     baseUrl: 'https://www.osti.gov/api/v1/records',
+    defaultWeight: 0.9,
+    cadence: 'weekly',
+  },
+  {
+    name: 'doe-science-awards',
+    displayName: 'DOE Office of Science awards (Yale PIs)',
+    description:
+      'Exports the DOE Office of Science public award search (PAMS) for Yale University and enriches the existing research row of each resolved principal investigator with the award, its project period and amount. Fails closed on an incomplete export and never mints a row.',
+    baseUrl:
+      'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx',
     defaultWeight: 0.9,
     cadence: 'weekly',
   },

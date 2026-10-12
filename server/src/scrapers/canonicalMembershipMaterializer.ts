@@ -348,121 +348,70 @@ export function buildCanonicalRoleAssignmentUpsert(
   return { filter, update, reattach: roleAssignmentReattachWrite(filter, options.reviewStatus) };
 }
 
-async function resolveOrCreateAccountId(
-  identity: CanonicalMemberIdentity,
+/**
+ * Accounts are created only at login (#5000), so a roster identity reaches a researcher
+ * through `identifiers.netid` and mints the researcher alone: the scraper never writes
+ * `accounts`. A researcher already linked to an account keeps that link, which is why the
+ * account lookup survives as the second key.
+ */
+async function researcherIdHoldingIdentityNetid(
+  netid: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
-  if (identityIsOrganizationalMailbox(identity)) return undefined;
-  const netid = normalizedNetid(identity.netid);
-  const email = normalizedEmail(identity.email);
-  if (!netid || !email || !looksLikeYaleNetid(netid)) return undefined;
+  const byIdentifier = await Researcher.findOne({ 'identifiers.netid': netid })
+    .select('_id')
+    .lean();
+  const holderId = toObjectId((byIdentifier as { _id?: unknown } | null)?._id);
+  if (holderId) return holderId;
+  const account = await Account.findOne({ netid }).select('_id').lean();
+  const accountId = toObjectId((account as { _id?: unknown } | null)?._id);
+  if (!accountId) return undefined;
+  const linked = await Researcher.findOne({ accountId }).select('_id').lean();
+  return toObjectId((linked as { _id?: unknown } | null)?._id);
+}
+
+async function mintResearcherForIdentityNetid(
+  netid: string,
+  email: string | undefined,
+  displayName: string | undefined,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  if (!displayName) return undefined;
   try {
-    const account = await Account.findOneAndUpdate(
-      { netid },
-      { $setOnInsert: { netid, email, status: 'UNKNOWN', archived: false } },
-      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
-    )
-      .select('_id')
-      .lean();
-    return toObjectId((account as { _id?: unknown } | null)?._id);
+    const created = await Researcher.create({
+      displayName,
+      identifiers: { netid, ...(email ? { email } : {}) },
+      profileLinks: [],
+      archived: false,
+    });
+    return toObjectId(created._id);
   } catch (error) {
-    if (isDuplicateKeyError(error)) {
-      const existing = await Account.findOne({ netid }).select('_id').lean();
-      return toObjectId((existing as { _id?: unknown } | null)?._id);
-    }
+    if (isDuplicateKeyError(error)) return researcherIdHoldingIdentityNetid(netid);
     throw error;
   }
 }
 
-/**
- * Netid identity has two disjoint keys, `accounts.netid` and
- * `researchers.identifiers.netid`, and the upsert below reads only the first. A
- * researcher holding its netid at `identifiers.netid` with no `accountId` is
- * therefore invisible to it, so the next observation of that same human minted a
- * second row: one person split across two `researchers`, each serving as its own
- * lead. That also bypassed a detachment rather than overriding it, because the
- * detachment is keyed to a `personId` and the twin is a different person (#3152).
- *
- * Only a bare normalized netid is looked up, which is what every other
- * `identifiers.netid` reader does, so a malformed stored key cannot be matched
- * here and is left to its own repair (#2864). Only a live holder is adopted, so
- * an archived person is never resurrected and the accountId mint below still
- * runs unchanged for that case.
- *
- * The accountId is stamped onto the adopted row so the two keys converge on one
- * identity: a detachment keyed to a person is only as durable as the guarantee
- * that the person has one row.
- */
-async function adoptAccountlessNetidHolderId(
-  identity: CanonicalMemberIdentity,
-  accountId: mongoose.Types.ObjectId,
-): Promise<mongoose.Types.ObjectId | undefined> {
-  const netid = normalizedNetid(identity.netid);
-  if (!netid) return undefined;
-  const holder = await Researcher.findOne({
-    'identifiers.netid': netid,
-    accountId: { $exists: false },
-    archived: { $ne: true },
-  })
-    .select('_id')
-    .lean();
-  const holderId = toObjectId((holder as { _id?: unknown } | null)?._id);
-  if (!holderId) return undefined;
-  try {
-    await Researcher.updateOne(
-      { _id: holderId, accountId: { $exists: false } },
-      { $set: { accountId } },
-    );
-  } catch (error) {
-    if (!isDuplicateKeyError(error)) throw error;
-  }
-  return holderId;
-}
-
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
-  accountId: mongoose.Types.ObjectId | undefined,
 ): Promise<mongoose.Types.ObjectId | undefined> {
   if (identityIsOrganizationalMailbox(identity)) return undefined;
   const displayName = canonicalPersonName(trimmed(identity.displayName));
   const orcid = normalizedOrcid(identity.orcid);
+  const netid = normalizedNetid(identity.netid);
+  const email = normalizedEmail(identity.email);
 
-  if (accountId) {
-    const existingByAccount = await Researcher.findOne({ accountId }).select('_id').lean();
-    if (!existingByAccount) {
-      const adopted = await adoptAccountlessNetidHolderId(identity, accountId);
-      if (adopted) return adopted;
-    }
-    const setOnInsert: Record<string, unknown> = {
-      profileLinks: [],
-      archived: false,
-      accountId,
-    };
-    if (displayName) setOnInsert.displayName = displayName;
-    try {
-      const researcher = await Researcher.findOneAndUpdate(
-        { accountId },
-        { $setOnInsert: setOnInsert },
-        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
-      )
-        .select('_id')
-        .lean();
-      return toObjectId((researcher as { _id?: unknown } | null)?._id);
-    } catch (error) {
-      if (isDuplicateKeyError(error)) {
-        const existing = await Researcher.findOne({ accountId }).select('_id').lean();
-        return toObjectId((existing as { _id?: unknown } | null)?._id);
-      }
-      throw error;
+  if (netid) {
+    const holderId = await researcherIdHoldingIdentityNetid(netid);
+    if (holderId) return holderId;
+    if (email && looksLikeYaleNetid(netid)) {
+      return mintResearcherForIdentityNetid(netid, email, displayName);
     }
   }
 
   if (orcid) {
     const existing = await Researcher.findOne({ 'identifiers.orcid': orcid })
-      .select('_id accountId')
+      .select('_id accountId identifiers.netid')
       .lean();
     if (existing) {
-      const existingAccountId = toObjectId((existing as { accountId?: unknown }).accountId);
-      if (existingAccountId) return undefined;
+      if (researcherHoldsYaleIdentity(existing)) return undefined;
       return toObjectId((existing as { _id?: unknown })._id);
     }
     if (!displayName) return undefined;
@@ -477,10 +426,9 @@ async function resolveOrCreateResearcherId(
     } catch (error) {
       if (isDuplicateKeyError(error)) {
         const fallback = await Researcher.findOne({ 'identifiers.orcid': orcid })
-          .select('_id accountId')
+          .select('_id accountId identifiers.netid')
           .lean();
-        if (fallback && toObjectId((fallback as { accountId?: unknown }).accountId))
-          return undefined;
+        if (fallback && researcherHoldsYaleIdentity(fallback)) return undefined;
         return toObjectId((fallback as { _id?: unknown } | null)?._id);
       }
       throw error;
@@ -576,6 +524,13 @@ async function resolveOrCreateNameOnlyResearcherId(
   }
 }
 
+function researcherHoldsYaleIdentity(researcher: unknown): boolean {
+  const record = researcher as { accountId?: unknown; identifiers?: { netid?: unknown } };
+  return (
+    Boolean(toObjectId(record.accountId)) || Boolean(normalizedNetid(record.identifiers?.netid))
+  );
+}
+
 async function liveResearcherId(
   personId: mongoose.Types.ObjectId | undefined,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -614,8 +569,7 @@ export async function identifiedResearcherHoldsDisplayName(displayName: unknown)
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
-  const accountId = await resolveOrCreateAccountId(identity);
-  return resolveOrCreateResearcherId(identity, accountId);
+  return resolveOrCreateResearcherId(identity);
 }
 
 export async function resolveCanonicalResearcherId(
@@ -625,13 +579,8 @@ export async function resolveCanonicalResearcherId(
   const orcid = normalizedOrcid(identity.orcid);
   const netid = normalizedNetid(identity.netid);
   if (netid) {
-    const account = await Account.findOne({ netid }).select('_id').lean();
-    const accountId = toObjectId((account as { _id?: unknown } | null)?._id);
-    if (accountId) {
-      const researcher = await Researcher.findOne({ accountId }).select('_id').lean();
-      const personId = toObjectId((researcher as { _id?: unknown } | null)?._id);
-      if (personId) return personId;
-    }
+    const personId = await researcherIdHoldingIdentityNetid(netid);
+    if (personId) return personId;
   }
   if (orcid) {
     const researcher = await Researcher.findOne({ 'identifiers.orcid': orcid })
@@ -736,7 +685,7 @@ export async function writeCanonicalMembership(
   try {
     const personId =
       (await liveResearcherId(identity.resolvedPersonId)) ??
-      (await resolveOrCreateResearcherId(identity, await resolveOrCreateAccountId(identity)));
+      (await resolveOrCreateResearcherId(identity));
     if (!personId) return refused('refused-person');
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {

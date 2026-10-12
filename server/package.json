@@ -73,6 +73,7 @@
     "observations:retire-deploy-host-citations": "tsx src/scripts/retireEphemeralDeployHostCitations.ts",
     "observations:retire-organization-identity-websites": "tsx src/scripts/retireOrganizationIdentityWebsiteGrafts.ts",
     "observations:retire-shared-roster-websites": "tsx src/scripts/retireSharedRosterWebsites.ts",
+    "observations:retire-borrowed-lab-websites": "tsx src/scripts/retireBorrowedLabWebsites.ts",
     "data:repair-legacy-person-page-urls": "tsx src/scripts/repairLegacyPersonPageUrls.ts",
     "data:drop-dead-citations": "tsx src/scripts/dropSupersededDeadCitations.ts",
     "data:find-lab-websites": "tsx src/scripts/findLabWebsites.ts",
@@ -81,6 +82,8 @@
     "observations:purge-unread-directory-contact": "tsx src/scripts/purgeUnreadDirectoryContactObservations.ts",
     "accounts:merge-local-part-netid-twins": "tsx src/scripts/mergeLocalPartNetidAccounts.ts",
     "accounts:purge-retired-login-profile-fields": "tsx src/scripts/purgeRetiredLoginProfileFields.ts",
+    "accounts:retire-identity-only": "tsx src/scripts/retireIdentityOnlyAccounts.ts",
+    "researchers:backfill-identity-from-accounts": "tsx src/scripts/backfillResearcherIdentityFromAccounts.ts",
     "research-plans:expire-legacy-archived": "tsx src/scripts/expireLegacyArchivedResearchPlans.ts",
     "observations:repartition-fingerprint-index": "tsx src/scripts/repartitionFingerprintIndex.ts",
     "research-entity:backfill-provenance-observation-id": "tsx src/scripts/backfillFieldProvenanceObservationId.ts",
@@ -139,7 +142,6 @@
     "data:materialize-inferred-pi-leads": "tsx src/scripts/backfillInferredPiLeadMaterialization.ts",
     "programs:migrate-program-entities-to-fellowships": "tsx src/scripts/migrateProgramEntitiesToFellowships.ts",
     "programs:backfill-global-regions": "tsx src/scripts/backfillGlobalRegionsDefaultFill.ts",
-    "programs:backfill-official-sources": "tsx src/scripts/backfillProgramOfficialSources.ts",
     "programs:backfill-link-labels": "tsx src/scripts/backfillProgramLinkLabels.ts",
     "programs:accept-formalization-exceptions": "tsx src/scripts/acceptFormalizationReviewExceptions.ts",
     "programs:audit-research-relevance": "tsx src/scripts/auditProgramResearchRelevance.ts",
@@ -281,7 +283,8 @@
     "postcss": "8.5.23",
     "tar": "7.5.22",
     "qs": "6.16.0",
-    "on-headers": "1.1.0"
+    "on-headers": "1.1.0",
+    "source-map-js": "1.2.2"
   },
   "devDependencies": {
     "@types/cookie-session": "^2.0.49",

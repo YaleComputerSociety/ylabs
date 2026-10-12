@@ -50,6 +50,9 @@ Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling 
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.
 A fetch that failed certificate verification is frozen as that certificate error code, so replay raises the same error and a lane that falls back to plain HTTP on it, as `lab-microsite-description-llm` does, takes the same fallback on replay instead of advancing to pages the capture never fetched (#4776).
 Any other network failure, such as a reset connection, is not frozen, because it describes the moment rather than the host, and it counts in `unfrozenRequestCount`.
+A host the SSRF guard refused during capture, because it resolved to a private address or did not resolve at all, is frozen as that refusal, and replay refuses the same host with the same reason (#4251).
+Replay skips the guard's DNS lookup, so before this a lane that runs the guard ahead of its cache read, as `lab-site-lead-verification` does, asked on replay for a page its capture had never been allowed to request, and the replay was reported unscored.
+A resolver failure is not frozen, for the same reason a reset connection is not.
 `center-affiliation-llm`, `center-director-llm` and `research-area-source-extractor` joined once their page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4606), which keeps the same SSRF guard, redirect cap and retry on a throttled status.
 Their model calls already went over the default axios instance, so the model freeze covered them before the move.
 
@@ -84,6 +87,14 @@ Read a fingerprint change on a funding benchmark across a sweep that remateriali
 Eleven more lanes that fetch through `getCached` joined on 2026-10-03 (#4608), each with a `--limit=3` benchmark on Development whose two replays on one head gave one fingerprint: `bbs-research-track`, `department-research-areas`, `department-undergrad-research`, `lab-site-lead-verification`, `official-research-home-roster`, `yale-directory`, `yale-health-sciences-summer-programs`, `yale-research-official`, `yale-reu-programs`, `yse-centers-index` and `yse-faculty-directory`.
 `official-research-home-roster` and `lab-site-lead-verification` first replayed to a new fingerprint every time, because each stamped its observation time, and the roster's `freshnessExpiresAt` derived from it, from the wall clock.
 Both now take that time from the run's reference date when one is set, which only a capture or replay sets, so a live run still stamps the moment it read the page.
+`lab-site-lead-verification` chooses its targets and their leads from the live corpus: a row needs a stored website and a lead edge that is not `HISTORICAL`, and each lead's name comes from the live `Researcher` row.
+A lead attached, detached or renamed after capture therefore changes what a replay judges without any change to the lane, as it does for the funding lanes.
+`lab-site-lead-verification-gold-v2` is the scoped benchmark #4251 asked for, captured on Development on 2026-10-05 and superseding `-v1`, which the SSRF refusal above left unscorable.
+Its scope is 60 rows: every live row whose stored `leadVerification.state` was `contradicted` (7), and 53 of the 74 live `student_ready` rows whose state was `unstated` with `confirmedCount` 0, taken in a fixed hash order.
+The lane planned a verdict for 46 of them, 5 `contradicted`, 39 `unstated` and 2 `unreachable`, over 77 frozen pages, all of which a replay serves.
+The other 14 keep a stored verdict the lane no longer reaches: 12 have no website left and 2 have only a `HISTORICAL` lead, so a first reader of `leadVerification` must not trust a stored verdict on a row the lane has stopped judging.
+Two replays on one head gave one fingerprint.
+It carries no gold labels yet; the per-lead hand labels and per-lead scoring are the remaining steps of #4251.
 `department-undergrad-research` reads a rendered page where its plain fetch is thin, and this benchmark was captured on a host with no renderer, so it measures only the plain-fetch path until it is recaptured where a renderer runs.
 Three lanes stay out, each for a reason a capture cannot remove:
 
@@ -135,9 +146,12 @@ Every capture and replay still goes through the orchestrator, so each one leaves
 
 ## The analytics panel
 
-`/analytics` shows every stored benchmark in the "Is each lane getting better?" panel, served by the admin-only `GET /api/analytics/lane-benchmarks` (#3591).
+`/analytics` shows the benchmarks a sweep replays in the "Is each lane getting better?" panel, served by the admin-only `GET /api/analytics/lane-benchmarks` (#3591).
+The panel applies the same recapture rule as an unnamed `lane:scorecard` run, so a successor replaces the benchmark it supersedes and names it as "Replaces <old-id>"; the replaced capture froze different input, so its replays are not comparable with the successor's and are counted as hidden rather than merged (#4970).
+A current benchmark captured since the last replay has no stored row yet and is listed under "Awaiting a first replay", because hiding it would leave the panel showing a replaced capture as the lane's current reading.
 Each benchmark shows its latest stored replay, and each change compares it with the replay stored before it, never with a live run.
 A stored replay that missed more than its capture left unfrozen is left out of both, as "Hand-judged labels" below describes.
+A current benchmark whose every stored replay is left out that way is hidden rather than listed as awaiting, because it has been replayed and needs a recapture instead.
 Known wrong is shown over its labeled population, input coverage as pages served and missed, and each hand-labeled field as precision and recall with their counts.
 Each of those carries its change from the previous replay, so a lane with no hand labels still shows whether it got better or worse.
 
@@ -151,6 +165,7 @@ The panel reads the output fingerprint and the code version together, because a 
 
 A live-model band is never stored, so it never appears here; read it from `--live-model`.
 The same route also serves the engine benchmarks under `engine`, read from `engine_benchmark_snapshots`, which `engineBenchmark.ts` stores keyed by `benchmarkId` and `stage` (#4605).
+Only `SWEEP_ENGINE_BENCHMARK_ID`, the benchmark each sweep replays and the default of `engine:benchmark`, is shown; the rest are one-off probes captured for a single investigation and never replayed again, so their last replay is not a current reading of the engine and the panel reports their count instead (#4970).
 The panel shows each benchmark and stage's latest stored replay and its change from the replay stored before it, with the same fingerprint and code-version reading as the lane rows.
 An engine replay also records whether it read a row the capture did not freeze, or found the quarantined run set moved, and a fingerprint change where either replay did so is shown as unattributable rather than as a code change.
 

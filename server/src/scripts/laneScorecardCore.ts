@@ -657,3 +657,28 @@ export function goldRegressions(
   }
   return regressions;
 }
+
+/**
+ * The benchmarks a scorecard replays. A recaptured benchmark replaces the one it supersedes,
+ * so an unnamed run replays only the successor; naming a superseded benchmark still replays it.
+ */
+export function benchmarksToReplay<T extends { benchmarkId: string; supersedes?: string | null }>(
+  benchmarks: readonly T[],
+  requestedId?: string,
+): { replay: T[]; superseded: Array<{ benchmarkId: string; supersededBy: string }> } {
+  if (requestedId) {
+    return { replay: benchmarks.filter((b) => b.benchmarkId === requestedId), superseded: [] };
+  }
+  const successorOf = new Map<string, string>();
+  for (const benchmark of benchmarks) {
+    if (benchmark.supersedes) successorOf.set(benchmark.supersedes, benchmark.benchmarkId);
+  }
+  const replay: T[] = [];
+  const superseded: Array<{ benchmarkId: string; supersededBy: string }> = [];
+  for (const benchmark of benchmarks) {
+    const supersededBy = successorOf.get(benchmark.benchmarkId);
+    if (supersededBy) superseded.push({ benchmarkId: benchmark.benchmarkId, supersededBy });
+    else replay.push(benchmark);
+  }
+  return { replay, superseded };
+}

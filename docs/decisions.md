@@ -5,18 +5,89 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-11: The Browse Card Shows An Undergraduate Quote With Its Page, Not A Hosting Claim (#3569)
+
+#3607 took the undergraduate badge off the browse card when #3569 measured its quotes at 18/50 = 0.36 badge precision (95% Wilson 0.24 to 0.50), because showing a quote then would have published model-written text with a citation attached.
+After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 like-for-like re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with grounding 49/50.
+That is the middling case #3569 committed to in advance, where the badge carries its evidence rather than asserting, and the owner chose that option.
+Only 25/50 quotes (0.37 to 0.63) show that undergraduates were hosted, because many state an opening rather than a past host, so a quote never lights "Has hosted undergraduate researchers", which stays the server's roster and advisee predicate (#3593).
+Decision: a served quote renders as "Mentions undergraduate research" with the quote and a "Quoted from" link to the page it cites, shortened at a word to 140 characters on the card and shown whole on the detail page.
+The DTO serves that page as `undergradEvidenceSourceUrl` only beside a quote the existing serve-time guards admit, a quote with no public page renders nothing, and the quote is withheld with the way in for an emeritus lead.
+The lane stays manual-only for runtime rather than precision: a full pass takes 4 to 20 hours against a weekly sweep of about 8 hours and Render's 12-hour job limit, so it is run scoped by hand when the quotes need refreshing.
+
+## 2026-10-11: A Row Whose Only Description Is A Career Biography Is Held Until Research Evidence Exists (#4928)
+
+This refines the 2026-10-01 rule that a biography serves when no research prose exists, and the 2026-10-04 rule that a thin but accurate description serves.
+After #4999, the rows still serving a body that `isBiographyRatherThanResearch` reads as a biography were career biographies with no research statement, and a biography that states no research is not a research description, so it does not qualify a row to serve.
+Decision (owner, 2026-10-11): the gate holds such a row at `operator_review` with `career_biography_without_research` until research evidence exists.
+It reads the representation the serve chain already produced, so it holds only what remains after the narrowing to research sentences and the research card served in place of a biography.
+A row is not held when its served body has a research sentence, when its served card states research, including a thin "Studies <topics>." line derived from its topics, or when the creative-practice predicate labels it (2026-10-03).
+A body sentence counts as research when it names a research focus and the biography detector does not read that sentence itself as a career fact, because the focus test alone reads a service sentence such as an editorship at a named journal as research.
+The `biography_without_research` hold keeps its narrower tests unchanged and wins when both apply, so each detector's hold is counted on its own.
+The hold is a derivation re-run on every gate pass: it writes no field and takes no lock, so a row returns as soon as a lane stores a research statement or a research card.
+Measured read-only on Development on 2026-10-11 by calling the gate planner in dry-run: of 4,224 research rows, 11 `student_ready` rows served a biography body; the hold moves 2 of them out of `student_ready`, both with no research sentence in the stored body and no research card, and spares 3 creative-practice rows and 5 rows whose served card states research, one of them a topics line.
+One more row the focus test spares is a biography whose only field-naming sentence is a co-founding note, which the per-sentence reading does not flag, so the residual errs toward serving.
+This is a stored-tier change: it reaches students after `student-visibility:gate --apply` runs on Development and the search index is rebuilt.
+
+## 2026-10-11: Analytics Keeps Only Event Types With A Live Emitter (#4992)
+
+This supersedes the 2026-08-29 rule that an analytics enum member with historical rows stays.
+The owner chose to delete the history of `research_view` and `profile_update` rather than keep enum members that nothing emits, because a type nothing writes only ever adds stale rows to dashboard totals.
+Every stored row of the two types was deleted from Development and Production with a local backup (Development 242, Production 325; Beta held none), and both enum members, the per-user `profileUpdates` column and their dashboard reads were removed.
+After this, every event type stored in Development and Production has a live emitter.
+Decision: when an analytics event loses its last emitter, delete its stored rows and its enum member together, rather than keeping a member alive for history.
+
+## 2026-10-05: A Lab Whose Own Site Names A Namesake As Its Lead Is Held For Review (#4916)
+
+This is the first reader of `leadVerification`, and it reads one narrow shape rather than the contradicted verdict the 2026-10-01 entry declined to act on.
+A graded sample served a lab whose lead's given name differs from the lead its own cited page names: a profile's lab slot linked a same-surname colleague's lab, so the row carried the colleague's lab name, website and prose under the wrong person.
+The verifier now records which shape contradicted a lead (`contradictedBy`): `NAMESAKE`, a same-surname person whose given name cannot be the lead's, or `NAMED_AS_LEAD`, a person named beside a lead-role phrase.
+A namesake no longer contradicts when its given name could be the lead's through any existing alias rule: `givenNamesCouldNameOnePerson` (initials, short forms, the nickname index), a transliteration fold (same first letter, at least four letters, equal once `h` is dropped, `y`/`i`, `o`/`u` and `e`/`a` are folded and doubled consonants collapse), and every name a former-name annotation gives (`personNameAliases`).
+The gate holds a row at `operator_review` with `lead_contradicted_by_namesake` only when a `NAMESAKE` judgement is about an attached lead and about the website the row still serves; `NAMED_AS_LEAD` stays unread, because #3750 measured that shape mostly wrong.
+Measured on Development on 2026-10-05: 7 live rows carry a `contradicted` verification, and a hand-check of their cited sites found 2 namesake collisions (both right: a lab attached to a same-surname colleague, and a profile lab slot linking a namesake's lab), 1 namesake that is the lead under a nickname and initials (spared by the alias rules), and 4 that are lead-role mentions or verdicts on faculty research profiles, which the reader ignores.
+No stored judgement carries `contradictedBy` yet, so the hold reaches no row until `lab-site-lead-verification` runs again and the gate is re-applied.
+
+## 2026-10-05: A Card Or Body Names A Method Only When Its Evidence States It (#4914)
+
+The graded sample after #4867 found overreach on 27 of 116 graded rows, mostly in the card line: listed interests, publication topics, emphases or a unit's name restated as "using X and Y", clinical or teaching interests served as research, a mission or vision sentence turned into an activity, separately listed topics joined into one claim, and past or one-off work stated as current research.
+Decision: every prompt that writes a card or a body carries one shared rule text (`server/src/scrapers/prompts/synthesisFidelityRules.md`), composed into the card synthesis prompt, the written-description prompt and the backfill writers rather than copied.
+A deterministic check backs the first rule: a "using", "via", "through", "by means of", "employing" or "leveraging" clause in a written body or a synthesized card is kept only when each listed item shares a word with a method-introducing context in the evidence the text was written from, and is otherwise stripped, or refused as `unsupported-method-clause` when nothing is left.
+The other four rules are prompt rules only, because no deterministic shape separates them from correct prose.
+Calibrated read-only over the 3,571 `student_ready` Development rows: of 1,636 cards with such a clause the check strips 532 and refuses 8, and of 867 bodies it strips 119 and refuses 1; a hand check of 20 hits found 18 correct, and of 20 non-hits found 18 correct.
+The writer contract version and the card prompt hash change, so the next writer run re-judges every row and the next microsite extraction run re-derives its cards.
+Follow-up (2026-10-05): the next graded sample still served five cards with an unsupported "using" clause.
+Two were copied lane cards, which never reached the check because it ran only where a card follows a written body; every copied or stored card is now checked at materialize.
+Three passed because the evidence vocabulary was broader than the page: an unbounded marker read "development" as "develop", a context ran past a new subject into a topic, and a method the page gave one listed aim was credited to another.
+Calibrated read-only over 3,576 `student_ready` Development rows, of 1,282 cards with such a clause the check now changes 181: 114 of 1,106 written-body cards, and 67 of 176 copied cards, 60 of which the old rule already failed but never saw.
+A hand check of 20 changed cards found 17 correct and every result well formed, and of 20 unchanged cards found 18 correct.
+The same sample served a written body built from a profile template's widget labels, which the lane's ingest check had verified because the labels are on the page verbatim, and which one lane read stored on its own as a publications timeline the predicate did not know.
+The writer now removes the template's widget labels from its evidence (`withoutProfileTemplateWidgets`): the co-author panel, the publications timeline, an empty research-topics panel, a project card's link label and a bare ORCID iD.
+A MeSH topic run is not chrome for the writer: it lists the topics the profile's publications are indexed under, and a thin but accurate "Studies <topics>." body serves (owner decision), so it stays evidence with the widgets beside it removed, and only a value with nothing left is refused.
+The lane's own guard and the materializer still refuse every `isProfileTemplateChrome` shape as a copied description.
+On Development 87 live rows carried a chrome-shaped writer snippet: 42 are pure MeSH runs and are unchanged, 43 keep their topics with the widgets removed (9 of them `student_ready` rows serving a written body, which the next writer run re-writes), and 2 are widgets only and are refused; neither of those two serves a written body, and both read as template text on a hand check.
+
+## 2026-10-04: A Description The Extractor Verified Against Its Fetched Page Is Page Text (#4867)
+
+The strict #4867 rule left 2,074 of the 3,908 rows that carry writer evidence with no page evidence, because almost no durable page copies exist.
+Decision (owner, 2026-10-04): admit the microsite extraction lane's `fullDescription` values that the lane verified against the fetched page at ingest, where every sentence of four or more words must be present in the page text (`groundDescriptionExtraction`, #528).
+The admission depends on a per-observation marker rather than the source name: the observation's `scrapeRunId` names a recorded `scrape_runs` row of that lane that started after #528 reached beta (`PAGE_GROUNDING_VERIFIED_SINCE`).
+The description backfill script writes rewrites and syntheses under the same source name with a fresh run id it never records, so its values match no recorded run and stay excluded; a lane run that predates the check is excluded too, and so is the lane's `shortDescription`, which can be a synthesized card.
+Every other model-text value still needs a durable stored copy of its page, and none exists yet.
+Measured read-only on Development before merge, 598 of the 4,193 live rows have no page evidence (272 of them `student_ready`) and 553 have no evidence even counting grants (232 `student_ready`), counting the row's own value refusals and excluding invalidated lane runs; an all-rows writer run makes about 3,635 model calls.
+The 174 live values from lane runs before the check stay excluded; admitting them would recover roughly 90 rows, which is the cost of not admitting unverified text.
+
 ## 2026-10-04: A Written Description Is Grounded In Fetched Page Text, And Grants Help Only When They Must (#4867)
 
 A 120-row graded sample after #4788 found 7 of 100 written bodies wrong, above the goal of fewer than 5% wrong.
 Two of the seven re-asserted details an earlier model-written observation had invented, and three attributed another unit's content, a co-founder's personal agenda or a featured item to the row.
 Decision: the writer is grounded only in text that is on a fetched page.
-A value a language-model lane wrote (`producesModelText` in `sourceCoverageRegistry.ts`, plus three retired lanes) is evidence only when it is found near-verbatim in a durable stored copy of the page it cites, and never without one; no durable page store exists yet, because `scrape_snapshots` is a 24-hour fetch cache, so today model text is never writer evidence.
+A value a language-model lane wrote (`producesModelText` in `sourceCoverageRegistry.ts`, plus three retired lanes) is evidence only when it is found near-verbatim in a durable stored copy of the page it cites, and never without one; no durable page store exists yet, because `scrape_snapshots` is a 24-hour fetch cache; the one admitted exception is recorded in the entry above.
 Evidence is read in this order: the row's own research site, its official profile, other pages, and grant records last.
 Grant rule (owner direction, 2026-10-04): grants are read only when the row's own research prose is absent or thin, only grants the row's lead holds as principal investigator that are active or ended within five years, never a single grant as the whole evidence, so one eligible grant is not read at all, and the prompt states only the theme several grants share.
 The prompt forbids attributing navigation, carousel, related-unit or featured-item content, presenting training or past positions as current work, and turning a listed interest into a method or a study subject; a sentence naming a featured item, a related unit or training as current work is dropped deterministically.
 The writer contract version is bumped, so every row is judged again on the next run.
 Measured read-only on Development before the change, the strict rule leaves 2,074 of the 3,908 rows that carry evidence with no page evidence at all, 1,515 of them with no evidence even counting grants, because almost no stored page copies exist and most description evidence is model-extracted.
-The fallback for those rows is an open decision, recorded on #4867, and the all-rows writer run waits for it.
+The owner chose the fallback in the entry above.
 
 ## 2026-10-04: A Page's Own Research Paragraph In The Progressive Is Research (#4809)
 
@@ -50,6 +121,11 @@ The head of a grounded sentence is grounded, so this adds no claim; a cut at a b
 A word that also reads as a plural noun ("uses", "studies", "tests") does not open a coordinated clause, because "structure, function and uses of" continues a noun list.
 " through " and " via " are not boundaries, because they are not reliable method markers: "from adolescence through early adulthood" cut before " through " changes what the card says.
 Measured on Development, cut cards went from 611 of 3,613 before this change to 326 of 3,609 after it (the served population moved by 4 rows between the two measurements), with no change to the four public-description invariant failures.
+After the written body took over most cards, the lines still cut were mostly body leads whose boundary has no comma, so the boundaries were widened on 2026-10-05 (#4809): a bare " such as " or " including ", ", with focus on" and ", with a translational focus", an em-dash aside, " by <verb>ing ", " to explore " and similar purpose clauses, ", aiming to ", and a colon.
+Each new boundary carries a guard for the shape it misread on Development: a head that ends on a linking verb or a placeholder noun ("and topics."), an em-dash or en-dash aside the sentence closes after its verb, and an example list inside a relative clause.
+A boundary with no punctuation before it also refuses a head that ends on a word needing what follows ("has", "aims", "in order", "how", "the ability", an adverb, or a past participle).
+A head the card quality check would call too short is never the cut, because the gate would then hold the row.
+Measured on Development on 2026-10-05 with the change applied, cut served cards went from 294 to 153 of 3,573, and served cards the quality check calls not useful stayed at 44.
 A routine materialize reconsiders a cut card with the deterministic derivation only, because a synthesis that yields no fitting line writes nothing and would repeat its LLM calls on every later materialize of the row.
 Card synthesis for a cut card is opt-in through `--resynthesize-cut-cards`: `yarn --cwd server research-entity:rematerialize --slugs=<rows whose browse card is cut> --resynthesize-cut-cards --apply --confirm-rematerialize`.
 `--card-model=<model>` synthesizes those cards with another model for that run only, because the description lane keys its content hash on its own card model, which must not change for a repair pass.
@@ -107,6 +183,7 @@ The row holds the date and integer counts only, with no netid, account id, major
 A tally write never blocks or fails a login.
 The collection is environment-local and is read with `yarn --cwd server auth:login-signal-tally --environment=production --from <date> --to <date>`.
 It measures nothing until it reaches Production by promotion, and the reading is taken over the two weeks after that.
+The report shows a bucket only when the range holds at least 3 logins in it, the #4159 threshold, and leaves a smaller bucket out of every total and share, so the reading cannot single out a student; it never prints a per-day row.
 Once the personalization decision is made from that reading, the tally, its collection and this entry's mechanism are removed.
 
 ## 2026-10-04: A Thin Description That Is Accurate Serves Whatever Wrote It (#4766)
@@ -514,8 +591,16 @@ Decided:
   Hand-read on 169 served Development bodies in three stratified samples (49 biographies), the test #4262 introduced (`isHighConfidencePersonBio || isCareerBiographyDescription`) scored precision 28 of 63 and recall 28 of 49, and the narrower one #4283 ranked on scored 23 of 38 and 23 of 49.
   Every false positive was research prose that opens on an orienting role ("is a cardiologist whose research focuses on"), which is why a research statement in the opening withdraws the verdict.
   On the third sample, read before the last calibration pass, the new test scored precision 9 of 11 and recall 9 of 17, and after that pass 38 of 39 and 38 of 49 across all three; the misses are biographies whose opening names a research activity or that never state a career fact, so the residual errs toward keeping a biography rather than displacing research prose.
+  A 2026-10-11 agent draft over the 32 served rows whose body or card it flagged (#4928) found six more research statements it read as biographies: a name heading glued before the opening, a role sentence that states its fields with a participle ("studying ..."), "teaches and writes in the areas of", "is a specialist in", and a card that "focuses (her research) on".
+  The opening now skips a name-only heading and reads those forms as research.
+- **A biography that states research later serves that research, and a biography is writer evidence only through its research sentences (#4928).**
+  The serve chain narrows a body to its research sentences when `isBiographyRatherThanResearch` reads it as a biography, and serves a research card in place of one that states no research, so the gate's biography reason and the narrowing read one predicate.
+  The writer reads a biography snippet only through `researchStatementSentences`, and drops it when it states none, so an appointment, award or clinical role never becomes a written research claim.
+  A biography with no research sentence and no research card is held by `career_biography_without_research` since the 2026-10-11 entry above, which supersedes the rule that it still serves.
+  The `biography_without_research` hold keeps its narrower biography tests.
 - **A row serving a biography is flagged, not held.**
   The gate records the soft reason `biography_description_fallback` when the served body is a biography, so it never blocks and is the cohort a research-prose lane should select on.
+  Since the 2026-10-11 entry above, a row whose biography states no research anywhere on the row is also held, under `career_biography_without_research`.
   The Corpus Quality panel counts it as "Serves a biography as its description", measured by `corpus:snapshot` over the same representation the gate reads.
 - **The card follows the same preference.**
   The shared card resolver serves a research card derived from the body in place of a stored biography card when that derived card clears the gate's card bar, and keeps the biography card otherwise, so browse, detail and the gate read one line (#4100, #4127).
@@ -1729,6 +1814,7 @@ A data-model audit of the live databases established that the Listing product su
 The only reader of the `Listing` model was `analyticsService`, which aggregated over the empty collection at six sites and looked up into it once, so its output was structurally zero rather than merely small.
 Decision: delete `server/src/models/listing.ts`, the eight `LISTING_*` and four `OUTREACH_*` members of `AnalyticsEventType`, the `analytics_events.listingId` field, the `'listing'` member of `RESEARCH_ENTITY_TYPES`, and every aggregation, funnel stage, action card, user-summary column, and admin panel that existed only to report them.
 An enum member is removed only when it has no emitter **and** zero rows in every database, which is why `profile_update` and `logout` stay: they have no emitter left but do carry historical rows, and dropping them would hide real data from the admin dashboard rather than remove dead code.
+Superseded on 2026-10-11 (#4992): an event type with no emitter now loses its rows and its enum member together.
 The `API_MODE=productionMigration` dual-connection path goes with it, because `MigrationListing` was the only model it ever bound - a second connection that binds nothing is dead by construction, and the startup banner said as much ("Listings from migration DB, everything else from primary").
 Two smaller pieces of the same lane fell out: the `PUT /listing-claims/:id` admin-audit descriptor named a route that does not exist, and the `{ type: 'listing' }` variant of the client `BrowsableItem` union was never constructed, so its `BrowseCard` and `BrowseListItem` branches were unreachable UI.
 Deliberately out of scope: the physical collection drop, which `legacy:cleanup` already owns and lists; and the audit and migration tooling (`researchModelInventoryCore`, `migrateResearchEntities`, `syncBetaToDevelopment`, the phase-0 hot-path shapes) that still names `listings` on purpose, since removing those specs would blind the residue reporting that found this in the first place.

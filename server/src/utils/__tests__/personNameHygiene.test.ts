@@ -7,6 +7,7 @@ import {
   stripPersonNameCaptionWrapper,
   stripPersonNameCredentialList,
   stripPersonNameFormerNameAnnotation,
+  personNameAliases,
   sanitizePersonGivenName,
 } from '../personNameHygiene';
 
@@ -235,5 +236,17 @@ describe('sanitizePersonGivenName', () => {
   it('keeps a given name that is the title word, and any given name outside a caption', () => {
     expect(sanitizePersonGivenName('Photo of Dean')).toBe('Dean');
     expect(sanitizePersonGivenName('Dean Robin')).toBe('Dean Robin');
+  });
+});
+
+describe('personNameAliases (#4916)', () => {
+  it('returns the current name and the former name an annotation records', () => {
+    expect(personNameAliases('Robin Quill f.k.a. Robin Brook')).toEqual([
+      'Robin Quill',
+      'Robin Brook',
+    ]);
+    expect(personNameAliases('Robin Quill, formerly Robin Brook')).toHaveLength(2);
+    expect(personNameAliases('Robin Quill')).toEqual(['Robin Quill']);
+    expect(personNameAliases('  ')).toEqual([]);
   });
 });

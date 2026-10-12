@@ -2,7 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readSweepHeadSha } from '../runScraperSweep';
+import {
+  isDeadObservationPruneSweepMode,
+  parseScraperSweepArgs,
+  readSweepHeadSha,
+} from '../runScraperSweep';
 import {
   WEEKLY_SWEEP_CONFIRM_FLAG,
   WEEKLY_SWEEP_SUMMARY_MARKER,
@@ -156,11 +160,23 @@ describe('command builders', () => {
       '--mode=development-full',
       '--confirm-development-full-sweep',
       '--restart',
+      '--prune-between-phases',
     ]);
     expect(buildWeeklySweepArgs('fellowship-development-full')).toContain(
       '--confirm-fellowship-sweep',
     );
   });
+
+  it.each(['development-full', 'fellowship-development-full'] as const)(
+    'turns on the dead-observation prune for every %s weekly run',
+    (mode) => {
+      const sweepArgv = buildWeeklySweepArgs(mode).slice(3);
+      const options = parseScraperSweepArgs(sweepArgv);
+      expect(options.mode).toBe(mode);
+      expect(options.pruneBetweenPhases).toBe(true);
+      expect(isDeadObservationPruneSweepMode(options.mode)).toBe(true);
+    },
+  );
 
   it('drops the fetch cache through the prune command the sweep already uses', () => {
     const args = buildSnapshotCacheDropArgs('/tmp/job/drop.json');

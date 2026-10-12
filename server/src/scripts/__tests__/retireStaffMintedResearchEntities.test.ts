@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  descriptionAffirmsNoResearch,
+  descriptionStatesCreativePracticeEvidence,
+} from '../../utils/descriptionStatesResearch';
+import {
   descriptionStatesResearch,
   entriesInReasonScope,
   hasForeignWebsite,
@@ -60,6 +64,36 @@ describe('hasForeignWebsite', () => {
     ).toBe(true);
   });
 
+  it('is false for a website the minting lane wrote from the page it minted the row from', () => {
+    const listing = 'https://school.example.edu/faculty/directory/';
+    const mint = { sourceName: 'dept-faculty-roster', sourceUrl: listing };
+    expect(
+      hasForeignWebsite(
+        {
+          websiteUrl: 'https://medicine.example.edu/lab/principal/',
+          fieldProvenance: { slug: mint, websiteUrl: mint },
+        },
+        IDENTITY,
+      ),
+    ).toBe(false);
+  });
+
+  it('is true when another lane wrote the website from the same listing the row was minted from', () => {
+    const listing = 'https://school.example.edu/faculty/directory/';
+    expect(
+      hasForeignWebsite(
+        {
+          websiteUrl: 'https://medicine.example.edu/lab/principal/',
+          fieldProvenance: {
+            slug: { sourceName: 'dept-faculty-roster', sourceUrl: listing },
+            websiteUrl: { sourceName: 'ysm-atoz-index', sourceUrl: listing },
+          },
+        },
+        IDENTITY,
+      ),
+    ).toBe(true);
+  });
+
   it('is false for a row with no website, and true when the identity page is unknown', () => {
     expect(hasForeignWebsite({ fieldProvenance: {} }, IDENTITY)).toBe(false);
     expect(hasForeignWebsite({ websiteUrl: 'https://x.example.org/' }, undefined)).toBe(true);
@@ -112,6 +146,18 @@ describe('parseRetireStaffMintedEntitiesArgs', () => {
 });
 
 describe('reason scope', () => {
+  it('reads each --record-id once and refuses a value that is not an object id', () => {
+    expect(parseRetireStaffMintedEntitiesArgs([]).recordIds).toBeUndefined();
+    const id = '0123456789abcdef01234567';
+    expect(
+      parseRetireStaffMintedEntitiesArgs([`--record-id=${id}`, `--record-id=${id}`]).recordIds,
+    ).toEqual([id]);
+    expect(() => parseRetireStaffMintedEntitiesArgs(['--record-id=not-an-id'])).toThrow(
+      /--record-id/,
+    );
+    expect(() => parseRetireStaffMintedEntitiesArgs(['--record-id='])).toThrow(/--record-id/);
+  });
+
   it('reads each --reason as a scope and refuses a reason the stage does not plan', () => {
     expect(parseRetireStaffMintedEntitiesArgs([]).reasons).toBeUndefined();
     expect(
@@ -161,5 +207,63 @@ describe('descriptionStatesResearch', () => {
       }),
     ).toBe(false);
     expect(descriptionStatesResearch({})).toBe(false);
+  });
+});
+
+describe('descriptionAffirmsNoResearch (#4916)', () => {
+  it('affirms a description about a practice or an award', () => {
+    for (const entity of [
+      { shortDescription: 'Won a national magazine award for a fixture report.' },
+      {
+        shortDescription: 'Leads cleanup of fixture contamination at remediation sites.',
+        fullDescription: 'Has worked in a state remediation division for twenty years.',
+      },
+    ]) {
+      expect(descriptionAffirmsNoResearch(entity)).toBe(true);
+    }
+  });
+
+  it('never affirms an empty row, a research verb in the full text, or stated scholarship', () => {
+    for (const entity of [
+      {},
+      { shortDescription: '   ', fullDescription: '' },
+      {
+        shortDescription: 'Writes about fixture policy for magazines.',
+        fullDescription: 'Studies injury prevention and fixture policy.',
+      },
+      { shortDescription: 'Works on an eighteenth-century fixture reformer.' },
+      { fullDescription: 'My academic province is the eighteenth century.' },
+    ]) {
+      expect(descriptionAffirmsNoResearch(entity)).toBe(false);
+    }
+  });
+});
+
+describe('teaching witness and creative practice (#4916)', () => {
+  it('reads program evaluation as research', () => {
+    expect(
+      descriptionAffirmsNoResearch({
+        fullDescription: 'Designing and evaluating leadership programs for fixture health teams.',
+      }),
+    ).toBe(false);
+  });
+
+  it('reads any kind of creative-practice evidence, with no arts department needed', () => {
+    expect(
+      descriptionStatesCreativePracticeEvidence({
+        fullDescription: 'The author of five books of poetry and a collection of essays.',
+      }),
+    ).toBe(true);
+    expect(
+      descriptionStatesCreativePracticeEvidence({
+        shortDescription: 'Writes about art and culture for magazines and essays.',
+        fullDescription: 'Has taught literature and is interested in fiction.',
+      }),
+    ).toBe(true);
+    expect(
+      descriptionStatesCreativePracticeEvidence({
+        fullDescription: 'Has worked in a state remediation division for twenty years.',
+      }),
+    ).toBe(false);
   });
 });

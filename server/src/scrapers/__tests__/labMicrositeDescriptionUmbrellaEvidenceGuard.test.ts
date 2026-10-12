@@ -16,10 +16,10 @@ import { describe, expect, it } from 'vitest';
 import {
   descriptionExtractionToObservations,
   isInterestChipListText,
-  isProfileTemplateChrome,
   opensOnNavigationChrome,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
+import { isProfileTemplateChrome } from '../../utils/profileTemplateChrome';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import { DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS } from '../descriptionSourceOwnership';
 
@@ -229,6 +229,32 @@ describe('profile template chrome refusal (#4048)', () => {
         'Research at a Glance Yale Co-Authors Frequent collaborators of a fixture person published research.',
       ),
     ).toBe(true);
+  });
+
+  it('recognises a project card and a bare ORCID iD after a project title', () => {
+    expect(
+      isProfileTemplateChrome(
+        'Identifying the neural basis of a fixture disorder Psychiatry Synapses Ketamine View Project ORCID 0000-0000-0000-000X',
+      ),
+    ).toBe(true);
+    expect(
+      isProfileTemplateChrome(
+        'Overview examining a fixture checklist on trainee autonomy. Fixture Mentor ORCID 0000-0000-0000-0000',
+      ),
+    ).toBe(true);
+  });
+
+  it('leaves prose that mentions a project or links an ORCID record alone', () => {
+    expect(
+      isProfileTemplateChrome(
+        'The lab leads a project on fixture imaging; see https://orcid.org/0000-0000-0000-0000 for its publications.',
+      ),
+    ).toBe(false);
+    expect(
+      isProfileTemplateChrome(
+        'Students who view project proposals each fall join the fixture study.',
+      ),
+    ).toBe(false);
   });
 
   it('leaves a research body that names medical research in passing alone', () => {

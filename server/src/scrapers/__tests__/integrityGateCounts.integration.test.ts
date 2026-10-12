@@ -40,8 +40,30 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
       const first = new mongoose.Types.ObjectId();
       const second = new mongoose.Types.ObjectId();
       await db.collection('research_entities').insertMany([
-        { _id: first, slug: `synthetic-a-${index}`, archived: false, websiteUrl: labUrl },
-        { _id: second, slug: `synthetic-b-${index}`, archived: false, sourceUrls: [labUrl] },
+        {
+          _id: first,
+          slug: `synthetic-a-${index}`,
+          archived: false,
+          websiteUrl: labUrl,
+          studentVisibilityTier: 'student_ready',
+        },
+        {
+          _id: second,
+          slug: `synthetic-b-${index}`,
+          archived: false,
+          websiteUrl: labUrl,
+          studentVisibilityTier: 'student_ready',
+        },
+        {
+          slug: `synthetic-member-${index}`,
+          archived: false,
+          sourceUrls: [labUrl, `https://medicine.yale.edu/lab/synthetic-cited-only-${index}/`],
+        },
+        {
+          slug: `synthetic-cited-lab-${index}`,
+          archived: false,
+          websiteUrl: `https://medicine.yale.edu/lab/synthetic-cited-only-${index}/`,
+        },
       ]);
 
       const personId = new mongoose.Types.ObjectId();
@@ -62,8 +84,12 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
       });
       await db.collection('signals').insertMany([signal(), signal()]);
 
-      const account = () => ({ email: `synthetic-${index}@example.test`, archived: false });
-      await db.collection('accounts').insertMany([account(), account()]);
+      const emailHolder = () => ({
+        displayName: `Synthetic Email Holder ${index}`,
+        identifiers: { email: `synthetic-${index}@example.test` },
+        archived: false,
+      });
+      await db.collection('researchers').insertMany([emailHolder(), emailHolder()]);
 
       await seedSamePiProfileShellPair(index);
     }
@@ -92,6 +118,7 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
         sourceUrls: [labUrl],
         departments: ['Synthetic Medicine'],
         archived: false,
+        studentVisibilityTier: 'student_ready',
       },
       {
         _id: profileShell,
@@ -102,6 +129,7 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
         sourceUrls: [`https://medicine.yale.edu/profile/fixture-lead-${index}/`],
         departments: ['Synthetic Medicine'],
         archived: false,
+        studentVisibilityTier: 'student_ready',
       },
     ]);
     const piEdge = (target: mongoose.Types.ObjectId) => ({
@@ -142,6 +170,35 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
       expect(sampled.samples[name], name).toHaveLength(2);
       expect(sampled.countLabels[name], name).toBe(`${GROUPS_PER_CHECK} (sample of 2)`);
     }
+  });
+
+  it('warns rather than fails on a duplicate group serving at most one row (#5004)', async () => {
+    const db = mongoose.connection.db!;
+    await db
+      .collection('research_entities')
+      .updateMany(
+        { slug: { $regex: '^(synthetic-b-|faculty-research-area-fixture-lead-)' } },
+        { $set: { studentVisibilityTier: 'suppressed' } },
+      );
+
+    const summary = await runPostMaterializationIntegrityGate({ includeSamples: true, limit: 25 });
+
+    expect(summary.counts.officialLabUrlResearchEntities).toBe(0);
+    expect(summary.counts.samePiSameNameResearchEntities).toBe(0);
+    expect(summary.failureNames).not.toContain('officialLabUrlResearchEntities');
+    expect(summary.failureNames).not.toContain('samePiSameNameResearchEntities');
+    expect(summary.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'heldOfficialLabUrlResearchEntities',
+          count: GROUPS_PER_CHECK,
+        }),
+        expect.objectContaining({
+          name: 'heldSamePiSameNameResearchEntities',
+          count: GROUPS_PER_CHECK,
+        }),
+      ]),
+    );
   });
 
   it('keeps an unmarked label when the sample holds every group', async () => {
