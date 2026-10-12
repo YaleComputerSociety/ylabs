@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminGrant } from '../../models/adminGrant';
 import { Account } from '../../models/account';
+import { Researcher } from '../../models/researcher';
 import {
   MAX_ADMIN_GRANT_NOTE_LENGTH,
   clearAdminGrantCache,
@@ -144,6 +145,7 @@ describe('listAdminGrants history timeline', () => {
       lean: vi.fn().mockResolvedValue([]),
     };
     vi.spyOn(Account, 'find').mockReturnValue(accountSummaryChain);
+    vi.spyOn(Researcher, 'find').mockReturnValue(accountSummaryChain);
 
     const result = await listAdminGrants();
 

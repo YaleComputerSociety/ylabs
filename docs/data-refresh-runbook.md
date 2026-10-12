@@ -440,6 +440,7 @@ It never reads Beta analytics, admin grants, admin audit and access-review proje
 Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
 Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
 The target's own logins are never lost to the copy: every target account with login evidence (`lastLoginAt`, or an owned research plan) is carried from the pre-swap backup before verification, keeping its `_id` so the target's `research_plans` still resolve (#4130).
+Where a source row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile`, `sessionVersion` and `status` onto it, because the target is authoritative for its own logins (#5000).
 Where the source holds that `_id` as a `mirrored-<id>` pseudonym, which is what the opposite-direction mirror mints for the target's own login, the target row replaces the pseudonym.
 Where the source also re-created that login's netid under a new `_id`, the source row is re-keyed onto the target `_id` over the pseudonym, so the netid stays unique.
 Read `accountCarry` in the artifact: `restored` counts round-tripped logins, `merged` counts re-created ones, and `inserted` counts target-only ones.

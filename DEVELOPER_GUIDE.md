@@ -423,7 +423,7 @@ Beta suppresses real student analytics while permitting fixture and admin valida
 ```
 User → Yale CAS SSO → passport.ts resolveLoginPrincipalForCas
      → Yalies lookup (classification cascade: skills/auth-security/SKILL.md)
-     → accountService.recordAccountLogin: resolve-or-create Account (netid/email) → cookie-session
+     → accountService.recordAccountLogin: resolve-or-create Account (netid/email), activate an UNKNOWN status → cookie-session
 ```
 
 Authentication runs on the canonical `Account`; the legacy `User` model has been retired (#2014) and `userType` is derived per login and carried in the signed session rather than persisted. The classification cascade runs at login time only. Per-request session restore (`deserializeUser`) re-validates that the backing `Account` exists and is not archived plus the admin-grant check - no account creation and no Yalies calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.

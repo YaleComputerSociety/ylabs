@@ -3,8 +3,8 @@
  */
 import { AdminGrant } from '../models/adminGrant';
 import { Account } from '../models/account';
-import { Researcher } from '../models/researcher';
 import { isLocalDevelopmentRuntime } from '../utils/environment';
+import { researchersByNetid } from './researcherNetidLookup';
 
 const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 export const MAX_ADMIN_GRANT_NOTE_LENGTH = 512;
@@ -56,28 +56,27 @@ export const hasAdminAuthorityForUser = async (
 
 const userSummaryByNetid = async (netids: string[]) => {
   if (netids.length === 0) return new Map<string, any>();
-  const accounts = await Account.find({ netid: { $in: netids } })
-    .select('netid email')
-    .lean();
-  const accountIds = accounts.map((account: any) => account._id);
-  const researchers = accountIds.length
-    ? await Researcher.find({ accountId: { $in: accountIds } })
-        .select('accountId displayName')
-        .lean()
-    : [];
-  const displayNameByAccountId = new Map(
-    researchers.map((researcher: any) => [String(researcher.accountId), researcher.displayName]),
+  const [accounts, researchers] = await Promise.all([
+    Account.find({ netid: { $in: netids } })
+      .select('netid email')
+      .lean(),
+    researchersByNetid(netids),
+  ]);
+  const accountByNetid = new Map(
+    accounts.map((account: any) => [normalizeNetid(account.netid), account]),
   );
-  return new Map(
-    accounts.map((account: any) => [
-      normalizeNetid(account.netid),
-      {
-        netid: account.netid,
-        email: account.email,
-        displayName: displayNameByAccountId.get(String(account._id)),
-      },
-    ]),
-  );
+  const summaries = new Map<string, any>();
+  for (const netid of netids) {
+    const account: any = accountByNetid.get(netid);
+    const researcher = researchers.get(netid);
+    if (!account && !researcher) continue;
+    summaries.set(netid, {
+      netid: account?.netid ?? netid,
+      email: account?.email ?? researcher?.email,
+      displayName: researcher?.displayName,
+    });
+  }
+  return summaries;
 };
 
 export const listAdminGrants = async (): Promise<AdminGrantResponse> => {

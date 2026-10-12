@@ -17,7 +17,8 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
         employee -> professor when isFacultyTitle(title), otherwise staff
         unavailable -> the userType a previous login stored on Account.profile, else "unknown"
         not_found -> "unknown"
-     -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
+     -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt,
+        set an UNKNOWN status to ACTIVE (DISABLED is never changed)
      -> cookie-session carrying a session claim, httpOnly, secure in prod, sameSite lax
      -> deserializeUser refuses it after sign-out or 30 days (SESSION_LIFETIME_MS)
 ```
@@ -39,6 +40,8 @@ The stored per-day rows are not suppressed, so read them only through the report
 It is temporary: it goes once the personalization decision in `docs/decisions.md` is made.
 Accounts are created only at login (never by the scraper); the scraper's identity materialization enriches researchers that already exist but mints no Account or Researcher on its own.
 One scraper path still mints an `Account`: `resolveOrCreateAccountId` in `scrapers/canonicalMembershipMaterializer.ts` upserts one with status `UNKNOWN` for a roster identity that carries both a netid and an email.
+A person who later signs into such a row is set to `ACTIVE` by the login, atomically and only from `UNKNOWN`, so a `DISABLED` account stays disabled; before #5000 the row stayed `UNKNOWN` and read as an unconfirmed user on `/analytics`.
+Services read a researcher's identity from the researcher row, `identifiers.netid` and `identifiers.email`, and fall back to the linked account only where the identifiers are absent (`services/researcherNetidLookup.ts`), so `accounts` can become login-only without changing what admin grants, analytics, journey-event validation, correction reports or rosters show (#5000).
 An account netid must be a Yale netid (`looksLikeYaleNetid` in `utils/yaleNetid.ts`), and `models/account.ts` enforces that with hooks on every Mongoose write path, `save`, `insertMany` and the update and replace queries, rather than with the schema `match`, so an upsert without `runValidators` is refused too (#4773).
 That is the shape of the defect: on 2026-08-27, between #2122 and #2129, the user-identity materializer upserted 170 accounts keyed on an email local part, because the user observations were keyed `netid:<local part>` (#2831) and that upsert ran no validators.
 152 of them share an email with the person's real-netid account, which made two live accounts claim one address, so the email joins in `entityMaterializer.ts` refused that person.

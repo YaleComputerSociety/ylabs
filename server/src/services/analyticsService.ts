@@ -5,7 +5,6 @@ import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../mo
 import { ResearchEntity, Fellowship } from '../models/index';
 import { Account } from '../models/account';
 import { AdminGrant } from '../models/adminGrant';
-import { Researcher } from '../models/researcher';
 import { Types, type PipelineStage } from 'mongoose';
 import {
   SEARCH_EPISODE_CANDIDATE_LIMIT,
@@ -18,6 +17,7 @@ import {
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { startOfAnalyticsDay, type AnalyticsDateRange } from '../utils/analyticsRange';
+import { researchersByNetid } from './researcherNetidLookup';
 
 export interface LogEventParams {
   eventType: AnalyticsEventType;
@@ -197,6 +197,7 @@ export interface AnalyticsUserDrilldownQuery {
 export interface AnalyticsUserSummary {
   netid: string;
   userType: string;
+  displayName?: string;
   fname?: string;
   lname?: string;
   totalEvents: number;
@@ -608,6 +609,7 @@ const singleMatchLookupStages = (input: {
   foreignFieldType: 'string' | 'objectId';
   project: Record<string, 1>;
   as: string;
+  match?: Record<string, unknown>;
 }): PipelineStage.FacetPipelineStage[] => {
   const matchesField = `${input.as}LookupMatches`;
 
@@ -619,7 +621,7 @@ const singleMatchLookupStages = (input: {
         foreignField: input.foreignField,
         as: matchesField,
         pipeline: [
-          { $match: { [input.foreignField]: { $type: input.foreignFieldType } } },
+          { $match: { [input.foreignField]: { $type: input.foreignFieldType }, ...input.match } },
           { $project: input.project },
         ],
       },
@@ -659,6 +661,21 @@ const researcherByAccountLookupStages = (
     as: 'researcher',
   });
 
+const researcherByNetidLookupStages = (netidField: string): PipelineStage.FacetPipelineStage[] =>
+  singleMatchLookupStages({
+    from: 'researchers',
+    localField: netidField,
+    foreignField: 'identifiers.netid',
+    foreignFieldType: 'string',
+    project: { displayName: 1 },
+    as: 'netidResearcher',
+    match: { archived: { $ne: true } },
+  });
+
+const researcherDisplayNameField = {
+  $ifNull: ['$netidResearcher.displayName', '$researcher.displayName'],
+};
+
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
@@ -691,12 +708,13 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
       },
     },
     ...accountByNetidLookupStages('_id'),
+    ...researcherByNetidLookupStages('_id'),
     ...researcherByAccountLookupStages('account._id'),
     {
       $addFields: {
         netid: '$_id',
         userType: '$analyticsUserType',
-        displayName: '$researcher.displayName',
+        displayName: researcherDisplayNameField,
         email: '$account.email',
         firstSeen: { $ifNull: ['$account.createdAt', '$firstEventAt'] },
         lastActive: {
@@ -1823,6 +1841,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           { $sort: { eventCount: -1 } },
           { $limit: 10 },
           ...accountByNetidLookupStages('_id.netid'),
+          ...researcherByNetidLookupStages('_id.netid'),
           ...researcherByAccountLookupStages('account._id'),
           {
             $project: {
@@ -1830,7 +1849,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
               userId: '$_id.netid',
               userType: '$_id.userType',
               eventCount: 1,
-              displayName: '$researcher.displayName',
+              displayName: researcherDisplayNameField,
             },
           },
         ],
@@ -2118,26 +2137,13 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           .lean()
       : Promise.resolve([]),
     topEntityIdsFor('profile').length
-      ? (async () => {
-          const accounts = await Account.find({ netid: { $in: topEntityIdsFor('profile') } })
-            .select('netid _id')
-            .lean();
-          const netidByAccountId = new Map(
-            accounts.map((account: any) => [String(account._id), account.netid] as const),
-          );
-          const researchers = await Researcher.find({
-            accountId: { $in: accounts.map((account: any) => account._id) },
-          })
-            .select('accountId displayName')
-            .lean();
-          return researchers
-            .map((researcher: any) => ({
-              netid: netidByAccountId.get(String(researcher.accountId)),
-              fname: researcher.displayName,
-              lname: '',
-            }))
-            .filter((row) => Boolean(row.netid));
-        })()
+      ? researchersByNetid(topEntityIdsFor('profile')).then((researchers) =>
+          [...researchers].map(([netid, researcher]) => ({
+            netid,
+            fname: researcher.displayName,
+            lname: '',
+          })),
+        )
       : Promise.resolve([]),
   ]);
   const researchEntityById = new Map(

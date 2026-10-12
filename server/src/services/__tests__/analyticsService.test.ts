@@ -617,6 +617,7 @@ describe('getAnalytics research coverage and range scoping', () => {
     expect(lookupStages.map((stage: Record<string, any>) => stage.$lookup.from)).toEqual([
       'accounts',
       'researchers',
+      'researchers',
     ]);
     expect(mostActiveStages.some((stage: Record<string, any>) => stage.$unwind)).toBe(false);
     expectNullSafeSingleMatchLookup(mostActiveStages, 'account', {
@@ -627,10 +628,16 @@ describe('getAnalytics research coverage and range scoping', () => {
       foreignField: 'accountId',
       foreignFieldType: 'objectId',
     });
+    expectNullSafeSingleMatchLookup(mostActiveStages, 'netidResearcher', {
+      foreignField: 'identifiers.netid',
+      foreignFieldType: 'string',
+    });
     const projectStage = mostActiveStages.find(
       (stage: Record<string, any>) => stage.$project?.userId,
     );
-    expect(projectStage.$project.displayName).toBe('$researcher.displayName');
+    expect(projectStage.$project.displayName).toEqual({
+      $ifNull: ['$netidResearcher.displayName', '$researcher.displayName'],
+    });
   });
 
   it('resolves the linked display name and still emits one row for a user with no account', async () => {
@@ -812,8 +819,10 @@ describe('getAnalytics research coverage and range scoping', () => {
     mocks.accountFind.mockImplementation(
       chainableFindReturning([{ _id: 'acc-prof', netid: 'prof-netid' }]),
     );
-    mocks.researcherFind.mockImplementation(
-      chainableFindReturning([{ accountId: 'acc-prof', displayName: 'Jane Doe' }]),
+    mocks.researcherFind.mockImplementation((query: Record<string, unknown>) =>
+      chainableFindReturning(
+        query['identifiers.netid'] ? [] : [{ accountId: 'acc-prof', displayName: 'Jane Doe' }],
+      )(),
     );
 
     const analytics = await getAnalytics({
