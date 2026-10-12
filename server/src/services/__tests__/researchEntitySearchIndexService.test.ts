@@ -5,6 +5,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import * as meiliClient from '../../utils/meiliClient';
+import { MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../../utils/meiliTask';
 import {
   buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
@@ -1232,6 +1233,7 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(timeouts).toHaveLength(2);
     for (const timeout of timeouts) expect(Number.isFinite(timeout)).toBe(true);
+    expect(timeouts[1]).toBe(MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
   });
 
   it('rejects unsafe rebuild page sizes before configuring the index', async () => {

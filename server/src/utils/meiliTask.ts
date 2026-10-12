@@ -8,6 +8,9 @@
 
 export const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
 export const MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS = 60_000;
+// A full rebuild embeds every document it adds: one 250-document Beta page measured 73s on
+// 2026-10-12, so the request-path limit above abandoned a task that went on to succeed (#5009).
+export const MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS = 900_000;
 
 export interface MeiliTaskOutcome {
   status: string;
