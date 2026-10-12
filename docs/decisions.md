@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
+
+This narrows where the 2026-10-11 entry below renders a quote, and keeps everything else it decided.
+On the browse card the quote was the heaviest block, a label, up to 140 characters of quote and a source link, on about a third of cards, and it was the one item a student had to read and judge rather than scan.
+At 0.84 precision about one quote in six is wrong, which suits the surface where a student is evaluating one row closely more than the surface they skim.
+Decision (owner, 2026-10-12): the browse card shows no quote, and the detail page shows the whole quote in its main column below the topics and methods, under the same "Mentions undergraduate research" label with its "Quoted from" link.
+The search response still carries `undergradEvidenceQuote`, because the `undergrad-evidence-quote-precision` journey case samples served quotes from browse.
+
 ## 2026-10-11: The Browse Card Shows An Undergraduate Quote With Its Page, Not A Hosting Claim (#3569)
 
 #3607 took the undergraduate badge off the browse card when #3569 measured its quotes at 18/50 = 0.36 badge precision (95% Wilson 0.24 to 0.50), because showing a quote then would have published model-written text with a citation attached.

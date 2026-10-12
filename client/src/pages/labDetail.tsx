@@ -514,7 +514,6 @@ const DecisionSummary = ({
   const undergradQuote = wayInWithheld ? undefined : undergradQuoteEvidenceFromEntity(group);
   const hasEvidenceList =
     Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
-  const hasEvidenceDetail = hasEvidenceList || Boolean(undergradQuote);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const actionLinks = resolveResearchDetailActionLinks({
@@ -625,43 +624,44 @@ const DecisionSummary = ({
               </div>
             </div>
           )}
+
+          {undergradQuote && (
+            <figure className="mt-6 max-w-[68ch] border-t border-[var(--yr-line)] pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                {UNDERGRAD_QUOTE_LABEL}
+              </p>
+              <blockquote
+                cite={undergradQuote.sourceUrl}
+                className="mt-2 border-l-2 border-line-brand pl-4 text-base leading-relaxed text-ink-soft"
+              >
+                <p>&ldquo;{undergradQuote.quote}&rdquo;</p>
+              </blockquote>
+              <figcaption className="mt-2 pl-4.5 text-sm text-muted">
+                Quoted from{' '}
+                <a
+                  href={undergradQuote.sourceUrl}
+                  aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-link yr-focus-ring break-words rounded-control"
+                >
+                  {undergradQuote.sourceHost}
+                </a>
+              </figcaption>
+            </figure>
+          )}
         </div>
 
         <div className="divide-y divide-[var(--yr-line)] self-start rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
-          {hasEvidenceDetail && (
+          {hasEvidenceList && (
             <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
-              {hasEvidenceList && (
-                <ul className="mt-3 space-y-1 text-xs text-muted">
-                  {grantSummary && <li>• {grantSummary}</li>}
-                  {honors.recent && <li>• {honors.recent}</li>}
-                  {honors.other && <li>• {honors.other}</li>}
-                  {pastAdvisees && <li>• {pastAdvisees}</li>}
-                </ul>
-              )}
-              {undergradQuote && (
-                <figure className="mt-3">
-                  <p className="text-sm font-semibold text-ink">{UNDERGRAD_QUOTE_LABEL}</p>
-                  <blockquote
-                    cite={undergradQuote.sourceUrl}
-                    className="mt-1 border-l-2 border-line-strong pl-3 text-sm leading-relaxed text-ink-soft"
-                  >
-                    <p>&ldquo;{undergradQuote.quote}&rdquo;</p>
-                  </blockquote>
-                  <figcaption className="mt-1 pl-3.5 text-xs text-muted">
-                    Quoted from{' '}
-                    <a
-                      href={undergradQuote.sourceUrl}
-                      aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      className="yr-link yr-focus-ring break-words rounded-control"
-                    >
-                      {undergradQuote.sourceHost}
-                    </a>
-                  </figcaption>
-                </figure>
-              )}
+              <ul className="mt-3 space-y-1 text-xs text-muted">
+                {grantSummary && <li>• {grantSummary}</li>}
+                {honors.recent && <li>• {honors.recent}</li>}
+                {honors.other && <li>• {honors.other}</li>}
+                {pastAdvisees && <li>• {pastAdvisees}</li>}
+              </ul>
             </div>
           )}
           {principalInvestigator && (
