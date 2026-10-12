@@ -148,6 +148,22 @@ export function officialPageCitationObservation(
   };
 }
 
+const OUTAGE_UNREAD_SHARE = 0.1;
+const OUTAGE_UNREAD_FLOOR = 5;
+
+/**
+ * Whether the pages this run could not read look like an outage rather than a few pages that
+ * were down. Each run reads about a hundred program pages and a few are unreadable every week,
+ * a different page each time, which marked every run `partial` and failed the sweep (#5028).
+ * They are still logged and counted in the run's notes; only a share that a host outage or a
+ * block would produce fails the run.
+ */
+export function unreadShareIsAnOutage(unread: number, read: number): boolean {
+  if (unread === 0) return false;
+  if (unread === read) return true;
+  return unread >= OUTAGE_UNREAD_FLOOR && unread > read * OUTAGE_UNREAD_SHARE;
+}
+
 export class ProgramOfficialPageScraper implements IScraper {
   readonly name = PROGRAM_OFFICIAL_PAGE_SOURCE;
   readonly displayName = 'Program official page citation';
@@ -178,7 +194,7 @@ export class ProgramOfficialPageScraper implements IScraper {
       return pending;
     };
     const tally = { cited: 0, notNamed: 0, gone: 0, unread: 0 };
-    const partialFailures: string[] = [];
+    const unreadPages: string[] = [];
     let observationCount = 0;
     for (const candidate of candidates) {
       const observedAt = context.options.referenceDate ?? new Date();
@@ -205,11 +221,13 @@ export class ProgramOfficialPageScraper implements IScraper {
           tally.gone += 1;
         } else {
           tally.unread += 1;
-          partialFailures.push(`${candidate.sourceKey}: official page could not be read`);
+          unreadPages.push(`${candidate.sourceKey}: official page could not be read`);
+          context.log(`${candidate.sourceKey}: official page could not be read`);
         }
       } else if (landsAwayFromRequestedResource(candidate.pageUrl, read.finalUrl)) {
         tally.unread += 1;
-        partialFailures.push(`${candidate.sourceKey}: official page landed away from itself`);
+        unreadPages.push(`${candidate.sourceKey}: official page landed away from itself`);
+        context.log(`${candidate.sourceKey}: official page landed away from itself`);
         if (candidate.hasLiveCitation) {
           observations.push(officialPageCitationObservation(candidate, false, observedAt));
         }
@@ -239,6 +257,12 @@ export class ProgramOfficialPageScraper implements IScraper {
         observationCount += observations.length;
       }
     }
+    const partialFailures = unreadShareIsAnOutage(unreadPages.length, candidates.length)
+      ? [
+          `${unreadPages.length} of ${candidates.length} official pages could not be read`,
+          ...unreadPages,
+        ]
+      : [];
     return {
       observationCount,
       entitiesObserved: candidates.length,
