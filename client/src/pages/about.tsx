@@ -184,6 +184,12 @@ const pastDevelopers = [
     github: 'https://github.com/Ryfernandes',
   },
   {
+    name: 'Isabel Rancu',
+    position: 'Research & Strategy Advisor',
+    image: '/assets/developers/IsabelRancu.jpeg',
+    location: 'Anderson, SC',
+  },
+  {
     name: 'Dohun Kim',
     position: 'Developer',
     image: '/assets/developers/DohunKim.jpeg',

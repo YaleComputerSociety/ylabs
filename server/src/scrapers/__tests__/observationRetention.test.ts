@@ -401,7 +401,13 @@ describe('observation retention', () => {
 
       const result = await pruneDeadObservations({ now: NOW, apply: true });
 
-      expect(JSON.stringify((find.mock.calls as unknown[][])[0]?.[0])).not.toContain('referenced-');
+      const findFilters = (find.mock.calls as unknown[][]).map(([filter]) => filter as any);
+      const eligibleScans = findFilters.filter((filter) => filter._id === undefined);
+      expect(eligibleScans).toHaveLength(1);
+      expect(JSON.stringify(eligibleScans[0])).not.toContain('referenced-');
+      for (const filter of findFilters.filter((candidate) => candidate._id !== undefined)) {
+        expect(filter._id.$in.length).toBeLessThanOrEqual(OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
+      }
       expect(deleteMany).toHaveBeenCalledTimes(2);
       for (const [filter] of deleteMany.mock.calls as any[]) {
         expect(filter._id.$in.length).toBeLessThanOrEqual(OBSERVATION_PRUNE_DELETE_BATCH_SIZE);

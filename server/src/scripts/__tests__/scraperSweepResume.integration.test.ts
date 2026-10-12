@@ -306,7 +306,7 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(secondSummary.postRun?.status).toBe('succeeded');
     expect(
       resumed.calls.some((call) =>
-        (commandFromArgs(call.args) || '').includes('meili:rebuild-research-entities'),
+        (commandFromArgs(call.args) || '').includes('meili:sync-research-entities'),
       ),
     ).toBe(true);
     expect(fs.existsSync(checkpointFor(mode))).toBe(false);

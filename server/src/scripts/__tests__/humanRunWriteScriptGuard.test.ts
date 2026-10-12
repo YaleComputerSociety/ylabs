@@ -53,6 +53,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'accounts:retire-identity-only':
     'deletes the accounts nobody signed into once researchers hold their own identity, a one-time operator decision about stored account data run on Development only (#5000)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
+  'meili:rebuild-research-entities':
+    're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
   'beta:readiness': 'promotion tooling, run as part of the release process',

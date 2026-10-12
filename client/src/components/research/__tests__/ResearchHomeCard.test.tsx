@@ -318,24 +318,23 @@ describe('ResearchHomeCard', () => {
       };
     };
 
-    it('shows the quote beside its label and links the page it is quoted from', async () => {
-      const { container } = render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome()} variant="compact" />
-        </MemoryRouter>,
-      );
+    it.each([
+      ['default', undefined],
+      ['compact', 'compact'],
+    ] as const)(
+      'leaves a served quote to the detail page on the %s card (#5022)',
+      (_label, variant) => {
+        const { container } = render(
+          <MemoryRouter>
+            <ResearchHomeCard home={quotedHome()} variant={variant} />
+          </MemoryRouter>,
+        );
 
-      expect(screen.getByText('Mentions undergraduate research')).toBeTruthy();
-      const quote = container.querySelector('blockquote');
-      expect(quote?.textContent).toBe(`\u201c${SYNTHETIC_QUOTE}\u201d`);
-      expect(quote?.getAttribute('cite')).toBe(SYNTHETIC_SOURCE);
-      const source = screen.getByRole('link', {
-        name: /^example\.yale\.edu \(opens in a new tab\)$/,
-      });
-      expect(source.getAttribute('href')).toBe(SYNTHETIC_SOURCE);
-      expect(source.getAttribute('target')).toBe('_blank');
-      await expectNoAxeViolations(container);
-    });
+        expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
+        expect(container.querySelector('blockquote')).toBeNull();
+        expect(screen.queryByRole('link', { name: /example\.yale\.edu/ })).toBeNull();
+      },
+    );
 
     it('never turns a quote into the hosted-undergraduates claim', () => {
       render(
@@ -347,58 +346,15 @@ describe('ResearchHomeCard', () => {
       expect(screen.queryByText('Has hosted undergraduate researchers')).toBeNull();
     });
 
-    it('shortens a long quote on the card at a word with an ellipsis', () => {
-      const longQuote = `${'Undergraduate students contribute to field and lab work '.repeat(5)}end.`;
-      const { container } = render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome({ undergradEvidenceQuote: longQuote })} />
-        </MemoryRouter>,
-      );
-
-      const shown = container.querySelector('blockquote')?.textContent || '';
-      expect(shown.length).toBeLessThanOrEqual(142);
-      expect(shown.endsWith('\u2026\u201d')).toBe(true);
-      expect(longQuote.startsWith(shown.slice(1, -2))).toBe(true);
-    });
-
-    it('opens the cited page without opening the profile', () => {
+    it('keeps the hosted-undergraduates lead line when a quote is also served', () => {
       render(
-        <MemoryRouter initialEntries={['/research']}>
-          <ResearchHomeCard home={quotedHome()} />
-          <LocationProbe />
-        </MemoryRouter>,
-      );
-
-      fireEvent.click(screen.getByRole('link', { name: /example\.yale\.edu/ }));
-      expect(screen.getByLabelText('Current path').textContent).toBe('/research');
-    });
-
-    it.each([
-      ['no quote', { undergradEvidenceQuote: undefined }],
-      ['a blank quote', { undergradEvidenceQuote: '   ' }],
-      ['a quote with no cited page', { undergradEvidenceSourceUrl: undefined }],
-      ['a quote citing a non-http page', { undergradEvidenceSourceUrl: 'javascript:alert(1)' }],
-    ])('shows nothing for %s', (_label, overrides) => {
-      const { container } = render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome(overrides)} variant="compact" />
-        </MemoryRouter>,
-      );
-
-      expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-      expect(container.querySelector('blockquote')).toBeNull();
-    });
-
-    it('keeps the hosted-undergraduates lead line and adds the quote beneath it', () => {
-      const { container } = render(
         <MemoryRouter>
           <ResearchHomeCard home={quotedHome({ hasUndergradHostingEvidence: true })} />
         </MemoryRouter>,
       );
 
       expect(screen.getByText('Has hosted undergraduate researchers')).toBeTruthy();
-      expect(screen.getByText('Mentions undergraduate research')).toBeTruthy();
-      expect(container.querySelector('blockquote')).toBeTruthy();
+      expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
     });
   });
 

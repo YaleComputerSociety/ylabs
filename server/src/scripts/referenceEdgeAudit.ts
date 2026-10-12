@@ -13,7 +13,7 @@
 import type { Collection, Db, Document } from 'mongodb';
 import {
   buildMissingRequiredRefSamplePipeline,
-  buildRefOrphanMatchPipeline,
+  buildRefOrphanCountPipeline,
   buildRefOrphanSamplePipeline,
   type ReferenceAuditInput,
   type ReferenceAuditSample,
@@ -31,42 +31,38 @@ export interface ReferenceEdge {
   targetIsEvidenceTrail?: boolean;
 }
 
-async function countFromAggregate(
-  collection: Collection<Document>,
-  pipeline: Document[],
-): Promise<number> {
-  const rows = await collection
-    .aggregate<{ count?: number }>([...pipeline, { $count: 'count' }])
-    .toArray();
-  return rows[0]?.count ?? 0;
-}
-
 export async function countReferenceOrphans(
   collection: Collection<Document>,
   localField: string,
   targetCollectionName: string,
   ownerFilter: Record<string, unknown> = {},
 ): Promise<number> {
-  return countFromAggregate(
-    collection,
-    buildRefOrphanMatchPipeline(localField, targetCollectionName, ownerFilter),
-  );
+  const rows = await collection
+    .aggregate<{ count?: number }>(
+      buildRefOrphanCountPipeline(localField, targetCollectionName, ownerFilter),
+      { allowDiskUse: true },
+    )
+    .toArray();
+  return rows[0]?.count ?? 0;
 }
 
 function stringifyId(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+// A sample query whose count is already known to be zero is skipped: its `$limit` never fills,
+// so it scans every row, which on `observations` was the query that timed out.
 async function collectReferenceEdgeSamples(
   collection: Collection<Document>,
   edge: ReferenceEdge,
   sampleLimit: number,
+  counts: { missingRequired: number; orphanedPresentRefs: number },
 ): Promise<ReferenceAuditSample[]> {
   if (sampleLimit <= 0) return [];
   const ownerFilter = { ...(edge.ownerFilter ?? {}) };
   const samples: ReferenceAuditSample[] = [];
 
-  if (edge.required) {
+  if (edge.required && counts.missingRequired > 0) {
     const missingRows = await collection
       .aggregate<{
         id?: unknown;
@@ -85,7 +81,7 @@ async function collectReferenceEdgeSamples(
   }
 
   const remaining = sampleLimit - samples.length;
-  if (remaining <= 0) return samples;
+  if (remaining <= 0 || counts.orphanedPresentRefs === 0) return samples;
 
   const orphanRows = await collection
     .aggregate<{
@@ -159,7 +155,12 @@ export async function auditReferenceEdge(
     missingRequired,
     orphanedPresentRefs,
     ...(options.includeSamples
-      ? { samples: await collectReferenceEdgeSamples(collection, edge, sampleLimit) }
+      ? {
+          samples: await collectReferenceEdgeSamples(collection, edge, sampleLimit, {
+            missingRequired,
+            orphanedPresentRefs,
+          }),
+        }
       : {}),
   };
 }

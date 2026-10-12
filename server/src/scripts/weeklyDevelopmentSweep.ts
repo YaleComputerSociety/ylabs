@@ -41,6 +41,8 @@ import {
   weeklySweepChildEnvironment,
   weeklySweepEnvironmentProblems,
   weeklySweepExitCode,
+  weeklySweepVerdict,
+  formatWeeklySweepDegradedLines,
   type WeeklySweepArgs,
   weeklySweepStorageReading,
   type WeeklySweepCorpusSnapshotRecord,
@@ -258,6 +260,12 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     if (preflightRecord.ok) {
       outcomes = runSweeps(jobDir, args.modes);
       exitCode = weeklySweepExitCode(outcomes);
+      if (exitCode === 0 && weeklySweepVerdict(outcomes) === 'degraded') {
+        console.error('[weekly-sweep] DEGRADED: the sweep completed, and these failed:');
+        for (const line of formatWeeklySweepDegradedLines(outcomes)) {
+          console.error(`[weekly-sweep]   ${line}`);
+        }
+      }
       if (exitCode === 0) corpusSnapshot = takeCorpusSnapshot();
       reportSearchIndexOutcome();
     }

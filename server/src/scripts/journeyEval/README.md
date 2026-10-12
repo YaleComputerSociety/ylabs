@@ -107,7 +107,7 @@ The freshness invariant reads the attribute the route's own `meiliSortEntries` s
 It compares against the stored row rather than the card because the card's title can carry a page-local disambiguation suffix that the index cannot hold.
 A row whose stored `updatedAt` falls within a minute of the read is counted under `writtenDuringRead` rather than as stale, since its index task may still be in flight.
 A failure names a stale index, and the remedy is a rebuild per `docs/meilisearch-reindex-runbook.md`, not a change to the sort.
-The usual cause on Development is a writer whose index syncs reach a different Meilisearch, or a hosted weekly run, which defers its index writes until `yarn development:search:rebuild` re-syncs it (`docs/data-refresh-runbook.md`).
+The usual cause on Development is a writer whose index syncs reach a different Meilisearch, or a hosted weekly run, which defers its index writes until `yarn development:search:sync` re-syncs it (`docs/data-refresh-runbook.md`).
 The two sorted cases are also the sample check that command and a laptop sweep's `search-index-check` stage run after a rebuild, as `yarn development:search:check`, with `--fail-on-inconclusive` so a window in which no served row settled before the read fails the check rather than passing over an empty population.
 
 ## What this harness does not cover
@@ -164,7 +164,7 @@ Permissive substring lists inflate `precisionAtK`, so a high score against a loo
 
 ## Measuring undergraduate evidence quote precision
 
-The browse card shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
+The detail page shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
 The `undergrad-evidence-quote-precision` case turns that reading into a repeatable measurement without putting any judged row in the repository.
 
 It walks the whole reachable browse, keeps the served rows carrying a non-empty quote, and reads each row's stored `fieldProvenance.undergradEvidenceQuote` to find the rows whose quote came from the judged lane, `lab-microsite-undergrad-llm` by default.
@@ -196,7 +196,7 @@ A verdict is exactly one of the following, applied in this order so that each ro
 4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
 5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
 
-`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the card labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
+`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the detail page labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
 
 Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
 With judgements supplied it adds three precision rates, and none of the six gates.

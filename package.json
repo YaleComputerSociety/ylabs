@@ -48,6 +48,7 @@
     "promote:beta": "yarn --cwd server promote:beta",
     "promote:production": "yarn --cwd server promote:production",
     "development:search:rebuild": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild && yarn development:search:check",
+    "development:search:sync": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server meili:sync-research-entities --apply && yarn development:search:check",
     "development:search:check": "node scripts/run-data-profile.mjs development -- yarn --cwd server journey:eval --case=sorted-browse-keeps-order,title-sorted-browse-follows-card-title --fail-on-inconclusive",
     "migrate:mongo-naming": "yarn --cwd server migrate:mongo-naming",
     "model-refactor:search-baseline": "yarn --cwd server model-refactor:search-baseline",

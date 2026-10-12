@@ -58,7 +58,7 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
 - `lab-microsite-undergrad-llm` stays manual-only for runtime rather than precision, by owner decision on 2026-10-11 (#3569, #3636).
   #3569 first measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50), mostly because the model's own absence notes were stored as quotes, so the browse badge was withdrawn (#3607).
   After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with 25/50 showing that undergraduates were hosted.
-  The browse card now shows the quote beside a "Mentions undergraduate research" label and the page it is quoted from (`docs/decisions.md`, 2026-10-11).
+  The detail page shows the quote beside a "Mentions undergraduate research" label and the page it is quoted from, and the browse card shows none (`docs/decisions.md`, 2026-10-11 and 2026-10-12).
   It is the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 4 to 20 hours, against a weekly sweep of about 8 hours and Render's 12-hour job limit.
   So it is run scoped by hand when the quotes need refreshing, and a manual run also refreshes its description emits.
 
@@ -233,7 +233,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
 17. `profile-honors` (`research-entity:profile-honors --apply`; after the lead reclaim so a lead linked this sweep has its profile page read this sweep, writing only rows whose honors changed, #4771)
 18. `staff-minted-retirement` (`research-entity:retire-staff-minted-entities --apply`; archives a row whose person's title owns no research, re-read every sweep because a row minted before its title was on file is never revisited by its mint lane, so the roster lane may keep minting an unknown title; capped by `--max-apply`, ordered before the gate and the rebuild, #4983)
 19. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-20. `search-rebuild` (`meili:rebuild-research-entities --clear`)
+20. `search-sync` (`meili:sync-research-entities --apply`)
 21. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
 22. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
 23. `coverage-audit`
@@ -1266,7 +1266,7 @@ A written body is also no longer judged against the stored card before its own c
 The prompt is shared with the grant-corpus and faculty-research-area lanes, so they write in the same voice and pass the same arms.
 A dry run builds no model client and calls the writer model for no row: each row reports the `step` it would take, `plannedLlmCalls` counts the rows that would call the model, and `llmCalls` reads 0; before this, a dry run called the model for every planned row and only skipped the write, so the all-live dry run on 2026-10-06 made 3,586 paid calls.
 `research-entity:grant-corpus-synthesis` follows the same rule and reports `plannedLlmCalls` in a dry run.
-`--skip-index-sync` defers every Meilisearch write for the run (it sets `SEARCH_INDEX_WRITES=deferred`, which the materializer, the gate, and the re-gate already read) and reports the re-gated rows it left unsynced as `indexSyncSkipped`; follow an `--all` apply run with it by one `yarn development:search:rebuild`.
+`--skip-index-sync` defers every Meilisearch write for the run (it sets `SEARCH_INDEX_WRITES=deferred`, which the materializer, the gate, and the re-gate already read) and reports the re-gated rows it left unsynced as `indexSyncSkipped`; follow an `--all` apply run with it by one `yarn development:search:sync`.
 The first full Development run is about 3,900 model calls (3,936 of 4,230 live rows carried evidence when measured on 2026-10-04); later runs call the model only for rows whose evidence changed.
 
 ### Roster biography research evidence (`roster-bio-research-evidence`)
@@ -1818,7 +1818,7 @@ The release queue is written by `yarn --cwd server student-visibility:gate`. Scr
 The gate recomputes visibility for the whole corpus on every run rather than tracking a version stamp.
 A per-plan write guard, `isStudentVisibilityGatePlanMateriallyChanged`, means only records whose recomputed plan actually changes are written, so an unconditional recompute stays cheap in writes (issue #2044 retired the former `STUDENT_VISIBILITY_VERSION` stamp and its stale-version sweep in favor of this model; do not reintroduce a version).
 The exhaustive Development sweep runs one full-corpus `--collection=all` apply gate as its `visibility-gate` post-run stage, immediately after the `inferred-pi-lead-reclaim` stage so the gate judges the leads that stage links in the same sweep (#3741).
-The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-syncs entities to Meilisearch so the index reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-rebuild` stage.
+The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-syncs entities to Meilisearch so the index reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-sync` stage.
 That sync is keyed on a read of the index rather than on the plan's changed flag (#3049).
 After the corpus write the gate projects the indexed `studentVisibilityTier` for every planned row and syncs the materially-changed rows plus every row the index disagrees with, so a sync that failed during a Meilisearch outage is repaired by the next run instead of being invisible to it: a plan that has already been written is no longer materially changed, so the old plan-keyed arm had nothing left to push and reported a clean `changed: 0` over a permanently stale index.
 Both modes report an `index` block. `divergentTierRecordIds` is the drift the run found, `unsyncedRecordIds` is the rows the index refused, `missingFromIndex` counts planned rows the index does not hold at all, and `indexReadFailed` says the probe could not run.
@@ -2350,9 +2350,11 @@ Follow the reviewed dry-run-first retention procedure in `docs/scraper-deploymen
 `observations:prune-dead` (`server/src/scripts/pruneDeadObservations.ts`) is the committed, gated dead-data prune used for mid-run and on-demand storage reclamation.
 It deletes observations that are both superseded and unreferenced regardless of age, reusing the same `observationRetention.ts` primitives (`buildSupersededObservationPruneFilter` with `cutoff = now`, plus `buildObservationReferencePipeline` over `OBSERVATION_REFERENCE_SPECS` to protect every referenced observation id), and can optionally drop the `scrape_snapshots` fetch cache with `--drop-snapshot-cache`.
 Referenced ids are excluded in memory while the eligible ids stream from a cursor, and deletes go out in batches of `OBSERVATION_PRUNE_DELETE_BATCH_SIZE`, because the referenced set passed the 16 MB BSON command limit on Development at about one million ids and a single `_id: { $nin }` filter made both prunes and the `beta:data-quality` retention stage crash (#3733).
+The `observations.supersededBy` spec protects a target only when the pointing observation survives the pass: protection is a closure followed forward along `supersededBy` from the `fieldProvenance` and signal references and from the targets of observations outside the eligible set, queried in bounded `_id` batches (#5021).
+Counting a pointer from a row deleted in the same pass had kept every link of a chain but the oldest, which on Development on 2026-10-12 left 310,539 of 2,487,442 eligible rows deletable; the closure leaves 2,303,777.
 Dropping the age floor does not drop run retention: the dead prune keeps the last 3 runs per source (`keepRuns`, same default as the compact prune) so the immediately preceding run's superseded observations survive.
 `keepRuns` default 3 was justified by `undergraduate-logistics-rollback`, which restored exactly those predecessors, and that script is retired (#3088), so the default now has no named consumer.
-It is deliberately left at 3 rather than lowered here, because `OBSERVATION_REFERENCE_SPECS` protects only the newer target of `supersededBy`, so dropping run retention makes the preceding run's superseded rows unrecoverable by any means; re-sizing it is its own measurement rather than a side effect of this retirement.
+It is deliberately left at 3 rather than lowered here, because `supersededBy` protects only the newer target, so dropping run retention makes the preceding run's superseded rows unrecoverable by any means; re-sizing it is its own measurement rather than a side effect of this retirement.
 `--keep-runs=<n>` overrides the default, and `--keep-runs=0` explicitly forfeits claim-local rollback for every source; only pass it when rollback for the retained window is no longer needed.
 It is dry-run first; `--apply` requires `--confirm-prune-dead-observations` and routes through the shared `applyObservationPruneEnvironmentGuards`, so it enforces `SCRAPER_ENV`/Mongo-target coherence, downgrades to dry-run outside production without `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and is unconditionally blocked when the resolved environment is production, independent of how the database happens to be named.
 The sweep runs it between phases and as the final `dead-data-prune` post-run stage of both engines, only when invoked with `--prune-between-phases` on a Development-database write mode.

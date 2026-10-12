@@ -147,10 +147,10 @@ export async function pruneSupersededObservations(
     sourceName: options.sourceName,
     keepRunIds: keptRunIds,
   });
-  const referenceScan = await scanReferencedObservations();
+  const referenceScan = await scanProtectedObservations(eligibleFilter);
   const { eligibleCandidates, candidates, deleted } = await pruneUnreferencedEligibleObservations({
     eligibleFilter,
-    referencedObservationIds: referenceScan.ids,
+    protectedObservationKeys: referenceScan.protectedKeys,
     apply: Boolean(options.apply),
   });
 
@@ -209,10 +209,10 @@ export async function pruneDeadObservations(
     sourceName: options.sourceName,
     keepRunIds: keptRunIds,
   });
-  const referenceScan = await scanReferencedObservations();
+  const referenceScan = await scanProtectedObservations(eligibleFilter);
   const { eligibleCandidates, candidates, deleted } = await pruneUnreferencedEligibleObservations({
     eligibleFilter,
-    referencedObservationIds: referenceScan.ids,
+    protectedObservationKeys: referenceScan.protectedKeys,
     apply: Boolean(options.apply),
   });
 
@@ -235,22 +235,21 @@ export async function pruneDeadObservations(
 export const OBSERVATION_PRUNE_DELETE_BATCH_SIZE = 5000;
 
 /**
- * Referenced ids are excluded in memory rather than sent as an `_id: { $nin }` filter,
- * because the referenced set grows with the corpus and passed the 16 MB BSON command
+ * Protected ids are excluded in memory rather than sent as an `_id: { $nin }` filter,
+ * because the protected set grows with the corpus and passed the 16 MB BSON command
  * limit on Development at about one million ids (#3733).
  */
 async function pruneUnreferencedEligibleObservations(input: {
   eligibleFilter: Record<string, unknown>;
-  referencedObservationIds: unknown[];
+  protectedObservationKeys: ReadonlySet<string>;
   apply: boolean;
 }): Promise<{ eligibleCandidates: number; candidates: number; deleted: number }> {
-  const referencedKeys = new Set(input.referencedObservationIds.map((id) => String(id)));
   let eligibleCandidates = 0;
   const unreferencedIds: unknown[] = [];
   const cursor = Observation.find(input.eligibleFilter).select('_id').lean().cursor();
   for await (const row of cursor) {
     eligibleCandidates += 1;
-    if (!referencedKeys.has(String(row._id))) unreferencedIds.push(row._id);
+    if (!input.protectedObservationKeys.has(String(row._id))) unreferencedIds.push(row._id);
   }
   let deleted = 0;
   if (input.apply) {
@@ -265,6 +264,104 @@ async function pruneUnreferencedEligibleObservations(input: {
     }
   }
   return { eligibleCandidates, candidates: unreferencedIds.length, deleted };
+}
+
+function isSupersessionReferenceSpec(spec: ObservationReferenceSpec): boolean {
+  return spec.collection === 'observations' && spec.field === 'supersededBy';
+}
+
+function buildSurvivingSupersessionReferencePipeline(
+  eligibleFilter: Record<string, unknown>,
+): Record<string, unknown>[] {
+  return [
+    { $match: { supersededBy: { $type: 'objectId' }, $nor: [eligibleFilter] } },
+    { $group: { _id: '$supersededBy' } },
+  ];
+}
+
+interface ProtectedObservationScan {
+  protectedKeys: Set<string>;
+  specs: ObservationReferenceSpecCoverage[];
+}
+
+/**
+ * A `supersededBy` pointer protects its target only when the pointing observation
+ * survives the pass, which is the whole of what the spec exists for: no surviving
+ * row is left pointing at a deleted one (af32a40d3). Counting a pointer from a row
+ * deleted in the same pass kept every link of a supersession chain but the oldest,
+ * so a chain shrank by one link per pass while each weekly sweep added one (#5021).
+ * Survivors are the rows outside the eligible set plus the eligible rows already
+ * protected, so the protected set is a closure followed forward along `supersededBy`
+ * from the external references and the outside rows' targets, queried in bounded
+ * `_id` batches for the same BSON-limit reason as the delete.
+ */
+async function scanProtectedObservations(
+  eligibleFilter: Record<string, unknown>,
+): Promise<ProtectedObservationScan> {
+  const externalScan = await scanReferencedObservations(
+    OBSERVATION_REFERENCE_SPECS.filter((spec) => !isSupersessionReferenceSpec(spec)),
+  );
+  const protectedKeys = new Set(externalScan.ids.map((id) => String(id)));
+  const supersessionProtectedKeys = new Set<string>();
+  let frontier: unknown[] = [...externalScan.ids];
+
+  const survivingTargets = await Observation.db
+    .collection('observations')
+    .aggregate(buildSurvivingSupersessionReferencePipeline(eligibleFilter), {
+      allowDiskUse: true,
+    })
+    .toArray();
+  for (const row of survivingTargets) {
+    if (!row?._id) continue;
+    const key = String(row._id);
+    supersessionProtectedKeys.add(key);
+    if (protectedKeys.has(key)) continue;
+    protectedKeys.add(key);
+    frontier.push(row._id);
+  }
+
+  while (frontier.length > 0) {
+    const next: unknown[] = [];
+    for (let start = 0; start < frontier.length; start += OBSERVATION_PRUNE_DELETE_BATCH_SIZE) {
+      const batch = frontier.slice(start, start + OBSERVATION_PRUNE_DELETE_BATCH_SIZE);
+      const cursor = Observation.find({
+        ...eligibleFilter,
+        _id: { $in: batch },
+        supersededBy: { $type: 'objectId' },
+      })
+        .select('supersededBy')
+        .lean()
+        .cursor();
+      for await (const row of cursor) {
+        const target = (row as { supersededBy?: unknown }).supersededBy;
+        if (!target) continue;
+        const key = String(target);
+        supersessionProtectedKeys.add(key);
+        if (protectedKeys.has(key)) continue;
+        protectedKeys.add(key);
+        next.push(target);
+      }
+    }
+    frontier = next;
+  }
+
+  const presentCollections = new Set(
+    (await Observation.db.listCollections()).map((info) => info.name),
+  );
+  const specs = OBSERVATION_REFERENCE_SPECS.map((spec) => {
+    if (!isSupersessionReferenceSpec(spec)) {
+      return externalScan.specs.find(
+        (coverage) => coverage.collection === spec.collection && coverage.field === spec.field,
+      ) as ObservationReferenceSpecCoverage;
+    }
+    return {
+      collection: spec.collection,
+      field: spec.field,
+      collectionPresent: presentCollections.has(spec.collection),
+      referencedObservations: supersessionProtectedKeys.size,
+    };
+  });
+  return { protectedKeys, specs };
 }
 
 export interface ReferencedObservationScan {

@@ -267,3 +267,17 @@ describe('teaching witness and creative practice (#4916)', () => {
     ).toBe(false);
   });
 });
+
+describe('the arguments the research sweep builds for the staff-minted-retirement stage', () => {
+  it('parse, so the stage does not crash on its own output path', async () => {
+    const { buildDevelopmentPostRunStages } = await import('../runScraperSweep');
+    const stage = buildDevelopmentPostRunStages('/tmp/development-sweep').find(
+      (entry) => entry.name === 'staff-minted-retirement',
+    );
+    expect(stage).toBeDefined();
+    const [, , command, ...scriptArgs] = stage!.args;
+    expect(command).toBe('research-entity:retire-staff-minted-entities');
+    const parsed = parseRetireStaffMintedEntitiesArgs(scriptArgs);
+    expect(parsed).toMatchObject({ apply: true, confirm: true, output: stage!.artifactPath });
+  });
+});

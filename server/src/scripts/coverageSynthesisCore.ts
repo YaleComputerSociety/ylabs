@@ -357,7 +357,7 @@ export function writerModelClientFor<C>(input: {
 }
 
 /**
- * `--skip-index-sync` leaves the search index to one `yarn development:search:rebuild`
+ * `--skip-index-sync` leaves the search index to one `yarn development:search:sync`
  * after an all-rows apply, in place of a Meilisearch sync per re-gated row. It sets the
  * process-wide switch every index writer already reads (the materializer, the gate and
  * the re-gate outcome), so no write path can sync a row behind it.

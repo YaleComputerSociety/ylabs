@@ -11,6 +11,7 @@ import {
   setResearchAnalyticsEnabled,
 } from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
+import { expectNoAxeViolations } from '../../testUtils/axe';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 
@@ -933,6 +934,8 @@ describe('LabDetail page', () => {
         .getByRole('link', { name: 'example.yale.edu (opens in a new tab)' })
         .getAttribute('href'),
     ).toBe('https://example.yale.edu/join');
+    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
+    await expectNoAxeViolations(container);
   });
 
   it('shows no undergraduate quote when the way in is withheld for an emeritus lead', async () => {
@@ -951,6 +954,30 @@ describe('LabDetail page', () => {
 
     expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
     expect(container.querySelector('blockquote')).toBeNull();
+  });
+
+  it.each([
+    ['no quote', { undergradEvidenceQuote: undefined }],
+    ['a blank quote', { undergradEvidenceQuote: '   ' }],
+    ['a quote with no cited page', { undergradEvidenceSourceUrl: undefined }],
+    ['a quote citing a non-http page', { undergradEvidenceSourceUrl: 'javascript:alert(1)' }],
+  ])('shows no undergraduate quote for %s', async (_label, overrides) => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
+        ...overrides,
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
+    expect(container.querySelector('blockquote')).toBeNull();
+    expect(screen.queryByText(/Quoted from/)).toBeNull();
+    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
   });
 
   it('points to the lab website instead of a dead end when there is no profile or email', async () => {

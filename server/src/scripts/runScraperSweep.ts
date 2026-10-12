@@ -280,7 +280,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'profile-honors'
     | 'staff-minted-retirement'
     | 'visibility-gate'
-    | 'search-rebuild'
+    | 'search-sync'
     | 'search-index-check'
     | 'lane-scorecard'
     | 'engine-benchmark'
@@ -425,7 +425,7 @@ export const SEARCH_INDEX_CHECK_JOURNEY_CASES = [
   'title-sorted-browse-follows-card-title',
 ] as const;
 
-export const DEVELOPMENT_SEARCH_RESYNC_COMMAND = 'yarn development:search:rebuild';
+export const DEVELOPMENT_SEARCH_RESYNC_COMMAND = 'yarn development:search:sync';
 
 export type SweepSearchIndexOutcome =
   { status: 'written' } | { status: 'resync-required'; remedy: string };
@@ -1659,10 +1659,10 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     isEnabled: () => true,
   },
   {
-    name: 'search-rebuild',
-    command: 'meili:rebuild-research-entities',
-    artifactName: 'development-search-rebuild.json',
-    buildArgs: () => ['--clear', '--confirm-meili-rebuild'],
+    name: 'search-sync',
+    command: 'meili:sync-research-entities',
+    artifactName: 'development-search-sync.json',
+    buildArgs: () => ['--apply'],
     isEnabled: () => !searchIndexWritesDeferred(),
   },
   {
