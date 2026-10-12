@@ -190,12 +190,14 @@ describe('a netid twin cannot bypass a detached role edge (#3152)', () => {
    * because a detachment keyed to a person is only as durable as the guarantee
    * that the person has one row.
    */
-  it('converges the two netid keys onto the adopted row', async () => {
+  it('resolves the netid to the existing holder without minting an account or a twin', async () => {
     await reobserveLead();
 
-    const account = await db().collection('accounts').findOne({ netid: NETID });
-    expect(account).toBeTruthy();
-    const adopted = await db().collection('researchers').findOne({ _id: detachedPersonId });
-    expect(String(adopted?.accountId)).toBe(String(account?._id));
+    expect(await db().collection('accounts').countDocuments({ netid: NETID })).toBe(0);
+    expect(
+      await db().collection('researchers').countDocuments({ 'identifiers.netid': NETID }),
+    ).toBe(1);
+    const holder = await db().collection('researchers').findOne({ 'identifiers.netid': NETID });
+    expect(String(holder?._id)).toBe(String(detachedPersonId));
   }, 30000);
 });

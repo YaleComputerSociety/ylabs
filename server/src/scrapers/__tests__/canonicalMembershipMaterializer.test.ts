@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Account, AccountRecord } from '../../models/account';
+import { Account } from '../../models/account';
 import { Researcher, ResearcherRecord } from '../../models/researcher';
 import { RoleAssignment, RoleAssignmentRecord } from '../../models/roleAssignment';
 import {
@@ -149,7 +149,7 @@ describe('canonical membership materialization (integration)', () => {
   const entityId = () => new mongoose.Types.ObjectId().toString();
   const ORCID = '9999-9999-9999-9994';
 
-  it('creates an Account, Researcher, and CURRENT RoleAssignment for a netid-backed member', async () => {
+  it('creates a Researcher holding the identity and a CURRENT RoleAssignment, but no Account, for a netid-backed member', async () => {
     const id = entityId();
     await materializeCanonicalMembership(
       id,
@@ -167,12 +167,13 @@ describe('canonical membership materialization (integration)', () => {
         hasCanonicalSourceReference: true,
       },
     );
-    const account = await Account.findOne({ netid: 'ab123' }).lean<WithObjectId<AccountRecord>>();
-    expect(account).toBeTruthy();
-    const researcher = await Researcher.findOne({ accountId: account?._id }).lean<
+    expect(await Account.countDocuments({})).toBe(0);
+    const researcher = await Researcher.findOne({ 'identifiers.netid': 'ab123' }).lean<
       WithObjectId<ResearcherRecord>
     >();
     expect(researcher?.displayName).toBe('Alpha One');
+    expect(researcher?.identifiers?.email).toBe('ab123@example.test');
+    expect(researcher?.accountId).toBeUndefined();
     const assignments = await RoleAssignment.find({
       'target.id': new mongoose.Types.ObjectId(id),
     }).lean();
@@ -247,8 +248,8 @@ describe('canonical membership materialization (integration)', () => {
         hasCanonicalSourceReference: true,
       },
     );
-    const account = await Account.findOne({ netid: 'zvanity' }).lean<WithObjectId<AccountRecord>>();
-    expect(account).toBeTruthy();
+    expect(await Account.countDocuments({})).toBe(0);
+    expect(await Researcher.exists({ 'identifiers.netid': 'zvanity' })).toBeTruthy();
     const assignments = await RoleAssignment.find({
       'target.id': new mongoose.Types.ObjectId(id),
     }).lean();

@@ -2765,6 +2765,12 @@ async function liveResearcherForAccount(accountId: unknown): Promise<any | null>
     .lean();
 }
 
+async function liveResearcherById(researcherId: unknown): Promise<any | null> {
+  return Researcher.findOne({ _id: researcherId, archived: { $ne: true } })
+    .select('_id displayName')
+    .lean();
+}
+
 async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
   const accounts: any[] = await Account.find({ netid })
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
@@ -2796,8 +2802,8 @@ async function researchersNamedByIdentityEvidence(
     if (claimants.length === 1) add(claimants[0]);
   }
   for (const email of evidence.emails) {
-    const account = await soleLiveAccountClaimingEmail(email);
-    add(await liveResearcherForAccount(account?._id));
+    const claimant = await soleLiveResearcherClaimingEmail(email);
+    add(claimant?._id ? await liveResearcherById(claimant._id) : null);
   }
   for (const netid of evidence.netids) {
     for (const researcher of await liveResearchersHoldingNetid(netid)) add(researcher);
@@ -3687,12 +3693,12 @@ async function canonicalResearcherIdentity(
     .select('displayName accountId identifiers')
     .lean();
   if (!researcher) return { displayName: '' };
-  let netid: string | undefined;
-  let email: string | undefined;
-  if (researcher.accountId) {
+  let netid = textValue(researcher.identifiers?.netid) || undefined;
+  let email = textValue(researcher.identifiers?.email) || undefined;
+  if ((!netid || !email) && researcher.accountId) {
     const account: any = await Account.findById(researcher.accountId).select('netid email').lean();
-    netid = textValue(account?.netid) || undefined;
-    email = textValue(account?.email) || undefined;
+    netid ??= textValue(account?.netid) || undefined;
+    email ??= textValue(account?.email) || undefined;
   }
   return {
     netid,
@@ -6033,19 +6039,80 @@ function accountIsLive(account: { archived?: boolean; status?: string } | undefi
 }
 
 /**
- * `accountSchema.index({ email: 1 })` is not unique and accounts are minted with a
- * synthetic `${netid}@yale.edu`, so one address can be claimed by several rows (a
- * student and a staff netid, a recycled `first.last` alias, a departed account next
- * to its replacement). An arbitrary index-order pick would join person evidence to
- * whichever row came first, so this fails closed unless exactly one live account
- * claims the address.
+ * The one person an address names, counting a researcher's own `identifiers.email` and every
+ * live account that claims it as claimants of one identity space, so the join fails closed
+ * exactly as it did when every address lived on an account (#5000). An account and the
+ * researcher it is linked to are one claimant, and an account linked to no researcher still
+ * counts, because it is still a second person holding the address.
  */
-async function soleLiveAccountClaimingEmail(email: string): Promise<any | undefined> {
-  const candidates: any[] = await Account.find({ email })
+async function soleLiveResearcherClaimingEmail(email: string): Promise<any | undefined> {
+  const accounts: any[] = (
+    await Account.find({ email }).limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT).lean()
+  ).filter(accountIsLive);
+  const linked: any[] = accounts.length
+    ? await Researcher.find({ accountId: { $in: accounts.map((account) => account._id) } })
+        .select('_id displayName accountId')
+        .lean()
+    : [];
+  const holders: any[] = await Researcher.find({
+    'identifiers.email': email,
+    archived: { $ne: true },
+  })
+    .select('_id displayName accountId')
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
-  const live = candidates.filter(accountIsLive);
-  return live.length === 1 ? live[0] : undefined;
+  const claimants = new Map<string, any>();
+  for (const researcher of [...linked, ...holders])
+    claimants.set(String(researcher._id), researcher);
+  const linkedAccountIds = new Set(linked.map((researcher) => String(researcher.accountId)));
+  const unlinkedAccounts = accounts.filter((account) => !linkedAccountIds.has(String(account._id)));
+  if (claimants.size + unlinkedAccounts.length !== 1) return undefined;
+  return claimants.values().next().value;
+}
+
+/**
+ * The researcher a `user` key's netid reaches: the researcher linked to the account holding
+ * the netid, then a researcher holding it as `identifiers.netid`. An alias the directory maps
+ * to another live holder's netid resolves to that holder, as it did when every alias twin was
+ * an account (#4988), and either side may hold the alias or its target (#5000).
+ */
+async function researcherReachedByIdentityNetid(netid: string): Promise<any | null> {
+  const target = (await aliasNetidWithLiveHolder(netid)) ?? netid;
+  const account: any = await Account.findOne({ netid: target }).lean();
+  const linked = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
+  return linked ?? Researcher.findOne({ 'identifiers.netid': target });
+}
+
+async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefined> {
+  if (!isLikelyYaleEmailLocalPart(netid)) return undefined;
+  const aliasAccountHeld = Boolean(await Account.exists({ netid }));
+  const aliasResearcher: any = aliasAccountHeld
+    ? null
+    : await Researcher.findOne({ 'identifiers.netid': netid }).select('displayName').lean();
+  if (!aliasAccountHeld && !aliasResearcher) return undefined;
+  const resolution = await resolveNetidForRosterEmailAlias(netid);
+  if (resolution.status !== 'resolved' || resolution.netid === netid) return undefined;
+  const targetAccount: any = await Account.findOne({ netid: resolution.netid }).lean();
+  const targetResearcher: any =
+    (targetAccount?._id
+      ? await Researcher.findOne({ accountId: targetAccount._id }).select('displayName').lean()
+      : null) ??
+    (await Researcher.findOne({
+      'identifiers.netid': resolution.netid,
+      archived: { $ne: true },
+    })
+      .select('displayName')
+      .lean());
+  if (aliasAccountHeld) {
+    const liveTarget = accountIsLive(targetAccount ?? undefined) || Boolean(targetResearcher);
+    return liveTarget ? resolution.netid : undefined;
+  }
+  // An alias only a researcher holds was never redirected while alias twins were accounts,
+  // and the directory map can name another person, so the redirect needs agreeing names.
+  return targetResearcher &&
+    observedPersonNameAgreesWith(targetResearcher.displayName, aliasResearcher.displayName)
+    ? resolution.netid
+    : undefined;
 }
 
 /**
@@ -6298,7 +6365,7 @@ export async function joinUserIdentityToExistingResearcher(
   if (account && netid) account = (await liveAccountTheAliasResolvesTo(netid)) ?? account;
   const accountNetid = normalizedAccountNetid(account?.netid);
 
-  let researcher: any = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
+  let researcher: any = netid ? await researcherReachedByIdentityNetid(netid) : null;
   let identityJoin: UserIdentityJoin | undefined = researcher ? 'account-netid' : undefined;
   let personNameHeldByNobody = false;
   if (!researcher && displayName) {
@@ -6330,15 +6397,15 @@ export async function joinUserIdentityToExistingResearcher(
    */
   let identityJoinedOnEmailAlone = false;
   if (!researcher && !account && observedEmail) {
-    const emailAccount = await soleLiveAccountClaimingEmail(observedEmail);
-    const emailResearcher = emailAccount?._id
-      ? await Researcher.findOne({ accountId: emailAccount._id })
-      : null;
+    const claimant = await soleLiveResearcherClaimingEmail(observedEmail);
+    const emailResearcher = claimant?._id ? await Researcher.findById(claimant._id) : null;
     const emailAccountNamesThisPerson =
       !displayName || observedPersonNameAgreesWith(emailResearcher?.displayName, displayName);
     if (emailResearcher && emailAccountNamesThisPerson) {
       researcher = emailResearcher;
-      account = emailAccount;
+      account = emailResearcher.accountId
+        ? ((await Account.findById(emailResearcher.accountId).lean()) ?? null)
+        : null;
       identityJoinedOnEmailAlone = true;
       identityJoin = 'account-email';
     }
