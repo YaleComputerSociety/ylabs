@@ -84,8 +84,12 @@ describe('runPostMaterializationIntegrityGate counts every group independently o
       });
       await db.collection('signals').insertMany([signal(), signal()]);
 
-      const account = () => ({ email: `synthetic-${index}@example.test`, archived: false });
-      await db.collection('accounts').insertMany([account(), account()]);
+      const emailHolder = () => ({
+        displayName: `Synthetic Email Holder ${index}`,
+        identifiers: { email: `synthetic-${index}@example.test` },
+        archived: false,
+      });
+      await db.collection('researchers').insertMany([emailHolder(), emailHolder()]);
 
       await seedSamePiProfileShellPair(index);
     }

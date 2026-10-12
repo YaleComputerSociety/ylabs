@@ -4,6 +4,7 @@ import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreem
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
+import { researcherHoldsDirectoryIdentity } from '../utils/researcherIdentity';
 
 export function normalizeResearcherName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -23,16 +24,24 @@ const cleanNetid = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-export const RESEARCHER_IDENTITY_TIERS = ['NAME_ONLY', 'NETID', 'ACCOUNT'] as const;
+export const RESEARCHER_IDENTITY_TIERS = ['NAME_ONLY', 'NETID', 'DIRECTORY'] as const;
 export type ResearcherIdentityTier = (typeof RESEARCHER_IDENTITY_TIERS)[number];
 
 export interface ResearcherIdentityLike {
   accountId?: unknown;
+  email?: unknown;
   netid?: unknown;
 }
 
 export function researcherIdentityTier(researcher: ResearcherIdentityLike): ResearcherIdentityTier {
-  if (researcher.accountId !== undefined && researcher.accountId !== null) return 'ACCOUNT';
+  if (
+    researcherHoldsDirectoryIdentity({
+      accountId: researcher.accountId,
+      identifiers: { email: researcher.email },
+    })
+  ) {
+    return 'DIRECTORY';
+  }
   if (cleanNetid(researcher.netid)) return 'NETID';
   return 'NAME_ONLY';
 }
@@ -53,6 +62,7 @@ export interface CanonicalNameEntry {
   orcid?: unknown;
   netid?: unknown;
   accountId?: unknown;
+  email?: unknown;
 }
 
 /**
@@ -73,6 +83,7 @@ export interface CanonicalNetidEntry {
   netid?: unknown;
   orcid?: unknown;
   accountId?: unknown;
+  email?: unknown;
 }
 
 /**
@@ -95,7 +106,7 @@ export function buildCanonicalNetidIndex(
       id: entry.id,
       orcid: cleanOrcid(entry.orcid),
       netid,
-      tier: researcherIdentityTier({ accountId: entry.accountId, netid }),
+      tier: researcherIdentityTier({ accountId: entry.accountId, email: entry.email, netid }),
     });
     index.set(netid, list);
   }
@@ -306,13 +317,13 @@ function decideRosterIdentityFold(
 }
 
 /**
- * A shell and an account-backed record that hold the same healthy official primary
+ * A shell and a directory-backed record that hold the same healthy official primary
  * profile are one person even when their given names differ, because a programme
- * roster mints under a nickname and the directory account under the legal name. The
+ * roster mints under a nickname and the directory record under the legal name. The
  * page decides; the surname and rank only veto, and they veto per holder, so a holder
  * reached through a wrong-person link drops out instead of making the page ambiguous.
- * More than one surviving account-backed holder resolves to nobody, because two accounts
- * are two humans the page cannot split.
+ * More than one surviving directory-backed holder resolves to nobody, because two
+ * directory records are two humans the page cannot split.
  */
 function decideVerifiedProfileFold(
   shell: ShellIdentity,
@@ -328,7 +339,7 @@ function decideVerifiedProfileFold(
   for (const key of keys) {
     for (const candidate of verifiedProfileIndex.get(key) ?? []) {
       if (candidate.id === shell.id) continue;
-      if (candidate.tier !== 'ACCOUNT') continue;
+      if (candidate.tier !== 'DIRECTORY') continue;
       if (identityTierStrength(candidate.tier) <= shellStrength) continue;
       if (!profileHolderSurnamesAgree(shell.displayName, candidate.displayName)) continue;
       if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
@@ -804,7 +815,7 @@ export function accountlessClusterSurvivor(
 }
 
 /**
- * Groups of accountless records with no account-backed member, which the outranking arms
+ * Groups of shell records with no directory-backed member, which the outranking arms
  * cannot fold because nobody outranks anybody. A group is the records that share a
  * healthy verified primary profile, the same normalized full name together with the same
  * stated primary department, or the same normalized full name together with a

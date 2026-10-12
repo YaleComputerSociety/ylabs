@@ -3,6 +3,7 @@ import {
   entityIdentityNamesPerson,
   leadSurnameKey,
   planSurnameClashLeadDetachment,
+  researcherIdentityAnchored,
   summarizeSurnameClashRefusals,
   type SurnameClashEntityRow,
   type SurnameClashLeadRow,
@@ -311,5 +312,23 @@ describe('planSurnameClashLeadDetachment', () => {
       'candidate-corroborated-by-the-entity-roster': 0,
       'assignment-already-reviewed': 0,
     });
+  });
+});
+
+describe('researcherIdentityAnchored', () => {
+  it('anchors a researcher on its own netid or directory email with no account linked (#5000)', () => {
+    expect(researcherIdentityAnchored({ identifiers: { netid: 'rq1' } })).toBe(true);
+    expect(researcherIdentityAnchored({ identifiers: { email: 'robin@example.test' } })).toBe(true);
+  });
+
+  it('still anchors a researcher on a linked account, a title, or a department', () => {
+    expect(researcherIdentityAnchored({ accountId: 'account-1' })).toBe(true);
+    expect(researcherIdentityAnchored({ profile: { title: 'Professor' } })).toBe(true);
+    expect(researcherIdentityAnchored({ profile: { primaryDepartment: 'Geology' } })).toBe(true);
+  });
+
+  it('leaves a bare name unanchored', () => {
+    expect(researcherIdentityAnchored({ identifiers: { netid: '  ', email: '' } })).toBe(false);
+    expect(researcherIdentityAnchored({})).toBe(false);
   });
 });

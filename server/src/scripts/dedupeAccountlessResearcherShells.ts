@@ -121,15 +121,15 @@ export interface AttributeUnionTotals {
 
 export interface DedupeAccountlessResearcherShellsResult {
   mode: 'apply' | 'dry-run';
-  accountLinkedResearchers: number;
-  accountlessResearchers: number;
-  netidBackedAccountlessResearchers: number;
+  directoryIdentifiedResearchers: number;
+  shellResearchers: number;
+  netidBackedShellResearchers: number;
   byReason: Record<ShellMergeReason, number>;
   shellsMerged: number;
   aliasTwinFolds: { folded: number; refusals: Record<AliasTwinFoldRefusal, number> };
   /** Which identity decided each fold, so a netid fold cannot hide inside a name count. */
   foldsByMatchedIdentity: Record<ShellFoldIdentity, number>;
-  /** Groups with no account-backed member, folded into a survivor chosen among themselves. */
+  /** Groups with no directory-backed member, folded into a survivor chosen among themselves. */
   accountlessClusters: {
     groups: number;
     foldedGroups: number;
@@ -168,6 +168,7 @@ async function loadRosterIdentityCandidates(
     id: string;
     displayName?: unknown;
     accountId?: unknown;
+    email?: unknown;
     orcid?: unknown;
     netid?: unknown;
   }>,
@@ -227,7 +228,11 @@ async function loadRosterIdentityCandidates(
         displayName: identity.displayName,
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
-        tier: researcherIdentityTier({ accountId: identity.accountId, netid }),
+        tier: researcherIdentityTier({
+          accountId: identity.accountId,
+          email: identity.email,
+          netid,
+        }),
       });
       candidatesByShellId.set(shellId, list);
     }
@@ -243,6 +248,7 @@ async function loadSharedRowCandidates(
     id: string;
     displayName?: unknown;
     accountId?: unknown;
+    email?: unknown;
     orcid?: unknown;
     netid?: unknown;
     title?: unknown;
@@ -303,7 +309,11 @@ async function loadSharedRowCandidates(
         title: identity.title,
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
-        tier: researcherIdentityTier({ accountId: identity.accountId, netid }),
+        tier: researcherIdentityTier({
+          accountId: identity.accountId,
+          email: identity.email,
+          netid,
+        }),
       });
     }
     candidatesByShellId.set(shellId, list);
@@ -376,6 +386,7 @@ export async function dedupeAccountlessResearcherShells(options: {
         accountId: 1,
         'identifiers.orcid': 1,
         'identifiers.netid': 1,
+        'identifiers.email': 1,
         profileLinks: 1,
         'profile.title': 1,
         'profile.primaryDepartment': 1,
@@ -387,6 +398,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     id: idKey(doc._id),
     displayName: doc.displayName,
     accountId: doc.accountId,
+    email: doc.identifiers?.email,
     orcid: doc.identifiers?.orcid,
     netid: doc.identifiers?.netid,
     profileLinks: doc.profileLinks,
@@ -411,6 +423,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities.map((entry) => ({
       id: entry.id,
       accountId: entry.accountId,
+      email: entry.email,
       orcid: entry.orcid,
       netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
     })),
@@ -424,9 +437,9 @@ export async function dedupeAccountlessResearcherShells(options: {
   );
 
   const foldableShells = researcherIdentities.filter(
-    (entry) => researcherIdentityTier(entry) !== 'ACCOUNT',
+    (entry) => researcherIdentityTier(entry) !== 'DIRECTORY',
   );
-  const netidBackedAccountlessResearchers = foldableShells.filter(
+  const netidBackedShellResearchers = foldableShells.filter(
     (entry) => researcherIdentityTier(entry) === 'NETID',
   ).length;
 
@@ -805,9 +818,9 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
-    accountLinkedResearchers: researcherIdentities.length - foldableShells.length,
-    accountlessResearchers: foldableShells.length,
-    netidBackedAccountlessResearchers,
+    directoryIdentifiedResearchers: researcherIdentities.length - foldableShells.length,
+    shellResearchers: foldableShells.length,
+    netidBackedShellResearchers,
     byReason,
     shellsMerged: mergeTargetByShellId.size,
     aliasTwinFolds: {

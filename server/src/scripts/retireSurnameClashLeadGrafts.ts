@@ -15,6 +15,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   planSurnameClashLeadDetachment,
+  researcherIdentityAnchored,
   summarizeSurnameClashRefusals,
   surnameClashGroups,
   type SurnameClashEntityRow,
@@ -71,12 +72,7 @@ async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
     if (!displayName) continue;
     identities.set(id, {
       displayName,
-      identityAnchored: Boolean(
-        String(row.identifiers?.netid || '').trim() ||
-        row.accountId ||
-        String(row.profile?.title || '').trim() ||
-        String(row.profile?.primaryDepartment || '').trim(),
-      ),
+      identityAnchored: researcherIdentityAnchored(row),
     });
   }
   return identities;

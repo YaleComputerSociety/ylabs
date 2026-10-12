@@ -68,6 +68,7 @@ import { resolveResearcherIdForPersonName } from '../../services/researcherPerso
 import { findOrCreateForOwner } from '../../services/researchGroupService';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { researcherNetid } from '../../utils/researcherIdentity';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import {
   SHARED_TEMP_ROOT,
@@ -648,12 +649,16 @@ export function aggregateAdviseesByAdvisor(
  */
 export type AdvisorResearcherResolver = (name: string, orcid?: string) => Promise<UserMatch | null>;
 
-async function accountNetidForResearcher(accountId: unknown): Promise<string> {
-  if (!accountId) return '';
-  const account: any = await Account.findById(accountId as any)
+export async function netidForAdvisorResearcher(researcher: {
+  accountId?: unknown;
+  identifiers?: { netid?: unknown } | null;
+}): Promise<string> {
+  const heldNetid = researcherNetid(researcher);
+  if (heldNetid || !researcher.accountId) return heldNetid;
+  const account: any = await Account.findById(researcher.accountId as any)
     .select('netid')
     .lean();
-  return typeof account?.netid === 'string' ? account.netid : '';
+  return researcherNetid(researcher, account);
 }
 
 function researcherToUserMatch(researcher: any, netid: string): UserMatch {
@@ -681,7 +686,7 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
       .select('_id displayName accountId profile identifiers')
       .lean();
     if (!researcher) return null;
-    return researcherToUserMatch(researcher, await accountNetidForResearcher(researcher.accountId));
+    return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
   }
   const resolution = await resolveResearcherIdForPersonName(name);
   if (resolution.status !== 'matched' || !resolution.researcherId) return null;
@@ -689,7 +694,7 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
     .select('_id displayName accountId profile identifiers')
     .lean();
   if (!researcher) return null;
-  return researcherToUserMatch(researcher, await accountNetidForResearcher(researcher.accountId));
+  return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
 };
 
 async function findUserForAdvisorRow(

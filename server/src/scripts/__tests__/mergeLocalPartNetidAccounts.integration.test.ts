@@ -150,7 +150,7 @@ describe('merging accounts minted with an email local part as their netid (#4773
   it('repoints every account reference, keeps a duplicate plan, archives, and plans 0 on a rerun', async () => {
     const { withReferences, mergeable, movedResearcher, reviewedEntityId } = await seed();
     const before = await runPostMaterializationIntegrityGate();
-    expect(before.counts.duplicatePeople).toBe(4);
+    expect(before.counts.duplicatePeople).toBe(1);
 
     const plan = await planLocalPartNetidMerges(db);
     const applied = await applyLocalPartNetidMerges(db, plan.merges, created);
@@ -183,7 +183,7 @@ describe('merging accounts minted with an email local part as their netid (#4773
     expect(await db.collection('accounts').countDocuments({})).toBe(9);
 
     const after = await runPostMaterializationIntegrityGate();
-    expect(after.counts.duplicatePeople).toBe(2);
+    expect(after.counts.duplicatePeople).toBe(1);
 
     const rerun = await planLocalPartNetidMerges(db);
     expect(rerun.merges).toHaveLength(0);
