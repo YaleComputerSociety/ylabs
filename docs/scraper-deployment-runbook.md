@@ -401,7 +401,8 @@ Beta retention requires a new target-bound dry-run, the same restore-boundary re
 Never reuse Development candidate counts or an old Beta artifact.
 
 The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
-It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, or supersession links.
+It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, or the `supersededBy` link of an observation that itself survives the pass.
+A `supersededBy` link from an observation deleted in the same pass protects nothing, so a whole eligible supersession chain goes in one pass and no survivor is left pointing at a deleted row (#5021).
 Retention is only projection-neutral while the materializer's read scope excludes superseded rows, so it refuses to apply under `C4_LOSSLESS_INGEST`, forces a dry-run when that flag is undeclared, and reports `projectionNeutral` in the artifact; `docs/research-data-pipeline.md` owns that contract and the reasoning behind it (#2944).
 Read `projectionNeutral` before filing an artifact in a promotion packet: under lossless ingest the candidate count is a count of live evidence, not of dead storage.
 Declare `C4_LOSSLESS_INGEST=false` (or `true`) in the environment the target materializes from, so the prune's view of the read scope is the materializer's view and not a blank shell's.
