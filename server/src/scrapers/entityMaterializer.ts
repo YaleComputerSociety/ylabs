@@ -951,6 +951,7 @@ interface MaterializeResult {
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
+  plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -1064,6 +1065,15 @@ export function materializerProjectionPathIsStorable(
 // only undeclared entry in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and no row of
 // the corpus stores it. So the comparison stays on the side that writes, which is
 // the side that cannot skip a removal a row does need.
+function plannedWriteSkipReason(
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+): 'no-scoped-fields' | 'unchanged' {
+  return Object.keys(set).length === 0 && Object.keys(unset).length === 0
+    ? 'no-scoped-fields'
+    : 'unchanged';
+}
+
 export function isMaterializerProjectionNoOp(
   entityDoc: Record<string, unknown>,
   set: Record<string, unknown>,
@@ -10117,6 +10127,15 @@ export async function materializeEntity(
       : {}),
   };
 
+  const entityScalarUnchanged =
+    Boolean(entityDoc) &&
+    isMaterializerProjectionNoOp(
+      entityDoc as Record<string, unknown>,
+      set,
+      unset,
+      Object.keys(Model.schema?.paths ?? {}),
+    );
+
   if (options.dryRun) {
     return {
       entityType,
@@ -10128,6 +10147,7 @@ export async function materializeEntity(
       resolved,
       plannedSet: set,
       plannedUnset: unset,
+      ...(entityScalarUnchanged ? { plannedWriteSkip: plannedWriteSkipReason(set, unset) } : {}),
       ...reportedProjectionOutcomes,
     };
   }
@@ -10154,15 +10174,6 @@ export async function materializeEntity(
     textValue(entityDoc?.slug),
   );
   if (!entityDoc) options.chunkPrefetch?.markCreated();
-
-  const entityScalarUnchanged =
-    Boolean(entityDoc) &&
-    isMaterializerProjectionNoOp(
-      entityDoc as Record<string, unknown>,
-      set,
-      unset,
-      Object.keys(Model.schema?.paths ?? {}),
-    );
 
   let created = false;
   if (entityDoc) {
