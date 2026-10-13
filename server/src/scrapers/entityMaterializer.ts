@@ -1040,6 +1040,15 @@ export function materializerProjectionPathIsStorable(
   return false;
 }
 
+function plannedWriteSkipReason(
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+): 'no-scoped-fields' | 'unchanged' {
+  return Object.keys(set).length === 0 && Object.keys(unset).length === 0
+    ? 'no-scoped-fields'
+    : 'unchanged';
+}
+
 // A re-projection over an unchanged observation log recomputes the same field
 // values every run; the only guaranteed-different field is the managed
 // `lastObservedAt` timestamp. Treat the projection as a no-op when every scoped
@@ -1065,15 +1074,6 @@ export function materializerProjectionPathIsStorable(
 // only undeclared entry in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and no row of
 // the corpus stores it. So the comparison stays on the side that writes, which is
 // the side that cannot skip a removal a row does need.
-function plannedWriteSkipReason(
-  set: Record<string, unknown>,
-  unset: Record<string, unknown>,
-): 'no-scoped-fields' | 'unchanged' {
-  return Object.keys(set).length === 0 && Object.keys(unset).length === 0
-    ? 'no-scoped-fields'
-    : 'unchanged';
-}
-
 export function isMaterializerProjectionNoOp(
   entityDoc: Record<string, unknown>,
   set: Record<string, unknown>,
