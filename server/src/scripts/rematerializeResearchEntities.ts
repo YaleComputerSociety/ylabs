@@ -16,6 +16,11 @@
  * for a repair pass belongs here rather than in `CARD_SYNTHESIS_MODEL`: on the cards three
  * passes left cut, the default model returned a line that shows whole for 5 of 10 and a
  * stronger one for 8 of 10.
+ *
+ * A dry run never calls the card model, because a model's line cannot be predicted and
+ * a preview that pays for one is not the line the apply will get. A row whose card the
+ * apply would synthesize is reported with `cardSynthesisPending` and without its
+ * `shortDescription` change, and counted in `entitiesAwaitingCardSynthesis`.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -30,7 +35,7 @@ import {
   ACCESS_SIGNAL_EVIDENCE_WITHDRAWN_REASON,
   EVIDENCE_GOVERNED_ACCESS_SIGNAL_FIELDS,
 } from '../scrapers/accessMaterializer';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import { materializeEntity, type CardSynthesizer } from '../scrapers/entityMaterializer';
 import { fieldProvenanceEntries } from '../models/fieldProvenanceBacking';
 import {
   applyStudentVisibilityGatePlans,
@@ -104,7 +109,7 @@ function provenanceAfterPlan(
   return planned;
 }
 
-async function processSlug(
+export async function rematerializeSlug(
   slug: string,
   apply: boolean,
   onlyFields: string[],
@@ -143,11 +148,17 @@ async function processSlug(
     };
   }
 
+  const cardSynthesis = { requested: false };
+  const dryRunCardSynthesizer: CardSynthesizer = async () => {
+    cardSynthesis.requested = true;
+    return '';
+  };
   const result = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
     {
       dryRun: !apply,
+      ...(apply ? {} : { synthesizeCardDescription: dryRunCardSynthesizer }),
       ...(writeOnlyFields.length > 0 ? { writeOnlyFields } : {}),
       ...(onlyReconcileFieldProvenance ? { onlyReconcileFieldProvenance } : {}),
       ...(resynthesizeCutCards ? { resynthesizeCutCards } : {}),
@@ -159,7 +170,7 @@ async function processSlug(
   const plannedSet: Record<string, unknown> = result.plannedSet || {};
   const plannedUnset: Record<string, unknown> = result.plannedUnset || {};
 
-  const changes = onlyReconcileFieldProvenance
+  const reportedChanges = onlyReconcileFieldProvenance
     ? provenanceReconciliationChanges(
         provenanceBefore,
         apply
@@ -173,6 +184,9 @@ async function processSlug(
           : rematerializeStateAfterPlan(before, plannedSet, plannedUnset, comparedFields),
         comparedFields,
       );
+  const changes = cardSynthesis.requested
+    ? reportedChanges.filter((change) => change.field !== 'shortDescription')
+    : reportedChanges;
   return rematerializeEntityReportFromChanges({
     slug,
     entityId: result.entityId,
@@ -182,7 +196,8 @@ async function processSlug(
     changes,
     foreignContact,
     unbackedResearchAreas: result.unbackedResearchAreas,
-    skipped: result.skipped,
+    cardSynthesisPending: cardSynthesis.requested,
+    skipped: result.skipped ?? (cardSynthesis.requested ? undefined : result.plannedWriteSkip),
   });
 }
 
@@ -428,7 +443,7 @@ async function main() {
   const entities = await collectRematerializeEntityReports(slugs, (slug) =>
     args.accessSignals
       ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
-      : processSlug(
+      : rematerializeSlug(
           slug,
           args.apply,
           args.onlyFields,
@@ -489,6 +504,7 @@ async function main() {
     fieldsWritten: summary.fieldsWritten,
     unbackedResearchAreas: summary.unbackedResearchAreas,
     researchAreaChips: summary.researchAreaChips,
+    entitiesAwaitingCardSynthesis: summary.entitiesAwaitingCardSynthesis,
     entitiesSkipped: entities.filter((entity) => entity.skipped).length,
     entitiesFailed: failed.map((entity) => ({ slug: entity.slug, error: entity.error })),
     regate,

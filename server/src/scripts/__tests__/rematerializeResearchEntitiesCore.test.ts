@@ -702,6 +702,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       clearedContactFields: 1,
       unbackedResearchAreas: {},
       researchAreaChips: { added: 0, removed: 0 },
+      entitiesAwaitingCardSynthesis: 0,
     });
     expect(selectRematerializeRegateEntityIds([report])).toEqual(['aaaaaaaaaaaaaaaaaaaaaaaa']);
   });
@@ -789,6 +790,7 @@ describe('the change set covers every field the run may write (#3822)', () => {
       clearedContactFields: 0,
       unbackedResearchAreas: {},
       researchAreaChips: { added: 0, removed: 0 },
+      entitiesAwaitingCardSynthesis: 0,
     });
   });
 });
@@ -946,5 +948,20 @@ describe('rematerializeReportedChanges on grant subdocuments (#4418)', () => {
     const reloaded = { recentGrants: [grant('Renamed Award')] };
 
     expect(rematerializeReportedChanges(before, reloaded, ['recentGrants'])).toHaveLength(1);
+  });
+});
+
+describe('rematerializeStateAfterPlan on a path the schema cannot store', () => {
+  it('keeps the stored value, because the apply drops the path from its update', () => {
+    const before = { name: 'Example Research Lab', inferredPiUserId: null };
+    const after = rematerializeStateAfterPlan(
+      before,
+      { inferredPiUserId: '0123456789abcdef01234567', description: 'Planned but undeclared.' },
+      {},
+      ['name', 'inferredPiUserId', 'description'],
+    );
+    expect(
+      rematerializeReportedChanges(before, after, ['name', 'inferredPiUserId', 'description']),
+    ).toEqual([]);
   });
 });

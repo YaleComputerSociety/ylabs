@@ -951,6 +951,7 @@ interface MaterializeResult {
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
+  plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -1037,6 +1038,15 @@ export function materializerProjectionPathIsStorable(
     if (declared.some((path) => path === ancestor || path.startsWith(nested))) return true;
   }
   return false;
+}
+
+function plannedWriteSkipReason(
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+): 'no-scoped-fields' | 'unchanged' {
+  return Object.keys(set).length === 0 && Object.keys(unset).length === 0
+    ? 'no-scoped-fields'
+    : 'unchanged';
 }
 
 // A re-projection over an unchanged observation log recomputes the same field
@@ -10117,6 +10127,15 @@ export async function materializeEntity(
       : {}),
   };
 
+  const entityScalarUnchanged =
+    Boolean(entityDoc) &&
+    isMaterializerProjectionNoOp(
+      entityDoc as Record<string, unknown>,
+      set,
+      unset,
+      Object.keys(Model.schema?.paths ?? {}),
+    );
+
   if (options.dryRun) {
     return {
       entityType,
@@ -10128,6 +10147,7 @@ export async function materializeEntity(
       resolved,
       plannedSet: set,
       plannedUnset: unset,
+      ...(entityScalarUnchanged ? { plannedWriteSkip: plannedWriteSkipReason(set, unset) } : {}),
       ...reportedProjectionOutcomes,
     };
   }
@@ -10154,15 +10174,6 @@ export async function materializeEntity(
     textValue(entityDoc?.slug),
   );
   if (!entityDoc) options.chunkPrefetch?.markCreated();
-
-  const entityScalarUnchanged =
-    Boolean(entityDoc) &&
-    isMaterializerProjectionNoOp(
-      entityDoc as Record<string, unknown>,
-      set,
-      unset,
-      Object.keys(Model.schema?.paths ?? {}),
-    );
 
   let created = false;
   if (entityDoc) {
