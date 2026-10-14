@@ -72,12 +72,16 @@ describe('profile website harvest', () => {
   });
 
   it('keeps a short call-to-action label that names the lab', () => {
-    const result = enrich(`<p><a href="https://www.fixturelab.example.org/">Learn More About My Lab!</a></p>`);
+    const result = enrich(
+      `<p><a href="https://www.fixturelab.example.org/">Learn More About My Lab!</a></p>`,
+    );
     expect(result.labUrl).toBe('https://www.fixturelab.example.org/');
   });
 
   it('keeps a call-to-action sentence that closes on the lab word', () => {
-    const result = enrich(`<p><a href="https://thefixturelab.example.org/">Learn more about the Fixture Lab.</a></p>`);
+    const result = enrich(
+      `<p><a href="https://thefixturelab.example.org/">Learn more about the Fixture Lab.</a></p>`,
+    );
     expect(result.labUrl).toBe('https://thefixturelab.example.org/');
   });
 

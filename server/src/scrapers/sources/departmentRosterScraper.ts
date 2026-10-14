@@ -3075,7 +3075,10 @@ export function pathNamesALab(pathname: string): boolean {
     .split('/')
     .filter(Boolean)
     .some((segment) => {
-      const words = segment.replace(/\.[a-z0-9]{2,5}$/i, '').split(/[-_.]+/).filter(Boolean);
+      const words = segment
+        .replace(/\.[a-z0-9]{2,5}$/i, '')
+        .split(/[-_.]+/)
+        .filter(Boolean);
       return words.length > 0 && PATH_LAB_WORD.test(words[words.length - 1]);
     });
 }
