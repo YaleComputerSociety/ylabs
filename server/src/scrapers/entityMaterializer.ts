@@ -251,7 +251,6 @@ import {
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
 import {
