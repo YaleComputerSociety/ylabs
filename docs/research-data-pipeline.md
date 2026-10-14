@@ -2045,6 +2045,12 @@ A refusal of a link the page still carries, and a read of a different profile, s
 The refusal is limited to a row serving the refused link because the withdrawal reaches every older website the lane asserted on the row, including one its lead-direct mode read from the lead's own website slot.
 An untargeted run selects rows with no website and rows whose stored `websiteUrl` this lane supplied, so it re-reads a row already serving an affiliated organization; a targeted run, `--only profile-research-home-backfill,<keys>`, narrows that to named rows.
 
+`dept-faculty-roster` adopts the first profile link whose label, host, or path carries a website word, and three shapes of that word say nothing about the destination (#5050).
+A lab word in the path counts only as a whole segment or as the last word of a segment slug, so a paper whose title slug opens with "Laboratory ..." or an umbrella center whose slug opens with `lab-` is not a website.
+Link text that reads as a sentence, ten words or more or six or more ending in a period, is a citation, and a center or institute named in the visible text is not made a lab by a CMS `title` attribute that calls the page a lab.
+A link naming a national laboratory is an institution and is refused.
+Measured over eight departments with `--use-cache` before and after: 6 planned websites changed, all corrections, and no genuine site was lost.
+
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
 The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.
 

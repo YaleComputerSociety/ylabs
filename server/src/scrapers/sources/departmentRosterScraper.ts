@@ -3060,6 +3060,44 @@ function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string)
 const WEBSITE_SIGNAL =
   /\b(lab|laboratory|website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page)\b/i;
 
+const PATH_LAB_WORD = /^(?:lab|labs|laboratory|laboratories)$/i;
+
+/**
+ * Whether a URL path names a lab where a lab's own address would: as a whole segment
+ * (`/lab/<name>/`) or as the last word of a segment slug (`/<name>-lab/`).
+ *
+ * The word anywhere in the path is not that. A publication's slug is its title, so
+ * "Laboratory degradation of lipids ..." made a paper page read as the person's website,
+ * and an umbrella center whose slug opens with `lab-` did the same (#5050).
+ */
+export function pathNamesALab(pathname: string): boolean {
+  return pathname
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => {
+      const words = segment.replace(/\.[a-z0-9]{2,5}$/i, '').split(/[-_.]+/).filter(Boolean);
+      return words.length > 0 && PATH_LAB_WORD.test(words[words.length - 1]);
+    });
+}
+
+/**
+ * A national laboratory is an institution a research paragraph links to, never one
+ * person's research website (#5050).
+ */
+const NATIONAL_LABORATORY_TEXT = /\bnational\s+laborator(?:y|ies)\b/i;
+
+/**
+ * Link text that reads as a sentence is a citation or a headline, not a label for a
+ * website, so a lab word inside it says nothing about the destination: a publication
+ * list entry titled "Laboratory degradation of ..." is a paper (#5050).
+ */
+export function linkTextIsASentence(text: string): boolean {
+  const words = text.split(/\s+/).filter(Boolean);
+  return words.length >= 10 || (words.length >= 6 && /\.$/.test(text.trim()));
+}
+
+const UMBRELLA_ORGANIZATION_TEXT = /\b(?:center|centre|institute|consortium)\b/i;
+
 function isCollapsedWidgetLink(link: cheerio.Cheerio<any>): boolean {
   return (link.attr('tabindex') || '').trim() === '-1';
 }
@@ -3374,9 +3412,18 @@ export function profileEnrichmentFromHtml(
     const text = link.text().replace(/\s+/g, ' ').trim();
     const aria = link.attr('aria-label') || '';
     const titleAttr = link.attr('title') || '';
-    const signal = `${text} ${aria} ${titleAttr} ${parsed.hostname} ${parsed.pathname}`;
-    const hasWebsiteSignal = WEBSITE_SIGNAL.test(signal);
+    const visibleTextSignal = linkTextIsASentence(text) ? '' : text;
+    const attributeSignal = UMBRELLA_ORGANIZATION_TEXT.test(text) ? '' : `${aria} ${titleAttr}`;
+    const labelSignal = `${visibleTextSignal} ${attributeSignal} ${parsed.hostname}`;
+    const hasWebsiteSignal =
+      WEBSITE_SIGNAL.test(labelSignal) ||
+      (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
+      /\b(?:website|homepage|home-page)\b/i.test(parsed.pathname);
     if (!hasWebsiteSignal) return;
+    if (NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
     if (isInstitutionalAdvancementUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
