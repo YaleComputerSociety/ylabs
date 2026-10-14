@@ -44,6 +44,12 @@ import { Observation } from '../../models/observation';
 import { listResearchEntityMergedInRows } from '../../services/researchEntityCanonicalTombstone';
 import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import {
+  quoteWithLeadEmailTokens,
+  withLeadEmailTokensRedacted,
+} from '../../utils/leadEmailQuoteToken';
+import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
+import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
@@ -134,7 +140,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'join-route-invites-undergraduates-v4';
+const OBSERVATION_DERIVATION_VERSION = 'lead-email-quote-token-v5';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -475,7 +481,7 @@ export function pageContainingQuote(
   quote: string | undefined,
   pages: readonly PromptSourcePage[],
 ): PromptSourcePage | null {
-  const needle = normalizeQuoteText(quote || '');
+  const needle = normalizeQuoteText(withLeadEmailTokensRedacted(quote || ''));
   if (!needle) return null;
   return (
     pages.find(
@@ -1131,6 +1137,7 @@ export function extractionToObservations(
     entityShape?: JoinPageEntity;
     joinPages?: PromptSourcePage[];
     readIsComplete?: boolean;
+    leadEmails?: readonly string[];
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -1139,7 +1146,7 @@ export function extractionToObservations(
   const quoteOnPage = (quote: string | undefined) => {
     const text = (quote || '').trim();
     const page = pageContainingQuote(text, pages);
-    return page ? { text, sourceUrl: page.url } : null;
+    return page ? { text, sourceUrl: page.url, pageText: page.text } : null;
   };
   const evidenceQuote = quoteOnPage(extraction.evidenceQuote);
   const base = {
@@ -1230,7 +1237,11 @@ export function extractionToObservations(
       ...base,
       sourceUrl: evidenceQuote.sourceUrl,
       field: 'undergradEvidenceQuote',
-      value: redactDirectContactInfo(evidenceQuote.text).slice(0, 500),
+      value: quoteWithLeadEmailTokens(
+        redactDirectContactInfo(evidenceQuote.text).slice(0, 500),
+        evidenceQuote.pageText,
+        sourceContext.leadEmails ?? [],
+      ),
       confidenceOverride: 0.5,
     });
   }
@@ -1581,11 +1592,22 @@ export interface LabMicrositeUndergradLLMExtractorDeps {
   callLLM?: CallLLMFn;
   workPlanLoader?: WorkPlanLoaderFn;
   liveEvidenceQuoteLoader?: LiveEvidenceQuoteLoaderFn;
+  leadEmailLoader?: LeadEmailLoaderFn;
   /** Resolves the candidate-lab list. Default queries Mongo. */
   labFinder?: () => Promise<CandidateLab[]>;
   model?: string;
   apiKey?: string;
   env?: NodeJS.ProcessEnv;
+}
+
+export type LeadEmailLoaderFn = (lab: CandidateLab) => Promise<string[]>;
+
+async function defaultLeadEmailLoader(lab: CandidateLab): Promise<string[]> {
+  const roster = await getResearchEntityRoster(lab._id);
+  return roster
+    .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role))
+    .map((entry) => entry.email)
+    .filter(Boolean);
 }
 
 async function defaultWorkPlanLoader(
@@ -1667,6 +1689,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
   private readonly callLLM: CallLLMFn;
   private readonly workPlanLoader: WorkPlanLoaderFn;
   private readonly liveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn;
+  private readonly leadEmailLoader: LeadEmailLoaderFn;
   private readonly labFinder: () => Promise<CandidateLab[]>;
   private readonly model: string;
   private readonly apiKey: string | undefined;
@@ -1679,6 +1702,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     this.callLLM = deps.callLLM ?? defaultCallLLM;
     this.workPlanLoader = deps.workPlanLoader ?? defaultWorkPlanLoader;
     this.liveEvidenceQuoteLoader = deps.liveEvidenceQuoteLoader ?? defaultLiveEvidenceQuoteLoader;
+    this.leadEmailLoader = deps.leadEmailLoader ?? defaultLeadEmailLoader;
     this.labFinder = deps.labFinder ?? defaultLabFinder;
     this.model = deps.model ?? DEFAULT_MODEL;
     this.apiKey = deps.apiKey ?? process.env.OPENAI_API_KEY;
@@ -1960,6 +1984,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
               departments: lab.departments,
             },
             readIsComplete: !linkedSubPageUnread,
+            leadEmails: await abortLaneOnFailure(() => this.leadEmailLoader(lab)),
           },
         );
         if ((lab.manuallyLockedFields || []).includes(UNDERGRAD_ACCESS_EVIDENCE_FIELD)) {

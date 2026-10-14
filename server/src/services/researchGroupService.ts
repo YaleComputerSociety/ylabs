@@ -3732,7 +3732,10 @@ export async function getResearchGroupDetail(
     // lead set. That switched off the #2913 key-names-only-this-person arm for the one
     // surface a student lands on: 8 served rows titled themselves with an organization
     // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
-    { leadMemberNames },
+    {
+      leadMemberNames,
+      servedContactEmails: members.flatMap((member) => member.user.email ?? []),
+    },
   );
   if (withheldBy.length === 0) return detail;
   return {

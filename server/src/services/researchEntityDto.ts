@@ -2,6 +2,7 @@ import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { withLeadEmailTokensResolved } from '../utils/leadEmailQuoteToken';
 import {
   MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
   MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
@@ -494,6 +495,7 @@ export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
   leadMemberNames?: readonly string[];
+  servedContactEmails?: readonly string[];
 }
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
@@ -626,7 +628,10 @@ function derivePublicResearchEntityDto(
             (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
               quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
         if (!withheld) {
-          dto[field] = publicTextValue(group[field]);
+          dto[field] = withLeadEmailTokensResolved(
+            String(publicTextValue(group[field])),
+            options.servedContactEmails ?? [],
+          );
           const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
           if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
         }

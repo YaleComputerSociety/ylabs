@@ -563,6 +563,9 @@ The one shape it leaves alone is a bare digit run with a letter directly before 
 It also redacts hand-obfuscated addresses: bracketed or parenthesised `at` and `dot`, a spaced `@`, the fullwidth at sign, and its HTML entities (#4202).
 Spelled-out `at` counts only alongside an obfuscated `dot` ending in a known suffix, and a spaced `@` needs whitespace after it, so "available at github.com" and a social handle stay intact; the 7,667 stored Development descriptions it was measured over gained zero new redactions.
 The search index redacts the same way over every description field it indexes.
+One address is put back on purpose: the detail page already serves each lead's own Yale address, so a quote saying "contact [email redacted]" about that same address hid only what the student could read beside it.
+The microsite undergraduate lane therefore stores `[lead email <digest>]` in place of a redacted address that matches one of the row's current lead emails on the quoted page, and never the address itself (`server/src/utils/leadEmailQuoteToken.ts`).
+The detail DTO resolves the token only to an address that page serves; every other surface, the search index included, renders it as `[email redacted]`.
 
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
