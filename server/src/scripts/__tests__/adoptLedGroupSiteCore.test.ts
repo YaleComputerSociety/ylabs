@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   OPERATOR_LED_GROUP_VERDICT_CONFIDENCE,
   planLedGroupSiteVerdict,
-  siteUrlLookupVariants,
   type LedGroupSiteRow,
 } from '../adoptLedGroupSiteCore';
 import { parseAdoptLedGroupSiteArgs } from '../adoptLedGroupSite';
+import {
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityKeyVariants,
+} from '../researchEntityPiDedupeCore';
 
 const row = (overrides: Partial<LedGroupSiteRow> = {}): LedGroupSiteRow => ({
   _id: '0123456789abcdef01234567',
@@ -85,14 +88,17 @@ describe('planLedGroupSiteVerdict', () => {
   });
 });
 
-describe('siteUrlLookupVariants', () => {
-  it('matches the stored site with or without a trailing slash and either scheme', () => {
-    expect(siteUrlLookupVariants('https://orca.fixture.yale.edu/')).toEqual(
+describe('another-row-serves-the-site lookup', () => {
+  it('finds a stored site spelled with www, another scheme, a capitalised host or a trailing slash', () => {
+    const lookup = websiteUrlIdentityKeyVariants(
+      normalizeWebsiteUrlIdentityKey('https://Orca.Fixture.yale.edu'),
+    );
+    expect(lookup).toEqual(
       expect.arrayContaining([
-        'https://orca.fixture.yale.edu/',
+        'https://www.orca.fixture.yale.edu/',
         'https://orca.fixture.yale.edu',
         'http://orca.fixture.yale.edu/',
-        'http://orca.fixture.yale.edu',
+        'http://www.orca.fixture.yale.edu',
       ]),
     );
   });

@@ -33,10 +33,13 @@ import { websiteIdentity } from '../scrapers/survivorOwnedWebsiteClear';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityKeyVariants,
+} from './researchEntityPiDedupeCore';
+import {
   OPERATOR_LED_GROUP_VERDICT_CONFIDENCE,
   OPERATOR_LED_GROUP_VERDICT_SOURCE,
   planLedGroupSiteVerdict,
-  siteUrlLookupVariants,
   type LedGroupSiteRow,
 } from './adoptLedGroupSiteCore';
 
@@ -100,7 +103,9 @@ async function main(): Promise<void> {
     const rowsServingTheSite = await ResearchEntity.countDocuments({
       archived: { $ne: true },
       slug: { $ne: options.slug },
-      websiteUrl: { $in: siteUrlLookupVariants(options.siteUrl) },
+      websiteUrl: {
+        $in: websiteUrlIdentityKeyVariants(normalizeWebsiteUrlIdentityKey(options.siteUrl)),
+      },
     });
     const planned = planLedGroupSiteVerdict(
       { ...(doc as LedGroupSiteRow), rowsServingTheSite },

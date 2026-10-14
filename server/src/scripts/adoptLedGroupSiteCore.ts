@@ -101,15 +101,3 @@ export function planLedGroupSiteVerdict(
     ],
   };
 }
-
-export function siteUrlLookupVariants(siteUrl: string): string[] {
-  const trimmed = textValue(siteUrl);
-  if (!trimmed) return [];
-  const bare = trimmed.replace(/\/+$/, '');
-  const variants = new Set([trimmed, bare, `${bare}/`]);
-  for (const value of [...variants]) {
-    if (value.startsWith('https://')) variants.add(`http://${value.slice('https://'.length)}`);
-    if (value.startsWith('http://')) variants.add(`https://${value.slice('http://'.length)}`);
-  }
-  return [...variants];
-}
