@@ -99,4 +99,23 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBeUndefined();
     expect(result.labSlotAttestation).toBe('empty');
   });
+
+  it('does not take a paper whose title closes on the common noun laboratory', () => {
+    const result = enrich(
+      `<ul><li><a href="https://www.fixture-journal.example.org/doi/10.0000/fixture.1">Fossilization of fixture tissue in the laboratory.</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('does not take a DOI link even when its label carries a lab word', () => {
+    const result = enrich(`<p><a href="https://doi.org/10.0000/fixture.2">Fixture Lab</a></p>`);
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('keeps a sentence label that closes on a lab name', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.org/">Learn more about the work of the Fixture Lab.</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.org/');
+  });
 });

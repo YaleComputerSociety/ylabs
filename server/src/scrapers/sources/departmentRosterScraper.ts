@@ -3089,7 +3089,13 @@ export function pathNamesALab(pathname: string): boolean {
  */
 const NATIONAL_LABORATORY_TEXT = /\bnational\s+laborator(?:y|ies)\b/i;
 
-const TEXT_ENDING_IN_WEBSITE_WORD = new RegExp(`${WEBSITE_SIGNAL.source}\\W*$`, 'i');
+const TEXT_ENDING_IN_WEBSITE_LABEL = /\b(?:website|homepage|home page)\W*$/i;
+
+/**
+ * Case-sensitive on purpose: a closing "the Smith Lab." names a lab, while a paper title
+ * closing "... in the laboratory." uses the common noun (#5050).
+ */
+const TEXT_ENDING_IN_LAB_NAME = /\b(?:Lab|Labs|Laboratory|Laboratories|Group)\W*$/;
 
 /**
  * Link text that reads as a sentence is a citation or a headline, not a label for a
@@ -3100,7 +3106,17 @@ const TEXT_ENDING_IN_WEBSITE_WORD = new RegExp(`${WEBSITE_SIGNAL.source}\\W*$`, 
 export function linkTextIsASentence(text: string): boolean {
   const trimmed = text.trim();
   const words = trimmed.split(/\s+/).filter(Boolean);
-  return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_WORD.test(trimmed);
+  return (
+    words.length >= 6 &&
+    trimmed.endsWith('.') &&
+    !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed) &&
+    !TEXT_ENDING_IN_LAB_NAME.test(trimmed)
+  );
+}
+
+/** A DOI resolves to a publication, which is never a person's research website (#5050). */
+function isDoiUrl(url: URL): boolean {
+  return /(?:^|\.)doi\.org$/i.test(url.hostname) || /\/doi\//i.test(url.pathname);
 }
 
 const UMBRELLA_ORGANIZATION_TEXT = /\b(?:center|centre|institute|consortium)\b/i;
@@ -3421,6 +3437,7 @@ export function profileEnrichmentFromHtml(
     const titleAttr = link.attr('title') || '';
     const visibleTextSignal = linkTextIsASentence(text) ? '' : text;
     const attributeSignal = UMBRELLA_ORGANIZATION_TEXT.test(text) ? '' : `${aria} ${titleAttr}`;
+    if (isDoiUrl(parsed)) return;
     const labelSignal = `${visibleTextSignal} ${attributeSignal} ${parsed.hostname}`;
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
