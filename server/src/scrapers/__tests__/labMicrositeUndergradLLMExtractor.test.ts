@@ -488,7 +488,7 @@ describe('extractionToObservations contact quote admission (#3928)', () => {
     expect(
       contactObservation('Interested students should email fixture.person@example.edu with a CV.')
         ?.value,
-    ).toBe('Interested students should email [email redacted] with a CV.');
+    ).toBe('Interested students should email fixture.person@example.edu with a CV.');
   });
 });
 
@@ -1238,11 +1238,11 @@ describe('extractionToObservations', () => {
     );
   });
 
-  it('redacts direct contact details from legacy public quote fields', () => {
+  it('keeps the page emails and redacts the phone numbers in public quote fields', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'Email pi.person@yale.edu to discuss undergraduate research.',
+      evidenceQuote: 'Email [email redacted] to discuss undergraduate research.',
       evidenceSource: 'explicit_text',
       joinPageUrl: 'https://x.example/join',
       undergradRoleQuote: '',
@@ -1259,14 +1259,11 @@ describe('extractionToObservations', () => {
     });
 
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')!.value).toBe(
-      'Email [email redacted] to discuss undergraduate research.',
+      'Email pi.person@yale.edu to discuss undergraduate research.',
     );
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
-      'Call [phone redacted] or email [email redacted] to arrange a visit.',
+      'Call [phone redacted] or email manager@yale.edu to arrange a visit.',
     );
-    expect(
-      (obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote,
-    ).toBe('Email pi.person@yale.edu to discuss undergraduate research.');
   });
 });
 

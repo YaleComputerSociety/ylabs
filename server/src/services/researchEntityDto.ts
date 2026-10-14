@@ -1,7 +1,7 @@
 import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactDirectContactInfo, redactPhoneNumbers } from '../utils/contactRedaction';
 import {
   MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
   MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH,
@@ -626,7 +626,9 @@ function derivePublicResearchEntityDto(
             (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
               quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
         if (!withheld) {
-          dto[field] = publicTextValue(group[field]);
+          dto[field] = redactPhoneNumbers(
+            String(group[field]).slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+          );
           const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
           if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
         }

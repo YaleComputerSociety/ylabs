@@ -44,6 +44,7 @@ import { Observation } from '../../models/observation';
 import { listResearchEntityMergedInRows } from '../../services/researchEntityCanonicalTombstone';
 import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { quoteWithPageEmailsRestored } from '../../utils/quotedEmailRestoration';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
@@ -134,7 +135,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'join-route-invites-undergraduates-v4';
+const OBSERVATION_DERIVATION_VERSION = 'quoted-emails-shown-v5';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -1139,8 +1140,10 @@ export function extractionToObservations(
   const quoteOnPage = (quote: string | undefined) => {
     const text = (quote || '').trim();
     const page = pageContainingQuote(text, pages);
-    return page ? { text, sourceUrl: page.url } : null;
+    return page ? { text, sourceUrl: page.url, pageText: page.text } : null;
   };
+  const storedQuote = (quote: { text: string; pageText: string }) =>
+    quoteWithPageEmailsRestored(redactDirectContactInfo(quote.text).slice(0, 500), quote.pageText);
   const evidenceQuote = quoteOnPage(extraction.evidenceQuote);
   const base = {
     entityType: 'researchEntity' as const,
@@ -1230,7 +1233,7 @@ export function extractionToObservations(
       ...base,
       sourceUrl: evidenceQuote.sourceUrl,
       field: 'undergradEvidenceQuote',
-      value: redactDirectContactInfo(evidenceQuote.text).slice(0, 500),
+      value: storedQuote(evidenceQuote),
       confidenceOverride: 0.5,
     });
   }
@@ -1281,7 +1284,7 @@ export function extractionToObservations(
       ...base,
       sourceUrl: undergradRoleQuote.sourceUrl,
       field: 'undergradRoleEvidenceQuote',
-      value: redactDirectContactInfo(undergradRoleQuote.text).slice(0, 500),
+      value: storedQuote(undergradRoleQuote),
       confidenceOverride: 0.5,
     });
   }
@@ -1292,7 +1295,7 @@ export function extractionToObservations(
       ...base,
       sourceUrl: contactInstructionsQuote.sourceUrl,
       field: 'contactInstructionsQuote',
-      value: redactDirectContactInfo(contactInstructionsQuote.text).slice(0, 500),
+      value: storedQuote(contactInstructionsQuote),
       confidenceOverride: 0.5,
     });
   }
@@ -1303,7 +1306,7 @@ export function extractionToObservations(
       ...base,
       sourceUrl: explicitConstraintQuote.sourceUrl,
       field: 'undergradConstraintQuote',
-      value: redactDirectContactInfo(explicitConstraintQuote.text).slice(0, 500),
+      value: storedQuote(explicitConstraintQuote),
       confidenceOverride: 0.5,
     });
   }

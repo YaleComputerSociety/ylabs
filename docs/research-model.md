@@ -556,7 +556,9 @@ It emits `joinPageUrl` on every complete read, empty when no page is admissible,
 At serve time an `APPLICATION_FORM_EXISTS` claim and its page stand or fall together: its excerpt only says a page was found, so when `getResearchGroupDetail` withholds the signal's link (a refused citation such as a people or members page, or a page known to be gone) it withholds the claim too, and the stored signal is kept (#4430).
 A programme-shaped page the admission keeps, the row's own website or its own department's programme, is served as the link through the same `isProgrammePageAdmittedAsJoinRoute` the admission uses, so a lab's own research-opportunities page is not withheld on a person row.
 
-Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
+Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
+The undergraduate quote fields are the exception for email: they keep the addresses of the page they quote and redact only phone numbers (`docs/decisions.md`, 2026-10-14).
+The model reads redacted text, so `quoteWithPageEmailsRestored` in `server/src/utils/quotedEmailRestoration.ts` puts each address back from the quoted page.
 `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.
 A phone number is redacted even when extracted HTML glues it to a label, as in "Phone" then the number or the number then "Fax", because the pattern is bounded by digit lookarounds rather than word boundaries (#3738).
 The one shape it leaves alone is a bare digit run with a letter directly before it and no phone label, because on Development every such run was a record id, such as an IRB protocol number or a journal article number.

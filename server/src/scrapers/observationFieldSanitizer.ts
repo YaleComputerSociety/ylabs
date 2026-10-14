@@ -44,7 +44,7 @@ import {
   normalizeHygieneWhitespace,
   isContentlessResearchProjectsBoilerplateText,
 } from '../utils/descriptionHygiene';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactDirectContactInfo, redactPhoneNumbers } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { withProseSentenceBoundariesRestored } from '../utils/proseSentenceBoundary';
@@ -126,7 +126,7 @@ export const INGEST_REJECTABLE_PERSON_NAME_FIELDS: ReadonlySet<string> = new Set
   ...PERSON_NAME_FIELDS,
 ]);
 
-const CONTACT_REDACTED_QUOTE_FIELDS = new Set([
+const PHONE_REDACTED_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
   'undergradRoleEvidenceQuote',
   'undergradConstraintQuote',
@@ -319,8 +319,8 @@ export function sanitizeObservationField(
   }
   if (isResearchEntity && ENTITY_NAME_FIELDS.has(field)) return sanitizeEntityNameField(value);
   if (PROSE_FIELDS.has(field)) return sanitizeProseField(value);
-  if (CONTACT_REDACTED_QUOTE_FIELDS.has(field)) {
-    return accepted(normalizeHygieneWhitespace(redactDirectContactInfo(value)));
+  if (PHONE_REDACTED_QUOTE_FIELDS.has(field)) {
+    return accepted(normalizeHygieneWhitespace(redactPhoneNumbers(value)));
   }
   return accepted(value);
 }
