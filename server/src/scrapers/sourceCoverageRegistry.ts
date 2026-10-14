@@ -158,6 +158,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Web search for a researcher's own lab, research-group, or personal academic homepage, adopted only where the fetched page identifies that researcher's research unit. Emits websiteUrl and sourceUrls only, never a name, description, access, route, or opportunity evidence. DERIVED rather than PRIMARY because the address comes from a search engine's ranking and not from a Yale page that states it.",
   },
+  'operator-led-group-verdict': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "An operator's verdict on one row, reached by reading the group's own pages, that the row's lead runs the named group whose own site this is. Written by research-entity:adopt-led-group-site, never by a sweep, for the shape no lane predicate can separate from a member linking a colleague's group (#5037, #5040).",
+  },
   'lab-site-type-probe': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',

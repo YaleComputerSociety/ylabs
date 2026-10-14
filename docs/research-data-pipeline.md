@@ -2058,6 +2058,9 @@ Only the leadership sentence is admitted from a homepage; the JSON-LD affiliatio
 An untargeted run therefore also selects rows whose stored `websiteUrl` is such a homepage, which is 27 rows on Development as of 2026-10-14.
 Measured over the 30 served rows citing one: 2 adopted, both correct, and 10 homepages state no led group.
 A developer laptop whose resolver returns private 10.66.x addresses for the cs.yale.edu hosts cannot fetch those homepages, because the SSRF guard refuses the private address and the public address times out from that network, so run the lane from the hosted runner.
+A lead who runs a group no page states leadership of in that form, where the profile links the group site with topic text and the group's people page lists the lead without a title, is outside every predicate, because nothing separates it from a member linking a colleague's group.
+The owner records that verdict per row with `yarn --cwd server research-entity:adopt-led-group-site --slug=<slug> --site-url=<group home page> --name="<Group Name>" --evidence-url=<group page>`, which appends `operator-led-group-verdict` observations (name, type, and site) at 0.97 citing the evidence page, writes no field and no lock, rematerializes twice, and reports whether the served site and name are the verdict's (#5040).
+It refuses a locked row, a name with no group noun, a site `isPromotableWebsiteUrl` refuses such as an umbrella host's root, and a site another live row already serves.
 
 When a row has more than one official profile, `official-profile-pi-backfill` reads the lead's own recorded official profile (`profileLinks` kind `YALE_OFFICIAL`) first and orders the rest with the shared `personProfileRanking` order the detail page uses (#4459).
 It no longer prefers `medicine.yale.edu` outright, because that school-wide directory mirrors profiles for people appointed elsewhere, and reading the mirror first hid the department profile's lab-site link.

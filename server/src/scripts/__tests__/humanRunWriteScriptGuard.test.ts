@@ -22,6 +22,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'research-entity:refuse-field-value': 'records a per-row refusal, the layer-3 writer',
   'research-entity:apply-page-read-verdict':
     'applies a verdict an operator reached by reading a page',
+  'research-entity:adopt-led-group-site':
+    "records an operator's verdict that one row's lead runs a named group site, as observations without a lock (#5040)",
   'research-entity:record-departure': 'records a departure an operator was told about',
   'research-entity:withdraw-non-research-home-row':
     'withdraws one row an operator judged not research',

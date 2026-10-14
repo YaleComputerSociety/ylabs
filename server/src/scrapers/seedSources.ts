@@ -582,6 +582,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'operator-led-group-verdict',
+    displayName: 'Operator led-group verdict',
+    description:
+      "An operator's per-row verdict, reached by reading the group's own pages, that the row's lead runs a named group whose own site this is. Emits name, displayName, entityType, website, websiteUrl and sourceUrls, and no lock.",
+    baseUrl: '',
+    defaultWeight: 0.97,
+    cadence: 'event',
+  },
+  {
     name: 'lab-site-type-probe',
     displayName: 'Lab site type probe',
     description:
