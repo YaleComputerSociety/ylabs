@@ -107,6 +107,20 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBeUndefined();
   });
 
+  it('does not take a Title Case paper title that closes on the common noun laboratory', () => {
+    const result = enrich(
+      `<ul><li><a href="https://www.fixture-journal.example.org/article/fixture-3">Fossilization of Fixture Tissue in the Laboratory.</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('keeps a sentence label that closes on a personal site phrase', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.org/">Click here to visit my personal site.</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.org/');
+  });
+
   it('does not take a DOI link even when its label carries a lab word', () => {
     const result = enrich(`<p><a href="https://doi.org/10.0000/fixture.2">Fixture Lab</a></p>`);
     expect(result.labUrl).toBeUndefined();

@@ -3057,8 +3057,10 @@ function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string)
  * Cancer Research", which is how a donor story page read as someone's personal
  * site (#2460).
  */
-const WEBSITE_SIGNAL =
-  /\b(lab|laboratory|website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page)\b/i;
+const WEBSITE_LABEL_PHRASES =
+  'website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page';
+
+const WEBSITE_SIGNAL = new RegExp(`\\b(lab|laboratory|${WEBSITE_LABEL_PHRASES})\\b`, 'i');
 
 const PATH_LAB_WORD = /^(?:lab|labs|laboratory|laboratories)$/i;
 
@@ -3089,13 +3091,16 @@ export function pathNamesALab(pathname: string): boolean {
  */
 const NATIONAL_LABORATORY_TEXT = /\bnational\s+laborator(?:y|ies)\b/i;
 
-const TEXT_ENDING_IN_WEBSITE_LABEL = /\b(?:website|homepage|home page)\W*$/i;
+const TEXT_ENDING_IN_WEBSITE_LABEL = new RegExp(`\\b(?:${WEBSITE_LABEL_PHRASES})\\W*$`, 'i');
 
 /**
  * Case-sensitive on purpose: a closing "the Smith Lab." names a lab, while a paper title
- * closing "... in the laboratory." uses the common noun (#5050).
+ * closing "... in the laboratory." uses the common noun (#5050). A Title Case title
+ * capitalizes the noun too, so the lab word must follow a capitalized name token rather
+ * than a determiner ("... in the Laboratory.").
  */
-const TEXT_ENDING_IN_LAB_NAME = /\b(?:Lab|Labs|Laboratory|Laboratories|Group)\W*$/;
+const TEXT_ENDING_IN_LAB_NAME =
+  /\b(?!(?:The|A|An|Our|My|This|That|Their|His|Her|Your)\b)[A-Z][\w'-]*\s+(?:Lab|Labs|Laboratory|Laboratories|Group)\W*$/;
 
 /**
  * Link text that reads as a sentence is a citation or a headline, not a label for a
