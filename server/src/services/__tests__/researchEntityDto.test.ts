@@ -642,6 +642,17 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('withholds a quote that lists members with their own contact details (#5041)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-people-listing',
+      slug: 'people-listing-lab',
+      name: 'People Listing Lab',
+      undergradEvidenceQuote:
+        'Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
+    });
+    expect(dto.undergradEvidenceQuote).toBeUndefined();
+  });
+
   it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
     const note = toPublicResearchEntityDto({
       id: 'entity-search-note',

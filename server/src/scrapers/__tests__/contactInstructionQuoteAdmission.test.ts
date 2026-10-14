@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { contactQuoteStatesAnInstruction } from '../contactInstructionQuoteAdmission';
+import {
+  contactQuoteStatesAnInstruction,
+  quoteListsPeopleWithTheirContactDetails,
+} from '../contactInstructionQuoteAdmission';
 
 describe('contactQuoteStatesAnInstruction (#3928)', () => {
   it.each([
@@ -49,5 +52,25 @@ describe('contactQuoteStatesAnInstruction (#3928)', () => {
   it('refuses a non-string value', () => {
     expect(contactQuoteStatesAnInstruction(undefined)).toBe(false);
     expect(contactQuoteStatesAnInstruction({ quote: 'please email us to apply' })).toBe(false);
+  });
+});
+
+describe('quoteListsPeopleWithTheirContactDetails (#5041)', () => {
+  it.each([
+    'Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
+    'Undergrad Students Alex Example Contact: <alex.example@example.edu>',
+    'Alex ExamplePhysics alex.example@example.edu is a current undergraduate in physics',
+    'Students/Aides Jane Doe Undergraduate Student jdoe@example.edu Lab Aide 555-010-0000',
+  ])("refuses a people listing that carries members' own contact details: %s", (quote) => {
+    expect(quoteListsPeopleWithTheirContactDetails(quote)).toBe(true);
+  });
+
+  it.each([
+    'Interested undergraduate students are encouraged to contact pi.person@example.edu and inquire about opportunities.',
+    'Students who would like to do research in the laboratory should email pi.person@example.edu',
+    'Undergraduate Students: Please contact Alex Example (alex.example@example.edu) with a brief description of your background.',
+    'Undergraduate Students Jane Doe John Roe',
+  ])('keeps an instruction, or a listing with no contact details: %s', (quote) => {
+    expect(quoteListsPeopleWithTheirContactDetails(quote)).toBe(false);
   });
 });

@@ -51,7 +51,10 @@ import {
   quoteStatesAnUndergraduateAccessFact,
   rosterSnippetNamesAnUndergraduate,
 } from '../undergradQuoteRelevance';
-import { contactQuoteStatesAnInstruction } from '../contactInstructionQuoteAdmission';
+import {
+  contactQuoteStatesAnInstruction,
+  quoteListsPeopleWithTheirContactDetails,
+} from '../contactInstructionQuoteAdmission';
 import { pageListsPeople, rosterSnippetNamesAPerson } from '../undergradRosterEvidence';
 import {
   deriveShortDescriptionFromFullDescription,
@@ -1230,16 +1233,18 @@ export function extractionToObservations(
     });
   }
 
+  const evidenceQuoteValue = evidenceQuote ? storedQuote(evidenceQuote) : '';
   if (
     evidenceQuote &&
     quoteStatesAnUndergraduateAccessFact(evidenceQuote.text) &&
-    isCurrentYaleUndergradEvidence(evidenceQuote.text)
+    isCurrentYaleUndergradEvidence(evidenceQuote.text) &&
+    !quoteListsPeopleWithTheirContactDetails(evidenceQuoteValue)
   ) {
     out.push({
       ...base,
       sourceUrl: evidenceQuote.sourceUrl,
       field: 'undergradEvidenceQuote',
-      value: storedQuote(evidenceQuote),
+      value: evidenceQuoteValue,
       confidenceOverride: 0.5,
     });
   }
