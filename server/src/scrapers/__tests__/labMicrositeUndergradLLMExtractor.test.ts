@@ -573,6 +573,33 @@ describe('evidenceQuoteRecitationObservation contact restoration (#5041)', () =>
   });
 });
 
+describe('extractionToObservations people listing quote (#5041)', () => {
+  it('emits no quote when the restored quote lists members with their own contact details', () => {
+    const listing = 'Undergraduate Students Jane Doe [email redacted] John Roe [email redacted]';
+    const obs = extractionToObservations(
+      'lab-l',
+      'https://x/people',
+      {
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: listing,
+        evidenceSource: 'members_section',
+        joinPageUrl: null,
+      },
+      new Date('2026-04-27T12:00:00Z'),
+      {
+        sourcePages: [
+          {
+            url: 'https://x/people',
+            text: 'People. Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
+          },
+        ],
+      },
+    );
+    expect(obs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
+  });
+});
+
 describe('pagesWithinEntityScope (#3764)', () => {
   const page = (url: string) => ({ url, text: 'text' });
 

@@ -12,6 +12,8 @@ Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidence
 The owner first kept phone numbers redacted, then reversed that the same day for the same reason: the lab publishes them on the cited page.
 The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
 Descriptions, signal excerpts, logs and the search index keep redacting both.
+A quote that carries a contact detail but states no instruction to use it is refused: it is a slice of a people page listing members with their own emails, such as an "Undergraduate Students" heading followed by names and addresses, not evidence of how to reach the lab (`quoteListsPeopleWithTheirContactDetails`).
+On Development that was 7 of the 12 quotes that had contacts restored, and the roster section, not the quote, is where a lab's undergraduates are listed.
 
 ## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
 

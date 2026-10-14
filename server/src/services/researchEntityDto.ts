@@ -47,6 +47,7 @@ import {
   quotePageIsAboutAnotherEntity,
   quoteStatesAnUndergraduateAccessFact,
 } from '../scrapers/undergradQuoteRelevance';
+import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -621,6 +622,7 @@ function derivePublicResearchEntityDto(
         const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
         const withheld =
           isModelSearchNote(group[field]) ||
+          quoteListsPeopleWithTheirContactDetails(group[field]) ||
           provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
           (fromMicrositeLane &&
             (!quoteStatesAnUndergraduateAccessFact(group[field]) ||

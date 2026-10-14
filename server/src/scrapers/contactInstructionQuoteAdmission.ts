@@ -64,3 +64,14 @@ export function contactQuoteStatesAnInstruction(value: unknown): boolean {
     .filter(Boolean)
     .some(clauseStatesAnInstruction);
 }
+
+/**
+ * A quote that carries an email or phone number but tells no one to use it, such as
+ * "Undergraduate Students Jane Doe jdoe@yale.edu ...", is a slice of a people page
+ * listing members with their own contact details, not an instruction for reaching
+ * the lab (#5041).
+ */
+export function quoteListsPeopleWithTheirContactDetails(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return redactDirectContactInfo(value) !== value && !contactQuoteStatesAnInstruction(value);
+}
