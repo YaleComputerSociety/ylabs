@@ -109,6 +109,7 @@
     "research-entity:audit-archive-attribution": "tsx src/scripts/archiveAttributionAudit.ts",
     "research-entity:audit-archived-lab-restore-candidates": "tsx src/scripts/archivedLabRestoreCandidates.ts",
     "research-entity:apply-page-read-verdict": "tsx src/scripts/applyPageReadVerdict.ts",
+    "research-entity:adopt-led-group-site": "tsx src/scripts/adoptLedGroupSite.ts",
     "research-entity:withdraw-non-research-home-row": "tsx src/scripts/withdrawNonResearchHomeRow.ts",
     "research-entity:retype-from-declared-page-type": "tsx src/scripts/retypeFromDeclaredPageType.ts",
     "research-entity:audit-kind-typing": "tsx src/scripts/researchEntityKindTypingAudit.ts",
