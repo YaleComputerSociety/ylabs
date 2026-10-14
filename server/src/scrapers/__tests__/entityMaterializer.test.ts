@@ -28,7 +28,6 @@ import {
   userLookupFiltersForInferredPiUserKey,
   userLookupValueForInferredPiUserKey,
 } from '../entityMaterializer';
-import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
 describe('materializedFieldValue research-entity name hygiene', () => {
   it('strips a description sentence glued onto a materialized name (#797)', () => {
@@ -803,10 +802,19 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
-  it('redacts direct contact details consistently for materialized public excerpts', () => {
-    expect(redactDirectContactInfo('Email ada@yale.edu or call 203-432-1234.')).toBe(
-      'Email [email redacted] or call [phone redacted].',
-    );
+  it.each([
+    'undergradEvidenceQuote',
+    'undergradRoleEvidenceQuote',
+    'contactInstructionsQuote',
+    'undergradConstraintQuote',
+  ])('writes the contact details a %s quotes as they appear on the page', (field) => {
+    expect(
+      materializedFieldValue(
+        'researchEntity',
+        field,
+        'Email ada@example.edu or call 555-010-0000.',
+      ),
+    ).toBe('Email ada@example.edu or call 555-010-0000.');
   });
 
   it('states the lead facts an inferredPiUserId observation carries, sourceName included (#3254)', () => {

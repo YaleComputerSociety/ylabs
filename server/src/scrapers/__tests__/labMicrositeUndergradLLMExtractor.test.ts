@@ -1264,6 +1264,9 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
       'Call 203-432-1234 or email manager@yale.edu to arrange a visit.',
     );
+    expect(
+      (obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote,
+    ).toBe('Email pi.person@yale.edu to discuss undergraduate research.');
   });
 });
 

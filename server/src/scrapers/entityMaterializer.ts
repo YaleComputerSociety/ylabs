@@ -251,7 +251,6 @@ import {
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
 import {
@@ -977,12 +976,6 @@ export type UserIdentityJoin =
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 // Retained only to fail closed on historical observations after the producer was retired.
 const OFFICIAL_PROFILE_PUBLICATIONS_FIELD = 'officialProfilePublications';
-const PUBLIC_QUOTE_FIELDS = new Set([
-  'undergradEvidenceQuote',
-  'undergradRoleEvidenceQuote',
-  'contactInstructionsQuote',
-  'undergradConstraintQuote',
-]);
 const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
   'fullDescription',
   'shortDescription',
@@ -1907,13 +1900,6 @@ export function materializedFieldValue(
     typeof value === 'string'
   ) {
     return fellowshipDisplayProse(field, value) ?? value;
-  }
-  if (
-    isResearchEntityObservationType(entityType) &&
-    PUBLIC_QUOTE_FIELDS.has(field) &&
-    typeof value === 'string'
-  ) {
-    return redactDirectContactInfo(value);
   }
   if (
     isResearchEntityObservationType(entityType) &&
