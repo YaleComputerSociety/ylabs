@@ -553,6 +553,26 @@ describe('evidenceQuoteRecitationObservation (#3831)', () => {
   });
 });
 
+describe('evidenceQuoteRecitationObservation contact restoration (#5041)', () => {
+  it('restates a kept quote with the contact details its cited page publishes', () => {
+    const live = {
+      value: 'Interested undergraduates should email [email redacted] or call [phone redacted].',
+      sourceUrl: 'https://lab.example.edu/join',
+    };
+    const recited = evidenceQuoteRecitationObservation('lab-a', live, [
+      {
+        url: 'https://lab.example.edu/join',
+        text: 'Join. Interested undergraduates should email pi.person@example.edu or call 555-010-0000.',
+      },
+    ]);
+    expect(recited).toMatchObject({
+      field: 'undergradEvidenceQuote',
+      sourceUrl: 'https://lab.example.edu/join',
+      value: 'Interested undergraduates should email pi.person@example.edu or call 555-010-0000.',
+    });
+  });
+});
+
 describe('pagesWithinEntityScope (#3764)', () => {
   const page = (url: string) => ({ url, text: 'text' });
 
