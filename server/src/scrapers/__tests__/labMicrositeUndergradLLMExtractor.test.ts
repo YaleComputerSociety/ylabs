@@ -9,7 +9,6 @@
  *
  * No network or DB access happens in this suite.
  */
-import { leadEmailToken } from '../../utils/leadEmailQuoteToken';
 import { describe, it, expect, vi } from 'vitest';
 import {
   LabMicrositeUndergradLLMExtractor,
@@ -339,12 +338,6 @@ describe('pageContainingQuote', () => {
     );
   });
 
-  it('matches a stored quote whose lead address became a lead email token', () => {
-    expect(
-      pageContainingQuote(`Email ${leadEmailToken('pi.person@yale.edu')} to ask.`, pages)?.url,
-    ).toBe('https://x.example/join');
-  });
-
   it('forgives typographic quotes and dashes but not a reworded sentence', () => {
     const typographic = [
       { url: 'https://x.example/', text: 'Students\u2019 projects \u2013 paid.' },
@@ -495,7 +488,7 @@ describe('extractionToObservations contact quote admission (#3928)', () => {
     expect(
       contactObservation('Interested students should email fixture.person@example.edu with a CV.')
         ?.value,
-    ).toBe('Interested students should email [email redacted] with a CV.');
+    ).toBe('Interested students should email fixture.person@example.edu with a CV.');
   });
 });
 
@@ -1245,11 +1238,11 @@ describe('extractionToObservations', () => {
     );
   });
 
-  it('redacts direct contact details from legacy public quote fields', () => {
+  it('keeps the page emails and redacts the phone numbers in public quote fields', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'Email pi.person@yale.edu to discuss undergraduate research.',
+      evidenceQuote: 'Email [email redacted] to discuss undergraduate research.',
       evidenceSource: 'explicit_text',
       joinPageUrl: 'https://x.example/join',
       undergradRoleQuote: '',
@@ -1266,47 +1259,11 @@ describe('extractionToObservations', () => {
     });
 
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')!.value).toBe(
-      'Email [email redacted] to discuss undergraduate research.',
+      'Email pi.person@yale.edu to discuss undergraduate research.',
     );
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
-      'Call [phone redacted] or email [email redacted] to arrange a visit.',
+      'Call [phone redacted] or email manager@yale.edu to arrange a visit.',
     );
-    expect(
-      (obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote,
-    ).toBe('Email pi.person@yale.edu to discuss undergraduate research.');
-  });
-});
-
-describe('extractionToObservations lead email token', () => {
-  const ext: LLMExtraction = {
-    openToUndergrads: 'yes',
-    currentUndergradCount: 0,
-    evidenceQuote:
-      'Interested undergraduate students are encouraged to contact [email redacted] or [email redacted].',
-    evidenceSource: 'explicit_text',
-    joinPageUrl: null,
-  };
-  const sourcePages = [
-    {
-      url: 'https://x/join',
-      text: 'Interested undergraduate students are encouraged to contact PI.Person@yale.edu or manager@yale.edu.',
-    },
-  ];
-  const quoteFor = (leadEmails: string[]) =>
-    extractionToObservations('lab-t', 'https://x/', ext, new Date('2026-04-27T12:00:00Z'), {
-      sourcePages,
-      leadEmails,
-    }).find((o) => o.field === 'undergradEvidenceQuote')!.value;
-
-  it("stores a token for the row's own lead address and keeps every other address redacted", () => {
-    expect(quoteFor(['pi.person@yale.edu'])).toBe(
-      `Interested undergraduate students are encouraged to contact ${leadEmailToken('pi.person@yale.edu')} or [email redacted].`,
-    );
-  });
-
-  it('stores no address and no token when the row has no matching lead email', () => {
-    expect(quoteFor(['someone.else@yale.edu'])).toBe(ext.evidenceQuote);
-    expect(quoteFor([])).toBe(ext.evidenceQuote);
   });
 });
 

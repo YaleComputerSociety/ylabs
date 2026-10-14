@@ -2,7 +2,6 @@ import { ResearchEntity } from '../models/researchEntity';
 import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { withLeadEmailTokensRedacted } from '../utils/leadEmailQuoteToken';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
   isStudiesResearchAreaEchoDescription,
@@ -488,7 +487,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
 
   for (const field of SEARCH_INDEX_TEXT_FIELDS) {
     if (typeof out[field] === 'string') {
-      out[field] = redactDirectContactInfo(withLeadEmailTokensRedacted(out[field]));
+      out[field] = redactDirectContactInfo(out[field]);
     }
   }
 

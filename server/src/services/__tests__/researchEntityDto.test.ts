@@ -1,4 +1,3 @@
-import { leadEmailToken } from '../../utils/leadEmailQuoteToken';
 import { describe, expect, it } from 'vitest';
 import {
   addResearchEntityDetailAlias,
@@ -629,7 +628,7 @@ describe('researchEntityDto', () => {
     expect(dto.websiteUrl).toBe('http://het.yale.edu/');
   });
 
-  it('redacts direct contact details from public evidence-style fields', () => {
+  it('keeps the email and redacts the phone number in a served evidence quote', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-evidence-redaction',
       slug: 'evidence-redaction-lab',
@@ -639,25 +638,7 @@ describe('researchEntityDto', () => {
     });
 
     expect(dto.undergradEvidenceQuote).toBe(
-      'Interested students can email [email redacted] or call [phone redacted].',
-    );
-  });
-
-  it('resolves a lead email token only to an address the page serves', () => {
-    const quote = `Interested undergraduates should contact ${leadEmailToken('lead.person@yale.edu')}.`;
-    const entity = {
-      id: 'entity-lead-token',
-      slug: 'lead-token-lab',
-      name: 'Lead Token Lab',
-      undergradEvidenceQuote: quote,
-    };
-
-    expect(
-      toPublicResearchEntityDto(entity, { servedContactEmails: ['lead.person@yale.edu'] })
-        .undergradEvidenceQuote,
-    ).toBe('Interested undergraduates should contact lead.person@yale.edu.');
-    expect(toPublicResearchEntityDto(entity, { forList: true }).undergradEvidenceQuote).toBe(
-      'Interested undergraduates should contact [email redacted].',
+      'Interested students can email private-contact@yale.edu or call [phone redacted].',
     );
   });
 
