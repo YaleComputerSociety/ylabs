@@ -2048,6 +2048,17 @@ An untargeted run selects rows with no website and rows whose stored `websiteUrl
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
 The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.
 
+A group with an acronym or descriptive name carries neither shape, so a link is also admitted when the sentence around it says the page's own person leads the group it names: "I lead the <anchor> group" or "<person> is leading the <anchor> group" (#5037).
+The name is the anchor plus the group noun the sentence uses.
+A link inside a site the group owns, a Yale subdomain whose label is a word of the group's name, opens that site's home page rather than the linked subpage.
+Any other host keeps its linked path, because the root of an umbrella's subdomain or of a shared host such as `csl.yale.edu` names the host organization.
+Membership wording ("is part of the <umbrella> Lab") never matches, and neither does a sentence whose subject is somebody else.
+That sentence usually lives on the lead's own homepage rather than on a school directory card, so when the profile links no home the research-home step also reads the lead's personal homepage the row already cites, a `/homes/<person>/` or `/~<person>/` page on a Yale host whose leaf carries the lead's surname, and cites it as the evidence.
+Only the leadership sentence is admitted from a homepage; the JSON-LD affiliation, linked research home, eponymous link, and `View Lab Website` arms read official profiles only, because a homepage links memberships and colleagues' labs as freely as the person's own.
+An untargeted run therefore also selects rows whose stored `websiteUrl` is such a homepage, which is 27 rows on Development as of 2026-10-14.
+Measured over the 30 served rows citing one: 2 adopted, both correct, and 10 homepages state no led group.
+A developer laptop whose resolver returns private 10.66.x addresses for the cs.yale.edu hosts cannot fetch those homepages, because the SSRF guard refuses the private address and the public address times out from that network, so run the lane from the hosted runner.
+
 When a row has more than one official profile, `official-profile-pi-backfill` reads the lead's own recorded official profile (`profileLinks` kind `YALE_OFFICIAL`) first and orders the rest with the shared `personProfileRanking` order the detail page uses (#4459).
 It no longer prefers `medicine.yale.edu` outright, because that school-wide directory mirrors profiles for people appointed elsewhere, and reading the mirror first hid the department profile's lab-site link.
 
