@@ -1238,7 +1238,7 @@ describe('extractionToObservations', () => {
     );
   });
 
-  it('keeps the page emails and redacts the phone numbers in public quote fields', () => {
+  it('restores the page emails and phone numbers in public quote fields', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
@@ -1262,7 +1262,7 @@ describe('extractionToObservations', () => {
       'Email pi.person@yale.edu to discuss undergraduate research.',
     );
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
-      'Call [phone redacted] or email manager@yale.edu to arrange a visit.',
+      'Call 203-432-1234 or email manager@yale.edu to arrange a visit.',
     );
   });
 });

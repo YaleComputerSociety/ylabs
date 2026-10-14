@@ -49,15 +49,10 @@ const isIdentifierSuffix = (match: string, offset: number, text: string): boolea
 export const phoneRedactionReplacement = (match: string, offset: number, text: string): string =>
   isIdentifierSuffix(match, offset, text) ? match : '[phone redacted]';
 
-export function redactPhoneNumbers(value: string): string {
-  return value.replace(PHONE_SHAPED_DIGITS_PATTERN, phoneRedactionReplacement);
-}
-
 export function redactDirectContactInfo(value: string): string {
-  return redactPhoneNumbers(
-    value
-      .replace(DIRECT_EMAIL_ADDRESS_PATTERN, '[email redacted]')
-      .replace(SYMBOLIC_AT_EMAIL_PATTERN, '[email redacted]')
-      .replace(SPELLED_AT_EMAIL_PATTERN, '[email redacted]'),
-  );
+  return value
+    .replace(DIRECT_EMAIL_ADDRESS_PATTERN, '[email redacted]')
+    .replace(SYMBOLIC_AT_EMAIL_PATTERN, '[email redacted]')
+    .replace(SPELLED_AT_EMAIL_PATTERN, '[email redacted]')
+    .replace(PHONE_SHAPED_DIGITS_PATTERN, phoneRedactionReplacement);
 }

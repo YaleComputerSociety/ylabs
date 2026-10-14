@@ -5,13 +5,13 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
-## 2026-10-14: A Quoted Email Is Shown, Not Redacted (#5041)
+## 2026-10-14: Quoted Contact Details Are Shown, Not Redacted (#5041)
 
 A quote such as "contact [email redacted] and inquire about opportunities" hid an address the lab publishes on the very page the quote links to, and often the same address the detail page already shows as the lead's contact.
-Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidenceQuote`, `undergradRoleEvidenceQuote`, `undergradConstraintQuote`, `contactInstructionsQuote`) keep the email addresses of the page they quote, and the detail page serves them as written.
-Phone numbers in those quotes stay redacted.
-The model still reads contact-redacted page text, so the lane puts each address back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
-Descriptions, signal excerpts, logs and the search index keep redacting emails.
+Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidenceQuote`, `undergradRoleEvidenceQuote`, `undergradConstraintQuote`, `contactInstructionsQuote`) keep the email addresses and phone numbers of the page they quote, and the detail page serves them as written.
+The owner first kept phone numbers redacted, then reversed that the same day for the same reason: the lab publishes them on the cited page.
+The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
+Descriptions, signal excerpts, logs and the search index keep redacting both.
 
 ## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
 

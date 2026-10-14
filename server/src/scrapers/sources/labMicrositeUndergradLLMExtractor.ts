@@ -44,7 +44,7 @@ import { Observation } from '../../models/observation';
 import { listResearchEntityMergedInRows } from '../../services/researchEntityCanonicalTombstone';
 import { isBenchmarkModeActive } from '../snapshotBenchmarkMode';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
-import { quoteWithPageEmailsRestored } from '../../utils/quotedEmailRestoration';
+import { quoteWithPageContactsRestored } from '../../utils/quotedContactRestoration';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
@@ -135,7 +135,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'quoted-emails-shown-v5';
+const OBSERVATION_DERIVATION_VERSION = 'quoted-contacts-shown-v6';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -1143,7 +1143,10 @@ export function extractionToObservations(
     return page ? { text, sourceUrl: page.url, pageText: page.text } : null;
   };
   const storedQuote = (quote: { text: string; pageText: string }) =>
-    quoteWithPageEmailsRestored(redactDirectContactInfo(quote.text).slice(0, 500), quote.pageText);
+    quoteWithPageContactsRestored(
+      redactDirectContactInfo(quote.text).slice(0, 500),
+      quote.pageText,
+    );
   const evidenceQuote = quoteOnPage(extraction.evidenceQuote);
   const base = {
     entityType: 'researchEntity' as const,

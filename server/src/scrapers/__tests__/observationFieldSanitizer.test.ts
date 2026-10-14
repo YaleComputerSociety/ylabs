@@ -261,8 +261,8 @@ describe('sanitizeObservationField', () => {
     });
   });
 
-  describe('evidence quotes keep the email a page publishes but never a phone number', () => {
-    it('keeps the email and redacts the phone number in a stored evidence quote', () => {
+  describe('evidence quotes keep the contact details a page publishes', () => {
+    it('keeps the email and phone number in a stored evidence quote', () => {
       const result = sanitizeObservationField(
         'researchEntity',
         'undergradEvidenceQuote',
@@ -270,7 +270,7 @@ describe('sanitizeObservationField', () => {
       );
       expect(result.rejected).toBe(false);
       expect(result.value).toBe(
-        'Interested students should email the lab at jdoe@example.edu or call [phone redacted].',
+        'Interested students should email the lab at jdoe@example.edu or call 555-010-0000.',
       );
     });
   });
