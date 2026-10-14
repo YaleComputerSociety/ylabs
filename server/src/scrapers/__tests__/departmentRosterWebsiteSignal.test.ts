@@ -44,12 +44,12 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBeUndefined();
   });
 
-  it('refuses a national laboratory linked from a research paragraph', () => {
+  it('retracts the website slot when the only lab link is a national laboratory', () => {
     const result = enrich(
       `<p>Fixture experiments run at the <a href="https://www.fixture-national-lab.gov/world/">Fixture National Laboratory</a> on Long Island.</p>`,
     );
     expect(result.labUrl).toBeUndefined();
-    expect(result.labSlotAttestation).toBe('refused');
+    expect(result.labSlotAttestation).toBe('empty');
   });
 
   it('keeps a lab whose slug ends in its lab word', () => {
@@ -74,5 +74,25 @@ describe('profile website harvest', () => {
   it('keeps a short call-to-action label that names the lab', () => {
     const result = enrich(`<p><a href="https://www.fixturelab.example.org/">Learn More About My Lab!</a></p>`);
     expect(result.labUrl).toBe('https://www.fixturelab.example.org/');
+  });
+
+  it('keeps a call-to-action sentence that closes on the lab word', () => {
+    const result = enrich(`<p><a href="https://thefixturelab.example.org/">Learn more about the Fixture Lab.</a></p>`);
+    expect(result.labUrl).toBe('https://thefixturelab.example.org/');
+  });
+
+  it('keeps a long lab name used as link text', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.org/">Laboratory for the Study of Molecular Mechanisms of Fixture Disease</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.org/');
+  });
+
+  it('does not take a citation sentence that opens with a lab word', () => {
+    const result = enrich(
+      `<ul><li><a href="https://journal.example.org/articles/1234">Laboratory degradation of fixture lipids in soils.</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('empty');
   });
 });

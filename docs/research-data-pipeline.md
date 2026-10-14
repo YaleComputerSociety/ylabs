@@ -2047,8 +2047,8 @@ An untargeted run selects rows with no website and rows whose stored `websiteUrl
 
 `dept-faculty-roster` adopts the first profile link whose label, host, or path carries a website word, and three shapes of that word say nothing about the destination (#5050).
 A lab word in the path counts only as a whole segment or as the last word of a segment slug, so a paper whose title slug opens with "Laboratory ..." or an umbrella center whose slug opens with `lab-` is not a website.
-Link text that reads as a sentence, ten words or more or six or more ending in a period, is a citation, and a center or institute named in the visible text is not made a lab by a CMS `title` attribute that calls the page a lab.
-A link naming a national laboratory is an institution and is refused.
+Link text that reads as a sentence, six or more words ending in a period without closing on the website word, is a citation, and a center or institute named in the visible text is not made a lab by a CMS `title` attribute that calls the page a lab.
+A link naming a national laboratory is an institution rather than a website signal, so a profile whose only lab link is one attests an empty website slot and retracts the national laboratory a previous run asserted.
 Measured over eight departments with `--use-cache` before and after: 6 planned websites changed, all corrections, and no genuine site was lost.
 
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).

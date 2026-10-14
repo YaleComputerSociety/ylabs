@@ -3086,14 +3086,18 @@ export function pathNamesALab(pathname: string): boolean {
  */
 const NATIONAL_LABORATORY_TEXT = /\bnational\s+laborator(?:y|ies)\b/i;
 
+const TEXT_ENDING_IN_WEBSITE_WORD = new RegExp(`${WEBSITE_SIGNAL.source}\\W*$`, 'i');
+
 /**
  * Link text that reads as a sentence is a citation or a headline, not a label for a
  * website, so a lab word inside it says nothing about the destination: a publication
- * list entry titled "Laboratory degradation of ..." is a paper (#5050).
+ * list entry titled "Laboratory degradation of ..." is a paper (#5050). A sentence that
+ * closes on the lab word, "Learn more about the Smith Lab.", still names its destination.
  */
 export function linkTextIsASentence(text: string): boolean {
-  const words = text.split(/\s+/).filter(Boolean);
-  return words.length >= 10 || (words.length >= 6 && /\.$/.test(text.trim()));
+  const trimmed = text.trim();
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_WORD.test(trimmed);
 }
 
 const UMBRELLA_ORGANIZATION_TEXT = /\b(?:center|centre|institute|consortium)\b/i;
@@ -3418,12 +3422,8 @@ export function profileEnrichmentFromHtml(
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
-      /\b(?:website|homepage|home-page)\b/i.test(parsed.pathname);
-    if (!hasWebsiteSignal) return;
-    if (NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) {
-      labUrlCandidateRefused = true;
-      return;
-    }
+      /\b(?:website|homepage)\b/i.test(parsed.pathname);
+    if (!hasWebsiteSignal || NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) return;
     if (isInstitutionalAdvancementUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
