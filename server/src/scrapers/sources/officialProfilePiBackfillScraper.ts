@@ -37,6 +37,7 @@ import {
   isCustomYaleResearchHomeSubdomain,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
+  isMultiTenantAcademicHostRootUrl,
   isPressOrNewsHostUrl,
   isProfileOrPeopleDirectoryPath,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -441,6 +442,47 @@ export function officialProfileUrlsForUser(user: Record<string, any>): string[] 
     .filter(isOfficialYaleProfileUrl)
     .map(normalizeOfficialProfileUrl)
     .filter(Boolean);
+}
+
+const PERSONAL_HOME_DIRECTORY_PATH_RE = /^\/(?:homes\/([^/]+)|~([^/]+))\/?$/i;
+
+const YALE_PERSONAL_HOME_DIRECTORY_URL_RE =
+  /^https?:\/\/(?:[^/]+\.)?yale\.edu\/(?:homes\/[^/]+|~[^/]+)\/?$/i;
+
+/**
+ * The lead's own personal homepage on a Yale host (`/homes/<person>/`, `/~<person>/`)
+ * that the row already cites, or empty.
+ *
+ * A school profile is often a short directory card, and the sentence saying which group
+ * the person leads lives on their own homepage, so the research-home step reads that
+ * page when the profile links no home. The leaf must carry the lead's surname, because
+ * a row can cite a colleague's homepage too.
+ */
+export function leadPersonalHomepageUrl(entity: Record<string, any>, personName: unknown): string {
+  const surname = slugify(normalizeName(splitName(textValue(personName)).last));
+  if (!surname) return '';
+  const cited = uniqueStrings([
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ]);
+  for (const value of cited) {
+    try {
+      const url = new URL(value);
+      if (!/^https?:$/i.test(url.protocol)) continue;
+      if (!/(^|\.)yale\.edu$/i.test(url.hostname)) continue;
+      const match = PERSONAL_HOME_DIRECTORY_PATH_RE.exec(url.pathname);
+      const leaf = slugify(match?.[1] || match?.[2] || '');
+      if (!leaf || !leaf.split('-').includes(surname)) continue;
+      url.hash = '';
+      url.search = '';
+      if (!url.pathname.endsWith('/')) url.pathname = `${url.pathname}/`;
+      return url.toString();
+    } catch {
+      continue;
+    }
+  }
+  return '';
 }
 
 export function shouldQueueEntityForPiBackfill(entity: Record<string, any>): boolean {
@@ -1432,15 +1474,86 @@ export function isEponymousResearchGroupLinkText(text: string, surname: string):
   ).test(textValue(text));
 }
 
+const LED_GROUP_NOUN_RE = /^\s+((?:research\s+)?(?:group|lab|laboratory))\b/i;
+const LED_GROUP_ANCHOR_NOUN_RE = /\b(?:group|lab|laboratory)$/i;
+const LED_GROUP_VERB =
+  '(?:lead|leads|am\\s+leading|is\\s+leading|are\\s+leading|direct|directs|head|heads|run|runs|founded)';
+
+/**
+ * The name of the group a link names, when the sentence around it says the page's own
+ * person leads that group: "I lead the <anchor> group" on a personal homepage, or
+ * "<person> is leading the <anchor> group" on a profile. Empty otherwise.
+ *
+ * An acronym or descriptive group name carries neither the surname nor a "View Lab
+ * Website" label, so neither existing arm can see it, and the leadership sentence is
+ * the only evidence that the linked site is this person's own group rather than one
+ * they belong to. Membership wording ("is part of the X Lab") never matches, so an
+ * umbrella stays refused.
+ */
+export function ledGroupNameFromLinkSentence(
+  context: string,
+  anchorText: string,
+  personName: string,
+): string {
+  const anchor = textValue(anchorText);
+  const text = textValue(context);
+  if (!anchor || !text) return '';
+  const { first, last } = splitName(textValue(personName));
+  const subjects = ['I', 'We'];
+  if (last) subjects.push(escapeRegex(last).replace(/\s+/g, '\\s+'));
+  if (first && last) subjects.push(`${escapeRegex(first)}\\s+${escapeRegex(last)}`);
+  const leadIn = new RegExp(
+    `(?:^|[^A-Za-z])(?:${subjects.join('|')})\\s+(?:also\\s+|currently\\s+)?${LED_GROUP_VERB}\\s+(?:the\\s+)?$`,
+    'i',
+  );
+  let from = 0;
+  for (;;) {
+    const index = text.indexOf(anchor, from);
+    if (index < 0) return '';
+    from = index + anchor.length;
+    const sentenceStart = Math.max(
+      text.lastIndexOf('. ', index),
+      text.lastIndexOf('! ', index),
+      text.lastIndexOf('? ', index),
+    );
+    const before = text.slice(sentenceStart < 0 ? 0 : sentenceStart + 2, index);
+    if (!leadIn.test(before)) continue;
+    if (LED_GROUP_ANCHOR_NOUN_RE.test(anchor)) return anchor;
+    const noun = LED_GROUP_NOUN_RE.exec(text.slice(from));
+    if (!noun) continue;
+    const titledNoun = noun[1]
+      .split(/\s+/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+    return `${anchor} ${titledNoun}`;
+  }
+}
+
+/**
+ * A led group's link often points inside its site ("/members", "/research-projects"),
+ * and the student should land on the group's home page. Only a host the group owns is
+ * collapsed to its root; a shared host's root names the host organization (#2359).
+ */
+function ledGroupSiteHomeUrl(linkedUrl: string): string {
+  const root = new URL(linkedUrl);
+  root.pathname = '/';
+  if (!isCustomYaleResearchHomeSubdomain(root) || isMultiTenantAcademicHostRootUrl(root.toString())) {
+    return linkedUrl;
+  }
+  return root.toString();
+}
+
 function profileLinkedLabWebsitesFromHtml(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
   profileUrl: string,
+  pagePersonName = '',
 ): OfficialProfileResearchHome[] {
   const homes: OfficialProfileResearchHome[] = [];
   const profileName = profileNameFromProfiles(profiles);
   const surname = profilePersonSurname($, profiles);
   const evidenceText = profileEvidenceText($, profiles);
+  const leaderName = profileName || textValue(pagePersonName);
 
   $('main a[href], article a[href], body a[href]').each((_i, el) => {
     const link = $(el);
@@ -1449,16 +1562,25 @@ function profileLinkedLabWebsitesFromHtml(
     const rawName = textValue(link.text());
     const context = textValue(link.closest('p,li,article,section,div').first().text());
     const isEponymousGroupLink = isEponymousResearchGroupLinkText(rawName, surname);
-    if (!isEponymousGroupLink && !/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)) {
+    const ledGroupName =
+      isEponymousGroupLink || !leaderName
+        ? ''
+        : ledGroupNameFromLinkSentence(context, rawName, leaderName);
+    if (
+      !isEponymousGroupLink &&
+      !ledGroupName &&
+      !/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)
+    ) {
       return;
     }
 
-    const url = publicProfileLinkedLabWebsiteUrl(link.attr('href'), profileUrl);
-    if (!url) return;
+    const linkedUrl = publicProfileLinkedLabWebsiteUrl(link.attr('href'), profileUrl);
+    if (!linkedUrl) return;
+    const url = ledGroupName ? ledGroupSiteHomeUrl(linkedUrl) : linkedUrl;
     if (/\/(?:internal-medicine|intmed)\/ctra\//i.test(new URL(url).pathname)) return;
     const name = isEponymousGroupLink
       ? canonicalResearchHomeName(rawName)
-      : profileLinkedLabWebsiteName(rawName, context, profileName);
+      : ledGroupName || profileLinkedLabWebsiteName(rawName, context, profileName);
     if (!name || genericOrganizationName(name)) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
     const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
@@ -1476,7 +1598,8 @@ function profileLinkedLabWebsitesFromHtml(
       url,
       ...classification,
       score: 20,
-      leadershipEvidenced: profileTextStatesLeadershipOf(evidenceText, name),
+      leadershipEvidenced:
+        Boolean(ledGroupName) || profileTextStatesLeadershipOf(evidenceText, name),
     });
   });
 
@@ -1525,6 +1648,7 @@ function linkedResearchHomesFromHtml(
 export function extractOfficialProfileResearchHomes(
   html: string,
   profileUrl: string,
+  pagePersonName = '',
 ): OfficialProfileResearchHome[] {
   const $ = cheerio.load(html);
   const profiles = jsonLdProfiles($);
@@ -1570,7 +1694,7 @@ export function extractOfficialProfileResearchHomes(
     addHome(home);
   }
 
-  for (const home of profileLinkedLabWebsitesFromHtml($, profiles, profileUrl)) {
+  for (const home of profileLinkedLabWebsitesFromHtml($, profiles, profileUrl, pagePersonName)) {
     addHome(home);
   }
 
@@ -3323,6 +3447,7 @@ async function selectResearchHomeProfileTargets(
               ],
             },
             { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
+            { websiteUrl: YALE_PERSONAL_HOME_DIRECTORY_URL_RE },
           ],
         };
 
@@ -3998,7 +4123,32 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               yaleDirectoryNetids,
               expectedPeople: entity.leadUsers,
             });
-            const [home] = extractOfficialProfileResearchHomes(html, profileUrl);
+            let [home] = extractOfficialProfileResearchHomes(html, profileUrl);
+            let homeEvidenceUrl = profileUrl;
+            const homepageUrl =
+              !home && identity ? leadPersonalHomepageUrl(entity, identity.displayName) : '';
+            if (homepageUrl && homepageUrl !== profileUrl) {
+              try {
+                await awaitFetchTurn();
+                const homepageHtml = await this.readHtml(
+                  homepageUrl,
+                  ctx.options.useCache,
+                  this.name,
+                );
+                [home] = extractOfficialProfileResearchHomes(
+                  homepageHtml,
+                  homepageUrl,
+                  identity?.displayName,
+                );
+                if (home) homeEvidenceUrl = homepageUrl;
+              } catch (err: any) {
+                ctx.log('Lead homepage fetch failed', {
+                  entityId: officialProfileDocumentId(entity._id),
+                  profileUrl: homepageUrl,
+                  error: sanitizeLogValue(err),
+                });
+              }
+            }
             // Named so the run can report WHY a home was withheld. A silent refusal is
             // indistinguishable from a guard that never ran: this lane withholds by
             // emitting nothing, so absence of a graft in the observation log is evidence
@@ -4019,10 +4169,14 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal) &&
                 rowStoresWebsite(entity, home.url)
               ) {
-                observations.push(refusedResearchHomeWebsiteObservation(entity, home, profileUrl));
+                observations.push(
+                  refusedResearchHomeWebsiteObservation(entity, home, homeEvidenceUrl),
+                );
               }
             } else if (identity && home) {
-              observations.push(...entityResearchHomeToObservations(entity, home, profileUrl));
+              observations.push(
+                ...entityResearchHomeToObservations(entity, home, homeEvidenceUrl),
+              );
               homesAdopted += 1;
             } else if (identity && profileAttestsItsLabWebsiteIsGone(html, profileUrl, entity)) {
               observations.push(emptyLabWebsiteSlotObservation(entity, profileUrl));
