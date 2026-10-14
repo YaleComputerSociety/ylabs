@@ -585,7 +585,7 @@ const SOURCES: SourceSeed[] = [
     name: 'operator-led-group-verdict',
     displayName: 'Operator led-group verdict',
     description:
-      "An operator's per-row verdict, reached by reading the group's own pages, that the row's lead runs a named group whose own site this is. Emits name, displayName, kind, entityType, website, websiteUrl and sourceUrls, and no lock.",
+      "An operator's per-row verdict, reached by reading the group's own pages, that the row's lead runs a named group whose own site this is. Emits name, displayName, entityType, website, websiteUrl and sourceUrls, and no lock.",
     baseUrl: '',
     defaultWeight: 0.97,
     cadence: 'event',

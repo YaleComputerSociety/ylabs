@@ -34,7 +34,7 @@ describe('planLedGroupSiteVerdict', () => {
     if (!('observations' in planned)) return;
     const byField = Object.fromEntries(planned.observations.map((obs) => [obs.field, obs]));
     expect(Object.keys(byField).sort()).toEqual(
-      ['displayName', 'entityType', 'kind', 'name', 'sourceUrls', 'website', 'websiteUrl'].sort(),
+      ['displayName', 'entityType', 'name', 'sourceUrls', 'website', 'websiteUrl'].sort(),
     );
     expect(byField.name.value).toBe(verdict.name);
     expect(byField.websiteUrl.value).toBe(verdict.siteUrl);

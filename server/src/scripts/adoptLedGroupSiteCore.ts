@@ -93,7 +93,6 @@ export function planLedGroupSiteVerdict(
     observations: [
       { ...base, field: 'name', value: name },
       { ...base, field: 'displayName', value: name },
-      { ...base, field: 'kind', value: 'lab' },
       { ...base, field: 'entityType', value: 'LAB' },
       { ...base, field: 'website', value: siteUrl },
       { ...base, field: 'websiteUrl', value: siteUrl },
