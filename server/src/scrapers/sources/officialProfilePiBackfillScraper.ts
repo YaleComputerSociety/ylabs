@@ -473,7 +473,7 @@ export function leadPersonalHomepageUrl(entity: Record<string, any>, personName:
       if (!/(^|\.)yale\.edu$/i.test(url.hostname)) continue;
       const match = PERSONAL_HOME_DIRECTORY_PATH_RE.exec(url.pathname);
       const leaf = slugify(match?.[1] || match?.[2] || '');
-      if (!leaf || !leaf.split('-').includes(surname)) continue;
+      if (!leaf || !`-${leaf}-`.includes(`-${surname}-`)) continue;
       url.hash = '';
       url.search = '';
       if (!url.pathname.endsWith('/')) url.pathname = `${url.pathname}/`;
@@ -1532,12 +1532,22 @@ export function ledGroupNameFromLinkSentence(
 /**
  * A led group's link often points inside its site ("/members", "/research-projects"),
  * and the student should land on the group's home page. Only a host the group owns is
- * collapsed to its root; a shared host's root names the host organization (#2359).
+ * collapsed to its root, and the group owns it only when the subdomain is the group's
+ * own name; an umbrella's or a shared host's root names the host organization (#2359).
  */
-function ledGroupSiteHomeUrl(linkedUrl: string): string {
+function ledGroupSiteHomeUrl(linkedUrl: string, groupName: string): string {
   const root = new URL(linkedUrl);
   root.pathname = '/';
-  if (!isCustomYaleResearchHomeSubdomain(root) || isMultiTenantAcademicHostRootUrl(root.toString())) {
+  const subdomain = root.hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .split('.')[0];
+  const groupTokens = groupName.toLowerCase().split(/[^a-z0-9]+/);
+  if (
+    !groupTokens.includes(subdomain) ||
+    !isCustomYaleResearchHomeSubdomain(root) ||
+    isMultiTenantAcademicHostRootUrl(root.toString())
+  ) {
     return linkedUrl;
   }
   return root.toString();
@@ -1547,13 +1557,14 @@ function profileLinkedLabWebsitesFromHtml(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
   profileUrl: string,
-  pagePersonName = '',
+  homepagePersonName = '',
 ): OfficialProfileResearchHome[] {
   const homes: OfficialProfileResearchHome[] = [];
   const profileName = profileNameFromProfiles(profiles);
   const surname = profilePersonSurname($, profiles);
   const evidenceText = profileEvidenceText($, profiles);
-  const leaderName = profileName || textValue(pagePersonName);
+  const ledGroupOnly = Boolean(textValue(homepagePersonName));
+  const leaderName = ledGroupOnly ? textValue(homepagePersonName) : profileName;
 
   $('main a[href], article a[href], body a[href]').each((_i, el) => {
     const link = $(el);
@@ -1561,22 +1572,25 @@ function profileLinkedLabWebsitesFromHtml(
 
     const rawName = textValue(link.text());
     const context = textValue(link.closest('p,li,article,section,div').first().text());
-    const isEponymousGroupLink = isEponymousResearchGroupLinkText(rawName, surname);
+    const isEponymousGroupLink =
+      !ledGroupOnly && isEponymousResearchGroupLinkText(rawName, surname);
     const ledGroupName =
       isEponymousGroupLink || !leaderName
         ? ''
         : ledGroupNameFromLinkSentence(context, rawName, leaderName);
     if (
-      !isEponymousGroupLink &&
-      !ledGroupName &&
-      !/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)
+      ledGroupOnly
+        ? !ledGroupName
+        : !isEponymousGroupLink &&
+          !ledGroupName &&
+          !/\bView\s+Lab\s+Website\b/i.test(`${rawName} ${context}`)
     ) {
       return;
     }
 
     const linkedUrl = publicProfileLinkedLabWebsiteUrl(link.attr('href'), profileUrl);
     if (!linkedUrl) return;
-    const url = ledGroupName ? ledGroupSiteHomeUrl(linkedUrl) : linkedUrl;
+    const url = ledGroupName ? ledGroupSiteHomeUrl(linkedUrl, ledGroupName) : linkedUrl;
     if (/\/(?:internal-medicine|intmed)\/ctra\//i.test(new URL(url).pathname)) return;
     const name = isEponymousGroupLink
       ? canonicalResearchHomeName(rawName)
@@ -1645,10 +1659,25 @@ function linkedResearchHomesFromHtml(
   return homes;
 }
 
+/**
+ * The groups a lead's personal homepage says that person leads. Only the leadership
+ * sentence is admitted here: a homepage lists the person's memberships and colleagues'
+ * labs as freely as their own, so the other arms that read an official profile do not
+ * run on it.
+ */
+export function extractLeadHomepageResearchHomes(
+  html: string,
+  homepageUrl: string,
+  personName: string,
+): OfficialProfileResearchHome[] {
+  if (!textValue(personName)) return [];
+  const $ = cheerio.load(html);
+  return profileLinkedLabWebsitesFromHtml($, jsonLdProfiles($), homepageUrl, personName);
+}
+
 export function extractOfficialProfileResearchHomes(
   html: string,
   profileUrl: string,
-  pagePersonName = '',
 ): OfficialProfileResearchHome[] {
   const $ = cheerio.load(html);
   const profiles = jsonLdProfiles($);
@@ -1694,7 +1723,7 @@ export function extractOfficialProfileResearchHomes(
     addHome(home);
   }
 
-  for (const home of profileLinkedLabWebsitesFromHtml($, profiles, profileUrl, pagePersonName)) {
+  for (const home of profileLinkedLabWebsitesFromHtml($, profiles, profileUrl)) {
     addHome(home);
   }
 
@@ -4135,10 +4164,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                   ctx.options.useCache,
                   this.name,
                 );
-                [home] = extractOfficialProfileResearchHomes(
+                [home] = extractLeadHomepageResearchHomes(
                   homepageHtml,
                   homepageUrl,
-                  identity?.displayName,
+                  identity?.displayName || '',
                 );
                 if (home) homeEvidenceUrl = homepageUrl;
               } catch (err: any) {
@@ -4174,9 +4203,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 );
               }
             } else if (identity && home) {
-              observations.push(
-                ...entityResearchHomeToObservations(entity, home, homeEvidenceUrl),
-              );
+              observations.push(...entityResearchHomeToObservations(entity, home, homeEvidenceUrl));
               homesAdopted += 1;
             } else if (identity && profileAttestsItsLabWebsiteIsGone(html, profileUrl, entity)) {
               observations.push(emptyLabWebsiteSlotObservation(entity, profileUrl));

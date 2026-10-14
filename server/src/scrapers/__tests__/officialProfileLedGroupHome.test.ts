@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  extractOfficialProfileResearchHomes,
+  extractLeadHomepageResearchHomes,
   leadPersonalHomepageUrl,
   ledGroupNameFromLinkSentence,
   OfficialProfilePiBackfillScraper,
@@ -82,9 +82,9 @@ describe('ledGroupNameFromLinkSentence', () => {
   });
 });
 
-describe('extractOfficialProfileResearchHomes on a lead homepage', () => {
+describe('extractLeadHomepageResearchHomes', () => {
   it('adopts the led group and lands on the home page of a site the group owns', () => {
-    const homes = extractOfficialProfileResearchHomes(
+    const homes = extractLeadHomepageResearchHomes(
       homepageHtml(
         '<p>Jane Quillfixture is leading the <a href="https://fse.yale.edu/members">Fixture Systems Engineering (FSE)</a> group.</p>',
       ),
@@ -102,7 +102,7 @@ describe('extractOfficialProfileResearchHomes on a lead homepage', () => {
   });
 
   it('keeps the linked path on a shared host whose root names the host organization', () => {
-    const [home] = extractOfficialProfileResearchHomes(
+    const [home] = extractLeadHomepageResearchHomes(
       homepageHtml('<p>I lead the <a href="https://csl.yale.edu/~orca/">ORCA</a> group.</p>'),
       homepageUrl,
       'Jane Quillfixture',
@@ -110,9 +110,36 @@ describe('extractOfficialProfileResearchHomes on a lead homepage', () => {
     expect(home?.url).toBe('https://csl.yale.edu/~orca/');
   });
 
+  it("keeps the linked path on an umbrella's subdomain the group's name does not own", () => {
+    const [home] = extractLeadHomepageResearchHomes(
+      homepageHtml(
+        '<p>I lead the <a href="https://fixtureinstitute.yale.edu/groups/orca/">ORCA</a> group.</p>',
+      ),
+      homepageUrl,
+      'Jane Quillfixture',
+    );
+    expect(home).toMatchObject({
+      name: 'ORCA Group',
+      url: 'https://fixtureinstitute.yale.edu/groups/orca/',
+    });
+  });
+
+  it('admits only a led-group sentence, not the arms that read an official profile', () => {
+    expect(
+      extractLeadHomepageResearchHomes(
+        homepageHtml(
+          '<p><a href="https://fixturerobotics.yale.edu/">Quillfixture Lab</a></p>' +
+            '<p>Collaborators: <a href="https://otherfixture.yale.edu/">View Lab Website</a></p>',
+        ),
+        homepageUrl,
+        'Jane Quillfixture',
+      ),
+    ).toEqual([]);
+  });
+
   it('adopts nothing from a page that only states membership', () => {
     expect(
-      extractOfficialProfileResearchHomes(
+      extractLeadHomepageResearchHomes(
         homepageHtml(
           '<p>Jane Quillfixture is part of the <a href="https://csl.yale.edu/">Fixture Systems Lab</a>.</p>',
         ),
@@ -137,6 +164,15 @@ describe('leadPersonalHomepageUrl', () => {
         'Jane Quillfixture',
       ),
     ).toBe('https://fixture.cs.yale.edu/~jane-quillfixture/');
+  });
+
+  it("returns a compound surname's home-directory page", () => {
+    expect(
+      leadPersonalHomepageUrl(
+        { sourceUrls: ['https://www.cs.yale.edu/homes/jane-van-quillfixture/'] },
+        'Jane van Quillfixture',
+      ),
+    ).toBe('https://www.cs.yale.edu/homes/jane-van-quillfixture/');
   });
 
   it("refuses a colleague's homepage and a non-Yale host", () => {
