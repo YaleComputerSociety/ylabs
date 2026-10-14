@@ -628,7 +628,7 @@ describe('researchEntityDto', () => {
     expect(dto.websiteUrl).toBe('http://het.yale.edu/');
   });
 
-  it('keeps the email and redacts the phone number in a served evidence quote', () => {
+  it('serves the email and phone number in an evidence quote as written', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-evidence-redaction',
       slug: 'evidence-redaction-lab',
@@ -638,7 +638,7 @@ describe('researchEntityDto', () => {
     });
 
     expect(dto.undergradEvidenceQuote).toBe(
-      'Interested students can email private-contact@yale.edu or call [phone redacted].',
+      'Interested students can email private-contact@yale.edu or call 203-432-1234.',
     );
   });
 
