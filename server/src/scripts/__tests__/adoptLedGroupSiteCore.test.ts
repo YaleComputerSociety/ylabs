@@ -67,9 +67,9 @@ describe('planLedGroupSiteVerdict', () => {
   });
 
   it("refuses an umbrella host's root, whose root names the host organization", () => {
-    expect(planLedGroupSiteVerdict(row(), { ...verdict, siteUrl: 'https://csl.yale.edu/' })).toEqual(
-      { refused: 'site-is-not-promotable' },
-    );
+    expect(
+      planLedGroupSiteVerdict(row(), { ...verdict, siteUrl: 'https://csl.yale.edu/' }),
+    ).toEqual({ refused: 'site-is-not-promotable' });
   });
 
   it('refuses a site another live row already serves', () => {
