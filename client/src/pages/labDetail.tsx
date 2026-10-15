@@ -514,7 +514,9 @@ const DecisionSummary = ({
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const undergradQuote =
-    wayInWithheld || rosterListsUndergraduates ? undefined : undergradQuoteEvidenceFromEntity(group);
+    wayInWithheld || rosterListsUndergraduates
+      ? undefined
+      : undergradQuoteEvidenceFromEntity(group);
   const hasEvidenceList =
     Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
