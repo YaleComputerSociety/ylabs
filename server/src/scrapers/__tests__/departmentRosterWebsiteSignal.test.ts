@@ -78,11 +78,18 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBe('https://www.fixturelab.example.org/');
   });
 
-  it('keeps a call-to-action sentence that closes on the lab word', () => {
+  it('treats a period-ended sentence closing on a lab word as a citation', () => {
     const result = enrich(
       `<p><a href="https://thefixturelab.example.org/">Learn more about the Fixture Lab.</a></p>`,
     );
-    expect(result.labUrl).toBe('https://thefixturelab.example.org/');
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('keeps a sentence label that closes on an explicit website phrase', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.org/">Click here to visit my personal site.</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.org/');
   });
 
   it('keeps a long lab name used as link text', () => {
@@ -98,5 +105,38 @@ describe('profile website harvest', () => {
     );
     expect(result.labUrl).toBeUndefined();
     expect(result.labSlotAttestation).toBe('empty');
+  });
+
+  it('does not take a paper whose title closes on the common noun laboratory', () => {
+    const result = enrich(
+      `<ul><li><a href="https://www.fixture-journal.example.org/doi/10.0000/fixture.1">Fossilization of fixture tissue in the laboratory.</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('does not take a Title Case paper title that closes on the common noun laboratory', () => {
+    const result = enrich(
+      `<ul><li><a href="https://www.fixture-journal.example.org/article/fixture-3">Fossilization of Fixture Tissue in the Laboratory.</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('keeps a sentence label that closes on a personal site phrase', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.org/">Click here to visit my personal site.</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.org/');
+  });
+
+  it('does not take a DOI link even when its label carries a lab word', () => {
+    const result = enrich(`<p><a href="https://doi.org/10.0000/fixture.2">Fixture Lab</a></p>`);
+    expect(result.labUrl).toBeUndefined();
+  });
+
+  it('does not take a Title Case paper title closing on an adjective and Laboratory', () => {
+    const result = enrich(
+      `<ul><li><a href="https://www.fixture-journal.example.org/article/1">Diagnostic Errors in the Clinical Laboratory.</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
   });
 });

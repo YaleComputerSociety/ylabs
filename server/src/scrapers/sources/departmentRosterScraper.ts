@@ -3057,8 +3057,10 @@ function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string)
  * Cancer Research", which is how a donor story page read as someone's personal
  * site (#2460).
  */
-const WEBSITE_SIGNAL =
-  /\b(lab|laboratory|website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page)\b/i;
+const WEBSITE_LABEL_PHRASES =
+  'website|homepage|home page|research group|group site|personal (?:web)?site|personal page|personal homepage|personal web page';
+
+const WEBSITE_SIGNAL = new RegExp(`\\b(lab|laboratory|${WEBSITE_LABEL_PHRASES})\\b`, 'i');
 
 const PATH_LAB_WORD = /^(?:lab|labs|laboratory|laboratories)$/i;
 
@@ -3089,18 +3091,26 @@ export function pathNamesALab(pathname: string): boolean {
  */
 const NATIONAL_LABORATORY_TEXT = /\bnational\s+laborator(?:y|ies)\b/i;
 
-const TEXT_ENDING_IN_WEBSITE_WORD = new RegExp(`${WEBSITE_SIGNAL.source}\\W*$`, 'i');
+const TEXT_ENDING_IN_WEBSITE_LABEL = new RegExp(`\\b(?:${WEBSITE_LABEL_PHRASES})\\W*$`, 'i');
 
 /**
  * Link text that reads as a sentence is a citation or a headline, not a label for a
  * website, so a lab word inside it says nothing about the destination: a publication
- * list entry titled "Laboratory degradation of ..." is a paper (#5050). A sentence that
- * closes on the lab word, "Learn more about the Smith Lab.", still names its destination.
+ * list entry titled "Laboratory degradation of ..." is a paper (#5050). Only a sentence
+ * that closes on an explicit website phrase ("... visit my personal site.") still labels
+ * its destination. A closing lab word cannot, because a Title Case paper title closes on
+ * "Laboratory" exactly as a lab's name does, and none of the measured roster pages used a
+ * period-ended sentence as a lab link's label.
  */
 export function linkTextIsASentence(text: string): boolean {
   const trimmed = text.trim();
   const words = trimmed.split(/\s+/).filter(Boolean);
-  return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_WORD.test(trimmed);
+  return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed);
+}
+
+/** A DOI resolves to a publication, which is never a person's research website (#5050). */
+function isDoiUrl(url: URL): boolean {
+  return /(?:^|\.)doi\.org$/i.test(url.hostname) || /\/doi\//i.test(url.pathname);
 }
 
 const UMBRELLA_ORGANIZATION_TEXT = /\b(?:center|centre|institute|consortium)\b/i;
@@ -3421,6 +3431,7 @@ export function profileEnrichmentFromHtml(
     const titleAttr = link.attr('title') || '';
     const visibleTextSignal = linkTextIsASentence(text) ? '' : text;
     const attributeSignal = UMBRELLA_ORGANIZATION_TEXT.test(text) ? '' : `${aria} ${titleAttr}`;
+    if (isDoiUrl(parsed)) return;
     const labelSignal = `${visibleTextSignal} ${attributeSignal} ${parsed.hostname}`;
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
