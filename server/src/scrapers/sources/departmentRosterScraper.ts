@@ -3105,11 +3105,7 @@ const TEXT_ENDING_IN_WEBSITE_LABEL = new RegExp(`\\b(?:${WEBSITE_LABEL_PHRASES})
 export function linkTextIsASentence(text: string): boolean {
   const trimmed = text.trim();
   const words = trimmed.split(/\s+/).filter(Boolean);
-  return (
-    words.length >= 6 &&
-    trimmed.endsWith('.') &&
-    !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed)
-  );
+  return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed);
 }
 
 /** A DOI resolves to a publication, which is never a person's research website (#5050). */
