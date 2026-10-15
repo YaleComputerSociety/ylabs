@@ -227,6 +227,10 @@ import {
   withoutLaneRefusedWebsiteUrls,
 } from './laneRefusedWebsiteUrl';
 import {
+  REFUSED_RESEARCH_HOME_NAME_FIELD,
+  withoutLaneRefusedResearchHomeNames,
+} from './laneRefusedResearchHomeName';
+import {
   LANE_PAGE_HEALTH_FIELD,
   planGoneLanePageFieldClears,
   withoutGoneLanePageObservations,
@@ -1789,6 +1793,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     isResearchEntityObservationType(entityType) &&
     (observation.field === REFUSED_WEBSITE_URL_FIELD ||
+      observation.field === REFUSED_RESEARCH_HOME_NAME_FIELD ||
       observation.field === LANE_PAGE_HEALTH_FIELD)
   ) {
     return true;
@@ -9835,7 +9840,13 @@ export async function materializeEntity(
       ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
       : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
-    ? withoutLaneRefusedWebsiteUrls(gonePageWithdrawal.observations, laneScopedRowIdentities)
+    ? withoutLaneRefusedWebsiteUrls(
+        withoutLaneRefusedResearchHomeNames(
+          gonePageWithdrawal.observations,
+          laneScopedRowIdentities,
+        ),
+        laneScopedRowIdentities,
+      )
     : { observations: obs, withdrawnValues: [] };
   const fellowshipEvidence =
     entityType === 'fellowship'

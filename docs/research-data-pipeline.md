@@ -2071,6 +2071,8 @@ Measured over eight departments with `--use-cache` before and after: 6 planned w
 
 A profile card naming a colleague's eponymous lab, a "<Surname> Lab" whose surname is a known researcher other than the profile's person (judged against the known-person surname roster), is where that member works rather than the member's own research home (#5053).
 By owner decision of 2026-10-15 the lab site is still the member's website, so the lane asserts `website`, `websiteUrl` and `sourceUrls` from it and never the lab's name, kind or type, which would graft the colleague's lab onto the member's row.
+The eponym is read with the same `eponymousLabNameSurnameCandidates` the materializer uses, so a particle, plural, possessive, or trailing-text lab name is judged like a bare one.
+A row the lane grafted before this guard keeps its older name claim live, because supersession is per field, so the re-read also states `refusedResearchHomeName`, and every resolve withdraws the lane's own older `name` and `displayName` carrying that value (`laneRefusedResearchHomeName.ts`); its `kind` and `entityType` then fall through `withoutUnpairedProfileHomeIdentity`, and another lane's name still counts.
 A link through a third-party shortener (`t.co`, `bit.ly` and similar) hides its destination and is not adopted; Yale's own `m.yale.edu` is.
 
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).

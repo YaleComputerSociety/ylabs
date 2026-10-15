@@ -23,6 +23,7 @@ import {
   NO_SURNAME_ROSTER,
   researchHomeIdentityTokens,
   eponymMatchesIdentity,
+  eponymousLabNameSurnameCandidates,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
@@ -32,6 +33,7 @@ import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefi
 import { loadKnownPersonSurnameRoster } from '../../utils/researchHomeNameIdentityRoster';
 import { rankPersonProfileUrls } from '../../utils/personProfileRanking';
 import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
+import { REFUSED_RESEARCH_HOME_NAME_FIELD } from '../laneRefusedResearchHomeName';
 import { websiteIdentity } from '../survivorOwnedWebsiteClear';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
@@ -1824,8 +1826,6 @@ export type ProfileLinkedHomeRefusal =
   | 'institutional-home-on-a-grant-shell'
   | 'institutional-home-on-a-person-keyed-shell';
 
-const EPONYMOUS_HOME_NAME_RE = /^(?:the\s+)?([A-Z][A-Za-z'-]+)\s+(?:research\s+)?(?:lab|laboratory|group)$/i;
-
 /**
  * Whether a home named "<Surname> Lab" names a colleague: the surname belongs to a known
  * researcher and is not the profile person's. A school profile's "View Lab Website" card
@@ -1839,13 +1839,11 @@ function homeNamesAColleaguesLab(
   knownPersonSurnames: ReadonlySet<string>,
 ): boolean {
   if (knownPersonSurnames.size === 0) return false;
-  const match = EPONYMOUS_HOME_NAME_RE.exec(textValue(home.name));
-  if (!match) return false;
-  const eponym = normalizeName(match[1]).toLowerCase().replace(/[^a-z]/g, '');
-  if (!eponym || !knownPersonSurnames.has(eponym)) return false;
+  const eponyms = eponymousLabNameSurnameCandidates(home.name);
+  if (!eponyms.some((eponym) => knownPersonSurnames.has(eponym))) return false;
   const identityTokens = researchHomeIdentityTokens({ personName, slug: entity.slug });
   if (identityTokens.length === 0) return false;
-  return !eponymMatchesIdentity(eponym, identityTokens);
+  return !eponyms.some((eponym) => eponymMatchesIdentity(eponym, identityTokens));
 }
 
 export function profileLinkedHomeRefusal(
@@ -2069,7 +2067,11 @@ export function entityResearchHomeToObservations(
   ];
 }
 
-const HOST_LAB_WEBSITE_FIELDS: ReadonlySet<string> = new Set(['website', 'websiteUrl', 'sourceUrls']);
+const HOST_LAB_WEBSITE_FIELDS: ReadonlySet<string> = new Set([
+  'website',
+  'websiteUrl',
+  'sourceUrls',
+]);
 
 /**
  * A member's own profile linking a colleague's lab is evidence of where the member works,
@@ -2082,9 +2084,28 @@ export function hostLabWebsiteOnlyObservations(
   home: OfficialProfileResearchHome,
   evidenceUrl: string,
 ): ObservationInput[] {
-  return entityResearchHomeToObservations(entity, home, evidenceUrl).filter((observation) =>
-    HOST_LAB_WEBSITE_FIELDS.has(observation.field),
-  );
+  return [
+    ...entityResearchHomeToObservations(entity, home, evidenceUrl).filter((observation) =>
+      HOST_LAB_WEBSITE_FIELDS.has(observation.field),
+    ),
+    refusedResearchHomeNameObservation(entity, home, evidenceUrl),
+  ];
+}
+
+/**
+ * The lane adopted these names as the row's own before #5053, and a re-read that withholds
+ * the name leaves that older claim live, so the refusal is stated and resolve withdraws it.
+ */
+function refusedResearchHomeNameObservation(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  profileUrl: string,
+): ObservationInput {
+  return {
+    ...refusedResearchHomeWebsiteObservation(entity, home, profileUrl),
+    field: REFUSED_RESEARCH_HOME_NAME_FIELD,
+    value: home.name,
+  };
 }
 
 export function entityLeadDirectWebsiteToObservations(
