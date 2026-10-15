@@ -152,6 +152,7 @@
     "departments:audit-catalog-drift": "tsx src/scripts/auditDepartmentCatalogDrift.ts",
     "departments:audit-roster-lanes": "tsx src/scripts/auditRosterLanes.ts",
     "research-homes:audit-rosters": "tsx src/scripts/auditResearchHomeRosters.ts",
+    "research-homes:propose-undergrad-rosters": "tsx src/scripts/proposeUndergradRosterConfigs.ts",
     "programs:backfill-accepting-applications-invariant": "tsx src/scripts/backfillFellowshipAcceptingApplicationsInvariant.ts",
     "fellowships:repair-duplicate-source-keys": "tsx src/scripts/repairDuplicateFellowshipSourceKeys.ts",
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",

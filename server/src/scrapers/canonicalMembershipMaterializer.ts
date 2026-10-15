@@ -254,6 +254,7 @@ const cleanRosterProvenance = (
   if (trimmed(provenance.sourceUrl)) cleaned.sourceUrl = trimmed(provenance.sourceUrl);
   if (trimmed(provenance.profileUrl)) cleaned.profileUrl = trimmed(provenance.profileUrl);
   if (trimmed(provenance.sectionLabel)) cleaned.sectionLabel = trimmed(provenance.sectionLabel);
+  if (trimmed(provenance.listingTitle)) cleaned.listingTitle = trimmed(provenance.listingTitle);
   if (trimmed(provenance.evidenceStatus))
     cleaned.evidenceStatus = trimmed(provenance.evidenceStatus);
   if (trimmed(provenance.membershipKey)) cleaned.membershipKey = trimmed(provenance.membershipKey);

@@ -1793,8 +1793,22 @@ Because canonical identity is unified there is no `facultyMemberId` conflict to 
 A lead `RoleAssignment` that resolves to a `Researcher` counts as attached lead evidence.
 
 The `official-research-home-roster` source acquires non-lead current membership only from an allowlisted official page and explicitly configured current section.
-Each materialized row requires a source-specific official profile identity, an honestly mapped role, a recent page publish date, an observation date, and a bounded refresh-expiry date.
+Each config names its page template: `profile-grid` (the medicine.yale.edu member grid), `yalesites-directory` (YaleSites `directory-listing-card` collections) or `heading-list` (a heading over a plain list of "Name (years)" lines).
+Each materialized row requires a source-specific official profile identity, an honestly mapped role, an observation date, and a bounded refresh-expiry date.
+A `profile-grid` page must also carry a recent publish date; the other two templates publish none, so their currency is the configured section label itself, held to the same refresh window (#5039).
+The member's listed title travels on the edge as `rosterProvenance.listingTitle`, and the detail card shows it when the person's own record has no title.
 Names alone never resolve a `Researcher` or merge membership rows.
+Undergraduates are also listed by name on the `rosterEnrichment` snapshot, as `undergraduates` entries with a `current` or `past` status, the years the page states, and a same-host profile link when the page gives one.
+This listing is display text cited to the page and resolves no `Researcher`, so an undergraduate with no profile page is still listed.
+Whether a listed undergraduate is past is read from the page and never from absence or page age.
+They are past when their section is a configured past section (`pastSectionLabels`) or sits under an alumni, former, past or previous heading, when they follow an alumni toggle such as "View Alumni", when the page gives an end or class year that has passed, or when it gives a start year more than five years back.
+A class year still ahead keeps them current, and a person listed as both current and past is listed once, as current.
+The `heading-list` template reads a page in document order: a heading deeper than its section, or inside a list item, is a person when it reads as a name and a nested section otherwise, a short paragraph holding a year after a name belongs to that name, and navigation, header, footer and aside blocks are skipped.
+`looksLikeListedPersonName` refuses role labels, section and subject words, institution names, credentials and anything holding a digit, colon, comma, ampersand or slash, and a name written in capitals is shown in normal case.
+`yarn --cwd server research-homes:propose-undergrad-rosters` proposes a config per row, for the rows carrying the hosted-undergraduates badge by default or for every row with a website (`--population=websites`, which follows the site's people-page links only inside the lab's own section of a shared host).
+It writes nothing to the database: the proposals and a review sheet naming each listed person land in a mode-0700 directory under the OS temp dir, and `--emit-configs=<ids>` prints the allowlist entries for the ones an owner approved.
+A profile-grid config the script proposes carries `currency: 'section-label'`, the owner-approved replacement for its publish-date check (#5039).
+Public detail serves the current undergraduates only while the snapshot is fresh, and the past ones from any successful snapshot, because a past member stays past.
 A complete non-empty snapshot archives source-owned rows that disappeared while preserving their observation and membership history; empty, stale, withheld, and failed snapshots never trigger cleanup.
 Public detail suppresses expired or conflicting rows, limits roster presentation to 24 members, excludes direct contact data, and discloses that missing roster evidence does not mean an empty team.
 After an optional-source failure, public detail may retain only the exact still-fresh rows from the most recent successful current or partial snapshot, using that snapshot's source and observation metadata for disclosure.

@@ -27,6 +27,7 @@ import {
   labSiteLeadVerdicts,
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
+  officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
 
 export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
@@ -384,6 +385,20 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
         withheldCount: { type: Number, min: 0, max: 1000, default: 0 },
         duplicateCount: { type: Number, min: 0, max: 1000, default: 0 },
         memberKeys: { type: [String], default: [] },
+        undergraduates: {
+          type: [
+            {
+              _id: false,
+              name: { type: String, required: true },
+              status: { type: String, enum: officialRosterUndergraduateStatuses, required: true },
+              startYear: { type: Number, min: 1900, max: 2100, required: false },
+              endYear: { type: Number, min: 1900, max: 2100, required: false },
+              profileUrl: { type: String, required: false },
+            },
+          ],
+          default: undefined,
+        },
+        undergraduateWithheldCount: { type: Number, min: 0, max: 1000, default: 0 },
         sourceUrl: { type: String, default: '' },
         sourcePublishedAt: { type: Date, required: false },
         observedAt: { type: Date, required: true },
@@ -394,6 +409,23 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           type: {
             state: { type: String, enum: ['current', 'partial'], required: true },
             memberKeys: { type: [String], default: [] },
+            undergraduates: {
+              type: [
+                {
+                  _id: false,
+                  name: { type: String, required: true },
+                  status: {
+                    type: String,
+                    enum: officialRosterUndergraduateStatuses,
+                    required: true,
+                  },
+                  startYear: { type: Number, min: 1900, max: 2100, required: false },
+                  endYear: { type: Number, min: 1900, max: 2100, required: false },
+                  profileUrl: { type: String, required: false },
+                },
+              ],
+              default: undefined,
+            },
             sourceUrl: { type: String, required: true },
             sourcePublishedAt: { type: Date, required: false },
             observedAt: { type: Date, required: true },

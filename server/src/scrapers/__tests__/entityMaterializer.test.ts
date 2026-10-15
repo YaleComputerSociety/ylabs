@@ -908,6 +908,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     // fields the retired update carried and `CanonicalMemberFacts` has no place for
     // (`title`, `identityKey`, `confidenceByField.*`, `fieldProvenance.*`) were
     // asserted here and nowhere else, which is what made the dead shape look alive.
+    expect(patch?.facts.rosterProvenance?.listingTitle).toBe('Director, Cowles Foundation');
     expect(patch).toMatchObject({
       role: 'director',
       matchName: 'Jane Doe',
@@ -1075,6 +1076,24 @@ describe('entityMaterializer post-materialization metrics', () => {
     );
 
     expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
+  });
+
+  it('retains listed undergraduates of the last successful snapshot across a failed refresh', () => {
+    const undergraduates = [{ name: 'Listed Fixture', status: 'current', startYear: 2024 }];
+    const current = rosterEnrichmentWithRetainedSuccessfulSnapshot({
+      state: 'current',
+      memberKeys: [],
+      undergraduates,
+      sourceUrl: 'https://fixturegroup.yale.edu/research-team',
+      observedAt: new Date('2026-10-14T00:00:00Z'),
+      freshnessExpiresAt: new Date('2026-11-04T00:00:00Z'),
+    });
+    const failed = rosterEnrichmentWithRetainedSuccessfulSnapshot(
+      { state: 'failed', memberKeys: [], observedAt: new Date('2026-10-15T00:00:00Z') },
+      current,
+    );
+
+    expect(failed).toMatchObject({ lastSuccessfulSnapshot: { undergraduates } });
   });
 });
 

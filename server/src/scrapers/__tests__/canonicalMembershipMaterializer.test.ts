@@ -115,6 +115,17 @@ describe('canonical membership mapping (pure)', () => {
     expect((historical?.update as any).$set.endedAt).toBe(ended);
     expect((historical?.update as any).$unset).toBeUndefined();
 
+    const listed = buildCanonicalRoleAssignmentUpsert(personId, entityId, 'grad-student', {
+      state: 'CURRENT',
+      confidence: 0.9,
+      reviewStatus: 'UNREVIEWED',
+      rosterProvenance: { sectionLabel: 'Lab Members', listingTitle: '  Ph.D. Candidate ' },
+    });
+    expect((listed?.update as any).$set.rosterProvenance).toEqual({
+      sectionLabel: 'Lab Members',
+      listingTitle: 'Ph.D. Candidate',
+    });
+
     expect(
       buildCanonicalRoleAssignmentUpsert(personId, entityId, 'nonsense', {
         state: 'CURRENT',

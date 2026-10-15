@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-14: A Lab's Undergraduate Researchers Are Listed By Name (#5039)
+
+Owner decision: when a lab's own page names its undergraduate researchers, the detail page lists every one of them, current and past, at the top of the team section.
+A student deciding whether to join a lab learns most from the undergraduates already in it, so the current list carries one line saying a current undergraduate can tell them what research there is like.
+That line is the one invitation to contact a named non-lead person anywhere on the page; every other team member stays team context only.
+A past undergraduate is listed only when the page itself marks them past, through an alumni or former section or toggle or an end or class year that has passed, and their position after leaving the lab is never stored.
+The list replaces the "Mentions undergraduate research" quote on that row, because the quote is a weaker statement of the same fact, often a single name lifted from the same page.
+An undergraduate needs no profile page to be listed, since the listing resolves no person record; a profile link, when the page has one, makes the entry a linked card.
+
 ## 2026-10-14: Quoted Contact Details Are Shown, Not Redacted (#5041)
 
 A quote such as "contact [email redacted] and inquire about opportunities" hid an address the lab publishes on the very page the quote links to, and often the same address the detail page already shows as the lead's contact.
