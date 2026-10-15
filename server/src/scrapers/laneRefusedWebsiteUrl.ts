@@ -52,7 +52,10 @@ function identityScope(observation: LaneWebsiteObservation, rowIdentities: Reado
   return forms[0] ?? '';
 }
 
-function laneScopeKey(observation: LaneWebsiteObservation, rowIdentities: ReadonlySet<string>) {
+export function laneScopeKey(
+  observation: LaneWebsiteObservation,
+  rowIdentities: ReadonlySet<string>,
+) {
   return JSON.stringify([
     String(observation.sourceName ?? ''),
     identityScope(observation, rowIdentities),

@@ -22,14 +22,18 @@ import {
   entityKeyNamesOnlyThisPerson,
   NO_SURNAME_ROSTER,
   researchHomeIdentityTokens,
+  eponymMatchesIdentity,
+  eponymousLabNameSurnameCandidates,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
+import { loadKnownPersonSurnameRoster } from '../../utils/researchHomeNameIdentityRoster';
 import { rankPersonProfileUrls } from '../../utils/personProfileRanking';
 import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
+import { REFUSED_RESEARCH_HOME_NAME_FIELD } from '../laneRefusedResearchHomeName';
 import { websiteIdentity } from '../survivorOwnedWebsiteClear';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
@@ -1010,6 +1014,14 @@ function publicOfficialYaleResearchHomeUrl(value: unknown, baseUrl: string): str
   }
 }
 
+/**
+ * A third-party shortener hides its destination, so the link cannot be judged as anyone's
+ * research home; one on a profile card redirected to a colleague's lab (#5053). Yale's own
+ * `m.yale.edu` resolves to Yale pages and stays admissible.
+ */
+const THIRD_PARTY_SHORTENER_HOST_RE =
+  /^(?:www\.)?(?:t\.co|bit\.ly|tinyurl\.com|goo\.gl|ow\.ly|buff\.ly|lnkd\.in|rebrand\.ly|is\.gd|cutt\.ly|shorturl\.at|tiny\.cc)$/i;
+
 function publicProfileLinkedLabWebsiteUrl(value: unknown, baseUrl: string): string {
   const raw = textValue(value);
   if (!raw) return '';
@@ -1022,6 +1034,7 @@ function publicProfileLinkedLabWebsiteUrl(value: unknown, baseUrl: string): stri
     if (!/^https?:$/i.test(url.protocol)) return '';
     if (/\/profile\//i.test(url.pathname)) return '';
     if (isPressOrNewsHostUrl(url.toString())) return '';
+    if (THIRD_PARTY_SHORTENER_HOST_RE.test(url.hostname)) return '';
     // Judged on the destination before the query is stripped above, which would
     // otherwise take the `directionsMode` arm away from it (#3184).
     if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) return '';
@@ -1809,15 +1822,40 @@ function linksAnOrganizationThePersonDoesNotLead(
 export type ProfileLinkedHomeRefusal =
   | 'affiliated-organization-without-leadership'
   | 'names-another-persons-lab'
+  | 'names-a-colleagues-lab'
   | 'institutional-home-on-a-grant-shell'
   | 'institutional-home-on-a-person-keyed-shell';
+
+/**
+ * Whether a home named "<Surname> Lab" names a colleague: the surname belongs to a known
+ * researcher and is not the profile person's. A school profile's "View Lab Website" card
+ * names the lab a member works in, and the URL-path check cannot see an eponym that sits
+ * in the host, so a colleague's lab was adopted as the member's own research home (#5053).
+ */
+function homeNamesAColleaguesLab(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  personName: unknown,
+  knownPersonSurnames: ReadonlySet<string>,
+): boolean {
+  if (knownPersonSurnames.size === 0) return false;
+  const eponyms = eponymousLabNameSurnameCandidates(home.name);
+  if (!eponyms.some((eponym) => knownPersonSurnames.has(eponym))) return false;
+  const identityTokens = researchHomeIdentityTokens({ personName, slug: entity.slug });
+  if (identityTokens.length === 0) return false;
+  return !eponyms.some((eponym) => eponymMatchesIdentity(eponym, identityTokens));
+}
 
 export function profileLinkedHomeRefusal(
   entity: Record<string, any>,
   home: OfficialProfileResearchHome | undefined,
   personName: unknown,
+  knownPersonSurnames: ReadonlySet<string> = NO_SURNAME_ROSTER,
 ): ProfileLinkedHomeRefusal | null {
   if (!home) return null;
+  if (homeNamesAColleaguesLab(entity, home, personName, knownPersonSurnames)) {
+    return 'names-a-colleagues-lab';
+  }
   if (linksAnOrganizationThePersonDoesNotLead(home, personName)) {
     return 'affiliated-organization-without-leadership';
   }
@@ -2027,6 +2065,47 @@ export function entityResearchHomeToObservations(
     { ...base, field: 'websiteUrl', value: home.url },
     { ...base, field: 'sourceUrls', value: sourceUrls },
   ];
+}
+
+const HOST_LAB_WEBSITE_FIELDS: ReadonlySet<string> = new Set([
+  'website',
+  'websiteUrl',
+  'sourceUrls',
+]);
+
+/**
+ * A member's own profile linking a colleague's lab is evidence of where the member works,
+ * so the lab site is the member's website (owner decision, 2026-10-15). It is not the
+ * member's research home: the colleague's name and the lab's type stay off the row, which
+ * is the graft the #3529 guard exists to stop (#5053).
+ */
+export function hostLabWebsiteOnlyObservations(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  evidenceUrl: string,
+): ObservationInput[] {
+  return [
+    ...entityResearchHomeToObservations(entity, home, evidenceUrl).filter((observation) =>
+      HOST_LAB_WEBSITE_FIELDS.has(observation.field),
+    ),
+    refusedResearchHomeNameObservation(entity, home, evidenceUrl),
+  ];
+}
+
+/**
+ * The lane adopted these names as the row's own before #5053, and a re-read that withholds
+ * the name leaves that older claim live, so the refusal is stated and resolve withdraws it.
+ */
+function refusedResearchHomeNameObservation(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  profileUrl: string,
+): ObservationInput {
+  return {
+    ...refusedResearchHomeWebsiteObservation(entity, home, profileUrl),
+    field: REFUSED_RESEARCH_HOME_NAME_FIELD,
+    value: home.name,
+  };
 }
 
 export function entityLeadDirectWebsiteToObservations(
@@ -3822,6 +3901,16 @@ interface FetchedProfile {
   failures: Array<{ profileUrl: string; error: string }>;
 }
 
+/**
+ * The roster is read from the researchers collection, so a run without a live connection,
+ * a unit test or an offline replay, judges eponyms with no roster rather than waiting on a
+ * buffered query.
+ */
+async function loadKnownPersonSurnameRosterWhenConnected(): Promise<ReadonlySet<string>> {
+  if (mongoose.connection.readyState !== 1) return NO_SURNAME_ROSTER;
+  return loadKnownPersonSurnameRoster();
+}
+
 export class OfficialProfilePiBackfillScraper implements IScraper {
   readonly name = SOURCE_NAME;
   readonly displayName = 'Official profile PI backfill';
@@ -3860,6 +3949,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       targetKeys?: string[],
     ) => Promise<Array<Record<string, any>>> = selectSourceUrlWebsiteTargets,
     private readonly probePage?: LanePageProbe,
+    private readonly knownPersonSurnameLoader: () => Promise<
+      ReadonlySet<string>
+    > = loadKnownPersonSurnameRosterWhenConnected,
   ) {}
 
   private pageReads = new LanePageReads();
@@ -3887,6 +3979,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       only.size === 0 ||
       only.has(PROFILE_RESEARCH_HOME_BACKFILL_KEY) ||
       (targetKeys.length > 0 && !hasExplicitMode);
+    let knownPersonSurnames: Promise<ReadonlySet<string>> | null = null;
+    const knownPersonSurnamesForRun = (): Promise<ReadonlySet<string>> =>
+      (knownPersonSurnames ??= this.knownPersonSurnameLoader());
     const runOnlyWebsiteObservationBackfill =
       (runLeadDirectWebsiteBackfill || runSourceUrlWebsiteBackfill) &&
       !runQueuedPiBackfill &&
@@ -3950,6 +4045,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     let emitted = 0;
     let observed = 0;
     let homesAdopted = 0;
+    let homesAdoptedAsHostLabWebsite = 0;
     const homesRefusedByReason: Record<string, number> = {};
     let fetchAttempts = 0;
 
@@ -4190,8 +4286,16 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 ? 'no-profile-identity'
                 : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
                   ? 'website-owned-by-another-entity'
-                  : profileLinkedHomeRefusal(entity, home, identity.displayName);
-            if (homeRefusal) {
+                  : profileLinkedHomeRefusal(
+                      entity,
+                      home,
+                      identity.displayName,
+                      await knownPersonSurnamesForRun(),
+                    );
+            if (homeRefusal === 'names-a-colleagues-lab' && home) {
+              observations.push(...hostLabWebsiteOnlyObservations(entity, home, homeEvidenceUrl));
+              homesAdoptedAsHostLabWebsite += 1;
+            } else if (homeRefusal) {
               homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
               if (
                 home &&
@@ -4234,6 +4338,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     // the per-reason breakdown is what tells a reader which arm fired.
     ctx.log('Profile-linked research homes', {
       adopted: homesAdopted,
+      adoptedAsHostLabWebsite: homesAdoptedAsHostLabWebsite,
       refused: homesRefusedByReason,
     });
 
@@ -4261,6 +4366,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       notes:
         `Processed ${entities.length} official profile records; ` +
         `adopted ${homesAdopted} profile-linked research homes` +
+        `, ${homesAdoptedAsHostLabWebsite} colleague-lab websites only` +
         (refusalSummary ? `, refused ${refusalSummary}.` : ', refused none.'),
     };
   }
