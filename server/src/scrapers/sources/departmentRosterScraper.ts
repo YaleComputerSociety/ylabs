@@ -3094,19 +3094,13 @@ const NATIONAL_LABORATORY_TEXT = /\bnational\s+laborator(?:y|ies)\b/i;
 const TEXT_ENDING_IN_WEBSITE_LABEL = new RegExp(`\\b(?:${WEBSITE_LABEL_PHRASES})\\W*$`, 'i');
 
 /**
- * Case-sensitive on purpose: a closing "the Smith Lab." names a lab, while a paper title
- * closing "... in the laboratory." uses the common noun (#5050). A Title Case title
- * capitalizes the noun too, so the lab word must follow a capitalized name token rather
- * than a determiner ("... in the Laboratory.").
- */
-const TEXT_ENDING_IN_LAB_NAME =
-  /\b(?!(?:The|A|An|Our|My|This|That|Their|His|Her|Your)\b)[A-Z][\w'-]*\s+(?:Lab|Labs|Laboratory|Laboratories|Group)\W*$/;
-
-/**
  * Link text that reads as a sentence is a citation or a headline, not a label for a
  * website, so a lab word inside it says nothing about the destination: a publication
- * list entry titled "Laboratory degradation of ..." is a paper (#5050). A sentence that
- * closes on the lab word, "Learn more about the Smith Lab.", still names its destination.
+ * list entry titled "Laboratory degradation of ..." is a paper (#5050). Only a sentence
+ * that closes on an explicit website phrase ("... visit my personal site.") still labels
+ * its destination. A closing lab word cannot, because a Title Case paper title closes on
+ * "Laboratory" exactly as a lab's name does, and none of the measured roster pages used a
+ * period-ended sentence as a lab link's label.
  */
 export function linkTextIsASentence(text: string): boolean {
   const trimmed = text.trim();
@@ -3114,8 +3108,7 @@ export function linkTextIsASentence(text: string): boolean {
   return (
     words.length >= 6 &&
     trimmed.endsWith('.') &&
-    !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed) &&
-    !TEXT_ENDING_IN_LAB_NAME.test(trimmed)
+    !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed)
   );
 }
 
