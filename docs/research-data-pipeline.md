@@ -2069,6 +2069,10 @@ A link naming a national laboratory is an institution rather than a website sign
 A re-run states that a paper or national laboratory a previous run asserted is gone, but the `fieldRetraction` sole-holder guard (#3135) retires it only when the value is shared or its page is positively dead, so a sole-holder value whose page still answers stays served until an operator acts.
 Measured over eight departments with `--use-cache` before and after: 6 planned websites changed, all corrections, and no genuine site was lost.
 
+A profile card naming a colleague's eponymous lab, a "<Surname> Lab" whose surname is a known researcher other than the profile's person (judged against the known-person surname roster), is where that member works rather than the member's own research home (#5053).
+By owner decision of 2026-10-15 the lab site is still the member's website, so the lane asserts `website`, `websiteUrl` and `sourceUrls` from it and never the lab's name, kind or type, which would graft the colleague's lab onto the member's row.
+A link through a third-party shortener (`t.co`, `bit.ly` and similar) hides its destination and is not adopted; Yale's own `m.yale.edu` is.
+
 An official profile link whose text is the profile person's surname plus `Lab`, `Laboratory`, `Group`, or `Research Group` (for example a department profile's `<Surname> Group` button) is the same signal as a `View Lab Website` card, and keeps its own text as the lab name (#4459).
 The surname comes from the profile's JSON-LD person name, or from its `h1` when the page carries no JSON-LD, and a link naming any other surname is not admitted.
 
