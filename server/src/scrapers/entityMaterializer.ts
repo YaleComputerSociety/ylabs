@@ -2051,11 +2051,14 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
   const sourceUrl = textValue(enrichment.sourceUrl);
   const observedAt = enrichment.observedAt;
   const freshnessExpiresAt = enrichment.freshnessExpiresAt;
-  if (memberKeys.length === 0 || !sourceUrl || !observedAt || !freshnessExpiresAt) return undefined;
+  const undergraduates = Array.isArray(enrichment.undergraduates) ? enrichment.undergraduates : [];
+  if (memberKeys.length === 0 && undergraduates.length === 0) return undefined;
+  if (!sourceUrl || !observedAt || !freshnessExpiresAt) return undefined;
   return {
     state: enrichment.state,
     memberKeys,
     sourceUrl,
+    ...(undergraduates.length > 0 ? { undergraduates } : {}),
     ...(enrichment.sourcePublishedAt ? { sourcePublishedAt: enrichment.sourcePublishedAt } : {}),
     observedAt,
     freshnessExpiresAt,
@@ -3039,6 +3042,7 @@ export function buildRosterMemberCanonicalPlan(
 
   const evidenceStatus = textValue(resolved.evidenceStatus?.value);
   const sectionLabel = textValue(resolved.sectionLabel?.value);
+  const listingTitle = textValue(resolved.title?.value);
 
   return {
     role,
@@ -3057,6 +3061,7 @@ export function buildRosterMemberCanonicalPlan(
         sourceUrl: sourceUrl || undefined,
         profileUrl: profileUrl || undefined,
         sectionLabel: sectionLabel || undefined,
+        listingTitle: listingTitle || undefined,
         evidenceStatus: evidenceStatus || undefined,
         membershipKey: membershipKey || undefined,
         observedAt,

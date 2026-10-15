@@ -55,6 +55,7 @@ describe('SignInButton', () => {
   });
 
   it('drops external or ambiguous return targets before building the CAS redirect', async () => {
+    vi.stubEnv('VITE_APP_SERVER', 'http://localhost:4000');
     sessionStorage.setItem('logoutReturnPath', 'https://evil.example.test/phish');
 
     renderSignInButton({ from: '/research' });
@@ -66,6 +67,7 @@ describe('SignInButton', () => {
   });
 
   it('drops oversized saved logout return paths before building the CAS redirect', async () => {
+    vi.stubEnv('VITE_APP_SERVER', 'http://localhost:4000');
     sessionStorage.setItem('logoutReturnPath', `/${'a'.repeat(2049)}`);
 
     renderSignInButton({ from: '/research' });

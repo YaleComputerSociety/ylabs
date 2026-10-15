@@ -13,6 +13,10 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  officialRosterUndergraduateStatuses,
+  type OfficialRosterUndergraduateStatus,
+} from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
@@ -2504,6 +2508,9 @@ const canonicalRosterMemberRow = (entry: ResearchEntityRosterEntry): Record<stri
   ...(entry.rosterProvenance?.sectionLabel
     ? { sectionLabel: entry.rosterProvenance.sectionLabel }
     : {}),
+  ...(entry.rosterProvenance?.listingTitle
+    ? { listingTitle: entry.rosterProvenance.listingTitle }
+    : {}),
   ...(entry.rosterProvenance?.observedAt
     ? { lastObservedAt: entry.rosterProvenance.observedAt }
     : {}),
@@ -2614,6 +2621,65 @@ export interface PublicRosterDisclosure {
   sourceUrl?: string;
   observedAt?: unknown;
   freshnessExpiresAt?: unknown;
+  undergraduates: PublicRosterUndergraduate[];
+}
+
+export interface PublicRosterUndergraduate {
+  name: string;
+  status: OfficialRosterUndergraduateStatus;
+  startYear?: number;
+  endYear?: number;
+  profileUrl?: string;
+}
+
+const MAX_PUBLIC_ROSTER_UNDERGRADUATES = 150;
+
+const boundedRosterText = (value: unknown, maxLength: number): string => {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return text.length <= maxLength ? text : '';
+};
+
+const rosterYear = (value: unknown): number | undefined => {
+  const year = Number(value);
+  return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : undefined;
+};
+
+function publicRosterUndergraduate(value: any): PublicRosterUndergraduate | null {
+  const name = boundedRosterText(value?.name, 80);
+  const status = value?.status;
+  if (!name || !(officialRosterUndergraduateStatuses as readonly string[]).includes(status)) {
+    return null;
+  }
+  const startYear = rosterYear(value?.startYear);
+  const endYear = rosterYear(value?.endYear);
+  const profileUrl = publicHttpUrl(value?.profileUrl);
+  return {
+    name,
+    status,
+    ...(startYear ? { startYear } : {}),
+    ...(endYear ? { endYear } : {}),
+    ...(profileUrl ? { profileUrl } : {}),
+  };
+}
+
+// A past undergraduate stays past whenever the page was read, so only the current list
+// is held to the snapshot's freshness window.
+export function publicRosterUndergraduates(
+  enrichment: any,
+  now = new Date(),
+): PublicRosterUndergraduate[] {
+  const snapshot = enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
+  if (!['current', 'partial'].includes(snapshot?.state)) return [];
+  if (!Array.isArray(snapshot?.undergraduates)) return [];
+  const freshnessExpiresAt = new Date(snapshot?.freshnessExpiresAt || 0).getTime();
+  const currentIsFresh = Number.isFinite(freshnessExpiresAt) && freshnessExpiresAt >= now.getTime();
+  return snapshot.undergraduates
+    .map(publicRosterUndergraduate)
+    .filter(
+      (member: PublicRosterUndergraduate | null): member is PublicRosterUndergraduate =>
+        Boolean(member) && (member!.status === 'past' || currentIsFresh),
+    )
+    .slice(0, MAX_PUBLIC_ROSTER_UNDERGRADUATES);
 }
 
 export function publicRosterDisclosure(
@@ -2621,12 +2687,15 @@ export function publicRosterDisclosure(
   verifiedMemberCount: number,
   availableMemberCount: number,
   retainedRows: any[] = [],
+  now = new Date(),
 ): PublicRosterDisclosure {
   const withheldCount = Math.max(0, Number(enrichment?.withheldCount) || 0);
+  const undergraduates = publicRosterUndergraduates(enrichment, now);
+  const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
   let status: PublicRosterDisclosureStatus;
   if (enrichment?.state === 'failed') {
     status = 'optional-source-failure';
-  } else if (verifiedMemberCount > 0) {
+  } else if (verifiedMemberCount > 0 || listsCurrentUndergraduates) {
     status = withheldCount > 0 || enrichment?.state === 'partial' ? 'partial' : 'current';
   } else if (withheldCount > 0 || enrichment?.state === 'withheld') {
     status = 'withheld';
@@ -2668,6 +2737,7 @@ export function publicRosterDisclosure(
       : useRetainedEvidence
         ? earliestRetainedValue('freshnessExpiresAt')
         : enrichment?.freshnessExpiresAt,
+    undergraduates,
   };
 }
 
@@ -3666,6 +3736,9 @@ export async function getResearchGroupDetail(
       user: withPublicMemberLeadEmail(
         {
           ...publicMemberUserForResearchDetail(member.user),
+          ...(rosterEvidence && !member.user?.title && row?.listingTitle
+            ? { title: row.listingTitle }
+            : {}),
           publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
           ...(leadHoldsOnlyEmeritusAppointments ? { emeritus: true } : {}),
         },

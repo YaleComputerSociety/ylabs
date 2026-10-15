@@ -120,6 +120,7 @@ import {
   isFreshVerifiedOfficialRosterRow,
   publicResearchEntityLeadMemberNames,
   publicRosterDisclosure,
+  publicRosterUndergraduates,
   researchDetailLeadIdentity,
   resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
@@ -6220,5 +6221,67 @@ describe('the independent Meilisearch legs of a text search run concurrently (#3
 
     expect(result.degraded).toBe(true);
     consoleError.mockRestore();
+  });
+});
+
+describe('publicRosterUndergraduates', () => {
+  const now = new Date('2026-10-20T00:00:00Z');
+  const snapshot = {
+    state: 'current',
+    sourceUrl: 'https://fixturelab.yale.edu/people',
+    observedAt: '2026-10-14T00:00:00Z',
+    freshnessExpiresAt: '2026-11-04T00:00:00Z',
+    undergraduates: [
+      {
+        name: 'Current Fixture',
+        status: 'current',
+        startYear: 2024,
+        profileUrl: 'https://fixturelab.yale.edu/profile/current-fixture',
+      },
+      { name: 'Former Fixture', status: 'past', startYear: 2021, endYear: 2023 },
+      { name: 'Unknown Status', status: 'visiting' },
+      { name: '', status: 'past' },
+      { name: 'Bad Year', status: 'past', endYear: 23, profileUrl: 'javascript:alert(1)' },
+    ],
+  };
+
+  it('serves valid listed undergraduates from a fresh snapshot', () => {
+    expect(publicRosterUndergraduates(snapshot, now)).toEqual([
+      {
+        name: 'Current Fixture',
+        status: 'current',
+        startYear: 2024,
+        profileUrl: 'https://fixturelab.yale.edu/profile/current-fixture',
+      },
+      { name: 'Former Fixture', status: 'past', startYear: 2021, endYear: 2023 },
+      { name: 'Bad Year', status: 'past' },
+    ]);
+  });
+
+  it('reads a page that lists only undergraduates as a current roster', () => {
+    expect(publicRosterDisclosure(snapshot, 0, 0, [], now)).toMatchObject({
+      status: 'current',
+      undergraduates: expect.arrayContaining([expect.objectContaining({ status: 'current' })]),
+    });
+  });
+
+  it('keeps past undergraduates but drops current ones once the freshness window passes', () => {
+    expect(
+      publicRosterUndergraduates(snapshot, new Date('2026-11-05T00:00:00Z')).map(
+        (member) => member.status,
+      ),
+    ).toEqual(['past', 'past']);
+  });
+
+  it('serves nothing from a snapshot that was never read as current', () => {
+    for (const state of ['withheld', 'stale', 'empty']) {
+      expect(publicRosterUndergraduates({ ...snapshot, state }, now)).toEqual([]);
+    }
+  });
+
+  it('serves the retained snapshot after a failed refresh', () => {
+    expect(
+      publicRosterUndergraduates({ state: 'failed', lastSuccessfulSnapshot: snapshot }, now),
+    ).toHaveLength(3);
   });
 });

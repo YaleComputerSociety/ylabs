@@ -199,3 +199,7 @@ export const loginSignalBuckets = [
   'yalies_unavailable',
 ] as const;
 export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
+
+export const officialRosterUndergraduateStatuses = ['current', 'past'] as const;
+export type OfficialRosterUndergraduateStatus =
+  (typeof officialRosterUndergraduateStatuses)[number];
