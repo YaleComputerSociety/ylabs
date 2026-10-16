@@ -133,4 +133,35 @@ describe('ResearchTeamSection', () => {
     expect(screen.queryByText(/can tell you what research/)).toBeNull();
     expect(screen.getByRole('link', { name: 'Official roster source' })).toBeTruthy();
   });
+
+  it('orders past undergraduates by year, newest first, then by last name', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          status: 'current',
+          undergraduates: [
+            { name: 'Zoe Adams', status: 'past', endYear: 2022 },
+            { name: 'Avery Quill', status: 'past', endYear: 2024 },
+            { name: 'Harper Wren Jr.', status: 'past' },
+            { name: 'Rowan Baker', status: 'past', endYear: 2024 },
+            { name: 'Ellis Álvarez', status: 'past', startYear: 2021, endYear: 2024 },
+            { name: 'Parker Moss', status: 'past', endYear: 2022 },
+          ],
+        })}
+      />,
+    );
+    expect(
+      within(screen.getByRole('list'))
+        .getAllByRole('listitem')
+        .map((item) => item.firstChild?.textContent),
+    ).toEqual([
+      'Ellis Álvarez',
+      'Rowan Baker',
+      'Avery Quill',
+      'Zoe Adams',
+      'Parker Moss',
+      'Harper Wren Jr.',
+    ]);
+  });
 });

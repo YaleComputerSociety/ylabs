@@ -677,6 +677,99 @@ describe('reading each person from their own line', () => {
   });
 });
 
+describe('round-three roster rules', () => {
+  const observedAt = new Date('2026-10-16T12:00:00Z');
+  const config: OfficialRosterConfig = {
+    researchEntityKey: 'dept-fixture-three',
+    url: 'https://threelab.yale.edu/people',
+    template: 'heading-list',
+    currentSectionLabels: ['Undergraduate Students'],
+    pastSectionLabels: ['Alumni'],
+  };
+  const listed = (html: string) =>
+    extractOfficialResearchHomeRoster(html, config, observedAt).undergraduates.map(
+      ({ name, status }) => `${name}:${status}`,
+    );
+
+  it('reads a bracket as the home school only where most brackets say Yale', () => {
+    expect(
+      listed(`<html><body><main><h3>Undergraduate Students</h3><ul><li>Jordan Alder</li></ul>
+        <h2>Alumni</h2><h3>Undergraduate Students</h3><ul>
+          <li>Avery Quill (Yale)</li><li>Harper Wren (Yale)</li><li>Rowan Thistle (Elsewhere University)</li>
+        </ul></main></body></html>`),
+    ).toEqual(['Jordan Alder:current', 'Avery Quill:past', 'Harper Wren:past']);
+    expect(
+      listed(`<html><body><main><h3>Undergraduate Students</h3><ul><li>Jordan Alder</li></ul>
+        <h2>Alumni</h2><h3>Undergraduate Students</h3><ul>
+          <li>Avery Quill (Elsewhere University)</li><li>Harper Wren (Yale University)</li>
+          <li>Rowan Thistle (Another Institute)</li>
+        </ul></main></body></html>`),
+    ).toHaveLength(4);
+  });
+
+  it('leaves out a section headed by another university', () => {
+    expect(
+      listed(`<html><body><main><h3>Undergraduate Students</h3><ul><li>Jordan Alder</li></ul>
+        <h2>Alumni</h2><h3>Undergraduate Students at Elsewhere State University</h3>
+        <ul><li>Avery Quill</li></ul></main></body></html>`),
+    ).toEqual(['Jordan Alder:current']);
+  });
+
+  it('ignores planned degrees and keeps a senior-thesis student who stayed on as postgraduate', () => {
+    expect(
+      listedEntryRole(
+        { title: '', years: 'BS Chemistry Yale 2029 Postgrad Plan: MD, PhD' },
+        'Undergraduate Students',
+      ),
+    ).toBe('undergrad');
+    expect(
+      listedEntryRole(
+        { title: '', years: '(Senior Thesis 2020; Postgraduate Researcher 2020-2021)' },
+        'Alumni',
+      ),
+    ).toBe('undergrad');
+    expect(listedEntryRole({ title: '', years: '(Postbac)' }, 'Undergraduate Students')).toBeNull();
+    expect(
+      listedEntryRole({ title: '', years: '(M.S. 2025)' }, 'Undergraduate Students'),
+    ).toBeNull();
+  });
+
+  it('reads names from a layout table without taking the next column as their own line', () => {
+    expect(
+      listed(`<html><body><main><h3>Undergraduate Students</h3><ul><li>Jordan Alder</li></ul>
+        <h3>Alumni</h3><table><tbody><tr>
+          <td><p>Person</p><p>Avery Quill (Yale College ‘24)</p><p>Harper Wren (Yale College ‘23)</p></td>
+          <td><p>Current position</p><p>PhD student, Fixture lab</p><p>Analyst</p></td>
+        </tr></tbody></table></main></body></html>`),
+    ).toEqual(['Jordan Alder:current', 'Avery Quill:past', 'Harper Wren:past']);
+  });
+});
+
+describe('owner name judgements', () => {
+  it('leaves out withheld names and lists past names as past, whatever the page says', () => {
+    const html = `<html><body><main><h3>Undergraduate Students</h3><ul>
+      <li>Avery Quill</li><li>Harper Wren</li><li>Rowan Thistle Rowan Thistle</li>
+    </ul></main></body></html>`;
+    const roster = extractOfficialResearchHomeRoster(
+      html,
+      {
+        researchEntityKey: 'dept-fixture-judged',
+        url: 'https://judgedlab.yale.edu/people',
+        template: 'heading-list',
+        currentSectionLabels: ['Undergraduate Students'],
+        withheldNames: ['avery quill'],
+        pastNames: ['Harper Wren'],
+      },
+      new Date('2026-10-16T12:00:00Z'),
+    );
+    expect(roster.undergraduates.map(({ name, status }) => `${name}:${status}`)).toEqual([
+      'Harper Wren:past',
+      'Rowan Thistle:current',
+    ]);
+    expect(roster.undergraduateWithheldCount).toBe(1);
+  });
+});
+
 describe('profile-grid pages with alumni outside the member grid', () => {
   it('reads former undergraduates listed in the page text below the grid', () => {
     const html = page(
