@@ -268,10 +268,11 @@ function readYaleSitesDirectorySections($: cheerio.CheerioAPI): RosterSection[] 
   trail.length = 0;
   sections.push(section);
   const scope = $('main').length > 0 ? 'main ' : '';
-  $(['h2', 'h3', 'li.directory-listing-card', 'table'].map((tag) => scope + tag).join(', ')).each(
+  $(['h2', 'h3', 'li', 'p', 'table'].map((tag) => scope + tag).join(', ')).each(
     (_index, element) => {
       const node = $(element);
-      if (node.is('li')) {
+      if (node.closest('nav, header, footer, aside').length > 0) return;
+      if (node.is('li.directory-listing-card')) {
         const heading = node.find('.directory-listing-card__heading').first();
         const link = heading.find('a').first();
         section.cards.push({
@@ -281,11 +282,16 @@ function readYaleSitesDirectorySections($: cheerio.CheerioAPI): RosterSection[] 
         });
         return;
       }
+      if (node.closest('li.directory-listing-card').length > 0) return;
       if (node.is('table')) {
         section.tableRows.push(...readRosterTableRows($, node));
         return;
       }
-      if (node.closest('li.directory-listing-card').length > 0) return;
+      if (node.closest('table').length > 0) return;
+      if (node.is('li, p')) {
+        section.listItems.push(blockEntry($, node));
+        return;
+      }
       const tagName = (element as { tagName?: string }).tagName || 'h3';
       section = openSection(trail, normalizedText(node.text()), headingLevel(tagName));
       sections.push(section);
@@ -308,7 +314,9 @@ const SECTION_HEADING_WORDS = new Set(
     'major minor neuroscience psychology mathematics computer science physics chemistry ' +
     'biology engineering economics statistics protein folding organisms cells molecular ' +
     'cellular biochemistry biophysics applied environmental bs ba b.s. b.a. ms m.s. phd ph.d. md ' +
-    'university college institute school hospital center centre academy'
+    'university college institute school hospital center centre academy ' +
+    'plan plans postgrad postgraduate hometown hobbies hobby fact facts advisor mentor ' +
+    'thesis concentration role status graduation interest fun favorite'
   ).split(' '),
 );
 
@@ -339,17 +347,22 @@ export function looksLikeListedPersonName(value: string): boolean {
   );
 }
 
+const ENTRY_NAME_BOUNDARY = /\s*(?:[(,:;|]|\s[–—-]\s)/;
+
 const listItemEntry = (text: string): ListedPersonEntry => {
-  const parenthesis = text.indexOf('(');
-  return parenthesis > 0
+  const boundary = ENTRY_NAME_BOUNDARY.exec(text);
+  return boundary && boundary.index > 0
     ? {
-        name: text.slice(0, parenthesis).trim(),
+        name: text.slice(0, boundary.index).trim(),
         title: '',
-        years: text.slice(parenthesis),
+        years: text.slice(boundary.index),
         profileHref: '',
       }
     : { name: text, title: '', years: '', profileHref: '' };
 };
+
+const PAST_MEMBERS_TOGGLE =
+  'summary, button, [role="button"], a[href^="#"], a[data-toggle], a[data-bs-toggle], a[aria-controls]';
 
 function leadingLineText($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string {
   const firstLine = (element.html() || '').split(/<br\s*\/?>/i)[0];
@@ -375,57 +388,73 @@ function blockEntry($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): Liste
  */
 const PAST_MEMBERS_MARKER =
   /^(?:view|show|see|our)?\s*(?:lab |group )?(?:alumni|alumnae|former members|past members|previous members)$/i;
-const TRAILING_YEAR_LINE = /\b(?:19|20)\d{2}\b/;
+const DESCRIPTOR_LINE_MAX = 60;
+
+function paragraphLines($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string[] {
+  return (element.html() || '')
+    .split(/<br\s*\/?>/i)
+    .map((fragment) => normalizedText(cheerio.load(`<div>${fragment}</div>`)('div').text()))
+    .filter(Boolean);
+}
 
 function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
   const sections: RosterSection[] = [];
   const trail: HeadingTrailEntry[] = [];
   let section: (RosterSection & { level: number }) | null = null;
   const root = $('main').length > 0 ? $('main').first() : $('body');
-  root.find('h1, h2, h3, h4, h5, h6, li, p, table, summary, button').each((_index, element) => {
-    const node = $(element);
-    if (node.closest('nav, header, footer, aside').length > 0) return;
-    const tagName = (element as { tagName?: string }).tagName || '';
-    if (/^h[1-6]$/.test(tagName)) {
+  root
+    .find(`h1, h2, h3, h4, h5, h6, li, p, div.paragraph, table, ${PAST_MEMBERS_TOGGLE}`)
+    .each((_index, element) => {
+      const node = $(element);
+      if (node.closest('nav, header, footer, aside').length > 0) return;
+      const tagName = (element as { tagName?: string }).tagName || '';
+      if (/^h[1-6]$/.test(tagName)) {
+        const text = normalizedText(node.text());
+        const level = headingLevel(tagName);
+        const isCardName = level > (section?.level ?? 7) || node.closest('li').length > 0;
+        if (section && isCardName && looksLikeListedPersonName(listItemEntry(text).name)) {
+          section.listItems.push(blockEntry($, node));
+          return;
+        }
+        section = { ...openSection(trail, text, level), level };
+        sections.push(section);
+        return;
+      }
+      if (!section) return;
+      if (tagName === 'table') {
+        section.tableRows.push(...readRosterTableRows($, node));
+        return;
+      }
+      if (node.closest('table').length > 0) return;
       const text = normalizedText(node.text());
-      const level = headingLevel(tagName);
-      const isCardName = level > (section?.level ?? 7) || node.closest('li').length > 0;
-      if (section && isCardName && looksLikeListedPersonName(text)) {
+      const isToggle = node.is(PAST_MEMBERS_TOGGLE);
+      if (PAST_MEMBERS_MARKER.test(text) && (isToggle || tagName === 'p' || tagName === 'li')) {
+        trail.push({ label: text, level: section.level - 0.5 });
+        section = { ...section, withinPastSection: true, cards: [], tableRows: [], listItems: [] };
+        sections.push(section);
+        return;
+      }
+      if (isToggle) return;
+      if (/^\s*(?:\u00a0\s*){4,}/.test(node.text())) return;
+      if (tagName === 'li') {
         section.listItems.push(blockEntry($, node));
         return;
       }
-      section = { ...openSection(trail, text, level), level };
-      sections.push(section);
-      return;
-    }
-    if (!section) return;
-    if (tagName === 'table') {
-      section.tableRows.push(...readRosterTableRows($, node));
-      return;
-    }
-    if (node.closest('table').length > 0) return;
-    const text = normalizedText(node.text());
-    if (PAST_MEMBERS_MARKER.test(text)) {
-      section = { ...section, withinPastSection: true, cards: [], tableRows: [], listItems: [] };
-      sections.push(section);
-      return;
-    }
-    if (tagName === 'summary' || tagName === 'button') return;
-    if (/^\s*(?:\u00a0\s*){4,}/.test(node.text())) return;
-    const entry = blockEntry($, node);
-    const previous = section.listItems[section.listItems.length - 1];
-    if (
-      previous &&
-      tagName === 'p' &&
-      !looksLikeListedPersonName(entry.name) &&
-      text.length <= 40 &&
-      TRAILING_YEAR_LINE.test(text)
-    ) {
-      previous.years = `${previous.years} ${text}`.trim();
-      return;
-    }
-    section.listItems.push(entry);
-  });
+      const lines = paragraphLines($, node);
+      const lead = blockEntry($, node);
+      const leadIsName = looksLikeListedPersonName(lead.name);
+      for (const [index, line] of lines.entries()) {
+        const entry = index === 0 ? lead : listItemEntry(line);
+        const previous = section.listItems[section.listItems.length - 1];
+        if (index === 0 ? leadIsName : looksLikeListedPersonName(entry.name)) {
+          section.listItems.push(entry);
+        } else if (previous && line.length <= DESCRIPTOR_LINE_MAX) {
+          previous.years = `${previous.years} ${line}`.trim();
+        } else if (index === 0) {
+          section.listItems.push(entry);
+        }
+      }
+    });
   return sections;
 }
 
@@ -483,6 +512,46 @@ function undergraduateStatus(
   return yearsSinceStart > OFFICIAL_ROSTER_MAX_UNDERGRADUATE_YEARS ? 'past' : 'current';
 }
 
+const YALE_UNDERGRADUATE_EVIDENCE =
+  /\bYale College\b|\bclass of (?:19|20)\d{2}\b|\bY(?:C|ale)\s*['’‘]\d{2}\b|\b(?:B\.?\s?S\.?|B\.?\s?A\.?)(?=[\s,'’‘(]|$)|\bundergrad/i;
+const GRADUATE_DEGREE_EVIDENCE =
+  /\b(?:Ph\.?\s?D|M\.?\s?S|M\.?\s?A|M\.?\s?D|M\.?\s?Phil|MPH|postdoc\w*|doctoral|master['’]?s)\b/i;
+
+/**
+ * A listed person's own line decides their role before the section does: a master's
+ * student under an "Undergraduate" heading is not an undergraduate, and a former member
+ * whose line reads "Yale College '22" is one.
+ */
+export function listedEntryRole(
+  entry: { title: string; years: string },
+  sectionLabel: string,
+): OfficialRosterRole | null {
+  const ownText = `${entry.title} ${entry.years}`;
+  const ownRole = mapOfficialRosterRole(ownText, '');
+  if (ownRole && ownRole !== 'affiliate') return ownRole;
+  if (YALE_UNDERGRADUATE_EVIDENCE.test(ownText) && !GRADUATE_DEGREE_EVIDENCE.test(ownText)) {
+    return 'undergrad';
+  }
+  return mapOfficialRosterRole(entry.title, sectionLabel);
+}
+
+const ANOTHER_SCHOOL_EVIDENCE = [
+  /\bvisiting\b/i,
+  /\bhigh school\b/i,
+  /\b(?:student|undergraduate|undergrad|major|intern)\s+(?:at|from)\s+(?!Yale\b)\p{Lu}/iu,
+  /\b(?:B\.?\s?S|B\.?\s?A)\.?,?\s+(?:\p{Lu}\w*\s+){0,3}(?:University|College|Institute)\b/u,
+  /\b(?!Yale\b)\p{Lu}\w+\s+(?:University|College)\s+(?:\w+\s+){0,2}(?:undergraduate|undergrad|student)\b/u,
+];
+
+/** The owner lists Yale undergraduates only (2026-10-16). */
+export function listedEntryIsFromAnotherSchool(entry: { title: string; years: string }): boolean {
+  const ownText = `${entry.title} ${entry.years}`.split(
+    /\b(?:now|current(?:ly)?\s+(?:position|at))\b/i,
+  )[0];
+  if (/\(\s*Yale[^)]*\)/i.test(ownText) || /\bYale College\b/i.test(ownText)) return false;
+  return ANOTHER_SCHOOL_EVIDENCE.some((pattern) => pattern.test(ownText));
+}
+
 function extractListedUndergraduates(
   sections: RosterSection[],
   config: OfficialRosterConfig,
@@ -500,7 +569,11 @@ function extractListedUndergraduates(
     if (!labelStatus) continue;
     const sectionStatus = section.withinPastSection ? 'past' : labelStatus;
     for (const entry of listedPersonEntries(section)) {
-      if (mapOfficialRosterRole(entry.title, section.label) !== 'undergrad') continue;
+      if (listedEntryRole(entry, section.label) !== 'undergrad') continue;
+      if (listedEntryIsFromAnotherSchool(entry)) {
+        undergraduateWithheldCount += 1;
+        continue;
+      }
       const name = displayCase(withoutRosterChrome(entry.name));
       if (
         !looksLikeListedPersonName(name) ||
@@ -543,7 +616,10 @@ function readRosterSections(
 ): RosterSection[] {
   if (template === 'yalesites-directory') return readYaleSitesDirectorySections($);
   if (template === 'heading-list') return readHeadingListSections($);
-  return readProfileGridSections($);
+  const pastSections = readHeadingListSections($).filter(
+    (section) => section.withinPastSection || PAST_SECTION_LABEL.test(section.label),
+  );
+  return [...readProfileGridSections($), ...pastSections];
 }
 
 const sectionListsPeople = (section: RosterSection): boolean =>
@@ -582,7 +658,7 @@ export function undergraduateSectionCandidates(
   for (const section of readRosterSections(cheerio.load(html), template)) {
     const undergraduateEntries = listedPersonEntries(section).filter(
       (entry) =>
-        mapOfficialRosterRole(entry.title, section.label) === 'undergrad' &&
+        listedEntryRole(entry, section.label) === 'undergrad' &&
         looksLikeListedPersonName(entry.name),
     ).length;
     if (!section.label || undergraduateEntries === 0) continue;

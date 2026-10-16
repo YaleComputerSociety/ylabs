@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   extractOfficialResearchHomeRoster,
+  listedEntryIsFromAnotherSchool,
+  listedEntryRole,
   looksLikeListedPersonName,
   mapOfficialRosterRole,
   officialRosterSectionLabels,
@@ -475,7 +477,7 @@ describe('heading-list document-order walker', () => {
     const roster = extractOfficialResearchHomeRoster(html, config, observedAt);
 
     expect(roster.undergraduates).toEqual([
-      { name: 'Ellis Juniper', status: 'current' },
+      { name: 'Ellis Juniper', status: 'current', startYear: 2024 },
       { name: 'Parker Moss', status: 'current' },
     ]);
   });
@@ -514,6 +516,8 @@ describe('heading-list document-order walker', () => {
       'Psychology Major',
       'Jordan Alder, PhD',
       'University of Oregon',
+      'Postgrad Plan',
+      'Fun Fact',
     ]) {
       expect(looksLikeListedPersonName(value)).toBe(false);
     }
@@ -608,6 +612,89 @@ describe('telling past undergraduates from current ones', () => {
         'Ellis Juniper:past',
       ]),
     );
+  });
+});
+
+describe('reading each person from their own line', () => {
+  const observedAt = new Date('2026-10-16T12:00:00Z');
+  const config: OfficialRosterConfig = {
+    researchEntityKey: 'dept-fixture-own',
+    url: 'https://ownlab.yale.edu/people',
+    template: 'heading-list',
+    currentSectionLabels: ['Current Members'],
+    pastSectionLabels: ['Former Members'],
+  };
+  const listed = (html: string) =>
+    extractOfficialResearchHomeRoster(html, config, observedAt).undergraduates.map(
+      ({ name, status }) => `${name}:${status}`,
+    );
+
+  it('lets a person line outrank the section heading', () => {
+    expect(
+      listedEntryRole({ title: '', years: "(Master's Student)" }, 'Undergraduate Students'),
+    ).toBe('grad-student');
+    expect(listedEntryRole({ title: '', years: "Yale College '27" }, 'Current Members')).toBe(
+      'undergrad',
+    );
+    expect(listedEntryRole({ title: '', years: 'B.S. 2019, Ph.D. 2024' }, 'Alumni')).toBeNull();
+  });
+
+  it('reads undergraduates from cards that state only a Yale College class year', () => {
+    expect(
+      listed(`<html><body><main><h3>Current Members</h3><ul>
+        <li><h2>Avery Quill</h2><p>Timothy Dwight College</p><p>Yale College ‘28</p></li>
+        <li><h2>Jordan Alder</h2><p>PhD Candidate</p></li>
+      </ul></main></body></html>`),
+    ).toEqual(['Avery Quill:current']);
+  });
+
+  it('splits a paragraph of names on line breaks and keeps short descriptor lines', () => {
+    expect(
+      listed(`<html><body><main><h3>Current Members</h3><ul><li>Jordan Alder (PhD Candidate)</li></ul>
+        <h3>Former Members</h3>
+        <p>Avery Quill, Yale College '22<br>Harper Wren<br>Class of 2023<br>Rowan Thistle (B.S. 2021)</p>
+      </main></body></html>`),
+    ).toEqual(['Avery Quill:past', 'Harper Wren:past', 'Rowan Thistle:past']);
+  });
+
+  it('leaves out undergraduates the page ties to another school', () => {
+    for (const years of [
+      'Visiting undergraduate from Elsewhere University',
+      'Undergraduate Student at Fordham University',
+      'B.S. Fairfield University (2024)',
+      'Summer intern from Valley Christian High School',
+    ]) {
+      expect(listedEntryIsFromAnotherSchool({ title: '', years })).toBe(true);
+    }
+    for (const years of [
+      '(Yale)',
+      "Yale College '24",
+      '(Princeton University)',
+      '2021-2024, now at MIT',
+    ]) {
+      expect(listedEntryIsFromAnotherSchool({ title: '', years })).toBe(false);
+    }
+  });
+});
+
+describe('profile-grid pages with alumni outside the member grid', () => {
+  it('reads former undergraduates listed in the page text below the grid', () => {
+    const html = page(
+      card('Avery Quill', 'Undergraduate Student', '/lab/fixture/profile/avery-quill/'),
+    ).replace(
+      '</body>',
+      `<div class="generic-content"><h2>Former Members</h2>
+        <ul><li>Rowan Thistle (Yale College 2023)</li></ul></div></body>`,
+    );
+    const roster = extractOfficialResearchHomeRoster(
+      html,
+      { ...config, pastSectionLabels: ['Former Members'] },
+      new Date('2026-07-14T00:00:00Z'),
+    );
+    expect(roster.undergraduates.map(({ name, status }) => `${name}:${status}`)).toEqual([
+      'Avery Quill:current',
+      'Rowan Thistle:past',
+    ]);
   });
 });
 
