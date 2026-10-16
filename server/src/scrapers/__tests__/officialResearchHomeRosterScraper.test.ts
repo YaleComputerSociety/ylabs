@@ -745,6 +745,31 @@ describe('round-three roster rules', () => {
   });
 });
 
+describe('owner name judgements', () => {
+  it('leaves out withheld names and lists past names as past, whatever the page says', () => {
+    const html = `<html><body><main><h3>Undergraduate Students</h3><ul>
+      <li>Avery Quill</li><li>Harper Wren</li><li>Rowan Thistle Rowan Thistle</li>
+    </ul></main></body></html>`;
+    const roster = extractOfficialResearchHomeRoster(
+      html,
+      {
+        researchEntityKey: 'dept-fixture-judged',
+        url: 'https://judgedlab.yale.edu/people',
+        template: 'heading-list',
+        currentSectionLabels: ['Undergraduate Students'],
+        withheldNames: ['avery quill'],
+        pastNames: ['Harper Wren'],
+      },
+      new Date('2026-10-16T12:00:00Z'),
+    );
+    expect(roster.undergraduates.map(({ name, status }) => `${name}:${status}`)).toEqual([
+      'Harper Wren:past',
+      'Rowan Thistle:current',
+    ]);
+    expect(roster.undergraduateWithheldCount).toBe(1);
+  });
+});
+
 describe('profile-grid pages with alumni outside the member grid', () => {
   it('reads former undergraduates listed in the page text below the grid', () => {
     const html = page(

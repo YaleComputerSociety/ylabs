@@ -36,6 +36,9 @@ export interface OfficialRosterConfig {
   currency?: 'publish-date' | 'section-label';
   currentSectionLabels: string[];
   pastSectionLabels?: string[];
+  /** Owner judgements on single listed names, recorded per lab in its review (#5039). */
+  withheldNames?: string[];
+  pastNames?: string[];
 }
 
 export interface OfficialRosterUndergraduate {
@@ -317,7 +320,7 @@ const SECTION_HEADING_WORDS = new Set(
     'cellular biochemistry biophysics applied environmental bs ba b.s. b.a. ms m.s. phd ph.d. md ' +
     'university college institute school hospital center centre academy ' +
     'plan plans postgrad postgraduate hometown hobbies hobby fact facts advisor mentor ' +
-    'thesis concentration role status graduation interest fun favorite'
+    'thesis concentration role status graduation interest fun favorite next position'
   ).split(' '),
 );
 
@@ -327,6 +330,16 @@ const displayCase = (name: string): string =>
         .toLowerCase()
         .replace(/(^|[\s'’-])(\p{L})/gu, (_match, lead, letter) => lead + letter.toUpperCase())
     : name;
+
+const withoutRepeatedName = (name: string): string => {
+  const tokens = name.split(/\s+/);
+  const half = tokens.length / 2;
+  return Number.isInteger(half) &&
+    half > 0 &&
+    tokens.slice(0, half).join(' ') === tokens.slice(half).join(' ')
+    ? tokens.slice(0, half).join(' ')
+    : name;
+};
 
 const withoutRosterChrome = (value: string): string =>
   value
@@ -612,6 +625,8 @@ function extractListedUndergraduates(
   ]);
   const undergraduates: OfficialRosterUndergraduate[] = [];
   const seen = new Set<string>();
+  const withheldNames = new Set((config.withheldNames ?? []).map(normalizedLabel));
+  const pastNames = new Set((config.pastNames ?? []).map(normalizedLabel));
   let undergraduateWithheldCount = 0;
   for (const section of sections) {
     const labelStatus = statusByLabel.get(normalizedLabel(section.label));
@@ -631,7 +646,11 @@ function extractListedUndergraduates(
         undergraduateWithheldCount += 1;
         continue;
       }
-      const name = displayCase(withoutRosterChrome(entry.name));
+      const name = displayCase(withoutRepeatedName(withoutRosterChrome(entry.name)));
+      if (withheldNames.has(normalizedLabel(name))) {
+        undergraduateWithheldCount += 1;
+        continue;
+      }
       if (
         !looksLikeListedPersonName(name) ||
         undergraduates.length >= OFFICIAL_ROSTER_MAX_UNDERGRADUATES_PER_ENTITY
@@ -640,7 +659,9 @@ function extractListedUndergraduates(
         continue;
       }
       const { startYear, endYear } = yearSpan(entry.years);
-      const status = undergraduateStatus(sectionStatus, { startYear, endYear }, observedAt);
+      const status = pastNames.has(normalizedLabel(name))
+        ? 'past'
+        : undergraduateStatus(sectionStatus, { startYear, endYear }, observedAt);
       const dedupeKey = `${status}|${normalizedLabel(name)}`;
       if (seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);

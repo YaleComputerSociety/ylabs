@@ -143,6 +143,12 @@ export function officialRosterConfigSource(configs: OfficialRosterConfig[]): str
         ...(config.pastSectionLabels && config.pastSectionLabels.length > 0
           ? [`    pastSectionLabels: ${JSON.stringify(config.pastSectionLabels)},`]
           : []),
+        ...(config.withheldNames && config.withheldNames.length > 0
+          ? [`    withheldNames: ${JSON.stringify(config.withheldNames)},`]
+          : []),
+        ...(config.pastNames && config.pastNames.length > 0
+          ? [`    pastNames: ${JSON.stringify(config.pastNames)},`]
+          : []),
       ];
       return `  {\n${fields.join('\n')}\n  },`;
     })
