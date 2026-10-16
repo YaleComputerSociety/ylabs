@@ -16,6 +16,7 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import type { OfficialRosterUndergraduateStatus } from '../../models/storedVocabularies';
+import { OFFICIAL_ROSTER_CONFIGS } from './officialRosterConfigs';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 export const OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE = 'official-research-home-roster';
@@ -71,32 +72,7 @@ export interface ExtractedOfficialRoster {
   complete: boolean;
 }
 
-export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
-  {
-    researchEntityKey: 'ysm-turk',
-    url: 'https://medicine.yale.edu/lab/turk/labmembers/',
-    currentSectionLabels: ['Current Members'],
-  },
-  {
-    researchEntityKey: 'ysm-haeny',
-    url: 'https://medicine.yale.edu/lab/haeny/people/',
-    currentSectionLabels: ['Postdoctoral Fellows', 'Lab Manager'],
-  },
-  {
-    researchEntityKey: 'dept-seas-john-fortner',
-    url: 'https://fortnerlab.yale.edu/people',
-    template: 'yalesites-directory',
-    currentSectionLabels: ['Lab Members'],
-    pastSectionLabels: ['Lab Alumni'],
-  },
-  {
-    researchEntityKey: 'dept-seas-drew-r-gentner',
-    url: 'https://gentnerlab.yale.edu/research-team',
-    template: 'heading-list',
-    currentSectionLabels: ['Undergraduate Researchers'],
-    pastSectionLabels: ['Undergraduate Alumni'],
-  },
-];
+export { OFFICIAL_ROSTER_CONFIGS } from './officialRosterConfigs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
