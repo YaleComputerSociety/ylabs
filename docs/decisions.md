@@ -13,6 +13,7 @@ That line is the one invitation to contact a named non-lead person anywhere on t
 A past undergraduate is listed only when the page itself marks them past, through an alumni or former section or toggle or an end or class year that has passed, and their position after leaving the lab is never stored.
 The list replaces the "Mentions undergraduate research" quote on that row, because the quote is a weaker statement of the same fact, often a single name lifted from the same page.
 An undergraduate needs no profile page to be listed, since the listing resolves no person record; a profile link, when the page has one, makes the entry a linked card.
+Only Yale undergraduates are listed (owner, 2026-10-16): a visitor, a high-school student, a student of another school, or a student of the lead's previous institution is left out, because the list answers which Yale students a student can ask about the lab.
 
 ## 2026-10-14: Quoted Contact Details Are Shown, Not Redacted (#5041)
 
