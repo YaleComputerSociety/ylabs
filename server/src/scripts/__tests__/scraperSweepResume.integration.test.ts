@@ -157,7 +157,9 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             },
             // The profile-link-health stage refuses an artifact that does not say
             // whether the run finished, so the stub has to answer that too (#3303).
+            // The faculty-research promotion stage refuses a result that is not an apply.
             result: {
+              mode: 'apply',
               decisiveVerdicts: 0,
               statusesWritten: 0,
               coverage: {
