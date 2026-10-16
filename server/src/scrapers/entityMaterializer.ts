@@ -7827,7 +7827,9 @@ function reclassifySiteNamedResearchAsLab(input: {
     set[`fieldProvenance.${field}`] = provenance;
   }
   set.name = siteStatedLabName;
-  if (!input.manuallyLockedFields.includes('displayName')) set.displayName = siteStatedLabName;
+  if (textValue(projected.displayName) && !input.manuallyLockedFields.includes('displayName')) {
+    set.displayName = siteStatedLabName;
+  }
   return 1;
 }
 
