@@ -271,7 +271,10 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
-import { isUnbackedLabNameShell } from '../services/studentVisibilityTier';
+import {
+  SITE_TITLE_LAB_NAME_SOURCE,
+  isUnbackedLabNameShell,
+} from '../services/studentVisibilityTier';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
@@ -2416,8 +2419,14 @@ function fieldProvenanceForResolvedObservation(
         obs._id && obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
     )
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
-  if (!match?._id) return null;
+  return match ? observationFieldProvenance(match, resolved.confidence) : null;
+}
 
+function observationFieldProvenance(
+  match: MaterializerObservationLike,
+  fallbackConfidence?: number,
+): Record<string, unknown> | null {
+  if (!match._id) return null;
   // `observationId` is the reference observation retention reads to decide a row
   // is still cited (`OBSERVATION_REFERENCE_SPECS`), so writing the observation's
   // id into `sourceId` left every cited row unprotected while the protection
@@ -2435,7 +2444,7 @@ function fieldProvenanceForResolvedObservation(
     sourceUrl: match.sourceUrl || '',
     observationId: match._id,
     observedAt: match.observedAt || new Date(),
-    confidence: match.confidence ?? resolved.confidence,
+    confidence: match.confidence ?? fallbackConfidence,
   };
 }
 
@@ -7592,10 +7601,12 @@ function enforceResearchEntityNameAuthority(input: {
     }
     fieldsWritten++;
   }
-  const siteStatedLabName = siteStatedLabNameForWebsite(
+  const siteStatedLab = siteStatedLabForWebsite(
     input.materializationObs,
     documentAsProjected(set, unset, entityDoc).websiteUrl,
+    entityDoc?.fieldValueRefusals,
   );
+  const siteStatedLabName = textValue(siteStatedLab?.name.value);
   fieldsWritten += reclassifyUnbackedLabAsFacultyResearch({
     set,
     unset,
@@ -7621,7 +7632,7 @@ function enforceResearchEntityNameAuthority(input: {
     entityDoc,
     manuallyLockedFields: input.manuallyLockedFields,
     authority: input.nameIdentityAuthority,
-    siteStatedLabName,
+    siteStatedLab,
   });
   // A heading composed from a bare person name gains its suffix here, after the
   // observation normalizer ran on the suffix-less value.
@@ -7710,30 +7721,43 @@ function reclassifyEvidencedFacultyResearchAsLab(input: {
   return 1;
 }
 
-export const SITE_TITLE_LAB_NAME_SOURCE = 'lab-site-type-probe';
-
 /**
- * The lab name the row's own current website states in its title, as the faculty-research
- * promotion read it (#5059). Tied to the current website: a name read from a site the row
- * no longer serves says nothing about it, so it is not evidence once the website moves.
+ * The lab name and type the row's own current website states in its title, as the
+ * faculty-research promotion read them (#5059). Tied to the current website: a name read
+ * from a site the row no longer serves says nothing about it, so it is not evidence once
+ * the website moves. A refused name or a refused `LAB` type is not evidence either, since
+ * this reads observations the resolver's refusal screen never saw.
  */
-export function siteStatedLabNameForWebsite(
+export function siteStatedLabForWebsite(
   observations: readonly MaterializerObservationLike[],
   websiteUrl: unknown,
-): string {
+  fieldValueRefusals: unknown,
+): { name: MaterializerObservationLike; entityType: MaterializerObservationLike } | null {
   const website = websiteIdentity(textValue(websiteUrl));
-  if (!website) return '';
-  let latest: MaterializerObservationLike | undefined;
-  for (const observation of observations) {
-    if (observation.sourceName !== SITE_TITLE_LAB_NAME_SOURCE || observation.field !== 'name') {
-      continue;
+  if (!website || valueIsRefused(fieldValueRefusals, 'entityType', 'LAB')) return null;
+  const latestFromSite = (field: string, admits: (value: unknown) => boolean) => {
+    let latest: MaterializerObservationLike | undefined;
+    for (const observation of observations) {
+      if (observation.sourceName !== SITE_TITLE_LAB_NAME_SOURCE || observation.field !== field) {
+        continue;
+      }
+      if (websiteIdentity(textValue(observation.sourceUrl)) !== website) continue;
+      if (!admits(observation.value)) continue;
+      const observedAt = observation.observedAt instanceof Date ? observation.observedAt.getTime() : 0;
+      const latestAt = latest?.observedAt instanceof Date ? latest.observedAt.getTime() : -1;
+      if (observedAt > latestAt) latest = observation;
     }
-    if (websiteIdentity(textValue(observation.sourceUrl)) !== website) continue;
-    const observedAt = observation.observedAt instanceof Date ? observation.observedAt.getTime() : 0;
-    const latestAt = latest?.observedAt instanceof Date ? latest.observedAt.getTime() : -1;
-    if (observedAt > latestAt) latest = observation;
-  }
-  return textValue(latest?.value);
+    return latest;
+  };
+  const name = latestFromSite(
+    'name',
+    (value) => Boolean(textValue(value)) && !valueIsRefused(fieldValueRefusals, 'name', value),
+  );
+  const entityType = latestFromSite(
+    'entityType',
+    (value) => textValue(value).toUpperCase() === 'LAB',
+  );
+  return name && entityType ? { name, entityType } : null;
 }
 
 /**
@@ -7746,6 +7770,8 @@ export function siteStatedLabNameForWebsite(
  * observation only after refusing a shared group, another researcher's site, and a name
  * the identity authority does not read as the row's own. Withheld when the lead already
  * has another lab row, which is a merge rather than a retype (2026-08-25 precedence).
+ * The name and type keep the site observations as provenance, which is what the serve
+ * gate (`isUnbackedLabNameShell`) reads as a name read off the row's own website.
  */
 function reclassifySiteNamedResearchAsLab(input: {
   set: Record<string, unknown>;
@@ -7754,17 +7780,29 @@ function reclassifySiteNamedResearchAsLab(input: {
   entityDoc: any;
   manuallyLockedFields: string[];
   authority: ResearchEntityNameIdentityAuthority;
-  siteStatedLabName: string;
+  siteStatedLab: ReturnType<typeof siteStatedLabForWebsite>;
 }): number {
-  const { set, unset, confidenceByField, entityDoc, authority, siteStatedLabName } = input;
-  if (!siteStatedLabName) return 0;
+  const { set, unset, confidenceByField, entityDoc, authority, siteStatedLab } = input;
+  if (!siteStatedLab) return 0;
   if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
     return 0;
   }
+  const siteStatedLabName = textValue(siteStatedLab.name.value);
   const projected = documentAsProjected(set, unset, entityDoc);
   const type = textValue(projected.entityType).toUpperCase();
   if (type !== 'FACULTY_RESEARCH_AREA' && type !== 'LAB') return 0;
-  if (type === 'LAB' && textValue(projected.name) === siteStatedLabName) return 0;
+  const provenanceFor = {
+    name: observationFieldProvenance(siteStatedLab.name),
+    entityType: observationFieldProvenance(siteStatedLab.entityType),
+  };
+  if (
+    type === 'LAB' &&
+    textValue(projected.name) === siteStatedLabName &&
+    materializerValuesDeepEqual(projected.fieldProvenance?.name, provenanceFor.name) &&
+    materializerValuesDeepEqual(projected.fieldProvenance?.entityType, provenanceFor.entityType)
+  ) {
+    return 0;
+  }
   const leadPersonId = textValue(authority.leadPersonId);
   const selfId = serializedDocumentId(entityDoc?._id) || '';
   if (leadPersonId && othersThan(authority.labRowRoster?.labIdsByLeadPersonId.get(leadPersonId), selfId)) {
@@ -7774,10 +7812,15 @@ function reclassifySiteNamedResearchAsLab(input: {
   const labIdentity = { entityType: 'LAB', kind: mapEntityTypeToResearchGroupKind('LAB') };
   set.entityType = labIdentity.entityType;
   set.kind = labIdentity.kind;
-  for (const field of ['entityType', 'kind', ...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS]) {
+  for (const field of ['kind', ...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS]) {
     delete set[`fieldProvenance.${field}`];
     delete confidenceByField[field];
     if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  for (const [field, provenance] of Object.entries(provenanceFor)) {
+    if (!provenance) continue;
+    delete unset[`fieldProvenance.${field}`];
+    set[`fieldProvenance.${field}`] = provenance;
   }
   set.name = siteStatedLabName;
   if (!input.manuallyLockedFields.includes('displayName')) set.displayName = siteStatedLabName;

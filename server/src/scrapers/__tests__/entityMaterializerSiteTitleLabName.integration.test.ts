@@ -21,6 +21,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { isUnbackedLabNameShell } from '../../services/studentVisibilityTier';
+import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
 import {
   resetKnownPersonSurnameRosterCache,
   resetLabRowRosterCache,
@@ -31,11 +32,6 @@ const ENTITY_KEY = 'faculty-research-area-rafferty-duchamp';
 const PROFILE_URL = 'https://www.example.edu/profile/rafferty-duchamp/';
 const SITE_URL = 'https://tidefixture.example.org/';
 const OLD_SITE_URL = 'https://old-tidefixture.example.org/';
-
-type PersistedEntity = { name?: string; kind?: string; entityType?: string };
-
-const persisted = () =>
-  ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<PersistedEntity>() as Promise<PersistedEntity>;
 
 const lead = async (entityId: unknown, displayName: string) => {
   const person = await Researcher.create({ displayName, archived: false });
@@ -51,18 +47,6 @@ const lead = async (entityId: unknown, displayName: string) => {
   });
   return person;
 };
-
-const leadAs = async (entityId: unknown, personId: unknown) =>
-  RoleAssignment.create({
-    personId,
-    target: { kind: 'RESEARCH_ENTITY', id: entityId },
-    role: 'PI',
-    evidenceClaimIds: [],
-    confidence: 0.9,
-    reviewStatus: 'UNREVIEWED',
-    archived: false,
-    state: 'CURRENT',
-  });
 
 describe('materializeEntity keeps a site-title lab name its own current website states', () => {
   let replSet: MongoMemoryReplSet;
@@ -131,8 +115,21 @@ describe('materializeEntity keeps a site-title lab name its own current website 
       seedObservation({ sourceName: 'lab-site-type-probe', sourceUrl, confidence: 0.85, field: 'entityType', value: 'LAB', observedAt: new Date('2026-02-01T00:00:00Z') }),
     ]);
 
-  const persisted = () =>
-    ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<{ name?: string; entityType?: string }>();
+  const persisted = () => ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<Record<string, any>>();
+
+  const refuse = (field: string, value: string) =>
+    ResearchEntity.updateOne(
+      { slug: ENTITY_KEY },
+      {
+        $set: planFieldValueRefusal(undefined, {
+          field,
+          value,
+          rule: 'operator_judgement',
+          refusedBy: 'test',
+          note: 'the site title does not name this row',
+        }),
+      },
+    );
 
   const materializeTwice = async () => {
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY }, {});
@@ -158,7 +155,35 @@ describe('materializeEntity keeps a site-title lab name its own current website 
 
     await materializeTwice();
 
-    expect(await persisted()).toMatchObject({ name: 'Rafferty Duchamp Lab', entityType: 'LAB' });
+    const row = await persisted();
+    expect(row).toMatchObject({ name: 'Rafferty Duchamp Lab', entityType: 'LAB' });
+    expect(isUnbackedLabNameShell(row!, 'Rafferty Duchamp')).toBe(false);
+  });
+
+  it('does not re-adopt a site-title lab name an operator refused', async () => {
+    const entity = await seedEntity();
+    await lead(entity._id, 'Rafferty Duchamp');
+    await seedRosterDefaults();
+    await seedSiteTitle('Tidal Fixture Lab');
+    await refuse('name', 'Tidal Fixture Lab');
+
+    await materializeTwice();
+
+    const row = await persisted();
+    expect(row?.name).not.toBe('Tidal Fixture Lab');
+    expect(row?.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
+  it('does not retype a row whose LAB type an operator refused', async () => {
+    const entity = await seedEntity();
+    await lead(entity._id, 'Rafferty Duchamp');
+    await seedRosterDefaults();
+    await seedSiteTitle('Tidal Fixture Lab');
+    await refuse('entityType', 'LAB');
+
+    await materializeTwice();
+
+    expect(await persisted()).toMatchObject({ entityType: 'FACULTY_RESEARCH_AREA' });
   });
 
   it('ignores a site-title name read from a website the row no longer serves', async () => {
