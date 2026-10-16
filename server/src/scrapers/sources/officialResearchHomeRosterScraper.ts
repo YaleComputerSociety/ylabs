@@ -16,7 +16,7 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import type { OfficialRosterUndergraduateStatus } from '../../models/storedVocabularies';
-import { OFFICIAL_ROSTER_CONFIGS } from './officialRosterConfigs';
+import { OFFICIAL_ROSTER_CONFIGS } from '../officialRosterConfigs';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 export const OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE = 'official-research-home-roster';
@@ -72,7 +72,7 @@ export interface ExtractedOfficialRoster {
   complete: boolean;
 }
 
-export { OFFICIAL_ROSTER_CONFIGS } from './officialRosterConfigs';
+export { OFFICIAL_ROSTER_CONFIGS } from '../officialRosterConfigs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
