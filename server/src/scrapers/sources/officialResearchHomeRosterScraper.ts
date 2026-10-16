@@ -284,10 +284,11 @@ function readYaleSitesDirectorySections($: cheerio.CheerioAPI): RosterSection[] 
       }
       if (node.closest('li.directory-listing-card').length > 0) return;
       if (node.is('table')) {
-        section.tableRows.push(...readRosterTableRows($, node));
+        if (!isLayoutTable($, node)) section.tableRows.push(...readRosterTableRows($, node));
         return;
       }
-      if (node.closest('table').length > 0) return;
+      const enclosingTable = node.closest('table');
+      if (enclosingTable.length > 0 && !isLayoutTable($, enclosingTable)) return;
       if (node.is('li, p')) {
         section.listItems.push(blockEntry($, node));
         return;
@@ -390,6 +391,21 @@ const PAST_MEMBERS_MARKER =
   /^(?:view|show|see|our)?\s*(?:lab |group )?(?:alumni|alumnae|former members|past members|previous members)$/i;
 const DESCRIPTOR_LINE_MAX = 60;
 
+/**
+ * A table used for page layout rather than as a roster: one of its cells holds several
+ * blocks (paragraphs, headings, list items). Its blocks are read like the page around it
+ * instead of as one row per person.
+ */
+function isLayoutTable($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>): boolean {
+  return table
+    .find('td')
+    .toArray()
+    .some((cell) => $(cell).find('p, div.paragraph, h1, h2, h3, h4, h5, h6, li').length >= 2);
+}
+
+const CLASS_YEAR_PHRASE =
+  /\b(?:class of (?:19|20)\d{2}|Yale College\s*['’‘]?\d{2,4}|(?:19|20)\d{2}\s+graduate)\b/i;
+
 function paragraphLines($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string[] {
   return (element.html() || '')
     .split(/<br\s*\/?>/i)
@@ -400,6 +416,7 @@ function paragraphLines($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): s
 function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
   const sections: RosterSection[] = [];
   const trail: HeadingTrailEntry[] = [];
+  const entryCells = new Map<ListedPersonEntry, unknown>();
   let section: (RosterSection & { level: number }) | null = null;
   const root = $('main').length > 0 ? $('main').first() : $('body');
   root
@@ -422,10 +439,11 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       }
       if (!section) return;
       if (tagName === 'table') {
-        section.tableRows.push(...readRosterTableRows($, node));
+        if (!isLayoutTable($, node)) section.tableRows.push(...readRosterTableRows($, node));
         return;
       }
-      if (node.closest('table').length > 0) return;
+      const table = node.closest('table');
+      if (table.length > 0 && !isLayoutTable($, table)) return;
       const text = normalizedText(node.text());
       const isToggle = node.is(PAST_MEMBERS_TOGGLE);
       if (PAST_MEMBERS_MARKER.test(text) && (isToggle || tagName === 'p' || tagName === 'li')) {
@@ -443,15 +461,21 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       const lines = paragraphLines($, node);
       const lead = blockEntry($, node);
       const leadIsName = looksLikeListedPersonName(lead.name);
+      const cell = node.closest('td')[0];
       for (const [index, line] of lines.entries()) {
         const entry = index === 0 ? lead : listItemEntry(line);
         const previous = section.listItems[section.listItems.length - 1];
+        const previousSharesCell = Boolean(previous) && entryCells.get(previous) === cell;
         if (index === 0 ? leadIsName : looksLikeListedPersonName(entry.name)) {
           section.listItems.push(entry);
-        } else if (previous && line.length <= DESCRIPTOR_LINE_MAX) {
+          entryCells.set(entry, cell);
+        } else if (previousSharesCell && line.length <= DESCRIPTOR_LINE_MAX) {
           previous.years = `${previous.years} ${line}`.trim();
+        } else if (previousSharesCell && CLASS_YEAR_PHRASE.test(line)) {
+          previous.years = `${previous.years} ${line.match(CLASS_YEAR_PHRASE)?.[0] ?? ''}`.trim();
         } else if (index === 0) {
           section.listItems.push(entry);
+          entryCells.set(entry, cell);
         }
       }
     });
@@ -513,9 +537,14 @@ function undergraduateStatus(
 }
 
 const YALE_UNDERGRADUATE_EVIDENCE =
-  /\bYale College\b|\bclass of (?:19|20)\d{2}\b|\bY(?:C|ale)\s*['’‘]\d{2}\b|\b(?:B\.?\s?S\.?|B\.?\s?A\.?)(?=[\s,'’‘(]|$)|\bundergrad/i;
+  /\bYale College\b|\bclass of (?:19|20)\d{2}\b|\bY(?:C|ale)\s*['’‘]\d{2}\b|\b(?:B\.?\s?S\.?|B\.?\s?A\.?)(?=[\s,'’‘(]|$)|\bundergrad|\bsenior (?:thesis|essay|project)\b|\b(?:rising )?(?:junior|sophomore|freshman|first[- ]year student)\b/i;
 const GRADUATE_DEGREE_EVIDENCE =
-  /\b(?:Ph\.?\s?D|M\.?\s?S|M\.?\s?A|M\.?\s?D|M\.?\s?Phil|MPH|postdoc\w*|doctoral|master['’]?s)\b/i;
+  /\b(?:Ph\.?\s?D|M\.?\s?S|M\.?\s?A|M\.?\s?D|M\.?\s?Phil|MPH|doctoral|master['’]?s|graduate student)\b/i;
+const POST_UNDERGRADUATE_ROLE = /\b(?:post-?bac\w*|postgraduate|postdoc\w*)\b/i;
+const LATER_OR_PLANNED =
+  /\b(?:now|currently|current(?:ly)?\s+(?:position|at)|post-?grad(?:uate)? plans?|plans?|goals?|future)\b/i;
+
+const beforeLaterOrPlanned = (text: string): string => text.split(LATER_OR_PLANNED)[0];
 
 /**
  * A listed person's own line decides their role before the section does: a master's
@@ -526,12 +555,12 @@ export function listedEntryRole(
   entry: { title: string; years: string },
   sectionLabel: string,
 ): OfficialRosterRole | null {
-  const ownText = `${entry.title} ${entry.years}`;
+  const ownText = beforeLaterOrPlanned(`${entry.title} ${entry.years}`);
   const ownRole = mapOfficialRosterRole(ownText, '');
   if (ownRole && ownRole !== 'affiliate') return ownRole;
-  if (YALE_UNDERGRADUATE_EVIDENCE.test(ownText) && !GRADUATE_DEGREE_EVIDENCE.test(ownText)) {
-    return 'undergrad';
-  }
+  const graduate = GRADUATE_DEGREE_EVIDENCE.test(ownText);
+  if (YALE_UNDERGRADUATE_EVIDENCE.test(ownText) && !graduate) return 'undergrad';
+  if (graduate || POST_UNDERGRADUATE_ROLE.test(ownText)) return null;
   return mapOfficialRosterRole(entry.title, sectionLabel);
 }
 
@@ -541,13 +570,33 @@ const ANOTHER_SCHOOL_EVIDENCE = [
   /\b(?:student|undergraduate|undergrad|major|intern)\s+(?:at|from)\s+(?!Yale\b)\p{Lu}/iu,
   /\b(?:B\.?\s?S|B\.?\s?A)\.?,?\s+(?:\p{Lu}\w*\s+){0,3}(?:University|College|Institute)\b/u,
   /\b(?!Yale\b)\p{Lu}\w+\s+(?:University|College)\s+(?:\w+\s+){0,2}(?:undergraduate|undergrad|student)\b/u,
+  /\bsummer (?:undergraduate )?(?:research )?(?:intern|scholar|student|fellow)\w*\b/i,
+  /\bHelios\b/,
 ];
+
+const ANOTHER_INSTITUTION_LABEL =
+  /\b(?!Yale\b)\p{Lu}[\w&.-]*(?:\s+[\w&.-]+){0,3}\s+(?:University|Institute|College)\b|\b(?:University|Institute) of (?!Yale\b)\p{Lu}|\bGeorgia Tech\b/u;
+
+const bracketedAffiliation = (entry: ListedPersonEntry): string | undefined => {
+  const match = /^\s*\(([^)]+)\)/.exec(entry.years);
+  if (!match || /^\s*(?:19|20)\d{2}/.test(match[1])) return undefined;
+  return match[1].trim();
+};
+
+/**
+ * Where most of a section's brackets read "(Yale)", they name each person's own school,
+ * so another school there is the person's home school. Where no entry is marked "(Yale)",
+ * a bracket is as likely to be where they went next, so it decides nothing.
+ */
+function sectionBracketsNameHomeSchool(entries: ListedPersonEntry[]): boolean {
+  const affiliations = entries.map(bracketedAffiliation).filter(Boolean) as string[];
+  const yale = affiliations.filter((affiliation) => /^Yale\b/i.test(affiliation)).length;
+  return yale >= 2 && yale * 2 > affiliations.length;
+}
 
 /** The owner lists Yale undergraduates only (2026-10-16). */
 export function listedEntryIsFromAnotherSchool(entry: { title: string; years: string }): boolean {
-  const ownText = `${entry.title} ${entry.years}`.split(
-    /\b(?:now|current(?:ly)?\s+(?:position|at))\b/i,
-  )[0];
+  const ownText = beforeLaterOrPlanned(`${entry.title} ${entry.years}`);
   if (/\(\s*Yale[^)]*\)/i.test(ownText) || /\bYale College\b/i.test(ownText)) return false;
   return ANOTHER_SCHOOL_EVIDENCE.some((pattern) => pattern.test(ownText));
 }
@@ -567,10 +616,18 @@ function extractListedUndergraduates(
   for (const section of sections) {
     const labelStatus = statusByLabel.get(normalizedLabel(section.label));
     if (!labelStatus) continue;
+    const entries = listedPersonEntries(section);
+    const otherInstitutionSection = ANOTHER_INSTITUTION_LABEL.test(section.label);
+    const bracketsNameHomeSchool = sectionBracketsNameHomeSchool(entries);
     const sectionStatus = section.withinPastSection ? 'past' : labelStatus;
-    for (const entry of listedPersonEntries(section)) {
+    for (const entry of entries) {
       if (listedEntryRole(entry, section.label) !== 'undergrad') continue;
-      if (listedEntryIsFromAnotherSchool(entry)) {
+      const homeSchool = bracketsNameHomeSchool ? bracketedAffiliation(entry) : undefined;
+      if (
+        otherInstitutionSection ||
+        (homeSchool && !/^Yale\b/i.test(homeSchool)) ||
+        listedEntryIsFromAnotherSchool(entry)
+      ) {
         undergraduateWithheldCount += 1;
         continue;
       }
