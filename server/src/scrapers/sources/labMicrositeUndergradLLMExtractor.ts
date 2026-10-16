@@ -138,7 +138,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'quoted-contacts-shown-v7';
+const OBSERVATION_DERIVATION_VERSION = 'people-listing-quotes-refused-v8';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
