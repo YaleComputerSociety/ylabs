@@ -236,13 +236,19 @@ describe('promoteFacultyResearchToLabCore', () => {
     );
     expect(labNameFromSiteTitles(['Proteomics | West Haven | Fixture lab'])).toBe('Fixture Lab');
     expect(labNameFromSiteTitles(['', 'The FIX Lab'])).toBe('The FIX Lab');
-    expect(labNameFromSiteTitles(['Welcome to the Fixture Group'])).toBe('the Fixture Group');
+    expect(labNameFromSiteTitles(['Welcome to the Fixture Group'])).toBe('Fixture Group');
     expect(labNameFromSiteTitles(['Fixture National Laboratory - a passion for discovery'])).toBe('');
     expect(labNameFromSiteTitles(['Ada Fixture | Professor of Fixtures'])).toBe('');
   });
 
   it('carries the stated lab name onto a promotion', () => {
     expect(classifyFacultyResearchPromotion(promotable()).toName).toBe('Fixture Circuits Lab');
+  });
+
+  it('promotes the type but keeps a locked name', () => {
+    const row = classifyFacultyResearchPromotion(promotable({ nameLocked: true }));
+    expect(row.decision).toBe('PROMOTE');
+    expect(row.toName).toBeUndefined();
   });
 
   it('promotes on a lab name in the title even when the page text has no self-declaration', () => {

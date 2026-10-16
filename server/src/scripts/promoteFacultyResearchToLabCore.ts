@@ -87,6 +87,7 @@ export interface FacultyResearchPromotionCandidate {
   websiteText?: string;
   /** The site's own title lines: `og:site_name`, `<title>`, and the first `<h1>`. */
   websiteTitles?: string[];
+  nameLocked?: boolean;
 }
 
 export interface FacultyResearchPromotionRow {
@@ -137,9 +138,9 @@ export function websiteDeclaresLaboratory(candidate: {
   return LAB_SELF_DECLARATION_RE.test(candidate.websiteText ?? '');
 }
 
-const TITLE_SEGMENT_SEPARATOR = /\s+[|\u2013\u2014\u00b7\u2022\u00bb:]\s+|\s+-\s+/;
+export const TITLE_SEGMENT_SEPARATOR = /\s+[|\u2013\u2014\u00b7\u2022\u00bb:]\s+|\s+-\s+/;
 const LAB_NOUN_RE = /\b(?:lab|labs|laboratory|group)\b/i;
-const TITLE_SEGMENT_FURNITURE_RE = /^(?:welcome\s+to\s+|home\s*$)/i;
+const TITLE_SEGMENT_FURNITURE_RE = /^(?:welcome\s+to\s+(?:the\s+)?|home\s*$)/i;
 const MAX_LAB_NAME_WORDS = 10;
 
 /**
@@ -353,7 +354,7 @@ export function classifyFacultyResearchPromotion(
 
   row.decision = 'PROMOTE';
   row.toEntityType = PROMOTED_ENTITY_TYPE;
-  row.toName = labName;
+  if (!candidate.nameLocked) row.toName = labName;
   if (candidate.kind !== PROMOTED_KIND) {
     row.fromKind = candidate.kind == null ? '' : String(candidate.kind);
     row.toKind = PROMOTED_KIND;

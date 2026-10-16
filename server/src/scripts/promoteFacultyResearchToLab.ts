@@ -25,6 +25,7 @@ import {
   PROMOTED_ENTITY_TYPE,
   PROMOTED_KIND,
   summarizeFacultyResearchPromotion,
+  TITLE_SEGMENT_SEPARATOR,
   type FacultyResearchPromotionCandidate,
   type FacultyResearchPromotionRow,
   type LabNameAdmissibility,
@@ -202,7 +203,7 @@ function titleNamesAnotherResearcher(
       .filter(Boolean),
   );
   for (const title of titles ?? []) {
-    for (const segment of title.split(/\s+[|\u2013\u2014:]\s+|\s+-\s+/)) {
+    for (const segment of title.split(TITLE_SEGMENT_SEPARATOR)) {
       const trimmed = segment.trim();
       if (ORGANIZATION_NOUN_ENDING_RE.test(trimmed)) continue;
       const match = PERSON_NAME_SEGMENT_RE.exec(trimmed);
@@ -275,7 +276,7 @@ export async function runFacultyResearchPromotion(options: {
 
   const query = ResearchEntity.find(
     { ...LIVE_ENTITY_FILTER, entityType: PROMOTABLE_SOURCE_ENTITY_TYPE },
-    { _id: 1, slug: 1, name: 1, entityType: 1, kind: 1, websiteUrl: 1, sourceUrls: 1 },
+    { _id: 1, slug: 1, name: 1, entityType: 1, kind: 1, websiteUrl: 1, sourceUrls: 1, manuallyLockedFields: 1 },
   ).sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
 
@@ -290,6 +291,9 @@ export async function runFacultyResearchPromotion(options: {
     entityType: typeof doc.entityType === 'string' ? doc.entityType : undefined,
     kind: typeof doc.kind === 'string' ? doc.kind : undefined,
     websiteUrl: typeof doc.websiteUrl === 'string' ? doc.websiteUrl : undefined,
+    nameLocked:
+      Array.isArray(doc.manuallyLockedFields) &&
+      doc.manuallyLockedFields.some((field) => field === 'name' || field === 'displayName'),
     urlUsageCount:
       typeof doc.websiteUrl === 'string'
         ? (usage.websiteUrls.get(normalizeWebsiteUrl(doc.websiteUrl)) ?? 0)

@@ -20,6 +20,15 @@ describe('site lab name admissibility', () => {
     ).toBe(false);
   });
 
+  it('refuses another researcher named in a title split on any separator the name reader uses', () => {
+    expect(
+      admissible(
+        'The Fixturegenomics Lab',
+        candidate(['Ada Fixturecolleague \u00bb The Fixturegenomics Lab']),
+      ),
+    ).toBe(false);
+  });
+
   it("does not read a lab name ending in Lab as a person's name", () => {
     expect(admissible('Quillfixture Lab', candidate(['Quillfixture Lab']))).toBe(true);
   });
