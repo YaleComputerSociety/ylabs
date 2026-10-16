@@ -9,6 +9,8 @@ import {
   normalizeWebsiteUrl,
   planFacultyResearchPromotion,
   summarizeFacultyResearchPromotion,
+  labNameFromSiteTitles,
+  isDepartmentGroupSubdomain,
   type FacultyResearchPromotionCandidate,
 } from '../promoteFacultyResearchToLabCore';
 
@@ -24,6 +26,7 @@ const promotable = (
   urlUsageCount: 1,
   websiteStatus: 200,
   websiteText: 'Welcome. Our lab builds superconducting circuits. Lab members and positions.',
+  websiteTitles: ['Fixture Circuits Lab | Yale University'],
   ...overrides,
 });
 
@@ -118,6 +121,7 @@ describe('promoteFacultyResearchToLabCore', () => {
       promotable({
         websiteText:
           'Publications. Research interests: early modern history. Curriculum vitae. Teaching.',
+        websiteTitles: ['Ada Fixture | Historian'],
       }),
     );
     expect(row.decision).toBe('HOLD');
@@ -224,5 +228,67 @@ describe('promoteFacultyResearchToLabCore', () => {
     expect(
       looksLikeDepartmentBioPage('Martha Munoz Faculty Research', 'http://www.marthamunoz.com/'),
     ).toBe(false);
+  });
+
+  it('reads the lab name from the segment of its own title that names a lab', () => {
+    expect(labNameFromSiteTitles(['Fixture Ecology & Resilience Lab'])).toBe(
+      'Fixture Ecology & Resilience Lab',
+    );
+    expect(labNameFromSiteTitles(['Proteomics | West Haven | Fixture lab'])).toBe('Fixture Lab');
+    expect(labNameFromSiteTitles(['', 'The FIX Lab'])).toBe('The FIX Lab');
+    expect(labNameFromSiteTitles(['Welcome to the Fixture Group'])).toBe('the Fixture Group');
+    expect(labNameFromSiteTitles(['Fixture National Laboratory - a passion for discovery'])).toBe('');
+    expect(labNameFromSiteTitles(['Ada Fixture | Professor of Fixtures'])).toBe('');
+  });
+
+  it('carries the stated lab name onto a promotion', () => {
+    expect(classifyFacultyResearchPromotion(promotable()).toName).toBe('Fixture Circuits Lab');
+  });
+
+  it('promotes on a lab name in the title even when the page text has no self-declaration', () => {
+    const row = classifyFacultyResearchPromotion(
+      promotable({ websiteText: 'Research. Publications. Contact.' }),
+    );
+    expect(row.decision).toBe('PROMOTE');
+  });
+
+  it('holds a lab page whose title states no lab name, so no LAB keeps a placeholder', () => {
+    const row = classifyFacultyResearchPromotion(promotable({ websiteTitles: ['Ada Fixture'] }));
+    expect(row.decision).toBe('HOLD');
+    expect(row.holdReason).toBe('website_states_no_lab_name');
+  });
+
+  it('holds when the stated name is not admissible as this row\'s own', () => {
+    const row = classifyFacultyResearchPromotion(promotable(), () => false);
+    expect(row.decision).toBe('HOLD');
+    expect(row.holdReason).toBe('website_states_no_lab_name');
+  });
+
+  it('holds a topic-named group on a department group subdomain as shared', () => {
+    expect(isDepartmentGroupSubdomain('https://fixturegraphics.cs.yale.edu/')).toBe(true);
+    expect(isDepartmentGroupSubdomain('https://fixturelab.yale.edu/')).toBe(false);
+    const row = classifyFacultyResearchPromotion(
+      promotable({
+        websiteUrl: 'https://fixturegraphics.cs.yale.edu/',
+        websiteTitles: ['Fixture Graphics Group'],
+      }),
+    );
+    expect(row.holdReason).toBe('website_is_a_shared_group');
+  });
+
+  it('promotes an eponymous group on a department group subdomain', () => {
+    const row = classifyFacultyResearchPromotion(
+      promotable({
+        name: 'Ada Fixturename Faculty Research',
+        websiteUrl: 'https://fixturename.cs.yale.edu/',
+        websiteTitles: ['Fixturename Group'],
+      }),
+    );
+    expect(row.decision).toBe('PROMOTE');
+    expect(row.toName).toBe('Fixturename Group');
+  });
+
+  it('drops a trailing university from the stated name', () => {
+    expect(labNameFromSiteTitles(['Fixture Ear Lab, Yale University'])).toBe('Fixture Ear Lab');
   });
 });

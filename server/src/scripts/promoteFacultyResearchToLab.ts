@@ -15,6 +15,9 @@ import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndex
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
+import * as cheerio from 'cheerio';
+import { classifyHarvestedResearchHomeName } from '../utils/researchHomeNameIdentityAuthority';
+import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
 import {
   normalizeWebsiteUrl,
   planFacultyResearchPromotion,
@@ -22,7 +25,9 @@ import {
   PROMOTED_ENTITY_TYPE,
   PROMOTED_KIND,
   summarizeFacultyResearchPromotion,
+  type FacultyResearchPromotionCandidate,
   type FacultyResearchPromotionRow,
+  type LabNameAdmissibility,
 } from './promoteFacultyResearchToLabCore';
 
 /**
@@ -35,6 +40,13 @@ import {
  */
 const PROBE_SOURCE_NAME = 'lab-site-type-probe';
 const PROBE_CONFIDENCE = 0.85;
+/**
+ * Above the 0.96 a profile-linked research home asserts, because a lab's own title is
+ * the lab stating its name, while a profile link can name an organization the person
+ * belongs to; that is how one promoted row would otherwise have served an institute's
+ * name (#5059).
+ */
+const PROBE_NAME_CONFIDENCE = 0.97;
 const PROBE_CONCURRENCY = 6;
 const PROBE_TIMEOUT_MS = 12_000;
 
@@ -149,6 +161,80 @@ async function buildUrlUsage(): Promise<{
 export interface ProbedWebsite {
   status: number;
   text: string;
+  titles: string[];
+}
+
+export function siteTitlesFromHtml(html: string): string[] {
+  const $ = cheerio.load(html);
+  return [
+    $('meta[property="og:site_name"]').attr('content') ?? '',
+    $('title').first().text(),
+    $('h1').first().text(),
+  ]
+    .map((value) => value.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+const PLACEHOLDER_SUFFIX_RE = /\s+(?:faculty\s+research|research)\s*$/i;
+
+const ORGANIZATION_NOUN_ENDING_RE =
+  /\b(?:lab|labs|laboratory|laboratories|group|center|centre|institute|program)$/i;
+
+const PERSON_NAME_SEGMENT_RE =
+  /^(?:dr\.?\s+)?([A-Z][a-z'-]+)(?:\s+[A-Z]\.?)*\s+([A-Z][A-Za-z'-]+)(?:,?\s+(?:M\.?D\.?|Ph\.?D\.?|MD|PhD))*$/;
+
+/**
+ * Whether a title segment is another known researcher's name: the site is then that
+ * person's, so a member whose profile links it keeps it as a website but is not renamed
+ * after it (owner decision, 2026-10-15; #5059).
+ */
+function titleNamesAnotherResearcher(
+  titles: readonly string[] | undefined,
+  leadName: string,
+  knownPersonSurnames: ReadonlySet<string>,
+): boolean {
+  const leadTokens = new Set(
+    leadName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .split(/[^a-z]+/)
+      .filter(Boolean),
+  );
+  for (const title of titles ?? []) {
+    for (const segment of title.split(/\s+[|\u2013\u2014:]\s+|\s+-\s+/)) {
+      const trimmed = segment.trim();
+      if (ORGANIZATION_NOUN_ENDING_RE.test(trimmed)) continue;
+      const match = PERSON_NAME_SEGMENT_RE.exec(trimmed);
+      if (!match) continue;
+      const surname = match[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (knownPersonSurnames.has(surname) && !leadTokens.has(surname)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A stated lab name is admitted only when the name authority reads it as this row's own
+ * research home, so an umbrella organization or a colleague's eponymous lab named in a
+ * shared site's title never becomes the row's name (#5059).
+ */
+export function labNameAdmissibilityFor(
+  knownPersonSurnames: ReadonlySet<string>,
+): LabNameAdmissibility {
+  return (labName: string, candidate: FacultyResearchPromotionCandidate) =>
+    !titleNamesAnotherResearcher(
+      candidate.websiteTitles,
+      String(candidate.name ?? '').replace(PLACEHOLDER_SUFFIX_RE, ''),
+      knownPersonSurnames,
+    ) &&
+    classifyHarvestedResearchHomeName({
+      harvestedName: labName,
+      personName: String(candidate.name ?? '').replace(PLACEHOLDER_SUFFIX_RE, ''),
+      websiteUrl: candidate.websiteUrl,
+      knownPersonSurnames,
+      recordCitedUrls: candidate.websiteUrl ? [candidate.websiteUrl] : [],
+    }) === 'OWN_IDENTITY';
 }
 
 /**
@@ -167,9 +253,13 @@ export async function probeCandidateWebsites(
   await mapWithConcurrency(distinct, PROBE_CONCURRENCY, async (url) => {
     try {
       const page = await fetchPage(url);
-      probed.set(url, { status: page.status, text: extractVisibleText(page.html) });
+      probed.set(url, {
+        status: page.status,
+        text: extractVisibleText(page.html),
+        titles: siteTitlesFromHtml(page.html),
+      });
     } catch {
-      probed.set(url, { status: 0, text: '' });
+      probed.set(url, { status: 0, text: '', titles: [] });
     }
   });
   return probed;
@@ -179,6 +269,7 @@ export async function runFacultyResearchPromotion(options: {
   dryRun: boolean;
   limit?: number;
   probe?: (urls: string[]) => Promise<Map<string, ProbedWebsite>>;
+  knownPersonSurnames?: ReadonlySet<string>;
 }): Promise<FacultyResearchPromotionResult> {
   const usage = await buildUrlUsage();
 
@@ -220,11 +311,19 @@ export async function runFacultyResearchPromotion(options: {
     .filter((url): url is string => Boolean(url));
   const probed = await (options.probe ?? probeCandidateWebsites)(probeUrls);
 
+  const knownPersonSurnames =
+    options.knownPersonSurnames ?? (await loadKnownPersonSurnameRoster());
   const plan = planFacultyResearchPromotion(
     baseInputs.map((input) => {
       const page = input.websiteUrl ? probed.get(input.websiteUrl) : undefined;
-      return { ...input, websiteStatus: page?.status, websiteText: page?.text };
+      return {
+        ...input,
+        websiteStatus: page?.status,
+        websiteText: page?.text,
+        websiteTitles: page?.titles,
+      };
     }),
+    labNameAdmissibilityFor(knownPersonSurnames),
   );
   const summary = summarizeFacultyResearchPromotion(candidates.length, plan);
   const promotions = plan.filter((row) => row.decision === 'PROMOTE');
@@ -260,8 +359,14 @@ export async function runFacultyResearchPromotion(options: {
       await Observation.insertMany(
         batch.flatMap((row) =>
           [
-            { field: 'entityType', value: PROMOTED_ENTITY_TYPE },
-            { field: 'kind', value: PROMOTED_KIND },
+            { field: 'entityType', value: PROMOTED_ENTITY_TYPE, confidence: PROBE_CONFIDENCE },
+            { field: 'kind', value: PROMOTED_KIND, confidence: PROBE_CONFIDENCE },
+            ...(row.toName
+              ? [
+                  { field: 'name', value: row.toName, confidence: PROBE_NAME_CONFIDENCE },
+                  { field: 'displayName', value: row.toName, confidence: PROBE_NAME_CONFIDENCE },
+                ]
+              : []),
           ].map((assertion) => ({
             entityType: 'researchEntity' as const,
             entityId: row.id,
@@ -269,7 +374,6 @@ export async function runFacultyResearchPromotion(options: {
             sourceId: probeSource._id,
             sourceName: PROBE_SOURCE_NAME,
             sourceUrl: row.websiteUrl,
-            confidence: PROBE_CONFIDENCE,
             observedAt,
             ...assertion,
             observationFingerprint: buildObservationFingerprint({
@@ -288,6 +392,10 @@ export async function runFacultyResearchPromotion(options: {
         batch.map((row) => {
           const set: Record<string, string> = { entityType: PROMOTED_ENTITY_TYPE };
           if (row.toKind) set.kind = PROMOTED_KIND;
+          if (row.toName) {
+            set.name = row.toName;
+            set.displayName = row.toName;
+          }
           return { updateOne: { filter: { _id: row.id }, update: { $set: set } } };
         }),
       );
