@@ -155,7 +155,9 @@ const MAX_LAB_NAME_WORDS = 10;
  */
 export function labNameFromSiteTitles(titles: readonly string[] | undefined): string {
   for (const raw of titles ?? []) {
-    const title = String(raw ?? '').replace(/\s+/g, ' ').trim();
+    const title = String(raw ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!title) continue;
     for (const piece of title.split(TITLE_SEGMENT_SEPARATOR)) {
       const segment = piece.replace(TITLE_SEGMENT_FURNITURE_RE, '').trim();
@@ -165,8 +167,9 @@ export function labNameFromSiteTitles(titles: readonly string[] | undefined): st
       return segment
         .replace(/(?:,\s*|\s+at\s+)(?:yale(?:\s+university)?|yale\s+school\s+of\s+[a-z ]+)$/i, '')
         .trim()
-        .replace(/\b(lab|labs|laboratory|group)$/i, (noun) =>
-          noun.charAt(0).toUpperCase() + noun.slice(1).toLowerCase(),
+        .replace(
+          /\b(lab|labs|laboratory|group)$/i,
+          (noun) => noun.charAt(0).toUpperCase() + noun.slice(1).toLowerCase(),
         );
     }
   }

@@ -237,7 +237,9 @@ describe('promoteFacultyResearchToLabCore', () => {
     expect(labNameFromSiteTitles(['Proteomics | West Haven | Fixture lab'])).toBe('Fixture Lab');
     expect(labNameFromSiteTitles(['', 'The FIX Lab'])).toBe('The FIX Lab');
     expect(labNameFromSiteTitles(['Welcome to the Fixture Group'])).toBe('Fixture Group');
-    expect(labNameFromSiteTitles(['Fixture National Laboratory - a passion for discovery'])).toBe('');
+    expect(labNameFromSiteTitles(['Fixture National Laboratory - a passion for discovery'])).toBe(
+      '',
+    );
     expect(labNameFromSiteTitles(['Ada Fixture | Professor of Fixtures'])).toBe('');
   });
 
@@ -264,7 +266,7 @@ describe('promoteFacultyResearchToLabCore', () => {
     expect(row.holdReason).toBe('website_states_no_lab_name');
   });
 
-  it('holds when the stated name is not admissible as this row\'s own', () => {
+  it("holds when the stated name is not admissible as this row's own", () => {
     const row = classifyFacultyResearchPromotion(promotable(), () => false);
     expect(row.decision).toBe('HOLD');
     expect(row.holdReason).toBe('website_states_no_lab_name');

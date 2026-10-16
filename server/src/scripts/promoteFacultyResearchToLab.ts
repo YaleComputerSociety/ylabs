@@ -208,7 +208,10 @@ function titleNamesAnotherResearcher(
       if (ORGANIZATION_NOUN_ENDING_RE.test(trimmed)) continue;
       const match = PERSON_NAME_SEGMENT_RE.exec(trimmed);
       if (!match) continue;
-      const surname = match[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const surname = match[2]
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
       if (knownPersonSurnames.has(surname) && !leadTokens.has(surname)) return true;
     }
   }
@@ -276,7 +279,16 @@ export async function runFacultyResearchPromotion(options: {
 
   const query = ResearchEntity.find(
     { ...LIVE_ENTITY_FILTER, entityType: PROMOTABLE_SOURCE_ENTITY_TYPE },
-    { _id: 1, slug: 1, name: 1, entityType: 1, kind: 1, websiteUrl: 1, sourceUrls: 1, manuallyLockedFields: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      entityType: 1,
+      kind: 1,
+      websiteUrl: 1,
+      sourceUrls: 1,
+      manuallyLockedFields: 1,
+    },
   ).sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
 
@@ -315,8 +327,7 @@ export async function runFacultyResearchPromotion(options: {
     .filter((url): url is string => Boolean(url));
   const probed = await (options.probe ?? probeCandidateWebsites)(probeUrls);
 
-  const knownPersonSurnames =
-    options.knownPersonSurnames ?? (await loadKnownPersonSurnameRoster());
+  const knownPersonSurnames = options.knownPersonSurnames ?? (await loadKnownPersonSurnameRoster());
   const plan = planFacultyResearchPromotion(
     baseInputs.map((input) => {
       const page = input.websiteUrl ? probed.get(input.websiteUrl) : undefined;

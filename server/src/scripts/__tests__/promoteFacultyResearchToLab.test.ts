@@ -11,7 +11,7 @@ const candidate = (titles: string[]) => ({
 });
 
 describe('site lab name admissibility', () => {
-  it("refuses a site whose title names another known researcher", () => {
+  it('refuses a site whose title names another known researcher', () => {
     expect(
       admissible(
         'The Laboratory for Fixturegenomics',
