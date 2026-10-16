@@ -7743,7 +7743,8 @@ export function siteStatedLabForWebsite(
       }
       if (websiteIdentity(textValue(observation.sourceUrl)) !== website) continue;
       if (!admits(observation.value)) continue;
-      const observedAt = observation.observedAt instanceof Date ? observation.observedAt.getTime() : 0;
+      const observedAt =
+        observation.observedAt instanceof Date ? observation.observedAt.getTime() : 0;
       const latestAt = latest?.observedAt instanceof Date ? latest.observedAt.getTime() : -1;
       if (observedAt > latestAt) latest = observation;
     }
@@ -7805,7 +7806,10 @@ function reclassifySiteNamedResearchAsLab(input: {
   }
   const leadPersonId = textValue(authority.leadPersonId);
   const selfId = serializedDocumentId(entityDoc?._id) || '';
-  if (leadPersonId && othersThan(authority.labRowRoster?.labIdsByLeadPersonId.get(leadPersonId), selfId)) {
+  if (
+    leadPersonId &&
+    othersThan(authority.labRowRoster?.labIdsByLeadPersonId.get(leadPersonId), selfId)
+  ) {
     return 0;
   }
 

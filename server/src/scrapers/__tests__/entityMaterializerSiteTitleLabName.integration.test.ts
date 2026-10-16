@@ -103,16 +103,40 @@ describe('materializeEntity keeps a site-title lab name its own current website 
       ['ysm-faculty-directory', 0.8],
       ['bbs-research-track', 0.7],
     ] as const) {
-      await seedObservation({ sourceName, confidence, field: 'entityType', value: 'FACULTY_RESEARCH_AREA' });
-      await seedObservation({ sourceName, confidence, field: 'name', value: 'Rafferty Duchamp Faculty Research' });
+      await seedObservation({
+        sourceName,
+        confidence,
+        field: 'entityType',
+        value: 'FACULTY_RESEARCH_AREA',
+      });
+      await seedObservation({
+        sourceName,
+        confidence,
+        field: 'name',
+        value: 'Rafferty Duchamp Faculty Research',
+      });
       await seedObservation({ sourceName, confidence, field: 'websiteUrl', value: SITE_URL });
     }
   };
 
   const seedSiteTitle = (name: string, sourceUrl = SITE_URL) =>
     Promise.all([
-      seedObservation({ sourceName: 'lab-site-type-probe', sourceUrl, confidence: 0.97, field: 'name', value: name, observedAt: new Date('2026-02-01T00:00:00Z') }),
-      seedObservation({ sourceName: 'lab-site-type-probe', sourceUrl, confidence: 0.85, field: 'entityType', value: 'LAB', observedAt: new Date('2026-02-01T00:00:00Z') }),
+      seedObservation({
+        sourceName: 'lab-site-type-probe',
+        sourceUrl,
+        confidence: 0.97,
+        field: 'name',
+        value: name,
+        observedAt: new Date('2026-02-01T00:00:00Z'),
+      }),
+      seedObservation({
+        sourceName: 'lab-site-type-probe',
+        sourceUrl,
+        confidence: 0.85,
+        field: 'entityType',
+        value: 'LAB',
+        observedAt: new Date('2026-02-01T00:00:00Z'),
+      }),
     ]);
 
   const persisted = () => ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<Record<string, any>>();
@@ -147,7 +171,7 @@ describe('materializeEntity keeps a site-title lab name its own current website 
     expect(await persisted()).toMatchObject({ name: 'Tidal Fixture Lab', entityType: 'LAB' });
   });
 
-  it("keeps a full-name lab its own site title states rather than reading it as composed", async () => {
+  it('keeps a full-name lab its own site title states rather than reading it as composed', async () => {
     const entity = await seedEntity();
     await lead(entity._id, 'Rafferty Duchamp');
     await seedRosterDefaults();
