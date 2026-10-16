@@ -264,6 +264,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'stale-scrape-run-reap'
     | 'researcher-dedupe'
     | 'grant-shell-faculty-port'
+    | 'faculty-research-lab-promotion'
     | 'eponymous-fra-merge'
     | 'url-identity-dedupe'
     | 'website-url-identity-dedupe'
@@ -296,6 +297,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
   error?: string;
   mergeDelta?: EponymousFraLabMergeDelta;
   grantShellPortDelta?: GrantShellPortDelta;
+  facultyResearchPromotionDelta?: FacultyResearchPromotionStageDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
@@ -308,6 +310,7 @@ export interface DevelopmentPostRunStageOptions {
   autoMergeEponymousFra?: boolean;
   dedupeResearchers?: boolean;
   portGrantShells?: boolean;
+  promoteFacultyResearchLabs?: boolean;
   mergeUrlIdentityDuplicates?: boolean;
   deleteMergeResidue?: boolean;
   pruneDeadObservations?: boolean;
@@ -339,6 +342,9 @@ export function resolveDevelopmentPostRunOptions(
     autoMergeEponymousFra: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_AUTO_MERGE_FRA_ENV]),
     dedupeResearchers: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DEDUPE_RESEARCHERS_ENV]),
     portGrantShells: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_PORT_GRANT_SHELLS_ENV]),
+    promoteFacultyResearchLabs: isSweepStageEnabledByDefault(
+      env[SCRAPER_SWEEP_PROMOTE_FACULTY_RESEARCH_LABS_ENV],
+    ),
     mergeUrlIdentityDuplicates: isUrlIdentityDedupeStageEnabled(env),
     deleteMergeResidue: isSweepStageEnabledByDefault(env[SCRAPER_SWEEP_DELETE_MERGE_RESIDUE_ENV]),
     sinceIso,
@@ -1096,6 +1102,7 @@ function spawnChild(
 interface PostRunStageDelta {
   mergeDelta?: EponymousFraLabMergeDelta;
   grantShellPortDelta?: GrantShellPortDelta;
+  facultyResearchPromotionDelta?: FacultyResearchPromotionStageDelta;
   researcherDedupeDelta?: ResearcherDedupeStageDelta;
   urlIdentityDedupeDelta?: UrlIdentityDedupeStageDelta;
   profileLinkHealthDelta?: ProfileLinkHealthStageDelta;
@@ -1234,6 +1241,39 @@ export function parseEponymousFraMergeResult(artifact: unknown): PostRunStageDel
     throw new Error('eponymous-fra-merge result is missing a mergeDelta object');
   }
   return { mergeDelta: mergeDelta as EponymousFraLabMergeDelta };
+}
+
+export const SCRAPER_SWEEP_PROMOTE_FACULTY_RESEARCH_LABS_ENV =
+  'SCRAPER_SWEEP_PROMOTE_FACULTY_RESEARCH_LABS';
+
+/**
+ * Covers every live faculty-research row: the script's `--limit` caps the rows it reads,
+ * not the rows it promotes, and apply mode refuses to run without one.
+ */
+export const FACULTY_RESEARCH_PROMOTION_SCAN_LIMIT = 100_000;
+
+export interface FacultyResearchPromotionStageDelta {
+  scanned: number;
+  promoted: number;
+  updated: number;
+  errors: number;
+  byHoldReason: Record<string, number>;
+}
+
+export function parseFacultyResearchPromotionResult(artifact: unknown): PostRunStageDelta {
+  const result = (artifact as { result?: Record<string, unknown> } | null)?.result;
+  if (!result || typeof result !== 'object' || result.mode !== 'apply') {
+    throw new Error('faculty-research-lab-promotion result is missing an apply-mode result');
+  }
+  return {
+    facultyResearchPromotionDelta: {
+      scanned: Number(result.scanned ?? 0),
+      promoted: Number(result.promoted ?? 0),
+      updated: Number(result.updated ?? 0),
+      errors: Number(result.errors ?? 0),
+      byHoldReason: (result.byHoldReason as Record<string, number>) ?? {},
+    },
+  };
 }
 
 export function parseGrantShellPortResult(artifact: unknown): PostRunStageDelta {
@@ -1426,6 +1466,22 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     ],
     isEnabled: (options) => Boolean(options.autoMergeEponymousFra && options.sinceIso),
     parseResult: parseEponymousFraMergeResult,
+  },
+  {
+    // After the merge stages, so a row folded into its lab this sweep is not promoted
+    // separately. Promotes a faculty-research row to LAB, under the name its own site
+    // states, only when that site is the row's own lab (#5059).
+    name: 'faculty-research-lab-promotion',
+    command: 'research-entity:promote-faculty-research',
+    artifactName: 'development-faculty-research-lab-promotion.json',
+    buildArgs: () => [
+      '--apply',
+      '--confirm-promote-faculty-research',
+      '--limit',
+      String(FACULTY_RESEARCH_PROMOTION_SCAN_LIMIT),
+    ],
+    isEnabled: (options) => Boolean(options.promoteFacultyResearchLabs),
+    parseResult: parseFacultyResearchPromotionResult,
   },
   {
     name: 'url-identity-dedupe',
