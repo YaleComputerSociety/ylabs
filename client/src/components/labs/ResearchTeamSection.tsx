@@ -38,8 +38,32 @@ const undergraduateYears = (member: LabRosterUndergraduate): string => {
   return String(member.endYear ?? member.startYear ?? '');
 };
 
-const byMostRecent = (left: LabRosterUndergraduate, right: LabRosterUndergraduate): number =>
-  (right.endYear ?? right.startYear ?? 0) - (left.endYear ?? left.startYear ?? 0);
+const NAME_SUFFIX = /^(?:jr|sr|ii|iii|iv)\.?$/i;
+
+const lastName = (name: string): string => {
+  const tokens = name
+    .replace(/\([^)]*\)/g, ' ')
+    .trim()
+    .split(/\s+/);
+  while (tokens.length > 1 && NAME_SUFFIX.test(tokens[tokens.length - 1])) tokens.pop();
+  return tokens[tokens.length - 1] ?? name;
+};
+
+const compareNames = (left: string, right: string): number =>
+  left.localeCompare(right, 'en', { sensitivity: 'base' });
+
+const byYearThenLastName = (
+  left: LabRosterUndergraduate,
+  right: LabRosterUndergraduate,
+): number => {
+  const leftYear = left.endYear ?? left.startYear ?? 0;
+  const rightYear = right.endYear ?? right.startYear ?? 0;
+  return (
+    rightYear - leftYear ||
+    compareNames(lastName(left.name), lastName(right.name)) ||
+    compareNames(left.name, right.name)
+  );
+};
 
 function UndergraduateLine({ member }: { member: LabRosterUndergraduate }) {
   const years = undergraduateYears(member);
@@ -84,7 +108,7 @@ function UndergraduateResearchers({
 }) {
   const [showAllPast, setShowAllPast] = useState(false);
   const current = undergraduates.filter((member) => member.status === 'current');
-  const past = undergraduates.filter((member) => member.status === 'past').sort(byMostRecent);
+  const past = undergraduates.filter((member) => member.status === 'past').sort(byYearThenLastName);
   const shownPast = showAllPast ? past : past.slice(0, PAST_UNDERGRADUATES_SHOWN_FIRST);
   const withProfile = current.flatMap((member) => {
     const profileUrl = safeHttpUrl(member.profileUrl);
