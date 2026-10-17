@@ -149,7 +149,15 @@ import {
   type CanonicalKey,
   type CanonicalResolution,
 } from './resolveCanonical';
-import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
+import {
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityKeyVariants,
+} from '../scripts/researchEntityPiDedupeCore';
+import {
+  RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
+  relationshipTargetIdentities,
+  type RelationshipTargetIdentity,
+} from './centerRelationshipTarget';
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import {
@@ -4724,27 +4732,78 @@ function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date
   return new Date(Math.max(...timestamps));
 }
 
-async function resolveRelationshipTarget(
+interface ResolvedRelationshipTargetRow {
+  _id?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  entityType?: unknown;
+}
+
+export async function resolveRelationshipTarget(
   researchEntityModel: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>,
-  targetEntityKey: string,
+  identity: RelationshipTargetIdentity,
 ): Promise<{
   canonicalFacultyResearchAreaTarget: { _id?: unknown } | null;
-  target: { _id?: unknown; name?: unknown; slug?: string } | null;
-  resolvedTarget: { _id?: unknown; slug?: unknown } | null;
+  target: ResolvedRelationshipTargetRow | null;
+  resolvedTarget: ResolvedRelationshipTargetRow | null;
 }> {
+  const { targetEntityKey } = identity;
   const canonicalFacultyResearchAreaTarget =
     (await findExistingResearchEntityByFacultyResearchAreaIdentity(researchEntityModel as any, {
       entityKey: targetEntityKey,
       entityType: 'FACULTY_RESEARCH_AREA',
-    })) as { _id?: unknown } | null;
+    })) as ResolvedRelationshipTargetRow | null;
   const target = (await researchEntityModel
-    .findOne({ slug: targetEntityKey, archived: { $ne: true } }, { _id: 1, name: 1, slug: 1 })
-    .lean()) as { _id?: unknown; name?: unknown; slug?: string } | null;
+    .findOne(
+      { slug: targetEntityKey, archived: { $ne: true } },
+      { _id: 1, name: 1, slug: 1, entityType: 1 },
+    )
+    .lean()) as ResolvedRelationshipTargetRow | null;
+  const namedTarget = canonicalFacultyResearchAreaTarget || target;
   return {
     canonicalFacultyResearchAreaTarget,
     target,
-    resolvedTarget: canonicalFacultyResearchAreaTarget || target,
+    resolvedTarget:
+      namedTarget || (await rowLedByListedPersonAtListedWebsite(researchEntityModel, identity)),
   };
+}
+
+export async function rowLedByListedPersonAtListedWebsite(
+  researchEntityModel: Pick<typeof ResearchEntity, 'find'>,
+  identity: RelationshipTargetIdentity,
+): Promise<ResolvedRelationshipTargetRow | null> {
+  const websiteKey = normalizeWebsiteUrlIdentityKey(identity.targetWebsiteUrl);
+  const personName = personNameFromFacultyResearchArea(identity.targetEntityKey);
+  if (!websiteKey || !personName) return null;
+  const rowsAtWebsite = (await researchEntityModel
+    .find(
+      { websiteUrl: { $in: websiteUrlIdentityKeyVariants(websiteKey) }, archived: { $ne: true } },
+      { _id: 1, name: 1, slug: 1, entityType: 1 },
+    )
+    .lean()) as ResolvedRelationshipTargetRow[];
+  if (rowsAtWebsite.length === 0) return null;
+  const researcherId = toMaterializerObjectId(await findUniqueResearcherIdByPersonName(personName));
+  if (!researcherId) return null;
+  const ledRowIds = new Set(
+    (
+      (await RoleAssignment.find({
+        personId: researcherId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': { $in: rowsAtWebsite.map((row) => row._id) },
+        role: 'PI',
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      })
+        .select('target.id')
+        .lean()) as Array<{ target?: { id?: unknown } }>
+    )
+      .map((assignment) => normalizeMaterializerObjectId(assignment.target?.id))
+      .filter(Boolean),
+  );
+  const ledRows = rowsAtWebsite.filter((row) =>
+    ledRowIds.has(normalizeMaterializerObjectId(row._id) || ''),
+  );
+  return ledRows.length === 1 ? ledRows[0] : null;
 }
 
 async function materializeResearchEntityRelationship(
@@ -4791,7 +4850,10 @@ async function materializeResearchEntityRelationship(
   if (!source?._id) return skip('source-not-resolved');
 
   const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =
-    await resolveRelationshipTarget(researchEntityModel, targetEntityKey);
+    await resolveRelationshipTarget(researchEntityModel, {
+      targetEntityKey,
+      targetWebsiteUrl: textValue(resolved[RELATIONSHIP_TARGET_WEBSITE_URL_FIELD]?.value),
+    });
   if (!resolvedTarget?._id) return skip('target-not-resolved');
   if (relationshipEndpointsAreSameEntity(source._id, resolvedTarget._id)) {
     return skip('self-relationship');
@@ -4828,10 +4890,10 @@ async function materializeResearchEntityRelationship(
   const targetResearchEntityId = normalizeMaterializerObjectId(resolvedTarget._id) || '';
   if (!sourceResearchEntityId || !targetResearchEntityId) return skip('target-not-resolved');
   // Prefer linking the center to the member's existing PI-led lab (a rich page)
-  // over a thin faculty-research-area stub: a resolved target whose slug is not a
-  // generated `faculty-research-area-*` is a real research home → AFFILIATED_LAB.
+  // over a thin faculty-research-area stub: a resolved target that is not a
+  // `FACULTY_RESEARCH_AREA` row is a real research home → AFFILIATED_LAB.
   const resolvedRelationshipType = centerRelationshipTypeForResolvedTarget(
-    textValue((resolvedTarget as { slug?: unknown }).slug),
+    resolvedTarget,
     relationshipType,
   );
   const label = relationshipLabelForType(resolvedRelationshipType);
@@ -4894,15 +4956,19 @@ export function relationshipLabelForType(relationshipType: string): string {
 }
 
 /**
- * Pick the relationship type for a center→target edge. A resolved target whose
- * slug is a generated `faculty-research-area-*` stub stays MEMBER_RESEARCH_AREA;
- * anything else is a real research home (the member's PI-led lab) → AFFILIATED_LAB.
+ * Pick the relationship type for a center→target edge. The resolved row's own
+ * `entityType` decides: a `FACULTY_RESEARCH_AREA` row stays MEMBER_RESEARCH_AREA and
+ * any other kind of row is a real research home → AFFILIATED_LAB. Slug shape is only
+ * the fallback for a row with no stored type, because a faculty research row promoted
+ * to a lab keeps its generated `faculty-research-area-*` slug (#5068).
  */
 export function centerRelationshipTypeForResolvedTarget(
-  resolvedTargetSlug: string,
+  resolvedTarget: { slug?: unknown; entityType?: unknown } | null | undefined,
   fallbackType: string,
 ): string {
-  const slug = (resolvedTargetSlug || '').trim();
+  const entityType = textValue(resolvedTarget?.entityType).toUpperCase();
+  if (entityType) return entityType === 'FACULTY_RESEARCH_AREA' ? fallbackType : 'AFFILIATED_LAB';
+  const slug = textValue(resolvedTarget?.slug);
   return slug && !slug.startsWith('faculty-research-area-') ? 'AFFILIATED_LAB' : fallbackType;
 }
 
@@ -10741,20 +10807,29 @@ async function centerRelationshipTargetIdsAssertedByOtherSources(
     {
       entityType: 'researchEntityRelationship',
       entityKey: { $in: relationshipKeys },
-      field: 'targetEntityKey',
+      field: { $in: ['targetEntityKey', RELATIONSHIP_TARGET_WEBSITE_URL_FIELD] },
     },
     sourceName,
   );
   const targetIds = new Set<string>();
-  for (const targetKey of uniqueStrings(targetRows.map((row) => textValue(row.value)))) {
-    const targetId = await resolveCenterRelationshipTargetId(targetKey);
+  const targets = relationshipTargetIdentities(
+    targetRows.map((row) => ({
+      entityKey: textValue(row.entityKey),
+      field: textValue(row.field),
+      value: row.value,
+    })),
+  );
+  for (const target of targets) {
+    const targetId = await resolveCenterRelationshipTargetId(target);
     if (targetId) targetIds.add(targetId);
   }
   return targetIds;
 }
 
-async function resolveCenterRelationshipTargetId(targetEntityKey: string): Promise<string | null> {
-  const { resolvedTarget } = await resolveRelationshipTarget(ResearchEntity, targetEntityKey);
+async function resolveCenterRelationshipTargetId(
+  target: RelationshipTargetIdentity,
+): Promise<string | null> {
+  const { resolvedTarget } = await resolveRelationshipTarget(ResearchEntity, target);
   return normalizeMaterializerObjectId(resolvedTarget?._id) || null;
 }
 

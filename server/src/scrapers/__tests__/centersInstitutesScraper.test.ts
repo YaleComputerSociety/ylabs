@@ -41,6 +41,7 @@ import {
   customCardLabsExtractor,
   contentSpotlightFacultyExtractor,
   fdsUsersGridExtractor,
+  wordpressBlockParagraphRosterExtractor,
   jacksonCentersExtractor,
   jacksonProfileItemExtractor,
   deriveChildEngagementCandidates,
@@ -2069,5 +2070,76 @@ describe('DEFAULT_CENTER_CONFIGS websiteUrl', () => {
       ),
     );
     expect(emitting.length).toBeGreaterThanOrEqual(30);
+  });
+});
+
+describe('wordpressBlockParagraphRosterExtractor (#5068)', () => {
+  const PAGE_URL = 'https://umbrella.example.edu/index.php/people/';
+  const memberParagraph = (inner: string) =>
+    `<div class="wp-block-column"><figure class="wp-block-image"><img src="/p.jpg" alt=""/></figure><p class="wp-block-paragraph">${inner}</p></div>`;
+  const FIXTURE = `
+<html><body><main><article><div class="entry-content">
+  <p class="wp-block-paragraph"></p>
+  <h2 class="wp-block-heading">Faculty</h2>
+  <div class="wp-block-columns">
+    ${memberParagraph('<a href="https://alex-sample.example.edu/">Alex Sample</a><br><em>distributed systems</em>')}
+    ${memberParagraph('<a href="/~bailey/">Bailey Example</a><br><em>circuits</em>, <em>formal methods</em>')}
+    ${memberParagraph('<a href="https://other.example.edu/"></a><a href="https://casey.example.edu/">Casey Placeholder</a><br><em><em>networking</em></em>')}
+    ${memberParagraph('<a href="https://alex-sample.example.edu/">Alex Sample</a><br><em>repeated card</em>')}
+  </div>
+  <p class="wp-block-paragraph">Read more about <a href="/research/">our research</a>.</p>
+  <h2 class="wp-block-heading">Staff</h2>
+  ${memberParagraph('<a href="https://dana.example.edu/">Dana Testcase</a><br><em>administrator</em>')}
+</div></article></main></body></html>`;
+
+  it('reads each faculty paragraph once, in page order, with the site it links', () => {
+    const { members } = wordpressBlockParagraphRosterExtractor(FIXTURE, { pageUrl: PAGE_URL });
+    expect(members).toEqual([
+      { name: 'Alex Sample', profileUrl: 'https://alex-sample.example.edu/', role: 'core-faculty' },
+      {
+        name: 'Bailey Example',
+        profileUrl: 'https://umbrella.example.edu/~bailey/',
+        role: 'core-faculty',
+      },
+      { name: 'Casey Placeholder', profileUrl: 'https://casey.example.edu/', role: 'core-faculty' },
+    ]);
+  });
+
+  it('reads no title from the topic line, so a topic never reads as a role', () => {
+    const { members } = wordpressBlockParagraphRosterExtractor(FIXTURE, { pageUrl: PAGE_URL });
+    expect(members.every((member) => member.title === undefined)).toBe(true);
+  });
+
+  it('drops prose links and members listed under a non-faculty heading', () => {
+    const names = wordpressBlockParagraphRosterExtractor(FIXTURE, {
+      pageUrl: PAGE_URL,
+    }).members.map((member) => member.name);
+    expect(names).not.toContain('our research');
+    expect(names).not.toContain('Dana Testcase');
+  });
+
+  it('configures the Computer Systems Lab as a center whose roster sits on its own site', () => {
+    const csl = DEFAULT_CENTER_CONFIGS.find((config) => config.centerKey === 'csl')!;
+    expect(csl.extractor).toBe(wordpressBlockParagraphRosterExtractor);
+    const { entityKey, observations } = centerToGroupObservations(csl, [], csl.url);
+    expect(entityKey).toBe('center-csl');
+    const field = (name: string) => observations.find((o) => o.field === name)?.value;
+    expect(field('entityType')).toBe('CENTER');
+    expect(field('websiteUrl')).toBe('https://csl.yale.edu/');
+    expect(field('departments')).toEqual(['Computer Science', 'Electrical & Computer Engineering']);
+  });
+
+  it('carries the linked site on the relationship so the materializer can match the member row', () => {
+    const csl = DEFAULT_CENTER_CONFIGS.find((config) => config.centerKey === 'csl')!;
+    const withSite = centerMemberRelationshipObservations(
+      { name: 'Alex Sample', profileUrl: 'https://alex-sample.example.edu/' },
+      csl,
+      csl.url,
+    );
+    expect(withSite.find((o) => o.field === 'targetWebsiteUrl')?.value).toBe(
+      'https://alex-sample.example.edu/',
+    );
+    const withoutSite = centerMemberRelationshipObservations({ name: 'Alex Sample' }, csl, csl.url);
+    expect(withoutSite.some((o) => o.field === 'targetWebsiteUrl')).toBe(false);
   });
 });

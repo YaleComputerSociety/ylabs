@@ -27,6 +27,7 @@
  * one-row config change.
  */
 import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
+import { RELATIONSHIP_TARGET_WEBSITE_URL_FIELD } from '../centerRelationshipTarget';
 import {
   resolveCenterConfigKey,
   type CenterConfigKeyResolution,
@@ -1044,6 +1045,48 @@ export const fdsUsersGridExtractor: CenterExtractor = (html, ctx) => {
   return { members };
 };
 
+/**
+ * WordPress block-editor roster used by the Computer Systems Lab people page
+ * (`csl.yale.edu/index.php/people/`). Each member is one paragraph under a faculty
+ * heading: the name links the member's own site and an emphasised line follows with
+ * research topics, which is not a title, so no title or role is read from it.
+ * The heading gate drops paragraphs under any other heading.
+ *   <h2 class="wp-block-heading">Faculty</h2>
+ *   <p class="wp-block-paragraph"><a href="https://…">Name</a><br><em>topics</em></p>
+ */
+export const wordpressBlockParagraphRosterExtractor: CenterExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  let underFacultyHeading = false;
+  $('.entry-content')
+    .find('h2, p.wp-block-paragraph')
+    .each((_i, el) => {
+      const block = $(el);
+      if (el.tagName === 'h2') {
+        underFacultyHeading = FACULTY_ROSTER_SECTION_HEADING.test(block.text());
+        return;
+      }
+      if (!underFacultyHeading || block.find('em').length === 0) return;
+      const link = block
+        .find('a')
+        .filter((_j, anchor) => $(anchor).text().trim().length > 0)
+        .first();
+      const name = link.text().replace(/\s+/g, ' ').trim();
+      if (!name) return;
+      const slug = slugify(name);
+      if (!slug || seen.has(slug)) return;
+      seen.add(slug);
+      const href = link.attr('href') || '';
+      members.push({
+        name,
+        profileUrl: href ? absolutize(href, ctx.pageUrl) : undefined,
+        role: 'core-faculty',
+      });
+    });
+  return { members };
+};
+
 function classifyChildCenterKind(title: string): CenterKind {
   const lower = title.toLowerCase();
   if (/\binitiatives?\b/.test(lower)) return 'initiative';
@@ -1640,6 +1683,17 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     paginated: false,
     extractor: profileGridLeadershipExtractor,
   },
+  {
+    centerKey: 'csl',
+    centerName: 'Computer Systems Lab (CSL)',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    kind: 'center',
+    departments: ['Computer Science', 'Electrical & Computer Engineering'],
+    url: 'https://csl.yale.edu/index.php/people/',
+    homeUrl: 'https://csl.yale.edu/',
+    paginated: false,
+    extractor: wordpressBlockParagraphRosterExtractor,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1846,13 +1900,21 @@ export function centerMemberRelationshipObservationsForEntityKey(
     sourceUrl,
   };
 
-  return [
+  const observations: ObservationInput[] = [
     { ...relationshipBase, field: 'sourceEntityKey', value: centerEntityKey },
     { ...relationshipBase, field: 'targetEntityKey', value: targetEntityKey },
     { ...relationshipBase, field: 'relationshipType', value: relationshipType },
     { ...relationshipBase, field: 'evidenceStrength', value: 'MODERATE' },
     { ...relationshipBase, field: 'confidence', value: 0.72 },
   ];
+  if (member.profileUrl) {
+    observations.push({
+      ...relationshipBase,
+      field: RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
+      value: member.profileUrl,
+    });
+  }
+  return observations;
 }
 
 export interface CenterRosterReadOutcome {
