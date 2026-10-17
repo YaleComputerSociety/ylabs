@@ -28,6 +28,7 @@ import {
   personScopedResearchEntityNameFromPersonName,
   servedResearchEntityNameWithoutPageFurniture,
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  servedIdentityLeadDirectsOrganization,
   personSynthesisDescribesAnotherPerson,
 } from './researchHomeNameIdentityAuthority';
 
@@ -3424,6 +3425,7 @@ export function sanitizeServedResearchEntityCopyFieldsWithTopicDecision<
       websiteUrl: next.fieldProvenance?.[field]?.sourceUrl || next.websiteUrl || next.website || '',
       recordCitedUrls: [next.websiteUrl, next.website, next.sourceUrls],
       siteDeclaredOwnNames: next.siteDeclaredOwnNames,
+      identityLeadDirectsOrganization: servedIdentityLeadDirectsOrganization(next),
     });
 
   // `name` is substituted and never cleared, because it is the heading every serve path

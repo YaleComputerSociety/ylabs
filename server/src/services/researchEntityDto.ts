@@ -35,7 +35,11 @@ import {
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
-import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  IDENTITY_LEAD_DIRECTS_ORGANIZATION,
+  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  servedIdentityLeadDirectsOrganization,
+} from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
@@ -162,6 +166,7 @@ function servedPersonScopedDisplayName(group: Record<string, any>, value: unknow
     websiteUrl: group.fieldProvenance?.displayName?.sourceUrl || group.websiteUrl || group.website,
     recordCitedUrls: [group.websiteUrl, group.website, group.sourceUrls],
     siteDeclaredOwnNames: group.siteDeclaredOwnNames,
+    identityLeadDirectsOrganization: servedIdentityLeadDirectsOrganization(group),
   })
     ? ''
     : displayName;
@@ -778,6 +783,7 @@ function derivePublicResearchEntityDto(
  */
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+  identityLeadDirectorEntityIds?: ReadonlySet<string>;
   leadMemberNamesUnavailable?: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<
     string,
@@ -839,6 +845,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 } {
   const {
     leadMemberNamesByEntityId,
+    identityLeadDirectorEntityIds,
     leadMemberNamesUnavailable,
     emeritusWayInByEntityId,
     ...entityOptions
@@ -848,9 +855,12 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
     (result.hits || []).map((hit) => {
       const hitKey = String(hit?._id || hit?.id || '');
       const leadMemberNames = leadMemberNamesByEntityId?.get(hitKey);
+      const servedHit = identityLeadDirectorEntityIds?.has(hitKey)
+        ? { ...hit, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+        : hit;
       return toPublicResearchEntityDto(
         {
-          ...researchEntityListServedSource(hit, leadMemberNames, leadMemberNamesUnavailable),
+          ...researchEntityListServedSource(servedHit, leadMemberNames, leadMemberNamesUnavailable),
           ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
         },
         { ...listOptions, leadMemberNames },

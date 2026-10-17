@@ -19,6 +19,7 @@ import {
   multiTenantAcademicHostLabelIsDistinctive,
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
+import { isOrganizationalResearchEntity } from './researchEntityOrganizational';
 import { researchEntityDisplayName } from './servedResearchEntityTitle';
 import { isNavigationMenuPhrase } from './titleHygiene';
 
@@ -1678,7 +1679,28 @@ export interface PersonScopedNameIdentityArgs {
    * organization they merely belong to.
    */
   siteDeclaredOwnNames?: readonly unknown[];
+  /**
+   * Whether the lead the name is judged against holds a director or co-director edge
+   * on this row. That edge is a lane's statement that the lead directs this very
+   * organization, so an organization's name on a row keyed to that person is the
+   * organization's own name rather than an umbrella the person merely belongs to
+   * (#5085). A PI edge states nothing of the kind.
+   */
+  identityLeadDirectsOrganization?: boolean;
 }
+
+const DIRECTOR_LEAD_ROLES: ReadonlySet<string> = new Set(['director', 'co-director']);
+
+export const leadRoleDirectsTheOrganization = (role: unknown): boolean =>
+  DIRECTOR_LEAD_ROLES.has(textValue(role).toLowerCase());
+
+// Symbol-keyed so a serve path can carry the roster fact through the spreads the copy
+// sanitizer copies the entity through without it ever serializing into a response.
+export const IDENTITY_LEAD_DIRECTS_ORGANIZATION = Symbol('identityLeadDirectsOrganization');
+
+export const servedIdentityLeadDirectsOrganization = (entity: unknown): boolean =>
+  Boolean(entity) &&
+  (entity as Record<symbol, unknown>)[IDENTITY_LEAD_DIRECTS_ORGANIZATION] === true;
 
 const nameNamesThisRecordsOwnPerson = (name: string, identityTokens: string[]): boolean =>
   eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
@@ -1803,6 +1825,13 @@ function personScopedNameIdentityPrelude(
   const personTokens = personIdentityTokens(args.personName);
   const identityTokens = researchHomeIdentityTokens(args);
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
+  if (
+    args.identityLeadDirectsOrganization &&
+    isOrganizationalResearchEntity({ entityType: args.entityType }) &&
+    isUmbrellaOrganizationName(name)
+  ) {
+    return { settled: false };
+  }
   if (
     isUmbrellaOrganizationName(name) &&
     !(
