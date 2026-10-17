@@ -806,7 +806,7 @@ describe('studentVisibilityGateService', () => {
       websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
       sourceUrls: [
         directorProfileUrl,
-        'https://orcid.org/0000-0002-1825-0097',
+        'https://orcid.org/9999-9000-9999-9005',
         'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
       ],
       ...overrides,
@@ -831,7 +831,7 @@ describe('studentVisibilityGateService', () => {
 
     it("treats the director's ORCID record as a person page too", () => {
       const entities = [
-        personRow({ sourceUrls: ['https://orcid.org/0000-0002-1825-0097'] }),
+        personRow({ sourceUrls: ['https://orcid.org/9999-9000-9999-9005'] }),
         organizationRow(),
       ];
 
