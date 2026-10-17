@@ -47,6 +47,8 @@ Before #4025 two sweep sources were seeded `enabled: false` and ran in every swe
 Each manual-only source records its reason next to its name in `scrapers/manualOnlySweepSources.ts`, which `runScraperSweep.ts` re-exports:
 
 - `undergrad-fellowships-recipients` is a backward-looking recipients source with no clean public feed.
+  Its STARS II reader (`starsSymposiumPiExtractor`) attributes each symposium presenter to the `PI:` line of the booklet and never to the `Mentor:` line, which usually names a graduate student or postdoc, and skips a presenter with no `PI:` line; it reads `stars-ii.pdf` and one `stars-ii-<year>.pdf` per configured booklet from the accepted-input directory (#5048).
+  Besides the `pastUndergradAdvisees` counts it keeps each named recipient (student, year, project title, PI as printed, booklet) as `fellowshipRecipients` on the PI's row, which the detail page lists as its own section, separate from the lab roster's undergraduates.
 - `official-research-home-roster` claims a named non-lead person is a current member, and no strict `research-homes:audit-rosters` run has been recorded reporting `broadEnablementReady` (#2412, #4025).
   The first 2026-10-04 strict run found one expired unrefreshed edge and one twin edge the audit could not see (#4757), which #4758 fixed in the lane and the audit; the re-run after it reads clean structure, every snapshot key fresh, and no twin.
   Only an agent has checked the sampled roles, which is not a recorded review, so it returns to the research sweep when a person reviews the sample and records it with `--sampled-precision-reviewed-by`.

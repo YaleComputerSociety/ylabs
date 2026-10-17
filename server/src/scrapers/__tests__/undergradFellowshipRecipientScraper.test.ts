@@ -28,6 +28,9 @@ import {
   type ProgramConfig,
   type FellowshipRecipient,
   type UserMatch,
+  manualPdfInputsFor,
+  primarySymposiumPiName,
+  starsSymposiumPiExtractor,
 } from '../sources/undergradFellowshipRecipientScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 
@@ -606,8 +609,8 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     expect(fetchPage).toHaveBeenCalledTimes(2);
     // 2 distinct advisors emitted (Roster, Atlas)
     expect(result.entitiesObserved).toBe(2);
-    // 2 advisors * 2 obs each = 4
-    expect(result.observationCount).toBe(4);
+    expect(result.observationCount).toBe(6);
+    expect(emitted.filter((o) => o.field === 'fellowshipRecipients')).toHaveLength(2);
 
     // Roster should have 2024 (count 2 — Alice + Casey) and 2023 (count 1 — Eve).
     const rosterObs = emitted.filter((o) => o.entityKey === 'roster-lab-rr1');
@@ -673,7 +676,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     expect(fetchPage).toHaveBeenCalledWith('manual://stars-2025.csv', false);
     expect(result.entitiesObserved).toBe(1);
-    expect(result.observationCount).toBe(2);
+    expect(result.observationCount).toBe(3);
     expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.value).toEqual([
       { year: 2025, programName: 'Manual STARS Upload', count: 2 },
     ]);
@@ -721,7 +724,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       const result = await scraper.run(ctx);
 
       expect(result.entitiesObserved).toBe(1);
-      expect(result.observationCount).toBe(2);
+      expect(result.observationCount).toBe(3);
       expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.sourceUrl).toBe(
         'https://example.yale.edu/stars-2025.pdf',
       );
@@ -1149,5 +1152,130 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
 
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
     expect(fetchPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('STARS symposium PI extraction', () => {
+  const booklet = [
+    'STARS II Symposium',
+    'April 21, 2025',
+    '5:05 – 5:15',
+    ' ',
+    'Avery Quill',
+    'Department of Neuroscience',
+    'Class of 2025',
+    'PI: Jordan Alder, MD PhD',
+    'Mentor: Casey Fennel, PhD Candidate',
+    'Mapping Circuit Activity in',
+    'Larval Fish',
+    '5:15 – 5:25',
+    ' ',
+    'Harper Wren',
+    'Department of Chemistry',
+    'Class of 2026',
+    'Mentor: Morgan Larkspur, Postdoc',
+    'A Project With No Faculty Line',
+    '4:00 – 5:00PM',
+    'Rowan Thistle',
+    'Molecular, Cellular, and Developmental',
+    'PI: Dr. Taylor Birch; The Birch Lab',
+    'Mentor’s name: Quinn Sorrel, Postdoc',
+    'Biology',
+    'Studying Protein Folding Under Stress',
+    'Ellis Juniper',
+    'Physics',
+    'PI: Professor Parker Moss',
+    'AGGeN: Diffusion Models for Sky Surveys',
+  ].join('\n');
+
+  it('attributes each presenter to the PI line, never to the mentor', () => {
+    const recipients = starsSymposiumPiExtractor(booklet, {
+      pageUrl: 'manual-pdf://stars-ii.pdf',
+      sourceUrl: 'https://example.yale.edu/2025-symposium.pdf',
+      defaultYear: 2025,
+    });
+
+    expect(
+      recipients.map(({ studentName, advisorName, projectTitle, classYear, year }) => ({
+        studentName,
+        advisorName,
+        projectTitle,
+        classYear,
+        year,
+      })),
+    ).toEqual([
+      {
+        studentName: 'Avery Quill',
+        advisorName: 'Jordan Alder',
+        projectTitle: 'Mapping Circuit Activity in Larval Fish',
+        classYear: 2025,
+        year: 2025,
+      },
+      {
+        studentName: 'Rowan Thistle',
+        advisorName: 'Taylor Birch',
+        projectTitle: 'Studying Protein Folding Under Stress',
+        classYear: undefined,
+        year: 2025,
+      },
+      {
+        studentName: 'Ellis Juniper',
+        advisorName: 'Parker Moss',
+        projectTitle: 'AGGeN: Diffusion Models for Sky Surveys',
+        classYear: undefined,
+        year: 2025,
+      },
+    ]);
+    expect(recipients.map((recipient) => recipient.studentName)).not.toContain('Harper Wren');
+  });
+
+  it('reads the primary PI name out of a credentialed PI line', () => {
+    expect(primarySymposiumPiName('Dr. Taylor Birch, PhD; The Birch Lab')).toBe('Taylor Birch');
+    expect(primarySymposiumPiName('Jordan Alder MD, Ph.D.')).toBe('Jordan Alder');
+    expect(primarySymposiumPiName('Casey Fennel (PhD), Morgan Larkspur')).toBe('Casey Fennel');
+  });
+
+  it('reads one accepted PDF per configured year beside the program file', () => {
+    expect(
+      manualPdfInputsFor({
+        programKey: 'stars-ii',
+        urls: [
+          'https://example.yale.edu/2025-symposium.pdf',
+          'https://example.yale.edu/2024-symposium.pdf',
+        ],
+      }),
+    ).toEqual([
+      { fileKey: 'stars-ii', sourceUrl: 'https://example.yale.edu/2025-symposium.pdf' },
+      { fileKey: 'stars-ii-2025', sourceUrl: 'https://example.yale.edu/2025-symposium.pdf' },
+      { fileKey: 'stars-ii-2024', sourceUrl: 'https://example.yale.edu/2024-symposium.pdf' },
+    ]);
+  });
+
+  it('keeps each named recipient on the advisor row it aggregates to', () => {
+    const recipients = starsSymposiumPiExtractor(booklet, {
+      pageUrl: 'manual-pdf://stars-ii.pdf',
+      sourceUrl: 'https://example.yale.edu/2025-symposium.pdf',
+      defaultYear: 2025,
+    });
+    const rows = aggregateAdviseesByAdvisor(recipients, 'STARS II');
+    const row = [...rows.values()].find((entry) => entry.canonicalName.includes('Alder'))!;
+    expect(row.recipients).toEqual([
+      {
+        studentName: 'Avery Quill',
+        year: 2025,
+        programName: 'STARS II',
+        projectTitle: 'Mapping Circuit Activity in Larval Fish',
+        piAsPrinted: 'Jordan Alder, MD PhD',
+        sourceUrl: 'https://example.yale.edu/2025-symposium.pdf',
+      },
+    ]);
+    expect(
+      buildObservationsForAdvisor(
+        'fixture-lab',
+        row.advisees,
+        'https://example.yale.edu/x.pdf',
+        row.recipients,
+      ).map((observation) => observation.field),
+    ).toEqual(['pastUndergradAdvisees', 'fellowshipRecipients', 'lastObservedAt']);
   });
 });

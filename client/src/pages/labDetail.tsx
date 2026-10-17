@@ -31,6 +31,7 @@ import ResearchProfileSkeleton, {
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
+import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
@@ -1239,6 +1240,8 @@ const LabDetail = () => {
           )}
 
           <ResearchTeamSection members={members} roster={roster} />
+
+          <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
 
           {hasRelatedResearchEntities && (
             <RelatedResearchEntitiesSection
