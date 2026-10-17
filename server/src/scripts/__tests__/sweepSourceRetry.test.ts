@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { format } from 'node:util';
+import { describe, expect, it, vi } from 'vitest';
+import { MongoNetworkError } from 'mongodb';
+import { retryTransientDatabaseWrite } from '../../scrapers/utils/databaseWriteRetry';
 import {
   SCRAPER_SWEEP_DEADLINE_ENV,
   decideSweepSourceRetry,
@@ -51,6 +54,40 @@ describe('decideSweepSourceRetry', () => {
     ]) {
       expect(decideSweepSourceRetry({ ...base, failure }).retry).toBe(false);
     }
+  });
+
+  it('does not re-run a crash whose tail only carries a database blip the write layer absorbed', async () => {
+    const logged: string[] = [];
+    const warn = vi
+      .spyOn(console, 'warn')
+      .mockImplementation((...args: unknown[]) => void logged.push(format(...args)));
+    try {
+      let calls = 0;
+      await retryTransientDatabaseWrite(
+        async () => {
+          calls += 1;
+          if (calls === 1) throw new MongoNetworkError('internal atlas error');
+          return 'ok';
+        },
+        { label: 'observation insert', backoffMs: [0], sleep: async () => undefined },
+      );
+    } finally {
+      warn.mockRestore();
+    }
+    expect(logged.join('\n')).toMatch(/internal atlas error/);
+    const failureText = [
+      ...logged,
+      "TypeError: Cannot read properties of undefined (reading 'name')",
+      '    at resolveLane (lane.ts:12:3)',
+    ].join('\n');
+    expect(
+      decideSweepSourceRetry({
+        attempt: 1,
+        failure: childExit({ failureText }),
+        attemptDurationMs: HOUR,
+        remainingBudgetMs: 10 * HOUR,
+      }).retry,
+    ).toBe(false);
   });
 
   it('does not re-run when the remaining run limit cannot cover another attempt', () => {

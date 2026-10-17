@@ -1,7 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { isTransientMongoError, type TransientMongoErrorOptions } from './transientMongoError';
+import {
+  DATABASE_WRITE_RETRY_LOG_TAG,
+  isTransientMongoError,
+  type TransientMongoErrorOptions,
+} from './transientMongoError';
 
 export const DATABASE_WRITE_RETRY_BACKOFF_MS: readonly number[] = [1_000, 5_000, 15_000, 30_000];
 
@@ -93,7 +97,7 @@ export async function retryTransientDatabaseWrite<T>(
       if (attempt > 1) {
         recordDatabaseWriteRetryOutcome('recovered', attempt - 1);
         console.warn(
-          `[db-write-retry] ${options.label} recovered after ${attempt - 1} retr${attempt === 2 ? 'y' : 'ies'}`,
+          `${DATABASE_WRITE_RETRY_LOG_TAG} ${options.label} recovered after ${attempt - 1} retr${attempt === 2 ? 'y' : 'ies'}`,
         );
       }
       return value;
@@ -106,13 +110,13 @@ export async function retryTransientDatabaseWrite<T>(
       if (delay === undefined) {
         recordDatabaseWriteRetryOutcome('exhausted', attempt - 1);
         console.error(
-          `[db-write-retry] ${options.label} still failing after ${attempt} attempt(s); giving up:`,
+          `${DATABASE_WRITE_RETRY_LOG_TAG} ${options.label} still failing after ${attempt} attempt(s); giving up:`,
           sanitizeLogValue(error instanceof Error ? error.message : error),
         );
         throw error;
       }
       console.warn(
-        `[db-write-retry] ${options.label} hit a transient database error on attempt ${attempt}; retrying in ${delay}ms:`,
+        `${DATABASE_WRITE_RETRY_LOG_TAG} ${options.label} hit a transient database error on attempt ${attempt}; retrying in ${delay}ms:`,
         sanitizeLogValue(error instanceof Error ? error.message : error),
       );
       await sleep(delay);

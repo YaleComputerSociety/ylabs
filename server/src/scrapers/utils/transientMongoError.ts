@@ -13,6 +13,8 @@ const TRANSIENT_SERVER_CODES = new Set([
   6, 7, 89, 91, 189, 262, 9001, 10107, 11600, 11602, 13435, 13436,
 ]);
 
+export const DATABASE_WRITE_RETRY_LOG_TAG = '[db-write-retry]';
+
 const DUPLICATE_KEY_CODE = 11000;
 const DOCUMENT_VALIDATION_FAILURE_CODE = 121;
 
@@ -149,8 +151,16 @@ export function isTransientMongoError(
   return cause !== undefined && cause !== record && isTransientMongoError(cause, options);
 }
 
-export function matchesTransientMongoFailureText(text: string | undefined): boolean {
-  if (!text) return false;
+function withoutAbsorbedRetryLogLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !line.includes(DATABASE_WRITE_RETRY_LOG_TAG))
+    .join('\n');
+}
+
+export function matchesTransientMongoFailureText(failureText: string | undefined): boolean {
+  if (!failureText) return false;
+  const text = withoutAbsorbedRetryLogLines(failureText);
   if (DETERMINISTIC_MONGO_FAILURE_PATTERNS.some((pattern) => pattern.test(text))) return false;
   return TRANSIENT_MONGO_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
 }
