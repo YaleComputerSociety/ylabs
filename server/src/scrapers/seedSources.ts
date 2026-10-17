@@ -468,7 +468,7 @@ const SOURCES: SourceSeed[] = [
     name: 'official-research-home-roster',
     displayName: 'Official research-home current rosters',
     description:
-      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded. Manual-only and out of the sweep until a sampled roster precision review is recorded.',
+      'Reviewed, explicitly current roster sections and owner-approved undergraduate lists on allowlisted official research-home pages, read weekly in the sweep. Public contact details are excluded.',
     baseUrl: 'https://medicine.yale.edu/lab/',
     defaultWeight: 0.95,
     cadence: 'weekly',

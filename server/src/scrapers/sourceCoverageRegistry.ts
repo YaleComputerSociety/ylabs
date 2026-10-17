@@ -15,7 +15,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes:
-      'Reviewed official current-roster sections for allowlisted research homes. Manual-only and out of the sweep until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
+      'Reviewed official current-roster sections and owner-approved undergraduate lists for allowlisted research homes, read weekly in the sweep since the sampled precision review was recorded on 2026-10-17 (#5039).',
   },
   'lab-site-lead-verification': {
     priority: 1,

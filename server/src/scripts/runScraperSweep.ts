@@ -161,6 +161,7 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
   { name: 'lab-site-lead-verification', phase: 'relationships' },
+  { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
