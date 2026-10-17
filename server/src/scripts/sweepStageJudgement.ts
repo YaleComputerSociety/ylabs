@@ -66,6 +66,40 @@ export function judgeIntegrityGateResult(
   return { counts: recorded, regressions: countRegressions(recorded, baseline) };
 }
 
+export const DATA_QUALITY_ERROR_CHECK_COUNT_PREFIX = 'errorCheck:';
+
+/**
+ * Data quality keeps an absolute contract, so any error-severity check fails the stage and no
+ * baseline is consulted; the judge exists so the failing checks land on the sweep row by name,
+ * because the report lists them near its top and a log tail only keeps the bottom.
+ */
+export function judgeDataQualityResult(artifact: unknown): StageJudgement {
+  const report = isRecord(artifact) ? artifact : {};
+  const summary = isRecord(report.summary) ? report.summary : {};
+  if (!isCount(summary.errorCount) || !Array.isArray(summary.errors)) {
+    throw new Error('data-quality result has no summary errorCount or errors');
+  }
+  const counts: StageCounts = { errorCount: summary.errorCount };
+  for (const check of summary.errors) {
+    if (!isRecord(check) || typeof check.name !== 'string' || !isCount(check.count)) {
+      throw new Error('data-quality result has an error check without a name and a count');
+    }
+    counts[`${DATA_QUALITY_ERROR_CHECK_COUNT_PREFIX}${check.name}`] = check.count;
+  }
+  const failing = Object.entries(counts)
+    .filter(([name]) => name.startsWith(DATA_QUALITY_ERROR_CHECK_COUNT_PREFIX))
+    .map(([name, count]) => `${name.slice(DATA_QUALITY_ERROR_CHECK_COUNT_PREFIX.length)} ${count}`);
+  return {
+    counts,
+    regressions: [],
+    ...(summary.errorCount > 0
+      ? {
+          violation: `data-quality failed ${summary.errorCount} error check(s): ${failing.join(', ')}`,
+        }
+      : {}),
+  };
+}
+
 export const TRUST_CONTRACT_REPAIR_LANE_COUNT_PREFIX = 'repairLane:';
 
 export function judgeTrustContractResult(

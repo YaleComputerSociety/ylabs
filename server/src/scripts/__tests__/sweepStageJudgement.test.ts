@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   countRegressions,
+  judgeDataQualityResult,
   judgeIntegrityGateResult,
   judgeLaneScorecardResult,
   judgeTrustContractResult,
@@ -132,5 +133,44 @@ describe('counting stage judgement (#4852)', () => {
       'integrity-gate': { duplicatePeople: 2, duplicateAccessSignals: 1 },
       'trust-contract': { violations: 9, publicVisibilityViolations: 0 },
     });
+  });
+});
+
+describe('data-quality stage judgement', () => {
+  const report = (errors: Array<{ name: string; count: number }>) => ({
+    summary: {
+      errorCount: errors.length,
+      errors,
+      warnings: [{ name: 'duplicateEntityNames', count: 22 }],
+    },
+  });
+
+  it('names every failing error check on the row, so a truncated log tail cannot hide it', () => {
+    expect(
+      judgeDataQualityResult(
+        report([
+          { name: 'referenceIntegrity', count: 3 },
+          { name: 'urlSyntax', count: 1 },
+        ]),
+      ),
+    ).toEqual({
+      counts: { errorCount: 2, 'errorCheck:referenceIntegrity': 3, 'errorCheck:urlSyntax': 1 },
+      regressions: [],
+      violation: 'data-quality failed 2 error check(s): referenceIntegrity 3, urlSyntax 1',
+    });
+  });
+
+  it('passes a report with no error checks and ignores warnings', () => {
+    expect(judgeDataQualityResult(report([]))).toEqual({
+      counts: { errorCount: 0 },
+      regressions: [],
+    });
+  });
+
+  it('refuses a report without a summary instead of passing it', () => {
+    expect(() => judgeDataQualityResult({ status: 'error' })).toThrow(/no summary/);
+    expect(() =>
+      judgeDataQualityResult({ summary: { errorCount: 1, errors: [{ name: 'urlSyntax' }] } }),
+    ).toThrow(/without a name and a count/);
   });
 });

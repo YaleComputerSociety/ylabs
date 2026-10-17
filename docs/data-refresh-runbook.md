@@ -643,7 +643,7 @@ Only run it after the bounded sample succeeds.
 After the source sweep, the same command projects active faculty into the Account/Researcher model, runs a full-corpus student-visibility gate so gate-logic changes propagate before the index rebuild, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
 Every post-run stage executes even when an earlier quality gate fails, so the operator receives every report; `docs/research-data-pipeline.md` owns the authoritative stage list.
 The overall command exits nonzero when a source or post-run stage fails.
-`integrity-gate`, `trust-contract` and `lane-scorecard` fail on a regression, a crash, or a public visibility violation, not on a standing count, as `docs/research-data-pipeline.md` describes after the stage list (#4852).
+`integrity-gate`, `trust-contract` and `lane-scorecard` fail on a regression, a crash, or a public visibility violation, not on a standing count, and `data-quality` fails as a `violation` that names each failing error check, as `docs/research-data-pipeline.md` describes after the stage list (#4852).
 The runner prints an output directory under `/tmp`.
 That directory contains one JSON report per source, `summary.json`, the faculty projection report, the student-visibility gate report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
 Each summary row includes observation and entity yield, fetch successes and failures, blocked requests, selector breakages, warnings, and materialization counts.

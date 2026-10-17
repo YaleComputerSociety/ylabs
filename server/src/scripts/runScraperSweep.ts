@@ -75,6 +75,7 @@ import { SweepRunLogger, buildFailureTail, formatFailureTailForLog } from './scr
 import {
   formatStageCounts,
   formatStageRegressions,
+  judgeDataQualityResult,
   judgeIntegrityGateResult,
   judgeLaneScorecardResult,
   judgeTrustContractResult,
@@ -1790,6 +1791,8 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     artifactName: 'development-data-quality.json',
     buildArgs: () => ['--strict', '--include-samples', '--progress'],
     isEnabled: () => true,
+
+    judgeResult: judgeDataQualityResult,
   },
   {
     name: 'integrity-gate',
