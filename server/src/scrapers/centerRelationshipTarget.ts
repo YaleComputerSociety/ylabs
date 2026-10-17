@@ -14,24 +14,30 @@ interface RelationshipObservationRow {
 export function relationshipTargetIdentities(
   rows: readonly RelationshipObservationRow[],
 ): RelationshipTargetIdentity[] {
-  const byRelationshipKey = new Map<string, Partial<RelationshipTargetIdentity>>();
+  const byRelationshipKey = new Map<string, { targetEntityKeys: Set<string>; urls: Set<string> }>();
   for (const row of rows) {
     if (typeof row.value !== 'string' || !row.value.trim()) continue;
     const value = row.value.trim();
-    const identity = byRelationshipKey.get(row.entityKey) ?? {};
-    if (row.field === 'targetEntityKey') identity.targetEntityKey = value;
-    else if (row.field === RELATIONSHIP_TARGET_WEBSITE_URL_FIELD) identity.targetWebsiteUrl = value;
+    const observed = byRelationshipKey.get(row.entityKey) ?? {
+      targetEntityKeys: new Set<string>(),
+      urls: new Set<string>(),
+    };
+    if (row.field === 'targetEntityKey') observed.targetEntityKeys.add(value);
+    else if (row.field === RELATIONSHIP_TARGET_WEBSITE_URL_FIELD) observed.urls.add(value);
     else continue;
-    byRelationshipKey.set(row.entityKey, identity);
+    byRelationshipKey.set(row.entityKey, observed);
   }
   const distinct = new Map<string, RelationshipTargetIdentity>();
-  for (const identity of byRelationshipKey.values()) {
-    if (!identity.targetEntityKey) continue;
-    const resolved: RelationshipTargetIdentity = {
-      targetEntityKey: identity.targetEntityKey,
-      ...(identity.targetWebsiteUrl ? { targetWebsiteUrl: identity.targetWebsiteUrl } : {}),
-    };
-    distinct.set(`${resolved.targetEntityKey}|${resolved.targetWebsiteUrl ?? ''}`, resolved);
+  for (const { targetEntityKeys, urls } of byRelationshipKey.values()) {
+    const websiteUrls = urls.size > 0 ? Array.from(urls) : [undefined];
+    for (const targetEntityKey of targetEntityKeys) {
+      for (const targetWebsiteUrl of websiteUrls) {
+        distinct.set(`${targetEntityKey}|${targetWebsiteUrl ?? ''}`, {
+          targetEntityKey,
+          ...(targetWebsiteUrl ? { targetWebsiteUrl } : {}),
+        });
+      }
+    }
   }
   return Array.from(distinct.values());
 }
