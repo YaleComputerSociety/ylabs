@@ -865,9 +865,10 @@ const DEPARTMENT_HIRING_SUBJECT_SEGMENT =
  * stays out of it, because an unscoped `/opportunities/` page on a department host can
  * be the research-opportunities page a student is looking for.
  *
- * The exemption reads host AND path, not the host label alone: `medicine.yale.edu/lab/
- * mcpartland/jobs/hilibrandfellowship/` is a lab's own openings page on a shared
- * school host, and clearing it would take a link the lab really owns.
+ * The exemption reads host AND path, not the host label alone, so a lab's own openings
+ * page on a shared school host is not read as its department's. That exemption decides
+ * whose page it is, not whether it may be a research website: `isPostingPageUrl` refuses
+ * every openings page as a research website, the lab's own included.
  */
 export function isDepartmentHiringPageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
@@ -879,6 +880,26 @@ export function isDepartmentHiringPageUrl(value: unknown): boolean {
     .split('/')
     .filter(Boolean)
     .some((segment) => DEPARTMENT_HIRING_SUBJECT_SEGMENT.test(segment));
+}
+
+const POSTING_PAGE_SEGMENT =
+  /^(?:jobs?|job-openings?|job-postings?|open-positions?|positions?|openings?|employment|careers?|hiring|vacanc(?:y|ies)|post-?doc(?:toral)?-(?:positions?|openings?|fellowships?))$/i;
+
+/**
+ * A page that advertises a job, a position or a postdoctoral fellowship. It is never any
+ * row's research website, on any host, because it is about a vacancy rather than about
+ * the research: a profile linked another lab's fellowship posting, the roster lane stored
+ * it as the row's website, and the microsite lane then named the row after the posting.
+ * Unlike `isDepartmentHiringPageUrl` there is no lab-path exemption, because the lab's own
+ * openings page is not its research website either; its site root is.
+ */
+export function isPostingPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return url.pathname
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => POSTING_PAGE_SEGMENT.test(segment));
 }
 
 /**
@@ -1504,6 +1525,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'institutional-advancement'
   | 'department-opportunities-path'
   | 'school-section-page'
+  | 'posting-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1555,6 +1577,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'institutional-advancement',
   'department-opportunities-path',
   'school-section-page',
+  'posting-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1627,6 +1650,7 @@ export function researchHomeWebsiteUrlDecision(
   // path check. Stronger than publicity as a refusal, because a fundraising page names
   // the donor whose fund it commemorates rather than the row's subject (#2460).
   if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
+  if (isPostingPageUrl(raw)) return refuse('posting-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {

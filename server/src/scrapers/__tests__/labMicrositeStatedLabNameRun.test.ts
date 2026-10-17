@@ -248,4 +248,26 @@ describe('the microsite lane emits the page-stated lab name on every description
       pageStatedLabNameObservations(extraction({ fullDescription: orgBody }), personScoped, html),
     ).toHaveLength(0);
   });
+
+  it('withholds every name a job or fellowship posting page states', async () => {
+    const { valueOf } = await runLane({
+      url: 'https://quillcircuits.example.org/jobs/quill-postdoctoral-fellowship/',
+      html: proseHtml(`${LAB_NAME} - Home`),
+      extraction: extraction({ fullDescription: 'Prose the page never states.' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+    expect(valueOf('displayName')).toBeUndefined();
+  });
+
+  it('withholds a name that names a fellowship rather than a lab', async () => {
+    const fellowship = 'The Quill Postdoctoral Fellowship in Neural Circuits';
+    const { valueOf } = await runLane({
+      html: proseHtml(fellowship).replace(`<h1>${LAB_NAME}</h1>`, `<h1>${fellowship}</h1>`),
+      extraction: extraction({ name: fellowship, fullDescription: 'Prose the page never states.' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+    expect(valueOf('displayName')).toBeUndefined();
+  });
 });

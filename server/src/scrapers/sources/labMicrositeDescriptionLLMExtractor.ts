@@ -34,6 +34,7 @@ import {
 } from '../../utils/researchEntityNameNormalization';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { isDepartmentCollectivePageUrl } from '../../utils/researchHomeWebsiteUrl';
+import { namesAPostingRatherThanResearch } from '../../utils/postingName';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
@@ -115,6 +116,7 @@ import { groundMethods, isMethodGroundedInText } from '../utils/methodGrounding'
 import {
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
+  isPostingPageUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import {
   claimsAnotherPersonsLab,
@@ -1707,6 +1709,7 @@ function labNameObservations(
   base: Omit<ObservationInput, 'field' | 'value'>,
   context: ExtractedPageIdentityContext,
 ): ObservationInput[] {
+  if (isPostingPageUrl(context.sourceUrl) || namesAPostingRatherThanResearch(labName)) return [];
   const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
   if (isLabTypedRowsPersonalPage(labName, context)) {
     return personalPageObservations(labName, nameBase);

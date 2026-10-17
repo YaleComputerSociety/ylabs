@@ -74,6 +74,7 @@ import {
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
   isOffsiteInstitutionPersonProfileUrl,
+  isPostingPageUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
 } from '../../utils/researchHomeWebsiteUrl';
@@ -3449,6 +3450,10 @@ export function profileEnrichmentFromHtml(
       labUrlCandidateRefused = true;
       return;
     }
+    if (isPostingPageUrl(absolute)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
 
     const candidateHost = parsed.hostname.toLowerCase();
     const isProfileSite = profileHost && candidateHost === profileHost;
@@ -3789,13 +3794,19 @@ export async function enrichEntryFromOfficialProfile(
 
 /**
  * Every roster lane mints `labUrl` from a page link, and only the official-profile
- * lane checks its shape, so the refusal has to sit on the boundary both observation
- * builders share rather than in each extractor. The extractor-level check stays
+ * lane checks its shape, so the refusal of another institution's profile and of a job
+ * or fellowship posting has to sit on the boundary both observation builders share
+ * rather than in each extractor. The extractor-level check stays
  * where it exists because there it lets a later, genuine website link on the same
  * page win instead of being blocked by the first off-site one.
  */
-function withoutOffsiteInstitutionWebsite(entry: FacultyEntry): FacultyEntry {
-  if (!entry.labUrl || !isOffsiteInstitutionPersonProfileUrl(entry.labUrl)) return entry;
+function withoutInadmissibleLabWebsite(entry: FacultyEntry): FacultyEntry {
+  if (
+    !entry.labUrl ||
+    !(isOffsiteInstitutionPersonProfileUrl(entry.labUrl) || isPostingPageUrl(entry.labUrl))
+  ) {
+    return entry;
+  }
   // Stripping a value the page still carries is a refusal, so the slot must stop
   // being claimable as empty even if an earlier parse attested it (#3135).
   return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
@@ -4382,7 +4393,7 @@ export class DepartmentRosterScraper implements IScraper {
           continue;
         }
         const entry = withoutAnotherRosterPersonsStatedLab(
-          withoutOffsiteInstitutionWebsite(
+          withoutInadmissibleLabWebsite(
             await enrichEntryFromOfficialProfile(
               withoutUnheldSceneIdentity(rawEntry, dept, labUrlEvidenceBySlug),
               this.name,
