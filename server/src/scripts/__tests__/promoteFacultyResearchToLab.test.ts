@@ -33,6 +33,24 @@ describe('site lab name admissibility', () => {
     expect(admissible('Quillfixture Lab', candidate(['Quillfixture Lab']))).toBe(true);
   });
 
+  it('admits a topic-named lab whose page path only echoes the lab name', () => {
+    expect(
+      admissible('Riverfixture Lab', {
+        ...candidate(['Riverfixture Lab']),
+        websiteUrl: 'https://www.collaborative.example.org/riverfixture-lab',
+      }),
+    ).toBe(true);
+  });
+
+  it("still refuses a colleague's eponymous lab whose page path echoes the lab name", () => {
+    expect(
+      admissible('Fixturecolleague Lab', {
+        ...candidate(['Fixturecolleague Lab']),
+        websiteUrl: 'https://www.collaborative.example.org/fixturecolleague-lab',
+      }),
+    ).toBe(false);
+  });
+
   it('reads og:site_name, the title, and the first heading', () => {
     expect(
       siteTitlesFromHtml(
