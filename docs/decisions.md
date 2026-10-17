@@ -5,6 +5,22 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-16: A Description Says What Is Studied Now, Measured By Date (#5074)
+
+Decision (owner, 2026-10-16), part of the one-writer description standard on #5020.
+1. Recent work counts: the topic of work from about the last 5 years, such as a book, paper, trial or project, may be described as what the person studies ("Studies X").
+2. Finished work is never ongoing: a finished book, paper, trial or project never takes an ongoing verb ("current project", "leads", "is working on", "ongoing").
+3. Current projects come first: when the evidence names a current project, the description leads with it rather than with the topic of a finished book.
+4. Older work needs proof: a topic backed only by work older than about 5 years counts as current only if the page says it continues.
+5. Emeritus or retired: their past work counts as what they study only if the page says it continues.
+
+The rule is in the writer prompt (`server/src/scrapers/prompts/coverageSynthesis.md`), clause 2 is in the rules the card and the body share (`synthesisFidelityRules.md`), and the writer is given today's date so it can apply the 5-year window.
+It replaces a line that forbade presenting any book as current research, which contradicted clause 1.
+The prompt carries the rule; enforcing it in code (an ongoing verb refused on a quote about finished or dated work, a quote dated more than 5 years back refused unless it says the work continues) belongs to the quote-checked writer built under #5020.
+
+Measured on 29 rows of the frozen description benchmark with two independent blind graders: accurate rows rose from 18 and 19 to 24 and 24, the 8 rows previously wrong on tense went from 0 and 1 accurate to 7 and 7, and supported specifics fell by about 9%.
+Clause 3 did not measurably change which item leads, so it needs its own check.
+
 ## 2026-10-14: A Lab's Undergraduate Researchers Are Listed By Name (#5039)
 
 Owner decision: when a lab's own page names its undergraduate researchers, the detail page lists every one of them, current and past, at the top of the team section.
