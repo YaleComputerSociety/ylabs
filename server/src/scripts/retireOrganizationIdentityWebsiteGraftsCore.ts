@@ -1,7 +1,6 @@
 import {
   isPersonScopedResearchEntity,
-  isUmbrellaOrganizationName,
-  namesAServiceFacility,
+  nameDenotesOrganization,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import { resolveBackfillWebsiteUrl } from './backfillResearchEntityWebsiteUrlsCore';
@@ -73,7 +72,7 @@ export type ResolvedUrlLookup = (url: string) => string;
  * is refused, which leaves a row unrepaired rather than repairing it wrongly.
  */
 export function ownerNameDenotesOrganization(name: unknown): boolean {
-  return isUmbrellaOrganizationName(name) || namesAServiceFacility(name);
+  return nameDenotesOrganization(name);
 }
 
 const stringList = (value: unknown): string[] =>

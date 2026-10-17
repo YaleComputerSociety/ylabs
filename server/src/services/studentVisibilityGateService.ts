@@ -68,7 +68,12 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
-import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
+import {
+  isLikelyOfficialPersonProfileUrl,
+  officialProfileUrlFromRosterEntry,
+} from './leadProfileIdentity';
+import { nameDenotesOrganization } from '../utils/researchHomeNameIdentityAuthority';
+import { servableOrcid } from '../utils/orcid';
 import {
   RE_DERIVED_ACCESS_SIGNAL_TYPES,
   underivedAccessSignalIds,
@@ -804,6 +809,46 @@ const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
   return Boolean(ownHome) && ownHome !== url;
 };
 
+function isPersonPageCitation(url: string): boolean {
+  if (isLikelyOfficialPersonProfileUrl(url)) return true;
+  try {
+    const parsed = new URL(url);
+    const host = hostWithoutWww(parsed.hostname);
+    if (host === 'orcid.org') return Boolean(servableOrcid(parsed.pathname.replace(/^\/+/, '')));
+    return (
+      host === 'scholar.google.com' &&
+      /^\/citations\/?$/i.test(parsed.pathname) &&
+      parsed.searchParams.has('user')
+    );
+  } catch {
+    return false;
+  }
+}
+
+const isNamedOrganizationEntity = (entity: any): boolean =>
+  isOrganizationalResearchEntity(entity) && nameDenotesOrganization(entity?.name);
+
+/**
+ * A director's own page is cited by the organization they direct and by their own
+ * person-scoped row, and the two are different kinds of thing rather than one row named
+ * twice (#5085). On a person's page an organization, by type and by name, is a reader
+ * of that page and never contests it against a person-scoped row, unless it publishes
+ * the page as its own home. Such organizations still contest the page among themselves,
+ * and two person-scoped rows sharing it still contest it too.
+ */
+const contestSetsOnUrl = (url: string, members: any[]): any[][] => {
+  if (!isPersonPageCitation(url)) return [members];
+  if (!members.some((entity) => isPersonScopedResearchEntityType(entity?.entityType))) {
+    return [members];
+  }
+  const isOrganizationReadingThePage = (entity: any) =>
+    isNamedOrganizationEntity(entity) && !entityPublishesUrlAsItsOwnHome(entity, url);
+  return [
+    members.filter((entity) => !isOrganizationReadingThePage(entity)),
+    members.filter(isOrganizationReadingThePage),
+  ];
+};
+
 /**
  * The members that actually contest ownership of a URL. Applied AFTER the group-size
  * filter, so a group that shrinks past the limit is not thereby exposed to the signal
@@ -813,7 +858,7 @@ const entityOnlyReadsUrl = (entity: any, url: string): boolean => {
  * The guard also keeps the result non-empty: the member that publishes the URL reads
  * `false` from `entityOnlyReadsUrl` and so always survives the filter.
  */
-const membersContestingUrl = (url: string, members: any[]): any[] => {
+const membersClaimingUrl = (url: string, members: any[]): any[] => {
   const publishers = members.filter((entity) => entityPublishesUrlAsItsOwnHome(entity, url));
   if (publishers.length === 0) return members;
   return members.filter((entity) => {
@@ -845,7 +890,12 @@ export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup
     .filter(
       ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
-    .map(([url, members]) => ({ url, members: membersContestingUrl(url, members) }))
+    .flatMap(([url, members]) =>
+      contestSetsOnUrl(url, members).map((contestants) => ({
+        url,
+        members: membersClaimingUrl(url, contestants),
+      })),
+    )
     .filter(({ members }) => members.length > 1);
 };
 

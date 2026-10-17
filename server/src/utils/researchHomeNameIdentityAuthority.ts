@@ -447,6 +447,19 @@ export function namesAServiceFacility(value: unknown): boolean {
   return SERVICE_FACILITY_NOUN_RE.test(name);
 }
 
+/**
+ * Whether a name denotes an organization rather than a person's research home.
+ *
+ * `isUmbrellaOrganizationName` is false for anything lab-headed by design, so a shared
+ * facility ("Yale CryoEM Resource") needs the service-noun test too. An organizational
+ * `entityType` alone is not enough wherever this is read: person-keyed shells typed
+ * `INITIATIVE` or `CENTER` and titled after the person are a duplicate-row problem wearing
+ * an organization's type.
+ */
+export function nameDenotesOrganization(value: unknown): boolean {
+  return isUmbrellaOrganizationName(value) || namesAServiceFacility(value);
+}
+
 const SUPPORT_OR_CONSULTING_UNIT_RE =
   /\bsupport\s+(?:hubs?|desks?|services?|cent(?:er|re)s?|teams?|units?|offices?)\b|\bconsult(?:ing|ancy|ants?)\b|\b(?:llc|l\.l\.c\.|pllc|inc\.?|ltd\.?)(?=\s|$|[,.;)])/i;
 
