@@ -3877,8 +3877,9 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /!PROGRAM_CATEGORIES\.has\(update\.programCategory\)/);
   assert.match(
     fellowshipService,
-    /normalizeFellowshipObjectId\(update\.studentVisibilityReviewedByAccountId\)/,
+    /normalizeReviewerNetid\(update\.studentVisibilityReviewedByNetid\)/,
   );
+  assert.match(fellowshipService, /const REVIEWER_NETID_PATTERN = \/\^\[a-z0-9\]\{2,12\}\$\/;/);
 });
 
 test('shared item view and favorite mutations normalize ObjectIds before model work', () => {
