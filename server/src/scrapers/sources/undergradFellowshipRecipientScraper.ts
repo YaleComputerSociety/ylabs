@@ -62,7 +62,6 @@ import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -823,15 +822,9 @@ export function aggregateAdviseesByAdvisor(
 export type AdvisorResearcherResolver = (name: string, orcid?: string) => Promise<UserMatch | null>;
 
 export async function netidForAdvisorResearcher(researcher: {
-  accountId?: unknown;
   identifiers?: { netid?: unknown } | null;
 }): Promise<string> {
-  const heldNetid = researcherNetid(researcher);
-  if (heldNetid || !researcher.accountId) return heldNetid;
-  const account: any = await Account.findById(researcher.accountId as any)
-    .select('netid')
-    .lean();
-  return researcherNetid(researcher, account);
+  return researcherNetid(researcher);
 }
 
 function researcherToUserMatch(researcher: any, netid: string): UserMatch {

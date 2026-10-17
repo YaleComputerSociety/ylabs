@@ -6,17 +6,15 @@ import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { summarizeAccountCarry } from './accountSwapCarry';
 import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
 import {
+  ACCOUNT_COPY_POLICY,
   applySync,
   buildPlan,
-  previewSyncAccountCarry,
-  syncCountMismatches,
   collectionsForOptions,
   parseMongoTarget,
-  researchPersonAccountIds,
-  type BetaToDevelopmentOptions,
+  syncAccountReferences,
+  syncCountMismatches,
 } from './syncBetaToDevelopment';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -99,11 +97,7 @@ async function main(): Promise<void> {
     await Promise.all([sourceClient.connect(), targetClient.connect()]);
     const sourceDb = sourceClient.db();
     const targetDb = targetClient.db();
-    const sharedOptions = {
-      includeObservations: options.includeObservations,
-    } as BetaToDevelopmentOptions;
-    const researchAccountIds = await researchPersonAccountIds(sourceDb);
-    const collections = collectionsForOptions(sharedOptions, researchAccountIds);
+    const collections = collectionsForOptions({ includeObservations: options.includeObservations });
     const before = await buildPlan(sourceDb, targetDb, collections);
     let after = before;
     const report = {
@@ -115,11 +109,8 @@ async function main(): Promise<void> {
       includesObservations: options.includeObservations,
       collections: before,
       preservedBetaOperationalCollections: true,
-      accountCarry: summarizeAccountCarry(
-        await previewSyncAccountCarry(sourceDb, targetDb, collections),
-      ),
-      userCopyPolicy:
-        'Preserve accounts reachable from a Researcher; pseudonymize every other account and remove account activity fields.',
+      accountReferences: await syncAccountReferences(sourceDb, collections),
+      userCopyPolicy: ACCOUNT_COPY_POLICY,
       observationPolicy: options.includeObservations
         ? 'Observations included by explicit --include-observations opt-in.'
         : 'Observations stay in Development: they are 95 percent of the volume on a shared Atlas cluster. A mirror without them must not be re-materialized.',
@@ -129,16 +120,16 @@ async function main(): Promise<void> {
       writeOutput(report, options.output);
       return;
     }
-    const accountCarry = await applySync(sourceDb, targetDb, collections, [], async (carry) => {
+    await applySync(sourceDb, targetDb, collections, [], async () => {
       after = await buildPlan(sourceDb, targetDb, collections);
-      const mismatches = syncCountMismatches(after, carry);
+      const mismatches = syncCountMismatches(after);
       if (mismatches.length) {
         throw new Error(
           `Post-sync count verification failed: ${mismatches.map((row) => row.name).join(', ')}`,
         );
       }
     });
-    const result = { ...report, accountCarry, status: 'applied', collections: after };
+    const result = { ...report, status: 'applied', collections: after };
     console.log(JSON.stringify(result, null, 2));
     writeOutput(result, options.output);
   } finally {

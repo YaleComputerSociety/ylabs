@@ -101,7 +101,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       email: `${netid}@yale.edu`,
       status: 'ACTIVE',
     });
-    return Researcher.create({ displayName, accountId: account._id, ...extra });
+    return Researcher.create({ displayName, identifiers: { netid: account.netid }, ...extra });
   };
 
   const seedRosterObservations = async (
@@ -163,7 +163,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const researcher = await Researcher.create({
       displayName: 'Robin Investigator',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
     });
 
     await seedDirectoryIdentity('realpi1', 'Robin', 'Investigator');
@@ -180,7 +180,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       identifiers?: { netid?: string };
     }>();
     expect(enriched?.profile?.title).toBe('Professor of Physics');
-    expect(String(enriched?.accountId)).toBe(String(account._id));
+    expect(enriched?.accountId).toBeUndefined();
     expect(enriched?.identifiers?.netid).toBe('realpi1');
   });
 
@@ -213,7 +213,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const enrichTarget = await Researcher.create({
       displayName: 'Collide Investigator',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
     });
 
     await seedDirectoryIdentity('collide1', 'Collide', 'Investigator');
@@ -325,7 +325,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       });
       const shellId = await insertWithoutValidation({
         displayName: 'Orphan Shell',
-        accountId: account._id,
+        identifiers: { netid: account.netid },
         profileLinks: [orcidProfileLink(claimedOrcid)],
       });
 
@@ -353,8 +353,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       });
       const researcherId = await insertWithoutValidation({
         displayName: 'Stray Linker',
-        accountId: account._id,
-        identifiers: { orcid: ownOrcid },
+        identifiers: { netid: account.netid, orcid: ownOrcid },
         profileLinks: [orcidProfileLink(strayOrcid)],
       });
 
@@ -378,7 +377,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       });
       const researcherId = await insertWithoutValidation({
         displayName: 'Dry Orphan',
-        accountId: account._id,
+        identifiers: { netid: account.netid },
         profileLinks: [orcidProfileLink(strayOrcid)],
       });
 
@@ -436,7 +435,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const researcher = await Researcher.create({
       displayName: 'Unrelated Stored Name',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
     });
 
     const base = {
@@ -467,7 +466,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const named = await Researcher.create({
       displayName: 'Pat Ryan-Example',
-      accountId: namedAccount._id,
+      identifiers: { netid: namedAccount.netid },
     });
     const otherAccount = await Account.create({
       netid: 'pe67',
@@ -476,7 +475,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const other = await Researcher.create({
       displayName: 'Peter Example',
-      accountId: otherAccount._id,
+      identifiers: { netid: otherAccount.netid },
     });
 
     const base = {
@@ -509,7 +508,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const other = await Researcher.create({
       displayName: 'Blake Other',
-      accountId: otherAccount._id,
+      identifiers: { netid: otherAccount.netid },
     });
 
     await seedRosterObservations('ab12', [
@@ -534,7 +533,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const first = await Researcher.create({
       displayName: 'Dana Shared',
-      accountId: firstAccount._id,
+      identifiers: { netid: firstAccount.netid },
     });
     const secondAccount = await Account.create({
       netid: 'gh78',
@@ -543,7 +542,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const second = await Researcher.create({
       displayName: 'Dana Sharedtwo',
-      accountId: secondAccount._id,
+      identifiers: { netid: secondAccount.netid },
     });
 
     await seedRosterObservations('netid:dana.shared', [
@@ -573,7 +572,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const live = await Researcher.create({
       displayName: 'Robin Reused',
-      accountId: liveAccount._id,
+      identifiers: { netid: liveAccount.netid },
     });
 
     await seedRosterObservations('netid:reused.person', [
@@ -598,7 +597,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const priorChair = await Researcher.create({
       displayName: 'Prior Chairperson',
-      accountId: chairAccount._id,
+      identifiers: { netid: chairAccount.netid },
     });
 
     await seedRosterObservations('dept:physics-chair', [
@@ -623,7 +622,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
     const researcher = await Researcher.create({
       displayName: 'Corey Example',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
     });
 
     await seedRosterObservations('netid:corey.example', [
@@ -654,27 +653,6 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     const enriched = await enrichedResearcher(shell._id);
     expect(enriched?.profile?.title).toBe('Professor of Physics');
     expect(enriched?.identifiers?.netid).toBeUndefined();
-  });
-
-  it('yields a colliding netid to its existing holder instead of failing the key', async () => {
-    await Researcher.init();
-    const holder = await Researcher.create({
-      displayName: 'Netid Holder',
-      identifiers: { netid: 'mn34' },
-    });
-    const enrichTarget = await attachedResearcher('mn34', 'Target Person');
-
-    await seedDirectoryIdentity('mn34', 'Target', 'Person');
-
-    const result = await materializeEntity('user', { entityKey: 'mn34' }, {});
-
-    expect(result.conflicts).toBe(1);
-
-    const enriched = await enrichedResearcher(enrichTarget._id);
-    expect(enriched?.profile?.title).toBe('Professor of Physics');
-    expect(enriched?.identifiers?.netid).toBeUndefined();
-    expect((await enrichedResearcher(holder._id))?.identifiers?.netid).toBe('mn34');
-    expect(await Researcher.countDocuments({ 'identifiers.netid': 'mn34' })).toBe(1);
   });
 
   it('clamps a directory title beyond the profile bound instead of failing the run', async () => {

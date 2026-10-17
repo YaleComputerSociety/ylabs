@@ -56,6 +56,7 @@ describe('archivedEntityUpdate', () => {
       'studentVisibilitySuppressionReason',
       'studentVisibilityReviewedAt',
       'studentVisibilityReviewedByAccountId',
+      'studentVisibilityReviewedByNetid',
     ]);
     for (const field of ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS) {
       expect(cleared).not.toContain(field);

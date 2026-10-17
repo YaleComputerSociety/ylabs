@@ -221,11 +221,8 @@ export interface ProductionPromotionReport {
   datasetVersion?: string;
   includesObservations?: boolean;
   includesScrapeRuns?: boolean;
-  syntheticReferenceBlockersClear?: boolean;
+  accountReferenceBlockersClear?: boolean;
   applyBlockers?: string[];
-  excludedBetaLoginAccounts?: number;
-  excludedSyntheticUsers?: number;
-  productionAccountCarry?: { inserted?: number; refreshed?: number; rekeyed?: number };
   collections?: CollectionCounts[];
 }
 
@@ -234,8 +231,8 @@ export function productionPlanProblems(report: ProductionPromotionReport): strin
   if (report.sourceEnvironment !== 'beta') problems.push('promotion source is not beta');
   if (report.targetEnvironment !== 'production')
     problems.push('promotion target is not production');
-  if (report.syntheticReferenceBlockersClear !== true) {
-    problems.push('synthetic-user reference blockers are not clear');
+  if (report.accountReferenceBlockersClear !== true) {
+    problems.push('promoted corpus rows still carry account _id references');
   }
   if ((report.applyBlockers ?? []).length > 0) {
     problems.push(`apply blockers: ${report.applyBlockers?.join(' ')}`);
@@ -247,12 +244,9 @@ export function productionPlanProblems(report: ProductionPromotionReport): strin
 }
 
 export function formatProductionPlan(report: ProductionPromotionReport): string {
-  const carry = report.productionAccountCarry ?? {};
   return [
     `Beta -> Production promotion plan ${report.datasetVersion ?? ''} (${report.sourceDatabase ?? '?'} -> ${report.targetDatabase ?? '?'})`,
-    `  Production logins carried: inserted ${carry.inserted ?? '-'}, refreshed ${carry.refreshed ?? '-'}, rekeyed ${carry.rekeyed ?? '-'}`,
-    `  Beta logins left behind: ${report.excludedBetaLoginAccounts ?? '-'}; synthetic rows excluded: ${report.excludedSyntheticUsers ?? '-'}`,
-    '  Stop if "inserted" is 0 while Production has logged-in users (docs/release-process.md).',
+    '  Accounts are environment-local and not promoted; Production keeps its own sign-ins.',
     formatCollectionTable(report.collections ?? []),
   ].join('\n');
 }

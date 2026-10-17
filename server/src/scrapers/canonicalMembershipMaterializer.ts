@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
   isRosterIdentityBasis,
@@ -350,10 +349,9 @@ export function buildCanonicalRoleAssignmentUpsert(
 }
 
 /**
- * Accounts are created only at login (#5000), so a roster identity reaches a researcher
- * through `identifiers.netid` and mints the researcher alone: the scraper never writes
- * `accounts`. A researcher already linked to an account keeps that link, which is why the
- * account lookup survives as the second key.
+ * Accounts are created only at login (#5000) and stay in the environment that made them
+ * (#5088), so a roster identity reaches a researcher through `identifiers.netid` and mints
+ * the researcher alone: the scraper never writes `accounts`.
  */
 async function researcherIdHoldingIdentityNetid(
   netid: string,
@@ -361,13 +359,7 @@ async function researcherIdHoldingIdentityNetid(
   const byIdentifier = await Researcher.findOne({ 'identifiers.netid': netid })
     .select('_id')
     .lean();
-  const holderId = toObjectId((byIdentifier as { _id?: unknown } | null)?._id);
-  if (holderId) return holderId;
-  const account = await Account.findOne({ netid }).select('_id').lean();
-  const accountId = toObjectId((account as { _id?: unknown } | null)?._id);
-  if (!accountId) return undefined;
-  const linked = await Researcher.findOne({ accountId }).select('_id').lean();
-  return toObjectId((linked as { _id?: unknown } | null)?._id);
+  return toObjectId((byIdentifier as { _id?: unknown } | null)?._id);
 }
 
 async function mintResearcherForIdentityNetid(

@@ -123,21 +123,8 @@ describe('official profile backfill reads researcher-held identity (#5000)', () 
     });
   });
 
-  it('reads an advisor netid from the researcher before any linked account', async () => {
-    const account = await Account.create({
-      netid: 'old9',
-      email: 'jules.fixture@example.test',
-      status: 'ACTIVE',
-      archived: false,
-    });
-
+  it('reads an advisor netid from the researcher identifiers only', async () => {
     expect(await netidForAdvisorResearcher({ identifiers: { netid: 'jf777' } })).toBe('jf777');
-    expect(
-      await netidForAdvisorResearcher({ identifiers: { netid: 'jf777' }, accountId: account._id }),
-    ).toBe('jf777');
-    expect(await netidForAdvisorResearcher({ identifiers: {}, accountId: account._id })).toBe(
-      'old9',
-    );
     expect(await netidForAdvisorResearcher({ identifiers: {} })).toBe('');
   });
 });

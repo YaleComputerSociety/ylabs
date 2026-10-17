@@ -2784,13 +2784,6 @@ export type RosterMemberIdentity = (
   profileUrlNamesAnotherSiteLead?: boolean;
 };
 
-async function liveResearcherForAccount(accountId: unknown): Promise<any | null> {
-  if (!accountId) return null;
-  return Researcher.findOne({ accountId, archived: { $ne: true } })
-    .select('_id displayName')
-    .lean();
-}
-
 async function liveResearcherById(researcherId: unknown): Promise<any | null> {
   return Researcher.findOne({ _id: researcherId, archived: { $ne: true } })
     .select('_id displayName')
@@ -2798,20 +2791,10 @@ async function liveResearcherById(researcherId: unknown): Promise<any | null> {
 }
 
 async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
-  const accounts: any[] = await Account.find({ netid })
-    .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
-    .lean();
-  const byAccount = await Promise.all(
-    accounts.filter(accountIsLive).map((account) => liveResearcherForAccount(account._id)),
-  );
-  const byIdentifier: any[] = await Researcher.find({
-    'identifiers.netid': netid,
-    archived: { $ne: true },
-  })
+  return Researcher.find({ 'identifiers.netid': netid, archived: { $ne: true } })
     .select('_id displayName')
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
-  return [...byAccount, ...byIdentifier].filter(Boolean);
 }
 
 async function researchersNamedByIdentityEvidence(
@@ -3718,19 +3701,12 @@ async function canonicalResearcherIdentity(
 ): Promise<{ netid?: string; email?: string; orcid?: string; displayName: string }> {
   if (!researcherId) return { displayName: '' };
   const researcher: any = await Researcher.findById(researcherId)
-    .select('displayName accountId identifiers')
+    .select('displayName identifiers')
     .lean();
   if (!researcher) return { displayName: '' };
-  let netid = textValue(researcher.identifiers?.netid) || undefined;
-  let email = textValue(researcher.identifiers?.email) || undefined;
-  if ((!netid || !email) && researcher.accountId) {
-    const account: any = await Account.findById(researcher.accountId).select('netid email').lean();
-    netid ??= textValue(account?.netid) || undefined;
-    email ??= textValue(account?.email) || undefined;
-  }
   return {
-    netid,
-    email,
+    netid: textValue(researcher.identifiers?.netid) || undefined,
+    email: textValue(researcher.identifiers?.email) || undefined,
     orcid: textValue(researcher.identifiers?.orcid) || undefined,
     displayName: textValue(researcher.displayName),
   };
@@ -3811,23 +3787,10 @@ async function resolveSingleLeadResearcherId(
 }
 
 async function leadResearcherDepartment(researcherId: string): Promise<string | undefined> {
-  const researcher = (await Researcher.findById(researcherId)
-    .select('profile accountId')
-    .lean()) as {
+  const researcher = (await Researcher.findById(researcherId).select('profile').lean()) as {
     profile?: { primaryDepartment?: unknown };
-    accountId?: unknown;
   } | null;
-  if (!researcher) return undefined;
-  const direct = textValue(researcher.profile?.primaryDepartment);
-  if (direct) return direct;
-  if (researcher.accountId) {
-    const account = (await Account.findById(materializerDocumentId(researcher.accountId))
-      .select('department')
-      .lean()) as { department?: unknown } | null;
-    const accountDepartment = textValue(account?.department);
-    if (accountDepartment) return accountDepartment;
-  }
-  return undefined;
+  return textValue(researcher?.profile?.primaryDepartment) || undefined;
 }
 
 export type LeadPiSchoolInheritanceSkip =
@@ -6128,45 +6091,48 @@ function accountIsLive(account: { archived?: boolean; status?: string } | undefi
  * The one person an address names, counting a researcher's own `identifiers.email` and every
  * live account that claims it as claimants of one identity space, so the join fails closed
  * exactly as it did when every address lived on an account (#5000). An account and the
- * researcher it is linked to are one claimant, and an account linked to no researcher still
- * counts, because it is still a second person holding the address.
+ * researcher holding its netid are one claimant, and an account no researcher's netid matches
+ * still counts, because it is still a second person holding the address. Accounts are
+ * environment-local (#5088), so the link is the netid rather than a stored account `_id`.
  */
 async function soleLiveResearcherClaimingEmail(email: string): Promise<any | undefined> {
   const accounts: any[] = (
     await Account.find({ email }).limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT).lean()
   ).filter(accountIsLive);
-  const linked: any[] = accounts.length
-    ? await Researcher.find({ accountId: { $in: accounts.map((account) => account._id) } })
-        .select('_id displayName accountId')
+  const accountNetids = accounts.map((account) => normalizedAccountNetid(account.netid));
+  const linkableNetids = accountNetids.filter((netid): netid is string => Boolean(netid));
+  const linked: any[] = linkableNetids.length
+    ? await Researcher.find({ 'identifiers.netid': { $in: linkableNetids } })
+        .select('_id displayName identifiers.netid')
         .lean()
     : [];
   const holders: any[] = await Researcher.find({
     'identifiers.email': email,
     archived: { $ne: true },
   })
-    .select('_id displayName accountId')
+    .select('_id displayName identifiers.netid')
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
   const claimants = new Map<string, any>();
   for (const researcher of [...linked, ...holders])
     claimants.set(String(researcher._id), researcher);
-  const linkedAccountIds = new Set(linked.map((researcher) => String(researcher.accountId)));
-  const unlinkedAccounts = accounts.filter((account) => !linkedAccountIds.has(String(account._id)));
+  const linkedNetids = new Set(linked.map((researcher) => researcher.identifiers?.netid));
+  const unlinkedAccounts = accounts.filter(
+    (_account, index) => !accountNetids[index] || !linkedNetids.has(accountNetids[index]),
+  );
   if (claimants.size + unlinkedAccounts.length !== 1) return undefined;
   return claimants.values().next().value;
 }
 
 /**
- * The researcher a `user` key's netid reaches: the researcher linked to the account holding
- * the netid, then a researcher holding it as `identifiers.netid`. An alias the directory maps
- * to another live holder's netid resolves to that holder, as it did when every alias twin was
- * an account (#4988), and either side may hold the alias or its target (#5000).
+ * The researcher a `user` key's netid reaches: the researcher holding it as
+ * `identifiers.netid`. An alias the directory maps to another live holder's netid resolves to
+ * that holder, as it did when every alias twin was an account (#4988), and either side may
+ * hold the alias or its target (#5000).
  */
 async function researcherReachedByIdentityNetid(netid: string): Promise<any | null> {
   const target = (await aliasNetidWithLiveHolder(netid)) ?? netid;
-  const account: any = await Account.findOne({ netid: target }).lean();
-  const linked = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
-  return linked ?? Researcher.findOne({ 'identifiers.netid': target });
+  return Researcher.findOne({ 'identifiers.netid': target });
 }
 
 async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefined> {
@@ -6179,16 +6145,12 @@ async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefin
   const resolution = await resolveNetidForRosterEmailAlias(netid);
   if (resolution.status !== 'resolved' || resolution.netid === netid) return undefined;
   const targetAccount: any = await Account.findOne({ netid: resolution.netid }).lean();
-  const targetResearcher: any =
-    (targetAccount?._id
-      ? await Researcher.findOne({ accountId: targetAccount._id }).select('displayName').lean()
-      : null) ??
-    (await Researcher.findOne({
-      'identifiers.netid': resolution.netid,
-      archived: { $ne: true },
-    })
-      .select('displayName')
-      .lean());
+  const targetResearcher: any = await Researcher.findOne({
+    'identifiers.netid': resolution.netid,
+    archived: { $ne: true },
+  })
+    .select('displayName')
+    .lean();
   if (aliasAccountHeld) {
     const liveTarget = accountIsLive(targetAccount ?? undefined) || Boolean(targetResearcher);
     return liveTarget ? resolution.netid : undefined;
@@ -6489,8 +6451,9 @@ export async function joinUserIdentityToExistingResearcher(
       !displayName || observedPersonNameAgreesWith(emailResearcher?.displayName, displayName);
     if (emailResearcher && emailAccountNamesThisPerson) {
       researcher = emailResearcher;
-      account = emailResearcher.accountId
-        ? ((await Account.findById(emailResearcher.accountId).lean()) ?? null)
+      const emailResearcherNetid = normalizedAccountNetid(emailResearcher.identifiers?.netid);
+      account = emailResearcherNetid
+        ? ((await Account.findOne({ netid: emailResearcherNetid }).lean()) ?? null)
         : null;
       identityJoinedOnEmailAlone = true;
       identityJoin = 'account-email';
@@ -6649,7 +6612,6 @@ async function materializeUserIdentityToResearcher(
     }
     researcher = new Researcher({
       displayName,
-      ...(accountId ? { accountId } : {}),
       // Stamped from the directory's own observation of this person's netid, never from the
       // alias itself, so the alias is not promoted to a join key (`research-model.md:36`).
       ...(resolvedNetid ? { identifiers: { netid: resolvedNetid } } : {}),
@@ -6676,10 +6638,6 @@ async function materializeUserIdentityToResearcher(
     researcher.displayName = displayName;
     fieldsWritten += 1;
   }
-  if (accountId && !researcher.accountId) {
-    researcher.accountId = accountId;
-    fieldsWritten += 1;
-  }
   researcher.profile = researcher.profile || {};
   for (const [key, value] of [
     ['title', title],
@@ -6703,7 +6661,7 @@ async function materializeUserIdentityToResearcher(
     orcidFieldsWritten += 1;
   }
   const priorNetid: string | undefined = researcher.identifiers?.netid;
-  const netidToStamp = await accountNetidForResearcherLink(researcher.accountId, account);
+  const netidToStamp = await accountNetidForResearcherLink(accountId, account);
   let netidFieldsWritten = 0;
   if (netidToStamp && priorNetid !== netidToStamp) {
     researcher.identifiers = { ...(researcher.identifiers || {}), netid: netidToStamp };

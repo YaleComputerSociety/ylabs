@@ -361,7 +361,6 @@ interface OperatorBoard {
       command: string;
       note: string;
       applyBlockerCount?: number;
-      excludedSyntheticUsers?: number;
       collectionCategoryCount?: number;
       artifactAgeHours?: number;
     };
@@ -1569,11 +1568,6 @@ const AdminOperatorBoard = () => {
               {typeof board.gates.productionCopy.applyBlockerCount === 'number' && (
                 <p className="mt-1 text-xs text-amber-700">
                   Apply blockers: {board.gates.productionCopy.applyBlockerCount}
-                </p>
-              )}
-              {typeof board.gates.productionCopy.excludedSyntheticUsers === 'number' && (
-                <p className="mt-1 text-xs text-muted">
-                  Excluded synthetic users: {board.gates.productionCopy.excludedSyntheticUsers}
                 </p>
               )}
               {typeof board.gates.productionCopy.collectionCategoryCount === 'number' && (

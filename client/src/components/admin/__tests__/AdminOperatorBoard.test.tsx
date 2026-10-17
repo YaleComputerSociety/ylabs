@@ -310,7 +310,6 @@ describe('AdminOperatorBoard', () => {
             command:
               'yarn --cwd server production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json',
             note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
-            excludedSyntheticUsers: 2,
             collectionCategoryCount: 3,
           },
         },
@@ -716,7 +715,7 @@ describe('AdminOperatorBoard', () => {
         'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
       ),
     ).toBeTruthy();
-    expect(screen.getByText('Excluded synthetic users: 2')).toBeTruthy();
+    expect(screen.queryByText(/Excluded synthetic users/)).toBeNull();
     expect(screen.getByText('Collection categories: 3')).toBeTruthy();
   });
 

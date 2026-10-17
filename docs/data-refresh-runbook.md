@@ -340,9 +340,10 @@ Development holds roughly 1.07 GB across 514,366 objects, and 412,997 of those o
 A mirror that carried observations would copy 436,026 documents and duplicate that footprint inside the same quota, which can exhaust the cluster and take the live site down to populate a staging environment.
 Without them the same mirror copies about 23,000 documents across the reviewable corpus and the identity spine.
 
-What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
+What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `signals`, `researchers`, `role_assignments`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
 Identity is not optional in that list.
-A mirrored environment holding `research_entities` without `researchers`, `role_assignments`, and `accounts` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
+A mirrored environment holding `research_entities` without `researchers` and `role_assignments` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
+A researcher's identity is its own `identifiers.netid` and `identifiers.email`, so `accounts` is not part of it: accounts are environment-local, each environment keeps the sign-ins made there, and no copy reads, writes, or clears them (#5088).
 `canonical_aliases` is retired (#3027) and is listed as an excluded collection rather than dropped from the classification, because a collection still present on the source but classified neither way blocks apply.
 Copying `taxonomy_terms` also carries the approved research-area vocabulary, which nothing else can currently seed into a fresh environment.
 
@@ -438,15 +439,10 @@ The sync mirrors every document in the approved Beta research-discovery, identit
 See ["Observations stay in Development"](#observations-stay-in-development) above for the exact copy set and why it is drawn that way.
 The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror, except for the environment-local measurement history named later in this section, which the refresh preserves.
 It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
-Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
-Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
-The target's own logins are never lost to the copy: every target account with login evidence (`lastLoginAt`, or an owned research plan) is carried from the pre-swap backup before verification, keeping its `_id` so the target's `research_plans` still resolve (#4130).
-Where a source row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile`, `sessionVersion` and `status` onto it, because the target is authoritative for its own logins (#5000).
-Where the source holds that `_id` as a `mirrored-<id>` pseudonym, which is what the opposite-direction mirror mints for the target's own login, the target row replaces the pseudonym.
-Where the source also re-created that login's netid under a new `_id`, the source row is re-keyed onto the target `_id` over the pseudonym, so the netid stays unique.
-Read `accountCarry` in the artifact: `restored` counts round-tripped logins, `merged` counts re-created ones, and `inserted` counts target-only ones.
-A dry run reports the preview, and an apply reports the carry it actually ran after cutover.
-Both mirror directions share this carry, as does `production:promote-beta-copy`.
+Accounts never cross (#5088): `accounts` is in `NEVER_COPY_COLLECTIONS` and `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the target keeps exactly the accounts it had, and its `research_plans` keep resolving.
+Because accounts are environment-local, an account `_id` stored on a copied corpus row would name nobody in the target, so the copy refuses a source whose `researchers.accountId` or `studentVisibilityReviewedByAccountId` is set.
+The plan artifact's `accountReferences` lists any such row by collection and field, and an apply refuses until it is empty.
+Both mirror directions share this rule, as does `production:promote-beta-copy`.
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -503,7 +499,7 @@ A deliberate full wipe is not part of this script; drop the collections directly
 It holds an account that owns a research plan, is a reviewer stamp, is named by an admin grant, or whose researcher holds a different netid or email, and reports each hold by reason.
 It is dry-run by default, `--apply` needs `--confirm-retire-identity-only-accounts`, it refuses any target but Development, and an apply writes a mode-0600 backup of the deleted rows and unset links to the OS temp directory first.
 Run `beta:refresh-from-development` after it and before any `development:refresh-from-beta`: Beta still holds the retired rows until then, and a Beta-to-Development refresh in between copies them back.
-Production converges on the next `production:promote-beta-copy`, whose account carry keeps every Production login and its plans while the swap drops the rest.
+Production keeps its own accounts through every promotion, because `production:promote-beta-copy` never copies `accounts` (#5088).
 
 ## One-Command Promotion
 
@@ -531,8 +527,7 @@ The trust contract runs with `--fail-on-public-visibility-violation`, so it fail
 1. Runs `database:verify-names --pair beta-to-production`.
 2. Reads every open pull request to `main` and refuses while any carries the `hold` label, or when GitHub cannot be read.
 A draft does not hold the data copy, because `docs/release-process.md` copies data before the code merge.
-3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared synthetic-reference blocker, or a plan that would promote observations or `scrape_runs`.
-It prints the Production login carry; an `inserted` of 0 while Production has logged-in users is still a stop you read for yourself.
+3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared account-reference blocker, or a plan that would promote observations or `scrape_runs`.
 4. Checks the Production operator service, which must deploy `main`.
 5. Requires the operator to type `production`; it never accepts `--yes`.
 6. Applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
@@ -844,13 +839,9 @@ Review the artifact and confirm all of the following:
 
 - `sourceEnvironment` is `beta`.
 - `targetEnvironment` is `production`.
-- `syntheticReferenceBlockersClear` is `true`.
+- `accountReferenceBlockersClear` is `true`, and `blockedAccountReferences` is empty.
+  `docs/release-process.md` ("Promoting data, not just code") owns why accounts are environment-local and never promoted.
 - `applyBlockers` is empty.
-- `productionAccountCarry` accounts for every Production login: an `inserted` of 0 while Production has logged-in users is a stop.
-  `docs/release-process.md` ("Promoting data, not just code") owns why the promotion carries them and how a same-netid Beta row is re-keyed.
-- `excludedBetaLoginAccounts` is not a blocker at any value: Beta holds its own logins, and an account whose only evidence is one of them does not cross.
-  Every account that does cross is reduced to the mirror allow-list, so no Beta login timestamp or student profile field reaches Production.
-  The same `docs/release-process.md` section owns both halves of that rule and why `excludedSyntheticUsers` is reported separately.
 - `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
 - `includesScrapeRuns` is `false` unless `--include-scrape-runs` was passed, and leaving it off is the correct default.
   Production has never scraped anything - Development is the only environment that does - so a promoted `scrape_runs` is a copy of Development's history wearing Production's name.
@@ -886,7 +877,7 @@ The promotion no longer requires an operator-supplied restore point, and no long
 `ATLAS_RESTORE_POINT` was the script's only rollback story and it was unverifiable: any non-empty string satisfied the check, so it recorded an operator's intention rather than a recoverable state (#2347).
 
 The rollback is now in the script.
-`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, carries Production's logged-in accounts out of the `accounts` backup, verifies that each promoted collection holds the row count Beta offered plus those carried accounts, and only then drops the backups.
+`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, verifies that each promoted collection holds the row count Beta offered, and only then drops the backups.
 Any failure before that verification passes rolls every collection back to its pre-run state, which is asserted against a real mongod rather than a mocked driver.
 
 An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
@@ -909,7 +900,7 @@ CONFIRM_PROD_SCRAPE=true \
   --output /tmp/ylabs-production-promotion-apply.json
 ```
 
-Stop if the command does not print `"status": "applied"` or if any post-copy count differs from the Beta source copy count, `accounts` excepted: it is expected to exceed Beta's count by the accounts carried from Production.
+Stop if the command does not print `"status": "applied"` or if any post-copy count differs from the Beta source copy count.
 
 ## Phase 5: Production Search and Smoke Gate - Run in the Production Render Shell
 

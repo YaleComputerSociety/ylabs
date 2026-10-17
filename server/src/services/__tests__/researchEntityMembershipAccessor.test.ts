@@ -32,15 +32,9 @@ describe('getResearchEntityRoster display profile projection', () => {
     profile: Record<string, string> | undefined,
     netid: string,
   ) => {
-    const account = await Account.create({
-      netid,
-      email: `${netid}@example.test`,
-      status: 'ACTIVE',
-      archived: false,
-    });
     const person = await Researcher.create({
       displayName: `Person ${netid}`,
-      accountId: account._id,
+      identifiers: { netid, email: `${netid}@example.test` },
       profileLinks: [],
       ...(profile ? { profile } : {}),
       status: 'ACTIVE',
@@ -81,7 +75,7 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.websiteUrl).toBe('https://user.example.test');
   });
 
-  it('reads the roster email from the researcher before the account', async () => {
+  it('reads the roster email from the researcher identifiers', async () => {
     const entityId = new mongoose.Types.ObjectId();
     const personId = await seedMember(entityId, undefined, 'cd456');
     await Researcher.updateOne(
@@ -116,7 +110,35 @@ describe('getResearchEntityRoster display profile projection', () => {
 
     expect(entry.email).toBe('accountless@example.test');
     expect(entry.netid).toBe('ef789');
-    expect(entry.accountId).toBeUndefined();
+  });
+
+  it('never resolves identity through a linked account, which names nobody outside its environment', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const account = await Account.create({
+      netid: 'gh012',
+      email: 'linked.account@example.test',
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const person = await Researcher.create({
+      displayName: 'Linked Person',
+      accountId: account._id,
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+    });
+
+    const [entry] = await getResearchEntityRoster(entityId);
+
+    expect(entry.netid).toBe('');
+    expect(entry.email).toBe('');
   });
 
   it('omits display fields when the Person has no profile', async () => {

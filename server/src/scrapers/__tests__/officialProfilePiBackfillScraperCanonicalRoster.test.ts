@@ -59,7 +59,7 @@ describe('selectVisibleProfileBioTargets canonical roster reads', () => {
     });
     const researcher = await Researcher.create({
       displayName: 'Jules Fixture',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
       profileLinks: [],
       status: 'ACTIVE',
       archived: false,

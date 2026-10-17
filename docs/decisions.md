@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-17: Accounts Are Environment-Local (#5088)
+
+Decision (owner, 2026-10-17): Development, Beta and Production each keep their own `accounts`, made by sign-ins in that environment, and only the research corpus is shared by promotion.
+Copying accounts between environments was incorrect: a sign-in belongs to the environment it happened in, and the carry that restored a target's logins after each copy was the machinery that orphaned 277 of 319 Production plans when it was missing (#4091).
+Measured before the change, the corpus held almost no account references after #5000: 0 researcher links and 0 reviewer stamps in Development and Beta, and 2 researcher links in Production, both with `identifiers.netid`.
+`accounts` joins `NEVER_COPY_COLLECTIONS` and is preserved by every refresh; the carry, the Beta-login exclusion and the account pseudonymization are deleted.
+No code writes an account `_id` onto a corpus row: the materializer no longer sets `researchers.accountId`, and a fellowship reviewer stamp records `studentVisibilityReviewedByNetid`.
+Both promotion steps and both mirror directions refuse a copy whose source corpus still carries `researchers.accountId` or `studentVisibilityReviewedByAccountId`, so an account reference cannot cross by accident.
+
 ## 2026-10-16: A Description Says What Is Studied Now, Measured By Date (#5074)
 
 Decision (owner, 2026-10-16), part of the one-writer description standard on #5020.
