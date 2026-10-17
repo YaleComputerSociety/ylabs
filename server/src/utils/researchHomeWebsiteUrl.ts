@@ -950,6 +950,19 @@ export function isDepartmentCollectivePageUrl(value: unknown): boolean {
   );
 }
 
+/**
+ * A posting page offered as the research website of a row that is not an organization.
+ * An organization-scoped row citing its own department's hiring page is left to the
+ * department-hiring-page contract (#3333), which keeps it; every lab and person-scoped
+ * row is refused, its own lab's openings page included.
+ */
+export function isPostingPageCitedAsResearchWebsite(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return isPostingPageUrl(value) && !isOrganizationShapedHostOwner(entity);
+}
+
 // Organization shapes whose identity is the collective that publishes a site rather
 // than a tenant of it, so the site the collective's name designates is its own
 // research home. Deliberately an ALLOWLIST and not the negation of
@@ -1650,7 +1663,7 @@ export function researchHomeWebsiteUrlDecision(
   // path check. Stronger than publicity as a refusal, because a fundraising page names
   // the donor whose fund it commemorates rather than the row's subject (#2460).
   if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
-  if (isPostingPageUrl(raw)) return refuse('posting-page');
+  if (isPostingPageCitedAsResearchWebsite(raw, entity)) return refuse('posting-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {
