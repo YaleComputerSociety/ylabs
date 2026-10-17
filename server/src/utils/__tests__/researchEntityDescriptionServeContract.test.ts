@@ -540,6 +540,22 @@ describe('research-entity serve contract - names and research-area chips (#1374)
     expect(out.name).toBe('Loyal Lab');
   });
 
+  it("serves a topic-named lab whose page path only echoes the lab's name", () => {
+    const out = sanitizeServedResearchEntityCopyFields(
+      {
+        entityType: 'LAB',
+        kind: 'lab',
+        slug: 'dept-fixture-avery-sloan',
+        name: 'Delta Lab',
+        displayName: 'Delta Lab',
+        websiteUrl: 'https://www.example.org/delta-lab',
+      },
+      ['Avery Sloan'],
+    );
+    expect(out.name).toBe('Delta Lab');
+    expect(out.displayName).toBe('Delta Lab');
+  });
+
   it('splits a bare comma-delimited research-area blob into chips', () => {
     const out = sanitizeServedResearchEntityCopyFields({
       entityType: 'CENTER',

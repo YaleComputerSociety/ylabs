@@ -1185,9 +1185,10 @@ export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: u
  * `/<word>-lab` echoes "<Word> Lab" back and says nothing about whether the word is
  * a person, so a place, topic or acronym lab on such a page was refused as another
  * person's lab even though no researcher has that surname (#5069). A colleague's
- * eponymous lab on that shape is still refused, by the surname roster, so only the
- * roster-bearing `claimsAnotherPersonsLab` may drop the echo; the path-only entry
- * point has no roster to fall back on and keeps counting it.
+ * eponymous lab on that shape is still refused by the surname roster at the write
+ * choke points. The path-only entry point drops the echo too, because it guards the
+ * serve and index paths over names those choke points already judged, and counting
+ * the echo there withheld the very lab name the roster had admitted.
  */
 export function labNameEponymsUrlPathNamesAsAPerson(
   harvestedName: unknown,
@@ -1459,7 +1460,7 @@ export function claimsAnotherPersonsLabByUrlPath(args: {
   identityTokens: string[];
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  const pathCorroborated = labNameEponymsUrlPathNamesAsAPerson(args.harvestedName, args.websiteUrl);
   if (pathCorroborated.length === 0) return false;
   return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }

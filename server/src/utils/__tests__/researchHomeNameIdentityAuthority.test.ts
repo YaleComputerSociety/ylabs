@@ -2378,14 +2378,14 @@ describe('a URL path segment that only spells the lab name is not evidence of a 
     ).toBe(true);
   });
 
-  it('keeps refusing that shape on the path-only side, which has no roster to fall back on', () => {
+  it('does not refuse a name-echo path on the path-only side, which backs the serve paths', () => {
     expect(
       claimsAnotherPersonsLabByUrlPath({
-        harvestedName: 'Quill Lab',
-        websiteUrl: 'https://medicine.example.edu/research/quill-lab/',
+        harvestedName: 'Delta Lab',
+        websiteUrl: 'https://www.example.org/delta-lab',
         identityTokens: ['avery', 'sloan'],
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("keeps the lead's own eponymous lab on a path that echoes its name", () => {
