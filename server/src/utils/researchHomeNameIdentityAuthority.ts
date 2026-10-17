@@ -1049,8 +1049,6 @@ export function nameCarriesPersonIdentity(value: unknown, personName: unknown): 
   return nameCarriesIdentityToken(value, personIdentityTokens(personName));
 }
 
-// Path segments that structure a site rather than name a person, so they never
-// corroborate an eponym.
 const RESEARCH_HOME_HEAD_NOUN_WORDS = new Set([
   'lab',
   'labs',
@@ -1060,13 +1058,10 @@ const RESEARCH_HOME_HEAD_NOUN_WORDS = new Set([
   'groups',
 ]);
 
+// Path segments that structure a site rather than name a person, so they never
+// corroborate an eponym.
 const STRUCTURAL_URL_SEGMENT_WORDS = new Set([
-  'lab',
-  'labs',
-  'laboratory',
-  'laboratories',
-  'group',
-  'groups',
+  ...RESEARCH_HOME_HEAD_NOUN_WORDS,
   'research',
   'people',
   'person',
@@ -1190,17 +1185,18 @@ export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: u
  * `/<word>-lab` echoes "<Word> Lab" back and says nothing about whether the word is
  * a person, so a place, topic or acronym lab on such a page was refused as another
  * person's lab even though no researcher has that surname (#5069). A colleague's
- * eponymous lab on that shape is still refused, by the surname roster.
+ * eponymous lab on that shape is still refused, by the surname roster, so only the
+ * roster-bearing `claimsAnotherPersonsLab` may drop the echo; the path-only entry
+ * point has no roster to fall back on and keeps counting it.
  */
 export function labNameEponymsUrlPathNamesAsAPerson(
   harvestedName: unknown,
   websiteUrl: unknown,
 ): string[] {
-  const candidates = eponymousLabNameSurnameCandidates(harvestedName);
   return labNameEponymsInUrlPath(
     harvestedName,
     websiteUrl,
-    (segment) => !segmentOnlySpellsLabName(segment, candidates),
+    (segment, candidates) => !segmentOnlySpellsLabName(segment, candidates),
   );
 }
 
@@ -1219,7 +1215,7 @@ function segmentOnlySpellsLabName(segment: string, eponymCandidates: string[]): 
 function labNameEponymsInUrlPath(
   harvestedName: unknown,
   websiteUrl: unknown,
-  segmentCounts: (segment: string) => boolean,
+  segmentCounts: (segment: string, eponymCandidates: string[]) => boolean,
 ): string[] {
   const candidates = eponymousLabNameSurnameCandidates(harvestedName);
   if (candidates.length === 0) return [];
@@ -1235,7 +1231,7 @@ function labNameEponymsInUrlPath(
     pathname
       .toLowerCase()
       .split('/')
-      .filter(segmentCounts)
+      .filter((segment) => segmentCounts(segment, candidates))
       .flatMap((segment) => segment.match(NAME_WORD_RE) || [])
       .filter(
         (word) => word.length >= 2 && !STRUCTURAL_URL_SEGMENT_WORDS.has(word) && !/\d/.test(word),
@@ -1463,7 +1459,7 @@ export function claimsAnotherPersonsLabByUrlPath(args: {
   identityTokens: string[];
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = labNameEponymsUrlPathNamesAsAPerson(args.harvestedName, args.websiteUrl);
+  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
   if (pathCorroborated.length === 0) return false;
   return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }

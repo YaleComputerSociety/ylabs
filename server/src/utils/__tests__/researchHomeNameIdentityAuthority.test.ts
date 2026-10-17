@@ -2357,13 +2357,6 @@ describe('a URL path segment that only spells the lab name is not evidence of a 
         knownPersonSurnames: roster,
       }),
     ).toBe('OWN_IDENTITY');
-    expect(
-      claimsAnotherPersonsLabByUrlPath({
-        harvestedName: 'Delta Lab',
-        websiteUrl: 'https://www.example.org/delta-lab',
-        identityTokens: ['avery', 'sloan'],
-      }),
-    ).toBe(false);
   });
 
   it("still refuses a colleague's eponymous lab on the same path shape through the roster", () => {
@@ -2381,6 +2374,16 @@ describe('a URL path segment that only spells the lab name is not evidence of a 
         websiteUrl: 'https://medicine.example.edu/research/quill-lab/',
         identityTokens: ['avery', 'sloan'],
         knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps refusing that shape on the path-only side, which has no roster to fall back on', () => {
+    expect(
+      claimsAnotherPersonsLabByUrlPath({
+        harvestedName: 'Quill Lab',
+        websiteUrl: 'https://medicine.example.edu/research/quill-lab/',
+        identityTokens: ['avery', 'sloan'],
       }),
     ).toBe(true);
   });
