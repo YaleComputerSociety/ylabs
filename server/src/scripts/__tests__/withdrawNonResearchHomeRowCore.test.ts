@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  NON_RESEARCH_HOME_KINDS,
   planNonResearchHomeWithdrawal,
   valuesThatMadeItAResearchHome,
+  withdrawalRefusalNote,
   type WithdrawalRow,
 } from '../withdrawNonResearchHomeRowCore';
 import { parseWithdrawalArgs } from '../withdrawNonResearchHomeRow';
@@ -79,7 +79,21 @@ describe('parseWithdrawalArgs', () => {
 });
 
 describe('the unlisted-program kind', () => {
-  it('is a withdrawal kind, so a program listing no page supports can leave /research', () => {
-    expect(NON_RESEARCH_HOME_KINDS).toContain('unlisted-program');
+  it('is accepted by the withdrawal command', () => {
+    const options = parseWithdrawalArgs([
+      '--slug=x',
+      '--kind=unlisted-program',
+      '--evidence-url=https://example.invalid/',
+    ]);
+    expect(options.kind).toBe('unlisted-program');
+  });
+
+  it('records the judgement that the page no longer lists the program', () => {
+    expect(withdrawalRefusalNote('unlisted-program')).toBe(
+      'the cited page no longer lists this program and its program record was judged not a program',
+    );
+    expect(withdrawalRefusalNote('blog')).toBe(
+      'the page is a blog, not a research home a student can join',
+    );
   });
 });
