@@ -890,8 +890,9 @@ const POSTING_PAGE_SEGMENT =
  * A page that advertises a job, a position or a postdoctoral fellowship. It is about a
  * vacancy rather than about the research, so it never names a row, and
  * `isPostingPageCitedAsResearchWebsite` refuses it as a lab or person-scoped row's
- * research website on any host: a profile linked another lab's fellowship posting, the roster lane stored
- * it as the row's website, and the microsite lane then named the row after the posting.
+ * research website on any host: a profile linked another lab's fellowship posting, the
+ * roster lane stored it as the row's website, and the microsite lane then named the row
+ * after the posting.
  * Unlike `isDepartmentHiringPageUrl` there is no lab-path exemption, because the lab's own
  * openings page is not its research website either; its site root is.
  */
