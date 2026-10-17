@@ -25,10 +25,10 @@
  *           Unmatched advisors are logged and skipped — we deliberately do NOT
  *           create synthetic Researcher records for advisors we can't disambiguate
  *           (those would pollute the researcher collection with low-quality stubs).
- *        b. resolve to a ResearchGroup via `findOrCreateForOwner` (the same
- *           helper Listing-creation uses), then emit observations against the
- *           returned slug. This guarantees the past-advisee history lands on
- *           the canonical group, not a synthetic key.
+ *        b. resolve to the advisor's EXISTING lead row (their own lab or faculty
+ *           research profile before a facility or center they direct), then emit
+ *           observations against its slug. No row is ever created here: an
+ *           advisor with no lead row is logged as unmatched (#5048).
  *   4. Emit ResearchGroup observations:
  *        - `pastUndergradAdvisees`: FULL aggregated array for the PI on every
  *          run. The resolver picks the highest-confidence (most recent) value
@@ -65,7 +65,8 @@ import path from 'path';
 import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
-import { findOrCreateForOwner } from '../../services/researchGroupService';
+import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { researcherNetid } from '../../utils/researcherIdentity';
@@ -876,28 +877,58 @@ async function findUserForAdvisorRow(
   return advisorResolver(row.canonicalName, row.advisorOrcid || undefined);
 }
 
+const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
+const OWN_RESEARCH_ROW_TYPES = ['LAB', 'FACULTY_RESEARCH_AREA'];
+
+export interface LeadRowCandidate {
+  slug: string;
+  entityType?: string;
+  role?: string;
+}
+
 /**
- * Default group-slug resolver: hits Mongo via `findOrCreateForOwner`, the same
- * canonical helper Listing-creation uses. Returns the resulting ResearchGroup's
- * `slug`, or null on failure (don't surface the error — the caller logs and
- * moves on so one bad row can't kill the run).
+ * The row a fellow's PI mentors them in: the PI's own lab or faculty research profile
+ * before a core facility, center or program they direct, then a PI role before a
+ * directorship, then the slug for a stable choice.
  */
-async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null> {
-  try {
-    const { group } = await findOrCreateForOwner({
-      _id: owner._id,
-      netid: owner.netid,
-      fname: owner.fname,
-      lname: owner.lname,
-      primaryDepartment: owner.primaryDepartment,
-    });
-    return group?.slug || null;
-  } catch {
-    const fullName = `${owner.fname || ''} ${owner.lname || ''}`.trim();
-    const nameSlug = slugify(fullName || owner.netid || 'advisor');
-    const netidSlug = slugify(owner.netid || '');
-    return netidSlug ? `${nameSlug}-${netidSlug}` : nameSlug;
-  }
+export function preferredLeadRowSlug(candidates: LeadRowCandidate[]): string | null {
+  const rank = (candidate: LeadRowCandidate) => [
+    OWN_RESEARCH_ROW_TYPES.includes(candidate.entityType ?? '') ? 0 : 1,
+    candidate.role === 'PI' || candidate.role === 'CO_PI' ? 0 : 1,
+  ];
+  const [best] = [...candidates].sort((left, right) => {
+    const [leftType, leftRole] = rank(left);
+    const [rightType, rightRole] = rank(right);
+    return leftType - rightType || leftRole - rightRole || left.slug.localeCompare(right.slug);
+  });
+  return best?.slug ?? null;
+}
+
+export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<string | null> {
+  const edges: any[] = await RoleAssignment.find({
+    personId: owner._id,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('target role')
+    .lean();
+  if (edges.length === 0) return null;
+  const roleByEntityId = new Map(edges.map((edge) => [String(edge.target?.id), edge.role]));
+  const rows: any[] = await ResearchEntity.find({
+    _id: { $in: edges.map((edge) => edge.target?.id).filter(Boolean) },
+    archived: { $ne: true },
+  })
+    .select('slug entityType')
+    .lean();
+  return preferredLeadRowSlug(
+    rows.map((row) => ({
+      slug: String(row.slug),
+      entityType: row.entityType,
+      role: roleByEntityId.get(String(row._id)),
+    })),
+  );
 }
 
 /**
@@ -997,7 +1028,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     const sourceName = this.name;
     this.fetchPage = deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
     this.advisorResolver = deps.advisorResolver ?? defaultAdvisorResearcherResolver;
-    this.ownerToGroupSlug = deps.ownerToGroupSlug ?? defaultOwnerToGroupSlug;
+    this.ownerToGroupSlug = deps.ownerToGroupSlug ?? existingLeadRowSlugForOwner;
     this.defaultManualRecipientCsvDir =
       deps.defaultManualRecipientCsvDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
     this.defaultManualRecipientPdfDir =
@@ -1192,12 +1223,10 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           continue;
         }
 
-        // Resolve User → ResearchGroup slug (via findOrCreateForOwner)
         const slug = await this.ownerToGroupSlug(user);
         if (!slug) {
-          ctx.log(
-            `[${config.programKey}] could not resolve research-group slug for ${user.netid || user.lname}; skipping`,
-          );
+          ctx.log(`[${config.programKey}] matched advisor leads no existing row; skipping`);
+          programUnmatched++;
           continue;
         }
 
