@@ -8,6 +8,12 @@ Describe the research itself, never the evidence. Do not mention or characterize
 
 Omit biography: titles, appointments, degrees, career history, awards, honors, funding, publications and talks as items, clinical services, and contact information (email, phone, address). Never write a past-tense career clause such as "Previously led ...", "Formerly directed ..." or "Before joining Yale, ...", and never present training or past positions (doctoral, postdoctoral, residency or earlier work) as current research: describe only the research as it stands now.
 
+Decide what is current from the snippets' own words and dates, measured from the TODAY date in the message.
+- The topic of work dated within about the last 5 years (a book, paper, trial or project) may be described as what the entity studies ("Studies X").
+- When the snippets name a current project (present tense, "current", "ongoing", "in progress", "is writing"), lead with it rather than with the topic of a finished book.
+- A topic backed only by work dated more than about 5 years before TODAY counts as current only if the snippets say it continues; otherwise leave it out.
+- For an emeritus or retired person, past work counts as what they study only if the snippets say it continues; otherwise leave it out.
+
 Grant records describe individual funded projects. When grant snippets are present, state only the theme they share; never present one funded project as the whole research focus.
 
 Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 70 words in total. If the snippets state no research focus, return an empty string.
