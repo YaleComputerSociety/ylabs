@@ -156,8 +156,9 @@ The row flattens both modes' `summary.json` into queryable fields rather than st
 - `codeSha`, `status` (`running`, `succeeded`, `failed`, or `refused`), `exitCode`, `refusals` (the preflight refusal and any `codeDrift` messages), `codeDrift`, and a capped `error`.
 - `preflight`: the held lock sources, storage before and after the fetch-cache drop as `usedMb`, `quotaMb`, `headroomMb` and `minHeadroomMb`, and whether the cache was dropped.
 - `modes`: per mode, its wall time, source counts, post-run status and duration, and throttle totals.
-- `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle recovered and exhausted, and materialization errors.
+- `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle and database-write recovered and exhausted, and materialization errors.
   A failed source also carries its redacted `failureTail`, so why it failed survives the container (#4852).
+  A source re-run after a transient database error carries `attempts` and `firstAttemptError` (#5078).
 - `stages`: one entry per post-run stage per mode, with status, exit code, start, finish and duration.
   A failed stage also carries `failureKind` (`crashed`, `regression`, or `violation`), and a crashed one its redacted `failureTail`.
   A counting stage carries the `counts` it recorded, which are the baseline the next run judges it against, its `regressions` as `{ name, previous, current }`, and for `lane-scorecard` the `unscored` benchmarks that need a recapture.

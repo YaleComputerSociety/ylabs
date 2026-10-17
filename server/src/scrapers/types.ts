@@ -6,6 +6,7 @@ import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
 import type { ThrottleRetryStats } from './utils/throttleRetryStats';
+import type { DatabaseWriteRetryStats } from './utils/databaseWriteRetry';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -124,6 +125,7 @@ export interface ScraperFetchMetrics<TFetchMode extends string = ScraperFetchMod
   httpCache?: HttpValidatorCacheStats;
   sweepPageReuse?: SweepPageReuseStats;
   throttleRetry?: ThrottleRetryStats;
+  databaseWriteRetry?: DatabaseWriteRetryStats;
   summary: {
     total: number;
     succeeded: number;

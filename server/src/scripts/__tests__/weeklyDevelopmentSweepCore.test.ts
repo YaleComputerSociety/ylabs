@@ -23,6 +23,7 @@ import {
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
   weeklySweepChildEnvironment,
+  weeklySweepRunDeadline,
   weeklySweepEnvironmentProblems,
   weeklySweepExitCode,
   weeklySweepVerdict,
@@ -150,6 +151,17 @@ describe('weeklySweepChildEnvironment', () => {
     expect(env.CONFIRM_PROD_SCRAPE).toBe('false');
     expect(env.TMPDIR).toBe('/tmp/job/development-full');
     expect(env.MEILISEARCH_INDEX_PREFIX).toBeUndefined();
+    expect(env.SCRAPER_SWEEP_DEADLINE_AT).toBeUndefined();
+  });
+
+  it('passes the Render run deadline down so a source is re-run only when the limit has room', () => {
+    const processStartedAt = Date.parse('2026-10-16T07:00:00.000Z');
+    const env = weeklySweepChildEnvironment(
+      completeEnv(),
+      '/tmp/job/development-full',
+      weeklySweepRunDeadline(processStartedAt),
+    );
+    expect(env.SCRAPER_SWEEP_DEADLINE_AT).toBe('2026-10-16T19:00:00.000Z');
   });
 });
 
@@ -460,6 +472,17 @@ describe('buildWeeklySweepRunRecord', () => {
       throttleRecovered: 7,
       throttleExhausted: 2,
     });
+  });
+
+  it('carries a re-run source attempt count and its recovered database writes onto the row (#5078)', () => {
+    expect(recordFrom().sources[0]).toMatchObject({
+      sourceName: 'source-a',
+      status: 'succeeded',
+      attempts: 2,
+      firstAttemptError: 'scraper exited with status 1',
+      databaseWriteRecovered: 1,
+    });
+    expect(recordFrom().sources[1].attempts).toBeUndefined();
   });
 
   it('keeps rows small by dropping artifact paths and stage deltas and capping error text', () => {

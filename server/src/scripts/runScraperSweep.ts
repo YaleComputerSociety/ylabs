@@ -90,6 +90,12 @@ import type { WeeklySweepStageFailureKind } from '../models/storedVocabularies';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
 import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
 import { connectScriptMongo } from '../db/connections';
+import {
+  decideSweepSourceRetry,
+  remainingSweepBudgetMs,
+  type SweepSourceFailure,
+  type SweepSourceFailureKind,
+} from './sweepSourceRetry';
 import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 
 export type ScraperSweepMode =
@@ -241,6 +247,8 @@ export interface ScraperSweepRunRow extends SweepStepTiming {
   selectorBreakages?: number;
   throttleRecovered?: number;
   throttleExhausted?: number;
+  databaseWriteRecovered?: number;
+  databaseWriteExhausted?: number;
   materializationCreated?: number;
   materializationUpdated?: number;
   materializationArchived?: number;
@@ -250,6 +258,8 @@ export interface ScraperSweepRunRow extends SweepStepTiming {
   exitCode?: number;
   error?: string;
   failureTail?: string;
+  attempts?: number;
+  firstAttemptError?: string;
 }
 
 export interface PostRunStageDiagnostics {
@@ -946,6 +956,8 @@ type ScraperSweepArtifactSummary = Pick<
   | 'selectorBreakages'
   | 'throttleRecovered'
   | 'throttleExhausted'
+  | 'databaseWriteRecovered'
+  | 'databaseWriteExhausted'
   | 'materializationCreated'
   | 'materializationUpdated'
   | 'materializationArchived'
@@ -971,6 +983,8 @@ function safeArtifactSummary(artifactPath: string): ScraperSweepArtifactSummary 
     selectorBreakages: numeric(artifact.coverage?.fetch?.selectorBreakages),
     throttleRecovered: numeric(artifact.coverage?.fetch?.throttleRecovered),
     throttleExhausted: numeric(artifact.coverage?.fetch?.throttleExhausted),
+    databaseWriteRecovered: numeric(artifact.coverage?.fetch?.databaseWriteRecovered),
+    databaseWriteExhausted: numeric(artifact.coverage?.fetch?.databaseWriteExhausted),
     materializationCreated: numeric(artifact.materialization?.created),
     materializationUpdated: numeric(artifact.materialization?.updated),
     materializationArchived: numeric(artifact.materialization?.archived),
@@ -1003,6 +1017,14 @@ export function defaultScraperSweepOutputDirectory(
   date = new Date(),
 ): string {
   return path.join(os.tmpdir(), `ylabs-${mode}-sweep-${sweepTimestamp(date)}`);
+}
+
+type SweepSourceAttemptOutcome =
+  | { ok: true; exitCode: number; artifact: ScraperSweepArtifactSummary }
+  | { ok: false; error: string; failure: Omit<SweepSourceFailure, 'failureText'> };
+
+function preserveAttemptFile(filePath: string, keptPath: string): void {
+  if (fs.existsSync(filePath)) fs.renameSync(filePath, keptPath);
 }
 
 export interface ScraperSweepChildResult {
@@ -2489,6 +2511,83 @@ export async function runScraperSweep(
     const sourceStartedAt = now();
     store.markRunning(stepId, 'source', sourceStartedAt);
     logger.logStart(stepId);
+    let firstAttemptError: string | undefined;
+    for (let attempt = 1; ; attempt += 1) {
+      const attemptStartedAt = now();
+      const outcome = await runSourceAttempt(source, artifactPath, logPath, phaseConcurrency);
+      const attemptRecord = {
+        ...(attempt > 1 ? { attempts: attempt } : {}),
+        ...(firstAttemptError ? { firstAttemptError } : {}),
+      };
+      const sourceTiming = sweepStepTiming(sourceStartedAt, now());
+      if (outcome.ok) {
+        rows[index] = {
+          sourceName: source.name,
+          phase: source.phase,
+          status: 'succeeded',
+          artifactPath,
+          exitCode: outcome.exitCode,
+          ...sourceTiming,
+          ...outcome.artifact,
+          ...attemptRecord,
+        };
+        store.markDone(stepId, 'source', outcome.exitCode, now(), artifactPath);
+        logger.logDone(stepId, outcome.exitCode);
+        if (attempt > 1) {
+          console.log(
+            `[${index + 1}/${sweepSources.length}] ${source.name} recovered on attempt ${attempt}`,
+          );
+        }
+        return;
+      }
+      const failureTail = buildFailureTail({ logPath, artifactPath });
+      console.error(
+        `[${index + 1}/${sweepSources.length}] ${source.name} failed: ${outcome.error}`,
+      );
+      console.error(formatFailureTailForLog(failureTail));
+      const attemptDurationMs = now().getTime() - attemptStartedAt.getTime();
+      const decision = decideSweepSourceRetry({
+        attempt,
+        failure: { ...outcome.failure, failureText: failureTail },
+        attemptDurationMs,
+        remainingBudgetMs: remainingSweepBudgetMs(process.env, now().getTime()),
+      });
+      if (decision.retry) {
+        firstAttemptError ??= outcome.error;
+        const keptLogPath = `${logPath}.attempt-${attempt}`;
+        preserveAttemptFile(logPath, keptLogPath);
+        preserveAttemptFile(artifactPath, `${artifactPath}.attempt-${attempt}`);
+        console.warn(
+          `[${index + 1}/${sweepSources.length}] ${source.name} hit a transient database failure; re-running it once (attempt ${attempt} log kept at ${keptLogPath})`,
+        );
+        continue;
+      }
+      console.error(
+        `[${index + 1}/${sweepSources.length}] ${source.name} not re-run: ${decision.reason}`,
+      );
+      store.markFailed(stepId, 'source', outcome.failure.exitCode, now());
+      logger.logFailed(stepId, outcome.failure.exitCode, logPath);
+      rows[index] = {
+        sourceName: source.name,
+        phase: source.phase,
+        status: 'failed',
+        artifactPath,
+        exitCode: outcome.failure.exitCode,
+        ...sourceTiming,
+        error: outcome.error,
+        ...(failureTail ? { failureTail } : {}),
+        ...attemptRecord,
+      };
+      return;
+    }
+  };
+
+  const runSourceAttempt = async (
+    source: ScraperSweepSource,
+    artifactPath: string,
+    logPath: string,
+    phaseConcurrency: number,
+  ): Promise<SweepSourceAttemptOutcome> => {
     const child = await childRunner(
       'yarn',
       buildScraperSweepChildArgs(options.mode, source.name, artifactPath, {
@@ -2508,53 +2607,33 @@ export async function runScraperSweep(
       },
     );
     const exitCode = child.status ?? 1;
-    const sourceTiming = sweepStepTiming(sourceStartedAt, now());
-    const failStep = (error: string): void => {
-      store.markFailed(stepId, 'source', exitCode, now());
-      logger.logFailed(stepId, exitCode, logPath);
-      const failureTail = buildFailureTail({ logPath, artifactPath });
-      console.error(`[${index + 1}/${sweepSources.length}] ${source.name} failed: ${error}`);
-      console.error(formatFailureTailForLog(failureTail));
-      rows[index] = {
-        sourceName: source.name,
-        phase: source.phase,
-        status: 'failed',
-        artifactPath,
+    const failed = (kind: SweepSourceFailureKind, error: string): SweepSourceAttemptOutcome => ({
+      ok: false,
+      error,
+      failure: {
+        kind,
         exitCode,
-        ...sourceTiming,
-        error,
-        ...(failureTail ? { failureTail } : {}),
-      };
-    };
+        signal: child.signal,
+        timedOut: child.timedOut,
+        spawnError: Boolean(child.error),
+      },
+    });
     if (child.error || child.timedOut || child.signal || exitCode !== 0) {
-      failStep(describeChildExit('scraper', child));
-      return;
+      return failed('child-exit', describeChildExit('scraper', child));
     }
     if (!fs.existsSync(artifactPath)) {
-      failStep(`scraper exited with status ${exitCode} but wrote no artifact`);
-      return;
+      return failed(
+        'missing-artifact',
+        `scraper exited with status ${exitCode} but wrote no artifact`,
+      );
     }
-
     try {
       const artifact = safeArtifactSummary(artifactPath);
       const artifactError = scraperSweepArtifactError(options.mode, artifact);
-      if (artifactError) {
-        failStep(artifactError);
-        return;
-      }
-      rows[index] = {
-        sourceName: source.name,
-        phase: source.phase,
-        status: 'succeeded',
-        artifactPath,
-        exitCode,
-        ...sourceTiming,
-        ...artifact,
-      };
-      store.markDone(stepId, 'source', exitCode, now(), artifactPath);
-      logger.logDone(stepId, exitCode);
+      if (artifactError) return failed('artifact-contract', artifactError);
+      return { ok: true, exitCode, artifact };
     } catch (error) {
-      failStep(sanitizeLogValue(error));
+      return failed('artifact-contract', sanitizeLogValue(error));
     }
   };
 

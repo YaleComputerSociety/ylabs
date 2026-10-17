@@ -215,6 +215,74 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
   const checkpointFor = (mode: string): string =>
     checkpointPathForMode(mode, os.tmpdir(), sweepRepoRoot);
 
+  describe('a source that fails on a transient database error is re-run once (#5078)', () => {
+    const TRANSIENT_TAIL =
+      'MongoBulkWriteError: Error determining if update will go over space quota: Error computing current atlas size: internal atlas error\n';
+    const flakySource = 'ysm-faculty-directory';
+    const deadlineEnv = 'SCRAPER_SWEEP_DEADLINE_AT';
+
+    afterEach(() => {
+      delete process.env[deadlineEnv];
+    });
+
+    const runWithFlakySource = async () => {
+      const mode = 'development-full' as const;
+      fs.rmSync(checkpointFor(mode), { force: true });
+      const base = makeChildRunner(new Set(['nih-reporter']));
+      const sourceCalls = new Map<string, number>();
+      const runner = async (
+        command: string,
+        args: string[],
+        options: { logPath?: string; env?: NodeJS.ProcessEnv },
+      ) => {
+        const sourceName = sourceNameFromArgs(args);
+        if (sourceName) sourceCalls.set(sourceName, (sourceCalls.get(sourceName) ?? 0) + 1);
+        if (sourceName === flakySource && sourceCalls.get(sourceName) === 1 && options.logPath) {
+          fs.mkdirSync(path.dirname(options.logPath), { recursive: true });
+          fs.appendFileSync(options.logPath, TRANSIENT_TAIL);
+          return { status: 1 };
+        }
+        return base.runner(command, args, options);
+      };
+      const summary = await runScraperSweep(
+        {
+          mode,
+          confirmations: new Set(['--confirm-development-full-sweep']),
+          skipPreflight: true,
+          restart: true,
+        },
+        { childRunner: runner },
+      );
+      trackRun(mode, summary.outputDirectory);
+      const row = (name: string) => summary.rows.find((candidate) => candidate.sourceName === name);
+      return { row, sourceCalls };
+    };
+
+    it('records the recovered source with its attempt count and keeps the first attempt log', async () => {
+      const { row, sourceCalls } = await runWithFlakySource();
+
+      expect(sourceCalls.get(flakySource)).toBe(2);
+      expect(row(flakySource)).toMatchObject({ status: 'succeeded', attempts: 2 });
+      expect(row(flakySource)?.firstAttemptError).toContain('exited with status 1');
+      expect(fs.readFileSync(`${row(flakySource)!.artifactPath}.log.attempt-1`, 'utf8')).toContain(
+        'internal atlas error',
+      );
+      expect(sourceCalls.get('nih-reporter')).toBe(1);
+      expect(row('nih-reporter')?.status).toBe('failed');
+      expect(row('nih-reporter')?.attempts).toBeUndefined();
+    });
+
+    it('does not re-run when the run limit has no room for another attempt', async () => {
+      process.env[deadlineEnv] = new Date(Date.now() - 60_000).toISOString();
+
+      const { row, sourceCalls } = await runWithFlakySource();
+
+      expect(sourceCalls.get(flakySource)).toBe(1);
+      expect(row(flakySource)?.status).toBe('failed');
+      expect(row(flakySource)?.attempts).toBeUndefined();
+    });
+  });
+
   it('checkpoints a failed development sweep, resumes only the unfinished source, prunes between phases, and clears the checkpoint when it finally succeeds', async () => {
     const mode = 'development-full' as const;
     fs.rmSync(checkpointFor(mode), { force: true });
