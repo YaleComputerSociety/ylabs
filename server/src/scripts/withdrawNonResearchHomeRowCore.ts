@@ -18,6 +18,9 @@ export const NON_RESEARCH_HOME_KINDS = [
   'database',
   'software',
   'clinical-practice',
+  // A department program listing whose program record was judged not a program and
+  // whose cited page no longer lists it: neither /research nor /programs (#5077).
+  'unlisted-program',
 ] as const;
 
 export type NonResearchHomeKind = (typeof NON_RESEARCH_HOME_KINDS)[number];

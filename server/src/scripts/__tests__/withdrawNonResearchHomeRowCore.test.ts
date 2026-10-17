@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  NON_RESEARCH_HOME_KINDS,
   planNonResearchHomeWithdrawal,
   valuesThatMadeItAResearchHome,
   type WithdrawalRow,
@@ -74,5 +75,11 @@ describe('parseWithdrawalArgs', () => {
     ]);
     expect(options.apply).toBe(false);
     expect(options.confirmed).toBe(false);
+  });
+});
+
+describe('the unlisted-program kind', () => {
+  it('is a withdrawal kind, so a program listing no page supports can leave /research', () => {
+    expect(NON_RESEARCH_HOME_KINDS).toContain('unlisted-program');
   });
 });
