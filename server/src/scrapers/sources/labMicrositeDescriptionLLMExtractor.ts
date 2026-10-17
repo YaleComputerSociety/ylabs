@@ -483,6 +483,10 @@ export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
   }
 }
 
+function isRefusedDescriptionLaneSourceUrl(value: unknown): boolean {
+  return isRejectedDescriptionSourceUrl(value) || isPostingPageUrl(value);
+}
+
 const idValue = (value: unknown): string => {
   const directId = serializedDocumentId(value);
   if (directId) return directId;
@@ -661,7 +665,7 @@ export function researchSubPageCrawlUrls(
     : [];
   const seen = new Set(researchUrls.map(withoutTrailingSlash));
   return [...researchUrls, ...aboutUrls.filter((url) => !seen.has(withoutTrailingSlash(url)))]
-    .filter((url) => !isRejectedDescriptionSourceUrl(url))
+    .filter((url) => !isRefusedDescriptionLaneSourceUrl(url))
     .slice(0, maxUrls);
 }
 
@@ -815,7 +819,7 @@ function candidateUrlsForDoc(doc: CandidateDescriptionLabDoc): string[] {
   // in Charles Brown's sourceUrls) can never key a description onto the wrong
   // entity. Non-person and corroborated person URLs are unaffected (#688).
   const usableDescriptionSource = (url: string): boolean =>
-    !isRejectedDescriptionSourceUrl(url) && personProfileSourceMatchesEntity(url, doc);
+    !isRefusedDescriptionLaneSourceUrl(url) && personProfileSourceMatchesEntity(url, doc);
   const primaryUrls = expandDescriptionSourceUrls([doc.websiteUrl, doc.website])
     .filter(usableDescriptionSource)
     .sort((a, b) => descriptionUrlPriority(a) - descriptionUrlPriority(b) || a.localeCompare(b));
@@ -1622,7 +1626,7 @@ export function describeDescriptionExtraction(
   extraction: DescriptionExtraction,
   context: ExtractedPageIdentityContext & { entityId?: string },
 ): DescriptionExtractionOutcome {
-  if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return refusedBy('rejected_source_url');
+  if (isRefusedDescriptionLaneSourceUrl(context.sourceUrl)) return refusedBy('rejected_source_url');
   // Evidence-side, so it holds whatever the page says: a page cited by more than one
   // row is not about any single one of them (#3148). A person page is exempt because
   // a person's own profile is cited by both their LAB and their research-area row and
@@ -1709,7 +1713,7 @@ function labNameObservations(
   base: Omit<ObservationInput, 'field' | 'value'>,
   context: ExtractedPageIdentityContext,
 ): ObservationInput[] {
-  if (isPostingPageUrl(context.sourceUrl) || namesAPostingRatherThanResearch(labName)) return [];
+  if (namesAPostingRatherThanResearch(labName)) return [];
   const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
   if (isLabTypedRowsPersonalPage(labName, context)) {
     return personalPageObservations(labName, nameBase);
@@ -1811,7 +1815,7 @@ export function pageStatedLabNameObservations(
   context: ExtractedPageIdentityContext & { entityId?: string },
   pageHtml: string,
 ): ObservationInput[] {
-  if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
+  if (isRefusedDescriptionLaneSourceUrl(context.sourceUrl)) return [];
   if (context.sharedEvidenceUrl === true && !isPersonProfileOrDirectoryUrl(context.sourceUrl)) {
     return [];
   }
@@ -2293,7 +2297,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         (candidate) =>
           candidateKeyMatches(candidate, only) &&
           candidate.websiteUrl &&
-          !isRejectedDescriptionSourceUrl(candidate.websiteUrl),
+          !isRefusedDescriptionLaneSourceUrl(candidate.websiteUrl),
       )
       .slice(offset, offset + limit);
     const identityCorpus = await this.identityCorpusLoader();
@@ -2328,7 +2332,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         }
         const candidateUrls = uniqueStrings([lab.websiteUrl, ...(lab.sourceUrls || [])]).filter(
           (url) =>
-            !isRejectedDescriptionSourceUrl(url) &&
+            !isRefusedDescriptionLaneSourceUrl(url) &&
             // Before the fetch, not after: the page that identifies no single entity is
             // the one this lane used to pay a fetch and a generation for and then throw
             // away (#3494).
