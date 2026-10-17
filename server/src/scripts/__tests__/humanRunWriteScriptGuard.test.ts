@@ -44,16 +44,10 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'deletes stored personal contact data, which AGENTS.md reserves for an operator rather than a lane or a sweep stage (#4161)',
   'accounts:purge-retired-login-profile-fields':
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
-  'accounts:merge-local-part-netid-twins':
-    'merges and archives login accounts that share one person, and archives a lone local-part account that holds nothing, an operator decision about account identity run on Development only (#4773, #4917)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
-  'researchers:backfill-identity-from-accounts':
-    'a one-time migration that moves each researcher netid and email off its linked account before accounts become login-only, so no lane or sweep stage re-derives it (#5000)',
-  'accounts:retire-identity-only':
-    'deletes the accounts nobody signed into once researchers hold their own identity, a one-time operator decision about stored account data run on Development only (#5000)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'meili:rebuild-research-entities':
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',

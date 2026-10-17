@@ -189,6 +189,9 @@ async function seedTarget(targetDb: Db): Promise<void> {
     .insertOne({ benchmarkId: frozenBenchmarkId, planned: 3 });
   await targetDb.collection('weekly_sweep_runs').insertOne({ status: 'succeeded', exitCode: 0 });
   await targetDb
+    .collection('research_plans')
+    .insertOne({ accountId: targetAccount._id, title: 'Target plan' });
+  await targetDb
     .collection('login_signal_tallies')
     .insertOne({ date: '2026-10-04', undergrad_usable_major: 1 });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });

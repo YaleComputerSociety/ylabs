@@ -38,7 +38,6 @@ import {
 import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
-import { Account } from '../../models/account';
 
 const profileUrl = 'https://medicine.yale.edu/profile/jules-fixture/';
 const departmentPersonPageUrl =
@@ -1798,19 +1797,12 @@ describe('officialProfilePiBackfillScraper', () => {
       lean: vi.fn().mockResolvedValue([
         {
           _id: 'res-riley',
-          accountId: 'acc-riley',
           displayName: 'Riley Anthropology-Fixture',
           profile: { websiteUrl: mirrorUrl },
           profileLinks: [{ kind: 'YALE_OFFICIAL', url: departmentUrl }],
-          identifiers: {},
+          identifiers: { netid: 'raf1', email: 'riley.fixture@yale.edu' },
         },
       ]),
-    } as any);
-    vi.spyOn(Account, 'find').mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      lean: vi
-        .fn()
-        .mockResolvedValue([{ _id: 'acc-riley', netid: 'raf1', email: 'riley.fixture@yale.edu' }]),
     } as any);
     const targets = await selectVisibleProfileBioTargets(5);
     expect(targets).toHaveLength(1);
@@ -3913,27 +3905,18 @@ describe('officialProfilePiBackfillScraper', () => {
       lean: vi.fn().mockResolvedValue([
         {
           _id: 'res-harold',
-          accountId: 'acc-harold',
           displayName: 'Harper Sanchez',
           profile: {},
           profileLinks: [{ kind: 'YALE_OFFICIAL', url: profileUrl }],
-          identifiers: {},
+          identifiers: { netid: 'hs7', email: 'harper.sanchez@yale.edu' },
         },
         {
           _id: 'res-hayde',
-          accountId: 'acc-hayde',
           displayName: 'Hayde Sanchez',
           profile: {},
           profileLinks: [{ kind: 'YALE_OFFICIAL', url: profileUrl }],
-          identifiers: {},
+          identifiers: { netid: 'hs272', email: 'hayden.sanchez@yale.edu' },
         },
-      ]),
-    } as any);
-    vi.spyOn(Account, 'find').mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      lean: vi.fn().mockResolvedValue([
-        { _id: 'acc-harold', netid: 'hs7', email: 'harper.sanchez@yale.edu' },
-        { _id: 'acc-hayde', netid: 'hs272', email: 'hayden.sanchez@yale.edu' },
       ]),
     } as any);
 

@@ -49,7 +49,6 @@ export interface ResearcherDisplayProfile {
 export interface ResearcherRecord {
   schemaVersion: number;
   displayName: string;
-  accountId?: mongoose.Types.ObjectId;
   profileLinks: ResearcherProfileLink[];
   identifiers?: ResearcherIdentifiers;
   profile?: ResearcherDisplayProfile;
@@ -259,11 +258,6 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
       minlength: 1,
       maxlength: 240,
     },
-    accountId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Account',
-      required: false,
-    },
     profileLinks: {
       type: [researcherProfileLinkSchema],
       default: [],
@@ -310,7 +304,6 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
   },
 );
 
-researcherSchema.index({ accountId: 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.netid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.email': 1 }, { sparse: true });

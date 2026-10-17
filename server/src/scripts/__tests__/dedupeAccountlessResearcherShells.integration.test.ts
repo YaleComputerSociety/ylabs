@@ -43,10 +43,9 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       {
         _id: canonicalId,
         displayName: 'Jane Roe',
-        accountId: new mongoose.Types.ObjectId(),
         archived: false,
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://canonical.yale.edu' }],
-        identifiers: {},
+        identifiers: { email: 'directory.fixture1@example.test' },
         profile: { title: 'Professor' },
       },
       {
@@ -68,13 +67,13 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       {
         _id: twinCanonicalA,
         displayName: 'Sam Twin',
-        accountId: new mongoose.Types.ObjectId(),
+        identifiers: { email: 'directory.fixture2@example.test' },
         archived: false,
       },
       {
         _id: twinCanonicalB,
         displayName: 'Sam Twin',
-        accountId: new mongoose.Types.ObjectId(),
+        identifiers: { email: 'directory.fixture3@example.test' },
         archived: false,
       },
       { _id: twinShellId, displayName: 'Sam Twin', archived: false },
@@ -82,9 +81,8 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       {
         _id: conflictCanonicalId,
         displayName: 'Kim Lee',
-        accountId: new mongoose.Types.ObjectId(),
         archived: false,
-        identifiers: { orcid: '0000-0001-2222-3333' },
+        identifiers: { orcid: '0000-0001-2222-3333', email: 'directory.fixture4@example.test' },
       },
       {
         _id: conflictShellId,
@@ -233,9 +231,8 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       {
         _id: canonicalOnly,
         displayName: 'Rosa Vega',
-        accountId: new mongoose.Types.ObjectId(),
         archived: false,
-        identifiers: {},
+        identifiers: { email: 'directory.fixture5@example.test' },
       },
       {
         _id: orcidShell,
@@ -273,9 +270,8 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       {
         _id: canonicalOnly,
         displayName: 'Rosa Vega',
-        accountId: new mongoose.Types.ObjectId(),
         archived: false,
-        identifiers: {},
+        identifiers: { email: 'directory.fixture6@example.test' },
         profileLinks: [],
       },
       {
@@ -413,9 +409,8 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       {
         _id: accountCanonical,
         displayName: 'Jane Roe',
-        accountId: new mongoose.Types.ObjectId(),
         archived: false,
-        identifiers: {},
+        identifiers: { email: 'directory.fixture7@example.test' },
         profileLinks: [],
       },
       {
@@ -559,9 +554,8 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
       {
         _id: accountCanonical,
         displayName: 'Kim Lee',
-        accountId: new mongoose.Types.ObjectId(),
         archived: false,
-        identifiers: { netid: 'kl10' },
+        identifiers: { netid: 'kl10', email: 'directory.fixture8@example.test' },
         profileLinks: [],
       },
       {

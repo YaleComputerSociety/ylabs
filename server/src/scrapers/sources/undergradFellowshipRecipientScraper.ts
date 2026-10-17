@@ -849,7 +849,7 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
       'identifiers.orcid': cleaned.toUpperCase(),
       archived: { $ne: true },
     })
-      .select('_id displayName accountId profile identifiers')
+      .select('_id displayName profile identifiers')
       .lean();
     if (!researcher) return null;
     return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
@@ -857,7 +857,7 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
   const resolution = await resolveResearcherIdForPersonName(name);
   if (resolution.status !== 'matched' || !resolution.researcherId) return null;
   const researcher: any = await Researcher.findById(resolution.researcherId)
-    .select('_id displayName accountId profile identifiers')
+    .select('_id displayName profile identifiers')
     .lean();
   if (!researcher) return null;
   return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));

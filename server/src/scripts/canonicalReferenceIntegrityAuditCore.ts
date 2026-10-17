@@ -82,13 +82,6 @@ export const CANONICAL_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze
     required: true,
   },
   {
-    name: 'researchers.accountId -> accounts',
-    collectionName: 'researchers',
-    localField: 'accountId',
-    targetCollectionName: 'accounts',
-    required: false,
-  },
-  {
     name: 'research_plans.accountId -> accounts',
     collectionName: 'research_plans',
     localField: 'accountId',

@@ -184,7 +184,7 @@ describe('canonical membership materialization (integration)', () => {
     >();
     expect(researcher?.displayName).toBe('Alpha One');
     expect(researcher?.identifiers?.email).toBe('ab123@example.test');
-    expect(researcher?.accountId).toBeUndefined();
+    expect((researcher as Record<string, unknown> | null)?.accountId).toBeUndefined();
     const assignments = await RoleAssignment.find({
       'target.id': new mongoose.Types.ObjectId(id),
     }).lean();
@@ -447,12 +447,10 @@ describe('canonical membership materialization (integration)', () => {
     expect(stillRetired?.archived).toBe(true);
   });
 
-  it('resolves by ORCID and skips the write on an accountId conflict (never merges)', async () => {
-    const conflictingAccountId = new mongoose.Types.ObjectId();
+  it('resolves by ORCID and skips the write on a Yale identity conflict (never merges)', async () => {
     await Researcher.create({
       displayName: 'Gamma Three',
-      accountId: conflictingAccountId,
-      identifiers: { orcid: ORCID },
+      identifiers: { orcid: ORCID, netid: 'gt3' },
       profileLinks: [],
       archived: false,
     });
@@ -467,7 +465,7 @@ describe('canonical membership materialization (integration)', () => {
       },
       { orcid: ORCID, displayName: 'Different Name' },
     );
-    // ORCID belongs to an account-backed researcher: fail closed, no new researcher, no assignment.
+    // ORCID belongs to a researcher holding a Yale netid: fail closed, no new researcher, no assignment.
     expect(await Researcher.countDocuments({})).toBe(1);
     expect(await RoleAssignment.countDocuments({})).toBe(0);
   });
@@ -539,7 +537,7 @@ describe('canonical membership materialization (integration)', () => {
     const id = entityId();
     await Researcher.create({
       displayName: 'Zeta Six',
-      accountId: new mongoose.Types.ObjectId(),
+      identifiers: { orcid: '9999-9000-9999-9005' },
       profileLinks: [],
       archived: false,
     });
@@ -557,7 +555,7 @@ describe('canonical membership materialization (integration)', () => {
     expect(
       await Researcher.countDocuments({
         displayName: 'Zeta Six',
-        accountId: { $exists: false },
+        'identifiers.orcid': { $exists: false },
       }),
     ).toBe(1);
     expect(await RoleAssignment.countDocuments({})).toBe(1);

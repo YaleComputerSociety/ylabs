@@ -317,6 +317,7 @@ describe('Beta to Development sync guards', () => {
       'lane_benchmarks',
       'lane_scorecard_snapshots',
       'login_signal_tallies',
+      'research_plans',
       'weekly_sweep_runs',
     ]);
     expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
@@ -447,6 +448,16 @@ describe('Beta to Development sync guards', () => {
     expect(PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS).toContain('accounts');
     expect(
       localNonMirrorCollectionNames(['accounts', 'research_entities'], ['research_entities']),
+    ).toEqual([]);
+  });
+
+  it('never copies research plans and never clears them from the target (#5092)', () => {
+    expect(
+      collectionsForOptions({ includeObservations: true }).map(({ name }) => name),
+    ).not.toContain('research_plans');
+    expect(NEVER_COPY_COLLECTIONS).toContain('research_plans');
+    expect(
+      localNonMirrorCollectionNames(['research_plans', 'research_entities'], ['research_entities']),
     ).toEqual([]);
   });
 
