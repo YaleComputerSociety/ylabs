@@ -326,7 +326,9 @@ async function fetchPageLive(
   const safeUrl = (await assertUrl(url)).toString();
   const host = hostOf(safeUrl);
   const limiter = options.limiter ?? sharedHostLimiter;
-  const request = options.request ?? defaultAxiosRequest;
+  const send = options.request ?? defaultAxiosRequest;
+  const request: HttpRequestFn = (target, requestConfig) =>
+    withScrapeRunProgress(() => send(target, requestConfig));
   const policy = resolveRetryPolicy(options, host);
 
   const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };
@@ -343,7 +345,7 @@ async function fetchPageLive(
   for (let attempt = 0; ; attempt += 1) {
     let result: HttpRequestResult;
     try {
-      result = await limiter.run(host, () => withScrapeRunProgress(() => request(safeUrl, config)));
+      result = await limiter.run(host, () => request(safeUrl, config));
     } catch (error) {
       if (!(await backoff.waitAfterTransportFailure(attempt))) {
         backoff.settle('exhausted');
