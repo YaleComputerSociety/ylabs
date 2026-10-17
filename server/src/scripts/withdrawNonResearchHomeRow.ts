@@ -41,6 +41,7 @@ import {
   NON_RESEARCH_HOME_KINDS,
   WITHDRAWAL_ARCHIVE_REASON,
   planNonResearchHomeWithdrawal,
+  withdrawalRefusalNote,
   type NonResearchHomeKind,
   type WithdrawalRow,
 } from './withdrawNonResearchHomeRowCore';
@@ -134,7 +135,7 @@ async function main(): Promise<void> {
           value: refusal.value,
           rule: 'operator_judgement',
           refusedBy: SCRIPT_NAME,
-          note: `the page is a ${options.kind}, not a research home a student can join`,
+          note: withdrawalRefusalNote(options.kind),
           evidenceUrl: options.evidenceUrl,
         });
         Object.assign(set, planned);

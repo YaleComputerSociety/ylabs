@@ -18,9 +18,19 @@ export const NON_RESEARCH_HOME_KINDS = [
   'database',
   'software',
   'clinical-practice',
+  // A department program listing whose program record was judged not a program and
+  // whose cited page no longer lists it: neither /research nor /programs (#5077).
+  'unlisted-program',
 ] as const;
 
 export type NonResearchHomeKind = (typeof NON_RESEARCH_HOME_KINDS)[number];
+
+export function withdrawalRefusalNote(kind: NonResearchHomeKind): string {
+  if (kind === 'unlisted-program') {
+    return 'the cited page no longer lists this program and its program record was judged not a program';
+  }
+  return `the page is a ${kind}, not a research home a student can join`;
+}
 
 export const WITHDRAWAL_ARCHIVE_REASON = 'research-entity:withdraw-non-research-home-row';
 
