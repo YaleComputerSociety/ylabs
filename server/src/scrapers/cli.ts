@@ -73,6 +73,7 @@ export {
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
 import { connectScriptMongo } from '../db/connections';
+import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from './scrapeRunProgress';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -271,7 +272,10 @@ Concurrency:
 
   const preflight = buildScraperCliPreflight(command, flags, url);
 
-  await connectScriptMongo(url);
+  await connectScriptMongo(
+    url,
+    command === 'run' ? { socketTimeoutMS: SCRAPE_RUN_SOCKET_TIMEOUT_MS } : undefined,
+  );
 
   try {
     const connectedDbLabel = (): string =>
@@ -578,7 +582,24 @@ Concurrency:
     console.error(`Unknown command: ${command}. Use "help" for usage.`);
     process.exit(1);
   } finally {
-    await mongoose.disconnect();
+    await disconnectWithin(MONGO_DISCONNECT_DEADLINE_MS);
+  }
+}
+
+// A stalled run can leave an operation hung on a dead socket, and the disconnect waits on
+// it, so the deadline is what lets the stall error reach process.exit.
+const MONGO_DISCONNECT_DEADLINE_MS = 10_000;
+
+async function disconnectWithin(deadlineMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, deadlineMs);
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([mongoose.disconnect(), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

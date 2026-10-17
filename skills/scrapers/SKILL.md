@@ -224,6 +224,11 @@ It also records `codeSha`, the commit the process loaded (`scrapeRunCodeIdentity
 Every terminal write, the signal write included, is retried by `writeScrapeRunTerminalStatus` (`scrapeRunTerminalWrite.ts`): three attempts with 500 ms then 1,500 ms backoff, a 4-second deadline on the signal path so the re-raise still fits the 5-second budget, and one clear log line when every attempt fails.
 Never write a terminal `ScrapeRun` status with a bare `updateOne`.
 Only a `SIGKILL`, a crash, or a terminal write that exhausted its retries still leaves a row `running`, and its heartbeat stops.
+A run whose work hangs stops heartbeating too (#5086): real work bumps the process-wide progress clock in `scrapeRunProgress.ts`, and after 20 minutes without progress (`SCRAPER_RUN_STALL_WINDOW_MS` overrides it) the run ends as `interrupted` with reason `stalled` and `scrape run` exits nonzero.
+
+- New long work that settles outside axios, `fetchPageWithPolicy`, the rendered fetch, `retryTransientDatabaseWrite` and the `ctx` callbacks must call `recordScrapeRunProgress` (or wrap the await in `withScrapeRunProgress`) when it settles, or a lane that only does that work for 20 minutes is ended as stalled.
+- A quiet gap of its own longer than a few minutes (a pause, a long poll) needs the same bump, or a reason to raise the window; the window's justification lives in `docs/research-data-pipeline.md`.
+- The sweep never re-runs a stalled source, so a stall reads as a failed step with `[scrape-run-stalled]` in its log tail.
 
 - Never ask "is anything running" with a bare `status: 'running'`.
   Use `classifyScrapeRunLiveness` (or `isAbandonedScrapeRun`) from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.

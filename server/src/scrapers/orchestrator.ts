@@ -14,6 +14,13 @@ import { appendObservations, getSourceByName } from './observationStore';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
+import {
+  installAxiosScrapeRunProgress,
+  recordScrapeRunProgress,
+  resolveScrapeRunStallWindowMs,
+  type ScrapeRunStall,
+  ScrapeRunStalledError,
+} from './scrapeRunProgress';
 import { boundedScrapeRunNotes } from './scrapeRunNotes';
 import {
   SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
@@ -50,7 +57,12 @@ const DEFAULT_EXPLAIN_LIMIT = 500;
 
 export interface ScraperOrchestratorConfig {
   runHeartbeatIntervalMs?: number;
+  runStallWindowMs?: number;
 }
+
+// A stalled run's own database socket may be the thing that hung, so its terminal write
+// is abandoned at this deadline and the stale-run reap closes the row instead.
+export const SCRAPE_RUN_STALL_WRITE_DEADLINE_MS = 60_000;
 
 export interface ScraperRunOwnership {
   lockOwnerId?: string;
@@ -155,6 +167,7 @@ export class ScraperOrchestrator {
             );
           }
         }
+        recordScrapeRunProgress();
         observationCount += options.dryRun ? inputs.length : res.inserted;
         for (const o of inputs) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
@@ -163,9 +176,11 @@ export class ScraperOrchestrator {
         entitiesObserved = observedEntityKeys.size;
       },
       reportMetrics: (metrics) => {
+        recordScrapeRunProgress();
         Object.assign(reportedMetrics, metrics);
       },
       log: (msg, meta) => {
+        recordScrapeRunProgress();
         const prefix = `[${name}]`;
         const safeMessage = sanitizeLogValue(msg);
         if (meta) console.log(prefix, safeMessage, sanitizeLogValue(meta));
@@ -173,10 +188,23 @@ export class ScraperOrchestrator {
       },
     };
 
+    installAxiosScrapeRunProgress();
+    recordScrapeRunProgress();
+    let stall: ScrapeRunStall | undefined;
+    let reportStall: (error: ScrapeRunStalledError) => void = () => undefined;
+    const stalled = new Promise<never>((_, reject) => {
+      reportStall = reject;
+    });
+    stalled.catch(() => undefined);
     const heartbeat = startScrapeRunHeartbeat({
       runId: run._id,
       sourceName: source.name,
       intervalMs: this.config.runHeartbeatIntervalMs,
+      stallWindowMs: this.config.runStallWindowMs ?? resolveScrapeRunStallWindowMs(),
+      onStall: (detected) => {
+        stall = detected;
+        reportStall(new ScrapeRunStalledError(detected));
+      },
     });
     let interrupted = false;
     const detachInterrupt = onInterrupt(async (signal) => {
@@ -214,7 +242,7 @@ export class ScraperOrchestrator {
       ).catch(() => undefined);
     });
 
-    try {
+    const completeRun = async () => {
       const databaseWrites = await withDatabaseWriteRetryScope(() =>
         withThrottleRetryScope(() =>
           withSweepPageReuseScope(() => withHttpValidatorCacheScope(() => scraper.run(ctx))),
@@ -312,7 +340,15 @@ export class ScraperOrchestrator {
             }
           : {}),
       };
+    };
+
+    try {
+      return await Promise.race([completeRun(), stalled]);
     } catch (err: any) {
+      if (stall && !interrupted) {
+        await recordRunStall(run._id, stall, { observationCount, entitiesObserved, errors });
+        throw err;
+      }
       if (!interrupted && !(err instanceof ScrapeRunTerminalWriteError))
         await recordRunFailure(run._id, source.name, err, {
           observationCount,
@@ -344,6 +380,35 @@ function runMetrics(
     ...(evidenceCoverageImpact ? { evidenceCoverageImpact } : {}),
   };
   return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+async function recordRunStall(
+  runId: unknown,
+  stall: ScrapeRunStall,
+  progress: { observationCount: number; entitiesObserved: number; errors: any[] },
+): Promise<void> {
+  const at = stall.detectedAt;
+  await writeScrapeRunTerminalStatus(
+    () =>
+      ScrapeRun.updateOne(
+        { _id: runId, status: 'running' },
+        {
+          $set: {
+            finishedAt: at,
+            status: 'interrupted',
+            observationCount: progress.observationCount,
+            entitiesObserved: progress.entitiesObserved,
+            interruption: { reason: 'stalled', detectedAt: at, detectedBy: 'orchestrator' },
+            errors: [...progress.errors, { message: new ScrapeRunStalledError(stall).message, at }],
+          },
+        },
+      ),
+    {
+      status: 'interrupted',
+      sourceName: stall.sourceName,
+      deadlineMs: SCRAPE_RUN_STALL_WRITE_DEADLINE_MS,
+    },
+  ).catch(() => undefined);
 }
 
 // A failed failure write must not replace the scrape's own error. A terminal write

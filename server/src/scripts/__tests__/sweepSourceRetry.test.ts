@@ -2,6 +2,7 @@ import { format } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { MongoNetworkError } from 'mongodb';
 import { retryTransientDatabaseWrite } from '../../scrapers/utils/databaseWriteRetry';
+import { ScrapeRunStalledError } from '../../scrapers/scrapeRunProgress';
 import {
   SCRAPER_SWEEP_DEADLINE_ENV,
   decideSweepSourceRetry,
@@ -21,6 +22,31 @@ const childExit = (overrides: Partial<SweepSourceFailure> = {}): SweepSourceFail
 });
 
 describe('decideSweepSourceRetry', () => {
+  it('never re-runs a stalled child, even though its log carries the outage that hung it (#5086)', () => {
+    const stall = new ScrapeRunStalledError({
+      sourceName: 'fixture-source',
+      lastProgressAt: new Date('2026-10-15T08:00:00Z'),
+      detectedAt: new Date('2026-10-15T08:21:00Z'),
+      stallWindowMs: 20 * 60 * 1000,
+    });
+    const failureText = [
+      'Failed to heartbeat the ScrapeRun for fixture-source: MongoServerSelectionError: getaddrinfo ENOTFOUND',
+      `${stall.name}: ${stall.message}`,
+    ].join('\n');
+
+    const decision = decideSweepSourceRetry({
+      attempt: 1,
+      failure: childExit({ failureText }),
+      attemptDurationMs: HOUR,
+      remainingBudgetMs: 5 * HOUR,
+    });
+
+    expect(decision).toEqual({
+      retry: false,
+      reason: expect.stringContaining('stalled'),
+    });
+  });
+
   it('re-runs a transient database failure once when the budget covers another attempt', () => {
     expect(
       decideSweepSourceRetry({

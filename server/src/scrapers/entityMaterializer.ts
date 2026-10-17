@@ -432,6 +432,7 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
+import { recordScrapeRunProgress } from './scrapeRunProgress';
 import {
   canonicalRoleForLegacy,
   LEAD_ROLE_LEGACY_LABELS,
@@ -10937,6 +10938,7 @@ export async function materializeObservedEntitiesInChunks(
       } catch (error) {
         outcome = { error };
       }
+      recordScrapeRunProgress();
       onRow(row, outcome);
     }
     start = end;

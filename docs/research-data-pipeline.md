@@ -400,7 +400,7 @@ The BBS lane's per-track floor fires on the first barren run for a track that ha
 ### A run record always ends terminal, and `running` is read through a heartbeat
 
 Before #3595 an interrupted run never closed its `scrape_runs` record, so 48 Development rows read `running` for up to four months and a question as simple as "is a sweep running?" invented activity.
-The contract now has four parts.
+The contract now has six parts.
 
 - **Every exit path of `ScraperOrchestrator.run` writes a terminal status.**
   A normal return writes `success`, `partial` or `failure`, a thrown error writes `failure`, and `SIGINT` or `SIGTERM` writes `interrupted` with `interruption: { reason: 'signal', signal }` before the signal is re-raised.
@@ -417,6 +417,19 @@ The contract now has four parts.
   Only `live` means a writer is working.
   Ask "is anything running" with `classifyScrapeRunLiveness`, never with a bare `status: 'running'`; `sourceHealthService` and `runReport` already do.
   `recentRuns` reports `running` (live), `unverifiable` (predates heartbeats and started within 72 hours), `abandoned` (stale, or predates heartbeats and started more than 72 hours ago, per `isAbandonedScrapeRun`) and `interrupted` separately.
+- **A run that stops making progress stops proving it is alive (#5086).**
+  A heartbeat alone proved only that the process was alive: two dry runs whose work hung after a laptop network loss heartbeated for about 2.5 days once the network returned, so the reap skipped them.
+  Real work now bumps one process-wide progress clock (`scrapers/scrapeRunProgress.ts`): every settled request on the shared axios instance (lane fetches and LLM calls alike), every `fetchPageWithPolicy` attempt, every rendered fetch, every database write attempt under `retryTransientDatabaseWrite`, every `ctx.emit`, `ctx.log` and `ctx.reportMetrics` call, and every materialized entity.
+  When the clock has not moved for `SCRAPE_RUN_STALL_WINDOW_MS` (20 minutes, overridable with `SCRAPER_RUN_STALL_WINDOW_MS`), the heartbeat stops advancing `heartbeatAt` and the orchestrator ends the run with `ScrapeRunStalledError`, whose message carries `[scrape-run-stalled]`.
+  It records the row `interrupted` with `interruption: { reason: 'stalled' }` under a 60-second deadline (`SCRAPE_RUN_STALL_WRITE_DEADLINE_MS`), because the database socket may be the thing that hung; if that write cannot land, the row keeps its stopped heartbeat and the reap closes it as `heartbeat_stale`.
+  `scrape run` bounds its final disconnect at 10 seconds so the error reaches `process.exit` even when an operation is still hung.
+  The window sits above the longest legitimate quiet gap between progress signals: one page attempt can take a 75-second operating-system connect timeout plus a 120-second response timeout after up to 180 seconds of waiting for a machine host slot, the host retry budget adds at most 90 seconds of backoff, the YSM and BBS second passes pause 60 seconds, and LLM calls time out within 40 seconds.
+  It also sits above the 15-minute stale bound, which already budgets a lane holding the event loop for minutes on one huge page, and above the 10-minute socket timeout below.
+  The sweep never re-runs a stalled source (`decideSweepSourceRetry`): its log also carries the failed heartbeats of the outage, which match the transient database signature, and a re-run would spend another window.
+- **A `scrape run` database read cannot wait forever.**
+  Scripts connect with no socket timeout, and the driver interrupts an operation in flight on a pooled connection only when a monitor check times out; a lost network fails the monitor with `getaddrinfo ENOTFOUND` instead, so an operation in flight on the dead socket had nothing to end it.
+  That is the likeliest hang in #5086: after the loss, the lane logged no failure at all, while every request or query issued after the loss failed within 30 seconds.
+  `scrape run` therefore connects with a 10-minute socket timeout (`SCRAPE_RUN_SOCKET_TIMEOUT_MS`), so such an operation fails as a network timeout, which the driver's retryable reads and writes can try again, before the stall window would end the run.
 - **A run that died without a word is closed by a writer, not by a reader.**
   A `SIGKILL`, an out-of-memory kill or a host crash runs no handler, so its row stays `running` with a heartbeat that stops.
   `yarn --cwd server scrape-runs:reconcile-stale` is dry-run by default and reports every `running` row with a verdict.

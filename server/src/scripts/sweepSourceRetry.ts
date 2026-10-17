@@ -1,3 +1,4 @@
+import { matchesScrapeRunStallText } from '../scrapers/scrapeRunProgress';
 import { matchesTransientMongoFailureText } from '../scrapers/utils/transientMongoError';
 
 export const SCRAPER_SWEEP_DEADLINE_ENV = 'SCRAPER_SWEEP_DEADLINE_AT';
@@ -19,8 +20,9 @@ export type SweepSourceRetryDecision = { retry: true } | { retry: false; reason:
 /**
  * A source is re-run only when its child exited on an infrastructure blip that a second run
  * can plausibly get past, and only when the hosted run's remaining time covers another run as
- * long as the one that failed. A missing or contract-breaking artifact, a timeout, a signal, or
- * any failure without the transient database signature is deterministic and would just repeat.
+ * long as the one that failed. A missing or contract-breaking artifact, a timeout, a signal, a
+ * stall, or any failure without the transient database signature is deterministic and would
+ * just repeat.
  */
 export function decideSweepSourceRetry(input: {
   attempt: number;
@@ -39,6 +41,11 @@ export function decideSweepSourceRetry(input: {
     return { retry: false, reason: 'the child was not started, timed out, or was killed' };
   }
   if (failure.exitCode === 0) return { retry: false, reason: 'the child exited cleanly' };
+  // Before the transient check: a stalled child's log also holds the failed heartbeats of
+  // the outage that hung it, which match the transient signature.
+  if (matchesScrapeRunStallText(failure.failureText)) {
+    return { retry: false, reason: 'the run stalled with no progress for the whole stall window' };
+  }
   if (!matchesTransientMongoFailureText(failure.failureText)) {
     return { retry: false, reason: 'the failure has no transient database signature' };
   }
