@@ -272,10 +272,10 @@ export const sourceCoverageRegistry = {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
     defaultConfidence: 'HIGH',
     notes:
-      'Targeted official Yale profile backfill for PI/user identity, visible professor bio repair, profile-derived source descriptions, and leadership-backed research-home websites without creating access claims.',
+      'Targeted official Yale profile backfill for PI/user identity, visible professor bio repair, profile-derived source descriptions, leadership-backed research-home websites, and the director of a lead-less organization whose own profile states the directorship and links its site, without creating access claims.',
   },
   'yale-directory': {
     priority: 2,

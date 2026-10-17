@@ -1106,6 +1106,9 @@ Both witnesses are required, so a site another person leads, a name shared by tw
 The roster retirement resolves a retired relationship through the same two fields, so an edge only the site reached still retires when the roster stops listing the member.
 Measured on the Computer Systems Lab roster on 2026-10-16: of 13 listed faculty, 9 resolve, 6 through the name arms (5 labs and 1 faculty research row) and 3 through the site arm (1 lab and 2 faculty research rows), and 4 do not, for having no live row, a name two researchers share, or a row that serves a host alias of the linked site.
 
+An organization with no lead whose director's own official profile is its only tie to that person gets its director from `official-profile-pi-backfill`'s organization-director mode, not from the centres lane or the director LLM (#5085).
+The mode needs the profile to state "Director" or "Co-Director" of the row by name and to link the row's own site, and it emits a `researchGroupMember` director claim through the shared roster path rather than any field write; `docs/research-data-pipeline.md` has the selection rule and the measurement.
+
 #### Minting a center that only exists as a URL on somebody's faculty row
 
 A real Yale organization often reaches the corpus only as a `websiteUrl` grafted onto the two or three people whose faculty profiles link it, so no student can reach it as an entity (#2535).
