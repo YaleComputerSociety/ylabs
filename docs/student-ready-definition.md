@@ -161,7 +161,8 @@ A school site's bare `/research` or `/opportunities` page (a host in `SCHOOL_PRO
 Measured on Development on 2026-09-27 over the gate's own groups, this dissolved exactly three groups (the Scholar `citations` group, the School of Art `/opportunities` group, and the School of Medicine `/research` group), created none, and cleared `exact_url_duplicate_risk` from 6 rows, 2 of which the gate then promotes (#3624).
 A person's own page (an official profile, an ORCID record, or a Scholar profile) is cited by every organization that person directs and by the person's own row, and those are different kinds of thing rather than one row named twice (#5085).
 So on a person's page an organizational row, one typed `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` whose name also denotes an organization, is a reader of the page and does not contest it against a person-scoped row, unless it publishes the page as its own home.
-Two person-scoped rows sharing the page, a person-named row that only carries an organizational type, and two organizations sharing it with no person-scoped row beside them all still group.
+Two person-scoped rows sharing the page, a person-named row that only carries an organizational type, and two organizations sharing it all still group.
+When organizations share the page beside a person-scoped row, they group among themselves and the person-scoped row stays out of their group.
 Measured on Development on 2026-10-17 through a full gate dry run before and after the change: 4 groups on a person page paired an organizational row with a person-scoped row, and exactly 3 rows changed tier, all held before and none served: one organization and one faculty research row moved to `student_ready`, and one lab moved to `operator_review`, where `missing_lead` still holds it.
 The fourth group's person-scoped row stays held, because it collides with the organization on the organization's own site as well.
 

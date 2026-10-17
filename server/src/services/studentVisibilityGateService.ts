@@ -833,17 +833,20 @@ const isNamedOrganizationEntity = (entity: any): boolean =>
  * person-scoped row, and the two are different kinds of thing rather than one row named
  * twice (#5085). On a person's page an organization, by type and by name, is a reader
  * of that page and never contests it against a person-scoped row, unless it publishes
- * the page as its own home. Two person-scoped rows sharing the page, and two
- * organizations sharing it with no person-scoped row beside them, still contest it.
+ * the page as its own home. Such organizations still contest the page among themselves,
+ * and two person-scoped rows sharing it still contest it too.
  */
-const withoutOrganizationsReadingAPersonsPage = (url: string, members: any[]): any[] => {
-  if (!isPersonPageCitation(url)) return members;
+const contestSetsOnUrl = (url: string, members: any[]): any[][] => {
+  if (!isPersonPageCitation(url)) return [members];
   if (!members.some((entity) => isPersonScopedResearchEntityType(entity?.entityType))) {
-    return members;
+    return [members];
   }
-  return members.filter(
-    (entity) => !isNamedOrganizationEntity(entity) || entityPublishesUrlAsItsOwnHome(entity, url),
-  );
+  const isOrganizationReadingThePage = (entity: any) =>
+    isNamedOrganizationEntity(entity) && !entityPublishesUrlAsItsOwnHome(entity, url);
+  return [
+    members.filter((entity) => !isOrganizationReadingThePage(entity)),
+    members.filter(isOrganizationReadingThePage),
+  ];
 };
 
 /**
@@ -855,9 +858,6 @@ const withoutOrganizationsReadingAPersonsPage = (url: string, members: any[]): a
  * The guard also keeps the result non-empty: the member that publishes the URL reads
  * `false` from `entityOnlyReadsUrl` and so always survives the filter.
  */
-const membersContestingUrl = (url: string, members: any[]): any[] =>
-  membersClaimingUrl(url, withoutOrganizationsReadingAPersonsPage(url, members));
-
 const membersClaimingUrl = (url: string, members: any[]): any[] => {
   const publishers = members.filter((entity) => entityPublishesUrlAsItsOwnHome(entity, url));
   if (publishers.length === 0) return members;
@@ -890,7 +890,12 @@ export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup
     .filter(
       ([, members]) => members.length > 1 && members.length <= EXACT_DUPLICATE_URL_GROUP_LIMIT,
     )
-    .map(([url, members]) => ({ url, members: membersContestingUrl(url, members) }))
+    .flatMap(([url, members]) =>
+      contestSetsOnUrl(url, members).map((contestants) => ({
+        url,
+        members: membersClaimingUrl(url, contestants),
+      })),
+    )
     .filter(({ members }) => members.length > 1);
 };
 

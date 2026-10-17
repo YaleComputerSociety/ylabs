@@ -880,6 +880,29 @@ describe('studentVisibilityGateService', () => {
       ]);
     });
 
+    it('still groups two organizations sharing the profile beside a person row, apart from it', () => {
+      const entities = [
+        personRow(),
+        organizationRow(),
+        organizationRow({
+          _id: 'second-organization',
+          slug: 'fixture-mood-program-copy',
+          studentVisibilityTier: 'operator_review',
+          websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood-copy/',
+          sourceUrls: [directorProfileUrl],
+        }),
+      ];
+
+      expect(
+        exactDuplicateUrlGroups(entities).map((group) =>
+          group.members.map((member) => member._id).sort(),
+        ),
+      ).toEqual([['directed-organization', 'second-organization']]);
+      expect(
+        selectExactUrlDuplicateRiskEntityIds(entities, leadRows).has('director-own-research'),
+      ).toBe(false);
+    });
+
     it('still lets an organization contest a profile it publishes as its own home', () => {
       const entities = [personRow(), organizationRow({ websiteUrl: directorProfileUrl })];
 
