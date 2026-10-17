@@ -192,9 +192,10 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
             lagging: 0,
             tally: { 'materialized-lead': 0, 'still-unresolved': 0 },
             // The counting stages are judged from their artifact, so the stub answers
-            // integrity-gate, trust-contract and lane-scorecard too (#4852).
+            // integrity-gate, trust-contract, lane-scorecard and data-quality too (#4852).
             counts: { publicVisibilityViolations: 0 },
             repairLanes: [],
+            summary: { errorCount: 0, errors: [] },
             unscored: [],
             results: [],
           })}\n`,
