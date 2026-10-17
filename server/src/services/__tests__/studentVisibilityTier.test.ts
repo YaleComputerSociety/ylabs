@@ -417,7 +417,10 @@ describe('computeResearchEntityStudentVisibility', () => {
   });
 
   describe('an organization named on a person-keyed slug (#5085)', () => {
-    const organizationOnPersonKey = (role: string) =>
+    const organizationOnPersonKey = (
+      role: string,
+      otherLeads: Array<{ userId: string; role: string; name: string }> = [],
+    ) =>
       computeResearchEntityStudentVisibility({
         entity: {
           _id: 'organization-on-person-key',
@@ -435,7 +438,7 @@ describe('computeResearchEntityStudentVisibility', () => {
             'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
           ],
         },
-        leadMembers: [{ userId: 'as12', role, name: 'Avery Sloan' }],
+        leadMembers: [{ userId: 'as12', role, name: 'Avery Sloan' }, ...otherLeads],
         accessSignalCount: 1,
         actionablePathwayCount: 1,
       });
@@ -447,6 +450,13 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     it('still holds the name when its lead is only a PI', () => {
       expect(organizationOnPersonKey('pi').reasons).toContain('unusable_name');
+    });
+
+    it('still holds the name when only a lead other than the keyed PI is a director', () => {
+      const result = organizationOnPersonKey('pi', [
+        { userId: 'bq34', role: 'director', name: 'Blair Quill' },
+      ]);
+      expect(result.reasons).toContain('unusable_name');
     });
   });
 

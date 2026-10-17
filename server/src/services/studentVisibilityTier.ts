@@ -45,7 +45,7 @@ import {
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
   researchHomeIdentitySource,
-  nameDenotesOrganization,
+  isUmbrellaOrganizationName,
   NO_SURNAME_ROSTER,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -1129,8 +1129,8 @@ export function computeResearchEntityStudentVisibility({
   // holds, so `unusable_name` would shut the #1930 recovery lane over exactly its own
   // population and nothing could ever clear either reason.
   const recordCitedUrls = [entity.websiteUrl, entity.website, entity.sourceUrls];
-  const leadPersonName =
-    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean) || '';
+  const identityLead = leadMembers.find((lead) => textValue(lead?.name || lead?.user?.displayName));
+  const leadPersonName = textValue(identityLead?.name || identityLead?.user?.displayName);
   // The shared-host arm stays unconditional, because it asks whether the name belongs
   // to an organization at all rather than to which person, and answers that from the
   // URLs the row cites (#2360).
@@ -1147,8 +1147,8 @@ export function computeResearchEntityStudentVisibility({
   // which keeps the #2913 graft held.
   const namesTheOrganizationItsLeadDirects =
     isOrganizationalResearchEntity(entity) &&
-    nameDenotesOrganization(entity.name) &&
-    leadMembers.some((lead) => DIRECTOR_LEAD_ROLES.has(textValue(lead?.role).toLowerCase()));
+    isUmbrellaOrganizationName(entity.name) &&
+    DIRECTOR_LEAD_ROLES.has(textValue(identityLead?.role).toLowerCase());
   const namesAnotherPersonsResearch =
     !namesTheOrganizationItsLeadDirects &&
     researchHomeIdentitySource({ personName: leadPersonName, slug: entity.slug }) ===
