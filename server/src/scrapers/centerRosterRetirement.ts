@@ -55,6 +55,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { escapeRegex } from '../utils/regex';
 import { retireObservations } from './observationStore';
+import {
+  relationshipTargetIdentities,
+  type RelationshipTargetIdentity,
+} from './centerRelationshipTarget';
 import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
 import { attributedArchiveSet } from '../models/entityArchival';
 
@@ -622,7 +626,7 @@ export interface CenterRosterRetirementDeps {
   membershipKeysAssertedByOtherSources(centerEntityKey: string): Promise<Set<string>>;
   personRolesAssertedByOtherSources(centerEntityKey: string): Promise<Set<string>>;
   relationshipTargetIdsAssertedByOtherSources(centerEntityKey: string): Promise<Set<string>>;
-  resolveRelationshipTargetId(targetEntityKey: string): Promise<string | null>;
+  resolveRelationshipTargetId(target: RelationshipTargetIdentity): Promise<string | null>;
   rematerializeMemberKey(memberKey: string): Promise<void>;
 }
 
@@ -795,18 +799,8 @@ export async function applyCenterRosterRetirementPlan(
   if (plan.verdict !== 'retire') return applied;
 
   const retiredRelationshipKeys = new Set(plan.retiredRelationshipKeys);
-  const retiredTargetKeys = Array.from(
-    new Set(
-      inputs.relationshipObservations
-        .filter(
-          (row) =>
-            retiredRelationshipKeys.has(row.entityKey) &&
-            row.field === 'targetEntityKey' &&
-            typeof row.value === 'string',
-        )
-        .map((row) => String(row.value).trim())
-        .filter(Boolean),
-    ),
+  const retiredTargets = relationshipTargetIdentities(
+    inputs.relationshipObservations.filter((row) => retiredRelationshipKeys.has(row.entityKey)),
   );
 
   await retireObservationRows(plan.observationIds, lane.retirementReason);
@@ -822,27 +816,20 @@ export async function applyCenterRosterRetirementPlan(
     );
   }
 
-  if (retiredTargetKeys.length > 0) {
+  if (retiredTargets.length > 0) {
     const protectedTargets = await deps.relationshipTargetIdsAssertedByOtherSources(plan.entityKey);
-    const targetKeysThisSourceStillAsserts = new Set(
-      inputs.relationshipObservations
-        .filter(
-          (row) =>
-            !retiredRelationshipKeys.has(row.entityKey) &&
-            !row.superseded &&
-            row.field === 'targetEntityKey' &&
-            typeof row.value === 'string',
-        )
-        .map((row) => String(row.value).trim())
-        .filter(Boolean),
+    const targetsThisSourceStillAsserts = relationshipTargetIdentities(
+      inputs.relationshipObservations.filter(
+        (row) => !retiredRelationshipKeys.has(row.entityKey) && !row.superseded,
+      ),
     );
-    for (const targetKey of targetKeysThisSourceStillAsserts) {
-      const targetId = await deps.resolveRelationshipTargetId(targetKey);
+    for (const target of targetsThisSourceStillAsserts) {
+      const targetId = await deps.resolveRelationshipTargetId(target);
       if (targetId) protectedTargets.add(targetId);
     }
     const centerObjectId = new mongoose.Types.ObjectId(inputs.centerEntityId);
-    for (const targetKey of retiredTargetKeys) {
-      const targetId = await deps.resolveRelationshipTargetId(targetKey);
+    for (const target of retiredTargets) {
+      const targetId = await deps.resolveRelationshipTargetId(target);
       if (!targetId || protectedTargets.has(targetId)) continue;
       const result = await ResearchEntityRelationship.updateMany(
         {

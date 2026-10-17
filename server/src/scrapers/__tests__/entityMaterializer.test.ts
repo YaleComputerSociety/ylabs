@@ -1475,24 +1475,51 @@ describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)',
 
 describe('center relationship type + label resolution', () => {
   it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
-    expect(centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA')).toBe(
-      'AFFILIATED_LAB',
-    );
+    expect(
+      centerRelationshipTypeForResolvedTarget({ slug: 'amy-arnsten-lab' }, 'MEMBER_RESEARCH_AREA'),
+    ).toBe('AFFILIATED_LAB');
   });
 
   it('keeps the fallback type for a generated faculty-research-area target', () => {
     expect(
       centerRelationshipTypeForResolvedTarget(
-        'faculty-research-area-amy-arnsten',
+        { slug: 'faculty-research-area-amy-arnsten' },
         'MEMBER_RESEARCH_AREA',
       ),
     ).toBe('MEMBER_RESEARCH_AREA');
   });
 
   it('keeps the fallback type when the slug is empty', () => {
-    expect(centerRelationshipTypeForResolvedTarget('', 'MEMBER_RESEARCH_AREA')).toBe(
+    expect(centerRelationshipTypeForResolvedTarget({ slug: '' }, 'MEMBER_RESEARCH_AREA')).toBe(
       'MEMBER_RESEARCH_AREA',
     );
+    expect(centerRelationshipTypeForResolvedTarget(null, 'MEMBER_RESEARCH_AREA')).toBe(
+      'MEMBER_RESEARCH_AREA',
+    );
+  });
+
+  it('links a lab promoted from a faculty research row as an affiliated lab despite its generated slug', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget(
+        { slug: 'faculty-research-area-synthetic-person', entityType: 'LAB' },
+        'MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe('AFFILIATED_LAB');
+    expect(
+      centerRelationshipTypeForResolvedTarget(
+        { slug: 'dept-cs-synthetic-person', entityType: 'LAB' },
+        'MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe('AFFILIATED_LAB');
+  });
+
+  it('keeps a faculty research row as a member even under a non-generated slug', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget(
+        { slug: 'synthetic-person-research', entityType: 'FACULTY_RESEARCH_AREA' },
+        'MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe('MEMBER_RESEARCH_AREA');
   });
 
   it('labels each relationship type, with a generic fallback', () => {

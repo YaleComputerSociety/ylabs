@@ -455,6 +455,81 @@ describe(
       expect(applied.indexSyncFailures).toBe(1);
     });
 
+    it('retires a relationship that only the listed website resolved (#5068)', async () => {
+      await runLane([ROSTER]);
+      const centerEntityId = String(await centerId());
+      const { _id: _centerObjectId, ...centerFields } = (await ResearchEntity.findById(
+        await centerId(),
+      ).lean()) as any;
+      const target = await ResearchEntity.create({
+        ...centerFields,
+        name: 'Synthetic Website Row',
+        slug: 'dept-synthetic-website-row',
+      });
+      const relationship = await ResearchEntityRelationship.create({
+        sourceResearchEntityId: await centerId(),
+        targetResearchEntityId: target._id,
+        relationshipType: 'MEMBER_RESEARCH_AREA',
+      });
+      const retiredKey = `${CENTER_SLUG}:faculty-research-area-website-member:MEMBER_RESEARCH_AREA`;
+      const claim = (field: string, value: string): CenterRosterGovernedObservation => ({
+        observationId: String(new mongoose.Types.ObjectId()),
+        entityKey: retiredKey,
+        field,
+        value,
+        scrapeRunId: String(new mongoose.Types.ObjectId()),
+        observedAt: new Date(),
+        superseded: false,
+      });
+      const resolverCalls: unknown[] = [];
+      await applyCenterRosterRetirementPlan(
+        {
+          entityKey: CENTER_SLUG,
+          verdict: 'retire',
+          retiredMemberKeys: [],
+          retiredRoleClaims: [],
+          retiredProfileClaims: [],
+          retiredRelationshipKeys: [retiredKey],
+          retiredEdges: [],
+          observationIds: [],
+          counts: {} as CenterRosterRetirementPlan['counts'],
+        },
+        {
+          centerEntityId,
+          reads: [],
+          memberObservations: [],
+          relationshipObservations: [
+            claim('targetEntityKey', 'faculty-research-area-website-member'),
+            claim('targetWebsiteUrl', 'https://website-member.example.edu/'),
+          ],
+          edges: [],
+          protectedMembershipKeys: new Set<string>(),
+          protectedPersonRoles: new Set<string>(),
+        },
+        {
+          membershipKeysAssertedByOtherSources: async () => new Set<string>(),
+          personRolesAssertedByOtherSources: async () => new Set<string>(),
+          relationshipTargetIdsAssertedByOtherSources: async () => new Set<string>(),
+          resolveRelationshipTargetId: async (identity) => {
+            resolverCalls.push(identity);
+            return identity.targetWebsiteUrl ? String(target._id) : null;
+          },
+          rematerializeMemberKey: async () => {},
+        },
+        new Date(),
+      );
+
+      expect(resolverCalls).toEqual([
+        {
+          targetEntityKey: 'faculty-research-area-website-member',
+          targetWebsiteUrl: 'https://website-member.example.edu/',
+        },
+      ]);
+      expect(
+        ((await ResearchEntityRelationship.findById(relationship._id).lean()) as any).archived,
+      ).toBe(true);
+    });
+
     it('retires nothing when the later reads fail with a 404, a fetch error, or an under-read', async () => {
       await runLane([ROSTER]);
       await runLane([notFound()]);

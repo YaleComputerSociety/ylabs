@@ -1081,6 +1081,12 @@ A relationship edge cites the page its lane read: the materializer stores the to
 The edge syncs a PI membership onto a faculty research area it links only when that row holds no `PI` edge at all, archived or not, and the new edge's `rosterProvenance` carries the relationship lane's `sourceName` and that same page.
 A relationship lane asserts nothing about who leads the row, so a lead edge another lane owns is never re-upserted, and its `sourceName` and `sourceUrl` survive every center pass (#4020).
 An observation that carries no page leaves a stored citation alone rather than blanking it.
+The edge's type comes from the resolved row's own `entityType`: a `FACULTY_RESEARCH_AREA` row is a `MEMBER_RESEARCH_AREA` and any other row is an `AFFILIATED_LAB`, because a faculty research row promoted to a lab keeps its generated `faculty-research-area-*` slug, and deciding by slug shape linked every such lab as a plain member (#5068).
+Slug shape is only the fallback for a row that stores no type.
+A relationship also carries the site the roster links for the member as `targetWebsiteUrl`, and when neither name arm resolves (most often a row under a `dept-*` slug), the materializer takes the one live row that serves that site and that the person the name resolves to uniquely leads as `PI`.
+Both witnesses are required, so a site another person leads, a name shared by two researchers, or a member with no row links nothing and mints nothing.
+The roster retirement resolves a retired relationship through the same two fields, so an edge only the site reached still retires when the roster stops listing the member.
+Measured on the Computer Systems Lab roster on 2026-10-16: of 13 listed faculty, 9 resolve, 6 through the name arms (5 labs and 1 faculty research row) and 3 through the site arm (1 lab and 2 faculty research rows), and 4 do not, for having no live row, a name two researchers share, or a row that serves a host alias of the linked site.
 
 #### Minting a center that only exists as a URL on somebody's faculty row
 
