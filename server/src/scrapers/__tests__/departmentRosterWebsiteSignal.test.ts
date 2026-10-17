@@ -59,6 +59,22 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBe('https://medicine.yale.edu/histmed/community-fixture-lab/');
   });
 
+  it("does not take another lab's fellowship posting, though its path names a lab", () => {
+    const result = enrich(
+      `<p><a href="https://medicine.yale.edu/lab/fixture/jobs/fixturefellowship/">Fixture Lab Postdoctoral Fellowship</a></p>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('takes the genuine lab website listed after a refused posting', () => {
+    const result = enrich(
+      `<p><a href="https://medicine.yale.edu/lab/fixture/jobs/">Fixture Lab Jobs</a></p>
+       <p><a href="https://medicine.yale.edu/lab/fixture/">Fixture Lab</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://medicine.yale.edu/lab/fixture/');
+  });
+
   it('keeps a link whose label says it is the lab website', () => {
     const result = enrich(`<p><a href="https://fixture.example.org/">Lab Website</a></p>`);
     expect(result.labUrl).toBe('https://fixture.example.org/');

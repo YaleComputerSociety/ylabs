@@ -11,6 +11,7 @@ import {
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
   isRosterPageWebsiteUrlForPerson,
+  isUnservableWebsiteUrl,
   resolveBackfillWebsiteUrl,
   selectBackfillWebsiteUrl,
 } from '../backfillResearchEntityWebsiteUrlsCore';
@@ -1268,5 +1269,19 @@ describe('an organization whose only citation is a page inside its own site (#25
         sourceUrls: ['https://examplegroup.yale.edu/people/members/'],
       }),
     ).toEqual({ action: 'clear' });
+  });
+});
+
+describe('a job or fellowship posting in the website backfill', () => {
+  const posting = 'https://medicine.yale.edu/lab/quill/jobs/quillfellowship/';
+
+  it('never promotes a posting page into an empty website slot', () => {
+    expect(isPromotableWebsiteUrl(posting, { entityType: 'FACULTY_RESEARCH_AREA' })).toBe(false);
+    expect(isPromotableWebsiteUrl('https://medicine.yale.edu/lab/quill/')).toBe(true);
+  });
+
+  it('reads a stored posting page as unservable so it is re-picked or cleared', () => {
+    expect(isUnservableWebsiteUrl(posting, { entityType: 'LAB' })).toBe(true);
+    expect(isUnservableWebsiteUrl('https://medicine.yale.edu/lab/quill/')).toBe(false);
   });
 });

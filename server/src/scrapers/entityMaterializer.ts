@@ -303,10 +303,12 @@ import {
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
   isMapOrDirectionsUrl,
+  isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
   researchHomeWebsiteUrlWriteRefusal,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
+import { namesAPostingRatherThanResearch } from '../utils/postingName';
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
@@ -7491,6 +7493,8 @@ function enforceResearchEntityNameAuthority(input: {
   ].sort();
   const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
     isPlaceholderEntityName(candidateName) ||
+    namesAPostingRatherThanResearch(candidateName) ||
+    isPostingPageUrl(websiteUrl) ||
     // An external platform's brand names no research home, and it is refused here
     // as well as at ingest for the same reason filler is: an already-stored
     // "Google Scholar" is re-projected from its own active observation on every

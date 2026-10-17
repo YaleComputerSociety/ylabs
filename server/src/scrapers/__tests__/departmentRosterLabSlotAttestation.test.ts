@@ -282,7 +282,7 @@ describe('every parse that reads a lab URL states what it saw', () => {
     expect(names).toContain('mcdbExtractor');
     expect(names).toContain('psychExtractor');
     expect(names).toContain('profileEnrichmentFromHtml');
-    expect(names).toContain('withoutOffsiteInstitutionWebsite');
+    expect(names).toContain('withoutInadmissibleLabWebsite');
   });
 
   it('leaves no slot-deciding parse silent about the slot', () => {

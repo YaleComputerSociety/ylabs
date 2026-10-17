@@ -29,6 +29,7 @@ import {
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
   isMultiTenantAcademicHostRootUrl,
+  isPostingPageCitedAsResearchWebsite,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
   type ResearchEntityHostOwnerIdentity,
@@ -636,7 +637,8 @@ function derivePublicResearchEntityDto(
           !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
           !isPressOrNewsHostUrl(url) &&
           !isMapOrDirectionsUrl(url) &&
-          !isInstitutionalPublicityPageUrl(url);
+          !isInstitutionalPublicityPageUrl(url) &&
+          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }

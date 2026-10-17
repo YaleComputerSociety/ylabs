@@ -27,6 +27,7 @@ import {
   isRecordSpecificApplicationPortalUrl,
   isResearchGroupHostRootUrl,
   isOffsiteInstitutionPersonProfileUrl,
+  isPostingPageUrl,
   isSameHostShallowChromeUrl,
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
@@ -34,6 +35,7 @@ import {
   isUnhelpfulProgramUrl,
   organizationOwnedSiteUrlFromCitation,
   researchEntityOwnsMultiTenantAcademicHost,
+  researchHomeWebsiteUrlWriteRefusal,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
 
@@ -1718,5 +1720,58 @@ describe('organizationOwnedSiteUrlFromCitation', () => {
         center('Examplecenter'),
       ),
     ).toBe('');
+  });
+});
+
+describe('a job or fellowship posting is never a research website', () => {
+  const FACULTY_ROW = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
+  const LAB_ROW = { entityType: 'LAB', kind: 'lab' };
+  const postingOnALabPath = 'https://medicine.yale.edu/lab/fixture/jobs/fixturefellowship/';
+
+  it.each([
+    postingOnALabPath,
+    'https://fixturelab.yale.edu/jobs',
+    'https://www.fixturelab.example.org/positions/',
+    'https://fixturegroup.research.yale.edu/open-positions',
+    'https://medicine.yale.edu/childstudy/about/jobs/',
+    'https://fixture.yale.edu/careers/',
+    'https://fixture.yale.edu/people/postdoctoral-positions',
+  ])('recognises %s as a posting page', (url) => {
+    expect(isPostingPageUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'https://medicine.yale.edu/lab/fixture/',
+    'https://medicine.yale.edu/lab/fixture/research/',
+    'https://fixture.yale.edu/about/job-market-candidates',
+    'https://fixture.yale.edu/research/jobs-and-automation/',
+    'https://fixture.yale.edu/fellows/',
+    'not a url',
+  ])('leaves %s alone', (url) => {
+    expect(isPostingPageUrl(url)).toBe(false);
+  });
+
+  it("refuses another lab's posting as a person's research website, though the path names a lab", () => {
+    expect(researchHomeWebsiteUrlWriteRefusal(postingOnALabPath, FACULTY_ROW)).toBe('posting-page');
+    expect(sourceUrlToResearchHomeWebsiteUrl(postingOnALabPath, FACULTY_ROW)).toBe('');
+  });
+
+  it("refuses a lab's own openings page as the lab's research website, and keeps its root", () => {
+    expect(researchHomeWebsiteUrlWriteRefusal('https://fixturelab.yale.edu/jobs', LAB_ROW)).toBe(
+      'posting-page',
+    );
+    expect(researchHomeWebsiteUrlWriteRefusal('https://fixturelab.yale.edu/', LAB_ROW)).toBeNull();
+    expect(
+      researchHomeWebsiteUrlWriteRefusal('https://medicine.yale.edu/lab/fixture/', FACULTY_ROW),
+    ).toBeNull();
+  });
+
+  it("leaves an organization's own department hiring page to the hiring-page contract", () => {
+    const departmentJobs = 'https://exampledept.yale.edu/about/jobs/';
+    expect(researchHomeWebsiteUrlWriteRefusal(departmentJobs, { entityType: 'CENTER' })).toBeNull();
+    expect(
+      researchHomeWebsiteUrlWriteRefusal(departmentJobs, { entityType: 'CORE_FACILITY' }),
+    ).toBeNull();
+    expect(researchHomeWebsiteUrlWriteRefusal(departmentJobs, LAB_ROW)).not.toBeNull();
   });
 });
