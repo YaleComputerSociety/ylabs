@@ -1233,7 +1233,11 @@ function genericOrganizationName(name: string): boolean {
   );
 }
 
-function profileEvidenceText($: cheerio.CheerioAPI, profiles: Array<Record<string, any>>): string {
+function profileEvidenceText(
+  $: cheerio.CheerioAPI,
+  profiles: Array<Record<string, any>>,
+  separator = ' ',
+): string {
   return uniqueStrings([
     ...profiles.flatMap((profile) => [
       profile.name,
@@ -1245,7 +1249,19 @@ function profileEvidenceText($: cheerio.CheerioAPI, profiles: Array<Record<strin
     $('[class*="biography"]').text(),
     $('[class*="profile-body"]').text(),
     $('[class*="field--name-body"]').text(),
-  ]).join(' ');
+  ]).join(separator);
+}
+
+const BLOCK_BOUNDARY_ELEMENTS =
+  'address, article, aside, blockquote, br, dd, div, dl, dt, figcaption, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, section, table, td, th, tr, ul';
+
+function blockSeparatedProfileEvidenceText(
+  html: string,
+  profiles: Array<Record<string, any>>,
+): string {
+  const $ = cheerio.load(html);
+  $(BLOCK_BOUNDARY_ELEMENTS).before(' | ').after(' | ');
+  return profileEvidenceText($, profiles, ' | ');
 }
 
 function leadershipMentionsOrganization(text: string, name: string, rawName: string): boolean {
@@ -1306,7 +1322,7 @@ export type ProfileStatedOrganizationRole = Extract<MemberRole, 'director' | 'co
 const QUALIFIED_DIRECTORSHIP_PREFIX_RE =
   /\b(?:co|deputy|assistant|associate|former|formerly|interim|acting|medical|clinical|executive|managing|program|site|section|division)[-\s]*$/i;
 
-const ORGANIZATION_NAME_END_RE = /^\s*(?:$|[(),.;:|]|[A-Z])/;
+const ORGANIZATION_NAME_END_RE = /^\s*(?:$|[(),.;:|])/;
 
 /**
  * The directorship of a named organization a profile states, or `null`.
@@ -1388,7 +1404,10 @@ export function organizationDirectorClaimFromProfile(
   const profiles = jsonLdProfiles($);
   const name = officialProfileDisplayName($, profiles);
   if (!name) return null;
-  const role = profileTextStatesDirectorshipOf(profileEvidenceText($, profiles), organizationName);
+  const role = profileTextStatesDirectorshipOf(
+    blockSeparatedProfileEvidenceText(html, profiles),
+    organizationName,
+  );
   if (!role || !profileLinksWebsite($, profileUrl, websiteUrl)) return null;
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(

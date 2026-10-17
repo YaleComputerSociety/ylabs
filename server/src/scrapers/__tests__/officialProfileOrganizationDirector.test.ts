@@ -77,7 +77,7 @@ describe('profileTextStatesDirectorshipOf', () => {
   it('reads a title line and a sentence naming the organization', () => {
     expect(
       profileTextStatesDirectorshipOf(
-        'Professor of Psychiatry Director, Fixture Mood Research Program Biography',
+        'Professor of Psychiatry | Director, Fixture Mood Research Program | Biography',
         'Fixture Mood Research Program',
       ),
     ).toBe('director');
@@ -116,6 +116,15 @@ describe('profileTextStatesDirectorshipOf', () => {
       ),
     ).toBeNull();
   });
+
+  it('refuses a name a title-case sub-unit extends', () => {
+    expect(
+      profileTextStatesDirectorshipOf(
+        'Director, Fixture Mood Research Program Genomics Shared Resource',
+        'Fixture Mood Research Program',
+      ),
+    ).toBeNull();
+  });
 });
 
 describe('organizationDirectorClaimFromProfile (#5085)', () => {
@@ -141,6 +150,24 @@ describe('organizationDirectorClaimFromProfile (#5085)', () => {
         expect.objectContaining({ field: 'profileUrl', value: profileUrl }),
       ]),
     );
+  });
+
+  it('claims the director when the name ends at an element boundary', () => {
+    const html = profileHtml(
+      `<ul><li>Director, Fixture Mood Research Program</li><li>Professor of Psychiatry</li></ul><a href="${programUrl}">Visit Website</a>`,
+    );
+
+    expect(organizationDirectorClaimFromProfile(html, profileUrl, organization)?.role).toBe(
+      'director',
+    );
+  });
+
+  it('claims nothing for the director of a sub-unit that links the parent site', () => {
+    const html = profileHtml(
+      `<p>Director, Fixture Mood Research Program Genomics Shared Resource</p><a href="${programUrl}">Visit Website</a>`,
+    );
+
+    expect(organizationDirectorClaimFromProfile(html, profileUrl, organization)).toBeNull();
   });
 
   it('claims nothing when the profile states the role but does not link the site', () => {
