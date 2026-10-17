@@ -13,6 +13,8 @@ Measured before the change, the corpus held almost no account references after #
 `accounts` joins `NEVER_COPY_COLLECTIONS` and is preserved by every refresh; the carry, the Beta-login exclusion and the account pseudonymization are deleted.
 No code writes an account `_id` onto a corpus row: the materializer no longer sets `researchers.accountId`, and a fellowship reviewer stamp records `studentVisibilityReviewedByNetid`.
 Both promotion steps and both mirror directions refuse a copy whose source corpus still carries `researchers.accountId` or `studentVisibilityReviewedByAccountId`, so an account reference cannot cross by accident.
+`research_plans` is environment-local by the same decision (#5092): a plan belongs to one of that environment's accounts, so it is in `NEVER_COPY_COLLECTIONS` and preserved by every refresh, including `--clear-development-non-mirror-data`.
+The Researcher schema no longer declares `accountId`, every reader resolves a researcher to a login by `identifiers.netid`, and the one-off #5000 migrations that read the link (`accounts:merge-local-part-netid-twins`, `accounts:retire-identity-only`, `researchers:backfill-identity-from-accounts`) were deleted after their Development dry runs found nothing to do.
 
 ## 2026-10-16: A Description Says What Is Studied Now, Measured By Date (#5074)
 

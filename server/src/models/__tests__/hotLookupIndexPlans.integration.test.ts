@@ -269,7 +269,7 @@ async function seedCorpus(): Promise<void> {
   researchers.push({
     displayName: 'Subject One',
     archived: false,
-    accountId: account._id,
+    identifiers: { netid: account.netid, email: account.email },
     profileLinks: [{ url: TARGET_PROFILE_URL, label: 'profile' }],
     profile: { websiteUrl: 'https://lab.example.test/subject-one' },
   });

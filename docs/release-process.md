@@ -216,7 +216,7 @@ Since #2721 the clear no longer applies to the rest of the corpus, which narrows
 Production is a serve-only environment: evidence accumulates in Development and arrives already materialised.
 
 Accounts are environment-local and are never promoted (#5088).
-Every environment's `accounts` holds only the sign-ins made in that environment, and its `research_plans` reference those accounts, so Development, Beta and Production each keep their own and no copy reads, writes or clears them.
+Every environment's `accounts` holds only the sign-ins made in that environment, and its `research_plans` reference those accounts, so Development, Beta and Production each keep their own of both and no copy reads, writes or clears either (#5092).
 The rule replaces a carry that copied accounts, scrubbed them, and then restored the target's logins after each swap.
 That carry existed only because corpus rows held account `_id` references; it once orphaned 277 of 319 Production plans when it was missing (#4091), and it kept a Beta login from becoming permanent only by a second exclusion (#4244).
 A researcher's identity is its own `identifiers.netid` and `identifiers.email` (#5000), and every reader that used to follow `researchers.accountId` now reads those identifiers or finds the login by netid.

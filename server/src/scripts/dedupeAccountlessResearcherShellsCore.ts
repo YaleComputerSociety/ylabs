@@ -28,18 +28,12 @@ export const RESEARCHER_IDENTITY_TIERS = ['NAME_ONLY', 'NETID', 'DIRECTORY'] as 
 export type ResearcherIdentityTier = (typeof RESEARCHER_IDENTITY_TIERS)[number];
 
 export interface ResearcherIdentityLike {
-  accountId?: unknown;
   email?: unknown;
   netid?: unknown;
 }
 
 export function researcherIdentityTier(researcher: ResearcherIdentityLike): ResearcherIdentityTier {
-  if (
-    researcherHoldsDirectoryIdentity({
-      accountId: researcher.accountId,
-      identifiers: { email: researcher.email },
-    })
-  ) {
+  if (researcherHoldsDirectoryIdentity({ identifiers: { email: researcher.email } })) {
     return 'DIRECTORY';
   }
   if (cleanNetid(researcher.netid)) return 'NETID';
@@ -61,7 +55,6 @@ export interface CanonicalNameEntry {
   id: string;
   orcid?: unknown;
   netid?: unknown;
-  accountId?: unknown;
   email?: unknown;
 }
 
@@ -82,17 +75,14 @@ export interface CanonicalNetidEntry {
   id: string;
   netid?: unknown;
   orcid?: unknown;
-  accountId?: unknown;
   email?: unknown;
 }
 
 /**
- * The index that sees a netid twin. A twin minted by the pre-#3164 resolver is
- * keyed on `accountId` and carries no `identifiers.netid` at all, and its
- * display name is whatever the observation said rather than whatever the holder
- * stored, so on Development 0 of the 5 pairs share a normalized name and the
- * name index cannot reach any of them. The netid is the identity that actually
- * joins the two rows, and it reaches the twin through its account.
+ * The index that sees a netid twin. A twin's display name is whatever the
+ * observation said rather than whatever the holder stored, so on Development 0 of
+ * the 5 pairs #3166 measured share a normalized name and the name index cannot
+ * reach any of them. The netid is the identity that actually joins the two rows.
  */
 export function buildCanonicalNetidIndex(
   canonical: ReadonlyArray<CanonicalNetidEntry>,
@@ -106,7 +96,7 @@ export function buildCanonicalNetidIndex(
       id: entry.id,
       orcid: cleanOrcid(entry.orcid),
       netid,
-      tier: researcherIdentityTier({ accountId: entry.accountId, email: entry.email, netid }),
+      tier: researcherIdentityTier({ email: entry.email, netid }),
     });
     index.set(netid, list);
   }
@@ -905,54 +895,49 @@ export function sameAddressHolderNamesAgree(left: unknown, right: unknown): bool
 }
 
 export const ALIAS_TWIN_FOLD_REFUSALS = [
-  'twin-account-has-login',
+  'twin-netid-has-login',
   'alias-unresolved',
-  'real-account-not-live',
   'no-real-researcher',
   'names-disagree',
 ] as const;
 export type AliasTwinFoldRefusal = (typeof ALIAS_TWIN_FOLD_REFUSALS)[number];
 
-export interface AliasTwinAccount {
+export interface AliasTwinResearcher {
   id: string;
   netid: string;
-  live: boolean;
-  hasLogin: boolean;
+  displayName?: unknown;
 }
 
 export interface AliasTwinPlan {
   targetByTwinResearcherId: Map<string, string>;
-  twinAccountIdByTwinResearcherId: Map<string, string>;
   refusals: Record<AliasTwinFoldRefusal, number>;
 }
 
 /**
  * Which local-part twin researchers fold into the real-netid researcher (#4988).
  *
- * The directory's alias map is the evidence that the two accounts are one address, but it
- * reads every `email` observation, including a lane that has attached one person's profile
- * to a namesake, so it only proposes: the names must also agree. A twin account that has
- * signed in is refused, because a login is a person acting under that account.
+ * A twin holds an email local part as its `identifiers.netid`. The directory's alias map is
+ * the evidence that the two netids are one address, but it reads every `email` observation,
+ * including a lane that has attached one person's profile to a namesake, so it only
+ * proposes: the names must also agree. A twin netid that has signed in to this environment
+ * is refused, because a login is a person acting under that netid.
  */
 export function planAliasTwinFolds(input: {
-  twinAccounts: readonly AliasTwinAccount[];
-  accountsByNetid: ReadonlyMap<string, AliasTwinAccount>;
+  twinResearchers: readonly AliasTwinResearcher[];
+  researcherByNetid: ReadonlyMap<string, { id: string; displayName?: unknown }>;
   aliasNetidByTwinNetid: ReadonlyMap<string, string>;
-  researcherByAccountId: ReadonlyMap<string, { id: string; displayName?: unknown }>;
+  loginNetids: ReadonlySet<string>;
 }): AliasTwinPlan {
   const plan: AliasTwinPlan = {
     targetByTwinResearcherId: new Map(),
-    twinAccountIdByTwinResearcherId: new Map(),
     refusals: Object.fromEntries(ALIAS_TWIN_FOLD_REFUSALS.map((reason) => [reason, 0])) as Record<
       AliasTwinFoldRefusal,
       number
     >,
   };
-  for (const twin of input.twinAccounts) {
-    const twinResearcher = input.researcherByAccountId.get(twin.id);
-    if (!twin.live || !twinResearcher) continue;
-    if (twin.hasLogin) {
-      plan.refusals['twin-account-has-login'] += 1;
+  for (const twin of input.twinResearchers) {
+    if (input.loginNetids.has(twin.netid)) {
+      plan.refusals['twin-netid-has-login'] += 1;
       continue;
     }
     const realNetid = input.aliasNetidByTwinNetid.get(twin.netid);
@@ -960,22 +945,16 @@ export function planAliasTwinFolds(input: {
       plan.refusals['alias-unresolved'] += 1;
       continue;
     }
-    const real = input.accountsByNetid.get(realNetid);
-    if (!real?.live) {
-      plan.refusals['real-account-not-live'] += 1;
-      continue;
-    }
-    const realResearcher = input.researcherByAccountId.get(real.id);
-    if (!realResearcher || realResearcher.id === twinResearcher.id) {
+    const realResearcher = input.researcherByNetid.get(realNetid);
+    if (!realResearcher || realResearcher.id === twin.id) {
       plan.refusals['no-real-researcher'] += 1;
       continue;
     }
-    if (!sameAddressHolderNamesAgree(twinResearcher.displayName, realResearcher.displayName)) {
+    if (!sameAddressHolderNamesAgree(twin.displayName, realResearcher.displayName)) {
       plan.refusals['names-disagree'] += 1;
       continue;
     }
-    plan.targetByTwinResearcherId.set(twinResearcher.id, realResearcher.id);
-    plan.twinAccountIdByTwinResearcherId.set(twinResearcher.id, twin.id);
+    plan.targetByTwinResearcherId.set(twin.id, realResearcher.id);
   }
   return plan;
 }

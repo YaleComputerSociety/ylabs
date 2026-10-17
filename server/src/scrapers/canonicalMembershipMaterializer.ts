@@ -401,7 +401,7 @@ async function resolveOrCreateResearcherId(
 
   if (orcid) {
     const existing = await Researcher.findOne({ 'identifiers.orcid': orcid })
-      .select('_id accountId identifiers.netid')
+      .select('_id identifiers.netid')
       .lean();
     if (existing) {
       if (researcherHoldsYaleIdentity(existing)) return undefined;
@@ -419,7 +419,7 @@ async function resolveOrCreateResearcherId(
     } catch (error) {
       if (isDuplicateKeyError(error)) {
         const fallback = await Researcher.findOne({ 'identifiers.orcid': orcid })
-          .select('_id accountId identifiers.netid')
+          .select('_id identifiers.netid')
           .lean();
         if (fallback && researcherHoldsYaleIdentity(fallback)) return undefined;
         return toObjectId((fallback as { _id?: unknown } | null)?._id);
@@ -456,7 +456,6 @@ async function adoptNoisyNameOnlyResearcherId(
   const candidates = await Researcher.find({
     displayName: new RegExp(escapeRegex(displayName), 'i'),
     archived: { $ne: true },
-    accountId: { $exists: false },
     'identifiers.orcid': { $exists: false },
   })
     .select('_id displayName')
@@ -481,7 +480,6 @@ async function findOrCreateNameOnlyResearcherId(
   const nameOnlyFilter = {
     displayName,
     archived: { $ne: true },
-    accountId: { $exists: false },
     'identifiers.orcid': { $exists: false },
   };
   const existingNameOnly = await Researcher.findOne(nameOnlyFilter).select('_id').lean();
@@ -518,10 +516,8 @@ async function resolveOrCreateNameOnlyResearcherId(
 }
 
 function researcherHoldsYaleIdentity(researcher: unknown): boolean {
-  const record = researcher as { accountId?: unknown; identifiers?: { netid?: unknown } };
-  return (
-    Boolean(toObjectId(record.accountId)) || Boolean(normalizedNetid(record.identifiers?.netid))
-  );
+  const record = researcher as { identifiers?: { netid?: unknown } };
+  return Boolean(normalizedNetid(record.identifiers?.netid));
 }
 
 async function liveResearcherId(
@@ -536,7 +532,7 @@ async function liveResearcherId(
 
 /**
  * Whether a name-only mint under this display name would stand beside a researcher who
- * already carries an identity (an account, a netid or an ORCID) under the same name.
+ * already carries an identity (a netid or an ORCID) under the same name.
  *
  * The comparison is the one the mint and the accountless-shell dedupe both make, the
  * canonical display name compared without case or spacing, so the answer here is exactly
@@ -549,7 +545,6 @@ export async function identifiedResearcherHoldsDisplayName(displayName: unknown)
     displayName: new RegExp(`^\\s*${tokens.map(escapeRegex).join('\\s+')}\\s*$`, 'i'),
     archived: { $ne: true },
     $or: [
-      { accountId: { $exists: true, $ne: null } },
       { 'identifiers.netid': { $exists: true, $nin: [null, ''] } },
       { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
     ],

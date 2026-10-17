@@ -140,6 +140,7 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // tally attributes one environment's sign-ins to another.
   'login_signal_tallies',
   'observation_reference_repair_audits',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5092).
   'research_plans',
   'review_decisions',
   'scrape_job_locks',

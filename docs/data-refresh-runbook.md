@@ -439,7 +439,7 @@ The sync mirrors every document in the approved Beta research-discovery, identit
 See ["Observations stay in Development"](#observations-stay-in-development) above for the exact copy set and why it is drawn that way.
 The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror, except for the environment-local measurement history named later in this section, which the refresh preserves.
 It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
-Accounts never cross (#5088): `accounts` is in `NEVER_COPY_COLLECTIONS` and `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the target keeps exactly the accounts it had, and its `research_plans` keep resolving.
+Accounts and research plans never cross (#5088, #5092): `accounts` and `research_plans` are in `NEVER_COPY_COLLECTIONS` and `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the target keeps exactly the accounts and plans it had, and no refresh clears either.
 Because accounts are environment-local, an account `_id` stored on a copied corpus row would name nobody in the target, so the copy refuses a source whose `researchers.accountId` or `studentVisibilityReviewedByAccountId` is set.
 The plan artifact's `accountReferences` lists any such row by collection and field, and an apply refuses until it is empty.
 Both mirror directions share this rule, as does `production:promote-beta-copy`.
@@ -492,14 +492,6 @@ The dry-run and apply artifacts report both sides: read `localCollectionsCleared
 Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preserved or ephemeral fails `assertEnvironmentLocalCollectionsClassified`, so a new instrument's history cannot join the cleared set by omission.
 The refusal itself sits in `applyStagedCollectionSwap`, the staged swap every whole-collection replacement goes through, so any caller that hands it a clear list naming a preserved collection fails before a single drop, promotion included.
 A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
-
-### Retiring identity-only accounts (#5000)
-
-`yarn --cwd server accounts:retire-identity-only` deletes every account nobody signed into, after copying its netid and email onto each linked researcher that lacks them and unsetting `Researcher.accountId`, so `accounts` holds only logins.
-It holds an account that owns a research plan, is a reviewer stamp, is named by an admin grant, or whose researcher holds a different netid or email, and reports each hold by reason.
-It is dry-run by default, `--apply` needs `--confirm-retire-identity-only-accounts`, it refuses any target but Development, and an apply writes a mode-0600 backup of the deleted rows and unset links to the OS temp directory first.
-Run `beta:refresh-from-development` after it and before any `development:refresh-from-beta`: Beta still holds the retired rows until then, and a Beta-to-Development refresh in between copies them back.
-Production keeps its own accounts through every promotion, because `production:promote-beta-copy` never copies `accounts` (#5088).
 
 ## One-Command Promotion
 

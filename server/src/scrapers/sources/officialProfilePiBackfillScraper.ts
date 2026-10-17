@@ -4,7 +4,6 @@ import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
-import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import {
   getResearchEntityRosterByEntityId,
@@ -551,10 +550,7 @@ function userIdentityMatchEntity(
   };
 }
 
-function researcherToProfileUser(
-  researcher: Record<string, any>,
-  linkedAccount: Record<string, any> | undefined,
-): Record<string, any> {
+function researcherToProfileUser(researcher: Record<string, any>): Record<string, any> {
   const displayName = textValue(researcher.displayName);
   const split = splitName(displayName);
   const profile =
@@ -572,8 +568,8 @@ function researcherToProfileUser(
   const websiteUrl = textValue(profile.websiteUrl);
   return {
     _id: idValue(researcher._id),
-    netid: researcherNetid(researcher, linkedAccount),
-    email: researcherEmail(researcher, linkedAccount),
+    netid: researcherNetid(researcher),
+    email: researcherEmail(researcher),
     fname: split.first,
     lname: split.last,
     name: displayName,
@@ -586,56 +582,28 @@ function researcherToProfileUser(
   };
 }
 
-const PROFILE_USER_RESEARCHER_SELECT = '_id accountId displayName profile profileLinks identifiers';
+const PROFILE_USER_RESEARCHER_SELECT = '_id displayName profile profileLinks identifiers';
 
-async function linkedAccountsById(
+function profileUsersForResearchers(
   researchers: Array<Record<string, any>>,
-): Promise<Map<string, Record<string, any>>> {
-  const accountIds = researchers.map((researcher) => researcher.accountId).filter(Boolean);
-  const accounts = accountIds.length
-    ? ((await Account.find({ _id: { $in: accountIds } })
-        .select('_id netid email')
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  return new Map(accounts.map((account) => [idValue(account._id), account]));
-}
-
-async function profileUsersForResearchers(
-  researchers: Array<Record<string, any>>,
-): Promise<Array<Record<string, any>>> {
-  const accountById = await linkedAccountsById(researchers);
-  return researchers.map((researcher) =>
-    researcherToProfileUser(researcher, accountById.get(idValue(researcher.accountId))),
-  );
+): Array<Record<string, any>> {
+  return researchers.map(researcherToProfileUser);
 }
 
 export async function profileUsersByNetids(netids: string[]): Promise<Array<Record<string, any>>> {
   const normalized = uniqueStrings(netids);
   if (normalized.length === 0) return [];
   const caseInsensitive = { locale: 'en', strength: 2 };
-  const [researchersHoldingNetid, accountsHoldingNetid] = await Promise.all([
-    Researcher.find({ 'identifiers.netid': { $in: normalized }, archived: { $ne: true } })
-      .collation(caseInsensitive)
-      .select(PROFILE_USER_RESEARCHER_SELECT)
-      .lean() as Promise<Array<Record<string, any>>>,
-    Account.find({ netid: { $in: normalized } })
-      .collation(caseInsensitive)
-      .select('_id')
-      .lean() as Promise<Array<Record<string, any>>>,
-  ]);
-  const accountIds = accountsHoldingNetid.map((account) => account._id);
-  const researchersLinkingNetid = accountIds.length
-    ? ((await Researcher.find({ accountId: { $in: accountIds }, archived: { $ne: true } })
-        .select(PROFILE_USER_RESEARCHER_SELECT)
-        .lean()) as Array<Record<string, any>>)
-    : [];
-  const researchersById = new Map<string, Record<string, any>>();
-  for (const researcher of [...researchersHoldingNetid, ...researchersLinkingNetid]) {
-    researchersById.set(idValue(researcher._id), researcher);
-  }
+  const researchersHoldingNetid = (await Researcher.find({
+    'identifiers.netid': { $in: normalized },
+    archived: { $ne: true },
+  })
+    .collation(caseInsensitive)
+    .select(PROFILE_USER_RESEARCHER_SELECT)
+    .lean()) as Array<Record<string, any>>;
   const wanted = new Set(normalized.map((netid) => netid.toLowerCase()));
   const usersByNetid = new Map<string, Array<Record<string, any>>>();
-  for (const user of await profileUsersForResearchers([...researchersById.values()])) {
+  for (const user of profileUsersForResearchers(researchersHoldingNetid)) {
     const netid = textValue(user.netid).toLowerCase();
     if (!netid || !wanted.has(netid)) continue;
     usersByNetid.set(netid, [...(usersByNetid.get(netid) || []), user]);
@@ -3276,12 +3244,7 @@ export async function selectDirectVisibleProfileBioUserTargets(
     Researcher.find({
       archived: { $ne: true },
       $and: [
-        {
-          $or: [
-            { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
-            { accountId: { $exists: true, $ne: null } },
-          ],
-        },
+        { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
         {
           $or: [
             { 'profileLinks.kind': 'YALE_OFFICIAL' },
@@ -3297,7 +3260,7 @@ export async function selectDirectVisibleProfileBioUserTargets(
     50,
   ).lean()) as Array<Record<string, any>>;
 
-  return (await profileUsersForResearchers(researchers))
+  return profileUsersForResearchers(researchers)
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
     .map((user) => {
       const urls = visibleBioProfileUrlsForUser(user);
@@ -4000,22 +3963,10 @@ export async function resolveExistingUserForIdentity(
         .limit(10)
         .lean()) as Array<Record<string, any>>,
     );
-    const emailAccounts = (await Account.find({ email }).select('_id').lean()) as Array<
-      Record<string, any>
-    >;
-    const emailAccountIds = emailAccounts.map((account) => account._id);
-    if (emailAccountIds.length) {
-      addResearchers(
-        (await Researcher.find({ archived: { $ne: true }, accountId: { $in: emailAccountIds } })
-          .select(PROFILE_USER_RESEARCHER_SELECT)
-          .limit(10)
-          .lean()) as Array<Record<string, any>>,
-      );
-    }
   }
   if (researchersById.size === 0) return null;
 
-  const candidates = await profileUsersForResearchers(Array.from(researchersById.values()));
+  const candidates = profileUsersForResearchers(Array.from(researchersById.values()));
 
   const matchingCandidates =
     candidates.length <= 1

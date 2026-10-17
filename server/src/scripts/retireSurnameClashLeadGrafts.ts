@@ -62,7 +62,7 @@ interface PersonIdentity {
 
 async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
   const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName identifiers accountId profile.title profile.primaryDepartment')
+    .select('_id displayName identifiers profile.title profile.primaryDepartment')
     .lean()) as unknown as Array<Record<string, any>>;
   const identities = new Map<string, PersonIdentity>();
   for (const row of researchers) {
