@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  extractAlumniPageUndergraduates,
   extractOfficialResearchHomeRoster,
   listedEntryIsFromAnotherSchool,
   listedEntryRole,
@@ -8,6 +9,7 @@ import {
   officialRosterSectionLabels,
   officialRosterObservations,
   OfficialResearchHomeRosterScraper,
+  withAlumniUndergraduates,
   type OfficialRosterConfig,
 } from '../sources/officialResearchHomeRosterScraper';
 
@@ -847,5 +849,64 @@ describe('profile-grid past sections', () => {
     );
 
     expect(roster.state).toBe('stale');
+  });
+});
+
+describe('a separate alumni page', () => {
+  const observedAt = new Date('2026-10-16T12:00:00Z');
+  const config: OfficialRosterConfig = {
+    researchEntityKey: 'dept-fixture-alumni',
+    url: 'https://alumnilab.yale.edu/people',
+    template: 'heading-list',
+    currentSectionLabels: ['Undergraduate Students'],
+    alumniPageUrl: 'https://alumnilab.yale.edu/alumni',
+  };
+  const peoplePage = `<html><body><main><h3>Undergraduate Students</h3>
+    <ul><li>Avery Quill (2025-present)</li></ul></main></body></html>`;
+  const alumniPage = `<html><body><main>
+    <h3>Graduate Students</h3><ul><li>Jordan Alder (PhD 2021)</li></ul>
+    <h3>Undergraduates</h3><ul>
+      <li>Avery Quill (2025)</li><li>Harper Wren (2019-2021)</li>
+      <li>Rowan Thistle (Visiting undergraduate from Elsewhere University)</li>
+    </ul></main></body></html>`;
+
+  it('lists every undergraduate on the alumni page as past, under the same rules', () => {
+    expect(extractAlumniPageUndergraduates(alumniPage, config, observedAt).undergraduates).toEqual([
+      { name: 'Avery Quill', status: 'past', endYear: 2025 },
+      { name: 'Harper Wren', status: 'past', startYear: 2019, endYear: 2021 },
+    ]);
+  });
+
+  it('keeps a current member current when the alumni page also lists them', () => {
+    const merged = withAlumniUndergraduates(
+      extractOfficialResearchHomeRoster(peoplePage, config, observedAt),
+      extractAlumniPageUndergraduates(alumniPage, config, observedAt).undergraduates,
+    );
+    expect(merged.undergraduates.map(({ name, status }) => `${name}:${status}`)).toEqual([
+      'Avery Quill:current',
+      'Harper Wren:past',
+    ]);
+  });
+
+  it('adds nothing to a roster whose own page could not be read', () => {
+    const withheld = extractOfficialResearchHomeRoster(
+      peoplePage.replace('Undergraduate Students', 'Our Team'),
+      config,
+      observedAt,
+    );
+    expect(
+      withAlumniUndergraduates(
+        withheld,
+        extractAlumniPageUndergraduates(alumniPage, config, observedAt).undergraduates,
+      ),
+    ).toBe(withheld);
+  });
+
+  it('cites the alumni page on the roster snapshot', () => {
+    const roster = extractOfficialResearchHomeRoster(peoplePage, config, observedAt);
+    const snapshot = officialRosterObservations(config, roster).find(
+      (observation) => observation.field === 'rosterEnrichment',
+    );
+    expect(snapshot?.value).toMatchObject({ alumniSourceUrl: 'https://alumnilab.yale.edu/alumni' });
   });
 });

@@ -2067,6 +2067,9 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
     memberKeys,
     sourceUrl,
     ...(undergraduates.length > 0 ? { undergraduates } : {}),
+    ...(textValue(enrichment.alumniSourceUrl)
+      ? { alumniSourceUrl: textValue(enrichment.alumniSourceUrl) }
+      : {}),
     ...(enrichment.sourcePublishedAt ? { sourcePublishedAt: enrichment.sourcePublishedAt } : {}),
     observedAt,
     freshnessExpiresAt,

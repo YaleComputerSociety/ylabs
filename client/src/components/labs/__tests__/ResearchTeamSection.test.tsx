@@ -164,4 +164,21 @@ describe('ResearchTeamSection', () => {
       'Harper Wren Jr.',
     ]);
   });
+
+  it('links the alumni page beside the roster source when it lists past undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          status: 'current',
+          alumniSourceUrl: 'https://alumnilab.yale.edu/alumni',
+          undergraduates: [{ name: 'Harper Wren', status: 'past', endYear: 2021 }],
+        })}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Alumni page' })).toHaveAttribute(
+      'href',
+      'https://alumnilab.yale.edu/alumni',
+    );
+  });
 });
