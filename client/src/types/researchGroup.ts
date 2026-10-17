@@ -47,6 +47,14 @@ export interface PastUndergradAdvisee {
   count?: number;
 }
 
+export interface FellowshipRecipient {
+  studentName: string;
+  year: number;
+  programName: string;
+  projectTitle?: string;
+  sourceUrl?: string;
+}
+
 export interface LeadHonor {
   key?: string;
   label?: string;
@@ -112,6 +120,7 @@ export interface ResearchGroup {
   undergradEvidenceSourceUrl?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
+  fellowshipRecipients?: FellowshipRecipient[];
   /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */
   hasUndergradHostingEvidence?: boolean;
   recentGrants?: RecentGrant[];

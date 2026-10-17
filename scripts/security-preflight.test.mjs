@@ -3415,7 +3415,7 @@ test('manual fellowship recipient scraper inputs stay under safe local roots', (
   );
   assert.match(
     source,
-    /resolveSafeManualRecipientInputPath\(\s*manualRecipientPdfDir,\s*config\.programKey,\s*'\.pdf'/,
+    /resolveSafeManualRecipientInputPath\(\s*manualRecipientPdfDir,\s*input\.fileKey,\s*'\.pdf'/,
   );
   assert.doesNotMatch(
     source,

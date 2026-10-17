@@ -469,6 +469,46 @@ export function toPublicResearchEntitySummaryDto(
   };
 }
 
+const MAX_PUBLIC_FELLOWSHIP_RECIPIENTS = 60;
+
+const boundedFellowshipText = (value: unknown, maxLength: number): string => {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return text.slice(0, maxLength);
+};
+
+export interface PublicFellowshipRecipient {
+  studentName: string;
+  year: number;
+  programName: string;
+  projectTitle?: string;
+  sourceUrl?: string;
+}
+
+export function publicFellowshipRecipients(value: unknown): PublicFellowshipRecipient[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((entry: any): PublicFellowshipRecipient[] => {
+      const studentName = boundedFellowshipText(entry?.studentName, 80);
+      const programName = boundedFellowshipText(entry?.programName, 120);
+      const year = Number(entry?.year);
+      if (!studentName || !programName || !Number.isInteger(year) || year < 1980 || year > 2100) {
+        return [];
+      }
+      const projectTitle = boundedFellowshipText(entry?.projectTitle, 300);
+      const sourceUrl = publicHttpUrl(entry?.sourceUrl);
+      return [
+        {
+          studentName,
+          year,
+          programName,
+          ...(projectTitle ? { projectTitle } : {}),
+          ...(sourceUrl ? { sourceUrl } : {}),
+        },
+      ];
+    })
+    .slice(0, MAX_PUBLIC_FELLOWSHIP_RECIPIENTS);
+}
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
@@ -479,6 +519,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'currentUndergradCount',
   'undergradEvidenceQuote',
   'pastUndergradAdvisees',
+  'fellowshipRecipients',
   'recentGrants',
   'recentGrantCount',
   'fundingAgencies',
@@ -639,6 +680,11 @@ function derivePublicResearchEntityDto(
           group.fieldProvenance?.currentUndergradCount?.sourceName ===
           RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE;
         if (!retired) dto[field] = publicTextValue(group[field]);
+        continue;
+      }
+      if (field === 'fellowshipRecipients') {
+        const recipients = publicFellowshipRecipients(group[field]);
+        if (recipients.length > 0) dto[field] = recipients;
         continue;
       }
       if (field === 'profileResearchAreas') {

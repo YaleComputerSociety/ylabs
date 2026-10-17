@@ -308,6 +308,20 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ],
       default: [],
     },
+    fellowshipRecipients: {
+      type: [
+        {
+          _id: false,
+          studentName: { type: String, required: true },
+          year: { type: Number, required: true },
+          programName: { type: String, required: true },
+          projectTitle: { type: String, required: false },
+          piAsPrinted: { type: String, required: false },
+          sourceUrl: { type: String, required: false },
+        },
+      ],
+      default: undefined,
+    },
     offersIndependentStudy: {
       type: Boolean,
       default: false,
