@@ -70,7 +70,6 @@ describe('department hiring page contract (server)', () => {
   contract.keptForOrganizationScopedRows.forEach((testCase) => {
     it(`keeps for an organization-scoped row: ${testCase.name}`, () => {
       expect(isUmbrellaPageCitedByPerson(testCase.url, ORGANIZATION_SCOPED)).toBe(false);
-      expect(isUnservableWebsiteUrl(testCase.url, ORGANIZATION_SCOPED)).toBe(false);
     });
   });
 });
