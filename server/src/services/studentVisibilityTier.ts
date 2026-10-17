@@ -45,6 +45,7 @@ import {
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
   researchHomeIdentitySource,
+  nameDenotesOrganization,
   NO_SURNAME_ROSTER,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -153,6 +154,8 @@ export interface ProgramStudentVisibilityInput extends Record<string, any> {
   applicationOpenDate?: unknown;
   isAcceptingApplications?: boolean;
 }
+
+const DIRECTOR_LEAD_ROLES: ReadonlySet<string> = new Set(['director', 'co-director']);
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -1138,7 +1141,16 @@ export function computeResearchEntityStudentVisibility({
       recordCitedUrls,
       identityTokens: entityKeyPersonTokens(entity.slug),
     });
+  // A director edge is a lane's statement that the lead directs this very organization,
+  // so an organization's name on a person-keyed slug is the organization's own name
+  // rather than a graft onto that person's row (#5085). A PI lead states no such thing,
+  // which keeps the #2913 graft held.
+  const namesTheOrganizationItsLeadDirects =
+    isOrganizationalResearchEntity(entity) &&
+    nameDenotesOrganization(entity.name) &&
+    leadMembers.some((lead) => DIRECTOR_LEAD_ROLES.has(textValue(lead?.role).toLowerCase()));
   const namesAnotherPersonsResearch =
+    !namesTheOrganizationItsLeadDirects &&
     researchHomeIdentitySource({ personName: leadPersonName, slug: entity.slug }) ===
       'resolved_lead' &&
     personScopedResearchEntityNameNamesSomethingElse({

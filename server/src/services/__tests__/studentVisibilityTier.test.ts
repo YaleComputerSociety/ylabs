@@ -416,6 +416,40 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('operator_review');
   });
 
+  describe('an organization named on a person-keyed slug (#5085)', () => {
+    const organizationOnPersonKey = (role: string) =>
+      computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'organization-on-person-key',
+          name: 'Fixture Mood Research Program',
+          slug: 'sloan-lab-as12',
+          entityType: 'INITIATIVE',
+          kind: 'initiative',
+          shortDescription:
+            'Studies the causes and treatment of mood disorders across the lifespan.',
+          fullDescription:
+            'A multidisciplinary program studying the causes and treatment of mood disorders across the lifespan, with neuroimaging and genetics.',
+          websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
+          sourceUrls: [
+            'https://medicine.yale.edu/profile/fixture-sloan/',
+            'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
+          ],
+        },
+        leadMembers: [{ userId: 'as12', role, name: 'Avery Sloan' }],
+        accessSignalCount: 1,
+        actionablePathwayCount: 1,
+      });
+
+    it('serves the name when its lead is the organization director', () => {
+      expect(organizationOnPersonKey('director').reasons).not.toContain('unusable_name');
+      expect(organizationOnPersonKey('co-director').reasons).not.toContain('unusable_name');
+    });
+
+    it('still holds the name when its lead is only a PI', () => {
+      expect(organizationOnPersonKey('pi').reasons).toContain('unusable_name');
+    });
+  });
+
   it('admits a unit name its own site declares under the lead as Principal Investigator', () => {
     const input = {
       entity: {
