@@ -177,6 +177,49 @@ describe('selectEponymousFraLabMergeGroups', () => {
     expect(groups).toHaveLength(0);
   });
 
+  const hopperRowLeading = (organization: Record<string, unknown>): ResearchEntityPiDedupeRow => ({
+    userId: 'pi-grace-hopper',
+    normalizedName: 'same-pi:pi-grace-hopper',
+    piFirstName: 'Grace',
+    piLastName: 'Hopper',
+    entities: [
+      {
+        id: 'hopper-organization',
+        slug: 'hopper-lab-gh1',
+        websiteUrl: 'https://medicine.yale.edu/psychiatry/research/hopper-organization/',
+        sourceUrls: ['https://medicine.yale.edu/psychiatry/research/hopper-organization/'],
+        departments: ['Computer Science'],
+        ...organization,
+      },
+      {
+        id: 'hopper-fra-shell',
+        slug: 'faculty-research-area-grace-hopper',
+        name: 'Grace Hopper Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
+        departments: ['Computer Science'],
+      },
+    ],
+  });
+
+  it('never merges an FRA shell into an organization-named initiative or core facility the PI directs (#5085)', () => {
+    for (const organization of [
+      { name: 'Computing Research Program', kind: 'initiative', entityType: 'INITIATIVE' },
+      { name: 'Computing Imaging Core', kind: 'core-facility', entityType: 'CORE_FACILITY' },
+    ]) {
+      expect(selectEponymousFraLabMergeGroups([hopperRowLeading(organization)])).toHaveLength(0);
+    }
+  });
+
+  it('still merges an FRA shell into a person-named row that only carries an initiative type', () => {
+    expect(
+      selectEponymousFraLabMergeGroups([
+        hopperRowLeading({ name: 'Hopper Lab', kind: 'lab', entityType: 'INITIATIVE' }),
+      ]).map((group) => group.canonicalEntityId),
+    ).toEqual(['hopper-organization']);
+  });
+
   it('keeps the PI own lab canonical and never the center when the PI leads both', () => {
     const groups = selectEponymousFraLabMergeGroups([
       {

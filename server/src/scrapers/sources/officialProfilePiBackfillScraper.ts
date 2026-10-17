@@ -24,6 +24,7 @@ import {
   researchHomeIdentityTokens,
   eponymMatchesIdentity,
   eponymousLabNameSurnameCandidates,
+  nameDenotesOrganization,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
@@ -80,6 +81,8 @@ import {
 } from '../utils/scraperHelpers';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
+import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
+import { memberObservationsForEntityKey, type MemberRole } from './centersInstitutesScraper';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -92,6 +95,7 @@ const PROFILE_RESEARCH_HOME_BACKFILL_KEY = 'profile-research-home-backfill';
 const PROFILE_DESCRIPTION_BACKFILL_KEY = 'profile-description-backfill';
 const LEAD_DIRECT_WEBSITE_BACKFILL_KEY = 'lead-direct-website-backfill';
 const SOURCE_URL_WEBSITE_BACKFILL_KEY = 'source-url-website-backfill';
+const PROFILE_ORGANIZATION_DIRECTOR_BACKFILL_KEY = 'profile-organization-director-backfill';
 const PROFILE_BIO_MIN_LENGTH = 120;
 const OFFICIAL_PROFILE_BIO_MAX_LENGTH = 1200;
 const VISIBLE_PROFILE_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
@@ -107,6 +111,7 @@ const OFFICIAL_PROFILE_MODE_KEYS = new Set([
   PROFILE_DESCRIPTION_BACKFILL_KEY,
   LEAD_DIRECT_WEBSITE_BACKFILL_KEY,
   SOURCE_URL_WEBSITE_BACKFILL_KEY,
+  PROFILE_ORGANIZATION_DIRECTOR_BACKFILL_KEY,
 ]);
 
 const officialProfileDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
@@ -1228,7 +1233,11 @@ function genericOrganizationName(name: string): boolean {
   );
 }
 
-function profileEvidenceText($: cheerio.CheerioAPI, profiles: Array<Record<string, any>>): string {
+function profileEvidenceText(
+  $: cheerio.CheerioAPI,
+  profiles: Array<Record<string, any>>,
+  separator = ' ',
+): string {
   return uniqueStrings([
     ...profiles.flatMap((profile) => [
       profile.name,
@@ -1240,7 +1249,19 @@ function profileEvidenceText($: cheerio.CheerioAPI, profiles: Array<Record<strin
     $('[class*="biography"]').text(),
     $('[class*="profile-body"]').text(),
     $('[class*="field--name-body"]').text(),
-  ]).join(' ');
+  ]).join(separator);
+}
+
+const BLOCK_BOUNDARY_ELEMENTS =
+  'address, article, aside, blockquote, br, dd, div, dl, dt, figcaption, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, section, table, td, th, tr, ul';
+
+function blockSeparatedProfileEvidenceText(
+  html: string,
+  profiles: Array<Record<string, any>>,
+): string {
+  const $ = cheerio.load(html);
+  $(BLOCK_BOUNDARY_ELEMENTS).before(' | ').after(' | ');
+  return profileEvidenceText($, profiles, ' | ');
 }
 
 function leadershipMentionsOrganization(text: string, name: string, rawName: string): boolean {
@@ -1293,6 +1314,123 @@ export function profileTextStatesLeadershipOf(text: string, organizationName: st
     '(?<!(?:deputy|assistant)(?: co| associate)? )(?:co director|associate director|founding director|director|directs|directed|leads|founded|founder|head|chief|principal investigator)';
   return new RegExp(`\\b${leadership}(?: of| for| at| the| yale| and)* ${name}\\b`).test(
     normalizedText,
+  );
+}
+
+export type ProfileStatedOrganizationRole = Extract<MemberRole, 'director' | 'co-director'>;
+
+const QUALIFIED_DIRECTORSHIP_PREFIX_RE =
+  /\b(?:co|deputy|assistant|associate|former|formerly|interim|acting|medical|clinical|executive|managing|program|site|section|division)[-\s]*$/i;
+
+const ORGANIZATION_NAME_END_RE = /^\s*(?:$|[(),.;:|])/;
+
+/**
+ * The directorship of a named organization a profile states, or `null`.
+ *
+ * Stricter than `profileTextStatesLeadershipOf`, because its answer becomes a lead edge
+ * rather than a website: only "Director" or "Co-Director" of the organization by name
+ * counts. A qualified directorate ("Medical Director", "Associate Director", "former
+ * Director") leads something else or no longer leads it, and "founded" or "leads" says
+ * nothing about the role a student should read. The name has to end where the stated one
+ * ends, because a title line lists units whose names extend one another ("Director,
+ * Division of Aging and Geriatric Psychiatry" names no "Division of Aging").
+ */
+export function profileTextStatesDirectorshipOf(
+  text: string,
+  organizationName: string,
+): ProfileStatedOrganizationRole | null {
+  const words = organizationNameForLeadershipMatch(organizationName).split(' ').filter(Boolean);
+  if (words.length < 2) return null;
+  const source = textValue(text).replace(/&/g, ' and ');
+  const separator = '[^a-z0-9]+';
+  const pattern = new RegExp(
+    `\\b(co[-\\s]?director|director)\\b(?:${separator}(?:of|for|at|the|yale)\\b)*${separator}${words
+      .map(escapeRegex)
+      .join(separator)}\\b`,
+    'gi',
+  );
+  for (const match of source.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (QUALIFIED_DIRECTORSHIP_PREFIX_RE.test(source.slice(Math.max(0, index - 24), index))) {
+      continue;
+    }
+    if (!ORGANIZATION_NAME_END_RE.test(source.slice(index + match[0].length))) continue;
+    return /^co/i.test(match[1]) ? 'co-director' : 'director';
+  }
+  return null;
+}
+
+function profileLinksWebsite(
+  $: cheerio.CheerioAPI,
+  profileUrl: string,
+  websiteUrl: string,
+): boolean {
+  const target = websiteIdentity(websiteUrl);
+  if (!target) return false;
+  return $('a[href]')
+    .toArray()
+    .some((el) => websiteIdentity(absolutize($(el).attr('href') || '', profileUrl)) === target);
+}
+
+export interface OrganizationDirectorClaim {
+  name: string;
+  role: ProfileStatedOrganizationRole;
+  profileUrl: string;
+  title: string;
+}
+
+/**
+ * The person whose own official profile states they direct this organization by name and
+ * links the organization's own site, or `null` (#5085).
+ *
+ * Both halves are required. A profile names every unit its subject directs, so the name
+ * alone would attach a director to a same-named row for another site, and a profile links
+ * many sites its subject does not run, so the link alone proves nothing about the role.
+ */
+export function organizationDirectorClaimFromProfile(
+  html: string,
+  profileUrl: string,
+  organization: Record<string, any>,
+): OrganizationDirectorClaim | null {
+  const organizationName = textValue(organization.name);
+  const websiteUrl = textValue(organization.websiteUrl) || textValue(organization.website);
+  if (!organizationName || !websiteUrl) return null;
+  const $ = cheerio.load(html);
+  const canonicalUrl = canonicalUrlFromHtml($, profileUrl);
+  const fetchedUrl = normalizeOfficialProfileUrl(profileUrl);
+  if (canonicalUrl !== fetchedUrl && !sameOfficialProfilePerson(canonicalUrl, fetchedUrl)) {
+    return null;
+  }
+  const profiles = jsonLdProfiles($);
+  const name = officialProfileDisplayName($, profiles);
+  if (!name) return null;
+  const role = profileTextStatesDirectorshipOf(
+    blockSeparatedProfileEvidenceText(html, profiles),
+    organizationName,
+  );
+  if (!role || !profileLinksWebsite($, profileUrl, websiteUrl)) return null;
+  const title =
+    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
+      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+    ) || '';
+  return { name, role, profileUrl: canonicalUrl, title };
+}
+
+export function organizationDirectorObservations(
+  organization: Record<string, any>,
+  claim: OrganizationDirectorClaim,
+): ObservationInput[] {
+  const organizationKey = textValue(organization.slug);
+  if (!organizationKey) return [];
+  return memberObservationsForEntityKey(
+    organizationKey,
+    {
+      name: claim.name,
+      role: claim.role,
+      profileUrl: claim.profileUrl,
+      ...(claim.title ? { title: claim.title } : {}),
+    },
+    claim.profileUrl,
   );
 }
 
@@ -2460,6 +2598,24 @@ function officialProfileIdentityMatchesExpectedPerson(
   });
 }
 
+function officialProfileDisplayName(
+  $: cheerio.CheerioAPI,
+  profiles: Array<Record<string, any>>,
+): string {
+  return normalizeName(
+    cleanOfficialProfileDisplayName(
+      firstJsonLdText(profiles, ['name']) ||
+        firstUsefulText($, [
+          'h1',
+          '[class*="profile"] [class*="name"]',
+          '[class*="person"] [class*="name"]',
+          'meta[property="og:title"]',
+          'title',
+        ]),
+    ),
+  );
+}
+
 export function extractOfficialProfileIdentity(
   html: string,
   profileUrl: string,
@@ -2478,18 +2634,7 @@ export function extractOfficialProfileIdentity(
     return null;
   }
 
-  const displayName = normalizeName(
-    cleanOfficialProfileDisplayName(
-      firstJsonLdText(profiles, ['name']) ||
-        firstUsefulText($, [
-          'h1',
-          '[class*="profile"] [class*="name"]',
-          '[class*="person"] [class*="name"]',
-          'meta[property="og:title"]',
-          'title',
-        ]),
-    ),
-  );
+  const displayName = officialProfileDisplayName($, profiles);
   const email = extractEmail($, profiles, displayName);
   if (!email && options.requireEmail !== false) return null;
   const hasExpectedPeople = (options.expectedPeople || []).length > 0;
@@ -3621,6 +3766,40 @@ async function selectResearchHomeProfileTargets(
     .slice(0, limit);
 }
 
+/**
+ * Live organizational rows with no current lead, named as organizations, carrying their own
+ * site and citing an official person profile: the rows whose director only that profile can
+ * name (#5085). The research-home selector cannot reach them, because it reads a profile
+ * through the row's existing lead roster and so skips a lead-less row before fetching.
+ */
+export async function selectOrganizationDirectorProfileTargets(
+  limit: number,
+  targetKeys: string[] = [],
+): Promise<Array<Record<string, any>>> {
+  if (mongoose.connection.readyState !== 1) return [];
+  const entities = await recentlyObservedResearchEntities(
+    {
+      archived: { $ne: true },
+      entityType: { $in: [...ORGANIZATIONAL_ENTITY_TYPES] },
+      ...(targetKeys.length > 0 ? targetKeyFilter(targetKeys) : {}),
+    },
+    '_id slug name displayName entityType website websiteUrl sourceUrls school schools',
+    limit,
+  );
+  const candidates = entities.filter(
+    (entity) =>
+      nameDenotesOrganization(entity.name) &&
+      Boolean(textValue(entity.websiteUrl) || textValue(entity.website)) &&
+      officialProfileUrlsForEntity(entity).length > 0,
+  );
+  if (candidates.length === 0) return [];
+  const ledEntityIds = await currentLeadRosterEntriesByEntity(
+    candidates.map((entity) => entity._id),
+    LEAD_MEMBER_ROLES,
+  );
+  return candidates.filter((entity) => !ledEntityIds.has(idValue(entity._id))).slice(0, limit);
+}
+
 async function selectLeadDirectWebsiteTargets(
   limit: number,
   targetKeys: string[] = [],
@@ -3952,6 +4131,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     private readonly knownPersonSurnameLoader: () => Promise<
       ReadonlySet<string>
     > = loadKnownPersonSurnameRosterWhenConnected,
+    private readonly organizationDirectorSelector: (
+      limit: number,
+      targetKeys?: string[],
+    ) => Promise<Array<Record<string, any>>> = selectOrganizationDirectorProfileTargets,
   ) {}
 
   private pageReads = new LanePageReads();
@@ -3979,6 +4162,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       only.size === 0 ||
       only.has(PROFILE_RESEARCH_HOME_BACKFILL_KEY) ||
       (targetKeys.length > 0 && !hasExplicitMode);
+    const runOrganizationDirectorBackfill =
+      only.size === 0 ||
+      only.has(PROFILE_ORGANIZATION_DIRECTOR_BACKFILL_KEY) ||
+      (targetKeys.length > 0 && !hasExplicitMode);
     let knownPersonSurnames: Promise<ReadonlySet<string>> | null = null;
     const knownPersonSurnamesForRun = (): Promise<ReadonlySet<string>> =>
       (knownPersonSurnames ??= this.knownPersonSurnameLoader());
@@ -3987,24 +4174,27 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       !runQueuedPiBackfill &&
       !runVisibleProfileBioBackfill &&
       !runProfileDescriptionBackfill &&
-      !runProfileResearchHomeBackfill;
+      !runProfileResearchHomeBackfill &&
+      !runOrganizationDirectorBackfill;
     const runOnlyVisibleProfileBioBackfill =
       runVisibleProfileBioBackfill &&
       !runQueuedPiBackfill &&
       !runProfileDescriptionBackfill &&
       !runProfileResearchHomeBackfill &&
       !runLeadDirectWebsiteBackfill &&
-      !runSourceUrlWebsiteBackfill;
+      !runSourceUrlWebsiteBackfill &&
+      !runOrganizationDirectorBackfill;
     if (
       !runQueuedPiBackfill &&
       !runVisibleProfileBioBackfill &&
       !runProfileDescriptionBackfill &&
       !runProfileResearchHomeBackfill &&
       !runLeadDirectWebsiteBackfill &&
-      !runSourceUrlWebsiteBackfill
+      !runSourceUrlWebsiteBackfill &&
+      !runOrganizationDirectorBackfill
     ) {
       ctx.log(
-        `No matching --only key; expected ${QUEUED_PI_BACKFILL_KEY}, ${VISIBLE_PROFILE_BIO_BACKFILL_KEY}, ${PROFILE_DESCRIPTION_BACKFILL_KEY}, ${PROFILE_RESEARCH_HOME_BACKFILL_KEY}, ${LEAD_DIRECT_WEBSITE_BACKFILL_KEY}, ${SOURCE_URL_WEBSITE_BACKFILL_KEY}, or entity keys.`,
+        `No matching --only key; expected ${QUEUED_PI_BACKFILL_KEY}, ${VISIBLE_PROFILE_BIO_BACKFILL_KEY}, ${PROFILE_DESCRIPTION_BACKFILL_KEY}, ${PROFILE_RESEARCH_HOME_BACKFILL_KEY}, ${LEAD_DIRECT_WEBSITE_BACKFILL_KEY}, ${SOURCE_URL_WEBSITE_BACKFILL_KEY}, ${PROFILE_ORGANIZATION_DIRECTOR_BACKFILL_KEY}, or entity keys.`,
       );
       return { observationCount: 0, entitiesObserved: 0, notes: 'Skipped by --only filter.' };
     }
@@ -4330,6 +4520,39 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       },
     );
 
+    const organizationDirectorTargets = runOrganizationDirectorBackfill
+      ? await this.organizationDirectorSelector(limit, targetKeys)
+      : [];
+    let organizationDirectorsClaimed = 0;
+    for (const organization of organizationDirectorTargets) {
+      for (const profileUrl of rankedOfficialProfileFetchCandidates(
+        officialProfileUrlsForEntity(organization),
+        organization,
+      )) {
+        let html: string;
+        try {
+          await awaitFetchTurn();
+          html = await this.readHtml(profileUrl, ctx.options.useCache, this.name);
+        } catch (err: any) {
+          ctx.log('Profile fetch failed', {
+            entityId: officialProfileDocumentId(organization._id),
+            profileUrl,
+            error: sanitizeLogValue(err),
+          });
+          continue;
+        }
+        const claim = organizationDirectorClaimFromProfile(html, profileUrl, organization);
+        if (!claim) continue;
+        const observations = organizationDirectorObservations(organization, claim);
+        if (observations.length === 0) continue;
+        await ctx.emit(observations);
+        emitted += observations.length;
+        observed += 1;
+        organizationDirectorsClaimed += 1;
+        break;
+      }
+    }
+
     const refusalSummary = Object.entries(homesRefusedByReason)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([reason, count]) => `${reason}=${count}`)
@@ -4367,7 +4590,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         `Processed ${entities.length} official profile records; ` +
         `adopted ${homesAdopted} profile-linked research homes` +
         `, ${homesAdoptedAsHostLabWebsite} colleague-lab websites only` +
-        (refusalSummary ? `, refused ${refusalSummary}.` : ', refused none.'),
+        (refusalSummary ? `, refused ${refusalSummary}` : ', refused none') +
+        (organizationDirectorTargets.length > 0
+          ? `; claimed ${organizationDirectorsClaimed} of ${organizationDirectorTargets.length} lead-less organization directors from their own profiles.`
+          : '.'),
     };
   }
 }

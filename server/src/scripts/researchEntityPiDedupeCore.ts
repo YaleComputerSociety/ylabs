@@ -8,7 +8,7 @@ import {
   concreteLabWebsiteForEntity,
   entityCarriesConcreteWebsite,
   entityNameWordsWithoutKindNouns,
-  isCenterOrInstituteEntity,
+  isOrganizationalHomeEntity,
   isConcreteResearchHomeEntity,
   isProfileAreaShellEntity,
 } from '../utils/profileAreaDuplicateRisk';
@@ -743,7 +743,8 @@ function buildProfileAreaShellDuplicateGroup(
   const duplicateShells = [...shellCandidatesById.values()];
   const duplicateShellIds = new Set(duplicateShells.map((entity) => entity.id));
   // A professor's eponymous profile-area/lab shell folds into their own lab, never into a
-  // CENTER or INSTITUTE they merely belong to: center memberships are separate entities tracked
+  // CENTER, INSTITUTE, or organization-named INITIATIVE or CORE_FACILITY they direct or belong
+  // to (#5085): center memberships are separate entities tracked
   // via RoleAssignment / ResearchEntityRelationship, so a center must never be selected as the
   // canonical survivor of an FRA-shadow merge (issue #1957). This exclusion is scoped to this
   // FRA-shadow selection path only; isConcreteResearchHomeEntity stays unchanged because the
@@ -751,7 +752,7 @@ function buildProfileAreaShellDuplicateGroup(
   const concreteHomes = entities.filter((entity) => {
     if (duplicateShellIds.has(entity.id)) return false;
     if (isFundingOnlyEntity(entity)) return false;
-    if (isCenterOrInstituteEntity(entity)) return false;
+    if (isOrganizationalHomeEntity(entity)) return false;
     if (entityCarriesConcreteWebsite(entity)) return true;
     if (!isConcreteResearchHomeEntity(entity)) return false;
     if (profileAreaShells.length > 0) return true;
