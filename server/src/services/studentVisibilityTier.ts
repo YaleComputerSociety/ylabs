@@ -45,6 +45,7 @@ import {
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
   researchHomeIdentitySource,
+  leadRoleDirectsTheOrganization,
   NO_SURNAME_ROSTER,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -1126,8 +1127,8 @@ export function computeResearchEntityStudentVisibility({
   // holds, so `unusable_name` would shut the #1930 recovery lane over exactly its own
   // population and nothing could ever clear either reason.
   const recordCitedUrls = [entity.websiteUrl, entity.website, entity.sourceUrls];
-  const leadPersonName =
-    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean) || '';
+  const identityLead = leadMembers.find((lead) => textValue(lead?.name || lead?.user?.displayName));
+  const leadPersonName = textValue(identityLead?.name || identityLead?.user?.displayName);
   // The shared-host arm stays unconditional, because it asks whether the name belongs
   // to an organization at all rather than to which person, and answers that from the
   // URLs the row cites (#2360).
@@ -1153,6 +1154,7 @@ export function computeResearchEntityStudentVisibility({
       knownPersonSurnames,
       recordCitedUrls,
       siteDeclaredOwnNames: entity.siteDeclaredOwnNames,
+      identityLeadDirectsOrganization: leadRoleDirectsTheOrganization(identityLead?.role),
     });
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&

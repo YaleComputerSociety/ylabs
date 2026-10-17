@@ -55,7 +55,11 @@ import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
-import { personScopedResearchEntityNameFromPersonName } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  IDENTITY_LEAD_DIRECTS_ORGANIZATION,
+  leadRoleDirectsTheOrganization,
+  personScopedResearchEntityNameFromPersonName,
+} from '../utils/researchHomeNameIdentityAuthority';
 import { buildSourceFieldContributions } from '../utils/servedFieldContributionLabels';
 import {
   detectProfileIdentityRisk,
@@ -164,6 +168,7 @@ import { unexpiredSignalClause } from './servedSignalExpiry';
  */
 export interface PublicLeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
+  identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<string, Readonly<EmeritusWayInDecision>>;
 }
@@ -179,7 +184,9 @@ export const leadGuardedServingInput = <T extends Record<string, any>>(
   read.unavailable
     ? { entity: withoutLeadGuardedCopy(entity), leadMemberNames: [] }
     : {
-        entity,
+        entity: read.identityLeadDirectorEntityIds?.has(researchGroupDocumentId(entity._id))
+          ? { ...entity, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+          : entity,
         leadMemberNames: read.byEntityId.get(researchGroupDocumentId(entity._id)) || [],
       };
 
@@ -188,6 +195,7 @@ export const optionalPublicLeadMemberNames = async (
   options: PublicLeadMemberNameReadOptions = {},
 ): Promise<PublicLeadMemberNameRead> => {
   const byEntityId = new Map<string, readonly string[]>();
+  const identityLeadDirectorEntityIds = new Set<string>();
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
   try {
@@ -204,6 +212,7 @@ export const optionalPublicLeadMemberNames = async (
       );
       const leadNames = publicLeadMemberNames(leadMembers);
       if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+      if (identityLeadDirectsOrganization(leadMembers)) identityLeadDirectorEntityIds.add(entityId);
       if (options.withEmeritusWayIn) {
         emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers) });
       }
@@ -217,6 +226,7 @@ export const optionalPublicLeadMemberNames = async (
     : undefined;
   return {
     byEntityId,
+    identityLeadDirectorEntityIds,
     unavailable: false,
     ...(emeritusWayInByEntityId ? { emeritusWayInByEntityId } : {}),
   };
@@ -224,6 +234,7 @@ export const optionalPublicLeadMemberNames = async (
 
 const leadMemberNameAliasOptions = (read: PublicLeadMemberNameRead) => ({
   leadMemberNamesByEntityId: read.byEntityId,
+  identityLeadDirectorEntityIds: read.identityLeadDirectorEntityIds,
   leadMemberNamesUnavailable: read.unavailable,
   emeritusWayInByEntityId: read.emeritusWayInByEntityId,
 });
@@ -3556,6 +3567,14 @@ function canonicalPublicDetailMembers(
     );
 }
 
+const identityLeadDirectsOrganization = (members: Array<{ user?: any; role: string }>): boolean =>
+  leadRoleDirectsTheOrganization(
+    members.find((member) => PUBLIC_LEAD_ROLES.has(member.role) && memberDisplayName(member))?.role,
+  );
+
+const identityLeadDirectorship = (members: Array<{ user?: any; role: string }>) =>
+  identityLeadDirectsOrganization(members) ? { [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true } : {};
+
 const publicLeadMemberNames = (members: Array<{ user?: any; role: string }>): string[] =>
   members
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
@@ -3705,7 +3724,7 @@ export async function getResearchGroupDetail(
       )
     ).get(researchGroupDocumentId((group as any)._id)) ?? NOT_EMERITUS_LED;
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
-    entity: group as any,
+    entity: { ...(group as any), ...identityLeadDirectorship(dedupedMembersWithRows) },
     leadMemberNames,
   });
   if (!publicDescription.invariant.pass) {
@@ -3797,6 +3816,7 @@ export async function getResearchGroupDetail(
     {
       group: {
         ...publicGroupForResponse,
+        ...identityLeadDirectorship(dedupedMembersWithRows),
         ...leadIdentity,
         ...servedEmeritusWayInFlags(emeritusWayIn),
       },
