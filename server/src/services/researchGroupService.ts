@@ -3569,8 +3569,7 @@ function canonicalPublicDetailMembers(
 
 const identityLeadDirectsOrganization = (members: Array<{ user?: any; role: string }>): boolean =>
   leadRoleDirectsTheOrganization(
-    members.find((member) => PUBLIC_LEAD_ROLES.has(member.role) && memberDisplayName(member))
-      ?.role,
+    members.find((member) => PUBLIC_LEAD_ROLES.has(member.role) && memberDisplayName(member))?.role,
   );
 
 const identityLeadDirectorship = (members: Array<{ user?: any; role: string }>) =>

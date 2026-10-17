@@ -98,8 +98,7 @@ const searchCardFor = async (slug: string) => {
   });
   const result = await searchResearchGroupsViaMeili('mood', {}, 1, 24);
   return result.researchEntities.find((entity: any) => entity.slug === slug) as
-    | Record<string, any>
-    | undefined;
+    Record<string, any> | undefined;
 };
 
 describe('an organization name on a person-keyed row its director leads is served (#5085)', () => {
