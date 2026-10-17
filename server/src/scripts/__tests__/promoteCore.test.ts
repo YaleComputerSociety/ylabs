@@ -218,14 +218,14 @@ describe('plan checks', () => {
       productionPlanProblems({
         sourceEnvironment: 'beta',
         targetEnvironment: 'production',
-        syntheticReferenceBlockersClear: false,
+        accountReferenceBlockersClear: false,
         applyBlockers: ['empty source accounts'],
         includesObservations: true,
         includesScrapeRuns: true,
         collections: [{ name: 'accounts' }],
       }),
     ).toEqual([
-      'synthetic-user reference blockers are not clear',
+      'promoted corpus rows still carry account _id references',
       'apply blockers: empty source accounts',
       'plan would promote observations',
       'plan would promote scrape_runs',

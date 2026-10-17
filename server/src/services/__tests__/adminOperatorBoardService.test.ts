@@ -1313,9 +1313,8 @@ describe('adminOperatorBoardService', () => {
       JSON.stringify({
         mode: 'dry-run',
         datasetVersion: 'prod-promote-2026-05-31-lane-a-beta-copy',
-        syntheticReferenceBlockersClear: true,
+        accountReferenceBlockersClear: true,
         applyBlockers: [],
-        excludedSyntheticUsers: 2,
         collectionCategories: [
           {
             category: 'research-discovery',
@@ -1334,15 +1333,13 @@ describe('adminOperatorBoardService', () => {
       artifactStatus: 'loaded',
       artifactPath,
       datasetVersion: 'prod-promote-2026-05-31-lane-a-beta-copy',
-      syntheticReferenceBlockersClear: true,
+      accountReferenceBlockersClear: true,
       applyBlockerCount: 0,
-      excludedSyntheticUsers: 2,
       collectionCategoryCount: 1,
     });
     expect(derivePromotionCopyGate(artifact)).toMatchObject({
       status: 'review_required',
       note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
-      excludedSyntheticUsers: 2,
       collectionCategoryCount: 1,
     });
   });
@@ -1353,9 +1350,8 @@ describe('adminOperatorBoardService', () => {
         artifactStatus: 'loaded',
         artifactPath: '/tmp/ylabs-lane-a-promotion-dry-run.json',
         datasetVersion: 'prod-promote-2026-05-31-lane-a-beta-copy',
-        syntheticReferenceBlockersClear: false,
+        accountReferenceBlockersClear: false,
         applyBlockerCount: 1,
-        excludedSyntheticUsers: 2,
         collectionCategoryCount: 3,
       }),
     ).toMatchObject({

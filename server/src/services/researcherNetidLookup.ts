@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { Account } from '../models/account';
 import { Researcher } from '../models/researcher';
 
 export interface ResearcherByNetid {
@@ -22,8 +21,6 @@ const toResearcherByNetid = (researcher: any): ResearcherByNetid => ({
     : {}),
 });
 
-// The account fallback keeps a researcher reachable whose own identifiers do not yet
-// carry the netid, until accounts hold only logins (#5000).
 export async function researchersByNetid(
   netids: readonly string[],
 ): Promise<Map<string, ResearcherByNetid>> {
@@ -40,25 +37,6 @@ export async function researchersByNetid(
   for (const researcher of byIdentifier as any[]) {
     const netid = researcher.identifiers?.netid;
     if (typeof netid === 'string') byNetid.set(netid, toResearcherByNetid(researcher));
-  }
-
-  const unresolved = wanted.filter((netid) => !byNetid.has(netid));
-  if (unresolved.length === 0) return byNetid;
-  const accounts = await Account.find({ netid: { $in: unresolved } })
-    .select('_id netid')
-    .lean();
-  if (accounts.length === 0) return byNetid;
-  const netidByAccountId = new Map(
-    accounts.map((account: any) => [String(account._id), account.netid as string]),
-  );
-  const byAccount = await Researcher.find({
-    accountId: { $in: accounts.map((account: any) => account._id) },
-  })
-    .select('_id displayName accountId identifiers.email')
-    .lean();
-  for (const researcher of byAccount as any[]) {
-    const netid = netidByAccountId.get(String(researcher.accountId));
-    if (netid && !byNetid.has(netid)) byNetid.set(netid, toResearcherByNetid(researcher));
   }
   return byNetid;
 }

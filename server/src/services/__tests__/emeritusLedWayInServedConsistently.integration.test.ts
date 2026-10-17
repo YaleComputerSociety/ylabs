@@ -77,17 +77,11 @@ const seedRow = async (
     ...extraFields,
   });
   for (const lead of leads) {
-    const accountId = new mongoose.Types.ObjectId();
-    await db.collection('accounts').insertOne({
-      _id: accountId,
-      netid: `fx${lead.key}`,
-      email: `fixture.${lead.key}@yale.edu`,
-    });
     const personId = new mongoose.Types.ObjectId();
     await db.collection('researchers').insertOne({
       _id: personId,
       displayName: lead.displayName,
-      accountId,
+      identifiers: { netid: `fx${lead.key}`, email: `fixture.${lead.key}@yale.edu` },
       profile: { title: lead.title },
       archived: false,
     });

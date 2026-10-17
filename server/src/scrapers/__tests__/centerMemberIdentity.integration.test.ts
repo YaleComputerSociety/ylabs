@@ -152,15 +152,11 @@ const accountHolder = async (
   options: { officialUrl?: string; email?: string; netid?: string; displayName?: string } = {},
 ) => {
   const netid = options.netid ?? `${first.toLowerCase()}9`;
-  const account = await Account.create({
-    netid,
-    email: options.email ?? `${netid}@fixture.example.edu`,
-    status: 'UNKNOWN',
-    archived: false,
-  });
+  const email = options.email ?? `${netid}@fixture.example.edu`;
+  await Account.create({ netid, email, status: 'UNKNOWN', archived: false });
   const researcher = await Researcher.create({
     displayName: options.displayName ?? `${first} Synthetic`,
-    accountId: account._id,
+    identifiers: { netid, email },
     profileLinks: options.officialUrl
       ? [
           {

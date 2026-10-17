@@ -1,17 +1,10 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import {
-  MongoClient,
-  type AnyBulkWriteOperation,
-  type Db,
-  type Document,
-  type ObjectId,
-} from 'mongodb';
+import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { reduceAccountToMirroredFields } from './mirroredAccountFields';
 import {
   assertEnvironmentLocalCollectionsClassified,
   assertNoNeverCopyCollections,
@@ -19,13 +12,10 @@ import {
 } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  accountCountChange,
-  applyAccountCarry,
-  loadAccountCarryPlan,
-  summarizeAccountCarry,
-  type AccountCarryPlan,
-  type AccountCarrySummary,
-} from './accountSwapCarry';
+  corpusAccountReferenceBlockers,
+  corpusAccountReferences,
+  type CorpusAccountReference,
+} from './corpusAccountReferences';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
 import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
 
@@ -55,9 +45,10 @@ export interface SyncCollection {
 const BATCH_SIZE = 1000;
 
 // The reviewable corpus plus the identity spine that resolves its leads. A
-// mirrored environment that carries research_entities without researchers,
-// accounts, and role_assignments serves a corpus whose every lead is
-// unresolvable, so identity is not optional here.
+// mirrored environment that carries research_entities without researchers and
+// role_assignments serves a corpus whose every lead is unresolvable, so identity
+// is not optional here. Accounts are not part of it: each environment keeps the
+// sign-ins made there (#5088).
 const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
@@ -111,6 +102,8 @@ export interface BetaToDevelopmentSummary {
 }
 
 const EXCLUDED_BETA_COLLECTIONS = [
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5088).
+  'accounts',
   'admin_access_review_projection_state',
   'admin_access_review_projections',
   'admin_audit_events',
@@ -273,89 +266,22 @@ export function assertSafeBetaToDevelopmentOptions(options: BetaToDevelopmentOpt
   }
 }
 
-export function sanitizeMirroredAccount(
-  document: Document,
-  preservePublicIdentity = true,
-): Document {
-  if (!preservePublicIdentity) {
-    const rawId = document._id as { toHexString?: () => string } | undefined;
-    if (!rawId || typeof rawId.toHexString !== 'function') {
-      throw new Error('Mirrored account pseudonymization requires an ObjectId _id');
-    }
-    const token = rawId.toHexString().toLowerCase();
-    return {
-      _id: document._id,
-      schemaVersion: document.schemaVersion,
-      netid: `mirrored-${token}`,
-      email: `mirrored-${token}@example.invalid`,
-      status: document.status,
-      archived: document.archived === true,
-      createdAt: document.createdAt,
-      updatedAt: document.updatedAt,
-    };
-  }
-
-  return reduceAccountToMirroredFields(document);
-}
-
 function collectionExists(db: Db, collectionName: string): Promise<boolean> {
   return db.listCollections({ name: collectionName }, { nameOnly: true }).hasNext();
 }
 
-async function distinctObjectIds(
-  db: Db,
-  collectionName: string,
-  field: string,
-  filter: Document = {},
-): Promise<ObjectId[]> {
-  if (!(await collectionExists(db, collectionName))) return [];
-  const values = await db.collection(collectionName).distinct(field, filter);
-  return values.filter(
-    (value): value is ObjectId =>
-      typeof value === 'object' &&
-      value !== null &&
-      typeof (value as { toHexString?: unknown }).toHexString === 'function',
-  );
-}
-
-// An account reachable from a Researcher carries the directory netid and email
-// Yale already publishes, which the copied researcher row holds anyway. Every
-// other account is somebody's real login, so it crosses environments
-// pseudonymized or not at all.
-export async function researchPersonAccountIds(sourceDb: Db): Promise<ObjectId[]> {
-  const accountIds = await distinctObjectIds(sourceDb, 'researchers', 'accountId');
-  return [...new Map(accountIds.map((id) => [id.toHexString(), id])).values()];
-}
-
 export function collectionsForOptions(
-  options: BetaToDevelopmentOptions,
-  researchAccountIds: ObjectId[],
+  options: Pick<BetaToDevelopmentOptions, 'includeObservations'>,
 ): SyncCollection[] {
-  const researchAccountIdSet = new Set(researchAccountIds.map((id) => id.toHexString()));
-  const collections: SyncCollection[] = [
-    ...BASE_COPY_COLLECTIONS.filter(
-      (collection) => options.includeObservations || collection.name !== 'observations',
-    ),
-    {
-      name: 'accounts',
-      category: 'identity-spine',
-      transform: (document) => {
-        const rawId = document._id as { toHexString?: () => string } | undefined;
-        const accountId =
-          rawId && typeof rawId.toHexString === 'function' ? rawId.toHexString() : '';
-        return sanitizeMirroredAccount(document, researchAccountIdSet.has(accountId));
-      },
-    },
-  ];
+  const collections: SyncCollection[] = BASE_COPY_COLLECTIONS.filter(
+    (collection) => options.includeObservations || collection.name !== 'observations',
+  );
   assertNoNeverCopyCollections(collections.map((collection) => collection.name));
   return collections;
 }
 
 export function betaToDevelopmentCollectionNames(includeObservations = true): string[] {
-  const options = {
-    includeObservations,
-  } as BetaToDevelopmentOptions;
-  return collectionsForOptions(options, []).map((collection) => collection.name);
+  return collectionsForOptions({ includeObservations }).map((collection) => collection.name);
 }
 
 async function countSourceCollection(
@@ -419,10 +345,12 @@ export function buildBetaToDevelopmentSummary(
     unclassifiedBetaCollections,
     localCollectionsClearedOnApply,
     localCollectionsPreservedOnApply,
-    userCopyPolicy:
-      'Copy the identity spine. Preserve accounts reachable from a Researcher, pseudonymize every other account, and remove account activity fields.',
+    userCopyPolicy: ACCOUNT_COPY_POLICY,
   };
 }
+
+export const ACCOUNT_COPY_POLICY =
+  'Accounts are environment-local and never copied; each environment keeps the sign-ins made there (#5088).';
 
 export function unclassifiedBetaCollectionNames(
   betaCollectionNames: string[],
@@ -543,72 +471,39 @@ async function copyCollection(
   }
 }
 
-export function syncCountMismatches(
-  after: readonly SyncCollectionPlan[],
-  carry: AccountCarrySummary,
-): SyncCollectionPlan[] {
-  return after.filter((row) => {
-    const expected =
-      row.name === 'accounts'
-        ? row.sourceCopyCount + accountCountChange(carry)
-        : row.sourceCopyCount;
-    return expected !== row.targetCount;
-  });
+export function syncCountMismatches(after: readonly SyncCollectionPlan[]): SyncCollectionPlan[] {
+  return after.filter((row) => row.sourceCopyCount !== row.targetCount);
 }
 
-function mirroredSourceAccounts(sourceDb: Db, collections: readonly SyncCollection[]) {
-  const accounts = collections.find((collection) => collection.name === 'accounts');
-  return async () => {
-    const rows = await sourceDb
-      .collection('accounts')
-      .find(accounts?.filter ?? {})
-      .toArray();
-    return accounts?.transform ? rows.map(accounts.transform) : rows;
-  };
-}
-
-export function previewSyncAccountCarry(
+export async function syncAccountReferences(
   sourceDb: Db,
-  targetDb: Db,
   collections: readonly SyncCollection[],
-): Promise<AccountCarryPlan> {
-  return loadAccountCarryPlan({
-    targetDb,
-    targetAccountsCollection: 'accounts',
-    loadPromotedAccounts: mirroredSourceAccounts(sourceDb, collections),
-  });
+): Promise<{ references: CorpusAccountReference[]; blockers: string[] }> {
+  const references = await corpusAccountReferences(
+    sourceDb,
+    collections.map((collection) => collection.name),
+  );
+  return { references, blockers: corpusAccountReferenceBlockers(references) };
 }
 
 export async function applySync(
-  betaDb: Db,
-  developmentDb: Db,
+  sourceDb: Db,
+  targetDb: Db,
   collections: SyncCollection[],
   clearedCollectionNames: string[],
-  verify: (carry: AccountCarrySummary) => Promise<void>,
-): Promise<AccountCarrySummary> {
-  let carry = summarizeAccountCarry({ refreshes: [], restores: [], rekeys: [], inserts: [] });
+  verify: () => Promise<void>,
+): Promise<void> {
+  const { blockers } = await syncAccountReferences(sourceDb, collections);
+  if (blockers.length > 0) throw new Error(`Sync blocked: ${blockers.join(' ')}`);
   await applyStagedCollectionSwap({
-    targetDb: developmentDb,
+    targetDb,
     collections,
     clearedCollectionNames,
     backupPrefix: '__beta_backup_',
     label: 'Beta to Development sync',
-    stage: (collection, operationId) =>
-      copyCollection(betaDb, developmentDb, collection, operationId),
-    afterCutover: async (backups) => {
-      const targetAccounts = backups.get('accounts');
-      if (!targetAccounts) return;
-      const plan = await loadAccountCarryPlan({
-        targetDb: developmentDb,
-        targetAccountsCollection: targetAccounts,
-        loadPromotedAccounts: () => developmentDb.collection('accounts').find({}).toArray(),
-      });
-      await applyAccountCarry(developmentDb, plan);
-      carry = summarizeAccountCarry(plan);
-    },
-    verify: () => verify(carry),
+    stage: (collection, operationId) => copyCollection(sourceDb, targetDb, collection, operationId),
+    verify,
   });
-  return carry;
 }
 
 async function main(): Promise<void> {
@@ -622,8 +517,7 @@ async function main(): Promise<void> {
     await developmentClient.connect();
     const betaDb = betaClient.db();
     const developmentDb = developmentClient.db();
-    const researchAccountIds = await researchPersonAccountIds(betaDb);
-    const collections = collectionsForOptions(options, researchAccountIds);
+    const collections = collectionsForOptions(options);
     const approvedMirrorCollectionNames = betaToDevelopmentCollectionNames(true);
     const [betaCollectionRows, developmentCollectionRows] = await Promise.all([
       betaDb.listCollections({}, { nameOnly: true }).toArray(),
@@ -651,11 +545,9 @@ async function main(): Promise<void> {
       localCollectionsPreservedOnApply,
     );
 
+    const accountReferences = await syncAccountReferences(betaDb, collections);
     if (options.mode === 'dry-run') {
-      const accountCarry = summarizeAccountCarry(
-        await previewSyncAccountCarry(betaDb, developmentDb, collections),
-      );
-      const report = { ...summary, accountCarry };
+      const report = { ...summary, accountReferences };
       console.log(JSON.stringify(report, null, 2));
       writeOutput(report, options.output);
       return;
@@ -664,24 +556,18 @@ async function main(): Promise<void> {
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    const accountCarry = await applySync(
-      betaDb,
-      developmentDb,
-      collections,
-      clearedDevelopmentCollections,
-      async (carry) => {
-        after = await buildPlan(betaDb, developmentDb, collections);
-        const mismatches = syncCountMismatches(after, carry);
-        if (mismatches.length > 0) {
-          throw new Error(
-            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-          );
-        }
-      },
-    );
+    await applySync(betaDb, developmentDb, collections, clearedDevelopmentCollections, async () => {
+      after = await buildPlan(betaDb, developmentDb, collections);
+      const mismatches = syncCountMismatches(after);
+      if (mismatches.length > 0) {
+        throw new Error(
+          `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+        );
+      }
+    });
     const result = {
       ...summary,
-      accountCarry,
+      accountReferences,
       status: 'applied',
       collections: after,
       clearedDevelopmentCollections,

@@ -678,7 +678,7 @@ describe(
       });
       const researcher = await Researcher.create({
         displayName: `${first} Synthetic`,
-        accountId: account._id,
+        identifiers: { netid: account.netid, email: account.email },
         profileLinks: [],
         archived: false,
         ...(profileUrl ? { profile: { websiteUrl: profileUrl } } : {}),

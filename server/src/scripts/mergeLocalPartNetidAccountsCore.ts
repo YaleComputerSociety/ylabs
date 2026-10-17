@@ -1,7 +1,7 @@
 import type { Db, Document, ObjectId } from 'mongodb';
 import type { AccountArchivedReason } from '../models/account';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
-import { ACCOUNT_ID_REFERENCE_FIELDS } from './accountSwapCarry';
+import { ACCOUNT_ID_REFERENCE_FIELDS } from './corpusAccountReferences';
 
 export const LOCAL_PART_TWIN_ARCHIVED_REASON: AccountArchivedReason =
   'merged-local-part-netid-twin';

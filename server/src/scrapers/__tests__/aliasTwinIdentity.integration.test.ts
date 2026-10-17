@@ -70,7 +70,11 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
       archived: false,
     });
     realResearcherId = (
-      await Researcher.create({ displayName: 'Sam Synthetic', accountId: real._id })
+      await Researcher.create({
+        displayName: 'Sam Synthetic',
+        accountId: real._id,
+        identifiers: { netid: real.netid },
+      })
     )._id;
     twinResearcherId = (
       await Researcher.create({

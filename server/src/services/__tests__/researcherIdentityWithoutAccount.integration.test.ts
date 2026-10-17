@@ -63,9 +63,12 @@ describe('researcher identity read from the researcher row, with no account behi
     });
   });
 
-  it('still summarizes an admin grant through the account a researcher links', async () => {
+  it('summarizes an admin grant through the login and the researcher holding its netid', async () => {
     const account = await Account.create({ netid: 'acct01', email: 'acct01@yale.edu' });
-    await Researcher.create({ displayName: 'Linked Researcher', accountId: account._id });
+    await Researcher.create({
+      displayName: 'Linked Researcher',
+      identifiers: { netid: account.netid },
+    });
     await AdminGrant.collection.insertOne({
       netid: 'acct01',
       status: 'active',

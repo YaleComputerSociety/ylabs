@@ -171,7 +171,6 @@ describe('promote accepted Beta copy guards', () => {
       expect.arrayContaining([
         'research_entities',
         'research_entity_relationships',
-        'accounts',
         'researchers',
         'role_assignments',
         'org_units',
@@ -180,6 +179,8 @@ describe('promote accepted Beta copy guards', () => {
     );
     expect(defaultNames).not.toContain('observations');
     expect(includeObservationNames).toContain('observations');
+    expect(defaultNames).not.toContain('accounts');
+    expect(includeObservationNames).not.toContain('accounts');
     expect(defaultNames).not.toContain('research_entity_redirects');
     for (const retired of [
       'faculty_members',
@@ -216,7 +217,7 @@ describe('promote accepted Beta copy guards', () => {
           excludedCount: 0,
         },
         {
-          name: 'accounts',
+          name: 'fellowships',
           category: 'base-support',
           sourceCount: 10,
           sourceCopyCount: 8,
@@ -226,8 +227,8 @@ describe('promote accepted Beta copy guards', () => {
       ],
       [
         {
-          collection: 'listings',
-          field: 'createdByUserId',
+          collection: 'researchers',
+          field: 'accountId',
           count: 1,
         },
       ],
@@ -243,19 +244,18 @@ describe('promote accepted Beta copy guards', () => {
       sourceDatabase: 'Beta',
       targetDatabase: 'Prod',
       includesObservations: false,
-      excludedSyntheticUsers: 2,
       applyBlockers: [
-        'Copied records reference 1 excluded synthetic-user link across 1 collection field.',
+        '1 researchers row carries an account _id in accountId; accounts are environment-local, so the copy would leave it pointing at nobody (#5088).',
         // This fixture is the #2513 shape: --skip-observations against a populated
         // scrape_runs, so the run-evidence guard fires on the DEFAULT promotion path.
         'scrape_runs is in the promotion manifest but observations is not, which installs a run history with no evidence behind it (#2513). Pass --include-observations, or drop --include-scrape-runs.',
       ],
-      syntheticReferenceBlockersClear: false,
+      accountReferenceBlockersClear: false,
       runEvidenceBlockersClear: false,
-      blockedSyntheticUserReferences: [
+      blockedAccountReferences: [
         {
-          collection: 'listings',
-          field: 'createdByUserId',
+          collection: 'researchers',
+          field: 'accountId',
           count: 1,
         },
       ],
@@ -288,14 +288,14 @@ describe('promote accepted Beta copy guards', () => {
     ]);
   });
 
-  it('marks synthetic reference blockers clear when no synthetic-user references are blocked', () => {
+  it('marks account reference blockers clear when no promoted row carries an account _id', () => {
     const options = parsePromotionOptions([], baseEnv);
     const summary = buildPromotionSummary(
       options,
       [
         {
-          name: 'accounts',
-          category: 'base-support',
+          name: 'researchers',
+          category: 'research-discovery',
           sourceCount: 8,
           sourceCopyCount: 8,
           targetCount: 8,
@@ -305,9 +305,8 @@ describe('promote accepted Beta copy guards', () => {
       [],
     );
 
-    expect(summary.syntheticReferenceBlockersClear).toBe(true);
+    expect(summary.accountReferenceBlockersClear).toBe(true);
     expect(summary.applyBlockers).toEqual([]);
-    expect(summary.excludedSyntheticUsers).toBe(0);
   });
 
   it('blocks apply from the same summary blockers shown in dry-run review', () => {
@@ -316,7 +315,7 @@ describe('promote accepted Beta copy guards', () => {
       options,
       [
         {
-          name: 'accounts',
+          name: 'fellowships',
           category: 'base-support',
           sourceCount: 10,
           sourceCopyCount: 8,
@@ -326,22 +325,22 @@ describe('promote accepted Beta copy guards', () => {
       ],
       [
         {
-          collection: 'research_scholarly_links',
-          field: 'userId',
+          collection: 'fellowships',
+          field: 'studentVisibilityReviewedByAccountId',
           count: 2,
         },
       ],
     );
 
     expect(() => assertPromotionSummaryCanApply(blockedSummary)).toThrow(
-      'Apply mode blocked: Copied records reference 2 excluded synthetic-user links across 1 collection field.',
+      'Apply mode blocked: 2 fellowships rows carry an account _id in studentVisibilityReviewedByAccountId; accounts are environment-local, so the copy would leave them pointing at nobody (#5088).',
     );
 
     const clearSummary = buildPromotionSummary(
       options,
       [
         {
-          name: 'accounts',
+          name: 'fellowships',
           category: 'base-support',
           sourceCount: 8,
           sourceCopyCount: 8,
@@ -360,7 +359,7 @@ describe('promote accepted Beta copy guards', () => {
     const payload = {
       mode: 'dry-run',
       datasetVersion: 'prod-promote-2026-05-31-lane-a-beta-copy',
-      syntheticReferenceBlockersClear: true,
+      accountReferenceBlockersClear: true,
       applyBlockers: [],
     };
 
@@ -402,7 +401,7 @@ describe('promote accepted Beta copy guards', () => {
     );
 
     expect(summary.emptySourceBlockersClear).toBe(false);
-    expect(summary.syntheticReferenceBlockersClear).toBe(true);
+    expect(summary.accountReferenceBlockersClear).toBe(true);
     expect(() => assertPromotionSummaryCanApply(summary)).toThrow(
       'Collection observations would copy 0 documents over 653321 existing production documents',
     );
@@ -436,30 +435,6 @@ describe('promote accepted Beta copy guards', () => {
 
     expect(summary.emptySourceBlockersClear).toBe(true);
     expect(() => assertPromotionSummaryCanApply(summary)).not.toThrow();
-  });
-
-  it('measures the accounts guard against the copied count, not the raw count', () => {
-    const options = parsePromotionOptions([], baseEnv);
-
-    const summary = buildPromotionSummary(
-      options,
-      [
-        {
-          name: 'accounts',
-          category: 'research-discovery',
-          sourceCount: 12,
-          sourceCopyCount: 0,
-          targetCount: 4179,
-          excludedCount: 12,
-        },
-      ],
-      [],
-    );
-
-    expect(summary.emptySourceBlockersClear).toBe(false);
-    expect(() => assertPromotionSummaryCanApply(summary)).toThrow(
-      'Collection accounts would copy 0 documents over 4179 existing production documents',
-    );
   });
 });
 

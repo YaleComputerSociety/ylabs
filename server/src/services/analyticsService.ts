@@ -641,26 +641,6 @@ const accountByNetidLookupStages = (netidField: string): PipelineStage.FacetPipe
     as: 'account',
   });
 
-/**
- * Joins the researcher profile for an account, if any.
- *
- * Analytics rows routinely have no account, and an unguarded
- * `localField: 'account._id'` join then matches every accountless researcher
- * shell, multiplying each row thousands of times and inflating every
- * downstream count.
- */
-const researcherByAccountLookupStages = (
-  accountIdField: string,
-): PipelineStage.FacetPipelineStage[] =>
-  singleMatchLookupStages({
-    from: 'researchers',
-    localField: accountIdField,
-    foreignField: 'accountId',
-    foreignFieldType: 'objectId',
-    project: { displayName: 1 },
-    as: 'researcher',
-  });
-
 const researcherByNetidLookupStages = (netidField: string): PipelineStage.FacetPipelineStage[] =>
   singleMatchLookupStages({
     from: 'researchers',
@@ -672,9 +652,7 @@ const researcherByNetidLookupStages = (netidField: string): PipelineStage.FacetP
     match: { archived: { $ne: true } },
   });
 
-const researcherDisplayNameField = {
-  $ifNull: ['$netidResearcher.displayName', '$researcher.displayName'],
-};
+const researcherDisplayNameField = '$netidResearcher.displayName';
 
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
@@ -709,7 +687,6 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     },
     ...accountByNetidLookupStages('_id'),
     ...researcherByNetidLookupStages('_id'),
-    ...researcherByAccountLookupStages('account._id'),
     {
       $addFields: {
         netid: '$_id',
@@ -1842,7 +1819,6 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           { $limit: 10 },
           ...accountByNetidLookupStages('_id.netid'),
           ...researcherByNetidLookupStages('_id.netid'),
-          ...researcherByAccountLookupStages('account._id'),
           {
             $project: {
               _id: 0,

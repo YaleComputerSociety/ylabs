@@ -285,7 +285,7 @@ describe('materializeEntity joins a user key on the official profile page it cit
     });
     const real = await Researcher.create({
       displayName: 'Grace Hopper',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
       profileLinks: [],
       status: 'UNKNOWN',
       archived: false,
@@ -315,7 +315,7 @@ describe('materializeEntity joins a user key on the official profile page it cit
     });
     const researcher = await Researcher.create({
       displayName: 'Alan Turing',
-      accountId: account._id,
+      identifiers: { netid: account.netid },
       profileLinks: [],
       status: 'UNKNOWN',
       archived: false,

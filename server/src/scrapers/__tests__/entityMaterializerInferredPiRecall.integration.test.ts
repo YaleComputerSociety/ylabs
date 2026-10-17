@@ -72,24 +72,22 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     orcid?: string;
     storedNetid?: string;
   }) => {
-    let accountId: mongoose.Types.ObjectId | undefined;
     if (opts.netid) {
-      const account = await Account.create({
+      await Account.create({
         netid: opts.netid,
         email: `${opts.netid}@yale.edu`,
         status: 'ACTIVE',
         archived: false,
       });
-      accountId = account._id as mongoose.Types.ObjectId;
     }
+    const heldNetid = opts.storedNetid ?? opts.netid;
     const identifiers = {
       ...(opts.orcid ? { orcid: opts.orcid } : {}),
-      ...(opts.storedNetid ? { netid: opts.storedNetid } : {}),
+      ...(heldNetid ? { netid: heldNetid } : {}),
     };
     return Researcher.create({
       schemaVersion: 1,
       displayName: opts.displayName,
-      ...(accountId ? { accountId } : {}),
       ...(Object.keys(identifiers).length > 0 ? { identifiers } : {}),
       status: 'ACTIVE',
       archived: false,
@@ -280,7 +278,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     expect(await leadRolesForEntity(entity._id as mongoose.Types.ObjectId)).toHaveLength(0);
   });
 
-  it('attaches to an account-backed researcher resolved by a canonical netid', async () => {
+  it('attaches to the researcher holding a canonical netid, never through its account', async () => {
     const entity = await seedEntity('synthetic-recall-canonical');
     const researcher = await seedCanonicalResearcher({ netid: 'plr42', displayName: 'Priya Lang' });
 
@@ -290,10 +288,8 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     expect(leads).toHaveLength(1);
     expect(String(leads[0].personId)).toBe(String(researcher._id));
 
-    const account = await Account.findOne({ netid: 'plr42' }).lean<{
-      _id: mongoose.Types.ObjectId;
-    }>();
-    expect(String(researcher.accountId)).toBe(String(account?._id));
+    const stored = await Researcher.findById(researcher._id).lean<{ accountId?: unknown }>();
+    expect(stored?.accountId).toBeUndefined();
   });
 
   it('fails closed when no canonical researcher matches the key', async () => {
