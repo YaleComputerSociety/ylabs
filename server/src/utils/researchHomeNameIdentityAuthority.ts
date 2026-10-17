@@ -1051,6 +1051,15 @@ export function nameCarriesPersonIdentity(value: unknown, personName: unknown): 
 
 // Path segments that structure a site rather than name a person, so they never
 // corroborate an eponym.
+const RESEARCH_HOME_HEAD_NOUN_WORDS = new Set([
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'group',
+  'groups',
+]);
+
 const STRUCTURAL_URL_SEGMENT_WORDS = new Set([
   'lab',
   'labs',
@@ -1172,6 +1181,46 @@ export function eponymousOrganizationNameSurnameCandidates(value: unknown): stri
  * segments count and never the host.
  */
 export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: unknown): string[] {
+  return labNameEponymsInUrlPath(harvestedName, websiteUrl, () => true);
+}
+
+/**
+ * The eponyms the URL path names as a person, which is `corroboratedLabNameEponyms`
+ * without the segments that only spell the candidate name's own slug. A page at
+ * `/<word>-lab` echoes "<Word> Lab" back and says nothing about whether the word is
+ * a person, so a place, topic or acronym lab on such a page was refused as another
+ * person's lab even though no researcher has that surname (#5069). A colleague's
+ * eponymous lab on that shape is still refused, by the surname roster.
+ */
+export function labNameEponymsUrlPathNamesAsAPerson(
+  harvestedName: unknown,
+  websiteUrl: unknown,
+): string[] {
+  const candidates = eponymousLabNameSurnameCandidates(harvestedName);
+  return labNameEponymsInUrlPath(
+    harvestedName,
+    websiteUrl,
+    (segment) => !segmentOnlySpellsLabName(segment, candidates),
+  );
+}
+
+function segmentOnlySpellsLabName(segment: string, eponymCandidates: string[]): boolean {
+  const words = segment.match(NAME_WORD_RE) || [];
+  if (!words.some((word) => RESEARCH_HOME_HEAD_NOUN_WORDS.has(word))) return false;
+  const nameWordsBeforeHeadNoun = words.filter(
+    (word) => !RESEARCH_HOME_HEAD_NOUN_WORDS.has(word) && word !== 'the',
+  );
+  return (
+    nameWordsBeforeHeadNoun.length > 0 &&
+    eponymCandidates.includes(nameWordsBeforeHeadNoun.join(''))
+  );
+}
+
+function labNameEponymsInUrlPath(
+  harvestedName: unknown,
+  websiteUrl: unknown,
+  segmentCounts: (segment: string) => boolean,
+): string[] {
   const candidates = eponymousLabNameSurnameCandidates(harvestedName);
   if (candidates.length === 0) return [];
   const raw = textValue(websiteUrl);
@@ -1183,9 +1232,14 @@ export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: u
     return [];
   }
   const pathWords = new Set(
-    (pathname.toLowerCase().match(NAME_WORD_RE) || []).filter(
-      (word) => word.length >= 2 && !STRUCTURAL_URL_SEGMENT_WORDS.has(word) && !/\d/.test(word),
-    ),
+    pathname
+      .toLowerCase()
+      .split('/')
+      .filter(segmentCounts)
+      .flatMap((segment) => segment.match(NAME_WORD_RE) || [])
+      .filter(
+        (word) => word.length >= 2 && !STRUCTURAL_URL_SEGMENT_WORDS.has(word) && !/\d/.test(word),
+      ),
   );
   const corroborated = candidates.filter((candidate) => pathWords.has(candidate));
   return corroborated.length > 0 ? [corroborated[0]] : [];
@@ -1329,7 +1383,7 @@ export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>):
       (word) => word.length >= 2 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
     );
     const surname = words[words.length - 1];
-    if (surname) surnames.add(surname);
+    if (surname && !RESEARCH_HOME_HEAD_NOUN_WORDS.has(surname)) surnames.add(surname);
   }
   return surnames;
 }
@@ -1409,7 +1463,7 @@ export function claimsAnotherPersonsLabByUrlPath(args: {
   identityTokens: string[];
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  const pathCorroborated = labNameEponymsUrlPathNamesAsAPerson(args.harvestedName, args.websiteUrl);
   if (pathCorroborated.length === 0) return false;
   return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }
@@ -1446,7 +1500,7 @@ export function claimsAnotherPersonsLab(args: {
   knownPersonSurnames: ReadonlySet<string>;
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  const pathCorroborated = labNameEponymsUrlPathNamesAsAPerson(args.harvestedName, args.websiteUrl);
   // The path named a person, so it has already answered the question either way;
   // the roster must not overturn "this is the eponym holder's own lab".
   if (pathCorroborated.length > 0) {

@@ -12,6 +12,7 @@ import {
   stripResearchHomeNameLinkChrome,
   stripResearchHomeNameLinkWrapper,
   corroboratedLabNameEponyms,
+  labNameEponymsUrlPathNamesAsAPerson,
   eponymousLabNameSurnameCandidates,
   entityKeyNamesOnlyThisPerson,
   entityKeyPersonTokens,
@@ -2308,5 +2309,96 @@ describe('a campus building is not a person-scoped name (#4916)', () => {
         currentName: 'Chemistry Fixture Lab',
       }),
     ).toBe('');
+  });
+});
+
+describe('a URL path segment that only spells the lab name is not evidence of a person', () => {
+  const roster = new Set(['sloan', 'quill']);
+
+  it('does not read a topic word before "Lab" as a person because the path echoes the name', () => {
+    expect(
+      labNameEponymsUrlPathNamesAsAPerson('Delta Lab', 'https://www.example.org/delta-lab'),
+    ).toEqual([]);
+    expect(
+      labNameEponymsUrlPathNamesAsAPerson(
+        'The Delta Lab',
+        'https://www.example.org/the-delta-lab/',
+      ),
+    ).toEqual([]);
+    expect(
+      labNameEponymsUrlPathNamesAsAPerson(
+        'De Camilli Lab',
+        'https://medicine.example.edu/research/de-camilli-lab/',
+      ),
+    ).toEqual([]);
+  });
+
+  it('still reads a person slug in the path as a person', () => {
+    expect(
+      labNameEponymsUrlPathNamesAsAPerson(
+        'The Liu Lab',
+        'https://medicine.example.edu/lab/jun-liu/',
+      ),
+    ).toEqual(['liu']);
+    expect(
+      labNameEponymsUrlPathNamesAsAPerson(
+        'Kliman Laboratories',
+        'https://medicine.example.edu/obgyn/kliman/',
+      ),
+    ).toEqual(['kliman']);
+  });
+
+  it("keeps a topic-named lab on a page whose path echoes its name as the lead's own", () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Delta Lab',
+        personName: 'Avery Sloan',
+        websiteUrl: 'https://www.example.org/delta-lab',
+        knownPersonSurnames: roster,
+      }),
+    ).toBe('OWN_IDENTITY');
+    expect(
+      claimsAnotherPersonsLabByUrlPath({
+        harvestedName: 'Delta Lab',
+        websiteUrl: 'https://www.example.org/delta-lab',
+        identityTokens: ['avery', 'sloan'],
+      }),
+    ).toBe(false);
+  });
+
+  it("still refuses a colleague's eponymous lab on the same path shape through the roster", () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Quill Lab',
+        personName: 'Avery Sloan',
+        websiteUrl: 'https://medicine.example.edu/research/quill-lab/',
+        knownPersonSurnames: roster,
+      }),
+    ).toBe('ANOTHER_PERSONS_LAB');
+    expect(
+      claimsAnotherPersonsLab({
+        harvestedName: 'Quill Lab',
+        websiteUrl: 'https://medicine.example.edu/research/quill-lab/',
+        identityTokens: ['avery', 'sloan'],
+        knownPersonSurnames: roster,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the lead's own eponymous lab on a path that echoes its name", () => {
+    expect(
+      classifyHarvestedResearchHomeName({
+        harvestedName: 'Sloan Lab',
+        personName: 'Avery Sloan',
+        websiteUrl: 'https://medicine.example.edu/research/sloan-lab/',
+        knownPersonSurnames: roster,
+      }),
+    ).toBe('OWN_IDENTITY');
+  });
+
+  it('never records a lab head noun as a surname', () => {
+    expect([
+      ...personSurnamesFromDisplayNames(['Quill Lab', 'Avery Sloan', 'Rowan Group']),
+    ]).toEqual(['sloan']);
   });
 });
