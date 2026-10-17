@@ -61,6 +61,7 @@ export interface LabRosterDisclosure {
   observedAt?: string;
   freshnessExpiresAt?: string;
   undergraduates?: LabRosterUndergraduate[];
+  alumniSourceUrl?: string;
 }
 
 export interface LabRosterUndergraduate {

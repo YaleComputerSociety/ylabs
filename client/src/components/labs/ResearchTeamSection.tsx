@@ -184,6 +184,7 @@ export default function ResearchTeamSection({
   if (teamMembers.length === 0 && undergraduates.length === 0) return null;
   const hasCurrentTeam = teamMembers.length > 0 || listsCurrentUndergraduates;
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
+  const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
   const dateLabel = observedLabel(roster.observedAt);
 
   return (
@@ -274,6 +275,19 @@ export default function ResearchTeamSection({
                 className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
               >
                 Official roster source
+              </a>
+            </>
+          )}
+          {alumniSourceUrl && (
+            <>
+              {' · '}
+              <a
+                href={alumniSourceUrl}
+                target="_blank"
+                rel={EXTERNAL_LINK_REL}
+                className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+              >
+                Alumni page
               </a>
             </>
           )}

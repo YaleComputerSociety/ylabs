@@ -39,6 +39,7 @@ export interface OfficialRosterConfig {
   /** Owner judgements on single listed names, recorded per lab in its review (#5039). */
   withheldNames?: string[];
   pastNames?: string[];
+  alumniPageUrl?: string;
 }
 
 export interface OfficialRosterUndergraduate {
@@ -136,7 +137,7 @@ export function mapOfficialRosterRole(
   ) {
     return 'grad-student';
   }
-  if (/\b(undergraduate|undergrad)\b/.test(evidence)) return 'undergrad';
+  if (/\b(undergraduates?|undergrads?)\b/.test(evidence)) return 'undergrad';
   if (
     /\b(lab manager|laboratory manager|research assistant|research associate|research scientist|postgraduate associate|technician|coordinator|data manager|staff)\b/.test(
       evidence,
@@ -713,6 +714,47 @@ export function officialRosterSectionLabels(
     .filter(Boolean);
 }
 
+/**
+ * Every undergraduate a lab's alumni page lists is past, whatever headings the page uses,
+ * so its sections are read as past sections under the same role, name and school rules.
+ */
+export function extractAlumniPageUndergraduates(
+  html: string,
+  config: OfficialRosterConfig,
+  observedAt = new Date(),
+): { undergraduates: OfficialRosterUndergraduate[]; undergraduateWithheldCount: number } {
+  const alumniUrl = config.alumniPageUrl || config.url;
+  const template = detectOfficialRosterTemplate(html);
+  const sections = readRosterSections(cheerio.load(html), template);
+  const labels = undergraduateSectionCandidates(html, template).map((candidate) => candidate.label);
+  return extractListedUndergraduates(
+    sections,
+    { ...config, url: alumniUrl, currentSectionLabels: [], pastSectionLabels: labels },
+    observedAt,
+  );
+}
+
+export function withAlumniUndergraduates(
+  roster: ExtractedOfficialRoster,
+  alumni: OfficialRosterUndergraduate[],
+): ExtractedOfficialRoster {
+  if (!['current', 'partial', 'empty'].includes(roster.state) || alumni.length === 0) return roster;
+  const listed = new Set(roster.undergraduates.map((member) => normalizedLabel(member.name)));
+  const added = alumni
+    .filter((member) => !listed.has(normalizedLabel(member.name)))
+    .map((member) => ({ ...member, status: 'past' as const }));
+  const undergraduates = [...roster.undergraduates, ...added].slice(
+    0,
+    OFFICIAL_ROSTER_MAX_UNDERGRADUATES_PER_ENTITY,
+  );
+  return {
+    ...roster,
+    undergraduates,
+    state: roster.state === 'empty' && undergraduates.length > 0 ? 'current' : roster.state,
+    complete: roster.state === 'empty' ? true : roster.complete,
+  };
+}
+
 export function detectOfficialRosterTemplate(html: string): OfficialRosterTemplate {
   const $ = cheerio.load(html);
   if ($('section.organization-member-listing article.profile-grid-item').length > 0) {
@@ -889,6 +931,7 @@ export function officialRosterObservations(
     undergraduates: roster.undergraduates,
     undergraduateWithheldCount: roster.undergraduateWithheldCount,
     sourceUrl: config.url,
+    ...(config.alumniPageUrl ? { alumniSourceUrl: config.alumniPageUrl } : {}),
     sourcePublishedAt: roster.sourcePublishedAt?.toISOString(),
     observedAt: roster.observedAt.toISOString(),
     freshnessExpiresAt: roster.freshnessExpiresAt.toISOString(),
@@ -1013,7 +1056,18 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
       const observedAt = context.options.referenceDate ?? new Date();
       try {
         const html = await this.fetchPage(config.url, context.options.useCache);
-        const roster = extractOfficialResearchHomeRoster(html, config, observedAt);
+        let roster = extractOfficialResearchHomeRoster(html, config, observedAt);
+        if (config.alumniPageUrl) {
+          try {
+            const alumniHtml = await this.fetchPage(config.alumniPageUrl, context.options.useCache);
+            roster = withAlumniUndergraduates(
+              roster,
+              extractAlumniPageUndergraduates(alumniHtml, config, observedAt).undergraduates,
+            );
+          } catch {
+            context.log(`${config.researchEntityKey}: optional alumni page fetch failed`);
+          }
+        }
         const observations = officialRosterObservations(config, roster);
         await context.emit(observations);
         observationCount += observations.length;

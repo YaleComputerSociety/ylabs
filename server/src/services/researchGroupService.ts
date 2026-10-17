@@ -2622,6 +2622,7 @@ export interface PublicRosterDisclosure {
   observedAt?: unknown;
   freshnessExpiresAt?: unknown;
   undergraduates: PublicRosterUndergraduate[];
+  alumniSourceUrl?: string;
 }
 
 export interface PublicRosterUndergraduate {
@@ -2691,6 +2692,11 @@ export function publicRosterDisclosure(
 ): PublicRosterDisclosure {
   const withheldCount = Math.max(0, Number(enrichment?.withheldCount) || 0);
   const undergraduates = publicRosterUndergraduates(enrichment, now);
+  const alumniSnapshot =
+    enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
+  const alumniSourceUrl = undergraduates.some((member) => member.status === 'past')
+    ? publicHttpUrl(alumniSnapshot?.alumniSourceUrl)
+    : undefined;
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
   let status: PublicRosterDisclosureStatus;
   if (enrichment?.state === 'failed') {
@@ -2738,6 +2744,7 @@ export function publicRosterDisclosure(
         ? earliestRetainedValue('freshnessExpiresAt')
         : enrichment?.freshnessExpiresAt,
     undergraduates,
+    ...(alumniSourceUrl ? { alumniSourceUrl } : {}),
   };
 }
 
