@@ -867,8 +867,9 @@ const DEPARTMENT_HIRING_SUBJECT_SEGMENT =
  *
  * The exemption reads host AND path, not the host label alone, so a lab's own openings
  * page on a shared school host is not read as its department's. That exemption decides
- * whose page it is, not whether it may be a research website: `isPostingPageUrl` refuses
- * every openings page as a research website, the lab's own included.
+ * whose page it is, not whether it may be a research website:
+ * `isPostingPageCitedAsResearchWebsite` refuses every openings page as a lab or
+ * person-scoped row's research website, the lab's own included.
  */
 export function isDepartmentHiringPageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
@@ -886,9 +887,10 @@ const POSTING_PAGE_SEGMENT =
   /^(?:jobs?|job-openings?|job-postings?|open-positions?|positions?|openings?|employment|careers?|hiring|vacanc(?:y|ies)|post-?doc(?:toral)?-(?:positions?|openings?|fellowships?))$/i;
 
 /**
- * A page that advertises a job, a position or a postdoctoral fellowship. It is never any
- * row's research website, on any host, because it is about a vacancy rather than about
- * the research: a profile linked another lab's fellowship posting, the roster lane stored
+ * A page that advertises a job, a position or a postdoctoral fellowship. It is about a
+ * vacancy rather than about the research, so it never names a row, and
+ * `isPostingPageCitedAsResearchWebsite` refuses it as a lab or person-scoped row's
+ * research website on any host: a profile linked another lab's fellowship posting, the roster lane stored
  * it as the row's website, and the microsite lane then named the row after the posting.
  * Unlike `isDepartmentHiringPageUrl` there is no lab-path exemption, because the lab's own
  * openings page is not its research website either; its site root is.
@@ -951,16 +953,16 @@ export function isDepartmentCollectivePageUrl(value: unknown): boolean {
 }
 
 /**
- * A posting page offered as the research website of a row that is not an organization.
- * An organization-scoped row citing its own department's hiring page is left to the
- * department-hiring-page contract (#3333), which keeps it; every lab and person-scoped
- * row is refused, its own lab's openings page included.
+ * A posting page offered as the research website of a lab or person-scoped row, its own
+ * lab's openings page included. Any other row citing its own department's hiring page is
+ * left to the department-hiring-page contract (#3333), which keeps it, so both refusals
+ * share the scope `isUmbrellaPageCitedByPerson` uses.
  */
 export function isPostingPageCitedAsResearchWebsite(
   value: unknown,
   entity?: ResearchEntityHostOwnerIdentity,
 ): boolean {
-  return isPostingPageUrl(value) && !isOrganizationShapedHostOwner(entity);
+  return isPostingPageUrl(value) && isPersonScopedHostTenant(entity);
 }
 
 // Organization shapes whose identity is the collective that publishes a site rather

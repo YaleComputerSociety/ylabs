@@ -1769,6 +1769,9 @@ describe('a job or fellowship posting is never a research website', () => {
   it("leaves an organization's own department hiring page to the hiring-page contract", () => {
     const departmentJobs = 'https://exampledept.yale.edu/about/jobs/';
     expect(researchHomeWebsiteUrlWriteRefusal(departmentJobs, { entityType: 'CENTER' })).toBeNull();
+    expect(
+      researchHomeWebsiteUrlWriteRefusal(departmentJobs, { entityType: 'CORE_FACILITY' }),
+    ).toBeNull();
     expect(researchHomeWebsiteUrlWriteRefusal(departmentJobs, LAB_ROW)).not.toBeNull();
   });
 });
