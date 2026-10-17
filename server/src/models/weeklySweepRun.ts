@@ -79,9 +79,13 @@ const sourceRunSchema = new mongoose.Schema(
     fetchBlocked: { type: Number, required: false },
     throttleRecovered: { type: Number, required: false },
     throttleExhausted: { type: Number, required: false },
+    databaseWriteRecovered: { type: Number, required: false },
+    databaseWriteExhausted: { type: Number, required: false },
     materializationErrors: { type: Number, required: false },
     error: { type: String, required: false },
     failureTail: { type: String, required: false },
+    attempts: { type: Number, required: false },
+    firstAttemptError: { type: String, required: false },
   },
   { _id: false },
 );

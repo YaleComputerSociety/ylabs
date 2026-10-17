@@ -238,6 +238,8 @@ export interface ScrapeRunReport {
       selectorBreakages: number;
       throttleRecovered: number;
       throttleExhausted: number;
+      databaseWriteRecovered: number;
+      databaseWriteExhausted: number;
       byMode: Record<
         string,
         {
@@ -621,6 +623,8 @@ function buildCoverageFetchSummary(
     selectorBreakages: summary?.selectorBreakages || 0,
     throttleRecovered: fetchMetrics?.throttleRetry?.recovered || 0,
     throttleExhausted: fetchMetrics?.throttleRetry?.exhausted || 0,
+    databaseWriteRecovered: fetchMetrics?.databaseWriteRetry?.recovered || 0,
+    databaseWriteExhausted: fetchMetrics?.databaseWriteRetry?.exhausted || 0,
     byMode,
   };
 }
@@ -923,6 +927,11 @@ export function buildScrapeRunReport(
   if (coverageFetch.throttleExhausted > 0) {
     warnings.push(
       `${coverageFetch.throttleExhausted} request(s) were still refused after the throttle retry budget; their pages are missing from this run.`,
+    );
+  }
+  if (coverageFetch.databaseWriteExhausted > 0) {
+    warnings.push(
+      `${coverageFetch.databaseWriteExhausted} database write(s) still failed after the transient-error retry budget; a lane that caught the error lost those observations.`,
     );
   }
   if (coverageFetch.attempts > 0 && coverageFetch.succeeded === 0 && reportedObservationCount > 0) {

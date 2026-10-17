@@ -22,6 +22,9 @@ export const sweepSummaryFixture = (overrides: Record<string, unknown> = {}) => 
       observationCount: 120,
       throttleRecovered: 7,
       throttleExhausted: 0,
+      databaseWriteRecovered: 1,
+      attempts: 2,
+      firstAttemptError: 'scraper exited with status 1',
     },
     {
       sourceName: 'source-b',

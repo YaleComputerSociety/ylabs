@@ -41,6 +41,8 @@ import {
 } from './descriptionSourceOwnership';
 import { resetDescriptionOwnershipCitersCache } from './descriptionOwnershipResolverScreen';
 import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
+import { insertDocumentsIdempotently } from './observationInsert';
+import { retryTransientDatabaseWrite } from './utils/databaseWriteRetry';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -781,6 +783,7 @@ export async function appendObservations(
   const docs = keptInputs.map((obs) => {
     const value = normalizeObservationValue(obs.field, obs.value);
     return {
+      _id: new mongoose.Types.ObjectId(),
       entityType: obs.entityType,
       entityId: obs.entityId || undefined,
       entityKey: obs.entityKey || undefined,
@@ -815,11 +818,23 @@ export async function appendObservations(
   }
 
   if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
-  const result = await Observation.insertMany(docs, { ordered: false });
+  const landed = await insertDocumentsIdempotently(
+    docs,
+    {
+      insertMany: (pending) =>
+        Observation.insertMany(pending, { ordered: false }) as Promise<
+          Array<{ _id: unknown; observationFingerprint?: string }>
+        >,
+      findLandedIds: async (ids) =>
+        (await Observation.find({ _id: { $in: ids } }, { _id: 1 }).lean()).map((row) => row._id),
+    },
+    { label: `${ctx.sourceName} observation insert (${docs.length} docs)` },
+  );
   const latestByFingerprint = new Map<string, { id: any; input: (typeof docs)[number] }>();
-  for (const [index, doc] of (result as any[]).entries()) {
-    if (!doc.observationFingerprint) continue;
-    latestByFingerprint.set(doc.observationFingerprint, { id: doc._id, input: docs[index] });
+  for (const { inserted, input } of landed) {
+    const fingerprint = (inserted as { observationFingerprint?: string }).observationFingerprint;
+    if (!fingerprint) continue;
+    latestByFingerprint.set(fingerprint, { id: inserted._id, input });
   }
 
   const supersedeOps = Array.from(latestByFingerprint.entries())
@@ -849,10 +864,15 @@ export async function appendObservations(
 
   const superseded =
     supersedeOps.length > 0
-      ? (await Observation.bulkWrite(supersedeOps, { ordered: false })).modifiedCount || 0
+      ? (
+          await retryTransientDatabaseWrite(
+            () => Observation.bulkWrite(supersedeOps, { ordered: false }),
+            { label: `${ctx.sourceName} observation supersede (${supersedeOps.length} ops)` },
+          )
+        ).modifiedCount || 0
       : 0;
 
-  return { inserted: result.length, skipped: skippedCount, superseded };
+  return { inserted: landed.length, skipped: skippedCount, superseded };
 }
 
 export interface RetireObservationsResult {
