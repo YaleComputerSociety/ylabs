@@ -191,6 +191,7 @@ None of these is a secret, and none belongs on a web service.
 | `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
 | `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |
 | `SCRAPER_SWEEP_DEADLINE_AT` | Run deadline the weekly wrapper passes to `scrape:sweep`, so a source that failed on a transient database error is re-run only when the Render limit has room; never set it by hand |
+| `SCRAPER_RUN_STALL_WINDOW_MS` | The scrape-run stall window (`scrapers/scrapeRunProgress.ts`, default 20 minutes): a run with no progress for longer stops heartbeating and exits as `interrupted` with reason `stalled`; a value that is not a positive whole number is ignored |
 | `SCRAPLING_RENDERER_ENABLED`, `SCRAPLING_FETCH_MODE`, `SCRAPLING_PYTHON_COMMAND`, `SCRAPLING_BRIDGE_PATH`, `SCRAPLING_TIMEOUT_MS` | The rendered-fetch bridge |
 | `SCRAPER_SWEEP_CANARY_LIMIT`, `SCRAPER_SWEEP_CANARY_CONCURRENCY`, `SCRAPER_SWEEP_CANARY_TIMEOUT_MS`, `SCRAPER_SWEEP_CLUSTER_QUOTA_MB`, `SCRAPER_SWEEP_MIN_HEADROOM_MB` | The sweep preflight |
 | `SWEEP_TARGET_SHA`, `SEARCH_INDEX_WRITES` | Set by the sweep entrypoint, as above |

@@ -23,6 +23,7 @@ import {
 } from '../snapshotBenchmarkMode';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { recordThrottleRetryOutcome } from './throttleRetryStats';
+import { withScrapeRunProgress } from '../scrapeRunProgress';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 
@@ -342,7 +343,7 @@ async function fetchPageLive(
   for (let attempt = 0; ; attempt += 1) {
     let result: HttpRequestResult;
     try {
-      result = await limiter.run(host, () => request(safeUrl, config));
+      result = await limiter.run(host, () => withScrapeRunProgress(() => request(safeUrl, config)));
     } catch (error) {
       if (!(await backoff.waitAfterTransportFailure(attempt))) {
         backoff.settle('exhausted');

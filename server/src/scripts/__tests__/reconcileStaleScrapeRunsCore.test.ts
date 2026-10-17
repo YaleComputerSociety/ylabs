@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertReconcileStaleScrapeRunsApplyAllowed,
   planStaleScrapeRunReconciliation,
@@ -8,6 +8,10 @@ import {
   type RunningScrapeRunFacts,
 } from '../reconcileStaleScrapeRunsCore';
 import { parseReconcileStaleScrapeRunsArgs } from '../reconcileStaleScrapeRuns';
+import {
+  startScrapeRunHeartbeat,
+  SCRAPE_RUN_STALE_HEARTBEAT_MS,
+} from '../../scrapers/scrapeRunLiveness';
 
 const NOW = new Date('2026-09-27T12:00:00Z');
 const MINUTE = 60 * 1000;
@@ -292,5 +296,68 @@ describe('parseReconcileStaleScrapeRunsArgs (#3595)', () => {
       /ISO timestamp/,
     );
     expect(() => parseReconcileStaleScrapeRunsArgs(['--started-before'])).toThrow(/ISO timestamp/);
+  });
+});
+
+describe('a stalled run (#5086)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is closed by the next reap once its stopped heartbeat goes stale', async () => {
+    vi.useFakeTimers({ now: ago(2 * HOUR) });
+    const startedAt = new Date(Date.now());
+    const lastProgressAtMs = Date.now();
+    const row: { status: string; heartbeatAt: Date } = {
+      status: 'running',
+      heartbeatAt: startedAt,
+    };
+    const heartbeat = startScrapeRunHeartbeat(
+      { runId: 'stalled-run', sourceName: 'fixture-source', stallWindowMs: 20 * MINUTE },
+      {
+        beat: async (_runId, at) => {
+          row.heartbeatAt = at;
+          return { matched: true };
+        },
+        lastProgressAtMs: () => lastProgressAtMs,
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(20 * MINUTE + 2 * MINUTE);
+    const lastBeat = row.heartbeatAt;
+    await vi.advanceTimersByTimeAsync(SCRAPE_RUN_STALE_HEARTBEAT_MS + MINUTE);
+    heartbeat.stop();
+    vi.useRealTimers();
+
+    expect(lastBeat.getTime() - startedAt.getTime()).toBe(20 * MINUTE);
+    expect(row.heartbeatAt).toEqual(lastBeat);
+    const outcome = planStaleScrapeRunReconciliation({
+      runs: [
+        {
+          id: 'stalled-run',
+          sourceName: 'fixture-source',
+          startedAt,
+          heartbeatAt: row.heartbeatAt,
+          owner: { host: 'this-host', pid: 31 },
+        },
+      ],
+      heldLockSourceNames: new Set(),
+      now: NOW,
+      localHost: 'this-host',
+      isLocalProcessAlive: () => false,
+      heartbeatStaleOnly: true,
+      startedBefore: NOW,
+    });
+
+    expect(outcome.reap).toEqual([
+      expect.objectContaining({
+        id: 'stalled-run',
+        reason: 'heartbeat_stale',
+        lastSignOfLifeAt: lastBeat,
+      }),
+    ]);
+    const update = staleScrapeRunUpdate(outcome.reap[0]!, { now: NOW, detectedBy: 'sweep' });
+    expect(update.filter).toEqual({ _id: 'stalled-run', status: 'running', heartbeatAt: lastBeat });
+    expect(update.update).toMatchObject({ $set: { status: 'interrupted' } });
   });
 });

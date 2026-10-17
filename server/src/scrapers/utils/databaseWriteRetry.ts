@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { withScrapeRunProgress } from '../scrapeRunProgress';
 import {
   DATABASE_WRITE_RETRY_LOG_TAG,
   isTransientMongoError,
@@ -93,7 +94,7 @@ export async function retryTransientDatabaseWrite<T>(
   for (;;) {
     attempt += 1;
     try {
-      const value = await operation({ attempt, isTransient });
+      const value = await withScrapeRunProgress(() => operation({ attempt, isTransient }));
       if (attempt > 1) {
         recordDatabaseWriteRetryOutcome('recovered', attempt - 1);
         console.warn(

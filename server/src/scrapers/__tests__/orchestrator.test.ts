@@ -31,6 +31,7 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 import { ScraperOrchestrator } from '../orchestrator';
 import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../interruptCleanup';
 import { currentProcessCodeSha } from '../scrapeRunCodeIdentity';
+import { ScrapeRunStalledError } from '../scrapeRunProgress';
 import { SCRAPE_RUN_NOTES_MAX_LENGTH, SCRAPE_RUN_NOTES_TRUNCATED_SUFFIX } from '../scrapeRunNotes';
 import {
   SCRAPE_RUN_INTERRUPT_WRITE_DEADLINE_MS,
@@ -825,6 +826,80 @@ describe('ScraperOrchestrator', () => {
       expect(statusWrites()).toEqual(['interrupted']);
       expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
       expect(process.listeners('SIGTERM').length).toBe(listenersBefore);
+    });
+
+    function heartbeatBeats(): number {
+      return mocks.scrapeRunUpdateOne.mock.calls.filter(
+        ([, update]) =>
+          (update as { $set?: { heartbeatAt?: Date } }).$set?.heartbeatAt instanceof Date,
+      ).length;
+    }
+
+    it('ends a run whose lane stopped making progress as interrupted with a stalled reason (#5086)', async () => {
+      vi.useFakeTimers();
+      const listenersBefore = process.listeners('SIGTERM').length;
+      const orchestrator = new ScraperOrchestrator({
+        runHeartbeatIntervalMs: 1_000,
+        runStallWindowMs: 3_000,
+      });
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run(ctx) {
+          ctx.log('fetched the first page');
+          return new Promise(() => undefined);
+        },
+      });
+
+      const outcome = orchestrator.run('fixture-source', OPTIONS).then(
+        () => 'resolved',
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(4_000);
+      const error = await outcome;
+
+      expect(error).toBeInstanceOf(ScrapeRunStalledError);
+      expect(String((error as Error).message)).toContain('[scrape-run-stalled]');
+      expect(statusWrites()).toEqual(['interrupted']);
+      const stalledWrite = mocks.scrapeRunUpdateOne.mock.calls.find(
+        ([, update]) => (update as { $set?: { status?: string } }).$set?.status === 'interrupted',
+      );
+      expect(stalledWrite?.[0]).toEqual({ _id: 'run-1', status: 'running' });
+      expect(stalledWrite?.[1]).toMatchObject({
+        $set: { interruption: { reason: 'stalled', detectedBy: 'orchestrator' } },
+      });
+      const beatsAtStall = heartbeatBeats();
+      expect(beatsAtStall).toBe(3);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(heartbeatBeats()).toBe(beatsAtStall);
+      expect(process.listeners('SIGTERM').length).toBe(listenersBefore);
+    });
+
+    it('keeps a slow lane that keeps reporting progress running past the stall window (#5086)', async () => {
+      vi.useFakeTimers();
+      const orchestrator = new ScraperOrchestrator({
+        runHeartbeatIntervalMs: 1_000,
+        runStallWindowMs: 3_000,
+      });
+      orchestrator.register({
+        name: 'fixture-source',
+        displayName: 'Fixture source',
+        async run(ctx) {
+          for (let page = 0; page < 10; page += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+            ctx.log(`fetched page ${page}`);
+          }
+          return { observationCount: 0, entitiesObserved: 0 };
+        },
+      });
+
+      const running = orchestrator.run('fixture-source', OPTIONS);
+      await vi.advanceTimersByTimeAsync(11_000);
+      const { status } = await running;
+
+      expect(status).toBe('success');
+      expect(statusWrites()).toEqual(['success']);
+      expect(heartbeatBeats()).toBeGreaterThanOrEqual(9);
     });
 
     it('detaches its signal handlers when the run finishes normally', async () => {
