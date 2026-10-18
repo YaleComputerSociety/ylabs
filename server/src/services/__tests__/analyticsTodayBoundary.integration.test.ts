@@ -20,6 +20,12 @@ describe('the per-card today breakdown over a real store', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('analytics_today_boundary_test'));
+    // getAnalytics runs its $lookup aggregates in parallel; a lookup target that does not
+    // exist yet can be created mid-aggregate, which the server rejects as a collection that
+    // "appeared after a restore". Creating them up front removes that race.
+    for (const collection of ['accounts', 'researchers']) {
+      await mongoose.connection.db!.createCollection(collection);
+    }
   });
 
   afterAll(async () => {
