@@ -178,7 +178,7 @@ describe('programController search visibility', () => {
       expect.objectContaining({
         query: 'summer',
         page: 1000,
-        pageSize: 100,
+        pageSize: 250,
       }),
     );
   });

@@ -36,10 +36,12 @@ interface FellowshipSearchContextProviderProps {
 
 const FELLOWSHIP_SORTABLE_KEYS = ['default', 'deadline', 'title'];
 
+export const PROGRAM_SEARCH_PAGE_SIZE = 250;
+
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({
   children,
 }) => {
-  const pageSize = 100;
+  const pageSize = PROGRAM_SEARCH_PAGE_SIZE;
   const sortableKeys = FELLOWSHIP_SORTABLE_KEYS;
 
   const location = useLocation();
@@ -416,7 +418,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     runFirstPageSearch();
   }, [runFirstPageSearch]);
 
-  const searchReady = isActive && authReady && filterOptionsLoaded;
+  const searchReady = isActive && authReady;
 
   useEffect(() => {
     if (!searchReady) return;
