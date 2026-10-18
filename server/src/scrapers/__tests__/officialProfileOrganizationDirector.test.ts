@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  centerRosterReadAdmissibility,
+  type CenterRosterHealthSnapshot,
+} from '../centerRosterRetirement';
+import {
   OfficialProfilePiBackfillScraper,
   organizationDirectorClaimFromProfile,
   organizationDirectorObservations,
@@ -39,13 +43,13 @@ const statesAndLinks = profileHtml(`
     <a href="${programUrl}">Visit Website</a>
   </section>`);
 
-function contextFor(emitted: ObservationInput[], only: string[]): ScraperContext {
+function contextFor(emitted: ObservationInput[], only: string[], useCache = false): ScraperContext {
   return {
     scrapeRunId: 'run-1',
     sourceId: 'source-1',
     sourceName: 'official-profile-pi-backfill',
     sourceWeight: 0.95,
-    options: { dryRun: true, useCache: false, release: false, only },
+    options: { dryRun: true, useCache, release: false, only },
     emit: vi.fn(async (obs: ObservationInput | ObservationInput[]) => {
       emitted.push(...(Array.isArray(obs) ? obs : [obs]));
     }),
@@ -53,8 +57,13 @@ function contextFor(emitted: ObservationInput[], only: string[]): ScraperContext
   };
 }
 
-function scraperReading(html: string, targets: Array<Record<string, any>>) {
-  const fetcher = vi.fn(async () => html);
+function scraperReading(
+  html: string,
+  targets: Array<Record<string, any>>,
+  fetcher: (url: string, useCache: boolean, sourceName: string) => Promise<string> = vi.fn(
+    async () => html,
+  ),
+) {
   const scraper = new OfficialProfilePiBackfillScraper(
     fetcher,
     vi.fn(async () => []),
@@ -241,5 +250,94 @@ describe('the organization-director arm of the lane run (#5085)', () => {
 
     expect(emitted.filter((obs) => obs.entityType === 'researchGroupMember')).toEqual([]);
     expect(result.notes).toContain('claimed 0 of 1 lead-less organization directors');
+  });
+});
+
+describe('the read snapshot the organization-director arm records for retirement (#5091)', () => {
+  const heldOrganization = { ...organization, holdsProfileDirectorEdge: true };
+  const statesNothing = profileHtml(
+    `<p>Professor of Psychiatry.</p><a href="${programUrl}">Visit Website</a>`,
+  );
+
+  async function snapshotFrom(
+    html: string,
+    options: {
+      targets?: Array<Record<string, any>>;
+      fetcher?: (url: string, useCache: boolean, sourceName: string) => Promise<string>;
+      useCache?: boolean;
+    } = {},
+  ): Promise<CenterRosterHealthSnapshot | undefined> {
+    const emitted: ObservationInput[] = [];
+    const { scraper } = scraperReading(
+      html,
+      options.targets ?? [heldOrganization],
+      options.fetcher,
+    );
+    await scraper.run(
+      contextFor(emitted, ['profile-organization-director-backfill'], options.useCache),
+    );
+    const snapshots = emitted.filter((obs) => obs.entityType === 'centerRosterHealth');
+    expect(snapshots.length).toBeLessThanOrEqual(1);
+    return snapshots[0]?.value as CenterRosterHealthSnapshot | undefined;
+  }
+
+  it('records a stated directorship as a listed member of the read', async () => {
+    const snapshot = await snapshotFrom(statesAndLinks);
+
+    expect(snapshot && centerRosterReadAdmissibility(snapshot)).toBe('read-listed-members');
+    expect(snapshot?.subjectKeys).toEqual([`official-profile:${profileUrl}`]);
+  });
+
+  it('records a parsed profile that no longer states the directorship as an absence', async () => {
+    const snapshot = await snapshotFrom(statesNothing);
+
+    expect(snapshot && centerRosterReadAdmissibility(snapshot)).toBe('read-subject-stated-nothing');
+  });
+
+  it('keeps a profile that still states the role but no longer links the site as listed', async () => {
+    const emitted: ObservationInput[] = [];
+    const { scraper } = scraperReading(
+      profileHtml('<p>Director of the Fixture Mood Research Program</p>'),
+      [heldOrganization],
+    );
+    await scraper.run(contextFor(emitted, ['profile-organization-director-backfill']));
+
+    expect(emitted.filter((obs) => obs.entityType === 'researchGroupMember')).toEqual([]);
+    const snapshot = emitted.find((obs) => obs.entityType === 'centerRosterHealth')
+      ?.value as CenterRosterHealthSnapshot;
+    expect(centerRosterReadAdmissibility(snapshot)).toBe('read-listed-members');
+  });
+
+  it('records a failed fetch as a read that is not evidence', async () => {
+    const snapshot = await snapshotFrom(statesNothing, {
+      fetcher: vi.fn(async () => {
+        throw new Error('fetch failed');
+      }),
+    });
+
+    expect(snapshot && centerRosterReadAdmissibility(snapshot)).toBe('not-read');
+  });
+
+  it('records a cache-permitted run as a read that is not evidence', async () => {
+    const snapshot = await snapshotFrom(statesNothing, { useCache: true });
+
+    expect(snapshot && centerRosterReadAdmissibility(snapshot)).toBe('cache-permitted');
+  });
+
+  it('records a page that is another person or did not parse as naming no subject', async () => {
+    const otherPerson = statesNothing.replace(
+      `<link rel="canonical" href="${profileUrl}" />`,
+      '<link rel="canonical" href="https://medicine.yale.edu/profile/someone-else/" />',
+    );
+    const unparsed = '<html><head></head><body></body></html>';
+
+    for (const html of [otherPerson, unparsed]) {
+      const snapshot = await snapshotFrom(html);
+      expect(snapshot && centerRosterReadAdmissibility(snapshot)).toBe('read-listed-nobody');
+    }
+  });
+
+  it('records nothing for a lead-less row its profile does not name', async () => {
+    expect(await snapshotFrom(statesNothing, { targets: [organization] })).toBeUndefined();
   });
 });

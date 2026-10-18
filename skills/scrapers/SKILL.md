@@ -1108,6 +1108,8 @@ Measured on the Computer Systems Lab roster on 2026-10-16: of 13 listed faculty,
 
 An organization with no lead whose director's own official profile is its only tie to that person gets its director from `official-profile-pi-backfill`'s organization-director mode, not from the centres lane or the director LLM (#5085).
 The mode needs the profile to state "Director" or "Co-Director" of the row by name and to link the row's own site, and it emits a `researchGroupMember` director claim through the shared roster path rather than any field write; `docs/research-data-pipeline.md` has the selection rule and the measurement.
+The mode re-reads the rows it directs and ends its edge once two complete reads of the director's own profile, in distinct runs, no longer state the role (#5091).
+That needed one extension to the centres snapshot contract, `subjectKeys`, because a roster read naming nobody is not evidence while a single-person page whose subject parsed is; `scrapers/officialProfileDirectorRetirement.ts` is the only reader of that admissibility, and `docs/research-data-pipeline.md` records every guard it keeps.
 
 #### Minting a center that only exists as a URL on somebody's faculty row
 

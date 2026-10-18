@@ -126,7 +126,9 @@ describe('a lead-less organization gains the director its director profile names
     ]);
     expect(String(edges[0].personId)).toBe(String(director._id));
 
-    expect(await selectOrganizationDirectorProfileTargets(10)).toEqual([]);
+    const [reread] = await selectOrganizationDirectorProfileTargets(10);
+    expect(String(reread?._id)).toBe(String(organization._id));
+    expect(reread?.holdsProfileDirectorEdge).toBe(true);
   });
 
   it('does not select a person-named row that only carries an organizational type', async () => {
