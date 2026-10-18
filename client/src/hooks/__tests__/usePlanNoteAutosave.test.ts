@@ -176,4 +176,89 @@ describe('usePlanNoteAutosave', () => {
     await act(async () => settle());
     expect(result.current.noteSaveStatuses['plan-1']).toBe('saved');
   });
+
+  it('does not hold an unload for a note cancelled while its failing save was in flight', async () => {
+    vi.useFakeTimers();
+    let fail: () => void = () => {};
+    const persist = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = () => reject(new Error('offline'));
+        }),
+    );
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    act(() => result.current.cancelNoteSave('plan-1'));
+    await act(async () => fail());
+
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(persist).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a failed note once its row is no longer listed', async () => {
+    vi.useFakeTimers();
+    const persist = vi.fn().mockRejectedValue(new Error('gone'));
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    act(() => result.current.scheduleNoteSave('plan-2', 'other'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    act(() => result.current.retainNoteSaves(['plan-2']));
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+
+    expect(persist).toHaveBeenCalledTimes(3);
+    expect(persist).toHaveBeenLastCalledWith('plan-2', 'other', { keepalive: true });
+  });
+
+  it('stops holding an unload once a failed note fails its retry', async () => {
+    vi.useFakeTimers();
+    const persist = vi.fn().mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('error');
+
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives a new edit its own retry after an earlier note exhausted one', async () => {
+    vi.useFakeTimers();
+    const persist = vi.fn().mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft two'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+
+    const unload = new Event('beforeunload', { cancelable: true });
+    await act(async () => {
+      window.dispatchEvent(unload);
+    });
+    expect(unload.defaultPrevented).toBe(true);
+    expect(persist).toHaveBeenLastCalledWith('plan-1', 'draft two', { keepalive: true });
+  });
 });

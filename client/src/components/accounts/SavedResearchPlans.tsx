@@ -151,8 +151,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistResearchPlanNote);
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistResearchPlanNote);
 
   // The count is how many plans the owner has, not how many of them are servable:
   // reporting only the servable ones is what let the dashboard read "0 research
@@ -264,6 +270,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     // Read the note before the row leaves the list, because afterwards no read path
     // serves it.
     const note = notes[entityId] || '';
+    cancelNoteSave(entityId);
     const removal = setFavorite(slug, false, 'saved_plans');
     void removal.then((removed) => {
       if (removed) markNotePersisted(entityId, '');
@@ -297,6 +304,10 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     () => entities.filter((entity) => savedSlugs.includes(entity.slug)),
     [entities, savedSlugs],
   );
+
+  useEffect(() => {
+    retainNoteSaves(visibleEntities.map((entity) => entity._id));
+  }, [visibleEntities, retainNoteSaves]);
 
   const accessStatuses = useMemo(() => {
     const statuses = new Map<string, UndergraduateAccessStatus>();

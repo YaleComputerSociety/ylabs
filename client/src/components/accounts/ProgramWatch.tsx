@@ -139,8 +139,14 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, cancelNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistProgramNote);
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistProgramNote);
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
     useUndoableProgramUnwatch({
       setFavorite,
@@ -201,6 +207,10 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     () => sortByUpcomingDeadline(programs.filter((program) => watchedIds.includes(program.id))),
     [programs, watchedIds],
   );
+
+  useEffect(() => {
+    retainNoteSaves(visiblePrograms.map((program) => program.id));
+  }, [visiblePrograms, retainNoteSaves]);
 
   const nextDeadline = useMemo(
     () => watchedProgramDeadlineSummary(visiblePrograms),
