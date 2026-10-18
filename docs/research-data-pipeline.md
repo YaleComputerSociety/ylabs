@@ -244,7 +244,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
 25. `data-quality` (`beta:data-quality --strict`)
 26. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
 27. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-28. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
+28. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
 29. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
 30. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
