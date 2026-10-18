@@ -207,6 +207,7 @@ interface ResearchEntitySearchOptions {
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
   exactSpelling?: boolean;
+  exactFilterValues?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -243,6 +244,7 @@ const searchResearchEntities = async (
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
       ...(options.exactSpelling ? { correctSpelling: false } : {}),
+      ...(options.exactFilterValues ? { resolveFilterValues: false } : {}),
     },
     { signal },
   );
@@ -780,6 +782,7 @@ const Research = () => {
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
         ...currentSortRequestOptions(),
         ...(options.exactSpelling ? { exactSpelling: true } : {}),
+        ...(options.departmentSearch ? { exactFilterValues: true } : {}),
       },
     });
     if (!options.preserveDraftQuery) setQuery(trimmed);
@@ -826,6 +829,7 @@ const Research = () => {
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
           ...(options.exactSpelling ? { exactSpelling: true } : {}),
+          ...(options.departmentSearch ? { exactFilterValues: true } : {}),
         },
       );
 

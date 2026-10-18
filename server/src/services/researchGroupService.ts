@@ -536,6 +536,7 @@ export interface ResearchGroupSearchOptions {
   // its semantic leg to a budget written for public traffic.
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
+  resolveFilterValues?: boolean;
 }
 
 export interface ResearchSearchQueryCorrection {
@@ -1593,7 +1594,13 @@ const resolveStudentFiltersAgainstCorpus = async (
 ): ReturnType<typeof resolveStudentFilterValuesInScope> => {
   const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
   const filtersNamedValues = Boolean(safeFilters.school?.length || safeFilters.departments?.length);
-  if (!filtersNamedValues || options.lowQualityFirst === true) return { filters };
+  if (
+    !filtersNamedValues ||
+    options.lowQualityFirst === true ||
+    options.resolveFilterValues === false
+  ) {
+    return { filters };
+  }
   return resolveStudentFilterValuesInScope(safeFilters, {
     archived: { $ne: true },
     ...mongoVisibilityFilter(safeFilters, options.includeNonPublic === true),

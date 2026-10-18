@@ -402,6 +402,20 @@ describe('a research filter option count is the number of results applying it re
     expect(result.estimatedTotalHits).toBe(canonical.estimatedTotalHits);
   });
 
+  it('keeps a department no row holds when the caller opts out of resolving filter values', async () => {
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { departments: ['Synthetic Nowhere Department'] },
+      1,
+      24,
+      {},
+      { correctSpelling: false, resolveFilterValues: false },
+    );
+
+    expect(result.appliedFilters).toBeUndefined();
+    expect(result.estimatedTotalHits).toBe(0);
+  });
+
   it('holds for a filters-only browse', async () => {
     await expectEveryOptionCountToEqualItsResults('', {});
     await expectEveryOptionCountToEqualItsResults('', { school: ['School of the Environment'] });

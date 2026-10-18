@@ -54,14 +54,13 @@ const readVocabulary = async (
   }
 };
 
-export const readResearchFilterVocabulary = (
+const readResearchFilterVocabulary = (
   scope: Record<string, unknown>,
-  options: { fresh?: boolean; now?: number } = {},
 ): Promise<ResearchFilterVocabulary | null> => {
-  const now = options.now ?? Date.now();
+  const now = Date.now();
   const key = JSON.stringify(scope);
   const cached = cachedVocabularies.get(key);
-  if (!options.fresh && cached && cached.expiresAt > now) return cached.vocabulary;
+  if (cached && cached.expiresAt > now) return cached.vocabulary;
   const vocabulary = readVocabulary(scope);
   cachedVocabularies.set(key, { expiresAt: now + RESEARCH_FILTER_VOCABULARY_TTL_MS, vocabulary });
   void vocabulary.then((read) => {
@@ -105,29 +104,9 @@ export function resolveStudentFilterValues(
   return changed ? { filters: resolved, applied } : { filters };
 }
 
-const holdsEveryValue = (
-  filters: ResearchGroupFilterInput,
-  vocabulary: ResearchFilterVocabulary | null,
-): boolean =>
-  !vocabulary ||
-  VOCABULARY_FIELDS.every(({ filterKey }) =>
-    (filters[filterKey] ?? []).every(
-      (value) => typeof value === 'string' && vocabulary[filterKey].has(vocabularyKey(value)),
-    ),
-  );
-
-/**
- * Resolves against the cached vocabulary, and re-reads it before dropping anything,
- * so a value a re-canonicalization added within the cache window is searched rather
- * than dropped.
- */
 export async function resolveStudentFilterValuesInScope(
   filters: ResearchGroupFilterInput,
   scope: Record<string, unknown>,
 ): Promise<ReturnType<typeof resolveStudentFilterValues>> {
-  const cached = await readResearchFilterVocabulary(scope);
-  const vocabulary = holdsEveryValue(filters, cached)
-    ? cached
-    : await readResearchFilterVocabulary(scope, { fresh: true });
-  return resolveStudentFilterValues(filters, vocabulary);
+  return resolveStudentFilterValues(filters, await readResearchFilterVocabulary(scope));
 }

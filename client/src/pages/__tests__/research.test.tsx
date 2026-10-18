@@ -975,6 +975,36 @@ describe('Research page', () => {
     );
   });
 
+  it('keeps a department search narrowed to its department rather than letting the server drop it (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?dept=Computer+Science']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const searchBodies = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/research/search')
+      .map(
+        ([, body]) =>
+          body as { filters?: { departments?: string[] }; resolveFilterValues?: boolean },
+      );
+    expect(searchBodies.length).toBeGreaterThan(0);
+    for (const body of searchBodies) {
+      expect(body.filters?.departments).toContain('Computer Science');
+      expect(body.resolveFilterValues).toBe(false);
+    }
+  });
+
   it('drops a type the page cannot read from the URL (#5146)', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

@@ -175,9 +175,9 @@ The distribution carries `school`, `departments`, `entityType`, and `hostsUnderg
 ### A filter value nothing holds is dropped, not answered empty (#5146)
 
 Before any search runs, `resolveStudentFilterValuesInScope` (`server/src/services/researchFilterVocabulary.ts`) maps each school and department filter value case-insensitively to the spelling the visibility-scoped corpus holds and drops a value no row holds, so a hand-edited or stale link cannot answer 0 results with coverage-gap copy for a filter that does not exist.
-The vocabulary is a `distinct` read on `schools` and `departments`, cached for five minutes per scope and re-read before anything is dropped, so a value a re-canonicalization added inside the window is searched rather than dropped; if it cannot be read the filters apply unchanged.
+The vocabulary is a `distinct` read on `schools` and `departments`, cached for five minutes per scope, so a value a re-canonicalization added inside that window can be dropped until the cache expires; if it cannot be read the filters apply unchanged.
 When a value changed, the response carries `appliedFilters` with the values actually searched, and `/research` rewrites its URL, selects and chips to match without a second search; it also drops a `type` or `undergrad` value it cannot read from the URL.
-An admin low-quality-first browse skips the resolution.
+An admin low-quality-first browse skips the resolution, and so does a request with `resolveFilterValues: false`, which a `/research?dept=` department search sends because its department spellings come from the config list rather than the corpus, and dropping them would widen it to an unfiltered browse under the department heading.
 
 ### A facet count is the number of results applying it returns (#5101)
 
