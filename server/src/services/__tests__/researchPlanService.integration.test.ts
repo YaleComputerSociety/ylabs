@@ -595,4 +595,35 @@ describe('researchPlanService saved plans', () => {
     expect(open).not.toHaveProperty('undergraduateCurrentAvailability');
     expect(neutral).not.toHaveProperty('hasUndergradHostingEvidence');
   });
+
+  it('serves the hosted flag on a saved entity whose official roster lists undergraduates (#5232)', async () => {
+    const rosteredId = new mongoose.Types.ObjectId('64a0000000000000000000f2');
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id: rosteredId,
+      slug: 'rostered-lab',
+      name: 'Rostered Lab',
+      kind: 'group',
+      departments: ['Computer Science'],
+      studentVisibilityTier: 'student_ready',
+      shortDescription:
+        'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      fullDescription:
+        'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+      sourceUrls: ['https://example.yale.edu/labs/rostered-lab'],
+      rosterEnrichment: {
+        state: 'current',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+        undergraduates: [{ name: 'Synthetic Student', status: 'current' }],
+      },
+      archived: false,
+    });
+
+    await addSavedResearchEntities(NETID, [rosteredId.toHexString()]);
+    const { savedResearchEntities: savedEntities } = await getSavedResearchEntityList(NETID);
+    const rostered = savedEntities.find((entity) => entity._id === rosteredId.toHexString());
+
+    expect(rostered?.hasUndergradHostingEvidence).toBe(true);
+    expect(rostered).not.toHaveProperty('rosterEnrichment');
+  });
 });

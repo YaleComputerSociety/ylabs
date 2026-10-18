@@ -140,6 +140,42 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     expect(await evidenceOf(outreachOnly._id)).toBe(false);
   });
 
+  it('persists the hosted flag for a row whose official roster lists undergraduates (#5232)', async () => {
+    const rostered = await createEntity('lab-official-roster', 'LAB');
+    await ResearchEntity.updateOne(
+      { _id: rostered._id },
+      {
+        $set: {
+          rosterEnrichment: {
+            state: 'current',
+            observedAt: new Date('2020-01-01T00:00:00Z'),
+            freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+            undergraduates: [{ name: 'Synthetic Student', status: 'past' }],
+          },
+        },
+      },
+    );
+    await recomputeBrowseRankForEntities([rostered._id], { sync: false });
+    await ResearchEntity.updateOne(
+      { _id: rostered._id },
+      { $set: { hasUndergradHostingEvidence: false } },
+    );
+
+    const check = await recomputeBrowseRankForEntities([rostered._id], {
+      sync: false,
+      dryRun: true,
+    });
+    expect(check.hostingFlagDrifted).toBe(1);
+    expect(check.scoreDrifted).toBe(0);
+
+    const repair = await recomputeBrowseRankForEntities([rostered._id], { sync: false });
+    expect(repair.hostingFlagDrifted).toBe(1);
+    const stored = await ResearchEntity.findById(rostered._id).lean<{
+      hasUndergradHostingEvidence?: boolean;
+    }>();
+    expect(stored?.hasUndergradHostingEvidence).toBe(true);
+  });
+
   const stampOf = async (id: mongoose.Types.ObjectId) =>
     (await ResearchEntity.findById(id).lean<{ browseRankScorerVersion?: number }>())
       ?.browseRankScorerVersion;
