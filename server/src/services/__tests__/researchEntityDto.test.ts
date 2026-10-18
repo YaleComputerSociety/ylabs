@@ -654,6 +654,24 @@ describe('researchEntityDto', () => {
     expect(dto.undergradEvidenceQuote).toBeUndefined();
   });
 
+  it('withholds a roster card served as an undergraduate quote', () => {
+    const roster = toPublicResearchEntityDto({
+      id: 'entity-roster-line-quote',
+      slug: 'roster-line-quote-lab',
+      name: 'Roster Line Quote Lab',
+      undergradEvidenceQuote: 'Jordan Example Undergraduate Student Hometown: Example City, ST',
+    });
+    expect(roster.undergradEvidenceQuote).toBeUndefined();
+
+    const statement = toPublicResearchEntityDto({
+      id: 'entity-statement-quote',
+      slug: 'statement-quote-lab',
+      name: 'Statement Quote Lab',
+      undergradEvidenceQuote: 'We welcome undergraduate researchers.',
+    });
+    expect(statement.undergradEvidenceQuote).toBe('We welcome undergraduate researchers.');
+  });
+
   it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
     const note = toPublicResearchEntityDto({
       id: 'entity-search-note',
