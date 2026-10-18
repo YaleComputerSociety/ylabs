@@ -170,7 +170,9 @@ describe('ResearchHomeComparison', () => {
       name: 'Open the official page',
     });
     expect(officialPage.getAttribute('href')).toMatch(/^https:\/\/engineering\.example\.edu\//);
-    expect(within(involvementRow).queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(
+      within(involvementRow).queryByRole('link', { name: 'Open official profile' }),
+    ).toBeNull();
   });
 
   it('labels official links by role rather than by URL slug', async () => {

@@ -161,7 +161,8 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
 
   it('offers the official page only when no other action or lead card link applies', () => {
     expect(
-      resolveResearchDetailActionLinks({ ...base, officialSource: { url: JOIN } }).offersOfficialPage,
+      resolveResearchDetailActionLinks({ ...base, officialSource: { url: JOIN } })
+        .offersOfficialPage,
     ).toBe(true);
     expect(
       resolveResearchDetailActionLinks({

@@ -180,7 +180,8 @@ const involvementLinks = (
   if (context.wayInWithheld) {
     add(actions.activityCheckUrl, 'Open the official page');
   } else {
-    if (actions.offersOrgEngagementPage) add(context.officialSource?.url, 'See how to get involved');
+    if (actions.offersOrgEngagementPage)
+      add(context.officialSource?.url, 'See how to get involved');
     if (actions.offersApplyPage) add(context.applyPageUrl, 'See how to get involved');
     if (actions.showsWebsiteCta) add(actions.websiteCtaUrl, researchWebsiteCtaLabel(entity));
     if (actions.offersJoinLinkBesideWebsite) add(context.applyPageUrl, 'See how to join');
