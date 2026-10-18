@@ -62,6 +62,9 @@ const Harness = () => {
       <button type="button" onClick={() => void navigate(-1)}>
         Back
       </button>
+      <button type="button" onClick={() => void navigate('/programs?year=Senior')}>
+        Seniors elsewhere
+      </button>
       <span data-testid="location">{`${location.pathname}${location.search}`}</span>
       <span data-testid="quick">{state.quickFilter ?? 'none'}</span>
       <span data-testid="years">{state.selectedYearOfStudy.join(',')}</span>
@@ -124,6 +127,17 @@ describe('useProgramSearchUrlSync', () => {
     expect(screen.getByTestId('location')).toHaveTextContent(
       '/programs?q=blue+center&quick=open&year=Senior&year=Junior&program=abc',
     );
+  });
+
+  it('keeps a filter chosen on another page when the programs page opens with it', async () => {
+    renderAt('/research');
+
+    await userEvent.type(screen.getByLabelText('Search'), 'stale');
+    await userEvent.click(screen.getByRole('button', { name: 'Seniors elsewhere' }));
+
+    await waitFor(() => expect(screen.getByTestId('years')).toHaveTextContent('Senior'));
+    expect(screen.getByLabelText('Search')).toHaveValue('');
+    expect(screen.getByTestId('location')).toHaveTextContent('/programs?year=Senior');
   });
 
   it('ignores an unknown quick filter in the URL', async () => {

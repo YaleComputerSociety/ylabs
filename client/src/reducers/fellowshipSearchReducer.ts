@@ -5,6 +5,7 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export type FellowshipQuickFilter =
   | 'open'
@@ -98,11 +99,7 @@ export type FellowshipSearchAction =
   | { type: 'RESET_PROGRAM_FILTERS' }
   | {
       type: 'APPLY_URL_STATE';
-      payload: StudentProgramFilters & {
-        queryString: string;
-        sortBy: string;
-        sortDirection: 'asc' | 'desc';
-      };
+      payload: ProgramSearchUrlState;
     }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }

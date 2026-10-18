@@ -5,7 +5,7 @@ import {
 } from '../reducers/fellowshipSearchReducer';
 import { PROGRAMS_QUERY_PARAM } from './researchProgramsHandoff';
 
-export type ProgramSearchSortDirection = 'asc' | 'desc';
+type ProgramSearchSortDirection = 'asc' | 'desc';
 
 export interface ProgramSearchUrlState extends StudentProgramFilters {
   queryString: string;
@@ -43,7 +43,7 @@ const PROGRAM_QUICK_FILTERS: ReadonlySet<string> = new Set<Exclude<FellowshipQui
   'applicationsOnly',
 ]);
 
-export const PROGRAM_SEARCH_URL_PARAMS: readonly string[] = [
+const PROGRAM_SEARCH_URL_PARAMS: readonly string[] = [
   PROGRAMS_QUERY_PARAM,
   QUICK_FILTER_PARAM,
   ...PROGRAM_FILTER_LIST_PARAMS.map(([, param]) => param),
