@@ -488,7 +488,6 @@ describe('profile-research-home-backfill on a lead personal site', () => {
           sourceUrl: first.websiteUrl.sourceUrl,
         },
       },
-      [PERSONAL_SITE_ONLY_TARGET_FIELD]: true,
     };
     const second = emittedByField((await runResearchHomeStep(pages, adoptedEntity)).emitted);
     expect(second.name).toMatchObject({ value: 'ORCA Lab', sourceUrl: personalSiteUrl });

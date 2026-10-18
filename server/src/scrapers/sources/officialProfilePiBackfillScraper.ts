@@ -3907,10 +3907,11 @@ export async function annotateProfileDescriptionPreferredSourceEvidence(
 }
 
 /**
- * Set on a row read for the led-group sentence on the lead's personal site and for nothing
- * else: a row the selector reached only because its own website may be that site, and a
- * row whose website this lane adopted from that site. Its profile was never in this step's
- * population and the profile arms have not been measured on it.
+ * Set on a row the selector reached only because its own website may be the lead's
+ * personal site. Such a row is read for the led-group sentence on that site and for
+ * nothing else, because its profile was never in this step's population and the profile
+ * arms have not been measured on it. A row whose website this lane wrote stays in the
+ * profile population and keeps every arm.
  */
 export const PERSONAL_SITE_ONLY_TARGET_FIELD = '__personalSiteOnly';
 
@@ -3918,9 +3919,11 @@ const RESEARCH_HOME_PROFILE_TARGET_FIELDS =
   '_id slug name displayName entityType website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl';
 
 function readsOnlyItsPersonalSite(entity: Record<string, any>, targeted: boolean): boolean {
-  if (!leadPersonalSiteCandidateUrl(entity)) return false;
-  if (entity.fieldProvenance?.websiteUrl?.sourceName === SOURCE_NAME) return true;
-  return !targeted && !isProfileResearchHomeTarget(entity);
+  return (
+    !targeted &&
+    !isProfileResearchHomeTarget(entity) &&
+    Boolean(leadPersonalSiteCandidateUrl(entity))
+  );
 }
 
 function isProfileResearchHomeTarget(entity: Record<string, any>): boolean {
@@ -3955,11 +3958,7 @@ async function selectResearchHomeProfileTargets(
           {
             $and: [
               {
-                $or: [
-                  { websiteUrl: { $exists: false } },
-                  { websiteUrl: null },
-                  { websiteUrl: '' },
-                ],
+                $or: [{ websiteUrl: { $exists: false } }, { websiteUrl: null }, { websiteUrl: '' }],
               },
               {
                 $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
