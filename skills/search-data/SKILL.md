@@ -120,7 +120,7 @@ The embedder check behind hybrid search (`readResearchEntitySearchEmbedderState`
 The rebuild makes the index's embedder follow the environment on every run: a real `OPENAI_API_KEY` sets the `default` embedder, and an unset, blank, or `<...>` placeholder key resets it on the unprefixed local index, because an embedder left over from an earlier seed keeps calling OpenAI on every `addDocuments` and fails the whole seed (#4254).
 A prefixed index (Beta, Production, any `MEILISEARCH_INDEX_PREFIX` target) keeps its stored embedder when the rebuilding shell has no usable key, so an operator reindex without the key cannot silently make a deployed search keyword-only.
 The rebuild and the query-embedding path read the key through `usableOpenAiApiKey` in `server/src/utils/openAiApiKey.ts`, so neither sends a placeholder to OpenAI; the scraper LLM extractors still read `OPENAI_API_KEY` directly.
-The companion queries a search sends after its primary one (the exhaustive hybrid count and facet query, each disjunctive facet query, the keyword-leg query, and the deep and semantic legs) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
+The companion queries a search sends after its primary one (each disjunctive facet query, the keyword-leg query, and the deep and semantic legs) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
 
 Relevant config:
 
@@ -169,6 +169,17 @@ That depth-limited page runs no search, so it reports no `estimatedTotalHits` at
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
 The distribution carries `school`, `departments`, and `entityType`, the three facets the filter rail reads.
+
+### A facet count is the number of results applying it returns (#5101)
+
+A browse and a keyword-only search take their facets from the same filtered Meilisearch query that answers them, plus one disjunctive query per active facet, so they were always consistent.
+A thresholded hybrid text search was not: it serves a locally fused pool (the thresholded pool, the keyword leg, the top-100 semantic leg, and the deep legs) but took its facets from a separate thresholded count query, so the keyword and semantic rows were in the total and in no facet.
+Measured on Development on 2026-10-18, `machine learning` read Computer Science (26) and returned 59, and `cognitive psychology` read Type counts summing to 71 under a total of 255.
+Sending the student's filters into each leg could not be fixed by counting the pool instead, because the semantic leg is a top-K window rather than a predicate: drawn from one department it admits that whole department, so a type or department filter stopped narrowing the query and returned every row of that type.
+So a locally paginated search builds its candidate pool under the visibility scope alone, narrows it with `candidateMatchesStudentFilters`, and tallies every facet over the same pool with `tallyCandidateFacetDistribution`, each facet dropping only its own clause.
+The total is the narrowed pool's length, and no companion count query runs.
+`candidateMatchesStudentFilters` is the in-process twin of `buildResearchGroupFilterString` and both read one field table, so a new student filter is added to both at once; every field it reads must be in `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`.
+`facetCountsMatchAppliedResults.integration.test.ts` asserts the equality for every option over a fake index whose semantic leg is a top-K window, and the `text-query-facet-count-agreement` journey case asserts it on the served route.
 `researchAreas` is still filterable, but its facet is computed only while a `researchAreas` filter is active: with no reader since the topic filter left the client (#1885), its roughly 6,000 values were most of every page-1 body, and measured on Development an empty-query page 1 of 24 fell from 285 KB raw (81 KB gzip) to 40 KB (8 KB gzip) once it and the two card fields below were dropped (#3951).
 A browse card is the `forList` DTO, which omits the detail-only `fullDescription`, `recentGrants`, and `sourceLinkHealth`; `recentGrantCount` stays on the card, the detail page reads the other two from the detail payload, and the saved-research comparison reads only `sourceLinkHealth` from it.
 `profileSynthesisDescription` and `descriptionSource` are on neither payload, because no lane writes either one (#3937); see `docs/research-model.md` under Research Detail Projection.
@@ -374,7 +385,7 @@ Re-run the harness before and after any of them, and move the overlap number rat
 
 ### Every hybrid query in a request must carry the precomputed vector (#3149)
 
-One search request issues several hybrid queries over the same text: the page query, the companion exhaustive threshold-aware count, and one disjunctive facet query per actively filtered facet.
+One search request issues several hybrid queries over the same text: the head pool query, the semantic leg, and the deep pool when the head fills its window.
 Meilisearch 1.13 has no query-embedding cache, so left to itself it re-embeds that text through OpenAI once per query, and the embedding is the whole cost: timed against the Development index for `machine learning`, a hybrid query reports 227-373ms of which ~40ms is the search, while the same query with a `vector` supplied reports 44ms and a keyword-only query over the full 100,000-row window reports 41ms.
 Paid two to four times, that is the difference between a 0.3s search and a 1.4s one.
 
@@ -491,7 +502,7 @@ Two residuals are upstream of the service and are the next levers, not this one.
 A perturbation that damages an alias key loses the whole expansion, because `resolveTopicAliasExpansion` is an exact lookup, which is why `clmiate change` searches 2 query terms where `climate change` searches 7.
 And `rankingRules` places `exactness` above `typo`, so a term the corpus contains verbatim partitions its clean query's matches from its misspelling's corrected ones: that is the whole of the `topic-neuroscience` regression in the numbers above, where both pages stay on topic at precision 1.0 but share almost no row.
 
-A reported total is floored at the locally reachable pool length: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the keyword-leg rows.
+A reported total is the locally reachable pool length, after the student's filters narrow it: a count of what cleared the blended cutoff alone would end the client's pagination walk before the keyword-leg rows (#2732, #5101).
 The pool is decided once per query, never by the requested page (#3943).
 It used to be `max(200, offset + pageSize)` rows, so each page past the first 200 rows admitted more and the reported total rose while a student scrolled the same query: `cancers` read 242 on page 1 and 577 on its last page at page size 24.
 Now the head keeps the fixed `HYBRID_CANDIDATE_POOL_SIZE` window for the pool and the keyword leg, so page 1 orders exactly as before, and when either head leg fills that window a deep pool and keyword leg to `RESEARCH_SEARCH_MAX_REACHABLE_RECORDS` supply every further row, appended after the head in their own order.
@@ -503,7 +514,7 @@ The two deep queries cost page latency as first merged, because they ran after e
 ### The legs of a text search run concurrently (#3949)
 
 After the primary pool query settles its fallbacks, every other leg depends only on its final parameters or on the keyword leg, so each starts as soon as what it reads has returned rather than one after another.
-The exhaustive count, each disjunctive facet query, the keyword leg, and, when the head pool filled its window, the deep pool start together.
+The keyword leg and, when the head pool filled its window, the deep pool start together.
 When the keyword leg returns, after its `'last'` retry, the semantic leg, the top-row match-position re-read, the deep keyword leg, and a deep pool the keyword leg alone made necessary start together.
 The semantic leg stays gated on a non-empty keyword leg, because the count query outlasts the keyword leg anyway, so the gate costs no wall time and saves a query on zero-keyword searches.
 Each leg keeps its own fallback and its own `degraded` contribution, applied after all of them settle.
@@ -558,7 +569,7 @@ The check reads those four fields through `_matchesPosition` on the first surviv
 Positions cover every searchable attribute, retrieved or not, which is why the topic veto cannot be computed locally from the hit.
 Measured on Development, match positions took a 200-row keyword query from about 40ms to 130-160ms and a 5,000-row one from about 100ms to 410ms, while the one-row re-read costs about 45ms and runs beside the semantic leg.
 A re-read that returns a different row, because the index changed between the two queries, gives the check no positions and so serves the fused order; a failed re-read on a fused search marks it degraded.
-A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
+A withheld result reports only the rows it serves as its total.
 A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
 A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.
 
