@@ -35,6 +35,7 @@ export interface PromoteProductionArgs {
   datasetVersion: string;
   skipRemotePhase: boolean;
   fullSearchRebuild: boolean;
+  meiliRestorePoint?: string;
 }
 
 function readValue(argv: string[], index: number, flag: string): string {
@@ -88,7 +89,14 @@ export function parsePromoteProductionArgs(
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;
     else if (arg === '--full-search-rebuild') args.fullSearchRebuild = true;
     else if (arg === '--dataset-version') args.datasetVersion = readValue(argv, index++, arg);
-    else if (arg === '--yes') {
+    else if (arg === '--meili-restore-point') {
+      args.meiliRestorePoint = readValue(argv, index++, arg);
+      if (!MEILI_RESTORE_POINT_PATTERN.test(args.meiliRestorePoint)) {
+        throw new Error(
+          '--meili-restore-point must be letters, digits, dot, dash or underscore, such as meili-dump-20261018-184026162',
+        );
+      }
+    } else if (arg === '--yes') {
       throw new Error(
         `promote:production never accepts --yes; type "${PRODUCTION_CONFIRMATION_WORD}" at the prompt`,
       );
@@ -281,7 +289,10 @@ export interface RemotePhaseStep {
 export interface RemotePhaseOptions {
   confirmBetaBackup: boolean;
   fullSearchRebuild?: boolean;
+  meiliRestorePoint?: string;
 }
+
+const MEILI_RESTORE_POINT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export const searchReindexResultFile = (target: PromotionTarget): string =>
   `/tmp/ylabs-${target}-search-reindex.json`;
@@ -431,6 +442,9 @@ export function remotePhaseStartCommand(
   options: RemotePhaseOptions = { confirmBetaBackup: false },
 ): string {
   return [
+    ...(target === 'production' && options.meiliRestorePoint
+      ? [`PFR3_MEILI_RESTORE_POINT=${options.meiliRestorePoint}`]
+      : []),
     'yarn --cwd server promote:remote-phase',
     `--environment ${target}`,
     ...(target === 'beta' && options.confirmBetaBackup ? ['--confirm-beta-backup'] : []),
@@ -516,6 +530,46 @@ export function renderServiceProblems(
     problems.push(`the ${target} operator service deploys ${service.branch}, expected ${branch}`);
   }
   return problems;
+}
+
+export interface OperatorBuildDecision {
+  needsDeploy: boolean;
+  headCommit: string;
+  liveCommit?: string;
+  message: string;
+}
+
+const shortSha = (sha: string | undefined): string => (sha ? sha.slice(0, 9) : 'none');
+
+export function operatorBuildDecision(
+  target: PromotionTarget,
+  headCommit: string,
+  liveCommit: string | undefined,
+): OperatorBuildDecision {
+  const branch = OPERATOR_SERVICE_BRANCHES[target];
+  if (liveCommit === headCommit) {
+    return {
+      needsDeploy: false,
+      headCommit,
+      liveCommit,
+      message: `the ${target} operator service is live at ${branch} head ${shortSha(headCommit)}`,
+    };
+  }
+  return {
+    needsDeploy: true,
+    headCommit,
+    liveCommit,
+    message: `the ${target} operator service is live at ${shortSha(liveCommit)} but ${branch} is at ${shortSha(headCommit)}; an apply deploys it at the head before writing anything`,
+  };
+}
+
+export function operatorDeployFailureMessage(
+  target: PromotionTarget,
+  deployId: string,
+  headCommit: string,
+  status: string | undefined,
+): string {
+  return `Render deploy ${deployId} of the ${target} operator service at ${shortSha(headCommit)} ended ${status ?? 'unknown'}, so the Render job was not started. Read the deploy log on Render; when it says the workspace ran out of build pipeline minutes, raise the build spend limit in the Render workspace settings and run the promotion again.`;
 }
 
 const SEARCH_REINDEX_SUMMARY_FIELDS = [

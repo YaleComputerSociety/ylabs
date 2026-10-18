@@ -128,7 +128,7 @@ Relevant config:
 | -------------------------- | ---------------------------------------------------------- |
 | `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700` locally; required in deployed runtimes. |
 | `MEILISEARCH_SEARCH_API_KEY` | Search-only key for the web service (`search`, `settings.get` on `<prefix>_researchentities`). |
-| `MEILISEARCH_WRITE_API_KEY` | Write key for the reindex and scripts, scoped to its environment's `<prefix>_*` indexes (#4859); stored on the operator services and the Beta web service, never on the Production web service (`docs/deployment-inventory.md` records where each service holds it). |
+| `MEILISEARCH_WRITE_API_KEY` | On an operator service, the reindex key, scoped to its environment's `<prefix>_*` indexes (#4859). On a web service, a document-sync key that can only add and delete documents in its own `<prefix>_researchentities` index, for live sync after edits; no web service holds the reindex key (`docs/meilisearch-reindex-runbook.md`, "Meilisearch keys"). |
 | `MEILISEARCH_API_KEY`      | Legacy single key; the fallback for either role, logged as a warning when deployed. |
 | `MEILISEARCH_INDEX_PREFIX` | Environment prefix (`beta`, `prod`), giving e.g. `beta_researchentities`; unset locally, required in deployed runtimes. |
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |

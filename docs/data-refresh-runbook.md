@@ -207,7 +207,10 @@ Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server sc
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
 The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
-The service builds from `beta`, but since 2026-10-17 its build filter is only `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, because rebuilding on every `server/**` commit exhausted the workspace's build minutes while buying the weekly sweep nothing.
+The service builds from `beta` with auto-deploy on (trigger: checks pass) and a build filter, set on 2026-10-18, of only `deploy/sweep-runner/**`, `package.json`, `.yarnrc.yml`, `server/package.json` and `server/yarn.lock`, with no ignored paths.
+The entrypoint clones `beta` at run time and runs that commit, so the image needs rebuilding only when the runner, its Python and Docker setup, or the dependency manifests change; before the filter, ordinary server pull requests triggered 5 to 7 image builds a day and exhausted the workspace's build minutes on 2026-10-18, which blocked every deploy, including Production's.
+One exception runs the image's own code: `--probe-hosts` executes from the image rather than from a fresh clone, so it uses the server code from the last image build.
+The operator services follow the same budget from the other direction: their auto-deploy is off, and `promote:beta` and `promote:production` deploy them at the branch head only when a promotion needs them (`One-Command Promotion`, "What to set up once").
 Each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even though the image is stale; only a new system dependency, a change to the entrypoint, or a file outside the paths `.dockerignore` admits needs a change under `deploy/sweep-runner/`.
 The image's own copy of the code under `/app` is therefore routinely older than `beta`, so a one-off job must never run `yarn --cwd /app/server ...` directly: start it with `yarn ops:sweep rerun`, below, which runs current `beta` through the entrypoint.
 Read the service with `render services --output json` and its builds with `render deploys list <service id> --output json`.
@@ -557,8 +560,10 @@ It prints which run satisfied each mode.
 2. Refuses while any sweep source holds a live scrape job lock, because a mirror of a Development that is being written copies a moving corpus.
 3. Runs the Phase 2 plan, `beta:refresh-from-development`, and prints each collection's copy count against Beta's current count.
 4. Checks the Render operator service through the Render API: it must exist, be running, deploy `beta`, and use the repository root as its root directory.
+It then compares the operator's live deploy with the `beta` head on GitHub and reports whether the apply will deploy it first.
 5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
-6. Applies the mirror and stops unless it reports `"status": "applied"`.
+6. Deploys the operator service at the `beta` head when its live build is older, and waits until that deploy is live, before writing anything; a deploy that fails, is canceled or times out stops the promotion with Beta untouched.
+Then it applies the mirror and stops unless it reports `"status": "applied"`.
 7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
 That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents when its settings and embedder match the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
 The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
@@ -569,11 +574,11 @@ The trust contract runs with `--fail-on-public-visibility-violation`, so it fail
 2. Reads every open pull request to `main` and refuses while any carries the `hold` label, or when GitHub cannot be read.
 A draft does not hold the data copy, because `docs/release-process.md` copies data before the code merge.
 3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared account-reference blocker, or a plan that would promote observations or `scrape_runs`.
-4. Checks the Production operator service, which must deploy `main`.
+4. Checks the Production operator service, which must deploy `main`, and reports whether its live build is behind the `main` head.
 5. Requires the operator to type `production`; it never accepts `--yes`.
-6. Applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
+6. Deploys the operator service at the `main` head when its build is older, waiting until it is live and stopping before any write if it is not, then applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
 7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its settings and embedder match the code, otherwise a full rebuild), and runs the Production smoke.
-It refuses when `PFR3_MEILI_RESTORE_POINT` is not set on that service.
+It refuses when `PFR3_MEILI_RESTORE_POINT` is not set; pass the restore point taken before this promotion as `--meili-restore-point <dump-uid>` and the start command carries it to the job, so the operator service's environment never needs a per-promotion edit ([Taking the Production restore point](#taking-the-production-restore-point)).
 8. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
 
 ### Running them
@@ -601,11 +606,38 @@ On the laptop, as environment variables or in `server/.env`, never committed:
 - An authenticated `gh` for the release-hold read.
 
 On Render, one operator service per environment, which is what the one-off job runs on.
-A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on the web service: the reindex needs `MEILISEARCH_WRITE_API_KEY`, which the Production web process must never hold.
-Create each as a Cron Job in the same region as that environment's private Meilisearch, from this repository with the root directory left empty, branch `beta` for Beta and `main` for Production, a Node runtime with the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), and a schedule that never matters, such as `0 0 1 1 *` with start command `true`.
-Give it `SCRAPER_ENV` (`beta` or `production`), `MONGODBURL` for that environment, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX` (`beta` or `prod`), `MEILISEARCH_WRITE_API_KEY`, and `OPENAI_API_KEY`, all as secrets, plus `PFR3_MEILI_RESTORE_POINT` on the Production one before each promotion.
-Its outbound ranges need the same Atlas access-list entry as any Render shell.
+A one-off job takes the base service's latest successful build and its environment variables, and the API cannot add a variable per job, so the job cannot run on a web service: the reindex needs the reindex key, which no web service holds.
+
+Both exist since 2026-10-18:
+
+| Service | Id | Branch | Holds |
+| ------- | -- | ------ | ----- |
+| `ylabs-beta-operator` | `crn-dbahuh2jnfac73fpipu0` | `beta` | `SCRAPER_ENV=beta`, the Beta-only `MONGODBURL`, `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX=beta`, `MEILISEARCH_WRITE_API_KEY` = `ylabs-beta-reindex`, `OPENAI_API_KEY` |
+| `ylabs-prod-operator` | `crn-dbahuhrrjlhs73ak5ac0` | `main` | the same with `production`, the Production-only `MONGODBURL`, `prod`, and `ylabs-prod-reindex` |
+
+Each is a Cron Job in Ohio, the region of the private Meilisearch, because Render's private network is per region; it is built from this repository with the root directory left empty, a Node runtime, the build command `docs/release-process.md` gives every Render service (`npm install -g corepack@0.36.0 && corepack enable && bash scripts/install-all.sh --immutable`), the schedule `0 0 1 1 *` and the start command `true`, so it never does anything on its own.
+Auto-deploy is off on both, because a build on every `beta` merge spends Render build minutes the workspace has run out of before; the promotion deploys the operator at the branch head itself when its build is behind (steps 4 and 6 above).
+Its `MONGODBURL` uses the environment-scoped Atlas user, so an operator job cannot write another environment's database.
+Its outbound ranges are the Ohio ranges already on the Atlas access list.
 The Production operator service deploys `main`, so `promote:remote-phase` reaches it only after the code promotion that carries this command.
+
+The web services hold a document-sync key, not the reindex key, as `MEILISEARCH_WRITE_API_KEY`; `docs/meilisearch-reindex-runbook.md` ("Meilisearch keys") owns the split.
+
+### Taking the Production restore point
+
+The Production remote phase refuses to write the Production index without `PFR3_MEILI_RESTORE_POINT`, and a Meilisearch dump is the restore point.
+Only the master key can create a dump, and it stays on the `meilisearch` private service, so create the dump from a one-off job on that service.
+That image keeps quote characters inside start-command arguments, so a quoted `sh -c "..."` reaches the shell as one word and fails; worse, a `$MEILI_MASTER_KEY` inside the quotes is expanded into the error line, which is how the master key reached a job log on 2026-10-18 and had to be rotated.
+Pass the script base64-encoded with no spaces in the command instead, and have it read the key from the environment at run time and print only the result:
+
+```bash
+B=$(base64 < dump.sh | tr -d '\n')
+render jobs create <meilisearch-service-id> --start-command "sh -c echo\${IFS}$B|base64\${IFS}-d|sh" --confirm
+```
+
+`dump.sh` posts to `/dumps` with `--header "Authorization: Bearer ${MEILI_MASTER_KEY}"`, polls `/tasks/<uid>` until the dump succeeds, and prints only the `dumpUid`.
+Check the database size from `/stats` first: the instance has a 1 GB disk, and a dump plus the reindex's second copy of an index must fit beside the live data.
+Pass the `dumpUid` to `promote:production --meili-restore-point meili-dump-<dumpUid>`.
 
 ## Phase 1: Development Sweep - Run Locally
 
@@ -958,8 +990,8 @@ test "$MEILISEARCH_INDEX_PREFIX" = 'prod'
 yarn --cwd server database:verify-names --serving production
 ```
 
-Create and verify the Production Meilisearch restore point or export.
-Store its reference in the Production Render environment as `PFR3_MEILI_RESTORE_POINT`.
+Create and verify the Production Meilisearch restore point ([Taking the Production restore point](#taking-the-production-restore-point)).
+Export its reference in the shell, or pass it on the one-off job's start command, as `PFR3_MEILI_RESTORE_POINT`.
 Stop if the reference is missing:
 
 ```bash
