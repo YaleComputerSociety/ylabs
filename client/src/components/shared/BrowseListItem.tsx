@@ -37,6 +37,7 @@ interface BrowseListItemProps {
   isCompact?: boolean;
   /** Controls that act on this item, rendered inside the card's own border. */
   footer?: ReactNode;
+  statusBadgeOverride?: { label: string; className: string };
 }
 
 const BrowseListItem = React.memo(
@@ -48,6 +49,7 @@ const BrowseListItem = React.memo(
     onAdminEdit,
     isCompact,
     footer,
+    statusBadgeOverride,
   }: BrowseListItemProps) => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
@@ -56,11 +58,15 @@ const BrowseListItem = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
-      item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
+      !statusBadgeOverride &&
+      item.type === 'fellowship' &&
+      daysUntil !== null &&
+      daysUntil > 0 &&
+      daysUntil <= 14;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);
-    const statusBadge = getItemStatusBadge(item);
+    const statusBadge = statusBadgeOverride ?? getItemStatusBadge(item);
     const guidanceHref = isDepartmentResearchGuidance(item.data)
       ? departmentResearchGuidanceHref(item.data)
       : undefined;

@@ -179,7 +179,7 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     const cta = screen.getByRole('button', {
-      name: '2 watched programs close within 2 weeks, 1 not started',
+      name: '2 watched programs close within 2 weeks, 1 still marked Saved',
     });
     const programTab = screen.getByRole('tab', { name: 'Program Watch (3)' });
     expect(programTab.getAttribute('aria-selected')).toBe('false');
