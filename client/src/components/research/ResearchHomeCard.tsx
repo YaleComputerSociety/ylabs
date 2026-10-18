@@ -472,8 +472,12 @@ const ResearchHomeCard = ({
             <Link
               to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
               state={profileOpenState}
+              data-research-result-slug={primaryLinkedEntity.slug}
               className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-              onClick={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                rememberOpenedProfile(primaryLinkedEntity.slug);
+              }}
             >
               View profile
               <ArrowRightIcon />

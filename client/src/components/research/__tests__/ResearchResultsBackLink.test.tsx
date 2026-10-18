@@ -16,34 +16,38 @@ afterEach(() => {
   forgetOpenedResearchResults();
 });
 
-const resultCard = (slug: string, label: string): ResearchCluster => ({
+const resultEntity = (slug: string, label: string): ResearchCluster['entities'][number] => ({
+  _id: `${slug}-id`,
+  slug,
+  name: label,
+  kind: 'lab',
+  websiteUrl: '',
+  departments: ['Example Department'],
+  researchAreas: [],
+  school: '',
+  contactEmail: '',
+  contactName: '',
+  contactRole: '',
+  sourceUrls: [],
+});
+
+const resultCard = (
+  slug: string,
+  label: string,
+  entities: ResearchCluster['entities'] = [resultEntity(slug, label)],
+): ResearchCluster => ({
   id: slug,
   label,
   description: 'Studies an example topic.',
   contextState: 'complete',
   contextLabel: 'Research description',
   contextLine: 'Example Department',
-  entityCount: 1,
+  entityCount: entities.length,
   pathwayCount: 0,
   peopleCount: 0,
   labels: [],
   metadataTags: [],
-  entities: [
-    {
-      _id: `${slug}-id`,
-      slug,
-      name: label,
-      kind: 'lab',
-      websiteUrl: '',
-      departments: ['Example Department'],
-      researchAreas: [],
-      school: '',
-      contactEmail: '',
-      contactName: '',
-      contactRole: '',
-      sourceUrls: [],
-    },
-  ],
+  entities,
   pathways: [],
   evidence: [],
 });
@@ -57,6 +61,10 @@ const ResultsPage = () => {
       {[
         resultCard('first-example-lab', 'First Example Lab'),
         resultCard('second-example-lab', 'Second Example Lab'),
+        resultCard('shared-example-center', 'Shared Example Center', [
+          resultEntity('third-example-lab', 'Third Example Lab'),
+          resultEntity('fourth-example-lab', 'Fourth Example Lab'),
+        ]),
       ].map((home) => (
         <ResearchHomeCard key={home.id} home={home} variant="compact" openSource="search" />
       ))}
@@ -106,6 +114,19 @@ describe('returning from a research profile to its results', () => {
     expect(currentLocation()).toBe('/research?q=example&department=Example');
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Second Example Lab' })),
+    );
+  });
+
+  it('refocuses the profile link of a card that groups several entries', async () => {
+    renderJourney('/research?q=example');
+
+    fireEvent.click(screen.getByRole('link', { name: 'View profile' }));
+    expect(currentLocation()).toBe('/research/third-example-lab');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Back to results' }));
+    expect(currentLocation()).toBe('/research?q=example');
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('link', { name: 'View profile' })),
     );
   });
 
