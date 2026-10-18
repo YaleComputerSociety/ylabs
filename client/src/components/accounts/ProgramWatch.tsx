@@ -28,7 +28,9 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
-import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import usePlanNoteAutosave, { type PersistNoteOptions } from '../../hooks/usePlanNoteAutosave';
+import { keepalivePut } from '../../utils/keepalivePut';
+import PlanNoteSaveStatusText from './PlanNoteSaveStatusText';
 import useUndoableProgramUnwatch, {
   undoRestoresSummary,
   watchedProgramPlanSnapshot,
@@ -100,11 +102,16 @@ export const watchedProgramDeadlineSummary = (
   };
 };
 
-const persistProgramNote = async (programId: string, note: string) => {
+const persistProgramNote = async (
+  programId: string,
+  note: string,
+  options?: PersistNoteOptions,
+) => {
   try {
-    await axios.put(`/users/watchedProgramPlans/${programId}`, {
-      data: { plan: { privateNotes: note } },
-    });
+    const body = { data: { plan: { privateNotes: note } } };
+    await (options?.keepalive
+      ? keepalivePut(`/users/watchedProgramPlans/${programId}`, body)
+      : axios.put(`/users/watchedProgramPlans/${programId}`, body));
   } catch (error) {
     console.error('Error saving watched program plan.');
     throw error;
@@ -135,8 +142,14 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, cancelNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistProgramNote);
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistProgramNote);
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
     useUndoableProgramUnwatch({
       setFavorite,
@@ -197,6 +210,10 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     () => sortByUpcomingDeadline(programs.filter((program) => watchedIds.includes(program.id))),
     [programs, watchedIds],
   );
+
+  useEffect(() => {
+    retainNoteSaves(visiblePrograms.map((program) => program.id));
+  }, [visiblePrograms, retainNoteSaves]);
 
   const nextDeadline = useMemo(
     () =>
@@ -434,19 +451,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                             rows={2}
                             className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                           />
-                          <p
-                            className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
-                            role={status === 'error' ? 'alert' : 'status'}
-                            aria-live="polite"
-                          >
-                            {status === 'saving'
-                              ? 'Saving…'
-                              : status === 'saved'
-                                ? 'Saved'
-                                : status === 'error'
-                                  ? 'Not saved. Check your connection or sign in again, then retry.'
-                                  : ''}
-                          </p>
+                          <PlanNoteSaveStatusText status={status} />
                         </div>
                       )}
                       {!isEditing && note && (

@@ -10,7 +10,9 @@ import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
-import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import usePlanNoteAutosave, { type PersistNoteOptions } from '../../hooks/usePlanNoteAutosave';
+import { keepalivePut } from '../../utils/keepalivePut';
+import PlanNoteSaveStatusText from './PlanNoteSaveStatusText';
 import useUndoableRemoval from '../../hooks/useUndoableRemoval';
 import UndoRemovalBanner from '../shared/UndoRemovalBanner';
 import LoadingSpinner from '../shared/LoadingSpinner';
@@ -101,11 +103,16 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const persistResearchPlanNote = async (entityId: string, note: string) => {
+const persistResearchPlanNote = async (
+  entityId: string,
+  note: string,
+  options?: PersistNoteOptions,
+) => {
   try {
-    await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-      data: { plan: { privateNotes: note } },
-    });
+    const body = { data: { plan: { privateNotes: note } } };
+    await (options?.keepalive
+      ? keepalivePut(`/users/savedResearchEntityPlans/${entityId}`, body)
+      : axios.put(`/users/savedResearchEntityPlans/${entityId}`, body));
   } catch (error) {
     console.error('Error saving research plan note.');
     throw error;
@@ -137,8 +144,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistResearchPlanNote);
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistResearchPlanNote);
 
   // The count is how many plans the owner has, not how many of them are servable:
   // reporting only the servable ones is what let the dashboard read "0 research
@@ -250,6 +263,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     // Read the note before the row leaves the list, because afterwards no read path
     // serves it.
     const note = notes[entityId] || '';
+    cancelNoteSave(entityId);
     const removal = setFavorite(slug, false, 'saved_plans');
     void removal.then((removed) => {
       if (removed) markNotePersisted(entityId, '');
@@ -283,6 +297,10 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     () => entities.filter((entity) => savedSlugs.includes(entity.slug)),
     [entities, savedSlugs],
   );
+
+  useEffect(() => {
+    retainNoteSaves(visibleEntities.map((entity) => entity._id));
+  }, [visibleEntities, retainNoteSaves]);
 
   const accessStatuses = useMemo(() => {
     const statuses = new Map<string, UndergraduateAccessStatus>();
@@ -579,21 +597,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         rows={2}
                         className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
-                      <p
-                        className={`mt-1 text-xs ${
-                          status === 'error' ? 'text-red-700' : 'text-muted'
-                        }`}
-                        role={status === 'error' ? 'alert' : 'status'}
-                        aria-live="polite"
-                      >
-                        {status === 'saving'
-                          ? 'Saving…'
-                          : status === 'saved'
-                            ? 'Saved'
-                            : status === 'error'
-                              ? 'Not saved. Check your connection or sign in again, then retry.'
-                              : ''}
-                      </p>
+                      <PlanNoteSaveStatusText status={status} />
                     </div>
                   )}
                 </div>

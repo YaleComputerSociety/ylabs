@@ -128,6 +128,8 @@ The footer shift this removed scored 0.094 on `/about` at 1440px and 0.159 at 37
 - Validate on submit and on blur, with errors tied to their field.
 - Support autofill and password managers; do not block paste.
 - Submitting is idempotent and keyboard accessible (Enter submits).
+- An autosaved field shows its state from the first keystroke, never a blank line while a debounce waits, and flushes a pending save on blur, `pagehide`, a hidden document, and unmount, and holds an unload while a save is pending or in flight (`client/src/hooks/usePlanNoteAutosave.ts`, #5126).
+The unload flush goes through `client/src/utils/keepalivePut.ts`, a direct `fetch` with `keepalive`, because axios reaches its adapter through a promise chain that an unloading document never runs, so an axios request made from `pagehide` is silently never sent.
 
 ## Animation
 
