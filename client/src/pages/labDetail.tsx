@@ -912,6 +912,9 @@ const LabDetail = () => {
     undoRemoval,
     dismissUndo,
   } = useUndoableRemoval<{ entityId: string }>();
+  useEffect(() => {
+    dismissUndo();
+  }, [slug, dismissUndo]);
 
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } = useFavorites(
     'researchPlans',
@@ -1194,7 +1197,7 @@ const LabDetail = () => {
             />
           )}
 
-          {undoableUnsave && (
+          {undoableUnsave?.entityId === group._id && (
             <UndoRemovalBanner
               onUndo={() =>
                 void undoRemoval(({ entityId }) => setSavedResearchPlanFavorite(entityId, true))
