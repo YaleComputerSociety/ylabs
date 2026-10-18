@@ -46,6 +46,7 @@ export interface FellowshipSearchContextType {
 
   fellowships: Fellowship[];
   isLoading: boolean;
+  isSearchPending: boolean;
   loadError: boolean;
   searchExhausted: boolean;
 
@@ -103,6 +104,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   onToggleSortDirection: () => {},
   fellowships: [],
   isLoading: false,
+  isSearchPending: false,
   loadError: false,
   searchExhausted: false,
   page: 1,

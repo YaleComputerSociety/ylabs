@@ -50,4 +50,12 @@ describe('ActiveFilters', () => {
       expect(button).toHaveClass('min-h-[44px]', 'rounded-control');
     }
   });
+
+  it('says it is searching instead of showing the previous count while a search runs', () => {
+    render(<ActiveFilters totalCount={172} isLoading chips={[]} onClearAll={vi.fn()} />);
+
+    const count = screen.getByRole('status');
+    expect(count).toHaveTextContent('Searching…');
+    expect(count).not.toHaveTextContent('172');
+  });
 });
