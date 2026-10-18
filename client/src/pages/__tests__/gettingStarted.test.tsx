@@ -75,8 +75,7 @@ describe('GettingStarted', () => {
   it('keeps the linked section in view after the route change scrolls the page', async () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
     const SECTION_SCROLL_TOP = 900;
-    const scrollContainer = () =>
-      document.querySelector<HTMLElement>('[data-scroll-container]')!;
+    const scrollContainer = () => document.querySelector<HTMLElement>('[data-scroll-container]')!;
     const originalScrollIntoView = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = vi.fn(() => {
       scrollContainer().scrollTop = SECTION_SCROLL_TOP;

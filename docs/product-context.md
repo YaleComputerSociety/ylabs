@@ -136,6 +136,8 @@ Reaching out is constant and primary: always offer a way to contact the research
 The lead card carries the person: their official profile and, when one is served, their email.
 The "How to get involved" block offers exactly one button: the research's own homepage where it has one, because a homepage is a better way in than a page deep inside it, and otherwise a specific place to apply or join from the entity's own classified sources ("See how to get involved", for every entity type).
 When the research has both a homepage and a join page the server vetted (`APPLICATION_FORM_EXISTS`), the join page sits beneath the button as a secondary "See how to join" link rather than a second button (#4753).
+That link, and the "See how to get involved" button, keep their join wording only when the address itself is join-shaped; a vetted route cited from a page whose path is not a join page, such as a news or roster page, reads "Read what they say about joining" instead (#5099).
+When the lead card is the only way in, the block still appears with one line pointing at that card or the official pages, and every block ends with a link to the generic `/getting-started` guide (#5099).
 When no lead card carries the profile, the official profile takes the website's place as that one action only while no place to apply competes; when one does, the homepage takes the action ahead of it, or the place to apply does when there is no homepage.
 An organization that coordinates involvement centrally offers its get-involved page as the one action, and its director's profile stays on the lead card.
 Every other page, including a lead's personal homepage, is listed under sources rather than offered as a second button.

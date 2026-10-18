@@ -274,7 +274,10 @@ await step(
     const laptopPage = await context.newPage();
     try {
       const sidebar = laptopPage.locator('header', {
-        has: laptopPage.getByRole('heading', { level: 1, name: 'Find Yale research that fits you.' }),
+        has: laptopPage.getByRole('heading', {
+          level: 1,
+          name: 'Find Yale research that fits you.',
+        }),
       });
       const assertSidebarFits = async (state) => {
         const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
