@@ -821,3 +821,41 @@ describe('serving the card in place of a researchless biography', () => {
     expect(representation.invariant.cardDescriptionUseful).toBe(true);
   });
 });
+
+describe('a body that only says how to join or narrates events serves the card (#5109)', () => {
+  const lab = (fullDescription: string, shortDescription: string) => ({
+    entityType: 'LAB',
+    name: 'Example Phage Lab',
+    fullDescription,
+    shortDescription,
+    websiteUrl: 'https://example.yale.edu/phage',
+    sourceUrls: ['https://example.yale.edu/phage'],
+  });
+  const card =
+    'Studies evolutionary genetics of bacteriophages and RNA viruses and phage therapy for resistant infections.';
+
+  it.each([
+    [
+      'joining instructions',
+      'Students and researchers interested in joining the Example Phage Lab should contact the lab director directly. Prospective doctoral students should apply to the PhD program in Example Biology.',
+    ],
+    [
+      'keynote narration',
+      'Gives keynote presentations on bacteriophage evolution, focusing on bacteriophage evolution.',
+    ],
+  ])('serves the research card as the body in place of %s', (_label, body) => {
+    const entity = lab(body, card);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.entity.fullDescription).toBe(card);
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(entity)).toBe(true);
+  });
+
+  it('still withholds the row when the card states no research either', () => {
+    const entity = lab(
+      'Students interested in joining the Example Phage Lab should contact the lab director directly.',
+      'Students should contact the lab director.',
+    );
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+});

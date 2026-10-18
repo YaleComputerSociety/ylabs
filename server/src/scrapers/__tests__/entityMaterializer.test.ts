@@ -587,6 +587,40 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
+  it('ignores a person title cut off at a connective, so a complete title wins (#5109)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'title',
+        sourceName: 'dept-faculty-roster',
+        value: 'Example Chair Professor of',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'title',
+        sourceName: 'dept-faculty-roster',
+        value: 'Example Chair Professor of Ecology and Evolutionary Biology',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['examines'],
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores a methods observation whose every chip is a bare verb (#5109)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['examines', 'investigates'],
+      }),
+    ).toBe(true);
+  });
+
   it('keeps the sourceUrl the fellowship database lane asserts, because the database is official (#4284)', () => {
     const fundPage = 'https://yale.communityforce.com/Funds/FundDetails.aspx?FUNDA';
     expect(

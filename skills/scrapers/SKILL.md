@@ -313,7 +313,7 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   Latest-wins per field is not tuple-atomic, though, which is why the director materialization lane carries its own name check.
 - `observationFieldSanitizer.ts` - shared ingest-time extraction sanitizer applied by `observationStore.appendObservations` to every observation from every source, so no scraper (present or future) can leak page furniture into a stored field (#1375).
   It composes the existing hygiene utilities rather than restating their rules:
-  - a `user` `title` runs through `sanitizePersonTitle` (rejected when it is nav/section furniture);
+  - a `user` `title` runs through `sanitizePersonTitle` (rejected when it is nav/section furniture, or cut off at a dangling connective such as "Professor of", which the materializer also ignores so a complete title wins, #5109);
   - a research-entity `name`/`displayName` is normalized and rejected when it is nav chrome, a section label, placeholder filler that identifies nothing (`isPlaceholderEntityName`: "n/a", "none", "unknown", "TBD"), a glued contact or street-address fragment, or literal HTML. The filler class is refused here, at the all-source choke point, rather than per source: #2367 had it guarded only inside the lab microsite extractor and a record reached students storing `name: "n/a"`. Extend the vocabulary in `isPlaceholderEntityName` (`utils/researchHomeNameIdentityAuthority.ts`), never in a scraper;
   - research-entity `researchAreas`/`topics`/`researchInterests` lists drop label/section leakage element-wise (rejected when nothing survives);
   - `fullDescription`/`shortDescription` are chrome-stripped and contact-redacted (rejected when only chrome remains);
@@ -689,6 +689,9 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   `sanitizeMethodChipLabel` also refuses a meaning class, through `isActivityOrPublicationLabel` (#4049): an activity the person does (teaching, consultation, outreach, workshops) or a publication-list heading ("Peer-Reviewed Original Research") names no technique.
   Only the bare head, the head after a generic modifier (`clinical training`, `public lectures`), a bare citation identifier (`DOI`, `PMID`, `PMCID`, `citations`), or a peer-reviewed publication heading followed by its list is refused, so a modifier that names a technique keeps the chip: `simulation training`, `rater training`, `systematic reviews`, `retrospective chart review` and `citation analysis` all stay.
   Hand-read on Development before landing, it refused 107 served chips on 72 rows and every one was an activity or a heading, with 7 rows left with no method.
+  It also refuses a chip that names an action or a quality rather than a technique, through `isBareVerbOrAdjectiveMethodLabel` (#5109): only verb forms from a closed research-verb lexicon ("Examines", "Designing"), a clause led by a third-person verb ("develops strategies"), or a bare evaluative adjective ("Scalable", "Highly-Controllable").
+  Keep the lexicon closed and never add a gerund or base form that is also a technique noun ("modeling", "sequencing", "screening", "mapping", "design"); measured on Development it refused 223 served chips on 150 rows, every one from the lab-site description lane.
+  The search document runs the same sanitizer, so the index and the detail page list the same methods.
   A stored `methods` observation that states no admissible method at all is ignored by `shouldIgnoreObservationForEntityMaterialization`, because the projection keeps a rejected value rather than dropping it; ignoring it lets clear-on-empty withdraw the stored list on the next materialize.
   There is no stored repair for this class any more, and none is needed: the rule runs at ingest for all four chip fields, no live observation and no unarchived row carries a sentence-shaped chip, and the 21 rows that do are archived (#3757).
   The one-off that used to rewrite the observation and the document was deleted once that held; if this class ever returns, the answer is the ingest arm rather than a new script.
@@ -1632,6 +1635,13 @@ Calibrated on every non-archived Development row and every distinct live descrip
 Any research or care word, a faculty rank, or one kind of creative practice evidence (`creativePracticeEvidence`) other than `design` or `instrument` keeps a biography, so widen the shapes only against a full served-corpus walk.
 Those two kinds are excluded because organ, brass and brand identity have ordinary meanings outside the arts (#4551).
 Calibrated on all 3,470 served Development rows on 2026-10-03: 5 bodies refused, all 5 read and wrong, and no other served text changed.
+
+#### Joining instructions and event narration are not a description (#5109)
+
+`nonResearchBodyShape` also names `joining-instructions` (who to contact, which program to apply to, where openings are posted) and `event-narration` (talks or keynotes given, awards received, papers accepted), both refused for the body and the card only when every sentence is of that kind.
+An event sentence must open on the event, so "who wins awards" as a research object and "gives talks" as one clause among several kinds of work keep their body; widen either shape only against a full served-corpus walk.
+When the row has no admissible body left, `buildResearchEntityPublicDescriptionRepresentation` serves the research card as the body rather than withholding the row, and a card that states no research is not served in its place.
+`docs/decisions.md` (2026-10-18) records the measurement.
 
 #### A practice biography with no research is not a description (#4551)
 
