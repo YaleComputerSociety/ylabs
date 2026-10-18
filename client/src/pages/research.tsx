@@ -1021,6 +1021,7 @@ const Research = () => {
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
+  const compactsHeaderOnPhones = hasSubmittedSearch;
   const programsHandoffQuery =
     departmentSearch || submittedQuery === FILTERED_RESULT_QUERY_LABEL ? '' : submittedQuery.trim();
 
@@ -1604,6 +1605,8 @@ const Research = () => {
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onClearAll: () => applyStudentFilters({ school: '', department: '', entityType: '' }),
+    resultCount: Math.max(searchTotal, activeClusters.length),
+    resultCountPending: searchLoading,
   };
 
   const browseFilterProps = {
@@ -1611,6 +1614,8 @@ const Research = () => {
     facetDistribution: browseFacetDistribution,
     isApplying: false,
     hasFacetError: false,
+    resultCount: defaultSearchTotal,
+    resultCountPending: defaultSearchLoading,
   };
 
   const retryRelaxedQuery = () => {
@@ -1728,7 +1733,9 @@ const Research = () => {
       <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
+            <h1
+              className={`yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9 ${compactsHeaderOnPhones ? 'max-sm:sr-only' : ''}`}
+            >
               Find a Yale lab that fits you.
             </h1>
             <p
@@ -1738,28 +1745,10 @@ const Research = () => {
               Search by interest, professor, course topic, method, or question.
             </p>
 
-            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
-              <div
-                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
-                role="status"
-              >
-                <Link
-                  to="/dashboard?tab=programs"
-                  aria-label={approachingDeadlineAriaLabel(
-                    watchedDeadlineApproachingCount,
-                    watchedDeadlineNotStartedCount,
-                  )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
-                >
-                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
-                </Link>
-                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
-                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
+            <form
+              onSubmit={onSubmit}
+              className={`mt-3 sm:mt-7 xl:mt-4 ${compactsHeaderOnPhones ? 'max-sm:mt-0' : ''}`}
+            >
               <label
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-ink"
@@ -1814,6 +1803,27 @@ const Research = () => {
               </p>
             </form>
 
+            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
+              <div
+                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                role="status"
+              >
+                <Link
+                  to="/dashboard?tab=programs"
+                  aria-label={approachingDeadlineAriaLabel(
+                    watchedDeadlineApproachingCount,
+                    watchedDeadlineNotStartedCount,
+                  )}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
+                >
+                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+                </Link>
+                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
+                )}
+              </div>
+            )}
+
             {hasSubmittedSearch && isWideFilterLayout && (
               <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
                 <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
@@ -1842,7 +1852,7 @@ const Research = () => {
             )}
             <div
               aria-hidden={isAuthLoading || undefined}
-              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
+              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''} ${compactsHeaderOnPhones ? 'max-sm:hidden' : ''}`}
             >
               <p
                 aria-hidden={isAuthenticated || undefined}

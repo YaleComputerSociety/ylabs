@@ -47,7 +47,7 @@ describe('ResearchFilterDisclosure', () => {
     const close = within(dialog).getByRole('button', { name: 'Close filters' });
     await waitFor(() => expect(close).toHaveFocus());
 
-    const last = within(dialog).getByRole('button', { name: 'Clear all filters' });
+    const last = within(dialog).getByRole('button', { name: 'Show results' });
     last.focus();
     fireEvent.keyDown(dialog, { key: 'Tab' });
     expect(close).toHaveFocus();
@@ -111,6 +111,31 @@ describe('ResearchFilterDisclosure', () => {
       expect(dialog.className).toContain('max-w-full');
     },
   );
+
+  it('closes the sheet from a button that names how many results the filters leave', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
+    const { rerender, props } = renderFilters({ resultCount: 1234 });
+
+    const trigger = screen.getByRole('button', { name: 'Filters' });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(within(dialog).getByRole('button', { name: 'Show 1,234 results' })).toBeTruthy();
+
+    rerender(<ResearchFilterDisclosure {...props} resultCount={1234} resultCountPending />);
+    expect(within(dialog).getByRole('button', { name: 'Updating results…' })).toBeTruthy();
+
+    rerender(<ResearchFilterDisclosure {...props} resultCount={1} />);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show 1 result' }));
+    expect(screen.queryByRole('dialog', { name: 'Research filters' })).toBeNull();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('offers one clear-all control in the sidebar, not one beside the fields and another beside the chips', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
+
+    expect(screen.getAllByRole('button', { name: /^Clear all/ })).toHaveLength(1);
+  });
 
   it('renders the sidebar variant as an always-open static panel without a trigger', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;

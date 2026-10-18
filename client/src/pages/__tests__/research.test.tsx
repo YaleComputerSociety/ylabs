@@ -1039,7 +1039,7 @@ describe('Research page', () => {
       expect(screen.getByRole('button', { name: 'Close filters' })).not.toBeDisabled(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all active filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
         'aria-expanded',
@@ -1185,6 +1185,40 @@ describe('Research page', () => {
     expect(screen.getByRole('status').textContent).toMatch(/^29 results for 'machine learning'/);
     expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
     expect(screen.queryByRole('heading', { name: /Showing research matches/ })).toBeNull();
+  });
+
+  it('keeps the page heading for assistive technology but gives a phone screen to results once a search runs', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity], { estimatedTotalHits: 29 })
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const pageHeading = screen.getByRole('heading', {
+      level: 1,
+      name: 'Find a Yale lab that fits you.',
+    });
+    expect(pageHeading.className).toContain('max-sm:sr-only');
+  });
+
+  it('shows the page heading on phones before any search runs', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch(departments, ['/research']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const pageHeading = screen.getByRole('heading', {
+      level: 1,
+      name: 'Find a Yale lab that fits you.',
+    });
+    expect(pageHeading.className).not.toContain('sr-only');
   });
 
   it('applies a filter toggle in place without re-running the previous query', async () => {
@@ -3029,6 +3063,16 @@ describe('Research landing watched-deadline urgency signal', () => {
       name: '1 watched program closes within 2 weeks, 1 not started',
     });
     expect(cta).toHaveAttribute('href', '/dashboard?tab=programs');
+  });
+
+  it('comes after the search box in focus order so it never stands between a student and search', async () => {
+    mockWatchedPrograms([{ _id: 'p1', title: 'STARS', deadline: inWindow }]);
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    const cta = await screen.findByRole('link', { name: /watched program closes within 2 weeks/ });
+    const searchBox = screen.getByRole('searchbox', { name: 'Search y/labs' });
+    expect(searchBox.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('stays silent when no watched deadline is approaching', async () => {
