@@ -212,6 +212,31 @@ describe('leadPersonalSiteCandidateUrl', () => {
     );
   });
 
+  it('returns the personal site this lane adopted a led group from', () => {
+    expect(
+      leadPersonalSiteCandidateUrl({
+        entityType: 'LAB',
+        websiteUrl: 'https://www.orcafixture.example/',
+        fieldProvenance: {
+          websiteUrl: { sourceName: 'official-profile-pi-backfill', sourceUrl: personalSiteUrl },
+        },
+      }),
+    ).toBe(personalSiteUrl);
+  });
+
+  it('refuses a profile this lane adopted a home from', () => {
+    expect(
+      leadPersonalSiteCandidateUrl({
+        entityType: 'LAB',
+        websiteUrl: 'https://www.orcafixture.example/',
+        leadUserProfileUrls: [profileUrl],
+        fieldProvenance: {
+          websiteUrl: { sourceName: 'official-profile-pi-backfill', sourceUrl: profileUrl },
+        },
+      }),
+    ).toBe('');
+  });
+
   it("refuses an institution's person page and a directory", () => {
     for (const websiteUrl of [
       'https://medicine.yale.edu/profile/jane-quillfixture/',
@@ -443,6 +468,31 @@ describe('profile-research-home-backfill on a lead personal site', () => {
     expect(fetched).toContain(personalSiteUrl);
     expect(emittedByField(emitted).name).toBeUndefined();
     expect(emittedByField(emitted).websiteUrl).toBeUndefined();
+  });
+  it('re-derives the adopted group from the same personal site on a second run', async () => {
+    const pages = {
+      [personalSiteUrl]: homepageHtml(
+        '<p>I lead the <a href="https://www.orcafixture.example/">ORCA Lab</a> at Yale.</p>',
+      ),
+    };
+    const first = emittedByField((await runResearchHomeStep(pages, personalSiteEntity)).emitted);
+    const adoptedEntity = {
+      ...personalSiteEntity,
+      name: first.name.value,
+      entityType: first.entityType.value,
+      websiteUrl: first.websiteUrl.value,
+      sourceUrls: first.sourceUrls.value,
+      fieldProvenance: {
+        websiteUrl: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: first.websiteUrl.sourceUrl,
+        },
+      },
+      [PERSONAL_SITE_ONLY_TARGET_FIELD]: true,
+    };
+    const second = emittedByField((await runResearchHomeStep(pages, adoptedEntity)).emitted);
+    expect(second.name).toMatchObject({ value: 'ORCA Lab', sourceUrl: personalSiteUrl });
+    expect(second.websiteUrl).toMatchObject({ value: 'https://www.orcafixture.example/' });
   });
 });
 

@@ -512,21 +512,32 @@ export function leadPersonalHomepageUrl(entity: Record<string, any>, personName:
 /**
  * The row's own stored website when it can be the lead's personal site on any host, or
  * empty. Only a faculty research row qualifies, because adopting a led group renames the
- * row and a lab or organization already carries its own name. The URL is never an official profile, a directory
- * or roster page, another institution's person page, a shared host's root, or a press or
- * publicity page, because each of those is an institution's page rather than the
- * person's own. Whether the page is the lead's is decided after the read, by
- * `personalSiteNamesItsLead`, because nothing in a personal domain's URL says whose it is.
+ * row and a lab or organization already carries its own name. A row whose website this
+ * lane wrote is the exception: its evidence page is the candidate instead, so a re-run
+ * re-reads the personal site it adopted from rather than the home it adopted. The URL is
+ * never an official profile, a directory or roster page, another institution's person
+ * page, a shared host's root, or a press or publicity page, because each of those is an
+ * institution's page rather than the person's own. Whether the page is the lead's is
+ * decided after the read, by `personalSiteNamesItsLead`, because nothing in a personal
+ * domain's URL says whose it is.
  */
 export function leadPersonalSiteCandidateUrl(entity: Record<string, any>): string {
-  if (textValue(entity.entityType) !== 'FACULTY_RESEARCH_AREA') return '';
-  for (const value of uniqueStrings([entity.websiteUrl, entity.website])) {
+  const provenance = entity.fieldProvenance?.websiteUrl;
+  const cited =
+    provenance?.sourceName === SOURCE_NAME
+      ? [provenance.sourceUrl]
+      : textValue(entity.entityType) === 'FACULTY_RESEARCH_AREA'
+        ? [entity.websiteUrl, entity.website]
+        : [];
+  const officialProfileUrls = new Set(officialProfileUrlsForEntity(entity));
+  for (const value of uniqueStrings(cited)) {
     try {
       const url = new URL(value);
       if (!/^https?:$/i.test(url.protocol)) continue;
       url.hash = '';
       const candidate = url.toString();
       if (
+        officialProfileUrls.has(normalizeOfficialProfileUrl(candidate)) ||
         YALE_PERSONAL_HOME_DIRECTORY_URL_RE.test(candidate) ||
         isOfficialYalePersonPageUrl(candidate) ||
         isPersonProfileOrDirectoryUrl(candidate) ||
@@ -2094,8 +2105,7 @@ export function isAcronymLabName(name: unknown): boolean {
 }
 
 /**
- * The phrase an acronym lab name abbreviates, as a page spells it out ("KAPI Lab" for
- * "Kinane American Political Institutions Lab"), or empty. Each capitalised word gives
+ * The phrase an acronym lab name abbreviates, as a page spells it out, or empty. Each capitalised word gives
  * one letter in order, connectors give none, and the phrase must end in the name's own
  * head noun, so a run of capitalised words that merely happens to share initials does not
  * count.
@@ -3897,12 +3907,21 @@ export async function annotateProfileDescriptionPreferredSourceEvidence(
 }
 
 /**
- * Set on a row the selector reached only because its own website may be the lead's
- * personal site. Such a row is read for the led-group sentence on that site and for
- * nothing else, because its profile was never in this step's population and the profile
- * arms have not been measured on it.
+ * Set on a row read for the led-group sentence on the lead's personal site and for nothing
+ * else: a row the selector reached only because its own website may be that site, and a
+ * row whose website this lane adopted from that site. Its profile was never in this step's
+ * population and the profile arms have not been measured on it.
  */
 export const PERSONAL_SITE_ONLY_TARGET_FIELD = '__personalSiteOnly';
+
+const RESEARCH_HOME_PROFILE_TARGET_FIELDS =
+  '_id slug name displayName entityType website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl';
+
+function readsOnlyItsPersonalSite(entity: Record<string, any>, targeted: boolean): boolean {
+  if (!leadPersonalSiteCandidateUrl(entity)) return false;
+  if (entity.fieldProvenance?.websiteUrl?.sourceName === SOURCE_NAME) return true;
+  return !targeted && !isProfileResearchHomeTarget(entity);
+}
 
 function isProfileResearchHomeTarget(entity: Record<string, any>): boolean {
   const websiteUrl = textValue(entity.websiteUrl);
@@ -3917,42 +3936,73 @@ async function selectResearchHomeProfileTargets(
   limit: number,
   targetKeys: string[] = [],
 ): Promise<Array<Record<string, any>>> {
-  const targetFilter =
-    targetKeys.length > 0
-      ? targetKeyFilter(targetKeys)
-      : {
-          $or: [
-            {
-              $and: [
-                {
-                  $or: [
-                    { websiteUrl: { $exists: false } },
-                    { websiteUrl: null },
-                    { websiteUrl: '' },
-                  ],
-                },
-                {
-                  $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
-                },
-              ],
-            },
-            { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
-            { websiteUrl: YALE_PERSONAL_HOME_DIRECTORY_URL_RE },
-            { entityType: 'FACULTY_RESEARCH_AREA', websiteUrl: /^https?:\/\//i },
-          ],
-        };
-
-  const selectedEntities = await recentlyObservedResearchEntities(
-    { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName entityType website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl',
+  if (targetKeys.length > 0) {
+    return researchHomeProfileTargetsWithLeads(
+      await recentlyObservedResearchEntities(
+        { archived: { $ne: true }, ...targetKeyFilter(targetKeys) },
+        RESEARCH_HOME_PROFILE_TARGET_FIELDS,
+        limit,
+      ),
+      limit,
+      true,
+    );
+  }
+  const profileTargets = await researchHomeProfileTargetsWithLeads(
+    await recentlyObservedResearchEntities(
+      {
+        archived: { $ne: true },
+        $or: [
+          {
+            $and: [
+              {
+                $or: [
+                  { websiteUrl: { $exists: false } },
+                  { websiteUrl: null },
+                  { websiteUrl: '' },
+                ],
+              },
+              {
+                $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
+              },
+            ],
+          },
+          { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
+          { websiteUrl: YALE_PERSONAL_HOME_DIRECTORY_URL_RE },
+        ],
+      },
+      RESEARCH_HOME_PROFILE_TARGET_FIELDS,
+      limit,
+    ),
+    limit,
+    false,
+  );
+  if (profileTargets.length >= limit) return profileTargets;
+  const personalSiteCandidates = await recentlyObservedResearchEntities(
+    {
+      archived: { $ne: true },
+      entityType: 'FACULTY_RESEARCH_AREA',
+      'fieldProvenance.websiteUrl.sourceName': { $ne: SOURCE_NAME },
+      $and: [
+        { websiteUrl: /^https?:\/\//i },
+        { websiteUrl: { $not: YALE_PERSONAL_HOME_DIRECTORY_URL_RE } },
+      ],
+    },
+    RESEARCH_HOME_PROFILE_TARGET_FIELDS,
     limit,
   );
-  const entities = selectedEntities.flatMap((entity) => {
-    if (targetKeys.length > 0 || isProfileResearchHomeTarget(entity)) return [entity];
-    return leadPersonalSiteCandidateUrl(entity)
-      ? [{ ...entity, [PERSONAL_SITE_ONLY_TARGET_FIELD]: true }]
-      : [];
-  });
+  const personalSiteTargets = await researchHomeProfileTargetsWithLeads(
+    personalSiteCandidates.filter((entity) => leadPersonalSiteCandidateUrl(entity)),
+    limit - profileTargets.length,
+    false,
+  );
+  return [...profileTargets, ...personalSiteTargets];
+}
+
+async function researchHomeProfileTargetsWithLeads(
+  entities: Array<Record<string, any>>,
+  limit: number,
+  targeted: boolean,
+): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return [];
 
   const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
@@ -4007,7 +4057,12 @@ async function selectResearchHomeProfileTargets(
 
   return entitiesWithObservationUrls
     .filter((entity) => officialProfileUrlsForEntity(entity).length > 0)
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((entity) =>
+      readsOnlyItsPersonalSite(entity, targeted)
+        ? { ...entity, [PERSONAL_SITE_ONLY_TARGET_FIELD]: true }
+        : entity,
+    );
 }
 
 /**
