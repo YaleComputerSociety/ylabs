@@ -55,6 +55,10 @@ import {
 } from '../../utils/watchedDeadlineSummary';
 import { CalendarIcon, EditIcon } from '../shared/icons';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import usePlanDetailSync, {
+  isPlanVersionConflict,
+  type ServedPlanDetail,
+} from '../../hooks/usePlanDetailSync';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
@@ -66,7 +70,7 @@ interface ProgramWatchProps {
   }) => void;
 }
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
 type ListLoadMode = 'replace' | 'merge';
 
@@ -102,29 +106,6 @@ export const watchedProgramDeadlineSummary = (
   };
 };
 
-const persistProgramNote = async (
-  programId: string,
-  note: string,
-  options?: PersistNoteOptions,
-) => {
-  try {
-    const body = { data: { plan: { privateNotes: note } } };
-    await (options?.keepalive
-      ? keepalivePut(`/users/watchedProgramPlans/${programId}`, body)
-      : axios.put(`/users/watchedProgramPlans/${programId}`, body));
-  } catch (error) {
-    console.error('Error saving watched program plan.');
-    throw error;
-  }
-  void trackResearchEvent({
-    eventType: 'research_plan_update',
-    entityType: 'fellowship',
-    entityId: programId,
-    payload: { field: 'note_presence' },
-    dedupeKey: createResearchAnalyticsInteractionId('plan'),
-  });
-};
-
 const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const {
     favIds: watchedIds,
@@ -142,6 +123,39 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const planSyncRef = useRef<ReturnType<typeof usePlanDetailSync> | null>(null);
+  const persistProgramNote = useCallback(
+    async (programId: string, note: string, options?: PersistNoteOptions) => {
+      const sync = planSyncRef.current;
+      const version = sync?.versionFor(programId);
+      const body = {
+        data: { plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) } },
+      };
+      try {
+        const served = options?.keepalive
+          ? await keepalivePut(`/users/watchedProgramPlans/${programId}`, body)
+          : (await axios.put(`/users/watchedProgramPlans/${programId}`, body)).data;
+        sync?.acceptWriteResponse(
+          programId,
+          (served as { watchedProgramPlans?: Record<string, ServedPlanDetail> } | undefined)
+            ?.watchedProgramPlans,
+        );
+      } catch (error) {
+        console.error('Error saving watched program plan.');
+        if (isPlanVersionConflict(error))
+          void sync?.refreshPlanDetails({ adoptVersionOf: programId });
+        throw error;
+      }
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'fellowship',
+        entityId: programId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
+    },
+    [],
+  );
   const {
     noteSaveStatuses,
     saveNote,
@@ -150,11 +164,30 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     retainNoteSaves,
     markNotePersisted,
   } = usePlanNoteAutosave(persistProgramNote);
+
+  const planSync = usePlanDetailSync({
+    plansPath: '/users/watchedProgramPlans',
+    responseKey: 'watchedProgramPlans',
+    notes,
+    stages,
+    setNotes,
+    setStages,
+    markNotePersisted,
+  });
+  const { recordServedPlan, versionFor, acceptWriteResponse, refreshPlanDetails, takeServerStage } =
+    planSync;
+  useEffect(() => {
+    planSyncRef.current = planSync;
+  });
+
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
     useUndoableProgramUnwatch({
       setFavorite,
       surface: 'saved_plans',
-      onPlanRestored: (programId, plan) => markNotePersisted(programId, plan.privateNotes),
+      onPlanRestored: (programId, plan) => {
+        markNotePersisted(programId, plan.privateNotes);
+        void refreshPlanDetails({ adoptVersionOf: programId });
+      },
     });
 
   const programRequest = useLatestRequest();
@@ -181,7 +214,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         );
         const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
           string,
-          { privateNotes?: string; stage?: string }
+          ServedPlanDetail
         >;
         const loadedNotes: Record<string, string> = {};
         const loadedStages: Record<string, ResearchPlanStage> = {};
@@ -190,6 +223,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
           loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
           markNotePersisted(program.id, loadedNotes[program.id]);
+          recordServedPlan(program.id, plans[program.id]);
         }
         loadedProgramIdsRef.current = new Set([
           ...(merging ? loadedProgramIdsRef.current : []),
@@ -211,10 +245,14 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         if (ticket.isCurrent()) setIsLoading(false);
       }
     },
-    [programRequest, markNotePersisted],
+    [programRequest, markNotePersisted, recordServedPlan],
   );
 
   useLoadEffect(loadPrograms);
+
+  useEffect(() => {
+    if (watchedIdsLoaded) void refreshPlanDetails();
+  }, [watchedIds, watchedIdsLoaded, refreshPlanDetails]);
 
   const requestedWatchIdsRef = useRef(new Set<string>());
   useEffect(() => {
@@ -319,9 +357,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       setStages((current) => ({ ...current, [programId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
       try {
-        await axios.put(`/users/watchedProgramPlans/${programId}`, {
-          data: { plan: { stage: nextStage } },
+        const version = versionFor(programId);
+        const response = await axios.put(`/users/watchedProgramPlans/${programId}`, {
+          data: { plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) } },
         });
+        acceptWriteResponse(programId, response.data?.watchedProgramPlans);
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
         void trackResearchEvent({
           eventType: 'research_plan_update',
@@ -330,13 +370,18 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           payload: { field: 'stage' },
           dedupeKey: createResearchAnalyticsInteractionId('plan'),
         });
-      } catch {
+      } catch (error) {
         console.error('Error saving watched program stage.');
+        if (isPlanVersionConflict(error)) {
+          await takeServerStage(programId);
+          setStageStatuses((statuses) => ({ ...statuses, [programId]: 'conflict' }));
+          return;
+        }
         setStages((current) => ({ ...current, [programId]: previousStage }));
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
       }
     },
-    [stages],
+    [stages, versionFor, acceptWriteResponse, takeServerStage],
   );
 
   const openModal = (program: Fellowship) => {

@@ -974,4 +974,87 @@ describe('SavedResearchPlans', () => {
 
     expect(await screen.findByText('Other Lab')).toBeTruthy();
   });
+
+  it('takes a stage changed in another tab when this tab becomes visible again', async () => {
+    let plan = { stage: 'CONTACTED', privateNotes: '', updatedAt: '2026-01-01T00:00:00.000Z' };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab'] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: { id1: plan } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+
+    plan = { stage: 'APPLIED', privateNotes: '', updatedAt: '2026-01-02T00:00:00.000Z' };
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => expect(select.value).toBe('APPLIED'));
+  });
+
+  it('refuses to overwrite a newer stage and shows the latest one instead', async () => {
+    let plan = { stage: 'CONTACTED', privateNotes: '', updatedAt: '2026-01-01T00:00:00.000Z' };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab'] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: { id1: plan } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), { isAxiosError: true, response: { status: 409 } }),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+    plan = { stage: 'APPLIED', privateNotes: '', updatedAt: '2026-01-02T00:00:00.000Z' };
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+
+    await waitFor(() => expect(select.value).toBe('APPLIED'));
+    expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedResearchEntityPlans/id1', {
+      data: { plan: { stage: 'EXPLORING', expectedUpdatedAt: '2026-01-01T00:00:00.000Z' } },
+    });
+    expect(screen.getByText('Changed in another tab. Showing the latest stage.')).toBeTruthy();
+  });
 });

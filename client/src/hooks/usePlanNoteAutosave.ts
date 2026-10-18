@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isPlanVersionConflict } from './usePlanDetailSync';
 
-export type PlanNoteSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+export type PlanNoteSaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error' | 'conflict';
 
 export interface PersistNoteOptions {
   keepalive?: boolean;
@@ -73,9 +74,14 @@ const usePlanNoteAutosave = (persistNote: PersistPlanNote) => {
         if (requestedRef.current[id] !== note) return;
         failedOnceRef.current.delete(id);
         setStatus(id, 'saved');
-      } catch {
+      } catch (error) {
         if (requestedRef.current[id] !== note) return;
         requestedRef.current[id] = persistedRef.current[id];
+        if (isPlanVersionConflict(error)) {
+          failedOnceRef.current.delete(id);
+          setStatus(id, 'conflict');
+          return;
+        }
         const isNewerEditQueued = id in pendingRef.current;
         const hasRetried = failedOnceRef.current.delete(id);
         if (!isNewerEditQueued && !hasRetried) {
