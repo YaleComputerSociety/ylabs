@@ -243,8 +243,3 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
     missingOneWord,
   };
 };
-
-export const rankProgramSearchMatches = <T extends Record<string, unknown>>(
-  query: string,
-  programs: readonly T[],
-): T[] => rankProgramSearch(query, programs).programs;

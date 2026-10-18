@@ -4,7 +4,6 @@ import {
   programQueryContentWords,
   programSearchWordStem,
   rankProgramSearch,
-  rankProgramSearchMatches,
 } from '../programSearchRelevance';
 
 const program = (title: string, description: string, overrides: Record<string, unknown> = {}) => ({
@@ -16,7 +15,10 @@ const program = (title: string, description: string, overrides: Record<string, u
 
 const titles = (programs: Array<{ title: string }>) => programs.map((entry) => entry.title);
 
-describe('rankProgramSearchMatches', () => {
+const rankedPrograms = <T extends Record<string, unknown>>(query: string, catalog: readonly T[]) =>
+  rankProgramSearch(query, catalog).programs;
+
+describe('rankProgramSearch ranked programs', () => {
   it('narrows the results when the student adds a word', () => {
     const catalog = [
       program('Harbor Economics Grant', 'Funds economics research during the summer.'),
@@ -24,8 +26,8 @@ describe('rankProgramSearchMatches', () => {
       program('Summer Painting Stipend', 'A summer studio stipend.'),
     ];
 
-    const oneWord = titles(rankProgramSearchMatches('economics', catalog));
-    const twoWords = titles(rankProgramSearchMatches('economics summer', catalog));
+    const oneWord = titles(rankedPrograms('economics', catalog));
+    const twoWords = titles(rankedPrograms('economics summer', catalog));
 
     expect(oneWord).toEqual(['Harbor Economics Grant', 'Ridge Economics Prize']);
     expect(twoWords).toEqual(['Harbor Economics Grant']);
@@ -42,9 +44,7 @@ describe('rankProgramSearchMatches', () => {
       program('Blue Center Research Award', 'Short-term research travel.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('Blue Center', catalog))[0]).toBe(
-      'Blue Center Research Award',
-    );
+    expect(titles(rankedPrograms('Blue Center', catalog))[0]).toBe('Blue Center Research Award');
   });
 
   it('puts an exact title ahead of a title that only contains the query', () => {
@@ -53,7 +53,7 @@ describe('rankProgramSearchMatches', () => {
       program('Computer Science Research', 'Research.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('computer science research', catalog))).toEqual([
+    expect(titles(rankedPrograms('computer science research', catalog))).toEqual([
       'Computer Science Research',
       'Computer Science Summer Research Program',
     ]);
@@ -65,8 +65,8 @@ describe('rankProgramSearchMatches', () => {
       program('Science Writing Prize', 'For writing about science.'),
     ];
 
-    expect(rankProgramSearchMatches('machine learning', catalog)).toEqual([]);
-    expect(rankProgramSearchMatches('computer science', catalog)).toEqual([]);
+    expect(rankedPrograms('machine learning', catalog)).toEqual([]);
+    expect(rankedPrograms('computer science', catalog)).toEqual([]);
   });
 
   it('keeps a long query from going empty by serving programs missing only one word', () => {
@@ -75,7 +75,7 @@ describe('rankProgramSearchMatches', () => {
       program('Laboratory Science Scholarship', 'Research in the natural sciences.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('history humanities research', catalog))).toEqual([
+    expect(titles(rankedPrograms('history humanities research', catalog))).toEqual([
       'History Research Grant',
     ]);
   });
@@ -86,7 +86,7 @@ describe('rankProgramSearchMatches', () => {
       program('Humanities Research Fellowship', 'Research in history and the humanities.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('history humanities research', catalog))).toEqual([
+    expect(titles(rankedPrograms('history humanities research', catalog))).toEqual([
       'Humanities Research Fellowship',
     ]);
   });
@@ -97,12 +97,12 @@ describe('rankProgramSearchMatches', () => {
       program('Policy Grant', 'Public policy research.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('machine learning', catalog))).toEqual([
+    expect(titles(rankedPrograms('machine learning', catalog))).toEqual([
       'Emerging Technology Award',
     ]);
     expect(
       titles(
-        rankProgramSearchMatches('machine learning', [
+        rankedPrograms('machine learning', [
           ...catalog,
           program('Machine Learning Internship', 'Build models.'),
         ]),
@@ -116,7 +116,7 @@ describe('rankProgramSearchMatches', () => {
       program('Psychology Grant', 'Psychology research.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('economics', catalog))).toEqual(['Economics Grant']);
+    expect(titles(rankedPrograms('economics', catalog))).toEqual(['Economics Grant']);
   });
 
   it('reads a subject name as the whole subject, typed matches first', () => {
@@ -125,7 +125,7 @@ describe('rankProgramSearchMatches', () => {
       program('Artificial Intelligence Prize', 'An essay prize.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('artificial intelligence', catalog))).toEqual([
+    expect(titles(rankedPrograms('artificial intelligence', catalog))).toEqual([
       'Artificial Intelligence Prize',
       'Neural Network Fellowship',
     ]);
@@ -137,9 +137,7 @@ describe('rankProgramSearchMatches', () => {
       program('Artificial Intelligence Award', 'For AI research.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('ai', catalog))).toEqual([
-      'Artificial Intelligence Award',
-    ]);
+    expect(titles(rankedPrograms('ai', catalog))).toEqual(['Artificial Intelligence Award']);
   });
 
   it('matches a word the student has not finished typing and a plural or singular form', () => {
@@ -148,10 +146,8 @@ describe('rankProgramSearchMatches', () => {
       program('Composition Prize', 'Music.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('econ', catalog))).toEqual([
-      'Economic Development Grant',
-    ]);
-    expect(titles(rankProgramSearchMatches('economics study', catalog))).toEqual([
+    expect(titles(rankedPrograms('econ', catalog))).toEqual(['Economic Development Grant']);
+    expect(titles(rankedPrograms('economics study', catalog))).toEqual([
       'Economic Development Grant',
     ]);
   });
@@ -162,11 +158,11 @@ describe('rankProgramSearchMatches', () => {
       program('Senior Grant', 'Open to seniors.'),
     ];
 
-    expect(titles(rankProgramSearchMatches('freshman', catalog))).toEqual(['Starter Grant']);
+    expect(titles(rankedPrograms('freshman', catalog))).toEqual(['Starter Grant']);
   });
 
   it('serves nothing for a query of only stop words', () => {
-    expect(rankProgramSearchMatches('of the', [program('Grant', 'Of the people.')])).toEqual([]);
+    expect(rankedPrograms('of the', [program('Grant', 'Of the people.')])).toEqual([]);
   });
 });
 
