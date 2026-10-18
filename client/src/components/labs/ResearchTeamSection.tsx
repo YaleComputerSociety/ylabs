@@ -6,6 +6,7 @@ import type {
   LabRosterUndergraduate,
 } from '../../types/labDetail';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvidence';
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
 
@@ -176,12 +177,44 @@ function UndergraduateResearchers({
   );
 }
 
+const memberLineHeading = (line: UndergraduateMemberLine): string =>
+  line.status === 'current' ? 'Undergraduate researchers' : 'Past undergraduate researchers';
+
+const memberLineText = (line: UndergraduateMemberLine): string =>
+  line.status === 'current'
+    ? `${line.count} current ${line.count === 1 ? 'undergraduate' : 'undergraduates'}`
+    : 'past undergraduate researchers';
+
+function UndergraduateMemberLineRow({ line }: { line: UndergraduateMemberLine }) {
+  const sourceUrl = safeHttpUrl(line.sourceUrl);
+  return (
+    <div>
+      <h3 className="mb-1 text-sm font-semibold text-ink">{memberLineHeading(line)}</h3>
+      <p className="text-sm leading-relaxed text-ink-soft">
+        The lab&rsquo;s own page lists {memberLineText(line)}.{' '}
+        {sourceUrl && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel={EXTERNAL_LINK_REL}
+            className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+          >
+            See the lab&rsquo;s page
+          </a>
+        )}
+      </p>
+    </div>
+  );
+}
+
 export default function ResearchTeamSection({
   members,
   roster,
+  undergraduateLines = [],
 }: {
   members: LabMember[];
   roster: LabRosterDisclosure;
+  undergraduateLines?: UndergraduateMemberLine[];
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
@@ -189,8 +222,13 @@ export default function ResearchTeamSection({
     .filter((member) => Boolean(member.rosterEvidence))
     .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad'))
     .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
-  if (teamMembers.length === 0 && undergraduates.length === 0) return null;
-  const hasCurrentTeam = teamMembers.length > 0 || listsCurrentUndergraduates;
+  if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateLines.length === 0) {
+    return null;
+  }
+  const hasCurrentTeam =
+    teamMembers.length > 0 ||
+    listsCurrentUndergraduates ||
+    undergraduateLines.some((line) => line.status === 'current');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
   const dateLabel = observedLabel(roster.observedAt);
@@ -222,6 +260,9 @@ export default function ResearchTeamSection({
           </p>
         )}
         {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
+        {undergraduateLines.map((line) => (
+          <UndergraduateMemberLineRow key={line.status} line={line} />
+        ))}
         {GROUPS.map(({ role, label }) => {
           const groupedMembers = teamMembers.filter((member) => member.role === role);
           if (groupedMembers.length === 0) return null;
@@ -267,39 +308,41 @@ export default function ResearchTeamSection({
             </div>
           );
         })}
-        <p className="text-xs leading-relaxed text-muted">
-          {undergraduates.length > 0 && teamMembers.length > 0
-            ? 'Other members are shown for team context only.'
-            : undergraduates.length > 0
-              ? 'Listed from the lab’s own page.'
-              : 'Membership is shown for team context only. It is not a recommendation to contact an individual.'}
-          {sourceUrl && (
-            <>
-              {' '}
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel={EXTERNAL_LINK_REL}
-                className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
-              >
-                Official roster source
-              </a>
-            </>
-          )}
-          {alumniSourceUrl && (
-            <>
-              {' · '}
-              <a
-                href={alumniSourceUrl}
-                target="_blank"
-                rel={EXTERNAL_LINK_REL}
-                className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
-              >
-                Alumni page
-              </a>
-            </>
-          )}
-        </p>
+        {(teamMembers.length > 0 || undergraduates.length > 0) && (
+          <p className="text-xs leading-relaxed text-muted">
+            {undergraduates.length > 0 && teamMembers.length > 0
+              ? 'Other members are shown for team context only.'
+              : undergraduates.length > 0
+                ? 'Listed from the lab’s own page.'
+                : 'Membership is shown for team context only. It is not a recommendation to contact an individual.'}
+            {sourceUrl && (
+              <>
+                {' '}
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+                >
+                  Official roster source
+                </a>
+              </>
+            )}
+            {alumniSourceUrl && (
+              <>
+                {' · '}
+                <a
+                  href={alumniSourceUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+                >
+                  Alumni page
+                </a>
+              </>
+            )}
+          </p>
+        )}
         {roster.truncated && (
           <p className="text-xs text-muted">Additional verified members are not shown here.</p>
         )}

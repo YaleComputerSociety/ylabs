@@ -28,6 +28,7 @@ import ResearchProfileSkeleton, {
   researchProfileGridClassName,
   researchProfilePageClassName,
 } from '../components/labs/ResearchProfileSkeleton';
+import { undergraduateMemberEvidence } from '../utils/undergraduateMemberEvidence';
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
 import ResearchResultsBackLink from '../components/research/ResearchResultsBackLink';
 import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
@@ -68,6 +69,7 @@ import {
   resolveOutreachOfficialSource,
   vettedJoinPageUrls,
   ACCESS_SIGNAL_SOURCE_CONTEXTS,
+  isCitableAccessSignal,
   joinPageLinkLabel,
 } from '../utils/researchDetailSources';
 import { formatGrantSummary } from '../utils/grantAgencyNames';
@@ -1047,11 +1049,19 @@ const LabDetail = () => {
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
+  const undergraduateMembers = undergraduateMemberEvidence({
+    roster,
+    accessSignals: accessSignals.filter(isCitableAccessSignal),
+    currentUndergradCount: group.currentUndergradCount,
+    pastUndergradAdvisees: group.pastUndergradAdvisees,
+    fellowshipRecipients: group.fellowshipRecipients,
+  });
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
     sourceLinkHealth: group.sourceLinkHealth,
     sourceFieldContributions: group.sourceFieldContributions,
+    undergraduateMembers,
   });
   const primaryWebsiteUrl =
     group.websiteUrl &&
@@ -1276,7 +1286,11 @@ const LabDetail = () => {
             </section>
           )}
 
-          <ResearchTeamSection members={members} roster={roster} />
+          <ResearchTeamSection
+            members={members}
+            roster={roster}
+            undergraduateLines={undergraduateMembers.memberLines}
+          />
 
           <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
 
