@@ -2,6 +2,7 @@ import { foldLatinDiacritics } from '../utils/latinDiacritics';
 
 export interface SearchVocabularyDocument {
   nameText: readonly unknown[];
+  personNameText?: readonly unknown[];
   bodyText: readonly unknown[];
   served: boolean;
 }
@@ -10,6 +11,7 @@ export interface SearchSpellingVocabulary {
   documentCount: number;
   documentFrequency: ReadonlyMap<string, number>;
   nameTerms: ReadonlySet<string>;
+  personNameWords: readonly string[];
   candidatesByLength: ReadonlyMap<number, ReadonlyArray<readonly [string, number]>>;
 }
 
@@ -51,10 +53,12 @@ export const buildSearchSpellingVocabulary = (
 ): SearchSpellingVocabulary => {
   const documentFrequency = new Map<string, number>();
   const nameTerms = new Set<string>();
+  const personNameTerms = new Set<string>();
   let documentCount = 0;
   for (const document of documents) {
     const names = termsOf(document.nameText);
     for (const term of names) nameTerms.add(term);
+    for (const term of termsOf(document.personNameText ?? [])) personNameTerms.add(term);
     if (!document.served) continue;
     documentCount += 1;
     for (const term of new Set([...names, ...termsOf(document.bodyText)])) {
@@ -68,7 +72,13 @@ export const buildSearchSpellingVocabulary = (
     bucket.push([term, frequency]);
     candidatesByLength.set(term.length, bucket);
   }
-  return { documentCount, documentFrequency, nameTerms, candidatesByLength };
+  return {
+    documentCount,
+    documentFrequency,
+    nameTerms,
+    personNameWords: [...personNameTerms].sort(),
+    candidatesByLength,
+  };
 };
 
 export const allowedSpellingEdits = (wordLength: number): number => {
@@ -107,6 +117,40 @@ export const boundedEditDistance = (a: string, b: string, maxEdits: number): num
 
 // A word in a name field is never corrected, however rare: a rare surname is exactly the
 // shape of a typo, and rewriting one hides the person searched for. See #4536.
+// The start of a person's name is a name being typed, and a word one edit from a
+// person's name is a misspelled name: rewriting either to a topic word ("hongy" to
+// "hong", "nyon" to "non", "dolar" to "solar") hid the person the student was
+// looking for, while Meilisearch's own prefix and typo matching finds them.
+const PERSON_NAME_PREFIX_MIN_LENGTH = 3;
+
+const startsAPersonName = (personNameWords: readonly string[], word: string): boolean => {
+  if (word.length < PERSON_NAME_PREFIX_MIN_LENGTH) return false;
+  let low = 0;
+  let high = personNameWords.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (personNameWords[middle] < word) low = middle + 1;
+    else high = middle;
+  }
+  return low < personNameWords.length && personNameWords[low].startsWith(word);
+};
+
+const isNearAPersonName = (personNameWords: readonly string[], word: string): boolean => {
+  const maxEdits = allowedSpellingEdits(word.length);
+  return (
+    startsAPersonName(personNameWords, word) ||
+    personNameWords.some(
+      (name) =>
+        Math.abs(name.length - word.length) <= maxEdits &&
+        boundedEditDistance(word, name, maxEdits) <= maxEdits,
+    )
+  );
+};
+
+// A word typed in capitals is an acronym the student means exactly: "CEID" is a
+// makespace, not a misspelled "reid".
+const ACRONYM_PATTERN = /^\p{Lu}{2,}$/u;
+
 const correctWord = (
   word: string,
   vocabulary: SearchSpellingVocabulary,
@@ -118,6 +162,7 @@ const correctWord = (
   if (vocabulary.documentFrequency.has(word)) return null;
   const maxEdits = allowedSpellingEdits(word.length);
   if (maxEdits === 0) return null;
+  if (isNearAPersonName(vocabulary.personNameWords, word)) return null;
 
   let best: { term: string; frequency: number; distance: number } | null = null;
   for (let length = word.length - maxEdits; length <= word.length + maxEdits; length += 1) {
@@ -145,6 +190,7 @@ export const correctSearchQuerySpelling = (
   if (!vocabulary || !query) return { query, corrections: [] };
   const corrections: SearchQueryCorrection[] = [];
   const corrected = query.replace(WORD_PATTERN, (typed) => {
+    if (ACRONYM_PATTERN.test(typed)) return typed;
     const replacement = correctWord(foldWord(typed), vocabulary, protectedTerms);
     if (!replacement) return typed;
     corrections.push({ from: typed, to: replacement });
