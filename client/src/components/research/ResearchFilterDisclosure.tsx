@@ -3,6 +3,8 @@ import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
 import {
+  HOSTED_UNDERGRADUATES_CHIP_VALUE,
+  HOSTED_UNDERGRADUATES_LABEL,
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
@@ -21,12 +23,14 @@ interface ResearchFilterDisclosureProps {
   selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedHostsUndergrads?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
   onEntityTypeChange: (value: string) => void;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
+  onHostsUndergradsChange?: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -50,6 +54,9 @@ const positiveFacetOptions = (values: Record<string, number> | undefined): Facet
     .map(([value, count]) => ({ value, count }))
     .sort((a, b) => a.value.localeCompare(b.value));
 
+const positiveFacetCount = (count: number | undefined): number | undefined =>
+  Number.isFinite(count) && (count as number) > 0 ? count : undefined;
+
 const withSelectedOption = (options: FacetOption[], selected: string): FacetOption[] => {
   if (!selected || options.some((option) => option.value === selected)) return options;
   return [{ value: selected }, ...options];
@@ -60,12 +67,14 @@ const ResearchFilterDisclosure = ({
   selectedEntityType,
   selectedSchool,
   selectedDepartment,
+  selectedHostsUndergrads = false,
   isApplying,
   hasFacetError,
   departmentLabel,
   onEntityTypeChange,
   onSchoolChange,
   onDepartmentChange,
+  onHostsUndergradsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -90,7 +99,10 @@ const ResearchFilterDisclosure = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const firstFieldRef = useRef<HTMLSelectElement | null>(null);
+  const firstFieldRef = useRef<HTMLElement | null>(null);
+  const setFirstFieldNode = useCallback((node: HTMLElement | null) => {
+    firstFieldRef.current = node;
+  }, []);
   const panelId = useId();
 
   const positiveEntityTypes = useMemo(
@@ -124,18 +136,26 @@ const ResearchFilterDisclosure = ({
   const showEntityType = positiveEntityTypes.length > 1 || Boolean(selectedEntityType);
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
+  const hostsUndergradsCount = positiveFacetCount(facetDistribution.hostsUndergrads?.true);
+  const showHostsUndergrads =
+    Boolean(onHostsUndergradsChange) &&
+    (hostsUndergradsCount !== undefined || selectedHostsUndergrads);
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment));
+    Number(Boolean(selectedDepartment)) +
+    Number(selectedHostsUndergrads);
   const triggerCount = activeCount + operatorActiveCount;
   const visibleFields = (
     [
+      showHostsUndergrads && 'hostsUndergrads',
       showEntityType && 'entityType',
       showSchool && 'school',
       showDepartment && 'department',
     ] as const
-  ).filter((field): field is 'entityType' | 'school' | 'department' => Boolean(field));
+  ).filter((field): field is 'entityType' | 'school' | 'department' | 'hostsUndergrads' =>
+    Boolean(field),
+  );
   const firstVisibleField = visibleFields[0];
   const visibleFacetKey = visibleFields.join(':');
 
@@ -219,11 +239,26 @@ const ResearchFilterDisclosure = ({
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
       <div className="min-w-0 space-y-4">
+        {showHostsUndergrads && (
+          <label className="flex min-h-11 min-w-0 items-start gap-3 text-sm font-medium text-ink">
+            <input
+              ref={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
+              type="checkbox"
+              checked={selectedHostsUndergrads}
+              onChange={(event) => onHostsUndergradsChange?.(event.target.checked)}
+              className="yr-focus-ring mt-0.5 h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand"
+            />
+            <span className="min-w-0">
+              {HOSTED_UNDERGRADUATES_LABEL}
+              {hostsUndergradsCount !== undefined ? ` (${hostsUndergradsCount})` : ''}
+            </span>
+          </label>
+        )}
         {showEntityType && (
           <label className="block min-w-0 text-sm font-medium text-ink">
             Type
             <select
-              ref={firstVisibleField === 'entityType' ? firstFieldRef : undefined}
+              ref={firstVisibleField === 'entityType' ? setFirstFieldNode : undefined}
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
@@ -243,7 +278,7 @@ const ResearchFilterDisclosure = ({
           <label className="block min-w-0 text-sm font-medium text-ink">
             School
             <select
-              ref={firstVisibleField === 'school' ? firstFieldRef : undefined}
+              ref={firstVisibleField === 'school' ? setFirstFieldNode : undefined}
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
@@ -263,7 +298,7 @@ const ResearchFilterDisclosure = ({
           <label className="block min-w-0 text-sm font-medium text-ink">
             Department
             <select
-              ref={firstVisibleField === 'department' ? firstFieldRef : undefined}
+              ref={firstVisibleField === 'department' ? setFirstFieldNode : undefined}
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
@@ -321,6 +356,13 @@ const ResearchFilterDisclosure = ({
             axis="Department"
             value={departmentLabel(selectedDepartment)}
             onRemove={() => onDepartmentChange('')}
+          />
+        )}
+        {selectedHostsUndergrads && (
+          <ActiveFilterChip
+            axis="Undergraduates"
+            value={HOSTED_UNDERGRADUATES_CHIP_VALUE}
+            onRemove={() => onHostsUndergradsChange?.(false)}
           />
         )}
         {offersClearAll && (

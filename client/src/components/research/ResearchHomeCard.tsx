@@ -14,6 +14,7 @@ import { cardSummary } from '../../utils/cardSummary';
 import {
   CREATIVE_PRACTICE_KIND_LABEL,
   entityKindLabel,
+  HOSTED_UNDERGRADUATES_LABEL,
   isCreativePracticeEntity,
   leadRoleLabelForEntity,
   sanitizeResearchEntityCopy,
@@ -53,7 +54,7 @@ const opensFromResearchResults = (source?: ResearchProfileOpenSource): boolean =
   source === 'browse' || source === 'search';
 
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
-  'Undergrad evidence': 'Has hosted undergraduate researchers',
+  'Undergrad evidence': HOSTED_UNDERGRADUATES_LABEL,
   'Student project evidence': 'Supervises student projects',
   'Contact route': 'Open to inquiries',
 };

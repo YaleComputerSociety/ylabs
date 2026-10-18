@@ -169,7 +169,8 @@ A request past that depth is answered with an empty page flagged `depthLimited: 
 That depth-limited page runs no search, so it reports no `estimatedTotalHits` at all instead of inventing one, and the client leaves the total it is already displaying untouched.
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
-The distribution carries `school`, `departments`, and `entityType`, the three facets the filter rail reads.
+The distribution carries `school`, `departments`, `entityType`, and `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), the facets the filter rail reads.
+`hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
 
 ### A facet count is the number of results applying it returns (#5101)
 

@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: Re-Expose The Hosted-Undergraduates Browse Filter (#5123)
+
+Five of six simulated student sessions on 2026-10-18 asked to filter `/research` by the "Has hosted undergraduate researchers" badge, which #1884 had removed as a control while the server kept the `hostsUndergrads` filter.
+The filter is the badge, not a way in: it reads the same historical predicate, `entityHasHostedUndergraduates`, so the 2026-10-02 rule that no browse filter offers a way in still holds.
+The index field is derived from that predicate when the index document is built rather than copied from the stored flag, so a writer that changes `pastUndergradAdvisees` or `currentUndergradCount` without recomputing the flag cannot make the filter and the badge disagree.
+Measured on Development on 2026-10-18, 227 served rows carry the badge and the stored flag, the index field and the served badge agreed on all 227.
+The control is a toggle in the filter rail and the mobile filter sheet, round-trips as `undergrad=1`, and shows its `hostsUndergrads` facet count, which is counted over the same population as the results (#5101).
+
 ## 2026-10-18: Joining Instructions, Event Narration, Cut-Off Titles And Verb Chips Are Not Content (#5109)
 
 A served research summary says what a group studies.

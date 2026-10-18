@@ -18,12 +18,14 @@ const renderFilters = (
     selectedEntityType: '',
     selectedSchool: '',
     selectedDepartment: '',
+    selectedHostsUndergrads: false,
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
     onEntityTypeChange: vi.fn(),
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
+    onHostsUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -36,6 +38,37 @@ afterEach(() => {
 });
 
 describe('ResearchFilterDisclosure', () => {
+  it('offers the hosted-undergraduates filter with the count it returns, and a chip that removes it', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
+        hostsUndergrads: { true: 7 },
+      },
+    });
+
+    const toggle = screen.getByRole('checkbox', {
+      name: 'Has hosted undergraduate researchers (7)',
+    });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
+
+    rerender(<ResearchFilterDisclosure {...props} selectedHostsUndergrads />);
+    expect(
+      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (7)' }),
+    ).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
+    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the hosted-undergraduates filter when no result carries the evidence', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: { hostsUndergrads: { true: 0 } } });
+
+    expect(screen.queryByRole('checkbox', { name: /hosted undergraduate/ })).toBeNull();
+  });
+
   it('moves and contains mobile focus, then restores the trigger on Escape and backdrop close', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
     renderFilters({ selectedSchool: 'Yale College' });

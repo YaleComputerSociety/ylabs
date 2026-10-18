@@ -1499,7 +1499,25 @@ export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'entityType', meiliField: 'entityType' },
 ];
 
-export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
+export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
+  'schools',
+  'departments',
+  'entityType',
+  HOSTS_UNDERGRADS_INDEX_FIELD,
+];
+
+// A toggle needs no disjunctive query: with it on, its own count under the other
+// filters is the conjunctive one Meilisearch already returns.
+const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
+  filterKey: keyof ResearchGroupFilterInput;
+  indexField: string;
+}> = [
+  ...DISJUNCTIVE_RESEARCH_FACETS.map(({ filterKey, meiliField }) => ({
+    filterKey,
+    indexField: meiliField,
+  })),
+  { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
+];
 
 const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [
@@ -2186,12 +2204,18 @@ async function searchResearchGroupsForQuery(
     rawDistribution: Record<string, Record<string, number>> | undefined,
   ): Record<string, Record<string, number>> | undefined => {
     if (!rawDistribution) return rawDistribution;
-    const { schools, researchAreas, ...rest } = rawDistribution;
+    const {
+      schools,
+      researchAreas,
+      [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
+      ...rest
+    } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
+      ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
     };
   };
 
@@ -2297,11 +2321,11 @@ async function searchResearchGroupsForQuery(
   const orderedHits = paginateHybridPoolLocally
     ? servedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
-  const facetsTalliedOverPool = DISJUNCTIVE_RESEARCH_FACETS.filter(
-    (facet) =>
-      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(facet.meiliField) ||
-      activeDisjunctiveFacets.includes(facet),
-  ).map(({ filterKey, meiliField }) => ({ filterKey, indexField: meiliField }));
+  const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
+    ({ indexField }) =>
+      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(indexField) ||
+      activeDisjunctiveFacets.some(({ meiliField }) => meiliField === indexField),
+  );
   const rawServedFacetDistribution = paginateHybridPoolLocally
     ? safeOptions.includeFacets
       ? tallyCandidateFacetDistribution(reorderedPool, safeFilters, facetsTalliedOverPool)

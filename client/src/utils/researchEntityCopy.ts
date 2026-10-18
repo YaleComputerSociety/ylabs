@@ -411,3 +411,6 @@ export const sanitizeFacultyResearchCopy = (
     .replace(/\byour\s+lab\b/gi, 'this research profile')
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
 };
+
+export const HOSTED_UNDERGRADUATES_LABEL = 'Has hosted undergraduate researchers';
+export const HOSTED_UNDERGRADUATES_CHIP_VALUE = 'Hosted before';
