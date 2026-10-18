@@ -80,3 +80,23 @@ describe('createFellowship projected deadline flag (#3904)', () => {
     expect(getFellowshipCycleStatus(confirmed).category).toBe('open');
   });
 });
+
+describe('createFellowship deadline text conflict (#5158)', () => {
+  const served = (deadlineTextConflict: unknown) =>
+    createFellowship({
+      _id: 'p-text-conflict',
+      title: 'Synthetic Text Conflict Program',
+      deadline: '2027-03-05T23:59:59.999Z',
+      deadlineTextConflict,
+      isAcceptingApplications: true,
+    });
+
+  it('carries the served text date so the detail view can flag it', () => {
+    expect(served('2027-02-19').deadlineTextConflict).toBe('2027-02-19');
+  });
+
+  it('reads no conflict when the server sends none', () => {
+    expect(served(null).deadlineTextConflict).toBeNull();
+    expect(served(undefined).deadlineTextConflict).toBeNull();
+  });
+});

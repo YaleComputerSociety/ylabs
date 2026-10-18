@@ -46,6 +46,8 @@ export function createFellowship(data: any): Fellowship {
     // own "unconfirmed, verify at source" warning (#3904).
     deadlineProjectedNextCycle: data.deadlineProjectedNextCycle === true,
     deadlineStale: data.deadlineStale === true,
+    deadlineTextConflict:
+      typeof data.deadlineTextConflict === 'string' ? data.deadlineTextConflict : null,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',
