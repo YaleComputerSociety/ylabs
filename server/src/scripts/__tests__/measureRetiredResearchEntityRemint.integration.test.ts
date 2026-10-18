@@ -64,6 +64,43 @@ describe('measuring whether a deleted retired row would be minted again (#5189)'
     expect((await ResearchEntity.findById(retired._id).lean())?.archived).toBe(true);
   });
 
+  it('reports a retired row whose evidence resolves no name as one the create would skip', async () => {
+    const retired = await ResearchEntity.create({
+      slug: 'synthetic-nameless-lab',
+      name: 'Synthetic Nameless Lab',
+      entityType: 'LAB',
+      archived: true,
+      archivedReason: 'synthetic:retire',
+    });
+    await observe('synthetic-nameless-lab', 'entityType', 'LAB');
+
+    expect(await measureRetiredResearchEntityRemint()).toEqual([
+      expect.objectContaining({
+        entityId: String(retired._id),
+        outcome: 'would-not-mint',
+        skipped: 'missing-required-fields',
+      }),
+    ]);
+  });
+
+  it('counts a retired row with no slug as one that cannot be keyed', async () => {
+    const _id = new mongoose.Types.ObjectId();
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id,
+      name: 'Synthetic Slugless',
+      archived: true,
+      archivedReason: 'synthetic:retire',
+    });
+
+    expect(await measureRetiredResearchEntityRemint()).toEqual([
+      expect.objectContaining({
+        entityId: String(_id),
+        outcome: 'would-not-mint',
+        skipped: 'no-entity-key',
+      }),
+    ]);
+  });
+
   it('ignores a merged row, which its survivor answers for', async () => {
     const survivor = await ResearchEntity.create({ slug: 'synthetic-survivor', name: 'Survivor' });
     await ResearchEntity.create({

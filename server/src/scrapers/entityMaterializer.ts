@@ -5585,7 +5585,7 @@ async function findEntityDocByIdentifier(
  * carry. Skip create when those aren't present rather than throwing a Mongoose
  * ValidationError that would abort the whole materialization run.
  */
-function hasRequiredFieldsForCreate(
+export function hasRequiredFieldsForCreate(
   entityType: ObservedEntityType,
   insert: Record<string, unknown>,
 ): boolean {

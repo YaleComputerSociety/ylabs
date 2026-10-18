@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import { hasRequiredFieldsForCreate, materializeEntity } from '../scrapers/entityMaterializer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -111,7 +111,16 @@ export async function measureRetiredResearchEntityRemint(
   const verdicts: RetiredRemintVerdict[] = [];
   for (const row of retired) {
     const entityKey = typeof row.slug === 'string' ? row.slug.trim() : '';
-    if (!entityKey) continue;
+    if (!entityKey) {
+      verdicts.push({
+        entityId: String(row._id),
+        entityKey,
+        archivedReason: row.archivedReason ?? '',
+        outcome: 'would-not-mint',
+        skipped: 'no-entity-key',
+      });
+      continue;
+    }
     const result = await materializeEntity(
       'researchEntity',
       { entityKey },
@@ -121,12 +130,18 @@ export async function measureRetiredResearchEntityRemint(
         synthesizeCardDescription: async () => '',
       },
     );
+    const skipped =
+      result.skipped ??
+      (result.created === true &&
+      !hasRequiredFieldsForCreate('researchEntity', result.plannedSet ?? {})
+        ? 'missing-required-fields'
+        : undefined);
     verdicts.push({
       entityId: String(row._id),
       entityKey,
       archivedReason: row.archivedReason ?? '',
-      outcome: result.created === true && !result.skipped ? 'would-mint' : 'would-not-mint',
-      ...(result.skipped ? { skipped: result.skipped } : {}),
+      outcome: result.created === true && !skipped ? 'would-mint' : 'would-not-mint',
+      ...(skipped ? { skipped } : {}),
     });
   }
   return verdicts;
