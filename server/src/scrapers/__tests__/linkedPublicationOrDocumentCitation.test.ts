@@ -207,11 +207,21 @@ describe('a credit on a field that holds no value', () => {
     expect(
       withoutUncreditedCreditOnlyCitations(
         [OWN_PROFILE, DOI_PAPER],
-        { inferredPiUserKey: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER } },
+        { displayName: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER } },
         {},
-        { inferredPiUserKey: 'synthetic-person-fixture' },
+        { displayName: 'Synthetic Fixture Faculty Research' },
       ),
     ).toEqual([OWN_PROFILE, DOI_PAPER]);
+  });
+
+  it('does not keep a document credited by a lead field, which a row never stores', () => {
+    expect(
+      withoutUncreditedCreditOnlyCitations(
+        [OWN_PROFILE, DOI_PAPER],
+        { inferredPiUserKey: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER } },
+        { inferredPiUserKey: 'synthetic-person-fixture' },
+      ),
+    ).toEqual([OWN_PROFILE]);
   });
 });
 
@@ -386,6 +396,25 @@ describe('a linked paper or file is not cited as a source', () => {
       ),
     ) as Record<string, any>;
     expect(served.sourceUrls).toEqual([OWN_PROFILE, PERSONAL_SITE]);
+  });
+
+  it('does not store a document credited only by a lead this pass projects', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: {
+          name: resolvedField('Synthetic Person Fixture Faculty Research'),
+          inferredPiUserKey: resolvedField('synthetic-person-fixture'),
+        },
+        entityDoc: facultyResearchRow({
+          sourceUrls: [OWN_PROFILE, DOI_PAPER],
+          fieldProvenance: {
+            inferredPiUserKey: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER },
+          },
+        }),
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([OWN_PROFILE]);
   });
 
   it('withholds a document credited only by an empty lead field from the served payload', () => {

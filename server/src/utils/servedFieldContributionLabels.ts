@@ -26,6 +26,23 @@ export const SERVED_FIELD_CONTRIBUTION_LABEL_SET = new Set(
 
 export const MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS = 8;
 
+/**
+ * Labelled provenance keys that are never stored on a ResearchEntity row: the lead
+ * fields feed the roster derivation and `description` is a legacy summary key. A
+ * materialize pass can still project one by name, so reading it as a row value
+ * would let the stored citations keep a page the served DTO withholds (#5210).
+ */
+const CONTRIBUTION_FIELDS_NOT_STORED_ON_ROW = new Set([
+  'description',
+  'inferredPiUserId',
+  'inferredPiUserKey',
+  'leadProfessorPublicKey',
+]);
+
+export function contributionFieldIsStoredOnRow(field: string): boolean {
+  return !CONTRIBUTION_FIELDS_NOT_STORED_ON_ROW.has(field);
+}
+
 export function servedFieldContributionLabel(field: unknown): string | undefined {
   return typeof field === 'string' ? SERVED_FIELD_CONTRIBUTION_LABELS[field] : undefined;
 }

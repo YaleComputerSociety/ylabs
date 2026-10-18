@@ -2,6 +2,7 @@ import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
 import {
   buildSourceFieldContributions,
+  contributionFieldIsStoredOnRow,
   contributionLabelIsServed,
 } from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
@@ -308,7 +309,8 @@ function rowFieldHoldsValue(value: unknown): boolean {
  * student reads, so it does not make a page a source, and neither does an entry that
  * outlived the value it recorded (#3922): the served label must hold a value, and so
  * must the credited field itself on `row`, because a label such as Name is always
- * served and one label covers several fields (#5210).
+ * served and one label covers several fields (#5210). A field never stored on a row
+ * holds no value there, so a lead-identity credit keeps nothing.
  */
 export function servedFieldSourceUrlKeys(
   fieldProvenance: unknown,
@@ -319,7 +321,7 @@ export function servedFieldSourceUrlKeys(
     buildSourceFieldContributions(
       fieldProvenance,
       () => true,
-      (field) => rowFieldHoldsValue(row[field]),
+      (field) => contributionFieldIsStoredOnRow(field) && rowFieldHoldsValue(row[field]),
     )
       .filter((contribution) =>
         contribution.contributions.some((label) => contributionLabelIsServed(label, servedPayload)),
