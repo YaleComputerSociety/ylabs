@@ -33,9 +33,9 @@ describe('FirstSaveCallout', () => {
 
     expect(screen.getByText('Watching this program')).toBeTruthy();
     expect(screen.queryByText(/saved/i)).toBeNull();
-    expect(
-      screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href'),
-    ).toBe('/dashboard?tab=programs');
+    expect(screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href')).toBe(
+      '/dashboard?tab=programs',
+    );
   });
 
   it('keeps the research plan callout linking to the Dashboard', () => {

@@ -1021,9 +1021,9 @@ describe('Programs page', () => {
 
     expect(screen.getByText('Watching this program')).toBeTruthy();
     expect(screen.queryByText('Program saved')).toBeNull();
-    expect(
-      screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href'),
-    ).toBe('/dashboard?tab=programs');
+    expect(screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href')).toBe(
+      '/dashboard?tab=programs',
+    );
     expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
       withCredentials: true,
       data: { watchedPrograms: ['open'] },

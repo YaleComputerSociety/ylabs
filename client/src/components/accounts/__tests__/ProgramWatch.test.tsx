@@ -492,7 +492,9 @@ describe('ProgramWatch control containment', () => {
     for (const title of ['Summer Research Grant', 'Travel Fellowship']) {
       const card = cardOf(title);
       expect(card).toBeTruthy();
-      const noteButton = screen.getByRole('button', { name: new RegExp(`^(Add|Edit) note for ${title}$`) });
+      const noteButton = screen.getByRole('button', {
+        name: new RegExp(`^(Add|Edit) note for ${title}$`),
+      });
       const stageControl = screen.getByLabelText(`Outreach stage for ${title}`);
       expect(card?.contains(noteButton)).toBe(true);
       expect(card?.contains(stageControl)).toBe(true);
