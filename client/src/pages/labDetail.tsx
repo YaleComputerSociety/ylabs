@@ -37,6 +37,7 @@ import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import OperatorPreviewNotice from '../components/labs/OperatorPreviewNotice';
 import FavoriteButton from '../components/shared/FavoriteButton';
+import { pastUndergradAdviseesSummary } from '../utils/pastUndergradAdvisees';
 import useFavorites from '../hooks/useFavorites';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
@@ -389,27 +390,6 @@ const formatGrantSummary = (group: any): string | null => {
   return `Funded: ${parts.join(', ')}`;
 };
 
-const formatPastAdvisees = (group: any): string | null => {
-  const total = (group.pastUndergradAdvisees || []).reduce(
-    (sum: number, p: any) => sum + (p?.count ?? 1),
-    0,
-  );
-  if (total <= 0) return null;
-  const years = (group.pastUndergradAdvisees || [])
-    .map((p: any) => p?.year)
-    .filter((y: unknown): y is number => typeof y === 'number' && y > 0)
-    .sort((a: number, b: number) => a - b);
-  const range =
-    years.length > 0
-      ? years[0] === years[years.length - 1]
-        ? `${years[0]}`
-        : `${years[0]}–${years[years.length - 1]}`
-      : null;
-  return `Advised ${total} ${total === 1 ? 'undergrad' : 'undergrads'}${
-    range ? ` (${range})` : ''
-  }`;
-};
-
 const emeritusResearchLabel = (group: any): string => {
   if (isCreativePracticeEntity(group)) return 'Emeritus faculty';
   if (group.entityType === 'LAB') return 'Emeritus lab';
@@ -487,7 +467,7 @@ const DecisionSummary = ({
     void captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group);
-  const pastAdvisees = formatPastAdvisees(group);
+  const pastAdvisees = pastUndergradAdviseesSummary(group.pastUndergradAdvisees);
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =

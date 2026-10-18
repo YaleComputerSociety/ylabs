@@ -43,6 +43,7 @@ export interface ResearchDetailActionLinkContext {
   preferOrgEngagementOutreach: boolean;
   officialSource?: { url: string } | null;
   hasApplyPage: boolean;
+  applyPageUrl?: string;
   wayInWithheld?: boolean;
 }
 
@@ -246,6 +247,7 @@ export function resolveResearchDetailActionLinkContext({
     preferOrgEngagementOutreach,
     officialSource: outreachOfficialSource,
     hasApplyPage: Boolean(outreachApplySource),
+    ...(outreachApplySource ? { applyPageUrl: outreachApplySource.url } : {}),
     wayInWithheld: group.wayInWithheld === true,
   };
 }
