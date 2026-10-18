@@ -5,6 +5,7 @@ import {
   extractLeadHomepageResearchHomes,
   leadPersonalHomepageUrl,
   leadPersonalSiteCandidateUrl,
+  pageBodyText,
   ledGroupNameFromLinkSentence,
   OfficialProfilePiBackfillScraper,
   PERSONAL_SITE_ONLY_TARGET_FIELD,
@@ -302,6 +303,25 @@ describe('acronymLabNameExpansion', () => {
       'Quillfixture Systems of Fixtures Group',
     );
     expect(acronymLabNameExpansion('QMSR Lab', 'Quillfixture Model Systems Research')).toBe('');
+  });
+
+  it('finds the phrase on minified markup where adjacent blocks carry no whitespace', () => {
+    expect(
+      acronymLabNameExpansion(
+        'QMSR Lab',
+        pageBodyText(
+          '<body><h1>QMSR Lab</h1><p>Quillfixture Model Systems Research Lab</p></body>',
+        ),
+      ),
+    ).toBe('Quillfixture Model Systems Research Lab');
+    expect(
+      acronymLabNameExpansion(
+        'QMSR Lab',
+        pageBodyText(
+          '<body><ul><li>QMSR Lab</li><li>Quillfixture Model Systems Research Lab</li></ul></body>',
+        ),
+      ),
+    ).toBe('Quillfixture Model Systems Research Lab');
   });
 });
 
