@@ -168,11 +168,35 @@ async function readOwnedSlotSurvivorWebsite(
 }
 
 async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> {
-  const { getResearchGroupDetail, optionalPublicLeadMemberNames, searchResearchGroupsViaMeili } =
-    await import('../../services/researchGroupService');
+  const {
+    getResearchGroupDetail,
+    listSimilarResearchEntities,
+    optionalPublicLeadMemberNames,
+    personNameWordKeys,
+    searchResearchGroupsViaMeili,
+  } = await import('../../services/researchGroupService');
   const database = mongoose.connection.db;
   if (!database) throw new Error('MongoDB connection is not initialized');
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
+  let indexedPersonNames: Promise<Map<string, Record<string, unknown>>> | null = null;
+  const readIndexedPersonNames = () => {
+    indexedPersonNames ??= Promise.all(
+      ['leadProfessorNames', 'professorNames'].map((field) =>
+        readIndexedFieldByDocumentId('researchEntity', field).then(
+          (byDocumentId) => [field, byDocumentId] as const,
+        ),
+      ),
+    ).then((fields) => {
+      const byDocumentId = new Map<string, Record<string, unknown>>();
+      for (const [field, values] of fields) {
+        for (const [documentId, value] of values) {
+          byDocumentId.set(documentId, { ...byDocumentId.get(documentId), [field]: value });
+        }
+      }
+      return byDocumentId;
+    });
+    return indexedPersonNames;
+  };
 
   const undergradSamplePath =
     args.undergradSampleOut !== undefined
@@ -227,6 +251,25 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
       );
     },
     readLeadMemberNames: (storedRows) => optionalPublicLeadMemberNames(storedRows),
+    readSimilarResearchRail: async (slug: string) => {
+      const viewed = await collection.findOne({ slug });
+      if (!viewed) return null;
+      const rail = await listSimilarResearchEntities(viewed as Record<string, unknown>);
+      const cardRows = await collection
+        .find(
+          { slug: { $in: rail.map((card) => card.slug).filter(Boolean) } },
+          { projection: { slug: 1 } },
+        )
+        .toArray();
+      const documentIdBySlug = new Map(cardRows.map((row) => [String(row.slug), String(row._id)]));
+      const indexedNames = await readIndexedPersonNames();
+      const nameWordsOf = (documentId: string | undefined) =>
+        documentId ? [...personNameWordKeys(indexedNames.get(documentId))] : [];
+      return {
+        viewedNameWords: nameWordsOf(String(viewed._id)),
+        cards: rail.map((card) => ({ nameWords: nameWordsOf(documentIdBySlug.get(card.slug)) })),
+      };
+    },
     readOwnedSlotSurvivorWebsites: async () => {
       const survivorIds = await collection.distinct('canonicalGroupId', {
         archived: true,

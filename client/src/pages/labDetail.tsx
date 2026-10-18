@@ -31,6 +31,7 @@ import ResearchProfileSkeleton, {
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
+import { searchQueryFromResearchSlug } from '../utils/researchSlugSearchQuery';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
@@ -876,6 +877,8 @@ const SourcesSection = ({
   );
 };
 
+const PROFILE_NOT_FOUND_STATUSES = new Set([400, 404]);
+
 const LabDetail = () => {
   const { isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
@@ -918,7 +921,7 @@ const LabDetail = () => {
         const finalUrl: string = res.request?.responseURL || '';
         const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
         const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
-        if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
+        if (canonicalSlug && canonicalSlug !== slug) {
           void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, {
             replace: true,
             state: locationStateRef.current,
@@ -933,7 +936,7 @@ const LabDetail = () => {
       })
       .catch((err) => {
         if (isCancel(err) || requestId !== requestIdRef.current) return;
-        if (err?.response?.status === 404) {
+        if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
           dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_NOT_FOUND_ERROR });
         } else {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
@@ -961,7 +964,7 @@ const LabDetail = () => {
 
   if (error && !payload) {
     if (error === RESEARCH_PROFILE_NOT_FOUND_ERROR) {
-      return <NotFound />;
+      return <NotFound suggestedQuery={searchQueryFromResearchSlug(slug)} />;
     }
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
@@ -1079,7 +1082,7 @@ const LabDetail = () => {
     singleLeadIsGenuinePrincipalInvestigator,
   );
   const showDedicatedPrincipalInvestigatorSection =
-    leadIdentityUnderReview || principalInvestigators.length !== 1;
+    leadIdentityUnderReview || principalInvestigators.length > 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
   const leadProfilesLinkedInline =

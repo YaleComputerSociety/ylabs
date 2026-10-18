@@ -7,6 +7,7 @@ import {
   isBioProseTitle,
   isNavMenuChromeTitle,
   isSectionLabelTitle,
+  isTruncatedPersonTitle,
   normalizeTitleWhitespace,
   sanitizePersonTitle,
 } from '../titleHygiene';
@@ -293,5 +294,25 @@ describe('a field label scraped in front of a title', () => {
 
   it('leaves a title that only contains the word', () => {
     expect(sanitizePersonTitle('Title IX Coordinator')).toBe('Title IX Coordinator');
+  });
+});
+
+describe('a title cut off at a connective (#5109)', () => {
+  it.each(['Professor of', 'Example Chair Professor of', 'Professor and Chair of', 'Lecturer in'])(
+    'refuses %s',
+    (title) => {
+      expect(isTruncatedPersonTitle(title)).toBe(true);
+      expect(sanitizePersonTitle(title)).toBeUndefined();
+    },
+  );
+
+  it.each([
+    'Professor of Ecology & Evolutionary Biology',
+    'Professor of the Practice',
+    'Associate Professor; Director of Undergraduate Studies',
+    'Lecturer',
+  ])('keeps %s', (title) => {
+    expect(isTruncatedPersonTitle(title)).toBe(false);
+    expect(sanitizePersonTitle(title)).toBe(title);
   });
 });

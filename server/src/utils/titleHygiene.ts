@@ -232,6 +232,19 @@ export function isBioProseTitle(value: string | null | undefined): boolean {
   return sentenceBoundaryCount(text) >= 2;
 }
 
+const DANGLING_TITLE_CONNECTIVE = /\b(?:of|in|and|for|the|to|at|on|with)\s*[,;:]?$|&\s*$/i;
+
+/**
+ * A title cut off before the department or field it names ("Professor of", "Professor
+ * and Chair of"), which a roster that renders the rank and the department in separate
+ * elements yields when only the first is read. It names no appointment a student could
+ * read, so it is refused like any other fragment.
+ */
+export function isTruncatedPersonTitle(value: string | null | undefined): boolean {
+  const text = normalizeTitleWhitespace(value);
+  return Boolean(text) && DANGLING_TITLE_CONNECTIVE.test(text);
+}
+
 export const MAX_PERSON_TITLE_LENGTH = 140;
 
 const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:\s*/i;
@@ -249,7 +262,8 @@ export const stripTitleFieldLabel = (value: string): string =>
  * connective, five or more of them menu items; person titles only, because
  * entity names such as a lab or program name legitimately run on menu words),
  * a raw email, a street-address
- * fragment, a phone/fax contact fragment, multi-sentence bio prose, or simply
+ * fragment, a phone/fax contact fragment, multi-sentence bio prose, a title cut off at a
+ * dangling connective ("Professor of"), or simply
  * longer than a role string ever runs (#740's over-140-char scraped-junk
  * heuristic), so a corrupted title never lands in storage nor renders from
  * stale data (#708, #740, #1257).
@@ -265,5 +279,6 @@ export function sanitizePersonTitle(value: string | null | undefined): string | 
   if (hasStreetAddressFragment(text)) return undefined;
   if (hasPhoneContactFragment(text)) return undefined;
   if (isBioProseTitle(text)) return undefined;
+  if (isTruncatedPersonTitle(text)) return undefined;
   return text;
 }

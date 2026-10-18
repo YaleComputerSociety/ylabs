@@ -99,6 +99,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
+import { isTruncatedPersonTitle } from '../../utils/titleHygiene';
 import { orgUnitMatchKey } from '../orgUnitCanonicalization';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
@@ -1484,6 +1485,43 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * The title on a YIBS affiliate row. The emphasised span is usually the whole title,
+ * followed by a comma and the unit ("Professor of Ecology, Yale School of the
+ * Environment"), but on many rows it is only the start of one, with the rest outside the
+ * emphasis: a linked department ("Professor of" + "Molecular, Cellular, and Developmental
+ * Biology") or the rank after a chair name ("Oastler" + "Professor of Biogeochemistry").
+ * When the span neither ends nor is followed by a separator, the text after it on the same
+ * line completes the title: plain text or further emphasis up to the next separator, and a
+ * link whole, because a department name can carry commas, but only while the title still
+ * dangles at a connective, so a complete title is never joined to a lab-site link.
+ */
+const TITLE_CONTINUATION_TAGS = new Set(['a', 'b', 'em', 'i', 'span', 'strong']);
+
+function fieldCollectionPersonTitle(
+  $: cheerio.CheerioAPI,
+  emphasis: cheerio.Cheerio<AnyNode>,
+): string | undefined {
+  const emphasised = cleanText(emphasis.text());
+  if (!emphasised) return undefined;
+  let title = emphasised;
+  let node = emphasis.get(0)?.nextSibling ?? null;
+  while (node && !/[,;]$/.test(title)) {
+    if (node.type === 'tag' && !TITLE_CONTINUATION_TAGS.has(node.name)) break;
+    if (node.type === 'tag' && node.name === 'a' && !isTruncatedPersonTitle(title)) break;
+    const isText = node.type === 'text';
+    const text = cleanText($(node).text());
+    if (text) {
+      if (/^[,;]/.test(text)) break;
+      const kept = isText ? text.split(/[,;]/)[0] : text;
+      title = cleanText(`${title} ${kept}`);
+      if (isText && kept !== text) break;
+    }
+    node = node.nextSibling;
+  }
+  return title.replace(/[,;]\s*$/, '') || undefined;
+}
+
+/**
  * Legacy Drupal field-collection person rows, used by the YIBS faculty-affiliates
  * roster. Each affiliate is a `field-collection-item-field-person-info` block
  * whose `.field-name-field-person-description` holds an `<h3>` name (often linked
@@ -1504,7 +1542,7 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
 
     const href = nameLink.attr('href') || '';
     const profileUrl = /^https?:\/\//i.test(href) ? href : undefined;
-    const title = cleanText(desc.find('p em').first().text()).replace(/[,;]\s*$/, '') || undefined;
+    const title = fieldCollectionPersonTitle($, desc.find('p em').first());
     const imageUrl = imageUrlFromElement(
       card.find('.field-name-field-person-photo').first(),
       ctx.pageUrl,

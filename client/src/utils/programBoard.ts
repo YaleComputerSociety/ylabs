@@ -69,6 +69,39 @@ export function mentorRequirementLabel(fellowship: Fellowship): string | null {
   return null;
 }
 
+export const US_CITIZENS_ELIGIBLE = 'U.S. citizens are eligible';
+export const NON_US_CITIZENS_ELIGIBLE = 'Non-U.S. citizens are eligible';
+export const US_PERMANENT_RESIDENTS_ELIGIBLE = 'U.S. permanent residents are eligible';
+
+export const CITIZENSHIP_NOT_STATED_LABEL = 'Not stated. Check the official page.';
+
+export function programCitizenshipRestriction(
+  fellowship: Pick<Fellowship, 'citizenshipStatus'>,
+): string | null {
+  const statuses = new Set(fellowship.citizenshipStatus || []);
+  const us = statuses.has(US_CITIZENS_ELIGIBLE);
+  const nonUs = statuses.has(NON_US_CITIZENS_ELIGIBLE);
+  if (us && !nonUs) {
+    return statuses.has(US_PERMANENT_RESIDENTS_ELIGIBLE)
+      ? 'U.S. citizens and permanent residents only'
+      : 'U.S. citizens only';
+  }
+  if (nonUs && !us) return 'Non-U.S. citizens only';
+  return null;
+}
+
+export function programCitizenshipSummary(
+  fellowship: Pick<Fellowship, 'citizenshipStatus'>,
+): string {
+  const restriction = programCitizenshipRestriction(fellowship);
+  if (restriction) return restriction;
+  const statuses = fellowship.citizenshipStatus || [];
+  if (statuses.includes(US_CITIZENS_ELIGIBLE) && statuses.includes(NON_US_CITIZENS_ELIGIBLE)) {
+    return 'Open to U.S. and non-U.S. citizens';
+  }
+  return statuses.length > 0 ? statuses.join(', ') : CITIZENSHIP_NOT_STATED_LABEL;
+}
+
 const CARD_AWARD_MAX_LENGTH = 24;
 
 export function cardAwardLabel(awardAmount: string | null | undefined): string | null {
@@ -79,7 +112,9 @@ export function cardAwardLabel(awardAmount: string | null | undefined): string |
 
 export function programCardFacts(fellowship: Fellowship): string[] {
   const award = cardAwardLabel(fellowship.awardAmount);
-  return [award ? `Award: ${award}` : null, mentorRequirementLabel(fellowship)].filter(
-    (fact): fact is string => Boolean(fact),
-  );
+  return [
+    award ? `Award: ${award}` : null,
+    mentorRequirementLabel(fellowship),
+    programCitizenshipRestriction(fellowship),
+  ].filter((fact): fact is string => Boolean(fact));
 }

@@ -29,6 +29,7 @@ import {
   FellowshipQuickFilter,
   isFellowshipSearchPending,
 } from '../reducers/fellowshipSearchReducer';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 interface FellowshipSearchContextProviderProps {
   children: ReactNode;
@@ -36,10 +37,12 @@ interface FellowshipSearchContextProviderProps {
 
 const FELLOWSHIP_SORTABLE_KEYS = ['default', 'deadline', 'title'];
 
+export const PROGRAM_SEARCH_PAGE_SIZE = 250;
+
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({
   children,
 }) => {
-  const pageSize = 100;
+  const pageSize = PROGRAM_SEARCH_PAGE_SIZE;
   const sortableKeys = FELLOWSHIP_SORTABLE_KEYS;
 
   const location = useLocation();
@@ -165,6 +168,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const resetProgramFilters = useCallback(() => {
     dispatch({ type: 'RESET_PROGRAM_FILTERS' });
+  }, []);
+
+  const applyUrlState = useCallback((value: ProgramSearchUrlState) => {
+    dispatch({ type: 'APPLY_URL_STATE', payload: value });
   }, []);
 
   const setFilterBarHeight = useCallback((value: number) => {
@@ -416,7 +423,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     runFirstPageSearch();
   }, [runFirstPageSearch]);
 
-  const searchReady = isActive && authReady && filterOptionsLoaded;
+  const searchReady = isActive && authReady;
 
   useEffect(() => {
     if (!searchReady) return;
@@ -507,6 +514,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         quickFilter,
         setQuickFilter,
         resetProgramFilters,
+        applyUrlState,
         filterBarHeight,
         setFilterBarHeight,
       }}

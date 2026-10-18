@@ -32,6 +32,7 @@ import {
   isPostingPageCitedAsResearchWebsite,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
+  withoutUncreditedLinkedPublicationOrDocumentCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
@@ -732,15 +733,20 @@ function derivePublicResearchEntityDto(
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
+  const servedPayload = {
+    ...dto,
+    shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
+  };
+  dto.sourceUrls = withoutUncreditedLinkedPublicationOrDocumentCitations(
+    dto.sourceUrls,
+    group.fieldProvenance,
+    servedPayload,
+  );
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
       group.sourceLinkHealth,
-      {
-        ...dto,
-        shortDescription:
-          dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
-      },
+      servedPayload,
     );
   }
 

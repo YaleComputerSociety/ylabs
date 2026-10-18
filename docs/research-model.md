@@ -202,6 +202,8 @@ Historical `paper` observations and source rows are retained as read-only archiv
 `/programs` is an application board, so it groups by application status rather than by role: due in the next 30 days, accepting applications, opening soon, the next cycle, department research guidance, and no dates posted (`client/src/utils/programBoard.ts`).
 A program whose served deadline is stale sits under no dates posted and in no timing quick filter, because its window is unknown rather than open or closed (#4363).
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
+A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
+The citizenship filter keeps a not-stated program, because unknown is not ineligible.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
 The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.
@@ -278,7 +280,7 @@ Four things hold it:
 
 - `server/src/models/entityArchival.ts` owns the shapes.
 `archivedEntityUpdate(extra?)` is the one update document that archives a research row: it sets `archived: true` alongside whatever the calling lane records, and unsets the five verdict fields in the same write.
-Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752), and relinks, merges into the survivor, or archives the row's live access signals (#4816).
+Lanes call it through `archiveResearchEntities` in `server/src/services/archivedResearchEntityRoleEdges.ts`, which also repoints, archives as redundant, or ends the row's live role edges in the same step, so no archive leaves a current lead on a row the serve path refuses (#4752), relinks, merges into the survivor, or archives the row's live access signals (#4816), and repoints the row's live relationship edges to the survivor or archives them as redundant (#5122).
 `LIVE_ENTITY_FILTER` and `liveEntityFilter(match?)` own the spelling of "live" (`archived: { $ne: true }`).
 Operator intent survives archiving: `studentVisibilityOverrideTier`, `studentVisibilitySuppressionReason` and the reviewer fields are deliberately not cleared.
 `ARCHIVED_CLEARED_STUDENT_VISIBILITY_FIELDS` and `ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS` partition `studentVisibilityFields`, and a test asserts the partition, so the next field added to the schema fails the suite until someone decides which side it is on instead of defaulting to surviving.
