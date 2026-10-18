@@ -15,6 +15,14 @@ describe('searchQueryFromResearchSlug', () => {
     expect(searchQueryFromResearchSlug(slug)).toBe(query);
   });
 
+  it('keeps the trailing name when a long department name fills the address', () => {
+    expect(
+      searchQueryFromResearchSlug(
+        'dept-molecular-cellular-and-developmental-biology-fixture-middle-scholar',
+      ),
+    ).toBe('and developmental biology fixture middle scholar');
+  });
+
   it('keeps markup and overlong junk out of the suggested search', () => {
     expect(searchQueryFromResearchSlug('%3Cscript%3Ealert(1)%3C%2Fscript%3E')).toBe(
       'script alert script',

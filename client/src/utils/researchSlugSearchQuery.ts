@@ -33,5 +33,5 @@ export const searchQueryFromResearchSlug = (slug: string | undefined): string =>
   if (firstContentWord === -1) return '';
   const departmentCodeFollowsDept = words[0] === 'dept' && firstContentWord === 1;
   const contentWords = words.slice(firstContentWord + (departmentCodeFollowsDept ? 1 : 0));
-  return contentWords.slice(0, MAX_QUERY_WORDS).join(' ');
+  return contentWords.slice(-MAX_QUERY_WORDS).join(' ');
 };
