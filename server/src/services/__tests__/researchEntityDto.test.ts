@@ -2147,7 +2147,7 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     'Department',
     'School',
     'Name',
-    'Lead identity',
+    'Who leads it',
   ];
   const creditedLabels = (row: Record<string, unknown>): string[] =>
     (
@@ -2198,7 +2198,7 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     const labels = creditedLabels({ departments: ['Earth & Planetary Sciences'] });
     expect(labels).not.toContain('Research summary');
     expect(labels).toContain('Name');
-    expect(labels).toContain('Lead identity');
+    expect(labels).toContain('Who leads it');
   });
 
   it('drops the research-summary credit when the only card is built from topics', () => {

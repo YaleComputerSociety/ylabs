@@ -471,7 +471,7 @@ Unsetting either field is therefore a separate change that has to retire those r
 The labels come from `fieldProvenance`, which is history and outlives the value it recorded: several materializer clear arms empty `websiteUrl`, and `departments` can resolve to an empty list, while the provenance entry stays.
 `contributionLabelIsServed` in `server/src/utils/servedFieldContributionLabels.ts` therefore drops a "Research website", "Department", "Topics", "Methods", "School" or "Research summary" label when the DTO serves that field empty, judged on the sanitized served value rather than the stored one.
 "Research summary" is judged on the served body, or on the served card line only when it is the stored card line itself, because a row with no usable description can still serve a card built from its topics.
-"Lead identity" and "Name" are not gated, because the lead is served on the roster outside the entity payload and every row serves a name.
+"Who leads it" and "Name" are not gated, because the lead is served on the roster outside the entity payload and every row serves a name.
 The provenance entries themselves are never pruned; only what the payload credits changes.
 
 ## Saved Research Entities

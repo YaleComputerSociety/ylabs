@@ -1284,7 +1284,7 @@ describe('LabDetail page', () => {
     expect(emailLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
   });
 
-  it('omits the get-involved block when it would only point back at the lead card', async () => {
+  it('points back at the lead card when the get-involved block has no action of its own', async () => {
     const LEAD_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-lead/';
     renderLabDetail({
       ...basePayload,
@@ -1312,9 +1312,46 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: 'Email Jordan Researcher' })).toBeTruthy();
-    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
+    ).toBe('/getting-started');
     expect(screen.queryByText(/linked in the card above/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('explains a principal investigator lead and spells out grant funders', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'LAB',
+        recentGrants: [{ agency: 'NHLBI' }],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/fixture-lead/' },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText(/The faculty member who leads this research\./)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'What a PI does' }).getAttribute('href')).toBe(
+      '/getting-started#what-is-a-pi',
+    );
+    expect(
+      screen.getByText(/1 from National Heart, Lung, and Blood Institute \(NHLBI\)/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Funded: 1/)).toBeNull();
   });
 
   it('drops a generic official page beside a lead card that already links the profile', async () => {
@@ -1348,7 +1385,10 @@ describe('LabDetail page', () => {
         .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
     ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
-    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
+    ).toBe('/getting-started');
   });
 
   it('offers the research homepage with the join page as a secondary link beside a lead card that links the profile', async () => {
@@ -1384,6 +1424,7 @@ describe('LabDetail page', () => {
     ).toEqual([
       ['Visit research website', RESEARCH_WEBSITE_URL],
       ['See how to join', JOIN_PAGE_URL],
+      ['New to research? How to reach out', '/getting-started'],
     ]);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
@@ -1424,7 +1465,7 @@ describe('LabDetail page', () => {
       within(getInvolvedBlock)
         .getAllByRole('link')
         .map((link) => link.getAttribute('href')),
-    ).toEqual([RESEARCH_WEBSITE_URL, JOIN_PAGE_URL]);
+    ).toEqual([RESEARCH_WEBSITE_URL, JOIN_PAGE_URL, '/getting-started']);
     expect(screen.queryByRole('link', { name: 'See how to get involved' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
@@ -1453,6 +1494,35 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
       vettedJoinPageUrl,
     );
+  });
+
+  it('labels a served join route by what its page is when the address is not a join page', async () => {
+    const pressPageUrl = 'https://join-lab.example.test/press';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+      accessSignals: [
+        {
+          signalType: 'APPLICATION_FORM_EXISTS',
+          confidence: 'MEDIUM',
+          excerpt: 'A join, opportunities, or application page was found.',
+          sourceUrl: pressPageUrl,
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'See how to join' })).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Read what they say about joining' }).getAttribute('href'),
+    ).toBe(pressPageUrl);
+    expect(screen.getByText('Mentions how to join')).toBeTruthy();
+    expect(screen.queryByText(/Application Form Exists/)).toBeNull();
   });
 
   it('offers the served join page as the button when the row has no homepage', async () => {
@@ -1752,7 +1822,7 @@ describe('LabDetail page', () => {
       GET_INVOLVED_URL,
     );
     const getInvolvedBlock = screen.getByText('How to get involved').parentElement as HTMLElement;
-    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(1);
+    expect(within(getInvolvedBlock).getAllByRole('link')).toHaveLength(2);
     expect(screen.queryByRole('link', { name: /^Contact / })).toBeNull();
     expect(
       screen
@@ -1821,7 +1891,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('heading', { name: 'Principal Investigator' })).toBeTruthy();
-    expect(screen.getByText('Lead identity under review')).toBeTruthy();
+    expect(screen.getByText('Lead not confirmed yet')).toBeTruthy();
     expect(screen.queryByText('Unverified Investigator')).toBeNull();
   });
 
@@ -2041,7 +2111,7 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('What this lab studies');
-    expect(text).toContain('Best fit for');
+    expect(text).toContain('Topics');
     expect(screen.getByText('Fixture Evolution')).toBeTruthy();
     expect(screen.getByText('Population Models')).toBeTruthy();
     expect(screen.getByText('Synthetic DNA Examples')).toBeTruthy();
@@ -2434,7 +2504,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText('Example Health Systems Profile');
 
-    expect(screen.getByText('Best fit for')).toBeTruthy();
+    expect(screen.getByText('Topics')).toBeTruthy();
     expect(screen.queryByText('This lab appears to study')).toBeNull();
     expect(screen.queryByText('Good fit if you are interested in')).toBeNull();
     expect(screen.queryByText('Student fit')).toBeNull();
@@ -3023,7 +3093,10 @@ describe('LabDetail display name unification', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.queryByText('How to get involved')).toBeNull();
+    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
+    ).toBe('/getting-started');
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(
       screen.getAllByRole('link').filter((link) => link.getAttribute('href') === LEAD_PROFILE_URL),

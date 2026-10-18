@@ -364,9 +364,9 @@ describe('Research page', () => {
     const { container } = renderResearch();
 
     expect(container.textContent).toContain('Search y/labs');
-    expect(container.textContent).toContain('Find a Yale lab that fits you.');
+    expect(container.textContent).toContain('Find Yale research that fits you.');
     expect(container.textContent).toContain(
-      'Search by interest, professor, course topic, method, or question.',
+      'Labs, centers, and faculty research in every field. Search by interest, professor, course topic, method, or question.',
     );
     expect(container.textContent).not.toContain('when the source evidence is strong enough');
     expect(container.textContent).not.toMatch(/\bways? in\b/i);
