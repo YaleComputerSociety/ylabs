@@ -69,6 +69,13 @@ Steps 12 and 13 gate at moderate. A low advisory below that gate is a judgement 
 
 None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
 
+## Stop only what you started (#5222)
+
+Record the PID of every server, database, or watcher you start, and at teardown stop it by that PID or by your own reserved port (`lsof -ti tcp:<your port> -sTCP:LISTEN | xargs kill`).
+Never pattern-kill with `pkill -f`, `killall`, or `pgrep ... | xargs kill`.
+A pattern such as `tsx src/index.ts` matches every worktree's and every session's API server on the machine, and gate test runs stopped the primary checkout's server that way several times.
+Never stop or restart anything on ports 3000 or 4000, which belong to the primary checkout.
+
 ## Review the final diff
 
 Review for bugs, regressions, risky patterns, unrelated changes, and documentation impact. Keep final summaries short and include the tests or checks run.
