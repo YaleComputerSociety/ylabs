@@ -131,6 +131,25 @@ describe('classifyProgram', () => {
     });
   });
 
+  it.each([
+    'The grant provides travel support for Yale University graduate students to present their dissertation research at conferences.',
+    'The grant provides travel support to conferences for Yale University graduate students in the dissertation phase.',
+  ])(
+    'claims no adviser for a graduate travel grant that only mentions a dissertation (#5100): %s',
+    (description) => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Council Conference Grant for Graduate Students',
+          description,
+        }),
+      ).toMatchObject({
+        programKind: 'TRAVEL_RESEARCH_GRANT',
+        entryMode: 'APPLY_TO_PROGRAM',
+        requiresMentorBeforeApply: false,
+      });
+    },
+  );
+
   it('gives a graduate collections fellowship a direct-apply entry mode', () => {
     expect(
       classifyProgram({
@@ -774,6 +793,8 @@ describe('classifyProgram senior research funding reads its mentor requirement o
     'Students will also need to provide a letter of recommendation written by a Yale faculty member.',
     'A letter of recommendation from a faculty member who knows you well.',
     'A letter from a faculty member in a related field of study.',
+    'Two letters of recommendation from faculty members familiar with your research.',
+    'A letter from a faculty member who supports your research interests.',
   ])(
     'does not read a requirement from a letter with no tie to the project (#5100): %s',
     (applicationInformation) => {

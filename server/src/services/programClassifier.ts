@@ -175,7 +175,7 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\b${MENTOR_NOUN}\\b[^.]{0,40}\\b(?:has |have )?agreed to (?:work with|supervise|advise|oversee)\\b`,
     `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
     `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
-    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed )?(?:project|research|essay|proposal)\\b`,
+    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed (?:project|research)|project|essay|proposal)\\b`,
     `\\bfrom (?:your|their|the applicant['’]s) (?:own )?(?:senior essay|senior thesis|senior project|thesis|essay|project|research|dissertation) ${MENTOR_NOUN}\\b`,
   ].join('|'),
   'i',
@@ -258,7 +258,13 @@ const GRADUATE_TRAVEL_RESEARCH =
 const COLLECTIONS_RESEARCH_HOST =
   /\blibrar(?:y|ies)\b|\barchival\b|\barchives\b|special collections|\bmuseum\b|\bgallery\b|reading room|\bresidency\b/;
 
-const DISSERTATION_RESEARCH = /\bdissertations?\b/;
+const DISSERTATION_FUNDING = new RegExp(
+  [
+    `\\bdissertation (?:(?:research|fieldwork|writing|completion) )?(?:fellowships?|grants?|awards?|funding)\\b`,
+    `\\b(?:fund|support)\\w*\\s(?:\\w+\\s){0,3}?for (?:\\w+\\s){0,2}?dissertations?\\b`,
+    `\\b(?:fund|support|conduct)\\w*\\s(?:\\w+\\s){0,2}?dissertation research\\b`,
+  ].join('|'),
+);
 
 // A dissertation has an adviser by construction, so prose funding one states the
 // requirement; any other graduate record asserts an adviser only when its page does. The
@@ -266,7 +272,7 @@ const DISSERTATION_RESEARCH = /\bdissertations?\b/;
 // conference-travel grants too.
 function graduateRecordRequiresAdviser(input: ProgramClassificationInput): boolean {
   return (
-    DISSERTATION_RESEARCH.test(proseForProgram(input).toLowerCase()) ||
+    DISSERTATION_FUNDING.test(proseForProgram(input).toLowerCase()) ||
     statesMentorRequirement(input)
   );
 }
