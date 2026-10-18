@@ -280,7 +280,7 @@ export default function ResearchTeamSection({
                 href={sourceUrl}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+                className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
               >
                 Official roster source
               </a>
@@ -293,7 +293,7 @@ export default function ResearchTeamSection({
                 href={alumniSourceUrl}
                 target="_blank"
                 rel={EXTERNAL_LINK_REL}
-                className="font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+                className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
               >
                 Alumni page
               </a>

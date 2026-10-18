@@ -54,6 +54,7 @@ import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
+import { scrollBehavior } from '../utils/scrollBehavior';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -540,6 +541,13 @@ const Research = () => {
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const scrollToResults = () => {
+    // Deferred past the filter sheet's own focus return to its trigger, which cancels a smooth scroll started before it.
+    window.setTimeout(() =>
+      resultsSectionRef.current?.scrollIntoView({ block: 'start', behavior: scrollBehavior() }),
+    );
+  };
   const searchRequestIdRef = useRef(0);
   const defaultSearchRequestIdRef = useRef(0);
   const browseAnalyticsSessionRef = useRef(createResearchAnalyticsInteractionId('browse'));
@@ -1718,6 +1726,7 @@ const Research = () => {
       applyStudentFilters({ school: '', department: '', entityType: '', hostsUndergrads: false }),
     resultCount: Math.max(searchTotal, activeClusters.length),
     resultCountPending: searchLoading,
+    onShowResults: scrollToResults,
   };
 
   const browseFilterProps = {
@@ -1922,7 +1931,7 @@ const Research = () => {
                     watchedDeadlineApproachingCount,
                     watchedDeadlineNotStartedCount,
                   )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
+                  className="-my-1.5 inline-block py-1.5 font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
                 >
                   {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
                 </Link>
@@ -1971,7 +1980,7 @@ const Research = () => {
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
                   tabIndex={isAuthenticated ? -1 : undefined}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                  className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
                 </Link>{' '}
@@ -1985,7 +1994,7 @@ const Research = () => {
                 <Link
                   to="/dashboard"
                   tabIndex={isAuthenticated ? undefined : -1}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                  className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   your dashboard
                 </Link>
@@ -1996,7 +2005,11 @@ const Research = () => {
 
           <div className="min-w-0">
             {!hasSubmittedSearch && (
-              <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
+              <section
+                ref={resultsSectionRef}
+                aria-busy={defaultSearchLoading}
+                aria-label="Research to explore"
+              >
                 <div className="mb-3 flex flex-row flex-wrap items-end justify-between gap-3 sm:mb-4">
                   <div className="min-w-0">
                     <SectionHeading>Research to explore</SectionHeading>
@@ -2088,7 +2101,11 @@ const Research = () => {
             )}
 
             {hasSubmittedSearch && (
-              <section aria-busy={searchLoading} aria-label="Search results">
+              <section
+                ref={resultsSectionRef}
+                aria-busy={searchLoading}
+                aria-label="Search results"
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p

@@ -39,6 +39,7 @@ interface ResearchFilterDisclosureProps {
   operatorActiveCount?: number;
   resultCount?: number;
   resultCountPending?: boolean;
+  onShowResults?: () => void;
   isLoadingOptions?: boolean;
 }
 
@@ -84,6 +85,7 @@ const ResearchFilterDisclosure = ({
   operatorActiveCount = 0,
   resultCount,
   resultCountPending = false,
+  onShowResults,
   isLoadingOptions = false,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
@@ -503,7 +505,10 @@ const ResearchFilterDisclosure = ({
               <div className="sticky bottom-0 border-t border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => closeFilters()}
+                  onClick={() => {
+                    closeFilters();
+                    onShowResults?.();
+                  }}
                   className="yr-focus-ring yr-pressable grid min-h-11 w-full place-items-center rounded-control bg-[var(--yr-blue)] px-4 text-sm font-semibold text-white hover:bg-brand-navy"
                 >
                   <span

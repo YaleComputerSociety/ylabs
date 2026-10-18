@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchHomeCard from '../ResearchHomeCard';
 import ResearchResultsBackLink from '../ResearchResultsBackLink';
@@ -109,6 +109,7 @@ describe('returning from a research profile to its results', () => {
 
     const backLink = screen.getByRole('link', { name: 'Back to results' });
     expect(backLink.getAttribute('href')).toBe('/research?q=example&department=Example');
+    expect(backLink.querySelector('svg')).not.toBeNull();
 
     fireEvent.click(backLink);
     expect(currentLocation()).toBe('/research?q=example&department=Example');
@@ -144,10 +145,50 @@ describe('returning from a research profile to its results', () => {
     );
   });
 
+  it('scrolls a returned-to card that the restored scroll leaves at the viewport edge fully into view', async () => {
+    const scroller = document.createElement('div');
+    scroller.setAttribute('data-scroll-container', '');
+    document.body.appendChild(scroller);
+    const rect = (top: number, height: number) =>
+      ({
+        top,
+        bottom: top + height,
+        left: 0,
+        right: 400,
+        width: 400,
+        height,
+        x: 0,
+        y: top,
+      }) as DOMRect;
+    const rectSpy = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        if (this === scroller) return rect(0, 800);
+        if (this.tagName === 'ARTICLE') return rect(739 - scroller.scrollTop, 200);
+        return rect(0, 20);
+      });
+    try {
+      renderJourney('/research?q=example');
+      fireEvent.click(screen.getByRole('link', { name: 'Second Example Lab' }));
+      fireEvent.click(screen.getByRole('link', { name: 'Back to results' }));
+
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('link', { name: 'Second Example Lab' }),
+        ),
+      );
+      expect(scroller.scrollTop).toBe(439);
+    } finally {
+      rectSpy.mockRestore();
+      scroller.remove();
+    }
+  });
+
   it('offers plain browsing when the profile was not opened from results', () => {
     renderJourney('/research/first-example-lab');
 
-    const browseLink = screen.getByRole('link', { name: 'Browse research' });
+    const browseLink = screen.getByRole('link', { name: 'Browse all research' });
+    expect(browseLink.querySelector('svg')).toBeNull();
     expect(browseLink.getAttribute('href')).toBe('/research');
     fireEvent.click(browseLink);
     expect(currentLocation()).toBe('/research');
