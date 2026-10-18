@@ -161,7 +161,9 @@ const ResearchFilterDisclosure = ({
   ).filter((field): field is 'entityType' | 'school' | 'department' | 'hostsUndergrads' =>
     Boolean(field),
   );
-  const firstVisibleField = visibleFields[0];
+  const firstVisibleField = visibleFields.find(
+    (field) => field !== 'hostsUndergrads' || !noHostedUndergraduateEvidence,
+  );
   const visibleFacetKey = visibleFields.join(':');
 
   const getFocusableElements = () =>

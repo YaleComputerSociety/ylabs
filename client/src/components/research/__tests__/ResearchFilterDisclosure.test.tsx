@@ -82,6 +82,23 @@ describe('ResearchFilterDisclosure', () => {
     );
   });
 
+  it('moves desktop focus past a disabled hosted-undergraduates toggle to the first usable field', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      facetDistribution: {
+        hostsUndergrads: { true: 0 },
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Has hosted undergraduate researchers (0)' }),
+    ).toBeDisabled();
+    await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
+  });
+
   it('moves and contains mobile focus, then restores the trigger on Escape and backdrop close', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
     renderFilters({ selectedSchool: 'Yale College' });
