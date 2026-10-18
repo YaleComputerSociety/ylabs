@@ -109,6 +109,20 @@ describe('classifyProgram', () => {
     });
   });
 
+  it('claims an adviser for a dissertation field research grant whose page names none (#5100)', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Dissertation Field Research Grant',
+        description:
+          'The grant funds travel abroad for PhD students whose dissertation addresses regional history.',
+      }),
+    ).toMatchObject({
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      requiresMentorBeforeApply: true,
+    });
+  });
+
   it.each([
     ['Fixture Dissertation Year Fellowship', 'PhD students in history are eligible. Fellows present their work at a spring conference.'],
     [
@@ -798,6 +812,7 @@ describe('classifyProgram senior research funding reads its mentor requirement o
     'One letter of recommendation (from the faculty member most directly relevant to the project).',
     'A letter of recommendation from your senior essay advisor.',
     'Include a short letter of support from their dissertation supervisor.',
+    'Include a short letter of support from their dissertation director.',
     'All research projects must be supervised by members of the Yale faculty, who should work with students on the design of their projects.',
   ])(
     'reads a requirement for a faculty member tied to the project (#5100): %s',

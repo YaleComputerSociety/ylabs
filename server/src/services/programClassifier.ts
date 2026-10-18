@@ -90,7 +90,7 @@ function textForProgram(input: ProgramClassificationInput): string {
 // `purpose` is a multi-select of permitted uses, so its "Senior Research Project or Senior
 // Essay" entry sits on awards open to first-years (#3904). A statement about who the award
 // is for has to come from the record's own prose.
-function proseFieldsForProgram(input: ProgramClassificationInput): string[] {
+function proseForProgram(input: ProgramClassificationInput): string {
   return [
     input.title,
     input.competitionType,
@@ -101,14 +101,9 @@ function proseFieldsForProgram(input: ProgramClassificationInput): string[] {
     input.additionalInformation,
   ]
     .map(normalizeText)
-    .filter(Boolean);
+    .filter(Boolean)
+    .join(' ');
 }
-
-function proseForProgram(input: ProgramClassificationInput): string {
-  return proseFieldsForProgram(input).join(' ');
-}
-
-const SENTENCE_BOUNDARY = /(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/;
 
 const AWARD_INSTRUMENT_TITLE =
   /\b(?:awards?|grants?|funds?|funding|scholarships?|prizes?|stipends?)\b/;
@@ -181,7 +176,7 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
     `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
     `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed (?:project|research)|project|essay|proposal)\\b`,
-    `\\bfrom (?:your|their|the applicant['’]s) (?:own )?(?:senior essay|senior thesis|senior project|thesis|essay|project|research|dissertation) ${MENTOR_NOUN}\\b`,
+    `\\bfrom (?:your|their|the applicant['’]s) (?:own )?(?:senior essay|senior thesis|senior project|thesis|essay|project|research|dissertation) (?:${MENTOR_NOUN}|directors?)\\b`,
   ].join('|'),
   'i',
 );
@@ -202,7 +197,7 @@ export function mentorRequirementSentence(input: ProgramClassificationInput): st
   return [proseForProgram(input), normalizeText(input.fullSourceDescription)]
     .filter(Boolean)
     .join(' ')
-    .split(SENTENCE_BOUNDARY)
+    .split(/(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/)
     .find(
       (sentence) =>
         MENTOR_REQUIREMENT_SENTENCE.test(sentence) && !MENTOR_NOT_REQUIRED_SENTENCE.test(sentence),
@@ -263,31 +258,13 @@ const GRADUATE_TRAVEL_RESEARCH =
 const COLLECTIONS_RESEARCH_HOST =
   /\blibrar(?:y|ies)\b|\barchival\b|\barchives\b|special collections|\bmuseum\b|\bgallery\b|reading room|\bresidency\b/;
 
-const DISSERTATION_FUNDING = new RegExp(
-  [
-    `\\bdissertation (?:(?:research|fieldwork|writing|completion|year) )?(?:fellowships?|grants?|awards?|funding)\\b`,
-    `\\b(?:fund|support)\\w*\\s(?:\\w+\\s){0,3}?for (?:\\w+\\s){0,2}?dissertations?\\b`,
-    `\\b(?:fund|support|conduct)\\w*\\s(?:\\w+\\s){0,4}?dissertation (?:research|writing|fieldwork|completion)\\b`,
-  ].join('|'),
-);
-
-const DISSERTATION_PRESENTATION = /\bpresent\w*|\bconferences?\b/;
-
-// A dissertation has an adviser by construction, so a sentence funding one states the
-// requirement, unless it funds presenting the dissertation at a conference; any other
-// graduate record asserts an adviser only when its page does. The `purpose` multi-select
-// is not read, because its "Dissertation Support" entry sits on conference-travel grants too.
-function fundsDissertation(input: ProgramClassificationInput): boolean {
-  return proseFieldsForProgram(input)
-    .flatMap((field) => field.toLowerCase().split(SENTENCE_BOUNDARY))
-    .some(
-      (sentence) =>
-        DISSERTATION_FUNDING.test(sentence) && !DISSERTATION_PRESENTATION.test(sentence),
-    );
-}
-
+// A dissertation has an adviser by construction; a conference grant names itself one in its
+// title. `purpose` is not read, because its "Dissertation Support" entry sits on conference
+// grants too.
 function graduateRecordRequiresAdviser(input: ProgramClassificationInput): boolean {
-  return fundsDissertation(input) || statesMentorRequirement(input);
+  if (statesMentorRequirement(input)) return true;
+  const prose = [proseForProgram(input), normalizeText(input.fullSourceDescription)].join(' ');
+  return /\bdissertations?\b/i.test(prose) && !/\bconferences?\b/i.test(input.title ?? '');
 }
 
 function graduateResearchClassification(
