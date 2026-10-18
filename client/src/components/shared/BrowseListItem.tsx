@@ -37,7 +37,7 @@ interface BrowseListItemProps {
   isCompact?: boolean;
   /** Controls that act on this item, rendered inside the card's own border. */
   footer?: ReactNode;
-  statusBadgeOverride?: { label: string; className: string };
+  hideDeadlineUrgency?: boolean;
 }
 
 const BrowseListItem = React.memo(
@@ -49,7 +49,7 @@ const BrowseListItem = React.memo(
     onAdminEdit,
     isCompact,
     footer,
-    statusBadgeOverride,
+    hideDeadlineUrgency = false,
   }: BrowseListItemProps) => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
@@ -58,11 +58,11 @@ const BrowseListItem = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
-      !statusBadgeOverride && item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
+      !hideDeadlineUrgency && item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
 
     const subtitle = getItemSubtitle(item);
-    const subtitleColor = statusBadgeOverride ? 'text-muted' : getItemSubtitleColor(item);
-    const statusBadge = statusBadgeOverride ?? getItemStatusBadge(item);
+    const subtitleColor = hideDeadlineUrgency ? 'text-muted' : getItemSubtitleColor(item);
+    const statusBadge = hideDeadlineUrgency ? null : getItemStatusBadge(item);
     const guidanceHref = isDepartmentResearchGuidance(item.data)
       ? departmentResearchGuidanceHref(item.data)
       : undefined;
@@ -151,13 +151,15 @@ const BrowseListItem = React.memo(
           )}
 
           <div className="col-span-12 md:col-span-2 flex md:flex-col items-center md:items-end gap-2 flex-shrink-0">
-            <div className="flex items-center gap-1">
-              <span
-                className={`text-xs font-medium px-1.5 py-0.5 rounded-card ${statusBadge.className}`}
-              >
-                {statusBadge.label}
-              </span>
-            </div>
+            {statusBadge && (
+              <div className="flex items-center gap-1">
+                <span
+                  className={`text-xs font-medium px-1.5 py-0.5 rounded-card ${statusBadge.className}`}
+                >
+                  {statusBadge.label}
+                </span>
+              </div>
+            )}
             <div className="relative z-[1] flex items-center gap-1">
               {isAdmin && onAdminEdit && (
                 <button

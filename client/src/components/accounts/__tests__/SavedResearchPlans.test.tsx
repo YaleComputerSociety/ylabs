@@ -183,7 +183,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     fireEvent.blur(note);
@@ -207,7 +207,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Edit note for / }));
     const textarea = await screen.findByRole('textbox', { name: 'Note for Owner Lab' });
     act(() => textarea.focus());
     fireEvent.blur(textarea);
@@ -228,7 +228,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
@@ -256,7 +256,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
@@ -278,7 +278,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     await screen.findByText(/Not saved/, {}, { timeout: 2000 });
@@ -299,7 +299,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Owner Lab from saved plans' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsave Owner Lab' }));
 
     await waitFor(() =>
       expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
@@ -707,7 +707,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
 
     const undo = await screen.findByRole('button', { name: 'Undo' });
     const region = undo.closest('[role="status"]');
@@ -733,7 +733,7 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText('Owner Lab');
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() =>
@@ -761,7 +761,7 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText('Other Lab');
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Remove Other Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Other Lab$/ }));
 
     const undo = await screen.findByRole('button', { name: 'Undo' });
     expect(undo.closest('[role="status"]')?.textContent).not.toContain('notes');
@@ -786,7 +786,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
@@ -803,7 +803,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
 
     expect(screen.queryByText(/are you sure/i)).toBeNull();
     expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
@@ -904,7 +904,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Edit note for / }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Note for Owner Lab' }), {
       target: { value: 'Unsaved local edit' },
     });
