@@ -6,6 +6,8 @@
  * kept as an opaque summary, so runs can be compared over time; artifact paths and stage
  * deltas are deliberately not stored, to keep a row small. A counting stage's `counts` are
  * the baseline the next run judges that stage against (#4852).
+ * While a run is in progress, `checkpoints` holds each mode's resume state so a run stopped
+ * at the Render limit can be continued (#5209); the full record written at the end drops it.
  *
  * Environment-local by policy, listed in scripts/mirrorCollectionPolicy.ts, for the same
  * reason as `corpus_quality_snapshots`: a copied history is both misdated and lost.
@@ -192,6 +194,16 @@ const weeklySweepRunSchema = new mongoose.Schema(
       remedy: { type: String, required: false },
     },
     error: { type: String, required: false },
+    resumes: {
+      type: [
+        new mongoose.Schema(
+          { at: { type: Date, required: true }, codeSha: { type: String, required: false } },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    checkpoints: { type: mongoose.Schema.Types.Mixed, required: false },
   },
   { timestamps: false },
 );
