@@ -1995,6 +1995,11 @@ The derivation skips a field named in `manuallyLockedFields`.
 `programRole` is always recomputed from the `programKind` the row keeps, so a locked kind still yields a matching role.
 Run it twice and the second pass plans nothing, which is what makes it a derivation rather than a repair, and a classifier fix reaches every row on its next materialize without a re-scrape.
 
+`requiresMentorBeforeApply`, the "Do you need a mentor first?" answer, is asserted only from a sentence on the record's own page (`mentorRequirementSentence`, #4131, #4218, #5100).
+A faculty member tied to the project counts: required supervision by faculty, approval or endorsement from the applicant's adviser, a letter from the applicant's own project adviser ("your senior essay advisor", "their dissertation supervisor"), or a letter from a faculty member who knows, supports, or is related to the project.
+A recommendation letter with no tie to the project, from any writer or from "a faculty advisor", is not a requirement.
+A graduate record asserts an adviser only when its prose funds a dissertation or its page states one, so a conference-travel grant no longer inherits the requirement.
+
 It replaced `programs:backfill-classification`, a post-sweep repair that re-ran the classifier over stored rows but refused any apply that would demote a served row or replace a served `studentFacingCategory`.
 Those refusals were right about the classifier and wrong as a mechanism: measured on Development on 2026-09-29 they had frozen 100 of 459 live rows on a label today's classifier no longer produces, including 12 served travel and research awards still labelled `Internship program` after the #2925 classifier fix meant to remove that label.
 

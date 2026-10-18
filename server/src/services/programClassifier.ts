@@ -170,11 +170,13 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\b(?:signature|approval|endorsement) (?:of|from) (?:the applicant['’]s |your |a |an |the )?[^.]{0,60}?${MENTOR_NOUN}\\b[^.]{0,20}\\b(?:is |are )?required\\b`,
     `\\b${MENTOR_NOUN}['’]s? (?:letter|statement|approval|endorsement|signature) (?:is |are )?required\\b`,
     `\\bunder the (?:supervision|guidance|direction) of (?:a |an )?(?:yale )?faculty\\b`,
-    `\\bmust be supervised by (?:a |an )?(?:yale )?faculty\\b`,
+    `\\bmust be supervised by (?:a |an |the )?(?:members? of the )?(?:yale )?faculty\\b`,
     `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} who (?:will|would) (?:supervise|oversee|advise)\\b`,
     `\\b${MENTOR_NOUN}\\b[^.]{0,40}\\b(?:has |have )?agreed to (?:work with|supervise|advise|oversee)\\b`,
     `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
     `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
+    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed )?(?:project|research|essay|proposal)\\b`,
+    `\\bfrom (?:your|their|the applicant['’]s) (?:own )?(?:senior essay|senior thesis|senior project|thesis|essay|project|research|dissertation) ${MENTOR_NOUN}\\b`,
   ].join('|'),
   'i',
 );
@@ -256,23 +258,43 @@ const GRADUATE_TRAVEL_RESEARCH =
 const COLLECTIONS_RESEARCH_HOST =
   /\blibrar(?:y|ies)\b|\barchival\b|\barchives\b|special collections|\bmuseum\b|\bgallery\b|reading room|\bresidency\b/;
 
-function graduateResearchClassification(lower: string): KindClassification {
+const DISSERTATION_RESEARCH = /\bdissertations?\b/;
+
+// A dissertation has an adviser by construction, so prose funding one states the
+// requirement; any other graduate record asserts an adviser only when its page does. The
+// `purpose` multi-select is not read, because its "Dissertation Support" entry sits on
+// conference-travel grants too.
+function graduateRecordRequiresAdviser(input: ProgramClassificationInput): boolean {
+  return (
+    DISSERTATION_RESEARCH.test(proseForProgram(input).toLowerCase()) ||
+    statesMentorRequirement(input)
+  );
+}
+
+function graduateResearchClassification(
+  lower: string,
+  input: ProgramClassificationInput,
+): KindClassification {
+  const requiresAdviser = graduateRecordRequiresAdviser(input);
   const base: KindClassification = {
     programCategory: 'FELLOWSHIP',
     programKind: 'FELLOWSHIP_FUNDING',
-    entryMode: 'SECURE_MENTOR_THEN_APPLY',
+    entryMode: requiresAdviser ? 'SECURE_MENTOR_THEN_APPLY' : 'APPLY_TO_PROGRAM',
     studentFacingCategory: 'Graduate research funding',
-    requiresMentorBeforeApply: true,
+    requiresMentorBeforeApply: requiresAdviser,
     mentorMatching: false,
     undergraduateOnly: false,
-    bestNextStep:
-      'Confirm you meet the graduate or professional eligibility, then line up an adviser and a research plan before applying.',
-    prepSteps: [
-      'Graduate eligibility check',
-      'Adviser or sponsor',
-      'Research plan',
-      'Official application',
-    ],
+    bestNextStep: requiresAdviser
+      ? 'Confirm you meet the graduate or professional eligibility, then line up an adviser and a research plan before applying.'
+      : 'Confirm you meet the graduate or professional eligibility, then prepare a research plan and apply.',
+    prepSteps: requiresAdviser
+      ? [
+          'Graduate eligibility check',
+          'Adviser or sponsor',
+          'Research plan',
+          'Official application',
+        ]
+      : ['Graduate eligibility check', 'Research plan', 'Official application'],
   };
 
   if (/\bresearch assistantships?\b/.test(lower)) {
@@ -297,8 +319,9 @@ function graduateResearchClassification(lower: string): KindClassification {
       ...base,
       programKind: 'TRAVEL_RESEARCH_GRANT',
       studentFacingCategory: 'Graduate research travel funding',
-      bestNextStep:
-        'Confirm you meet the graduate or professional eligibility, then build a research and travel plan with your adviser before applying.',
+      bestNextStep: requiresAdviser
+        ? 'Confirm you meet the graduate or professional eligibility, then build a research and travel plan with your adviser before applying.'
+        : 'Confirm you meet the graduate or professional eligibility, then build a research and travel plan and apply.',
       prepSteps: [
         'Graduate eligibility check',
         'Research and travel plan',
@@ -422,7 +445,9 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
       eligibility: input.eligibility,
       purpose: input.purpose,
     }).researchRelated;
-    return researchRelated ? graduateResearchClassification(lower) : archiveReviewClassification();
+    return researchRelated
+      ? graduateResearchClassification(lower, input)
+      : archiveReviewClassification();
   }
 
   if (/\btobin\b/.test(identityLower) && /\bresearch assistant/i.test(text)) {
