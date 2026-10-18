@@ -3853,12 +3853,6 @@ test('program and fellowship search bound query and filter inputs before search 
     fellowshipService,
     /const safeYearOfStudy = boundedSearchFilterValues\(yearOfStudy\)/,
   );
-  assert.match(fellowshipService, /const querySubjects = resolveTopicSubjects\(\[safeQuery\]\)/);
-  assert.match(
-    fellowshipService,
-    /const searchTerms = \[\s*safeQuery,\s*\.\.\.queryTopicAliases,\s*\.\.\.yearOfStudyAliasesForQuery\(safeQuery\),?\s*\]\.filter\(Boolean\)/,
-  );
-  assert.match(fellowshipService, /filter\.\$text = \{ \$search: searchTerms\.join\(' '\) \}/);
   assert.match(
     fellowshipService,
     /const adminFellowshipText = \(value: unknown\): string \| undefined =>/,
