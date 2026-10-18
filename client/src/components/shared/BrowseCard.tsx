@@ -15,7 +15,7 @@ import {
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
 import ArrowRightIcon from './ArrowRightIcon';
-import FavoriteButton, { watchControlLabel } from './FavoriteButton';
+import FavoriteButton, { watchControlLabel, watchControlVerb } from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
@@ -119,7 +119,7 @@ const BrowseCard = React.memo(
                 isFavorite={isFavorite}
                 onToggle={onToggleFavorite}
                 ariaLabel={watchControlLabel(item.data.title, isFavorite)}
-                title={isFavorite ? 'Stop watching' : 'Watch'}
+                title={watchControlVerb(isFavorite)}
               />
             )}
           </div>
