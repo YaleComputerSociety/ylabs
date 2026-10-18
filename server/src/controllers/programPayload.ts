@@ -14,6 +14,7 @@ import { programAudience } from '../services/programAudience';
 import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
 import { programTextDeadlineConflict } from '../utils/programDeadlineText';
 import { formatServedAwardAmount } from '../utils/awardAmountFormat';
+import { programCitizenshipCondition } from '../utils/programCitizenshipCondition';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -243,6 +244,13 @@ export const publicProgramForReader = (program: any) => {
     purpose: Array.isArray(program.purpose) ? program.purpose : [],
     globalRegions: Array.isArray(program.globalRegions) ? program.globalRegions : [],
     citizenshipStatus: Array.isArray(program.citizenshipStatus) ? program.citizenshipStatus : [],
+    citizenshipCondition:
+      programCitizenshipCondition([
+        servedProgramEligibility(program).value,
+        publicProgramDescription(program.description),
+        publicProgramDescription(program.applicationInformation),
+        publicProgramDescription(program.additionalInformation),
+      ]) ?? null,
     sourceName: publicProgramText(program.sourceName),
     sourceUrl: publicHttpUrl(program.sourceUrl),
     sourceLinkHealth: publicProgramSourceLinkHealth(program.sourceLinkHealth),

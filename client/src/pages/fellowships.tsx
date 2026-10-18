@@ -47,11 +47,13 @@ import {
   isDepartmentResearchGuidance,
 } from '../utils/programJourney';
 import {
+  citizenshipFilterOptionLabel,
   emptyProgramBoardSummary,
   isOpenToFirstYears,
   needsMentorBeforeApplying,
   programBoardSectionOf,
   PROGRAM_BOARD_SECTIONS,
+  PROGRAM_FACET_NOT_STATED_NOTE,
   type ProgramBoardSection,
   type ProgramBoardSummary,
 } from '../utils/programBoard';
@@ -572,6 +574,7 @@ const Fellowships = () => {
       options: filterOptions.yearOfStudy,
       selected: selectedYearOfStudy,
       setSelected: setSelectedYearOfStudy,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'term',
@@ -579,6 +582,7 @@ const Fellowships = () => {
       options: filterOptions.termOfAward,
       selected: selectedTermOfAward,
       setSelected: setSelectedTermOfAward,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'subjects',
@@ -593,6 +597,7 @@ const Fellowships = () => {
       options: filterOptions.purpose,
       selected: selectedPurpose,
       setSelected: setSelectedPurpose,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'region',
@@ -600,11 +605,14 @@ const Fellowships = () => {
       options: filterOptions.globalRegions,
       selected: selectedRegions,
       setSelected: setSelectedRegions,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'citizenship',
       label: 'Citizenship',
       options: filterOptions.citizenshipStatus,
+      labelFn: citizenshipFilterOptionLabel,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
       selected: selectedCitizenship,
       setSelected: setSelectedCitizenship,
     },
@@ -644,7 +652,12 @@ const Fellowships = () => {
     { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
     { label: 'Subject', values: selectedSubjects, clear: () => setSelectedSubjects([]) },
     { label: 'Region', values: selectedRegions, clear: () => setSelectedRegions([]) },
-    { label: 'Citizenship', values: selectedCitizenship, clear: () => setSelectedCitizenship([]) },
+    {
+      label: 'Citizenship',
+      values: selectedCitizenship,
+      labelFn: citizenshipFilterOptionLabel,
+      clear: () => setSelectedCitizenship([]),
+    },
   ].filter((g) => g.values.length > 0);
 
   const fellowshipChips: ActiveFilterChip[] = fellowshipFilterGroups.map((group) => {
