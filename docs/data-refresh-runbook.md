@@ -266,6 +266,7 @@ A source is flagged when its run is missing or failed, when it wrote no observat
 Comparable exhaustive runs from 2026-09-20 to 2026-10-17 fell by at most 12.7% on every lane outside the hold (an LLM lane), and once by 20.6% in one lane's updates, so 25% clears the measured noise while a broken selector or a lost page list falls far further; the floor of 10 keeps a lane with a handful of rows from flagging a change of two.
 8. After a job that succeeded it runs `yarn development:search:sync` from the checkout, because the job deferred every index write.
 It exits nonzero when the job failed, the sync failed, or any source was flagged; read a flagged run before trusting it.
+When the wait itself stops, on the timeout or a Render API error, it exits nonzero without comparing or syncing and prints the job id, the sync command, and each source's recorded baseline row, because the job may still be writing Development; once the job ends, run the sync and compare the new `scrape_runs` rows by hand.
 
 Render's logs are not always available, so the outcome comes from the job status and the `scrape_runs` rows, never from the log.
 `--dry-run` runs every refusal and prints the start command without starting a job.
