@@ -192,7 +192,7 @@ describe('program search service', () => {
     expect(programs).toHaveLength(1);
   });
 
-  it('redacts direct contact details in public program service results', async () => {
+  it('serves the contact details a program page publishes in service results (#5046)', async () => {
     const chain = mockFindChain();
     chain.lean.mockResolvedValue([
       {
@@ -211,16 +211,13 @@ describe('program search service', () => {
     const result = await searchPrograms({});
 
     expect(result.programs[0]).toMatchObject({
-      summary: 'Email [email redacted] or call [phone redacted].',
-      description: 'Questions: [email redacted].',
-      prepSteps: ['Email [email redacted] or call [phone redacted].'],
-      contactOffice: 'Office contact: [email redacted] or [phone redacted].',
+      summary: 'Email prose-contact@yale.edu or call 203-555-1212.',
+      description: 'Questions: office@example.edu.',
+      prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
+      contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
     });
     expect(result.programs[0].contactPhone).toBeUndefined();
-    expect(JSON.stringify(result.programs[0])).not.toContain('prose-contact@yale.edu');
-    expect(JSON.stringify(result.programs[0])).not.toContain('prep-contact@yale.edu');
-    expect(JSON.stringify(result.programs[0])).not.toContain('office@example.edu');
-    expect(JSON.stringify(result.programs[0])).not.toContain('203-555');
+    expect(JSON.stringify(result.programs[0])).not.toMatch(/redacted/i);
   });
 
   it('caps program search pagination before building Mongo skip and limit', async () => {

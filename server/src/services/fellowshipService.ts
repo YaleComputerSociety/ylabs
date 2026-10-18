@@ -243,7 +243,10 @@ const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
 const boundedPublicText = (value: string): string =>
   value.slice(0, MAX_PUBLIC_FELLOWSHIP_TEXT_LENGTH).trim();
 
-const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: string }> =>
+const fellowshipLinks = (
+  links: unknown,
+  labelText: (label: string) => string,
+): Array<{ label?: string; url: string }> =>
   Array.isArray(links)
     ? links.slice(0, MAX_PUBLIC_FELLOWSHIP_LINKS).flatMap((link) => {
         if (!link || typeof link !== 'object') return [];
@@ -252,11 +255,14 @@ const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: str
         if (!url) return [];
         const label =
           typeof record.label === 'string' && boundedPublicText(record.label)
-            ? redactDirectContactInfo(boundedPublicText(record.label))
+            ? labelText(boundedPublicText(record.label))
             : undefined;
         return [{ ...(label ? { label } : {}), url }];
       })
     : [];
+
+const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: string }> =>
+  fellowshipLinks(links, (label) => label);
 
 const adminFellowshipText = (value: unknown): string | undefined =>
   typeof value === 'string' ? redactDirectContactInfo(boundedPublicText(value)) : undefined;
@@ -272,7 +278,7 @@ const adminFellowshipStringArray = (value: unknown): string[] | undefined => {
 const adminFellowshipLinks = (
   value: unknown,
 ): Array<{ label?: string; url: string }> | undefined =>
-  Array.isArray(value) ? publicFellowshipLinks(value) : undefined;
+  Array.isArray(value) ? fellowshipLinks(value, redactDirectContactInfo) : undefined;
 
 const adminFellowshipDate = (value: unknown): Date | undefined => {
   if (value === null || value === '') return undefined;
@@ -300,15 +306,13 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
     const prose = CATALOG_SANITIZED_FELLOWSHIP_FIELDS.has(field)
       ? sanitizeCatalogDescription(value, { evergreenizeDates: false })
       : value;
-    return redactDirectContactInfo(boundedPublicText(prose));
+    return boundedPublicText(prose);
   }
 
   if ((field === 'prepSteps' || field === 'applicationMaterials') && Array.isArray(value)) {
     return value
       .slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS)
-      .flatMap((item) =>
-        typeof item === 'string' ? [redactDirectContactInfo(boundedPublicText(item))] : [],
-      );
+      .flatMap((item) => (typeof item === 'string' ? [boundedPublicText(item)] : []));
   }
 
   if (PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS.has(field)) {

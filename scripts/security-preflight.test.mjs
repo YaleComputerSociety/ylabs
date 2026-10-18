@@ -5191,13 +5191,17 @@ test('analytics event storage redacts user-entered contact details', () => {
   }
 });
 
-test('public ResearchEntity DTO recursively redacts direct-contact text', () => {
+test('public ResearchEntity DTO redacts direct-contact text outside the fields that publish a way in', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/researchEntityDto.ts', import.meta.url),
     'utf8',
   );
 
-  assert.match(source, /function publicTextValue\(value: unknown\): unknown/);
+  assert.match(source, /function publicTextValue\(value: unknown, keepContacts = false\): unknown/);
+  assert.match(
+    source,
+    /const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set\(\[\s*'waysIn',\s*'recentGrants',\s*'leadHonors',\s*'fundingAgencies',\s*\]\)/,
+  );
   assert.match(source, /function publicTextString\(value: unknown\): string/);
   assert.match(source, /MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS/);
   assert.match(source, /MAX_PUBLIC_RESEARCH_ENTITY_URLS/);
@@ -5232,7 +5236,7 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
   assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
   assert.match(
     source,
-    /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS\)\s*\.map\(publicTextValue\)/,
+    /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS\)\s*\.map\(\(item\) => publicTextValue\(item, keepContacts\)\)/,
   );
   assert.match(
     source,

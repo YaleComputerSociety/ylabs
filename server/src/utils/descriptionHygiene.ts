@@ -437,10 +437,10 @@ export function stripRedactionPlaceholders(text: string): string {
 }
 
 /**
- * Prepare a scraped source quote for use as a student-facing evidence excerpt:
- * redact direct contact details, then drop every sentence that still carries a
- * `[email redacted]`/`[phone redacted]` marker so the raw placeholder is never
- * rendered to students (#1076). Unlike stripRedactionPlaceholders (which salvages
+ * Prepare a scraped source quote for use as a student-facing evidence excerpt. The
+ * contact details a public page publishes are kept (#5046); a sentence that still
+ * carries a legacy `[email redacted]`/`[phone redacted]` marker is dropped so the raw
+ * placeholder is never rendered to students (#1076). Unlike stripRedactionPlaceholders (which salvages
  * a description sentence by trimming a trailing marker), an evidence excerpt is a
  * short verbatim quote where a marker-bearing sentence is almost always a bare
  * contact directive ("Email us at [email redacted]") with no independent value,
@@ -449,9 +449,9 @@ export function stripRedactionPlaceholders(text: string): string {
  * substance survives, so the caller can omit the excerpt entirely.
  */
 export function sanitizeEvidenceExcerpt(value: string): string {
-  const redacted = normalizeHygieneWhitespace(redactDirectContactInfo(String(value ?? '')));
-  if (!redacted || !redactionTokenTest.test(redacted)) return redacted;
-  const kept = partitionSentencesForFiltering(redacted).filter(
+  const text = normalizeHygieneWhitespace(String(value ?? ''));
+  if (!text || !redactionTokenTest.test(text)) return text;
+  const kept = partitionSentencesForFiltering(text).filter(
     (sentence) => sentence.trim() && !redactionTokenTest.test(sentence),
   );
   return normalizeHygieneWhitespace(kept.join(''));
@@ -2661,9 +2661,8 @@ export function sanitizeCatalogDescription(
  * closed to an empty string on dump shapes.
  */
 export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000): string {
-  const redacted = redactDirectContactInfo(String(text || ''));
   return clampDescriptionLength(
-    stripRedactionPlaceholders(sanitizeCatalogDescription(redacted)),
+    stripRedactionPlaceholders(sanitizeCatalogDescription(String(text || ''))),
     maxLength,
   );
 }

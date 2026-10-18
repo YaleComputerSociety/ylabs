@@ -99,7 +99,10 @@ A quote such as "contact [email redacted] and inquire about opportunities" hid a
 Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidenceQuote`, `undergradRoleEvidenceQuote`, `undergradConstraintQuote`, `contactInstructionsQuote`) keep the email addresses and phone numbers of the page they quote, and the detail page serves them as written.
 The owner first kept phone numbers redacted, then reversed that the same day for the same reason: the lab publishes them on the cited page.
 The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
-Descriptions, signal excerpts, logs and the search index keep redacting both.
+Logs, analytics and search queries, admin and user input, and config keep redacting both.
+The same owner decision extends to the rest of the scraped public text outside research descriptions (#5046): program and fellowship prose and link labels, signal excerpts, a row's ways in, grants, honors and funding agencies, course-credit evidence, and the search index's quote fields all keep the contact details their page publishes.
+Research descriptions (`shortDescription`, `fullDescription`) still redact and drop contact sentences until the description pipeline redesign (#5020) decides them, and names, titles and labels that contain an address are still refused as malformed.
+Two content rules that look like redaction stay, because they are about where a sentence belongs rather than hiding it: eligibility text drops a contact direction, which names who to ask rather than who may apply (#4177), and a profile bio drops leading contact chrome.
 A quote that carries a contact detail but states no instruction to use it is refused: it is a slice of a people page listing members with their own emails, such as an "Undergraduate Students" heading followed by names and addresses, not evidence of how to reach the lab (`quoteListsPeopleWithTheirContactDetails`).
 On Development that was 7 of the 12 quotes that had contacts restored, and the roster section, not the quote, is where a lab's undergraduates are listed.
 
