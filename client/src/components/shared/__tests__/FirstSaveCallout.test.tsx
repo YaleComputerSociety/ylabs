@@ -27,4 +27,23 @@ describe('FirstSaveCallout', () => {
 
     expect(screen.queryByText(/email/i)).toBeNull();
   });
+
+  it('names the program next step with the watch vocabulary and links to Watched programs', () => {
+    renderCallout({ kind: 'program', onDismiss: vi.fn() });
+
+    expect(screen.getByText('Watching this program')).toBeTruthy();
+    expect(screen.queryByText(/saved/i)).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href'),
+    ).toBe('/dashboard?tab=programs');
+  });
+
+  it('keeps the research plan callout linking to the Dashboard', () => {
+    renderCallout({ kind: 'researchPlan', onDismiss: vi.fn() });
+
+    expect(screen.getByText('Research plan saved')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Dashboard' }).getAttribute('href')).toBe(
+      '/dashboard',
+    );
+  });
 });
