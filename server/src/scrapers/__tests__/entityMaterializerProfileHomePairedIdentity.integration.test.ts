@@ -27,11 +27,14 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { materializeEntity } from '../entityMaterializer';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const SLUG = 'dept-synthetic-member';
-const PERSON_ROW_NAME = 'Synthetic Member Faculty Research';
+const LEAD_NAME = 'Synthetic Member';
+const PERSON_ROW_NAME = `${LEAD_NAME} Faculty Research`;
 const HOME_NAME = 'Synthetic Center for Coastal Studies';
 const PROFILE_URL = 'https://synthetic.yale.edu/profile/synthetic-member/';
 const LANE = 'official-profile-pi-backfill';
@@ -56,7 +59,7 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+    for (const name of ['observations', 'research_entities', 'researchers', 'role_assignments']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -166,7 +169,10 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
         superseded: false,
       });
 
-    const seedMergedSurvivor = async (survivorName = PERSON_ROW_NAME) => {
+    const seedMergedSurvivor = async ({
+      survivorName = PERSON_ROW_NAME,
+      leadName = LEAD_NAME as string | null,
+    } = {}) => {
       const survivor = await ResearchEntity.create({
         slug: SURVIVOR_SLUG,
         name: survivorName,
@@ -175,6 +181,16 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
         archived: false,
         sourceUrls: [PROFILE_URL],
       });
+      if (leadName) {
+        const lead = await Researcher.create({ displayName: leadName });
+        await RoleAssignment.create({
+          personId: lead._id,
+          target: { kind: 'RESEARCH_ENTITY', id: survivor._id },
+          role: 'PI',
+          state: 'UNKNOWN',
+          confidence: 0.9,
+        });
+      }
       await ResearchEntity.create({
         slug: LOSER_SLUG,
         name: PERSON_ROW_NAME,
@@ -215,7 +231,23 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
     });
 
     it('leaves an organization-named survivor alone', async () => {
-      await seedMergedSurvivor(HOME_NAME);
+      await seedMergedSurvivor({ survivorName: HOME_NAME });
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('CENTER');
+    });
+
+    it('leaves a survivor alone when the words before the suffix are not its lead', async () => {
+      await seedMergedSurvivor({ survivorName: 'Office of Synthetic Faculty Research' });
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('CENTER');
+    });
+
+    it('leaves a leadless survivor alone', async () => {
+      await seedMergedSurvivor({ leadName: null });
 
       await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
 

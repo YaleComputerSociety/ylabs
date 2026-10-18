@@ -7677,6 +7677,7 @@ function enforceResearchEntityNameAuthority(input: {
     entityDoc,
     manuallyLockedFields: input.manuallyLockedFields,
     materializationObs: input.materializationObs,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
   });
   // A heading composed from a bare person name gains its suffix here, after the
   // observation normalizer ran on the suffix-less value.
@@ -7985,6 +7986,10 @@ const ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED = new Set(['CENTER', 'INITIATI
  * evidence behind it while the name, which only a person-scoped roster composes,
  * said faculty research. A live observation of the type, an operator edit included,
  * keeps the row as it is.
+ *
+ * The suffix alone does not make a row person-scoped, so every word before it has to
+ * be a word of the lead's own name, as for `reclassifyUnbackedLabAsFacultyResearch`;
+ * an organization whose name ends the same way, or a leadless row, keeps its type.
  */
 function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
   set: Record<string, unknown>;
@@ -7993,6 +7998,7 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
   entityDoc: any;
   manuallyLockedFields: string[];
   materializationObs: MaterializerObservationLike[];
+  leadPersonName: unknown;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
   if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
@@ -8002,9 +8008,10 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
   const type = textValue(projected.entityType).toUpperCase();
   if (!ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED.has(type)) return 0;
   const names = [projected.name, projected.displayName].map(textValue).filter(Boolean);
-  if (names.length === 0 || !names.every((name) => FACULTY_RESEARCH_NAME_SUFFIX.test(name))) {
-    return 0;
-  }
+  const namesTheLeadsFacultyResearch = (name: string) =>
+    FACULTY_RESEARCH_NAME_SUFFIX.test(name) &&
+    eponymNamesOnlyTheLead(name.replace(FACULTY_RESEARCH_NAME_SUFFIX, ''), input.leadPersonName);
+  if (names.length === 0 || !names.every(namesTheLeadsFacultyResearch)) return 0;
   const typeIsStated = input.materializationObs.some(
     (observation) =>
       observation.field === 'entityType' && textValue(observation.value).toUpperCase() === type,
