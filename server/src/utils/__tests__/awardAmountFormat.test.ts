@@ -33,6 +33,11 @@ describe('formatServedAwardAmount (#5205)', () => {
     '10,000 USD',
     '1,000 dollars',
     '5000 EUR',
+    '£2,500-3,000',
+    '€5000 - 7000',
+    '2,500-3,000 USD',
+    '1,000 to 2,000 dollars',
+    '$1500 or 1,200 GBP',
     'Spend by June 30, 2026',
     'Class of 2027',
   ])(
