@@ -484,6 +484,29 @@ describe('heading-list document-order walker', () => {
     ]);
   });
 
+  it('reads a role on the second line of a name heading, under a lead title heading', () => {
+    const html = `<html><body><main>
+      <h2>Our Team</h2>
+      <h3>Rowan Thistle, PhD</h3>
+      <h4>Assistant Professor of Pathology</h4>
+      <h5><strong>Avery Quill</strong><br />Undergraduate Researcher</h5>
+      <h5><b>Harper Wren</b><br />Undergraduate Researcher</h5>
+      <h5><strong>Ellis Juniper, B.S</strong><br />Postgraduate Associate</h5>
+      <h5><strong>Jordan Alder</strong><br />High Schooler</h5>
+      <h2>Our Lab Alumni</h2>
+    </main></body></html>`;
+    const roster = extractOfficialResearchHomeRoster(
+      html,
+      { ...config, currentSectionLabels: ['Our Team'] },
+      observedAt,
+    );
+
+    expect(roster.undergraduates).toEqual([
+      { name: 'Avery Quill', status: 'current' },
+      { name: 'Harper Wren', status: 'current' },
+    ]);
+  });
+
   it('shows a name written in capitals in normal case', () => {
     const html = `<html><body><main><h3>Undergraduate Students</h3>
       <ul><li>AVERY QUILL</li><li>HARPER O'WREN-LARK</li></ul></main></body></html>`;
