@@ -289,6 +289,10 @@ describe('isRosterLineRatherThanAStatement', () => {
       'We welcome undergraduate researchers.',
       'Undergraduate research positions are also available.',
       'We have openings for undergraduate students who can commit to more than one year.',
+      'We welcome undergraduates.',
+      'Undergraduates are welcome.',
+      'Open to undergraduates.',
+      'Undergraduate research opportunities available',
     ]) {
       expect(isRosterLineRatherThanAStatement(quote), quote).toBe(false);
     }

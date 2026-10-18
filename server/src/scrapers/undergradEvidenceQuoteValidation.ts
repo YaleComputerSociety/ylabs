@@ -136,13 +136,23 @@ const MIN_RUNNING_WORDS_IN_A_PUNCTUATED_SENTENCE = 3;
 
 const ENDS_A_SENTENCE = /[.!?]["\u201d\u2019']?$/;
 
+const SENTENCE_INITIAL_CAPITAL = /^([^A-Za-z]*)([A-Z])(?=[a-z])/;
+
+function lowercaseSentenceInitialWord(text: string): string {
+  return text.replace(
+    SENTENCE_INITIAL_CAPITAL,
+    (_, lead: string, initial: string) => lead + initial.toLowerCase(),
+  );
+}
+
 /**
  * A roster card or heading ("<name> Undergraduate Student Hometown: <city>", "Undergrad
  * and RAs") rather than a sentence about the lab taking undergraduates. Membership is the
  * roster's and the member count's evidence; served as a quote it reads as the lab saying
  * something it did not. A roster line is names and labels, so it carries almost no
  * lowercase running words, while every measured access statement carries four or more, or
- * three in a sentence that ends like one ("We welcome undergraduate researchers.").
+ * three in a sentence that ends like one ("Open to undergraduates."). The first word of a
+ * sentence is running text however it is capitalized.
  */
 export function isRosterLineRatherThanAStatement(quote: string | undefined | null): boolean {
   const text = (quote || '').trim();
@@ -150,7 +160,7 @@ export function isRosterLineRatherThanAStatement(quote: string | undefined | nul
   const minimum = ENDS_A_SENTENCE.test(text)
     ? MIN_RUNNING_WORDS_IN_A_PUNCTUATED_SENTENCE
     : MIN_RUNNING_WORDS_IN_A_STATEMENT;
-  return (text.match(LOWERCASE_RUNNING_WORD)?.length ?? 0) < minimum;
+  return (lowercaseSentenceInitialWord(text).match(LOWERCASE_RUNNING_WORD)?.length ?? 0) < minimum;
 }
 
 export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | null): boolean {
