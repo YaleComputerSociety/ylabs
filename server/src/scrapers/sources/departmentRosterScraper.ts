@@ -99,6 +99,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
+import { isTruncatedPersonTitle } from '../../utils/titleHygiene';
 import { orgUnitMatchKey } from '../orgUnitCanonicalization';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
@@ -1489,10 +1490,13 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
  * Environment"), but on many rows it is only the start of one, with the rest outside the
  * emphasis: a linked department ("Professor of" + "Molecular, Cellular, and Developmental
  * Biology") or the rank after a chair name ("Oastler" + "Professor of Biogeochemistry").
- * When the span neither ends nor is followed by a separator, the text after it completes
- * the title: a link whole, because a department name can carry commas, and plain text up
- * to the next separator.
+ * When the span neither ends nor is followed by a separator, the text after it on the same
+ * line completes the title: plain text or further emphasis up to the next separator, and a
+ * link whole, because a department name can carry commas, but only while the title still
+ * dangles at a connective, so a complete title is never joined to a lab-site link.
  */
+const TITLE_CONTINUATION_TAGS = new Set(['a', 'b', 'em', 'i', 'span', 'strong']);
+
 function fieldCollectionPersonTitle(
   $: cheerio.CheerioAPI,
   emphasis: cheerio.Cheerio<AnyNode>,
@@ -1502,6 +1506,8 @@ function fieldCollectionPersonTitle(
   let title = emphasised;
   let node = emphasis.get(0)?.nextSibling ?? null;
   while (node && !/[,;]$/.test(title)) {
+    if (node.type === 'tag' && !TITLE_CONTINUATION_TAGS.has(node.name)) break;
+    if (node.type === 'tag' && node.name === 'a' && !isTruncatedPersonTitle(title)) break;
     const isText = node.type === 'text';
     const text = cleanText($(node).text());
     if (text) {

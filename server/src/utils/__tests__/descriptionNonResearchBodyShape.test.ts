@@ -202,6 +202,25 @@ describe('a body that says how to join or narrates events (#5109)', () => {
     ).toBe(false);
   });
 
+  it('keeps service, outreach and funding prose that shares a verb with joining or event lines', () => {
+    expect(
+      nonResearchBodyShape(
+        'Researchers can submit samples for sequencing through the online portal; the core provides library preparation and data analysis.',
+        'CORE_FACILITY',
+      ),
+    ).toBeNull();
+    expect(
+      isEventNarrationText(
+        'The program delivers community health interventions and addresses tobacco disparities.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText(
+        'The center receives support from federal awards to study coastal flooding.',
+      ),
+    ).toBe(false);
+  });
+
   it('fails the quality bar for both the body and the card', () => {
     expect(fullDescriptionQuality(joiningInstructions, undefined, 'LAB').flags).toContain(
       'joining-instructions',

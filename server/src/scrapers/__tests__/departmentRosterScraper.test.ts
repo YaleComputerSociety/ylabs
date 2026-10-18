@@ -1113,6 +1113,15 @@ describe('fieldCollectionPersonExtractor title continuation (#5109)', () => {
     ).toBe('Director');
     expect(titleOf('<p><em>Example Dean</em>, Example School</p>')).toBe('Example Dean');
   });
+
+  it('does not join a complete title to a following line or a link', () => {
+    expect(
+      titleOf('<p><em>Professor of Ecology</em><br>Example School of the Environment</p>'),
+    ).toBe('Professor of Ecology');
+    expect(
+      titleOf('<p><em>Lecturer</em> <a href="https://example.yale.edu/">Lab website</a></p>'),
+    ).toBe('Lecturer');
+  });
 });
 
 describe('facultyThumbnailExtractor', () => {
