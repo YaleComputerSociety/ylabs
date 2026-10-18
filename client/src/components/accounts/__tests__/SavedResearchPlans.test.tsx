@@ -549,7 +549,7 @@ describe('SavedResearchPlans', () => {
   });
 
   it('does not promise a readable note for a target that will never come back', async () => {
-    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'RETIRED' }]);
 
     render(
       <MemoryRouter>
@@ -563,7 +563,7 @@ describe('SavedResearchPlans', () => {
 
   it('counts a saved plan the list cannot show so the dashboard tally agrees (#2174)', async () => {
     withUnavailablePlans([
-      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-gone', reason: 'RETIRED' },
       { _id: 'id-held', reason: 'UNAVAILABLE' },
     ]);
     const onCountChange = vi.fn();
@@ -597,7 +597,7 @@ describe('SavedResearchPlans', () => {
 
   it('distinguishes a home that left the directory from one that is only held back', async () => {
     withUnavailablePlans([
-      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-gone', reason: 'RETIRED' },
       { _id: 'id-held', reason: 'UNAVAILABLE' },
     ]);
 
@@ -608,7 +608,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('2 saved items are not showing below');
-    expect(screen.getByText(/No longer in the directory/)).toBeTruthy();
+    expect(screen.getByText(/No longer listed in the student directory/)).toBeTruthy();
     expect(screen.getByText(/Held back from the student directory/)).toBeTruthy();
   });
 
@@ -655,7 +655,7 @@ describe('SavedResearchPlans', () => {
   });
 
   it('removes an unavailable plan by its entity id and drops the notice row', async () => {
-    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'RETIRED' }]);
     mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
 
     render(

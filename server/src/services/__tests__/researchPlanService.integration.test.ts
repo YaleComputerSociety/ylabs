@@ -335,23 +335,14 @@ describe('researchPlanService saved plans', () => {
       expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'MERGED' }]);
     });
 
-    it('reports a target no row carries and no survivor lists as REMOVED (#5148)', async () => {
-      await saveWhilePublished();
-      await mongoose.connection.db!.collection('research_entities').deleteOne({ _id: ENTITY_ID });
-
-      const list = await getSavedResearchEntityList(NETID);
-
-      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'REMOVED' }]);
-    });
-
-    it('reports a target whose record no longer exists as REMOVED', async () => {
+    it('reports a target no row carries and no survivor lists as RETIRED (#5148)', async () => {
       await saveWhilePublished();
       await mongoose.connection.db!.collection('research_entities').deleteOne({ _id: ENTITY_ID });
 
       const list = await getSavedResearchEntityList(NETID);
 
       expect(list.savedResearchEntities).toEqual([]);
-      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'REMOVED' }]);
+      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'RETIRED' }]);
     });
 
     it('names the id and the reason and nothing the gate withheld', async () => {
@@ -510,7 +501,7 @@ describe('researchPlanService saved plans', () => {
         { _id: '64a0000000000000000001a2', reason: 'RETIRED' },
         { _id: '64a0000000000000000001a3', reason: 'UNAVAILABLE' },
         { _id: '64a0000000000000000001a4', reason: 'UNAVAILABLE' },
-        { _id: '64a0000000000000000001a5', reason: 'REMOVED' },
+        { _id: '64a0000000000000000001a5', reason: 'RETIRED' },
       ]);
     });
 

@@ -76,17 +76,19 @@ export interface SavedResearchEntitySummary {
 /**
  * Why a saved plan's target is not on the served list.
  *
- * `REMOVED` is terminal: no `ResearchEntity` carries that id, so nothing will bring
- * the item back and the owner's only move is to remove it. `UNAVAILABLE` is not: the
- * record exists and is archived, held by the visibility gate, or failing the
- * public-description invariant, any of which can be reversed by a repair or a
- * re-gate, so the plan and its private notes are worth keeping.
+ * `RETIRED` means the record is archived with no live survivor, or no `ResearchEntity`
+ * carries that id and no survivor names it, and the owner's only move is to remove it.
+ * The two are one reason because Beta and Production hold no archived rows (#5148), so
+ * there they cannot be told apart. `UNAVAILABLE` is not terminal: the record exists and
+ * is held by the visibility gate or failing the public-description invariant, either of
+ * which can be reversed by a repair or a re-gate, so the plan and its private notes are
+ * worth keeping.
  *
  * Distinguishing the two is the whole point. Before this, both were dropped from the
  * payload AND from the saved count, so a student could not tell an item they had
  * removed from one the corpus had stopped serving (#2174).
  */
-export type UnavailableSavedResearchEntityReason = 'REMOVED' | 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
+export type UnavailableSavedResearchEntityReason = 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 
 /**
  * The id and the reason, and deliberately nothing else. A record that failed the
@@ -418,18 +420,9 @@ interface PartitionedSavedResearchEntities {
   unavailableSavedResearchEntities: UnavailableSavedResearchEntity[];
 }
 
-/**
- * The servable records for these target ids, in id order, alongside the ids that
- * resolve to no servable record and why.
- *
- * The visibility rules are applied in memory rather than in the query, because a
- * query that filters them out cannot tell a target whose record is gone from one
- * whose record is merely held, and that is the distinction the owner needs. The
- * rules themselves are unchanged: not archived, at a public tier, and clearing
- * `researchEntityServesPublicDetail`.
- */
 // Beta and Production hold no archived rows (#5148), so a saved id that no row carries is
-// a merge when a live survivor names it in `mergedFrom`, and removed otherwise.
+// a merge when a live survivor names it in `mergedFrom`, and otherwise cannot be told
+// apart from a retired row.
 const idsNamedInMergedFrom = async (ids: readonly string[]): Promise<Set<string>> => {
   if (ids.length === 0) return new Set();
   const survivors = (await ResearchEntity.find({
@@ -447,6 +440,16 @@ const idsNamedInMergedFrom = async (ids: readonly string[]): Promise<Set<string>
   );
 };
 
+/**
+ * The servable records for these target ids, in id order, alongside the ids that
+ * resolve to no servable record and why.
+ *
+ * The visibility rules are applied in memory rather than in the query, because a
+ * query that filters them out cannot tell a target whose record is gone from one
+ * whose record is merely held, and that is the distinction the owner needs. The
+ * rules themselves are unchanged: not archived, at a public tier, and clearing
+ * `researchEntityServesPublicDetail`.
+ */
 const partitionSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
 ): Promise<PartitionedSavedResearchEntities> => {
@@ -475,7 +478,7 @@ const partitionSavedResearchEntities = async (
     if (!verdict) {
       unavailableSavedResearchEntities.push({
         _id: id,
-        reason: mergedIntoSurvivor.has(id) ? 'MERGED' : 'REMOVED',
+        reason: mergedIntoSurvivor.has(id) ? 'MERGED' : 'RETIRED',
       });
     } else if (verdict.entity.archived === true) {
       unavailableSavedResearchEntities.push({

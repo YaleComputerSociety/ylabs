@@ -61,12 +61,12 @@ interface SavedResearchEntity {
 /**
  * A saved plan the list cannot show, reported by the server rather than dropped, so
  * a student can tell an entry they removed from one the corpus stopped
- * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
+ * serving (#2174). `RETIRED` is terminal; `UNAVAILABLE` can be reversed by a repair
  * or a re-gate, so its plan and private notes are worth keeping.
  */
 interface UnavailableSavedResearchEntity {
   _id: string;
-  reason: 'REMOVED' | 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
+  reason: 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 }
 
 /**
@@ -74,11 +74,10 @@ interface UnavailableSavedResearchEntity {
  * these reasons is name-agnostic while the detail page resolves lead names, so a
  * held row can still serve its own page (#2597). What is true of every row here is
  * that the student directory is not listing it, which is what the copy says.
- * `REMOVED` promises nothing about the note: the plan row survives until removal,
+ * `RETIRED` promises nothing about the note: the plan row survives until removal,
  * but with the target gone no surface can ever read the note back.
  */
 const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
-  REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
   MERGED:
     'Combined with another listing for the same research. Your note moves to that listing at the next directory update.',
   RETIRED: 'No longer listed in the student directory. Remove it to clear this item.',

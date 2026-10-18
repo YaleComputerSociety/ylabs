@@ -108,7 +108,12 @@ describe('re-pointing saved plans to merge survivors after a promotion (#5208)',
 
     const report = await retargetResearchPlansToMergeSurvivors({ apply: true });
 
-    expect(report).toMatchObject({ archivedTargets: 0, mergedTargets: 1, survivors: 1 });
+    expect(report).toMatchObject({
+      archivedTargets: 0,
+      mergedTargets: 1,
+      retiredTargets: 1,
+      survivors: 1,
+    });
     const plans = await mongoose.connection
       .db!.collection('research_plans')
       .find({ accountId, archived: { $ne: true } })

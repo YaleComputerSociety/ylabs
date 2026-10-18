@@ -85,7 +85,10 @@ export async function retargetResearchPlansToMergeSurvivors(input: {
     }
     for (const absentId of absentIds) {
       const survivorId = survivorByMergedId.get(String(absentId));
-      if (!survivorId) continue;
+      if (!survivorId) {
+        report.retiredTargets += 1;
+        continue;
+      }
       report.mergedTargets += 1;
       addDuplicate(survivorId, new mongoose.Types.ObjectId(String(absentId)));
     }
