@@ -875,4 +875,52 @@ describe('SavedResearchPlans', () => {
       expect(screen.queryByRole('alert')).toBeNull();
     });
   });
+
+  it('loads a plan saved in another tab without resetting a note being edited here', async () => {
+    let ids = ['owner-lab'];
+    let entities: Array<Record<string, unknown>> = [
+      { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ids } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({ data: { savedResearchEntities: entities } });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({
+          data: { savedResearchEntityPlans: { id1: { privateNotes: 'Stored note' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Note for Owner Lab' }), {
+      target: { value: 'Unsaved local edit' },
+    });
+
+    ids = ['owner-lab', 'other-lab'];
+    entities = [
+      ...entities,
+      { _id: 'id2', slug: 'other-lab', name: 'Other Lab', kind: 'lab', departments: [] },
+    ];
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Other Lab')).toBeTruthy();
+    expect(
+      (screen.getByRole('textbox', { name: 'Note for Owner Lab' }) as HTMLTextAreaElement).value,
+    ).toBe('Unsaved local edit');
+  });
 });
