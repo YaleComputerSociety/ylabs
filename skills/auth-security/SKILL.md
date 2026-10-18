@@ -192,7 +192,7 @@ Client route guards:
 |-------|---------|
 | `PrivateRoute` | Auth required. |
 | `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
-| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. The one exception is the `Navbar`, which shows the signed-in navigation while the check is pending when `client/src/utils/lastKnownSession.ts` records that the last answer was signed in, and still holds the account and sign-out controls invisible until it resolves. |
 | `UnprivateRoute` | No auth required. |
 
 Because a public page now runs before the check answers, client research analytics has three states rather than two.
@@ -204,6 +204,7 @@ Treating unknown as enabled would post a guest's first browse impression to `/an
 `normalizeReturnPath` in `client/src/utils/returnPath.ts` reduces `state.from` to a same-origin path or an empty string.
 `SignInButton` applies it before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
 `/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
+Any `401` dispatches `HTTP_AUTH_REQUIRED_EVENT` (`client/src/utils/httpStatusEvents.ts`), and `UserContextProvider` answers it by signing the client out, so a login link raised by an expired session reaches the CAS sign-in instead of bouncing off `/login` back to the page that failed.
 
 ## Validation middleware
 
