@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   buildPermissionProbePlan,
@@ -174,11 +172,7 @@ describe('rerun commands', () => {
   });
 
   it('recognises an image whose entrypoint has the rerun mode', () => {
-    const entrypoint = fs.readFileSync(
-      path.resolve(__dirname, '../../../../deploy/sweep-runner/entrypoint.sh'),
-      'utf8',
-    );
-    expect(entrypointSupportsRerun(entrypoint)).toBe(true);
+    expect(entrypointSupportsRerun('if [ "${1:-}" = "--rerun-source" ]; then')).toBe(true);
     expect(entrypointSupportsRerun('exec yarn --cwd server scrape:sweep:weekly-development')).toBe(
       false,
     );

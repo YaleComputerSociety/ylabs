@@ -194,11 +194,21 @@ async function runRerun(
   const requestedAt = new Date(Date.now() - JOB_CLOCK_SKEW_MS);
   const job = await createRenderJob(client, SWEEP_RENDER_SERVICE_ID, startCommand);
   log(`started Render one-off job ${job.id}: ${startCommand}`);
-  const finished = await waitForRenderJob(client, SWEEP_RENDER_SERVICE_ID, job.id, {
-    intervalMs: RERUN_POLL_INTERVAL_MS,
-    timeoutMs: RENDER_CRON_RUN_LIMIT_MS + 30 * 60_000,
-    onStatus: (current) => log(`job ${current.id}: ${current.status ?? 'unknown'}`),
-  });
+  let finished: RenderJob;
+  try {
+    finished = await waitForRenderJob(client, SWEEP_RENDER_SERVICE_ID, job.id, {
+      intervalMs: RERUN_POLL_INTERVAL_MS,
+      timeoutMs: RENDER_CRON_RUN_LIMIT_MS + 30 * 60_000,
+      onStatus: (current) => log(`job ${current.id}: ${current.status ?? 'unknown'}`),
+    });
+  } catch (error) {
+    const baselineIds = sources
+      .map((source) => `${source} ${String(baselines.get(source)?._id ?? 'none')}`)
+      .join(', ');
+    return fail(
+      `stopped waiting for job ${job.id} (${error instanceof Error ? error.message : String(error)}); it may still be writing Development. Once it ends (render jobs list ${SWEEP_RENDER_SERVICE_ID} -o json), run \`yarn ${DEVELOPMENT_SEARCH_SYNC_SCRIPT}\` and compare its scrape runs, started after ${requestedAt.toISOString()}, against the baselines: ${baselineIds}`,
+    );
+  }
 
   const comparisons = await withDevelopment(async () => {
     const results = [];
@@ -286,11 +296,18 @@ async function runProbePermissions(dryRun: boolean): Promise<number> {
   const client = renderClient();
   const job = await createRenderJob(client, SWEEP_RENDER_SERVICE_ID, startCommand);
   log(`started Render one-off job ${job.id}`);
-  const finished = await waitForRenderJob(client, SWEEP_RENDER_SERVICE_ID, job.id, {
-    intervalMs: PROBE_POLL_INTERVAL_MS,
-    timeoutMs: PROBE_TIMEOUT_MS,
-    onStatus: (current) => log(`job ${current.id}: ${current.status ?? 'unknown'}`),
-  });
+  let finished: RenderJob;
+  try {
+    finished = await waitForRenderJob(client, SWEEP_RENDER_SERVICE_ID, job.id, {
+      intervalMs: PROBE_POLL_INTERVAL_MS,
+      timeoutMs: PROBE_TIMEOUT_MS,
+      onStatus: (current) => log(`job ${current.id}: ${current.status ?? 'unknown'}`),
+    });
+  } catch (error) {
+    return fail(
+      `stopped waiting for probe job ${job.id} (${error instanceof Error ? error.message : String(error)}); read its PERMISSION_PROBE_RESULT log line once it ends`,
+    );
+  }
   if (finished.status === 'succeeded') {
     log(`PASS: every granted action was allowed and every expected denial was denied`);
     return 0;
