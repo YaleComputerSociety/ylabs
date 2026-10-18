@@ -60,6 +60,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     queryString,
     exactSpelling,
     queryCorrection,
+    resultsRankedByRelevance,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -319,10 +320,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
 
+    const searchedQuery = filtersRef.current.queryString.trim();
     dispatch({
       type: 'SEARCH_REQUEST',
-      payload: { queryString: filtersRef.current.queryString.trim() },
+      payload: { queryString: searchedQuery },
     });
+    const rankedByRelevance = searchedQuery !== '';
 
     const accumulate = async () => {
       const collected: Fellowship[] = [];
@@ -357,6 +360,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             pageSize,
             append: false,
             queryCorrection,
+            rankedByRelevance,
           },
         });
       })
@@ -465,6 +469,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         queryString,
         setQueryString,
         queryCorrection,
+        resultsRankedByRelevance,
         searchTypedSpelling,
         selectedProgramCategory,
         setSelectedProgramCategory,

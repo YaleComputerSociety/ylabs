@@ -684,7 +684,48 @@ const studentYearWordsReachSourcedYear: ProgramJourneyCase = {
   },
 };
 
+const ADDED_WORD_QUERY_PAIRS = [
+  { shorterQuery: 'economics', longerQuery: 'economics summer' },
+  { shorterQuery: 'research', longerQuery: 'research travel' },
+  { shorterQuery: 'science', longerQuery: 'computer science' },
+];
+
+const anAddedWordNarrowsTheResults: ProgramJourneyCase = {
+  id: 'programs-an-added-word-narrows-the-results',
+  title: 'Adding a word to a program search never serves a program the shorter search did not',
+  surface: PROGRAMS_SURFACE.id,
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      (await walkProgramBrowseLikeTheClient(context, { query })).rows.map(rowKey).filter(Boolean);
+    const pairs = [];
+    for (const { shorterQuery, longerQuery } of ADDED_WORD_QUERY_PAIRS) {
+      pairs.push({
+        baselineQuery: longerQuery,
+        baselineKeys: await servedKeys(longerQuery),
+        variantQuery: shorterQuery,
+        variantKeys: await servedKeys(shorterQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'programs-added-word-serves-a-subset',
+          'Every program a two-word search serves is also served by its first word alone',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+          'coversBaselineRows',
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 export const programJourneyCases: readonly ProgramJourneyCase[] = [
   ...programSurfaceCases(PROGRAMS_SURFACE),
   studentYearWordsReachSourcedYear,
+  anAddedWordNarrowsTheResults,
 ];
