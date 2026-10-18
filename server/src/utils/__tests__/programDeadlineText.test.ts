@@ -153,3 +153,26 @@ describe('programTextDeadlineConflict never flags on a date it misses (#5158)', 
     ).toBeUndefined();
   });
 });
+
+describe('programTextDeadlineConflict does not flag text that gives the served day anywhere (#5158)', () => {
+  const servedFeb12 = '2027-02-12T17:00:00.000Z';
+
+  it.each([
+    'Priority deadline: January 5, 2027. Final due date: February 12, 2027.',
+    'The priority deadline is January 5, 2027. Applications for the summer session starting in June are due February 12, 2027.',
+    'The priority deadline is January 5, 2027. The final round closes Thursday, Feb 12.',
+    'The priority deadline is January 5, 2027. Final materials by 2/12/2027.',
+    'The priority deadline is January 5, 2027. Final materials by 02/12.',
+    'The priority deadline is January 5, 2027. Final materials by the 12th of February.',
+  ])('does not flag a cued date when the served day appears in any form: %s', (text) => {
+    expect(programTextDeadlineConflict(servedFeb12, [text])).toBeUndefined();
+  });
+
+  it('still flags when the served day appears in no form', () => {
+    expect(
+      programTextDeadlineConflict(servedFeb12, [
+        'The deadline is January 5, 2027. Office hours run 2/1 to 2/11 and on February 13.',
+      ]),
+    ).toBe('2027-01-05');
+  });
+});

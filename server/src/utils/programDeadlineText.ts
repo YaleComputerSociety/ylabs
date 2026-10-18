@@ -1,22 +1,21 @@
 import { isRealCalendarDate, newYorkCalendarDate } from './newYorkTime';
 
-const MONTH_NAME =
-  '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
-
-const MONTH_PREFIXES = [
-  'jan',
-  'feb',
-  'mar',
-  'apr',
+const MONTH_FORMS = [
+  'jan(?:uary)?',
+  'feb(?:ruary)?',
+  'mar(?:ch)?',
+  'apr(?:il)?',
   'may',
-  'jun',
-  'jul',
-  'aug',
-  'sep',
-  'oct',
-  'nov',
-  'dec',
+  'june?',
+  'july?',
+  'aug(?:ust)?',
+  'sep(?:t(?:ember)?)?',
+  'oct(?:ober)?',
+  'nov(?:ember)?',
+  'dec(?:ember)?',
 ];
+
+const MONTH_NAME = `(?:${MONTH_FORMS.join('|')})`;
 
 const STATED_DATE = new RegExp(
   `\\b(${MONTH_NAME})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`,
@@ -77,7 +76,7 @@ function deadlineDatesStatedIn(prose: readonly unknown[]): Set<string> {
         const [, month, day, year] = match;
         const date = {
           year: Number(year),
-          monthIndex: MONTH_PREFIXES.indexOf(month.slice(0, 3).toLowerCase()),
+          monthIndex: MONTH_FORMS.findIndex((form) => new RegExp(`^${form}$`, 'i').test(month)),
           day: Number(day),
         };
         if (isRealCalendarDate(date)) dates.add(isoDate(date.year, date.monthIndex, date.day));
@@ -87,12 +86,23 @@ function deadlineDatesStatedIn(prose: readonly unknown[]): Set<string> {
   return dates;
 }
 
+function servedDayAppearsIn(prose: readonly unknown[], monthIndex: number, day: number): boolean {
+  const month = MONTH_FORMS[monthIndex];
+  const dayNumber = `0?${day}(?:st|nd|rd|th)?`;
+  const servedDay = new RegExp(
+    `\\b${month}\\.?\\s+${dayNumber}\\b|\\b${dayNumber}\\s+(?:of\\s+)?${month}\\b|(?<![\\d/])0?${monthIndex + 1}/0?${day}(?:/\\d{2,4})?(?![\\d/])`,
+    'i',
+  );
+  return prose.some((text) => typeof text === 'string' && servedDay.test(text));
+}
+
 /**
  * The one deadline date a program's own text gives when it differs from the served
  * deadline, as `YYYY-MM-DD` (#5158). The structured deadline and the prose are often
  * written in different cycles, so the reader cannot tell which is current; it flags the
- * disagreement instead of choosing. Text that states two or more deadline dates is not
- * flagged, so a date the reader misses can never make another look like a contradiction.
+ * disagreement instead of choosing. The flag is conservative and can miss a conflict: it
+ * names a date only when the text ties exactly one date to the deadline and the served
+ * month and day appear nowhere in the text.
  */
 export function programTextDeadlineConflict(
   deadline: unknown,
@@ -102,9 +112,9 @@ export function programTextDeadlineConflict(
   if (projected || stale) return undefined;
   const served = deadline instanceof Date ? deadline : new Date(String(deadline ?? ''));
   if (!deadline || Number.isNaN(served.getTime())) return undefined;
-  const { year, monthIndex, day } = newYorkCalendarDate(served);
-  const servedDate = isoDate(year, monthIndex, day);
+  const { monthIndex, day } = newYorkCalendarDate(served);
+  if (servedDayAppearsIn(prose, monthIndex, day)) return undefined;
   const stated = deadlineDatesStatedIn(prose);
-  if (stated.size !== 1 || stated.has(servedDate)) return undefined;
+  if (stated.size !== 1) return undefined;
   return [...stated][0];
 }
