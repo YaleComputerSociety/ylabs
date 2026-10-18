@@ -42,8 +42,7 @@ export const useRestoreOpenedResearchResultFocus = (): void => {
       const link = findResultLink(slug);
       if (link) {
         stop();
-        link.focus({ preventScroll: true });
-        if (isLaidOutOutsideViewport(link)) link.scrollIntoView({ block: 'center' });
+        link.focus({ preventScroll: !isLaidOutOutsideViewport(link) });
         return;
       }
       if (performance.now() > deadline) {
