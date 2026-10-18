@@ -430,4 +430,12 @@ describe('LabMembersList text size floor', () => {
     expect(screen.getByText('Professor of Synthetic Studies')).toBeTruthy();
     expect(undersizedRenderedTextClasses(container)).toEqual([]);
   });
+
+  it('builds the avatar initials from the first and last name, not a middle initial', () => {
+    renderMembers([
+      member('', { fname: 'Ada', lname: 'R. Fixture', displayName: 'Ada R. Fixture' }),
+    ]);
+    expect(screen.getByText('AF')).toBeTruthy();
+    expect(screen.queryByText('AR')).toBeNull();
+  });
 });

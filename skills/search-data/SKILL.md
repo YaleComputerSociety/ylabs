@@ -169,7 +169,15 @@ A request past that depth is answered with an empty page flagged `depthLimited: 
 That depth-limited page runs no search, so it reports no `estimatedTotalHits` at all instead of inventing one, and the client leaves the total it is already displaying untouched.
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
-The distribution carries `school`, `departments`, and `entityType`, the three facets the filter rail reads.
+The distribution carries `school`, `departments`, `entityType`, and `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), the facets the filter rail reads.
+`hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
+
+### A filter value nothing holds is dropped, not answered empty (#5146)
+
+Before any search runs, `resolveStudentFilterValuesInScope` (`server/src/services/researchFilterVocabulary.ts`) maps each school and department filter value case-insensitively to the spelling the visibility-scoped corpus holds and drops a value no row holds, so a hand-edited or stale link cannot answer 0 results with coverage-gap copy for a filter that does not exist.
+The vocabulary is a `distinct` read on `schools` and `departments`, cached for five minutes per scope, so a value a re-canonicalization added inside that window can be dropped until the cache expires; if it cannot be read the filters apply unchanged.
+When a value changed, the response carries `appliedFilters` with the values actually searched, and `/research` rewrites its URL, selects and chips to match without a second search; it also drops a `type` or `undergrad` value it cannot read from the URL.
+An admin low-quality-first browse skips the resolution, and so does a request with `resolveFilterValues: false`, which a `/research?dept=` department search sends because its department spellings come from the config list rather than the corpus, and dropping them would widen it to an unfiltered browse under the department heading.
 
 ### A facet count is the number of results applying it returns (#5101)
 
@@ -560,6 +568,9 @@ Every k and weight swept beat the keyword-first merge, and a semantic weight of 
 Two guards shape the fused list.
 When the all-words keyword leg of a multi-word query is empty, it is re-run with `matchingStrategy: 'last'`, so a phrase no row carries in full (`immigration policy`, or a `queryOnly` alias word such as `kids` inside a phrase) still has keyword evidence to anchor the fusion.
 It was measured as part of the design: without it, concept queries scored 0.74 rather than 0.80 and question-style queries 0.65 rather than 0.72 nDCG@10 on the development set.
+`last` never drops the first word, so one word no row carries at the front of the query (`xyzzy medieval plague podcast`) still emptied the keyword leg and with it the whole search, while the same word typed last was dropped harmlessly.
+So when the `last` retry is empty too, each of the first ten query words (Meilisearch reads no further) is searched for alone, every word but the last probed whole because only a query's last word is prefix-matched, and when some match no row the keyword leg re-runs, both strategies, over the words that do match, in the order they were typed; the deep keyword leg and the name-match re-read use that same text.
+Measured on Development, the leading-word variant of `medieval plague podcast` went from 1 served row to 10, sharing 9 of the topic query's top 10; `journey:eval --case=unmatched-word-keeps-topic-results` asserts that a topic query with an unmatched word added at the front, middle, or end shares a top row with the topic query and reports the overlap as a rate.
 A keyword leg still empty after that runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
 When the best keyword hit matches every query word at the start of a word in a name, with at least one whole-word match, semantic-only rows are withheld and the keyword leg's own order is served (`keywordLegTopHitIsNameMatch`), because the semantic neighbours of a name are other people with similar names and carry no signal about which same-named row is the person.
 The names read are `leadProfessorNames`, `professorNames`, and the entity title (`name`, `displayName`), because many faculty rows are titled after their person, and when the guard was measured their lead names were often not indexed (#3745): with titles excluded, the guard fired on none of 10 held-out name queries and person-name nDCG@10 fell from 0.750 to 0.580 (#3853).
@@ -669,7 +680,7 @@ Over 1,190 held-out single-edit typos of corpus words the rule recovered 93% (1,
 
 ### Program search corrects misspellings and matches unfinished words (#4537)
 
-Program search (`searchFellowships` in `server/src/services/fellowshipService.ts`) stays on MongoDB `$text` rather than moving to Meilisearch.
+Program search (`searchFellowships` in `server/src/services/fellowshipService.ts`) stays on MongoDB rather than moving to Meilisearch; since #5118 it matches and ranks in process rather than through `$text` (below).
 The visible catalog is about 181 rows, so a second index would add a reindex step to every Beta and Production promotion for little gain.
 Measured through the route on Development, a query serving the same rows before and after took the same time (`research` 220ms then 207ms, `study abroad` 201ms then 205ms, averages of five); `Com` rose from 65ms to 249ms because it now serves 112 rows instead of none.
 
@@ -679,8 +690,7 @@ Two things were missing, and both showed up in the queries students typed in Pro
 - **Spelling.** The query runs through `correctProgramSearchQuerySpelling` (`programSearchSpellingVocabulary.ts`) first, with a vocabulary built from served programs and cached for ten minutes.
   Besides the research rules, a word is never rewritten when the research corpus carries it in three or more rows (`econ` must not become `icon`), or when it starts a longer word in either corpus, because the search box searches as the student types and an unfinished word is not a typo (`fres` is `freshman`, not `fees`).
   Until the research vocabulary has loaded, or while it cannot load, program search fails closed and searches the typed spelling, so the same warm-up rule as research search applies to a script that calls `searchFellowships` directly.
-- **Prefixes.** Alongside `$text`, a second query requires every typed word of two or more letters, stop words aside, to start a word in one of the searchable fields (`programQueryWordPrefixClauses`).
-  The two are merged by id: `$text` matches first in their existing relevance-then-sort order, then prefix-only matches in sort order, and the total is the size of the union, so paging walks one stable list.
+- **Prefixes.** A typed word of two or more letters, stop words aside, also matches any word it starts in one of the searchable fields, so an unfinished word finds programs; #5118 moved this rule into `programSearchRelevance.ts`.
 
 The response carries `queryCorrection` exactly as research search does, the page shows "Showing results for X. Search instead for Y" under the search box (`client/src/components/shared/SearchSpellingNotice.tsx`, shared with `/research`), and choosing the typed spelling sends `correctSpelling=false` until the student edits the query.
 
@@ -692,6 +702,40 @@ Measured on Development through `GET /api/programs/search`, before to after:
 - The program journey cases (`programs-*`, `fellowships-*`) pass, 37 of 37 invariants, including the stable text-query total and the every-row-once walk.
 
 Some zero-result queries remain zero because no program covers the subject (`neurology`, `Machine`), which is coverage rather than search.
+
+### Program search requires every typed word and ranks title matches first (#5118)
+
+`$text` ORs its terms, and the query also carried every alias of any topic subject it named, so `economics` served 61 programs and `economics summer` served 119, and `economics` pulled in programs that only say `policy` or `psychology`.
+The text index weighted a title word like a description word, and the page then regrouped the results into deadline sections and sorted each by deadline, so the exact title `Blue Center` was second and `Computer Science Research Internship Program` was 32nd of 40 for `computer science`.
+
+`searchFellowships` now reads the filtered catalog (172 visible programs, about 290KB of searchable text on Development) and hands it to `rankProgramSearchMatches` in `server/src/services/programSearchRelevance.ts`:
+
+- A program matches when every content word of the query (stop words and single letters dropped) starts a word in a searchable field or shares its light stem (`economics` and `economic`, `studies` and `study`, `sciences` and `science`), so adding a word narrows the list except in three cases below that can serve a program the shorter query did not: a query that is a subject's own name or abbreviation, a query that is one of a subject's aliases, and the fallback for three or more words.
+  An abbreviation alias (`ai`, `ml`, `nlp`) matches whole words only, because `ai` starts `aid`.
+  A student's year word (`freshman`) is satisfied by the words of the year the source files (`first year`).
+- A topic word is not widened to its sibling fields: `economics` no longer serves `psychology`.
+  A query that is a subject's own name (`artificial intelligence`) or abbreviation also serves programs naming any of that subject's aliases, after the programs that carry the typed words.
+  A query that is one of a subject's aliases (`machine learning`) widens to the subject only when no program carries the typed words, because no program says `machine learning` and the AI programs are the honest answer.
+- A query of three or more words that no program carries in full serves the programs missing only one word, so a long question does not go empty; two-word queries never fall back to one word, which is what served the European Studies grant for `machine learning`.
+- Ranking: every-word matches first, then subject matches, then the one-word-short fallback; within each, a title equal to the query, then a title carrying the query as a phrase, then a title carrying every word, then a weighted field score (title 8, summary, competition type, purpose and student-facing category 3, eligibility 2, long text 1), then the requested sort.
+
+The page keeps that order: a result set that answers a search renders as one "Best matches" section, with archive records still apart, instead of deadline sections, because each card already shows whether it is open, closing soon or closed.
+`resultsRankedByRelevance` in the client reducer records whether the current results answered a search; an explicit sort choice still regroups and sorts as before.
+
+Measured on Development, before to after, through `GET /api/programs/search` for counts and the rendered page for order, judging the top five shown by whether the program's own text targets every concept in the query:
+
+| Query | Programs | Relevant in top five | Rank of the program titled with the query |
+|---|---|---|---|
+| `economics` | 61 to 11 | 1/5 to 4/5 | |
+| `economics summer` | 119 to 5 | 0/5 to 3/5 | |
+| `Blue Center` | 31 to 1 | 1/5 to 1/1 | 2 to 1 |
+| `machine learning` | 17 to 2 | 1/5 to 2/2 | |
+| `computer science` | 40 to 6 | 0/5 to 4/5 | 32 to 1 |
+| `history humanities research` | 158 to 20 | 1/5 to 4/5 | |
+
+Mean precision of what the page shows first went from 0.13 to 0.83.
+Median route time over five runs fell from between 302ms and 694ms to between 274ms and 370ms, because the page fetch no longer reads up to 100 full documents a query used to serve.
+The text index on `fellowships` stays declared; removing it is a schema change with its own issue.
 
 ## Data shape rules
 

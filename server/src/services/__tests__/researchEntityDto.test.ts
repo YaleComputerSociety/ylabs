@@ -762,6 +762,35 @@ describe('researchEntityDto', () => {
     expect(retiredCount.hasUndergradHostingEvidence).toBeUndefined();
   });
 
+  describe('an official roster that lists undergraduates (#5232)', () => {
+    const rosterRow = {
+      id: 'entity-official-roster',
+      slug: 'official-roster-lab',
+      name: 'Official Roster Lab',
+      rosterEnrichment: {
+        state: 'current',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+        undergraduates: [{ name: 'Synthetic Student', status: 'past' }],
+      },
+    };
+
+    it('serves the hosted flag on the list card without serving the roster', () => {
+      const [card] = addResearchEntitySearchAliases({ hits: [rosterRow] }).researchEntities;
+      expect(card.hasUndergradHostingEvidence).toBe(true);
+      expect(card).not.toHaveProperty('rosterEnrichment');
+    });
+
+    it('takes the verdict a narrowing caller read from the whole row', () => {
+      const { rosterEnrichment: _withheld, ...narrowed } = rosterRow;
+      expect(toPublicResearchEntityDto(narrowed).hasUndergradHostingEvidence).toBeUndefined();
+      expect(
+        toPublicResearchEntityDto(narrowed, { hasHostedUndergraduates: true })
+          .hasUndergradHostingEvidence,
+      ).toBe(true);
+    });
+  });
+
   describe('undergraduate access fields no lane fills (#3579)', () => {
     const storedRow = {
       id: 'entity-unfilled-access',
@@ -2145,7 +2174,7 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     'Department',
     'School',
     'Name',
-    'Lead identity',
+    'Who leads it',
   ];
   const creditedLabels = (row: Record<string, unknown>): string[] =>
     (
@@ -2196,7 +2225,7 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     const labels = creditedLabels({ departments: ['Earth & Planetary Sciences'] });
     expect(labels).not.toContain('Research summary');
     expect(labels).toContain('Name');
-    expect(labels).toContain('Lead identity');
+    expect(labels).toContain('Who leads it');
   });
 
   it('drops the research-summary credit when the only card is built from topics', () => {

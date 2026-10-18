@@ -17,6 +17,11 @@ import {
   type CorpusAccountReference,
 } from './corpusAccountReferences';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
+import {
+  carriedRowCount,
+  carryDevelopmentArchive,
+  type DevelopmentArchiveCarryReport,
+} from './archivedTombstoneMirror';
 import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
 
 export { parseMongoTarget };
@@ -472,8 +477,13 @@ async function copyCollection(
   }
 }
 
-export function syncCountMismatches(after: readonly SyncCollectionPlan[]): SyncCollectionPlan[] {
-  return after.filter((row) => row.sourceCopyCount !== row.targetCount);
+export function syncCountMismatches(
+  after: readonly SyncCollectionPlan[],
+  carry?: DevelopmentArchiveCarryReport,
+): SyncCollectionPlan[] {
+  return after.filter(
+    (row) => row.sourceCopyCount + carriedRowCount(carry, row.name) !== row.targetCount,
+  );
 }
 
 export async function syncAccountReferences(
@@ -493,6 +503,7 @@ export async function applySync(
   collections: SyncCollection[],
   clearedCollectionNames: string[],
   verify: () => Promise<void>,
+  afterCutover?: (backups: ReadonlyMap<string, string>) => Promise<void>,
 ): Promise<void> {
   const { blockers } = await syncAccountReferences(sourceDb, collections);
   if (blockers.length > 0) throw new Error(`Sync blocked: ${blockers.join(' ')}`);
@@ -503,6 +514,7 @@ export async function applySync(
     backupPrefix: '__beta_backup_',
     label: 'Beta to Development sync',
     stage: (collection, operationId) => copyCollection(sourceDb, targetDb, collection, operationId),
+    afterCutover,
     verify,
   });
 }
@@ -557,21 +569,32 @@ async function main(): Promise<void> {
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    await applySync(betaDb, developmentDb, collections, clearedDevelopmentCollections, async () => {
-      after = await buildPlan(betaDb, developmentDb, collections);
-      const mismatches = syncCountMismatches(after);
-      if (mismatches.length > 0) {
-        throw new Error(
-          `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-        );
-      }
-    });
+    let archiveCarry: DevelopmentArchiveCarryReport | undefined;
+    await applySync(
+      betaDb,
+      developmentDb,
+      collections,
+      clearedDevelopmentCollections,
+      async () => {
+        after = await buildPlan(betaDb, developmentDb, collections);
+        const mismatches = syncCountMismatches(after, archiveCarry);
+        if (mismatches.length > 0) {
+          throw new Error(
+            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+          );
+        }
+      },
+      async (backups) => {
+        archiveCarry = await carryDevelopmentArchive(developmentDb, backups);
+      },
+    );
     const result = {
       ...summary,
       accountReferences,
       status: 'applied',
       collections: after,
       clearedDevelopmentCollections,
+      developmentArchiveCarry: archiveCarry,
     };
     console.log(JSON.stringify(result, null, 2));
     writeOutput(result, options.output);

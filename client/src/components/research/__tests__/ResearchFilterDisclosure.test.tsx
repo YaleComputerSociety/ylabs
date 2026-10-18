@@ -18,12 +18,14 @@ const renderFilters = (
     selectedEntityType: '',
     selectedSchool: '',
     selectedDepartment: '',
+    selectedHostsUndergrads: false,
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
     onEntityTypeChange: vi.fn(),
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
+    onHostsUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -36,6 +38,44 @@ afterEach(() => {
 });
 
 describe('ResearchFilterDisclosure', () => {
+  it('says the filter options are loading, not that nothing can narrow the results, before the first counts arrive (#5146)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: {}, isLoadingOptions: true });
+
+    expect(screen.getByText('Filter options will appear when this search finishes.')).toBeTruthy();
+    expect(screen.queryByText('No additional filters can narrow these results.')).toBeNull();
+  });
+
+  it('offers the hosted-undergraduates filter with the count it returns, and a chip that removes it', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
+        hostsUndergrads: { true: 7 },
+      },
+    });
+
+    const toggle = screen.getByRole('checkbox', {
+      name: 'Has hosted undergraduate researchers (7)',
+    });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
+
+    rerender(<ResearchFilterDisclosure {...props} selectedHostsUndergrads />);
+    expect(
+      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (7)' }),
+    ).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
+    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the hosted-undergraduates filter when no result carries the evidence', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: { hostsUndergrads: { true: 0 } } });
+
+    expect(screen.queryByRole('checkbox', { name: /hosted undergraduate/ })).toBeNull();
+  });
+
   it('moves and contains mobile focus, then restores the trigger on Escape and backdrop close', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
     renderFilters({ selectedSchool: 'Yale College' });
@@ -229,8 +269,8 @@ describe('ResearchFilterDisclosure', () => {
     const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
       'All types',
-      'Core Facility (50)',
-      'Faculty Research (2149)',
+      'Core facility (50)',
+      'Faculty research (2149)',
       'Lab (1322)',
     ]);
 
@@ -259,8 +299,8 @@ describe('ResearchFilterDisclosure', () => {
     const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
       'All types',
-      'Faculty Project (2)',
-      'Faculty Research (2149)',
+      'Faculty project (2)',
+      'Faculty research (2149)',
     ]);
     expect(Array.from(typeSelect.options).map((option) => option.value)).toEqual([
       '',
@@ -276,8 +316,8 @@ describe('ResearchFilterDisclosure', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
-    const chip = screen.getByRole('button', { name: 'Remove Type: Core Facility' });
-    expect(chip.textContent).toContain('Type: Core Facility');
+    const chip = screen.getByRole('button', { name: 'Remove Type: Core facility' });
+    expect(chip.textContent).toContain('Type: Core facility');
     fireEvent.click(chip);
     expect(props.onEntityTypeChange).toHaveBeenCalledWith('');
   });

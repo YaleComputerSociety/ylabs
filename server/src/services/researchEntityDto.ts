@@ -25,6 +25,7 @@ import {
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
 import {
+  isCoursePageUrl,
   isDisallowedResearchEntitySourceUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
@@ -32,7 +33,7 @@ import {
   isPostingPageCitedAsResearchWebsite,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
-  withoutUncreditedLinkedPublicationOrDocumentCitations,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
@@ -543,6 +544,12 @@ export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
   leadMemberNames?: readonly string[];
+  /**
+   * The hosting verdict read from the whole row, for a caller that narrowed away one of
+   * its inputs before building the DTO: the detail route withholds `rosterEnrichment`
+   * (#5232).
+   */
+  hasHostedUndergraduates?: boolean;
 }
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
@@ -656,7 +663,8 @@ function derivePublicResearchEntityDto(
           !isPressOrNewsHostUrl(url) &&
           !isMapOrDirectionsUrl(url) &&
           !isInstitutionalPublicityPageUrl(url) &&
-          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity);
+          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity) &&
+          !isCoursePageUrl(url);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }
@@ -715,7 +723,9 @@ function derivePublicResearchEntityDto(
     }
   }
 
-  if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
+  if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
+    dto.hasUndergradHostingEvidence = true;
+  }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 
   // The browse card is the same line `shortDescription` above carries, because both
@@ -749,10 +759,11 @@ function derivePublicResearchEntityDto(
     ...dto,
     shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
   };
-  dto.sourceUrls = withoutUncreditedLinkedPublicationOrDocumentCitations(
+  dto.sourceUrls = withoutUncreditedCreditOnlyCitations(
     dto.sourceUrls,
     group.fieldProvenance,
     servedPayload,
+    group,
   );
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(

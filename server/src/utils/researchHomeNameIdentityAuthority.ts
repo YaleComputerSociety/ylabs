@@ -178,6 +178,49 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
 }
 
+const PROFILE_HOME_CALL_TO_ACTION_RE = /^learn\s+more$/i;
+const MIN_SENTENCE_NAME_WORDS = 6;
+const FIRST_PERSON_CLAUSE_IN_NAME_RE = /\S\s+(?:We|Our|My)\s+[a-z]/;
+
+function isSentenceShapedName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (FIRST_PERSON_CLAUSE_IN_NAME_RE.test(name)) return true;
+  return name.endsWith('.') && name.split(/\s+/).length >= MIN_SENTENCE_NAME_WORDS;
+}
+
+/**
+ * A value `official-profile-pi-backfill` would assert as a profile-linked home's name at
+ * 0.96 that names no organization: a link label ("Lab", "Author Website"), a placeholder
+ * ("n/a"), a person-page label, a site menu item ("About Us"), or prose. The lane refuses
+ * one in every arm, and the materializer ignores one the lane stored before it did (#5226).
+ */
+export function isInadmissibleProfileLinkedHomeName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return (
+    isNonIdentifyingLinkLabelName(name) ||
+    PROFILE_HOME_CALL_TO_ACTION_RE.test(name) ||
+    isPlaceholderEntityName(name) ||
+    isPersonPageLinkLabelName(name) ||
+    isNavigationMenuPhrase(name) ||
+    isSentenceShapedName(name)
+  );
+}
+
+const PROFILE_LINKED_HOME_SOURCE_NAME = 'official-profile-pi-backfill';
+
+/**
+ * A name `official-profile-pi-backfill` asserted that `isInadmissibleProfileLinkedHomeName`
+ * now refuses. The materializer ignores such an observation, refuses such a served name, and
+ * the gate withholds a row still headed by one when nothing can replace it (#5226).
+ */
+export function isRefusedProfileLinkedHomeName(value: unknown, sourceName: unknown): boolean {
+  return (
+    sourceName === PROFILE_LINKED_HOME_SOURCE_NAME && isInadmissibleProfileLinkedHomeName(value)
+  );
+}
+
 // The furniture a page hangs off a brand ("Google Scholar Profile", "ORCID
 // Citations") and the head noun `personScopedResearchEntityNameFromPersonName`
 // appends ("Google Scholar Lab"). Peeled from the END only, and only while every

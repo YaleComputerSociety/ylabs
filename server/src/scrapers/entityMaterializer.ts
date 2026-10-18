@@ -98,6 +98,7 @@ import {
   personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
   isOffSitePageTitleForPersonScopedName,
+  isRefusedProfileLinkedHomeName,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -224,6 +225,10 @@ import {
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import {
+  storedFieldIsCreditedToACoursePage,
+  withoutCoursePageEvidence,
+} from './coursePageEvidenceScreen';
+import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
 } from './personProfileTopicScreen';
@@ -299,6 +304,7 @@ import { splitName } from './utils/scraperHelpers';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import {
   isBoilerplatePlatformHostUrl,
+  isCoursePageUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
@@ -307,7 +313,7 @@ import {
   recordSpecificApplicationPortalIdentity,
   isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
-  withoutUncreditedLinkedPublicationOrDocumentCitations,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { namesAPostingRatherThanResearch } from '../utils/postingName';
@@ -1779,6 +1785,18 @@ const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
   'undergraduateLogisticsCurrentAvailability',
 ]);
 
+/**
+ * A name this lane stored before it refused that shape at the name step. A refusal retracts
+ * nothing, so the stored value stays live (#5226). The type and kind it was paired with then
+ * fall through `withoutUnpairedProfileHomeIdentity`.
+ */
+function isInadmissibleProfileHomeName(observation: MaterializerObservationLike): boolean {
+  return (
+    (observation.field === 'name' || observation.field === 'displayName') &&
+    isRefusedProfileLinkedHomeName(observation.value, observation.sourceName)
+  );
+}
+
 export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
   observation: MaterializerObservationLike,
@@ -1793,6 +1811,13 @@ export function shouldIgnoreObservationForEntityMaterialization(
     return true;
   }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
+    return true;
+  }
+  if (
+    entityType === 'user' &&
+    (observation.field === 'website' || observation.field === 'websiteUrl') &&
+    isCoursePageUrl(observation.value)
+  ) {
     return true;
   }
   if (
@@ -1830,6 +1855,15 @@ export function shouldIgnoreObservationForEntityMaterialization(
     isResearchEntityObservationType(entityType) &&
     isGrantLaneObservationOutsideEnrichment(observation)
   ) {
+    return true;
+  }
+  // A course page describes a class, so nothing read off it is evidence about a research
+  // entity: dropping it here keeps an already-stored course name, type or description
+  // inert on every resolve without a lock (#5213).
+  if (isResearchEntityObservationType(entityType) && isCoursePageUrl(observation.sourceUrl)) {
+    return true;
+  }
+  if (isResearchEntityObservationType(entityType) && isInadmissibleProfileHomeName(observation)) {
     return true;
   }
   if (
@@ -2164,7 +2198,8 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       // serve-time predicate misses the search-list DTO, so refusing it here is what
       // actually empties the stored field (#3184).
       !isMapOrDirectionsUrl(url) &&
-      !isBoilerplatePlatformHostUrl(url),
+      !isBoilerplatePlatformHostUrl(url) &&
+      !isCoursePageUrl(url),
   );
   if (!entityIdentity) return kept;
   const entityForMatch: ResearchEntityIdentity = {
@@ -7452,8 +7487,8 @@ function enforceResearchEntityNameAuthority(input: {
   // provenance that candidate would bring with it. Judging a candidate against
   // the outgoing value's URL would clear another person's eponymous lab whenever
   // the refused value happened to come from somewhere else.
-  const servedProvenanceSourceUrl = (field: string): unknown =>
-    objectRecord(set[`fieldProvenance.${field}`] ?? entityDoc?.fieldProvenance?.[field]).sourceUrl;
+  const servedProvenance = (field: string): Record<string, unknown> =>
+    objectRecord(set[`fieldProvenance.${field}`] ?? entityDoc?.fieldProvenance?.[field]);
   // A candidate with no matching observation provenance (a manual value) has no
   // URL of its own, so the record's own linked site is the last corroboration
   // available rather than letting the foreign-lab check fail open.
@@ -7473,6 +7508,7 @@ function enforceResearchEntityNameAuthority(input: {
     isPlaceholderEntityName(candidateName) ||
     namesAPostingRatherThanResearch(candidateName) ||
     isPostingPageUrl(websiteUrl) ||
+    isCoursePageUrl(websiteUrl) ||
     // An external platform's brand names no research home, and it is refused here
     // as well as at ingest for the same reason filler is: an already-stored
     // "Google Scholar" is re-projected from its own active observation on every
@@ -7530,9 +7566,11 @@ function enforceResearchEntityNameAuthority(input: {
   for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
     if (input.manuallyLockedFields.includes(field)) continue;
     const servedValue = set[field] ?? entityDoc?.[field];
+    const provenance = servedProvenance(field);
     if (
       !textValue(servedValue) ||
-      !namesNothingUsable(servedValue, servedProvenanceSourceUrl(field))
+      (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
+        !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName))
     ) {
       continue;
     }
@@ -9247,7 +9285,7 @@ export async function projectFromLog(
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
       const projected = documentAsProjected(set, unset, entityDoc);
-      const keptCitations = withoutUncreditedLinkedPublicationOrDocumentCitations(
+      const keptCitations = withoutUncreditedCreditOnlyCitations(
         citedThisPass,
         projected.fieldProvenance,
         projected,
@@ -9328,7 +9366,7 @@ export async function projectFromLog(
         const projected = documentAsProjected(set, unset, entityDoc);
         const citableProvenanceSourceUrl =
           provenanceSourceUrl &&
-          withoutUncreditedLinkedPublicationOrDocumentCitations(
+          withoutUncreditedCreditOnlyCitations(
             [provenanceSourceUrl],
             projected.fieldProvenance,
             projected,
@@ -10056,10 +10094,9 @@ export async function materializeEntity(
   }
 
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    obs = withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc);
-    researchAreaEvidenceObservations = withoutPersonProfileTopicsOnOrganizationRow(
-      researchAreaEvidenceObservations,
-      entityDoc,
+    obs = withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc));
+    researchAreaEvidenceObservations = withoutCoursePageEvidence(
+      withoutPersonProfileTopicsOnOrganizationRow(researchAreaEvidenceObservations, entityDoc),
     );
   }
 
@@ -10346,6 +10383,7 @@ export async function materializeEntity(
   const storedResearchAreasEvidenceRetired =
     researchAreasHaveNoLiveEvidence &&
     (storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
+      storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
   const projection = await projectFromLog(entityType, {

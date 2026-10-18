@@ -2,6 +2,7 @@ import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
 import {
   buildSourceFieldContributions,
+  contributionFieldIsStoredOnRow,
   contributionLabelIsServed,
 } from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
@@ -295,18 +296,33 @@ const citationIdentityKey = (value: unknown): string | undefined => {
   return `${host}${path}${url.search}`;
 };
 
+function rowFieldHoldsValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(rowFieldHoldsValue);
+  return true;
+}
+
 /**
  * The pages a row's student-facing fields were read from, as `fieldProvenance` credits
  * them. Bookkeeping provenance (`leadVerification`, a content hash) is not a fact a
  * student reads, so it does not make a page a source, and neither does an entry that
- * outlived the value it recorded (#3922).
+ * outlived the value it recorded (#3922): the served label must hold a value, and so
+ * must the credited field itself on `row`, because a label such as Name is always
+ * served and one label covers several fields (#5210). A field never stored on a row
+ * holds no value there, so a lead-identity credit keeps nothing.
  */
 export function servedFieldSourceUrlKeys(
   fieldProvenance: unknown,
   servedPayload: Record<string, unknown>,
+  row: Record<string, unknown> = servedPayload,
 ): Set<string> {
   return new Set(
-    buildSourceFieldContributions(fieldProvenance, () => true)
+    buildSourceFieldContributions(
+      fieldProvenance,
+      () => true,
+      (field) => contributionFieldIsStoredOnRow(field) && rowFieldHoldsValue(row[field]),
+    )
       .filter((contribution) =>
         contribution.contributions.some((label) => contributionLabelIsServed(label, servedPayload)),
       )
@@ -315,25 +331,83 @@ export function servedFieldSourceUrlKeys(
   );
 }
 
+const NATIONAL_LABORATORY_HOSTS = new Set([
+  'ameslab.gov',
+  'anl.gov',
+  'bnl.gov',
+  'fnal.gov',
+  'inl.gov',
+  'jlab.org',
+  'lanl.gov',
+  'lbl.gov',
+  'llnl.gov',
+  'netl.doe.gov',
+  'nrel.gov',
+  'ornl.gov',
+  'pnnl.gov',
+  'pppl.gov',
+  'sandia.gov',
+  'slac.stanford.edu',
+  'srnl.doe.gov',
+  'srnl.gov',
+]);
+
+const SITE_LANDING_SEGMENT = /^(?:world|home|index|default|main|en)(?:\.[a-z]{2,5})?$/i;
+
 /**
- * Drops a paper, DOI, PubMed record, file share or document from a row's citations
- * unless one of the row's student-facing fields was read from it.
+ * The home page of a US Department of Energy national laboratory: the institution a
+ * research paragraph links to, never a page about one Yale row's research (#5050).
+ *
+ * The roster lane refuses such a link as a website by its text, but a stored citation
+ * from before that fix is re-admitted on every pass (#3476), and a lane that later
+ * read the page recorded provenance for it. Only the bare home page is matched: a
+ * deeper page on a laboratory host can be a Yale person's own group or facility page.
+ * Generic institution roots stay cited, because on Development nearly every non-Yale
+ * host root a row cites is a personal lab site (#5210).
+ */
+export function isNationalLaboratoryHomePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.$/, '');
+  if (!NATIONAL_LABORATORY_HOSTS.has(host)) return false;
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.length === 0 || (segments.length === 1 && SITE_LANDING_SEGMENT.test(segments[0]));
+}
+
+/**
+ * A citation that is absent provenance unless a lane read a served field from it: a
+ * paper, DOI, PubMed record, file share or document (#5114), or a national laboratory
+ * home page (#5210).
+ */
+export function isCreditOnlyCitationUrl(value: unknown): boolean {
+  return isLinkedPublicationOrDocumentUrl(value) || isNationalLaboratoryHomePageUrl(value);
+}
+
+/**
+ * Drops a credit-only citation (`isCreditOnlyCitationUrl`) from a row's citations
+ * unless one of the row's student-facing fields, still holding a value, was read from it.
  *
  * Such a link reaches `sourceUrls` as a value, never as the page a lane read: the
  * roster lane cites the website it harvests from a profile, and before #5051/#5052 that
- * harvest took a paper or a shared PDF as the website. Refusing the website (and an
- * operator clearing it) left the same link cited, because a stored citation is
- * re-admitted on every pass (#3476). A document a lane actually read and took a served
- * field from is real provenance, which is what the `fieldProvenance` exemption keeps.
+ * harvest took a paper, a shared PDF or a national laboratory's home page as the
+ * website. Refusing the website (and an operator clearing it) left the same link cited,
+ * because a stored citation is re-admitted on every pass (#3476). A document a lane
+ * actually read and took a served field from is real provenance, which is what the
+ * `fieldProvenance` exemption keeps. `row` is where the credited field's own value is
+ * read, and defaults to `servedPayload`.
  */
-export function withoutUncreditedLinkedPublicationOrDocumentCitations<T>(
+export function withoutUncreditedCreditOnlyCitations<T>(
   sourceUrls: readonly T[],
   fieldProvenance: unknown,
   servedPayload: Record<string, unknown>,
+  row: Record<string, unknown> = servedPayload,
 ): T[] {
-  const credited = servedFieldSourceUrlKeys(fieldProvenance, servedPayload);
+  const credited = servedFieldSourceUrlKeys(fieldProvenance, servedPayload, row);
   return sourceUrls.filter((url) => {
-    if (!isLinkedPublicationOrDocumentUrl(url)) return true;
+    if (!isCreditOnlyCitationUrl(url)) return true;
     const key = citationIdentityKey(url);
     return Boolean(key && credited.has(key));
   });
@@ -1016,6 +1090,25 @@ export function isPostingPageUrl(value: unknown): boolean {
     .some((segment) => POSTING_PAGE_SEGMENT.test(segment));
 }
 
+const COURSE_PAGE_PARENT_SEGMENT = /^courses?$/i;
+
+const COURSE_CATALOG_HOSTS: ReadonlySet<string> = new Set(['courses.yale.edu', 'coursetable.com']);
+
+/**
+ * A course's own page describes a class, so it is never a research home, never names a
+ * row and is never evidence about one (#5213). A bare `/courses` listing on a research
+ * home's own site is left an ordinary citation, so a course slug must follow the segment.
+ */
+export function isCoursePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (COURSE_CATALOG_HOSTS.has(hostnameWithoutWwwAlias(url))) return true;
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.some(
+    (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
+  );
+}
+
 /**
  * A page about a collective offered as one person's research website: a research
  * group's own root, a department's audience-recruitment page, a department's hiring
@@ -1044,8 +1137,8 @@ export function isUmbrellaPageCitedByPerson(
 }
 
 /**
- * A department's audience-recruitment, hiring or programme page, which describes what
- * the department offers rather than one lab or person, so it is never the source of a
+ * A department's audience-recruitment, hiring, programme or course page, which describes
+ * what the department offers rather than one lab or person, so it is never the source of a
  * row's description. A research group's own host, its `/lab/` path on a shared school
  * host, or a personal-site path is exempt: its openings page is the group writing about
  * itself.
@@ -1060,7 +1153,8 @@ export function isDepartmentCollectivePageUrl(value: unknown): boolean {
   return (
     isDepartmentAudiencePageUrl(value) ||
     isDepartmentHiringPageUrl(value) ||
-    isDepartmentProgrammePageUrl(value)
+    isDepartmentProgrammePageUrl(value) ||
+    isCoursePageUrl(value)
   );
 }
 
@@ -1653,6 +1747,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'department-opportunities-path'
   | 'school-section-page'
   | 'posting-page'
+  | 'course-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1705,6 +1800,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'department-opportunities-path',
   'school-section-page',
   'posting-page',
+  'course-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1778,6 +1874,7 @@ export function researchHomeWebsiteUrlDecision(
   // the donor whose fund it commemorates rather than the row's subject (#2460).
   if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
   if (isPostingPageCitedAsResearchWebsite(raw, entity)) return refuse('posting-page');
+  if (isCoursePageUrl(raw)) return refuse('course-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {

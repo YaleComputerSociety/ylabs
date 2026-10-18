@@ -249,6 +249,8 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
   The guard counts and the share of stored values withheld are reported, never gated.
 
 `programs` also runs `programs-student-year-words-reach-sourced-year`, which is not a surface case: it asserts that a query for `freshmen` or `freshman` serves every row a query for `first-year` serves.
+It also runs `programs-an-added-word-narrows-the-results`, which asserts that every program a two-word search serves (`economics summer`) is served by its first word alone (`economics`), because program search requires every typed word (#5118).
+The pair holds only because the two-word query is neither a subject's name, abbreviation, or alias nor three words long, since those queries can also serve programs missing a typed word (`skills/search-data/SKILL.md`, #5118).
 
 The programs corpus is small enough that three cases walk all of it, so their rates are over the whole served surface rather than the top of a ranking, and `--window` changes only the cold-browse rates.
 A stored row whose `updatedAt` is later than the walk's start describes a different version than the one served, so it is counted as `skippedStaleIndex` and left out, and the corpus fingerprint over the program collection makes a failure inconclusive when the collection moved during the case, on the same one-directional reasoning as the research cases.

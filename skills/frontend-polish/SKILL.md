@@ -39,6 +39,7 @@ These are the tells that have actually been measured in this client, so check ea
 - **Pressed state, not just hover.** An interactive card or button needs an `:active` that moves, or it feels like a picture of a button.
 - **Sentence case in headings and labels**, not Title Case On Every Header.
 The `/programs` quick filters, board section titles, cycle badges, and program modal headings are held to it by `fellowships.test.tsx` and `FellowshipModal.test.tsx` (#4273).
+The research kind labels come from one source, `entityKindLabel` in `client/src/utils/researchEntityCopy.ts`, which returns sentence case ("Faculty research", "Core facility"), so the detail chip and the browse card never need their own case conversion (#5111).
 - **No em dash anywhere**, per `AGENTS.md`. Plain hyphens.
 - **Real copy and real data.** No Lorem Ipsum, no "Acme", no `99.99%`, no `Jane Doe`. No "Elevate", "Seamless", "Unleash", "Next-Gen". No `Oops!` and no exclamation mark in a success message: "Connection failed. Please try again."
 - **No three equal cards** as a feature row, and no equal-height cards forced by flex when the content length varies.
@@ -57,6 +58,9 @@ Take the tells, not the taste.
 - Pages scroll inside `[data-scroll-container]`, not the document, so PageDown and Space only work while focus is inside it.
 `ScrollToTop` moves focus to `#main-content` (with `preventScroll`) on every client-side push or replace navigation, and on back navigation when nothing holds focus.
 A page that wants focus somewhere else after a route change sets it in its own mount effect, which runs after that and wins.
+`/research` is that case on back navigation: a result card records the profile it opened against its history entry, and `useRestoreOpenedResearchResultFocus` puts focus back on that card's link when the student returns, so a keyboard user resumes where they left off instead of at the top of the list.
+A research profile opened from results carries the results' search string in its location state, and its back link returns through history (`navigate(-depth)`), so the restored scroll, focus, and loaded pages all come back.
+It reads "Back to results" when that search string holds a query or a filter, "Back to research" when it came from the unfiltered browse view, and "Browse research", linking to `/research`, when the profile was reached without that state.
 - `[data-scroll-container]` is `relative` so it is the containing block for every absolutely positioned descendant, `sr-only` text included.
 Without it, such an element resolves against the viewport, escapes the scroller's clip, and grows the document past the window, so a wheel at the end of the page scrolls the whole shell out of view (#4136).
 The student-journey smoke asserts the document never outgrows the window.
@@ -128,6 +132,8 @@ The footer shift this removed scored 0.094 on `/about` at 1440px and 0.159 at 37
 - Validate on submit and on blur, with errors tied to their field.
 - Support autofill and password managers; do not block paste.
 - Submitting is idempotent and keyboard accessible (Enter submits).
+- An autosaved field shows its state from the first keystroke, never a blank line while a debounce waits, and flushes a pending save on blur, `pagehide`, a hidden document, and unmount, and holds an unload while a save is pending or in flight (`client/src/hooks/usePlanNoteAutosave.ts`, #5126).
+The unload flush goes through `client/src/utils/keepalivePut.ts`, a direct `fetch` with `keepalive`, because axios reaches its adapter through a promise chain that an unloading document never runs, so an axios request made from `pagehide` is silently never sent.
 
 ## Animation
 

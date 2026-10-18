@@ -7,9 +7,9 @@ const KIND_LABELS: Record<string, string> = {
   program: 'Program',
   initiative: 'Initiative',
   group: 'Group',
-  individual: 'Faculty Research',
-  solo: 'Faculty Research',
-  core_facility: 'Core Facility',
+  individual: 'Faculty research',
+  solo: 'Faculty research',
+  core_facility: 'Core facility',
 };
 
 const ENTITY_TYPE_TO_KIND: Record<string, string> = {
@@ -44,7 +44,7 @@ const researchHomeLabel = (entity?: ResearchEntityCopyInput | null): string =>
   KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research';
 
 const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
-  AFFILIATED_LAB: 'Affiliated lab',
+  AFFILIATED_LAB: 'Affiliated',
   MEMBER_RESEARCH_AREA: 'Member',
 };
 
@@ -97,7 +97,7 @@ export const researchEntityTitle = (entity?: ResearchEntityCopyInput | null): st
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isCreativePracticeEntity(entity)) return CREATIVE_PRACTICE_KIND_LABEL;
-  if (isFacultyResearchEntity(entity)) return 'Faculty Research';
+  if (isFacultyResearchEntity(entity)) return 'Faculty research';
   return KIND_LABELS[effectiveEntityKind(entity)] || 'Research';
 };
 
@@ -114,10 +114,10 @@ const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
   LAB: 'Lab',
   CENTER: 'Center',
   INSTITUTE: 'Institute',
-  FACULTY_RESEARCH_AREA: 'Faculty Research',
-  FACULTY_PROJECT: 'Faculty Project',
+  FACULTY_RESEARCH_AREA: 'Faculty research',
+  FACULTY_PROJECT: 'Faculty project',
   INITIATIVE: 'Initiative',
-  CORE_FACILITY: 'Core Facility',
+  CORE_FACILITY: 'Core facility',
 };
 
 // `researchEntityTypes` rather than the label map's keys, so the accept-list has
@@ -411,3 +411,6 @@ export const sanitizeFacultyResearchCopy = (
     .replace(/\byour\s+lab\b/gi, 'this research profile')
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
 };
+
+export const HOSTED_UNDERGRADUATES_LABEL = 'Has hosted undergraduate researchers';
+export const HOSTED_UNDERGRADUATES_CHIP_VALUE = 'Hosted before';

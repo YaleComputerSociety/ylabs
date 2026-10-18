@@ -237,27 +237,20 @@ describe('program search service', () => {
     });
   });
 
-  it('bounds direct program search query and filters before building Mongo filters', async () => {
+  it('bounds direct program search filters and keeps the query text out of the Mongo filter', async () => {
     await searchPrograms({
       query: ` ${'q'.repeat(700)} `,
       yearOfStudy: Array.from({ length: 60 }, (_, index) => `Year ${index}`),
       purpose: ['x'.repeat(200)],
     });
 
-    const filter = mocks.find.mock.calls
-      .map(([candidate]) => candidate)
-      .find((candidate) => candidate?.$text);
-    expect(filter.$text).toEqual({ $search: 'q'.repeat(512) });
+    const filter = mocks.find.mock.calls[0][0];
+    expect(filter.$text).toBeUndefined();
+    expect(JSON.stringify(filter)).not.toContain('qqq');
     expect(filter.yearOfStudy.$in).toHaveLength(50);
     expect(filter.yearOfStudy.$in).toContain('Year 49');
     expect(filter.yearOfStudy.$in).not.toContain('Year 50');
     expect(filter.purpose.$in).toEqual(['x'.repeat(120)]);
-    const prefixFilter = mocks.find.mock.calls
-      .map(([candidate]) => candidate)
-      .find((candidate) => candidate?.$and);
-    expect(prefixFilter.$text).toBeUndefined();
-    expect(prefixFilter.purpose).toEqual({ $in: ['x'.repeat(120)] });
-    expect(prefixFilter.$and[0].$or[0].title.$regex).toBe(`(?:^|[^a-z0-9])${'q'.repeat(512)}`);
   });
 
   it('drops non-string direct program filter values and avoids object pagination coercion', async () => {

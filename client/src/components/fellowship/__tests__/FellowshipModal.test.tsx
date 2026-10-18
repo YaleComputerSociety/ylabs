@@ -307,6 +307,46 @@ describe('FellowshipModal', () => {
     expect(within(screen.getByRole('dialog')).getAllByText(answer).length).toBeGreaterThan(0);
   });
 
+  it('flags a deadline the program text gives on another day (#5158)', () => {
+    renderModal({ deadlineTextConflict: '2026-02-19' });
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        /own text gives Feb 19, 2026\. Confirm the deadline on the official page\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says nothing about the text when it agrees with the deadline', () => {
+    renderModal({ deadlineTextConflict: null });
+
+    expect(within(screen.getByRole('dialog')).queryByText(/own text gives/)).toBeNull();
+  });
+
+  it('names the program on its watch control and flips the verb once watched', () => {
+    const { rerender } = renderModal();
+
+    const watch = screen.getByRole('button', { name: `Watch ${fellowship.title}` });
+    expect(watch.getAttribute('aria-pressed')).toBe('false');
+
+    rerender(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={fellowship}
+            isOpen
+            isFavorite
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const stop = screen.getByRole('button', { name: `Stop watching ${fellowship.title}` });
+    expect(stop.getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('does not render an application action for unsafe application links', () => {
     const { container } = renderModal({ applicationLink: 'javascript:alert(1)' });
 

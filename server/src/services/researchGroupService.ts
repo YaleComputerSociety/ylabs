@@ -13,10 +13,7 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  officialRosterUndergraduateStatuses,
-  type OfficialRosterUndergraduateStatus,
-} from '../models/storedVocabularies';
+import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
@@ -76,6 +73,15 @@ import {
   visibilityScopeOnly,
 } from './researchGroupFilters';
 import {
+  entityHasHostedUndergraduates,
+  listedRosterUndergraduate,
+  servableRosterSnapshot,
+} from './hostedUndergraduates';
+import {
+  type AppliedStudentFilters,
+  resolveStudentFilterValuesInScope,
+} from './researchFilterVocabulary';
+import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
 } from './researchEntityQuality';
@@ -106,6 +112,10 @@ import {
 } from '../utils/researchEntityDeceasedLead';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
+import {
+  isPageLeadsOwnFacultyResearch,
+  servedRelationshipLabel,
+} from './researchDetailRelatedRows';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SearchUnavailableError } from '../utils/errors';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
@@ -173,6 +183,7 @@ import { unexpiredSignalClause } from './servedSignalExpiry';
  */
 export interface PublicLeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
+  leadPersonIdsByEntityId?: ReadonlyMap<string, readonly string[]>;
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<string, Readonly<EmeritusWayInDecision>>;
@@ -200,6 +211,7 @@ export const optionalPublicLeadMemberNames = async (
   options: PublicLeadMemberNameReadOptions = {},
 ): Promise<PublicLeadMemberNameRead> => {
   const byEntityId = new Map<string, readonly string[]>();
+  const leadPersonIdsByEntityId = new Map<string, readonly string[]>();
   const identityLeadDirectorEntityIds = new Set<string>();
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
@@ -217,6 +229,8 @@ export const optionalPublicLeadMemberNames = async (
       );
       const leadNames = publicLeadMemberNames(leadMembers);
       if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+      const leadPersonIds = leadPersonIdsOf(leadMembers);
+      if (leadPersonIds.length > 0) leadPersonIdsByEntityId.set(entityId, leadPersonIds);
       if (identityLeadDirectsOrganization(leadMembers)) identityLeadDirectorEntityIds.add(entityId);
       if (options.withEmeritusWayIn) {
         emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers) });
@@ -231,6 +245,7 @@ export const optionalPublicLeadMemberNames = async (
     : undefined;
   return {
     byEntityId,
+    leadPersonIdsByEntityId,
     identityLeadDirectorEntityIds,
     unavailable: false,
     ...(emeritusWayInByEntityId ? { emeritusWayInByEntityId } : {}),
@@ -256,6 +271,17 @@ const PUBLIC_TEAM_ROLES: ReadonlySet<string> = new Set([
   'undergrad',
   'staff',
 ]);
+
+function leadPersonIdsOf(members: Array<{ role: string; row?: Record<string, any> }>): string[] {
+  return Array.from(
+    new Set(
+      members
+        .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+        .map((member) => String(member.row?.identityKey || ''))
+        .filter(Boolean),
+    ),
+  );
+}
 
 function leadTitlesOf(members: Array<{ user?: any; role: string }>): unknown[] {
   return members
@@ -511,6 +537,7 @@ export interface ResearchGroupSearchOptions {
   // its semantic leg to a budget written for public traffic.
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
+  resolveFilterValues?: boolean;
 }
 
 export interface ResearchSearchQueryCorrection {
@@ -526,6 +553,7 @@ export interface ResearchGroupSearchResult {
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  appliedFilters?: AppliedStudentFilters;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -554,6 +582,8 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// Meilisearch ignores every query word past the tenth.
+const MEILISEARCH_QUERY_WORD_LIMIT = 10;
 // A candidate-pool hit is never served. It is reduced to its id, and the served
 // row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
 // 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
@@ -1476,7 +1506,25 @@ export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'entityType', meiliField: 'entityType' },
 ];
 
-export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
+export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
+  'schools',
+  'departments',
+  'entityType',
+  HOSTS_UNDERGRADS_INDEX_FIELD,
+];
+
+// A toggle needs no disjunctive query: with it on, its own count under the other
+// filters is the conjunctive one Meilisearch already returns.
+const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
+  filterKey: keyof ResearchGroupFilterInput;
+  indexField: string;
+}> = [
+  ...DISJUNCTIVE_RESEARCH_FACETS.map(({ filterKey, meiliField }) => ({
+    filterKey,
+    indexField: meiliField,
+  })),
+  { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
+];
 
 const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [
@@ -1519,14 +1567,18 @@ export async function searchResearchGroupsViaMeili(
     options.correctSpelling === false
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
-  const result = await searchResearchGroupsForQuery(
+  const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
+  const searched = await searchResearchGroupsForQuery(
     spelling.query,
-    filters,
+    studentFilters.filters,
     page,
     pageSize,
     sort,
     options,
   );
+  const result = studentFilters.applied
+    ? { ...searched, appliedFilters: studentFilters.applied }
+    : searched;
   if (spelling.corrections.length === 0) return result;
   return {
     ...result,
@@ -1536,6 +1588,25 @@ export async function searchResearchGroupsViaMeili(
     },
   };
 }
+
+const resolveStudentFiltersAgainstCorpus = async (
+  filters: ResearchGroupFilterInput,
+  options: ResearchGroupSearchOptions,
+): ReturnType<typeof resolveStudentFilterValuesInScope> => {
+  const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const filtersNamedValues = Boolean(safeFilters.school?.length || safeFilters.departments?.length);
+  if (
+    !filtersNamedValues ||
+    options.lowQualityFirst === true ||
+    options.resolveFilterValues === false
+  ) {
+    return { filters };
+  }
+  return resolveStudentFilterValuesInScope(safeFilters, {
+    archived: { $ne: true },
+    ...mongoVisibilityFilter(safeFilters, options.includeNonPublic === true),
+  });
+};
 
 async function searchResearchGroupsForQuery(
   query: string,
@@ -1940,11 +2011,12 @@ async function searchResearchGroupsForQuery(
     ...(matchingStrategy ? { matchingStrategy } : {}),
   });
   const searchKeywordLeg = async (
+    keywordText: string,
     matchingStrategy?: string,
     hitsPerPage: number = HYBRID_CANDIDATE_POOL_SIZE,
   ): Promise<any[]> => {
     try {
-      const keywordLegResult = await index.search(meiliQueryText, {
+      const keywordLegResult = await index.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showRankingScoreDetails: true,
         attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -1962,13 +2034,14 @@ async function searchResearchGroupsForQuery(
   // Match positions cost more than the rest of a 200-row keyword query, and only
   // the first surviving hit's are read, so that one row is re-read with them (#3949).
   const searchKeywordLegTopHitMatches = async (
+    keywordText: string,
     matchingStrategy: string | undefined,
     keywordLegRawHits: any[],
   ): Promise<{ hit: any; failed: boolean } | null> => {
     const topHit = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits[0];
     if (!topHit) return null;
     try {
-      const topHitResult = await index.search(meiliQueryText, {
+      const topHitResult = await index.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showMatchesPosition: true,
         attributesToRetrieve: [
@@ -1993,25 +2066,74 @@ async function searchResearchGroupsForQuery(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  const keywordLegSearch = (async (): Promise<{
+  type KeywordLegOutcome = {
+    keywordText: string;
     matchingStrategy: string | undefined;
     rawHits: any[];
-  }> => {
-    if (!runsHybridLegs) return { matchingStrategy: undefined, rawHits: [] };
-    const allWordsHits = await searchKeywordLeg(finalSearchParams.matchingStrategy);
+  };
+  const servesNoKeywordRow = (hits: any[]) => dropCoincidentalTypoOnlyHits(hits).hits.length === 0;
+  const searchKeywordLegWords = async (keywordText: string): Promise<KeywordLegOutcome> => {
+    const allWordsHits = await searchKeywordLeg(keywordText, finalSearchParams.matchingStrategy);
     // A phrase no single row carries in full ("immigration policy", "wind power")
     // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
     // matching the phrase's leading words are the next best evidence; a query
     // matching nothing at all still takes the thresholded path below. Measured as
     // part of the design: removing it cost concept queries 0.80 to 0.74 and
     // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
-    if (
-      dropCoincidentalTypoOnlyHits(allWordsHits).hits.length === 0 &&
-      finalSearchParams.matchingStrategy === 'all'
-    ) {
-      return { matchingStrategy: 'last', rawHits: await searchKeywordLeg('last') };
+    if (servesNoKeywordRow(allWordsHits) && finalSearchParams.matchingStrategy === 'all') {
+      return {
+        keywordText,
+        matchingStrategy: 'last',
+        rawHits: await searchKeywordLeg(keywordText, 'last'),
+      };
     }
-    return { matchingStrategy: finalSearchParams.matchingStrategy, rawHits: allWordsHits };
+    return {
+      keywordText,
+      matchingStrategy: finalSearchParams.matchingStrategy,
+      rawHits: allWordsHits,
+    };
+  };
+  // `last` never drops the first word, so one word no row carries at the front of
+  // the query ("xyzzy medieval plague podcast") emptied the keyword leg, and with it
+  // the whole search, while the same word typed last was dropped harmlessly. Such a
+  // word is searched for alone, and when no row matches it the rest of the query is
+  // searched as if it had not been typed.
+  // Meilisearch matches only a query's last word as a prefix, so every other word is
+  // probed whole, which a trailing space asks for: probed alone, the first word of
+  // "pure math" reached "purely" by prefix and was kept, though no row carries it.
+  const wordsSomeRowMatches = async (words: string[]): Promise<string[]> => {
+    const distinctWords = [...new Set(words)];
+    const lastWord = words[words.length - 1];
+    const probeText = (word: string) => (word === lastWord ? word : `${word} `);
+    const matched = await Promise.all(
+      distinctWords.map(
+        async (word) => !servesNoKeywordRow(await searchKeywordLeg(probeText(word), 'all', 1)),
+      ),
+    );
+    const matchedWords = new Set(distinctWords.filter((_word, position) => matched[position]));
+    return words.filter((word) => matchedWords.has(word));
+  };
+  const keywordLegSearch = (async (): Promise<KeywordLegOutcome> => {
+    if (!runsHybridLegs) {
+      return { keywordText: meiliQueryText, matchingStrategy: undefined, rawHits: [] };
+    }
+    const typedWordsOutcome = await searchKeywordLegWords(meiliQueryText);
+    if (
+      !servesNoKeywordRow(typedWordsOutcome.rawHits) ||
+      typedWordsOutcome.matchingStrategy !== 'last'
+    ) {
+      return typedWordsOutcome;
+    }
+    const searchedWords = meiliQueryText
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, MEILISEARCH_QUERY_WORD_LIMIT);
+    if (searchedWords.length <= 1) return typedWordsOutcome;
+    const matchedWords = await wordsSomeRowMatches(searchedWords);
+    if (matchedWords.length === 0 || matchedWords.length === searchedWords.length) {
+      return typedWordsOutcome;
+    }
+    return searchKeywordLegWords(matchedWords.join(' '));
   })();
 
   const semanticLegSearch = keywordLegSearch.then(({ rawHits }) =>
@@ -2053,13 +2175,17 @@ async function searchResearchGroupsForQuery(
       : keywordLegSearch.then(({ rawHits }) =>
           deepCandidatePoolWanted(rawHits) ? searchDeepPool() : null,
         );
-  const deepKeywordLegSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
-    runsHybridLegs && deepCandidatePoolWanted(rawHits)
-      ? searchKeywordLeg(matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
-      : [],
+  const deepKeywordLegSearch = keywordLegSearch.then(
+    ({ keywordText, matchingStrategy, rawHits }) =>
+      runsHybridLegs && deepCandidatePoolWanted(rawHits)
+        ? searchKeywordLeg(keywordText, matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
+        : [],
   );
-  const keywordLegTopHitSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
-    runsSemanticLeg ? searchKeywordLegTopHitMatches(matchingStrategy, rawHits) : null,
+  const keywordLegTopHitSearch = keywordLegSearch.then(
+    ({ keywordText, matchingStrategy, rawHits }) =>
+      runsSemanticLeg
+        ? searchKeywordLegTopHitMatches(keywordText, matchingStrategy, rawHits)
+        : null,
   );
 
   const [
@@ -2108,12 +2234,18 @@ async function searchResearchGroupsForQuery(
     rawDistribution: Record<string, Record<string, number>> | undefined,
   ): Record<string, Record<string, number>> | undefined => {
     if (!rawDistribution) return rawDistribution;
-    const { schools, researchAreas, ...rest } = rawDistribution;
+    const {
+      schools,
+      researchAreas,
+      [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
+      ...rest
+    } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
+      ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
     };
   };
 
@@ -2219,11 +2351,11 @@ async function searchResearchGroupsForQuery(
   const orderedHits = paginateHybridPoolLocally
     ? servedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
-  const facetsTalliedOverPool = DISJUNCTIVE_RESEARCH_FACETS.filter(
-    (facet) =>
-      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(facet.meiliField) ||
-      activeDisjunctiveFacets.includes(facet),
-  ).map(({ filterKey, meiliField }) => ({ filterKey, indexField: meiliField }));
+  const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
+    ({ indexField }) =>
+      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(indexField) ||
+      activeDisjunctiveFacets.some(({ meiliField }) => meiliField === indexField),
+  );
   const rawServedFacetDistribution = paginateHybridPoolLocally
     ? safeOptions.includeFacets
       ? tallyCandidateFacetDistribution(reorderedPool, safeFilters, facetsTalliedOverPool)
@@ -2676,22 +2808,15 @@ export interface PublicRosterUndergraduate {
 
 const MAX_PUBLIC_ROSTER_UNDERGRADUATES = 150;
 
-const boundedRosterText = (value: unknown, maxLength: number): string => {
-  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-  return text.length <= maxLength ? text : '';
-};
-
 const rosterYear = (value: unknown): number | undefined => {
   const year = Number(value);
   return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : undefined;
 };
 
 function publicRosterUndergraduate(value: any): PublicRosterUndergraduate | null {
-  const name = boundedRosterText(value?.name, 80);
-  const status = value?.status;
-  if (!name || !(officialRosterUndergraduateStatuses as readonly string[]).includes(status)) {
-    return null;
-  }
+  const listed = listedRosterUndergraduate(value);
+  if (!listed) return null;
+  const { name, status } = listed;
   const startYear = rosterYear(value?.startYear);
   const endYear = rosterYear(value?.endYear);
   const profileUrl = publicHttpUrl(value?.profileUrl);
@@ -2710,9 +2835,8 @@ export function publicRosterUndergraduates(
   enrichment: any,
   now = new Date(),
 ): PublicRosterUndergraduate[] {
-  const snapshot = enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
-  if (!['current', 'partial'].includes(snapshot?.state)) return [];
-  if (!Array.isArray(snapshot?.undergraduates)) return [];
+  const snapshot = servableRosterSnapshot(enrichment);
+  if (!snapshot) return [];
   const freshnessExpiresAt = new Date(snapshot?.freshnessExpiresAt || 0).getTime();
   const currentIsFresh = Number.isFinite(freshnessExpiresAt) && freshnessExpiresAt >= now.getTime();
   return snapshot.undergraduates
@@ -2899,20 +3023,24 @@ const publicRelationshipForResearchDetail = (
   relatedResearchEntityId: relatedResearchEntity?.id || relatedResearchEntity?.slug,
   relatedResearchEntitySlug: relatedResearchEntity?.slug,
   relationshipType: relationship.relationshipType,
-  label: relationship.label,
+  label: servedRelationshipLabel(relatedResearchEntity),
   evidenceStrength: relationship.evidenceStrength,
   sourceUrl: publicHttpUrl(relationship.sourceUrl),
   confidence: relationship.confidence,
   lastObservedAt: relationship.lastObservedAt,
 });
 
-export async function listResearchEntityRelationshipPayload(entityId: unknown): Promise<{
+export async function listResearchEntityRelationshipPayload(
+  entityId: unknown,
+  { pageLeadPersonIds = [] }: { pageLeadPersonIds?: readonly string[] } = {},
+): Promise<{
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   affiliatedRelationships: any[];
   affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
+  pageLeadOwnResearchEntityKeys: string[];
 }> {
   const safeEntityId = normalizeResearchGroupObjectId(entityId);
   if (!safeEntityId) {
@@ -2923,6 +3051,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     };
   }
 
@@ -3004,8 +3133,28 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     }),
   );
 
+  const pageLeads = new Set(pageLeadPersonIds);
+  const pageLeadOwnFacultyResearchIds = new Set(
+    publicRelatedEntities
+      .filter((relatedEntity) =>
+        isPageLeadsOwnFacultyResearch(
+          relatedEntity,
+          relatedLeadNameRead.leadPersonIdsByEntityId?.get(
+            researchGroupDocumentId(relatedEntity._id),
+          ),
+          pageLeads,
+        ),
+      )
+      .map((relatedEntity) => researchGroupDocumentId(relatedEntity._id)),
+  );
+  const servedRelatedRelationships = relatedRelationships.filter(
+    (relationship) =>
+      !pageLeadOwnFacultyResearchIds.has(
+        researchGroupDocumentId(relationship.targetResearchEntityId),
+      ),
+  );
   const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
-    relatedEntityIds,
+    servedRelatedRelationships.map((relationship) => relationship.targetResearchEntityId),
     publicEntitiesByInternalId,
   );
   const affiliatedResearchEntities = dedupePublicResearchEntitiesInOrder(
@@ -3014,7 +3163,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
   );
 
   return {
-    entityRelationships: relatedRelationships
+    entityRelationships: servedRelatedRelationships
       .map((relationship) => ({
         relationship,
         relatedResearchEntity: publicEntitiesByInternalId.get(
@@ -3046,6 +3195,12 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       returned: affiliatedResearchEntities.length,
       truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
     },
+    pageLeadOwnResearchEntityKeys: Array.from(pageLeadOwnFacultyResearchIds).flatMap(
+      (internalId) => {
+        const entity = publicEntitiesByInternalId.get(internalId);
+        return entity ? [entity.slug, entity.id].filter(Boolean) : [];
+      },
+    ),
   };
 }
 
@@ -3865,11 +4020,17 @@ export async function getResearchGroupDetail(
       .map((signal) => publicAccessSignalForResearchDetail(signal, group))
       .filter(servedAccessSignalStandsWithItsPage),
   );
-  const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
+  const { pageLeadOwnResearchEntityKeys, ...relationshipPayload } =
+    await listResearchEntityRelationshipPayload((group as any)._id, {
+      pageLeadPersonIds: leadPersonIdsOf(dedupedMembersWithRows),
+    });
   const structuralRelationExclusionKeys = [
-    ...relationshipPayload.relatedResearchEntities,
-    ...relationshipPayload.affiliatedResearchEntities,
-  ].flatMap((related) => [related.slug, related.id]);
+    ...[
+      ...relationshipPayload.relatedResearchEntities,
+      ...relationshipPayload.affiliatedResearchEntities,
+    ].flatMap((related) => [related.slug, related.id]),
+    ...pageLeadOwnResearchEntityKeys,
+  ];
   const similarResearchEntities = await listSimilarResearchEntities(group as Record<string, any>, {
     excludeEntityKeys: structuralRelationExclusionKeys,
   });
@@ -3894,7 +4055,7 @@ export async function getResearchGroupDetail(
     // lead set. That switched off the #2913 key-names-only-this-person arm for the one
     // surface a student lands on: 8 served rows titled themselves with an organization
     // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
-    { leadMemberNames },
+    { leadMemberNames, hasHostedUndergraduates: entityHasHostedUndergraduates(group as any) },
   );
   if (withheldBy.length === 0) return detail;
   return {

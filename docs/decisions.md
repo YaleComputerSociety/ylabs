@@ -5,6 +5,25 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: Beta And Production Carry Slim Archived Tombstones (#5208)
+
+Development's engine needs every full archived row: re-scraped evidence for a merged duplicate routes to its survivor through the tombstone, and an archived slug is what stops the same duplicate being minted again (#3029).
+Beta and Production never mint or resolve evidence, and every serving path that reads an archived row reads only its id, slug, name, archive reason and `canonicalGroupId`, so copying 5,359 full archived rows and the signals, role assignments and relationships hanging off them shipped data no serving surface reads.
+Decision (owner, 2026-10-18): the Development-to-Beta copy reduces an archived row to that slim shape and leaves its dependent rows in Development, and Beta-to-Production copies Beta as is.
+A separate redirect map was rejected because the retired redirect ledger drifted from the rows it described (#3027); the slim row is still the tombstone, so there is one source of the mapping.
+Two consequences are enforced in code.
+The Beta-to-Development refresh carries Development's full archive back from the swap backup, because one plain refresh would otherwise replace it with slim rows.
+Plans are environment-local (#5092), so a merge recorded in Development can only carry Development's plans; each promotion's remote phase therefore runs `research-plans:retarget-merged` in the target, which moves a saved plan from a merged target to its live survivor.
+A saved plan on an archived target now reads as merged or retired rather than as held and returning.
+
+## 2026-10-18: Re-Expose The Hosted-Undergraduates Browse Filter (#5123)
+
+Five of six simulated student sessions on 2026-10-18 asked to filter `/research` by the "Has hosted undergraduate researchers" badge, which #1884 had removed as a control while the server kept the `hostsUndergrads` filter.
+The filter is the badge, not a way in: it reads the same historical predicate, `entityHasHostedUndergraduates`, so the 2026-10-02 rule that no browse filter offers a way in still holds.
+The index field is derived from that predicate when the index document is built rather than copied from the stored flag, so a writer that changes `pastUndergradAdvisees` or `currentUndergradCount` without recomputing the flag cannot make the filter and the badge disagree.
+Measured on Development on 2026-10-18, 227 served rows carry the badge and the stored flag, the index field and the served badge agreed on all 227.
+The control is a toggle in the filter rail and the mobile filter sheet, round-trips as `undergrad=1`, and shows its `hostsUndergrads` facet count, which is counted over the same population as the results (#5101).
+
 ## 2026-10-18: Joining Instructions, Event Narration, Cut-Off Titles And Verb Chips Are Not Content (#5109)
 
 A served research summary says what a group studies.

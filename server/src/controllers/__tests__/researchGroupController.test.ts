@@ -459,6 +459,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        resolveFilterValues: true,
       },
     );
   });
@@ -500,6 +501,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        resolveFilterValues: true,
       },
     );
   });
@@ -563,6 +565,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        resolveFilterValues: true,
       },
     );
   });

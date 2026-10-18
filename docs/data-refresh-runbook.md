@@ -142,6 +142,9 @@ The single weekly job runs both modes, so that is one point a week, taken after 
 A run is `failed` only for a failed source, a crashed stage, a counting stage whose count rose over the last run in which that stage succeeded, or any public visibility violation; standing counts are recorded on the stage rows, so they no longer fail every run by construction (#4852).
 The row is inserted with status `running`, `startedAt`, `codeSha` and `requestedModes` before step 3, and the job refuses to start if that insert fails.
 It is replaced by the full record when the job ends, so a run that Render stops at its 12-hour limit, or that crashes, stays `running` instead of leaving no row.
+While a mode runs, the job copies that mode's checkpoint onto the same row every minute, under `checkpoints.<mode>`, with each finished step's source row or stage result; when a mode ends it records that mode's summary there instead (#5209).
+The checkpoint file and every artifact live in the container's temp directory, which Render discards, so the row is what makes a stopped run resumable; the full record that replaces the row when the job ends drops `checkpoints`, so a finished row stays small.
+Copying is best-effort: a failed write is logged and never fails the sweep, and a stopped run loses at most the last minute, whose step in flight is re-run on resume rather than trusted.
 
 `--dry-run` in place of the confirmation runs steps 1 to 4 read-only, prints the two sweep commands without running them, and writes no row.
 Steps 1 and 2 also write no row, because a run refused there has not proven it holds a Development connection.
@@ -198,15 +201,16 @@ The sweep's own peak memory has not been measured, so start the service on an in
 
 Render stops a cron run after 12 hours, and the research sweep alone has measured 414 minutes (2026-09-28) and 556 minutes (2026-09-26), while the fellowship sweep has never been timed.
 The weekly runner is one cron job, `ylabs-scraper`, that runs both modes in one run, by the owner's decision (2026-10-04) that both fit inside the limit.
-Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server scrape:sweep:weekly-runs --limit 1`; if a run is stopped at the limit, its row stays `running`, and the remedy is to split the job by `--mode`.
+Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server scrape:sweep:weekly-runs --limit 1`; if a run is stopped at the limit, its row stays `running`.
+Continue it with `yarn ops:sweep resume` (below), which picks up where the stopped container left off; if runs keep reaching the limit, split the job by `--mode` as well.
 
 | Service | Docker Command | Schedule |
 |---|---|---|
-| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 7 * * 0`, Sundays at 07:00 UTC |
+| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 4 * * 5`, Fridays at 04:00 UTC |
 
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
-The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
+The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Friday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
 The service builds from `beta` with auto-deploy on (trigger: checks pass) and a build filter, set on 2026-10-18, of only `deploy/sweep-runner/**`, `package.json`, `.yarnrc.yml`, `server/package.json` and `server/yarn.lock`, with no ignored paths.
 The entrypoint clones `beta` at run time and runs that commit, so the image needs rebuilding only when the runner, its Python and Docker setup, or the dependency manifests change; before the filter, ordinary server pull requests triggered 5 to 7 image builds a day and exhausted the workspace's build minutes on 2026-10-18, which blocked every deploy, including Production's.
 One exception runs the image's own code: `--probe-hosts` executes from the image rather than from a fresh clone, so it uses the server code from the last image build.
@@ -247,6 +251,7 @@ The logic is in `server/src/scripts/opsSweepCore.ts`; the command is `server/src
 yarn ops:sweep status
 yarn ops:sweep rerun <source>... [--override-hold] [--dry-run]
 yarn ops:sweep probe-permissions [--dry-run]
+yarn ops:sweep resume [<weekly run id>] [--dry-run]
 ```
 
 `status` prints the newest `weekly_sweep_runs` row: its status, start and duration (or elapsed time for a `running` row, and whether it outlived Render's 12-hour limit), its `codeSha` against the current `beta` HEAD, the search index state and remedy, any refusal or error, and each failed source and stage with its error and, for a stage, its `failureKind`.
@@ -273,6 +278,20 @@ When the wait itself stops, on the timeout or a Render API error, it exits nonze
 
 Render's logs are not always available, so the outcome comes from the job status and the `scrape_runs` rows, never from the log.
 `--dry-run` runs every refusal and prints the start command without starting a job.
+
+`resume` continues a weekly run that Render stopped at its 12-hour limit, or that crashed, as a one-off job on the same service (#5209):
+
+1. It takes the named run, or by default the newest row that is `running` with no `finishedAt`.
+2. It refuses unless that row is unfinished, recorded a `codeSha`, and started more than 12 hours ago, so its container is certainly gone; it also refuses while any sweep source holds a live scrape job lock or another one-off job on the service is not finished, and unless the live image's entrypoint has the `--resume-weekly-run` mode.
+3. It starts `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --resume-weekly-run <run id> <codeSha> --confirm-weekly-development-sweep`.
+The entrypoint clones `beta` and checks out the run's recorded commit rather than `beta` HEAD, because a checkpoint's finished steps describe that code and continuing them on a newer commit would mix two commits' results under one row; it then runs `scrape:sweep:weekly-development --resume-run <run id>`.
+4. The weekly entry refuses again unless the row is unfinished and the checkout is at the recorded commit, re-runs the lock and storage preflight, and skips the lane-freshness refusal, which a deliberately older commit would trip.
+Each mode the stopped run finished is reused from its recorded summary; each mode it left unfinished is restored from its recorded checkpoint and run without `--restart`, so every step already done is skipped, its row or stage result taken from the record because its artifact went with the old container; a mode that never started runs fresh.
+5. It appends the resume to the row's `resumes` and finishes the same row, keeping its original `startedAt`, so a resumed run's duration spans both containers.
+A refused resume leaves the row as it was, still resumable.
+6. After a job that succeeded it runs `yarn development:search:sync`, because the job deferred every index write.
+
+A scheduled run is never a resume: the weekly cron always starts fresh at the current `beta` head and abandons any older checkpoint, so resume a stopped run before the next Friday if its results matter.
 The rerun mode exists only once an image built with it is live; until then `rerun` refuses at step 3.
 
 `probe-permissions` reads the `ylabs-sweep-dev` custom role with `atlas customDbRoles describe ylabs-sweep-dev --projectId 685b36661a9a1101c14a007b -o json`, so it needs a current `atlas auth login`.
@@ -495,6 +514,11 @@ Accounts and research plans never cross (#5088, #5092): `accounts` and `research
 Because accounts are environment-local, an account `_id` stored on a copied corpus row would name nobody in the target, so the copy refuses a source whose `researchers.accountId` or `studentVisibilityReviewedByAccountId` is set.
 The plan artifact's `accountReferences` lists any such row by collection and field, and an apply refuses until it is empty.
 Both mirror directions share this rule, as does `production:promote-beta-copy`.
+Beta holds only slim archived tombstones and none of the rows that hang off an archived entity (see Phase 2), so this refresh carries Development's own archive back across the swap (#5208).
+After the cutover and before verification, `carryDevelopmentArchive` in `server/src/scripts/archivedTombstoneMirror.ts` restores every archived `research_entities` row from Development's backup in full, and the `signals`, `role_assignments` and `research_entity_relationships` rows on those entities that Beta does not hold.
+A row Beta holds live is Beta's accepted state and keeps Beta's version.
+Verification expects each collection to hold Beta's copy plus exactly the rows the carry inserted, and the apply report's `developmentArchiveCarry` gives the counts.
+Without the carry one refresh would erase Development's tombstones, and the engine would mint every merged duplicate again (#3029).
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -785,6 +809,10 @@ It is the only way data enters Beta.
 The command replaces only the approved research-discovery, identity-spine, source-audit, and base-support collections, with account state sanitized.
 It preserves Beta operational collections such as sessions, analytics, admin grants, student workflows, locks, caches, and release queues.
 It leaves `observations` in Development unless `--include-observations` is passed, so review the plan's `observationPolicy` line before applying.
+Archived research entities cross as slim tombstones (#5208): `withSlimArchivedTombstones` keeps `_id`, `slug`, `name`, `archived`, `archivedReason`, `archivedAt`, `canonicalGroupId` and bookkeeping timestamps, which is all a serving environment reads from an archived row, for the old-slug redirect, a saved plan's status, and the dead-end tombstone check.
+The `signals`, `role_assignments` and `research_entity_relationships` rows on archived entities stay in Development, so the plan's `excludedCount` for those collections is expected to be non-zero.
+Development keeps every full row, because its engine routes re-scraped evidence and refuses re-mints through it.
+Beta-to-Production copies Beta as is, so Production carries the same slim tombstones.
 It never writes to Meilisearch.
 The mirror replaces whole documents rather than merging fields, so a mirrored row can serve a worse individual field than the row it replaced even when the mirror is newer; [research-data-pipeline.md](research-data-pipeline.md) owns the known `websiteUrl` case and the repair command for it.
 

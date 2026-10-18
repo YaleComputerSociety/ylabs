@@ -15,7 +15,7 @@ import {
   TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
-import FavoriteButton from './FavoriteButton';
+import FavoriteButton, { watchControlLabel, watchControlVerb } from './FavoriteButton';
 import UrgentBadge from './UrgentBadge';
 import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
@@ -58,11 +58,7 @@ const BrowseListItem = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
-      !statusBadgeOverride &&
-      item.type === 'fellowship' &&
-      daysUntil !== null &&
-      daysUntil > 0 &&
-      daysUntil <= 14;
+      !statusBadgeOverride && item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = statusBadgeOverride ? 'text-muted' : getItemSubtitleColor(item);
@@ -177,7 +173,12 @@ const BrowseListItem = React.memo(
                 </button>
               )}
               {onToggleFavorite && (
-                <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+                <FavoriteButton
+                  isFavorite={isFavorite}
+                  onToggle={onToggleFavorite}
+                  ariaLabel={watchControlLabel(item.data.title, isFavorite)}
+                  title={watchControlVerb(isFavorite)}
+                />
               )}
             </div>
           </div>

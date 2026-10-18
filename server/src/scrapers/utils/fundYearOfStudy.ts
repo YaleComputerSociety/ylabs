@@ -142,7 +142,14 @@ const ENDS_IN_PROGRAM_HEAD = /\sprograms?$/;
 
 const ENROLLED_IN = /\benrolled in\s+(?:an?\s+|the\s+)?$/;
 
-const ANY_LEVEL = /\bstudents?\s+(?:at|of)\s+(?:any|all)\s+(?:levels?|stages?)\b/;
+const ANY_LEVEL = new RegExp(
+  `(?<!\\b(?:${TERM_SOURCE})\\s+)\\bstudents?\\s+(?:at|of)\\s+(?:any|all)\\s+(?:levels?|stages?)\\b`,
+);
+
+const QUANTIFIED_LEVEL_AFTER =
+  /^\s*(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)(?:\s+of\s+(?:their\s+|his\s+or\s+her\s+)?(?:stud(?:y|ies)|programs?))?\b(?=\s*(?:[,.;:)]|$)|\s+(?:to|are|is|may|can|who|will|and|or)\b)/;
+
+const DIRECTLY_AFTER_FOR = /\bfor\s+$/;
 
 const ELIGIBILITY_CUE =
   /\b(?:eligib\w*|open(?: only)? to|available(?: only)? to|intended(?: only)? for|designed for|limited to|restricted to|reserved for|awarded(?: only)? to|awards? to|enrolled in|welcomed? from|applications? (?:are )?(?:accepted |invited |welcomed? )?from|must be(?: an?)?)\b/;
@@ -284,8 +291,9 @@ function roleOf(before: string, after: string): GroupRole {
     : 'base';
 }
 
+// "Senior essay" names a piece of work rather than who may apply, so it is not an unread year (#5121).
 const YEAR_WORD =
-  /\b(?:(?:first|second|third|fourth) years?|freshm[ae]n|sophomores?|juniors?|seniors?)\b/g;
+  /\b(?:(?:first|second|third|fourth) years?|freshm[ae]n|sophomores?|juniors?|seniors?(?!\s+(?:essays?|thes[ie]s|projects?|research)\b))\b/g;
 
 function yearWordCount(text: string): number {
   return Array.from(text.matchAll(YEAR_WORD)).length;
@@ -336,13 +344,19 @@ function groupsIn(sentence: string, isEligibilitySection: boolean): LevelGroup[]
     if (ORGANIZATION_OF.test(before) || REDIRECTED_AFTER.test(after)) continue;
     const negation = negationOf(before, after);
     if (negation === 'qualified') continue;
-    if (!negation && !isAdmissionCued(before, after, isEligibilitySection)) continue;
+    const quantifiedAfter = !negation && QUANTIFIED_LEVEL_AFTER.test(after);
+    const cued =
+      Boolean(negation) ||
+      isAdmissionCued(before, after, isEligibilitySection) ||
+      (quantifiedAfter && DIRECTLY_AFTER_FOR.test(before));
+    if (!cued) continue;
     phrases.push(phrase);
     groups.push({
       terms: expandYearRange(phrase, termsOfPhrase(phrase)),
       role: negation === 'blanket' ? 'excluded' : roleOf(before, after),
       complete:
         negation === 'blanket' ||
+        quantifiedAfter ||
         (QUANTIFIED_COMPLETE.test(before) && isExplicitlyCued(before, after)),
     });
   }

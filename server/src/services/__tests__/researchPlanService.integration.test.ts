@@ -292,7 +292,7 @@ describe('researchPlanService saved plans', () => {
       ]);
     });
 
-    it('reports an archived target as UNAVAILABLE rather than removed', async () => {
+    it('reports an archived target with no live survivor as RETIRED rather than returning (#5208)', async () => {
       await saveWhilePublished();
       await mongoose.connection
         .db!.collection('research_entities')
@@ -300,9 +300,22 @@ describe('researchPlanService saved plans', () => {
 
       const list = await getSavedResearchEntityList(NETID);
 
-      expect(list.unavailableSavedResearchEntities).toEqual([
-        { _id: entityId, reason: 'UNAVAILABLE' },
-      ]);
+      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'RETIRED' }]);
+    });
+
+    it('reports an archived target whose tombstone reaches a live survivor as MERGED (#5208)', async () => {
+      await saveWhilePublished();
+      const survivorId = new mongoose.Types.ObjectId('64a00000000000000000beef');
+      const entities = mongoose.connection.db!.collection('research_entities');
+      await entities.insertOne({ _id: survivorId, slug: 'merge-survivor', name: 'Merge Survivor' });
+      await entities.updateOne(
+        { _id: ENTITY_ID },
+        { $set: { archived: true, canonicalGroupId: survivorId } },
+      );
+
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'MERGED' }]);
     });
 
     it('reports a target whose record no longer exists as REMOVED', async () => {
@@ -468,7 +481,7 @@ describe('researchPlanService saved plans', () => {
       expect(
         [...list.unavailableSavedResearchEntities].sort((a, b) => a._id.localeCompare(b._id)),
       ).toEqual([
-        { _id: '64a0000000000000000001a2', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a2', reason: 'RETIRED' },
         { _id: '64a0000000000000000001a3', reason: 'UNAVAILABLE' },
         { _id: '64a0000000000000000001a4', reason: 'UNAVAILABLE' },
         { _id: '64a0000000000000000001a5', reason: 'REMOVED' },
@@ -581,5 +594,36 @@ describe('researchPlanService saved plans', () => {
     expect(neutral).not.toHaveProperty('undergraduateCurrentAvailability');
     expect(open).not.toHaveProperty('undergraduateCurrentAvailability');
     expect(neutral).not.toHaveProperty('hasUndergradHostingEvidence');
+  });
+
+  it('serves the hosted flag on a saved entity whose official roster lists undergraduates (#5232)', async () => {
+    const rosteredId = new mongoose.Types.ObjectId('64a0000000000000000000f2');
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id: rosteredId,
+      slug: 'rostered-lab',
+      name: 'Rostered Lab',
+      kind: 'group',
+      departments: ['Computer Science'],
+      studentVisibilityTier: 'student_ready',
+      shortDescription:
+        'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      fullDescription:
+        'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+      sourceUrls: ['https://example.yale.edu/labs/rostered-lab'],
+      rosterEnrichment: {
+        state: 'current',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+        undergraduates: [{ name: 'Synthetic Student', status: 'current' }],
+      },
+      archived: false,
+    });
+
+    await addSavedResearchEntities(NETID, [rosteredId.toHexString()]);
+    const { savedResearchEntities: savedEntities } = await getSavedResearchEntityList(NETID);
+    const rostered = savedEntities.find((entity) => entity._id === rosteredId.toHexString());
+
+    expect(rostered?.hasUndergradHostingEvidence).toBe(true);
+    expect(rostered).not.toHaveProperty('rosterEnrichment');
   });
 });

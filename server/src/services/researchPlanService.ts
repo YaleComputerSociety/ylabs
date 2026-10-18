@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { resolveResearchEntityCanonicalByTombstone } from './researchEntityCanonicalTombstone';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { ResearchEntity, ResearchPlan } from '../models/index';
 import { readPrograms } from './programService';
@@ -85,7 +86,7 @@ export interface SavedResearchEntitySummary {
  * payload AND from the saved count, so a student could not tell an item they had
  * removed from one the corpus had stopped serving (#2174).
  */
-export type UnavailableSavedResearchEntityReason = 'REMOVED' | 'UNAVAILABLE';
+export type UnavailableSavedResearchEntityReason = 'REMOVED' | 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 
 /**
  * The id and the reason, and deliberately nothing else. A record that failed the
@@ -435,7 +436,7 @@ const partitionSavedResearchEntities = async (
   const entities = await ResearchEntity.find({
     _id: { $in: normalizedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
-    .select(`${savedResearchEntityProjection} archived studentVisibilityTier`)
+    .select(`${savedResearchEntityProjection} archived studentVisibilityTier canonicalGroupId`)
     .lean();
   const verdictById = new Map(
     entities.map((entity: any) => [
@@ -450,6 +451,13 @@ const partitionSavedResearchEntities = async (
     const verdict = verdictById.get(id);
     if (!verdict) {
       unavailableSavedResearchEntities.push({ _id: id, reason: 'REMOVED' });
+    } else if (verdict.entity.archived === true) {
+      unavailableSavedResearchEntities.push({
+        _id: id,
+        reason: (await resolveResearchEntityCanonicalByTombstone(verdict.entity))
+          ? 'MERGED'
+          : 'RETIRED',
+      });
     } else if (!verdict.serves) {
       unavailableSavedResearchEntities.push({ _id: id, reason: 'UNAVAILABLE' });
     } else {

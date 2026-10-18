@@ -1072,6 +1072,64 @@ const accessWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
+const UNMATCHED_WORD = 'zqxjv';
+const UNMATCHED_WORD_QUERY_PAIRS = [
+  {
+    baselineQuery: 'medieval plague podcast',
+    variantQuery: `${UNMATCHED_WORD} medieval plague podcast`,
+  },
+  { baselineQuery: 'neuroscience', variantQuery: `${UNMATCHED_WORD} neuroscience` },
+  { baselineQuery: 'climate policy', variantQuery: `climate ${UNMATCHED_WORD} policy` },
+  { baselineQuery: 'machine learning', variantQuery: `machine learning ${UNMATCHED_WORD}` },
+];
+
+const unmatchedWordKeepsTopicResults: JourneyCase = {
+  id: 'unmatched-word-keeps-topic-results',
+  title: 'A query word no row carries leaves the rest of the query answering, wherever it is typed',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of UNMATCHED_WORD_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const baselineRows = pairs.reduce((total, pair) => total + pair.baselineKeys.length, 0);
+    const sharedRows = pairs.reduce(
+      (total, pair) =>
+        total + pair.baselineKeys.filter((key) => pair.variantKeys.includes(key)).length,
+      0,
+    );
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'unmatched-word-shares-the-topic-results',
+          "A topic query with an unmatched word added serves at least one of the topic query's top rows",
+          pairs,
+          corpusBefore,
+          corpusAfter,
+          'sharesABaselineRow',
+        ),
+      ],
+      rates: [
+        buildRate(
+          'unmatched-word-top-row-overlap',
+          'Share of the topic query top rows the query with an unmatched word also serves',
+          sharedRows,
+          baselineRows,
+        ),
+      ],
+    };
+  },
+};
+
 const MESH_DESCRIPTOR_PROBE_QUERIES = [
   'robotics',
   'machine learning',
@@ -1317,6 +1375,7 @@ export const journeyCases: readonly JourneyCase[] = [
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
   accessWordKeepsTopicRanking,
+  unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
   personNameLookupReachesThePerson,
   similarRailRanksTopicsAboveNames,

@@ -55,6 +55,7 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   searchedQueryString: string;
   exactSpelling: boolean;
   queryCorrection: ProgramSearchQueryCorrection | null;
+  resultsRankedByRelevance: boolean;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
@@ -112,6 +113,7 @@ export type FellowshipSearchAction =
         pageSize: number;
         append: boolean;
         queryCorrection?: ProgramSearchQueryCorrection | null;
+        rankedByRelevance?: boolean;
       };
     }
   | { type: 'SEARCH_FAILURE' }
@@ -126,6 +128,7 @@ export const createInitialFellowshipSearchState = (
   searchedQueryString: '',
   exactSpelling: false,
   queryCorrection: null,
+  resultsRankedByRelevance: false,
   ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
@@ -273,7 +276,8 @@ export function fellowshipSearchReducer(
       };
 
     case 'SEARCH_SUCCESS': {
-      const { fellowships, total, pageSize, append, queryCorrection } = action.payload;
+      const { fellowships, total, pageSize, append, queryCorrection, rankedByRelevance } =
+        action.payload;
       const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
       const nextTotal = total !== undefined ? total : nextFellowships.length;
       return {
@@ -284,6 +288,9 @@ export function fellowshipSearchReducer(
           total !== undefined ? nextFellowships.length >= total : fellowships.length < pageSize,
         isLoading: false,
         queryCorrection: append ? state.queryCorrection : (queryCorrection ?? null),
+        resultsRankedByRelevance: append
+          ? state.resultsRankedByRelevance
+          : rankedByRelevance === true,
       };
     }
 

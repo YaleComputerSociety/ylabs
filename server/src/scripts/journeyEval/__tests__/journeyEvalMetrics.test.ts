@@ -542,6 +542,18 @@ describe('checkQueryVariantServesTheBaseline', () => {
     ).toBe('fail');
   });
 
+  it('accepts a variant sharing one baseline row when only a shared row is asserted', () => {
+    const sharing = pair(['c', 'b']);
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', sharing, still, still, 'sharesABaselineRow')
+        .status,
+    ).toBe('pass');
+    expect(
+      checkQueryVariantServesTheBaseline('x', 'x', pair([]), still, still, 'sharesABaselineRow')
+        .status,
+    ).toBe('fail');
+  });
+
   it('is inconclusive when the baseline served nothing', () => {
     const empty = [{ baselineQuery: 'q', baselineKeys: [], variantQuery: 'q2', variantKeys: [] }];
     expect(checkQueryVariantServesTheBaseline('x', 'x', empty, still, still).status).toBe(

@@ -295,7 +295,7 @@ describe('researchEntitySearchIndexService', () => {
       undergraduateCurrentAvailability: 'OPEN',
       undergraduateCompensationModel: 'PAID_OR_STIPEND',
       undergraduateEligibleStudentLevels: ['FIRST_YEAR'],
-      hasUndergradHostingEvidence: true,
+      pastUndergradAdvisees: [{ count: 2 }],
     });
 
     expect(doc).toMatchObject({
@@ -305,6 +305,43 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('undergraduateCurrentAvailability');
     expect(doc).not.toHaveProperty('undergraduateCompensationModel');
     expect(doc).not.toHaveProperty('undergraduateEligibleStudentLevels');
+  });
+
+  it('derives the hosted-undergraduates field from the badge predicate, not the stored flag (#5123)', () => {
+    const staleTrue = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-stale-true',
+      name: 'Stale Flag Lab',
+      archived: false,
+      hasUndergradHostingEvidence: true,
+      pastUndergradAdvisees: [],
+    });
+    const staleFalse = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-stale-false',
+      name: 'Unrecomputed Flag Lab',
+      archived: false,
+      hasUndergradHostingEvidence: false,
+      pastUndergradAdvisees: [{ count: 1 }],
+    });
+
+    expect(staleTrue?.hasUndergradHostingEvidence).toBe(false);
+    expect(staleFalse?.hasUndergradHostingEvidence).toBe(true);
+  });
+
+  it('indexes a row whose official roster lists undergraduates as hosting, without the roster (#5232)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-official-roster',
+      name: 'Official Roster Lab',
+      archived: false,
+      hasUndergradHostingEvidence: false,
+      rosterEnrichment: {
+        state: 'partial',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        undergraduates: [{ name: 'Synthetic Student', status: 'current' }],
+      },
+    });
+
+    expect(doc?.hasUndergradHostingEvidence).toBe(true);
+    expect(doc).not.toHaveProperty('rosterEnrichment');
   });
 
   it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {

@@ -7,6 +7,7 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
+import { programTextDateLabel } from '../../utils/programDates';
 import {
   STALE_DEADLINE_MESSAGE,
   formatFellowshipDate,
@@ -36,7 +37,7 @@ import {
   createEmptyStudentProgramFilters,
 } from '../../reducers/fellowshipSearchReducer';
 import useModalDialog from '../../hooks/useModalDialog';
-import FavoriteButton from '../shared/FavoriteButton';
+import FavoriteButton, { watchControlLabel, watchControlVerb } from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
 import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
 
@@ -165,6 +166,7 @@ const FellowshipModal = ({
     : cycleStatus;
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
   const deadlineStale = applicationStatus.kind === 'staleDeadline';
+  const deadlineTextConflict = programTextDateLabel(fellowship.deadlineTextConflict);
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
   const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
@@ -346,6 +348,8 @@ const FellowshipModal = ({
                     toggleFavorite();
                   }}
                   size={22}
+                  ariaLabel={watchControlLabel(fellowship.title, isFavorite)}
+                  title={watchControlVerb(isFavorite)}
                 />
                 <button
                   onClick={onClose}
@@ -473,6 +477,12 @@ const FellowshipModal = ({
                             {fellowship.deadlineProjectedNextCycle && (
                               <p className="text-xs text-brand">
                                 Projected from the last cycle - unconfirmed, verify at source.
+                              </p>
+                            )}
+                            {deadlineTextConflict && (
+                              <p className="text-xs text-amber-800">
+                                The program&apos;s own text gives {deadlineTextConflict}. Confirm
+                                the deadline on the official page.
                               </p>
                             )}
                           </div>

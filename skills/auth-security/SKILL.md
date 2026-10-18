@@ -257,6 +257,8 @@ The SPA fallback writes per-page share metadata into the shell, because link pre
 `/`, `/research`, `/programs` and `/about` get a page title and a query-free canonical URL on `https://yalelabs.io` whatever the request host.
 `/research/:slug` reads the row through `getResearchGroupDetail` with no operator authority, so it can only show what the anonymous detail endpoint serves, which is `student_ready` rows: the served title, the served short description, and the canonical page.
 A description carrying an email address or phone number is dropped rather than shared, and no member, roster or contact field is ever read.
+The SPA fallback is a path-less `GET`/`HEAD` handler rather than a named wildcard route, because Express decodes a route parameter and answers a malformed percent sequence such as `%zz` with a JSON `400` before the resolver runs.
+An undecodable path therefore gets the same shell as any other unknown path, and an undecodable `/research/:slug` answers `404` (#5219).
 A slug the endpoint withholds or does not know answers `404` with the generic shell, a merged shell answers `301` to its canonical page, and a lookup that throws or outlasts `PAGE_SHELL_LOOKUP_TIMEOUT_MS` serves the unmodified shell with `200`.
 Each normalized slug's `200`, `404` or `301` resolution is cached in memory for `PAGE_SHELL_CACHE_TTL_MS` (five minutes), at most `PAGE_SHELL_CACHE_MAX_ENTRIES` slugs with the oldest evicted first, and concurrent requests for one slug share a single in-flight detail read.
 A lookup that throws or times out is never cached, so the next request reads again.

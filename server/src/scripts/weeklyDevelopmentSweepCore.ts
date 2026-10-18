@@ -53,9 +53,21 @@ export interface WeeklySweepArgs {
   dryRun: boolean;
   confirmed: boolean;
   modes: WeeklySweepMode[];
+  resumeRunId?: string;
 }
 
 export const WEEKLY_SWEEP_CONFIRM_FLAG = '--confirm-weekly-development-sweep';
+export const WEEKLY_SWEEP_RESUME_FLAG = '--resume-run';
+const WEEKLY_SWEEP_RUN_ID_PATTERN = /^[0-9a-f]{24}$/;
+
+function parseWeeklySweepRunId(raw: string | undefined): string {
+  if (!raw || !WEEKLY_SWEEP_RUN_ID_PATTERN.test(raw)) {
+    throw new Error(
+      `${WEEKLY_SWEEP_RESUME_FLAG} needs a weekly_sweep_runs id (24 hex characters); got ${raw ?? '(missing)'}`,
+    );
+  }
+  return raw;
+}
 
 function parseWeeklySweepMode(raw: string | undefined): WeeklySweepMode {
   const mode = WEEKLY_SWEEP_MODES.find((candidate) => candidate === raw);
@@ -68,7 +80,10 @@ function parseWeeklySweepMode(raw: string | undefined): WeeklySweepMode {
 }
 
 export function parseWeeklySweepArgs(argv: string[]): WeeklySweepArgs {
-  const args = { dryRun: false, confirmed: false };
+  const args: { dryRun: boolean; confirmed: boolean; resumeRunId?: string } = {
+    dryRun: false,
+    confirmed: false,
+  };
   const requested = new Set<WeeklySweepMode>();
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -81,9 +96,18 @@ export function parseWeeklySweepArgs(argv: string[]): WeeklySweepArgs {
       requested.add(parseWeeklySweepMode(argv[++index]));
     } else if (arg.startsWith('--mode=')) {
       requested.add(parseWeeklySweepMode(arg.slice('--mode='.length)));
+    } else if (arg === WEEKLY_SWEEP_RESUME_FLAG) {
+      args.resumeRunId = parseWeeklySweepRunId(argv[++index]);
+    } else if (arg.startsWith(`${WEEKLY_SWEEP_RESUME_FLAG}=`)) {
+      args.resumeRunId = parseWeeklySweepRunId(arg.slice(WEEKLY_SWEEP_RESUME_FLAG.length + 1));
     } else {
       throw new Error(`Unknown weekly sweep argument: ${arg}`);
     }
+  }
+  if (args.resumeRunId && requested.size > 0) {
+    throw new Error(
+      `${WEEKLY_SWEEP_RESUME_FLAG} continues the modes the interrupted run requested, so it takes no --mode`,
+    );
   }
   const modes =
     requested.size > 0
@@ -139,16 +163,110 @@ export function weeklySweepChildEnvironment(
   return childEnv;
 }
 
-export function buildWeeklySweepArgs(mode: WeeklySweepMode): string[] {
+export function buildWeeklySweepArgs(
+  mode: WeeklySweepMode,
+  options: { resume?: boolean } = {},
+): string[] {
   return [
     '--cwd',
     'server',
     'scrape:sweep',
     `--mode=${mode}`,
     WEEKLY_SWEEP_CONFIRMATIONS[mode],
-    '--restart',
+    ...(options.resume ? [] : ['--restart']),
     '--prune-between-phases',
   ];
+}
+
+/**
+ * How often the weekly entry copies a running mode's checkpoint file onto the run row. A
+ * container stopped at the Render limit loses at most this much progress, and the step in
+ * flight at that moment is re-run on resume rather than trusted.
+ */
+export const WEEKLY_SWEEP_CHECKPOINT_MIRROR_INTERVAL_MS = 60_000;
+
+export function weeklySweepCheckpointFieldPath(mode: WeeklySweepMode): string {
+  return `checkpoints.${mode}`;
+}
+
+export interface WeeklySweepModeCheckpointRecord {
+  checkpoint?: unknown;
+  mirroredAt?: Date | string;
+  completed?: boolean;
+  exitCode?: number | null;
+  summaryFound?: boolean;
+  summary?: unknown;
+}
+
+export interface WeeklySweepResumableRun {
+  _id?: unknown;
+  status?: unknown;
+  finishedAt?: Date | string | null;
+  codeSha?: string | null;
+  requestedModes?: unknown[];
+  checkpoints?: Record<string, WeeklySweepModeCheckpointRecord | undefined> | null;
+}
+
+export interface WeeklySweepResumeModePlan {
+  mode: WeeklySweepMode;
+  completedOutcome?: WeeklySweepModeOutcome;
+  checkpoint?: unknown;
+}
+
+export type WeeklySweepResumePlan =
+  { ok: true; modes: WeeklySweepResumeModePlan[] } | { ok: false; refusal: string };
+
+/**
+ * What a resumed weekly run does per mode. A resume runs only at the commit the interrupted
+ * run recorded, because a checkpoint's finished steps describe that code, and continuing
+ * them on a newer checkout would mix two commits' results under one run row. A mode the
+ * interrupted run finished is reused from its recorded summary rather than run again.
+ */
+export function planWeeklySweepResume(
+  run: WeeklySweepResumableRun | null | undefined,
+  codeSha: string | null,
+): WeeklySweepResumePlan {
+  if (!run) return { ok: false, refusal: 'the weekly_sweep_runs row was not found' };
+  if (run.status !== 'running' || run.finishedAt) {
+    return {
+      ok: false,
+      refusal: `the run is ${String(run.status ?? 'unknown')}, and only an unfinished run (status running, no finishedAt) can be resumed`,
+    };
+  }
+  if (!run.codeSha) {
+    return {
+      ok: false,
+      refusal: 'the run recorded no commit, so a resume cannot prove it runs the same code',
+    };
+  }
+  if (!codeSha || codeSha !== run.codeSha) {
+    return {
+      ok: false,
+      refusal: `the run recorded ${run.codeSha} but this checkout is at ${codeSha ?? 'an unknown commit'}; a resume runs only at the interrupted run's commit`,
+    };
+  }
+  const modes = (run.requestedModes ?? []).filter((mode): mode is WeeklySweepMode =>
+    WEEKLY_SWEEP_MODES.includes(mode as WeeklySweepMode),
+  );
+  if (modes.length === 0) return { ok: false, refusal: 'the run requested no weekly sweep mode' };
+  return {
+    ok: true,
+    modes: modes.map((mode) => {
+      const record = run.checkpoints?.[mode];
+      if (record?.completed) {
+        return {
+          mode,
+          completedOutcome: {
+            mode,
+            exitCode: typeof record.exitCode === 'number' ? record.exitCode : null,
+            summaryFound: Boolean(record.summaryFound),
+            summary: record.summary,
+          },
+        };
+      }
+      return { mode, ...(record?.checkpoint ? { checkpoint: record.checkpoint } : {}) };
+    }),
+  };
 }
 
 export function buildSnapshotCacheDropArgs(artifactPath: string): string[] {
@@ -399,6 +517,7 @@ export interface WeeklySweepRunRecord {
   corpusSnapshot: WeeklySweepCorpusSnapshotRecord;
   searchIndex?: SweepSearchIndexOutcome;
   error?: string;
+  resumes?: WeeklySweepRunResume[];
 }
 
 type RecordLike = Record<string, unknown>;
@@ -599,6 +718,11 @@ export function weeklySweepRunStatus(
   return verdict === 'degraded' ? 'degraded' : 'succeeded';
 }
 
+export interface WeeklySweepRunResume {
+  at: Date;
+  codeSha: string | null;
+}
+
 export interface WeeklySweepRunStartRecord {
   startedAt: Date;
   environment: 'development';
@@ -629,6 +753,7 @@ export interface WeeklySweepRunRecordInput {
   corpusSnapshot: WeeklySweepCorpusSnapshotRecord;
   searchIndex?: SweepSearchIndexOutcome;
   error?: string;
+  resumes?: WeeklySweepRunResume[];
 }
 
 export function buildWeeklySweepRunRecord(input: WeeklySweepRunRecordInput): WeeklySweepRunRecord {
@@ -673,6 +798,7 @@ export function buildWeeklySweepRunRecord(input: WeeklySweepRunRecordInput): Wee
     corpusSnapshot: input.corpusSnapshot,
     searchIndex: input.searchIndex,
     error,
+    resumes: input.resumes && input.resumes.length > 0 ? input.resumes : undefined,
   });
 }
 

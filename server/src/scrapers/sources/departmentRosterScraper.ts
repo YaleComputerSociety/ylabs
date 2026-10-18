@@ -70,6 +70,7 @@ import {
   withoutMeshNonSubjectDescriptors,
 } from '../utils/meshNonSubjectDescriptors';
 import {
+  isCoursePageUrl,
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
@@ -3488,7 +3489,7 @@ export function profileEnrichmentFromHtml(
       labUrlCandidateRefused = true;
       return;
     }
-    if (isPostingPageUrl(absolute)) {
+    if (isPostingPageUrl(absolute) || isCoursePageUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
     }
@@ -3841,7 +3842,11 @@ export async function enrichEntryFromOfficialProfile(
 function withoutInadmissibleLabWebsite(entry: FacultyEntry): FacultyEntry {
   if (
     !entry.labUrl ||
-    !(isOffsiteInstitutionPersonProfileUrl(entry.labUrl) || isPostingPageUrl(entry.labUrl))
+    !(
+      isOffsiteInstitutionPersonProfileUrl(entry.labUrl) ||
+      isPostingPageUrl(entry.labUrl) ||
+      isCoursePageUrl(entry.labUrl)
+    )
   ) {
     return entry;
   }

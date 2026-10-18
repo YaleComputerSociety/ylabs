@@ -1380,7 +1380,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'entityType'],
+        facets: ['schools', 'departments', 'entityType', 'hasUndergradHostingEvidence'],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -2816,6 +2816,7 @@ describe('searchResearchGroupsViaMeili', () => {
         Chemistry: 1,
       },
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
+      hostsUndergrads: { true: 0 },
     });
   });
 
@@ -4748,6 +4749,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(mocks.researchEntityRelationshipFind).not.toHaveBeenCalled();
   });
@@ -4838,6 +4840,7 @@ describe('listResearchEntityRelationshipPayload', () => {
         }),
       ],
       affiliatedResearchEntitiesMeta: { returned: 1, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(result.affiliatedRelationships[0].sourceUrl).toBeUndefined();
     expect(result.affiliatedRelationships[0]).not.toHaveProperty('evidenceQuote');
@@ -4937,6 +4940,142 @@ describe('listResearchEntityRelationshipPayload', () => {
     ]);
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
     expect(result.affiliatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+  });
+
+  it('labels a related row by its own kind rather than the stored edge label', async () => {
+    const currentEntityId = '67d8928150621bcef434a1f5';
+    const facultyResearchId = '67d8928150621bcef434a1f6';
+    const labId = '67d8928150621bcef434a1f7';
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [facultyResearchId, labId].map((targetResearchEntityId) => ({
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+          })),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: facultyResearchId,
+          slug: 'synthetic-faculty-research',
+          name: 'Synthetic Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: labId,
+          slug: 'synthetic-member-lab',
+          name: 'Synthetic Member Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(
+      result.entityRelationships.map((edge) => [edge.relatedResearchEntitySlug, edge.label]),
+    ).toEqual([
+      ['synthetic-faculty-research', 'Member'],
+      ['synthetic-member-lab', 'Affiliated'],
+    ]);
+  });
+
+  it("drops the page lead's own faculty research row from the related list", async () => {
+    const currentEntityId = '67d8928150621bcef434a1f8';
+    const leadFacultyResearchId = '67d8928150621bcef434a1f9';
+    const otherFacultyResearchId = '67d8928150621bcef434a1fa';
+    const leadLabId = '67d8928150621bcef434a1fb';
+    const leadPersonId = new mongoose.Types.ObjectId();
+    const otherPersonId = new mongoose.Types.ObjectId();
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [leadFacultyResearchId, otherFacultyResearchId, leadLabId].map(
+            (targetResearchEntityId) => ({
+              sourceResearchEntityId: currentEntityId,
+              targetResearchEntityId,
+              relationshipType: 'AFFILIATED_LAB',
+              label: 'Affiliated lab',
+            }),
+          ),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    const facultyRow = (id: string, slug: string) => ({
+      _id: id,
+      slug,
+      name: 'Synthetic Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...validPublicDescriptions,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        facultyRow(leadFacultyResearchId, 'synthetic-lead-faculty-research'),
+        facultyRow(otherFacultyResearchId, 'synthetic-other-faculty-research'),
+        {
+          _id: leadLabId,
+          slug: 'synthetic-lead-lab',
+          name: 'Synthetic Lead Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    const piAssignment = (personId: mongoose.Types.ObjectId, entityId: string) => ({
+      _id: new mongoose.Types.ObjectId(),
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(entityId) },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      reviewStatus: 'APPROVED',
+    });
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        piAssignment(leadPersonId, leadFacultyResearchId),
+        piAssignment(otherPersonId, otherFacultyResearchId),
+        piAssignment(leadPersonId, leadLabId),
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        { _id: leadPersonId, displayName: 'Ada Fixture' },
+        { _id: otherPersonId, displayName: 'Bea Fixture' },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId, {
+      pageLeadPersonIds: [String(leadPersonId)],
+    });
+
+    expect(result.relatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.entityRelationships.map((edge) => edge.relatedResearchEntitySlug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.pageLeadOwnResearchEntityKeys).toContain('synthetic-lead-faculty-research');
   });
 
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
@@ -6369,5 +6508,119 @@ describe('publicRosterUndergraduates', () => {
     expect(
       publicRosterUndergraduates({ state: 'failed', lastSuccessfulSnapshot: snapshot }, now),
     ).toHaveLength(3);
+  });
+});
+
+describe('a query word no row carries does not empty the search', () => {
+  const entityId = '67d8928150621bcef434a3a1';
+  const keywordHit = {
+    id: entityId,
+    slug: 'medieval-history-row',
+    name: 'Medieval History Row',
+    kind: 'lab',
+    _rankingScoreDetails: { words: { matchingWords: 2, maxMatchingWords: 2 } },
+  };
+  const unmatchedWord = 'zqxvk';
+
+  const searchWithKeywordRowsFor = async (query: string, matchingTexts: string[]) => {
+    mocks.search.mockImplementation(async (text: string, params: Record<string, any>) => {
+      if (params.hybrid) return { hits: [], estimatedTotalHits: 0, totalHits: 0 };
+      return { hits: matchingTexts.includes(text.trim()) ? [keywordHit] : [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'medieval-history-row',
+          name: 'Medieval History Row',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    return searchResearchGroupsViaMeili(query, {}, 1, 24);
+  };
+
+  const keywordLegTexts = () =>
+    mocks.search.mock.calls.filter(([, params]) => !params.hybrid).map(([text]) => text);
+
+  it('searches the remaining words when the first word matches no row', async () => {
+    const result = await searchWithKeywordRowsFor(`${unmatchedWord} medieval plague`, [
+      'medieval',
+      'plague',
+      'medieval plague',
+    ]);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'medieval-history-row',
+    ]);
+    expect(keywordLegTexts()).toContain('medieval plague');
+  });
+
+  it('probes every word but the last whole, since only the last is matched as a prefix', async () => {
+    await searchWithKeywordRowsFor(`${unmatchedWord} medieval plague`, [
+      'medieval',
+      'plague',
+      'medieval plague',
+    ]);
+
+    expect(keywordLegTexts()).toEqual(
+      expect.arrayContaining([`${unmatchedWord} `, 'medieval ', 'plague']),
+    );
+    expect(keywordLegTexts()).not.toContain('plague ');
+  });
+
+  it('keeps the typed order of the words it keeps', async () => {
+    await searchWithKeywordRowsFor(`plague ${unmatchedWord} medieval`, [
+      'plague',
+      'medieval',
+      'plague medieval',
+    ]);
+
+    expect(keywordLegTexts()).toContain('plague medieval');
+    expect(keywordLegTexts()).not.toContain('medieval plague');
+  });
+
+  it('probes no single word when the typed words already have keyword matches', async () => {
+    await searchWithKeywordRowsFor('medieval plague', ['medieval plague']);
+
+    expect(keywordLegTexts()).not.toContain('medieval');
+    expect(keywordLegTexts()).not.toContain('plague');
+  });
+
+  it('probes no single word when only one word was typed', async () => {
+    await searchWithKeywordRowsFor(unmatchedWord, []);
+
+    expect(
+      mocks.search.mock.calls.filter(([, params]) => !params.hybrid && params.hitsPerPage === 1),
+    ).toEqual([]);
+  });
+
+  it('probes each distinct word once and none past the tenth', async () => {
+    const searchedWords = Array.from({ length: 10 }, (_word, position) => `word${position}`);
+    const ignoredWords = Array.from({ length: 30 }, (_word, position) => `extra${position}`);
+    await searchWithKeywordRowsFor(
+      [unmatchedWord, unmatchedWord, ...searchedWords.slice(1), ...ignoredWords].join(' '),
+      [],
+    );
+
+    const probedWords = keywordLegTexts()
+      .map((text) => text.trim())
+      .filter((text) => !text.includes(' '));
+    expect(probedWords.filter((text) => text === unmatchedWord)).toHaveLength(1);
+    expect(probedWords).toEqual(expect.arrayContaining(searchedWords.slice(1)));
+    expect(probedWords.filter((text) => text.startsWith('extra'))).toEqual([]);
+  });
+
+  it('serves nothing from the keyword leg when no typed word matches a row', async () => {
+    const result = await searchWithKeywordRowsFor(`${unmatchedWord} qwfpgjz`, []);
+
+    expect(result.researchEntities).toEqual([]);
+    expect(
+      mocks.search.mock.calls.filter(([, params]) => params.hybrid?.semanticRatio === 1),
+    ).toHaveLength(0);
   });
 });

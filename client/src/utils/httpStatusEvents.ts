@@ -13,3 +13,19 @@ export const dispatchAuthRequired = () => {
 export const dispatchRateLimited = (detail: HttpRateLimitDetail) => {
   window.dispatchEvent(new CustomEvent(HTTP_RATE_LIMITED_EVENT, { detail }));
 };
+
+export const dispatchHttpStatusEvent = (
+  status: number | undefined,
+  retryAfterHeader: string | null | undefined,
+  data?: { error?: string; retryAfterSeconds?: number },
+) => {
+  if (typeof window === 'undefined') return;
+  if (status === 401) dispatchAuthRequired();
+  if (status === 429) {
+    const retryAfterSeconds =
+      retryAfterHeader != null && Number.isFinite(Number(retryAfterHeader))
+        ? Number(retryAfterHeader)
+        : data?.retryAfterSeconds;
+    dispatchRateLimited({ message: data?.error || 'Too many requests.', retryAfterSeconds });
+  }
+};

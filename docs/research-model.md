@@ -110,6 +110,12 @@ The derivation is enforced in the scraper projection rather than in the schema, 
 Two escapes are deliberate: an operator lock on `kind` still wins over the derivation, and an entity with no recognizable `entityType` has no derivable kind, so `kind` observations still classify it at mint time.
 Classify a research home by observing `entityType`: a source that observes only `kind` cannot correct an entity another source already minted under a different `entityType`.
 
+A live row also carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, one entry per archived row whose `canonicalGroupId` chain ends on it (#5148).
+It is derived rather than written by a lane: `research-entity:derive-survivor-aliases` (`server/src/services/researchEntityMergedFrom.ts`) reads every tombstone, flattens chains onto the final live survivor, credits nobody for a chain that cycles, points at a missing row, or ends on an archived row, and sets each survivor's list exactly, clearing it from a row left with none.
+It runs as the `survivor-alias-derivation` Development sweep stage, writes with `timestamps: false` because the field is neither served nor indexed, and a second run plans no write.
+It exists so Beta and Production can resolve an old slug or id from the live survivor once promotion stops copying archived rows; until a reader uses it, the tombstones stay the source of truth and `mergedFrom` changes no served output.
+On Development on 2026-10-18 it planned 3,640 entries on 1,850 survivors from 3,715 tombstones, 75 of which name no live survivor.
+
 ### `RoleAssignment` (`role_assignments`)
 
 The person-to-research-entity membership edge (the roster); replaces the retired `ResearchGroupMember`.
@@ -202,8 +208,13 @@ Historical `paper` observations and source rows are retained as read-only archiv
 `/programs` is an application board, so it groups by application status rather than by role: due in the next 30 days, accepting applications, opening soon, the next cycle, department research guidance, and no dates posted (`client/src/utils/programBoard.ts`).
 A program whose served deadline is stale sits under no dates posted and in no timing quick filter, because its window is unknown rather than open or closed (#4363).
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
+An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
 The citizenship filter keeps a not-stated program, because unknown is not ineligible.
+Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
+When a program's own text ties exactly one date to the deadline and the served deadline's month and day appear nowhere in the text, the detail view says so and points to the official page, because the reader cannot tell which cycle each was written in (`programTextDeadlineConflict`, #5158).
+A projected or stale deadline is never flagged, because the page already labels it.
+The flag is conservative and can miss a conflict: text that ties two or more dates to the deadline is not flagged.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
 The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.
@@ -473,7 +484,7 @@ Unsetting either field is therefore a separate change that has to retire those r
 The labels come from `fieldProvenance`, which is history and outlives the value it recorded: several materializer clear arms empty `websiteUrl`, and `departments` can resolve to an empty list, while the provenance entry stays.
 `contributionLabelIsServed` in `server/src/utils/servedFieldContributionLabels.ts` therefore drops a "Research website", "Department", "Topics", "Methods", "School" or "Research summary" label when the DTO serves that field empty, judged on the sanitized served value rather than the stored one.
 "Research summary" is judged on the served body, or on the served card line only when it is the stored card line itself, because a row with no usable description can still serve a card built from its topics.
-"Lead identity" and "Name" are not gated, because the lead is served on the roster outside the entity payload and every row serves a name.
+"Who leads it" and "Name" are not gated, because the lead is served on the roster outside the entity payload and every row serves a name.
 The provenance entries themselves are never pruned; only what the payload credits changes.
 
 ## Saved Research Entities
@@ -499,7 +510,7 @@ The embedded `User.favPathways` field declaration has since been dropped from th
 The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the `LISTING_*` analytics enums remain until the analytics listing surface is retired.
 All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; with the `User` model retired (#2014), no embedded planning fields remain in code (see [`ResearchPlan`](#researchplan-research_plans) for the human-gated #725 backfill of any legacy values in the orphaned `users` collection).
 
-Program watching (the account Program Watch surface and the `/programs` watch affordance) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
+Program watching (the dashboard's Watched programs tab and the `/programs` watch control) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
 
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
 Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
