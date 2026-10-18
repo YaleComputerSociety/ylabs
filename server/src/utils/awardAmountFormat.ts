@@ -1,17 +1,23 @@
-const AMOUNT =
-  /(\$\s?)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{2})?(?!\d|,\d{3}|\.\d|%|\s*(?:weeks?|months?|years?|days?|hours?|awards?|students?|grants?|fellowships?|recipients?|per\b))/g;
+const AMOUNT = /(\$\s?)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{2})?(?!\d|,\d{3}|\.\d|%)/g;
 
 const MIN_BARE_AMOUNT = 100;
 
+const COUNT_NOUN_AFTER =
+  /^\s*(?:weeks?|months?|years?|days?|hours?|awards?|students?|grants?|fellowships?|recipients?)\b/i;
+
+const OTHER_CURRENCY_BEFORE = /[£€¥]\s*$/;
+
+const CURRENCY_WORD_AFTER = /^\s*(?:USD|dollars?|EUR)\b/i;
+
 const YEAR = /^(?:19|20)\d{2}$/;
 
-const YEAR_BEFORE =
-  /(?:\b(?:in|for|the|fall|spring|summer|winter|academic|year|cycle|since|by|through|until)\s*|\b(?:19|20)\d{2}\s*[-\u2013/]\s*)$/i;
+const FIGURES_ONLY = /^\s*\$?\s?[\d,.]+(?:\s*[-–]\s*\$?\s?[\d,.]+)*\s*$/;
 
-const YEAR_AFTER = /^\s*[-\u2013/]\s*(?:(?:19|20)\d{2}|\d{2})\b/;
-
-function readsAsYear(digits: string, before: string, after: string): boolean {
-  return YEAR.test(digits) && (YEAR_BEFORE.test(before) || YEAR_AFTER.test(after));
+function readsAsBareDollars(digits: string, before: string, after: string, whole: string): boolean {
+  if (Number(digits.replace(/,/g, '')) < MIN_BARE_AMOUNT) return false;
+  if (COUNT_NOUN_AFTER.test(after)) return false;
+  if (OTHER_CURRENCY_BEFORE.test(before) || CURRENCY_WORD_AFTER.test(after)) return false;
+  return !YEAR.test(digits) || FIGURES_ONLY.test(whole);
 }
 
 function wholeDollars(digits: string, cents: string | undefined): string | undefined {
@@ -22,19 +28,24 @@ function wholeDollars(digits: string, cents: string | undefined): string | undef
 /**
  * An award amount as a student reads one (#5205): "Up to 500.00" and "Maximum award of
  * 7500" are served as "Up to $500" and "Maximum award of $7,500". A figure with cents
- * other than .00, a number under 100 with no dollar sign, and a number followed by a
- * count noun ("3 awards", "10 weeks") are left as written.
+ * other than .00 is left as written. A figure with no dollar sign is also left as written
+ * when it is under 100, is followed by a count noun ("3 awards", "10 weeks"), sits next to
+ * another currency ("£2,500", "1,000 USD"), or is a 19xx/20xx year in a string that has
+ * words besides its figures.
  */
 export function formatServedAwardAmount(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   return value.replace(
     AMOUNT,
     (match, dollar: string | undefined, digits: string, cents, offset: number, whole: string) => {
-      const amount = Number(digits.replace(/,/g, ''));
-      if (!dollar && amount < MIN_BARE_AMOUNT) return match;
       if (
         !dollar &&
-        readsAsYear(digits, whole.slice(0, offset), whole.slice(offset + match.length))
+        !readsAsBareDollars(
+          digits,
+          whole.slice(0, offset),
+          whole.slice(offset + match.length),
+          whole,
+        )
       ) {
         return match;
       }
