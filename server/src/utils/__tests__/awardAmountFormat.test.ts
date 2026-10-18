@@ -17,6 +17,9 @@ describe('formatServedAwardAmount (#5205)', () => {
     ['2500 per semester', '$2,500 per semester'],
     ['2000', '$2,000'],
     ['1500-2000', '$1,500-$2,000'],
+    ['Up to 5000 per semester', 'Up to $5,000 per semester'],
+    ['Typically 500 to 2500, and 3000 each', 'Typically $500 to $2,500, and $3,000 each'],
+    ['Total award 1200.', 'Total award $1,200.'],
   ])('writes %j as %j', (stored, served) => {
     expect(formatServedAwardAmount(stored)).toBe(served);
   });
@@ -40,6 +43,10 @@ describe('formatServedAwardAmount (#5205)', () => {
     '$1500 or 1,200 GBP',
     'Spend by June 30, 2026',
     'Class of 2027',
+    'Up to 150 participants',
+    'Top 100 applicants',
+    'Grant ID 12345',
+    'Room 4500 stipend',
   ])(
     'leaves a count, a figure with cents, another currency, a year, or prose as written: %j',
     (stored) => {

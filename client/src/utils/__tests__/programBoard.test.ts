@@ -106,6 +106,10 @@ describe('cardAwardLabel', () => {
     expect(cardAwardLabel('up to $500')).toBe('up to $500');
   });
 
+  it('keeps a served award whose sign and separators lengthened it on the card', () => {
+    expect(cardAwardLabel('Up to $5,000 per semester')).toBe('Up to $5,000 per semester');
+  });
+
   it('keeps a long award sentence off the card rather than truncating it', () => {
     expect(cardAwardLabel('maximum amount around $2,500; smaller amounts typical')).toBeNull();
     expect(cardAwardLabel('')).toBeNull();

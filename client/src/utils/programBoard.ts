@@ -102,7 +102,7 @@ export function programCitizenshipSummary(
   return statuses.length > 0 ? statuses.join(', ') : CITIZENSHIP_NOT_STATED_LABEL;
 }
 
-const CARD_AWARD_MAX_LENGTH = 24;
+const CARD_AWARD_MAX_LENGTH = 28;
 
 export function cardAwardLabel(awardAmount: string | null | undefined): string | null {
   const amount = (awardAmount || '').trim();
