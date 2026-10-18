@@ -4,8 +4,7 @@ import { sourceLedgerKey } from './researchDetailSources';
 export type UndergraduateMemberStatus = 'current' | 'past';
 
 export type UndergraduateMemberLine =
-  | { status: 'current'; count: number; sourceUrl: string }
-  | { status: 'past'; sourceUrl: string };
+  { status: 'current'; count: number; sourceUrl: string } | { status: 'past'; sourceUrl: string };
 
 interface MemberSignal {
   signalType?: string;
