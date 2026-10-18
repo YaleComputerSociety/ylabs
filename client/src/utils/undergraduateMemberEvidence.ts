@@ -1,4 +1,5 @@
 import { ROSTER_ALUMNI_PROGRAM_NAME } from './pastUndergradAdvisees';
+import { sourceLedgerKey } from './researchDetailSources';
 
 export type UndergraduateMemberStatus = 'current' | 'past';
 
@@ -26,15 +27,6 @@ export interface UndergraduateMemberEvidence {
   shownStatuses: ReadonlySet<UndergraduateMemberStatus>;
   citesFellowshipRecipients: (sourceUrl?: string) => boolean;
 }
-
-const normalizeComparableUrl = (value?: string): string => {
-  try {
-    const url = new URL((value || '').trim());
-    return `${url.hostname.toLowerCase().replace(/^www\./, '')}${decodeURI(url.pathname).replace(/\/+$/, '')}`;
-  } catch {
-    return '';
-  }
-};
 
 const SIGNAL_STATUS: Record<string, UndergraduateMemberStatus> = {
   CURRENT_UNDERGRADS: 'current',
@@ -70,16 +62,20 @@ export function undergraduateMemberEvidence(
   );
   const fellowshipUrls = new Set(
     (input.fellowshipRecipients ?? [])
-      .map((recipient) => normalizeComparableUrl(recipient.sourceUrl))
-      .filter(Boolean),
+      .map((recipient) => sourceLedgerKey(recipient.sourceUrl))
+      .filter((key): key is string => Boolean(key)),
   );
   const citesFellowshipRecipients = (sourceUrl?: string): boolean => {
-    const url = normalizeComparableUrl(sourceUrl);
-    return Boolean(url) && fellowshipUrls.has(url);
+    const key = sourceLedgerKey(sourceUrl);
+    return Boolean(key) && fellowshipUrls.has(key as string);
   };
-  const rosterAlumniCount = (input.pastUndergradAdvisees ?? [])
-    .filter((entry) => entry?.programName === ROSTER_ALUMNI_PROGRAM_NAME)
-    .reduce((sum, entry) => sum + (entry.count ?? 1), 0);
+  const pastAdvisees = input.pastUndergradAdvisees ?? [];
+  const pastAdviseesAreRosterAlumni = pastAdvisees.every(
+    (entry) => entry?.programName === ROSTER_ALUMNI_PROGRAM_NAME,
+  );
+  const rosterAlumniCount = pastAdviseesAreRosterAlumni
+    ? pastAdvisees.reduce((sum, entry) => sum + (entry.count ?? 1), 0)
+    : 0;
   const countFor: Record<UndergraduateMemberStatus, number> = {
     current: positive(input.currentUndergradCount),
     past: positive(rosterAlumniCount),

@@ -51,15 +51,36 @@ describe('undergraduateMemberEvidence', () => {
     expect(contexts).toEqual(['Undergraduate access']);
   });
 
-  it('counts past members from the roster-alumni count only', () => {
+  it('counts past members from the roster-alumni count', () => {
     const evidence = undergraduateMemberEvidence({
       accessSignals: [pastSignal],
+      pastUndergradAdvisees: [{ programName: 'Lab roster alumni', count: 4 }],
+    });
+    expect(evidence.countLines).toEqual([{ status: 'past', count: 4, sourceUrl: TEAM_PAGE }]);
+  });
+
+  it('does not credit a lab page with past members when the signal may cite another source', () => {
+    const mixedSignal = { signalType: 'PAST_UNDERGRADS', sourceUrl: BOOKLET };
+    const evidence = undergraduateMemberEvidence({
+      accessSignals: [mixedSignal],
       pastUndergradAdvisees: [
         { programName: 'Lab roster alumni', count: 4 },
         { programName: 'Fixture Scholars', count: 2 },
       ],
     });
-    expect(evidence.countLines).toEqual([{ status: 'past', count: 4, sourceUrl: TEAM_PAGE }]);
+    expect(evidence.countLines).toEqual([]);
+    expect(chipFor(BOOKLET, evidence, [mixedSignal])).toEqual(['Undergraduate access']);
+  });
+
+  it('keeps fellowship documents that differ only by a query identifier apart', () => {
+    const otherBooklet = `${BOOKLET}?id=2`;
+    const signal = { signalType: 'PAST_UNDERGRADS', sourceUrl: otherBooklet };
+    const evidence = undergraduateMemberEvidence({
+      accessSignals: [signal],
+      fellowshipRecipients: [{ sourceUrl: `${BOOKLET}?id=1` }],
+    });
+    expect(evidence.citesFellowshipRecipients(otherBooklet)).toBe(false);
+    expect(evidence.citesFellowshipRecipients(`${BOOKLET}?id=1`)).toBe(true);
   });
 
   it('labels a past-member signal citing a fellowship booklet as fellowship evidence', () => {
