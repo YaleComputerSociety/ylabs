@@ -410,7 +410,7 @@ describe('SavedResearchPlans', () => {
     );
 
     expect(await screen.findByRole('link', { name: 'Fixture Person' })).toBeTruthy();
-    expect(screen.getByText('Faculty Research')).toBeTruthy();
+    expect(screen.getByText('Faculty research')).toBeTruthy();
     expect(screen.getByText('Creative practice')).toBeTruthy();
     expect(screen.queryByText('Individual')).toBeNull();
   });

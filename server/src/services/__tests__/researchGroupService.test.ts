@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchSimilarDocuments: vi.fn(),
+  getDocument: vi.fn(),
   getEmbedders: vi.fn(),
   listingDistinct: vi.fn(),
   listingFind: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../../utils/meiliClient', () => ({
   getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     searchSimilarDocuments: mocks.searchSimilarDocuments,
+    getDocument: mocks.getDocument,
     getEmbedders: mocks.getEmbedders,
   })),
 }));
@@ -163,6 +165,8 @@ beforeEach(() => {
   mocks.search.mockReset();
   mocks.searchSimilarDocuments.mockReset();
   mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
+  mocks.getDocument.mockReset();
+  mocks.getDocument.mockResolvedValue({});
   mocks.getEmbedders.mockReset();
   mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
   mocks.getResearchSearchQueryVector.mockReset();
@@ -4745,6 +4749,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(mocks.researchEntityRelationshipFind).not.toHaveBeenCalled();
   });
@@ -4835,6 +4840,7 @@ describe('listResearchEntityRelationshipPayload', () => {
         }),
       ],
       affiliatedResearchEntitiesMeta: { returned: 1, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(result.affiliatedRelationships[0].sourceUrl).toBeUndefined();
     expect(result.affiliatedRelationships[0]).not.toHaveProperty('evidenceQuote');
@@ -4934,6 +4940,142 @@ describe('listResearchEntityRelationshipPayload', () => {
     ]);
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
     expect(result.affiliatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+  });
+
+  it('labels a related row by its own kind rather than the stored edge label', async () => {
+    const currentEntityId = '67d8928150621bcef434a1f5';
+    const facultyResearchId = '67d8928150621bcef434a1f6';
+    const labId = '67d8928150621bcef434a1f7';
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [facultyResearchId, labId].map((targetResearchEntityId) => ({
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+          })),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: facultyResearchId,
+          slug: 'synthetic-faculty-research',
+          name: 'Synthetic Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: labId,
+          slug: 'synthetic-member-lab',
+          name: 'Synthetic Member Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(
+      result.entityRelationships.map((edge) => [edge.relatedResearchEntitySlug, edge.label]),
+    ).toEqual([
+      ['synthetic-faculty-research', 'Member'],
+      ['synthetic-member-lab', 'Affiliated'],
+    ]);
+  });
+
+  it("drops the page lead's own faculty research row from the related list", async () => {
+    const currentEntityId = '67d8928150621bcef434a1f8';
+    const leadFacultyResearchId = '67d8928150621bcef434a1f9';
+    const otherFacultyResearchId = '67d8928150621bcef434a1fa';
+    const leadLabId = '67d8928150621bcef434a1fb';
+    const leadPersonId = new mongoose.Types.ObjectId();
+    const otherPersonId = new mongoose.Types.ObjectId();
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [leadFacultyResearchId, otherFacultyResearchId, leadLabId].map(
+            (targetResearchEntityId) => ({
+              sourceResearchEntityId: currentEntityId,
+              targetResearchEntityId,
+              relationshipType: 'AFFILIATED_LAB',
+              label: 'Affiliated lab',
+            }),
+          ),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    const facultyRow = (id: string, slug: string) => ({
+      _id: id,
+      slug,
+      name: 'Synthetic Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...validPublicDescriptions,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        facultyRow(leadFacultyResearchId, 'synthetic-lead-faculty-research'),
+        facultyRow(otherFacultyResearchId, 'synthetic-other-faculty-research'),
+        {
+          _id: leadLabId,
+          slug: 'synthetic-lead-lab',
+          name: 'Synthetic Lead Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    const piAssignment = (personId: mongoose.Types.ObjectId, entityId: string) => ({
+      _id: new mongoose.Types.ObjectId(),
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(entityId) },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      reviewStatus: 'APPROVED',
+    });
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        piAssignment(leadPersonId, leadFacultyResearchId),
+        piAssignment(otherPersonId, otherFacultyResearchId),
+        piAssignment(leadPersonId, leadLabId),
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        { _id: leadPersonId, displayName: 'Ada Fixture' },
+        { _id: otherPersonId, displayName: 'Bea Fixture' },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId, {
+      pageLeadPersonIds: [String(leadPersonId)],
+    });
+
+    expect(result.relatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.entityRelationships.map((edge) => edge.relatedResearchEntitySlug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.pageLeadOwnResearchEntityKeys).toContain('synthetic-lead-faculty-research');
   });
 
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
@@ -5234,6 +5376,103 @@ describe('listSimilarResearchEntities', () => {
     expect(encoded).not.toContain('example.edu/private');
   });
 
+  it('ranks a neighbour sharing a person name with the viewed row after every topical neighbour', async () => {
+    mocks.getDocument.mockResolvedValue({
+      leadProfessorNames: ['Ada Q. Fixture'],
+      professorNames: ['Ada Q. Fixture'],
+    });
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a260', 'same-surname', 0.85),
+          leadProfessorNames: ['Bo Fixture'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a261', 'same-first-name', 0.63),
+          professorNames: ['Ada Other'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a262', 'field-peer', 0.6),
+          leadProfessorNames: ['Cy Peer'],
+        },
+        similarHit('67d8928150621bcef434a263', 'unnamed-peer', 0.55),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a260', 'same-surname', 'Same Surname'),
+      mongoEntity('67d8928150621bcef434a261', 'same-first-name', 'Same First Name'),
+      mongoEntity('67d8928150621bcef434a262', 'field-peer', 'Field Peer'),
+      mongoEntity('67d8928150621bcef434a263', 'unnamed-peer', 'Unnamed Peer'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual([
+      'field-peer',
+      'unnamed-peer',
+      'same-surname',
+      'same-first-name',
+    ]);
+    expect(mocks.getDocument).toHaveBeenCalledWith('67d8928150621bcef434a1d5', {
+      fields: ['leadProfessorNames', 'professorNames'],
+    });
+  });
+
+  it('does not treat a shared name particle or generational suffix as a shared name', async () => {
+    mocks.getDocument.mockResolvedValue({
+      professorNames: ['Ada de la Fixture Jr.'],
+    });
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a280', 'particle-peer', 0.8),
+          professorNames: ['Bo de Other Jr'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a281', 'surname-peer', 0.7),
+          professorNames: ['Cy Fixture'],
+        },
+        similarHit('67d8928150621bcef434a282', 'unnamed-peer', 0.6),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a280', 'particle-peer', 'Particle Peer'),
+      mongoEntity('67d8928150621bcef434a281', 'surname-peer', 'Surname Peer'),
+      mongoEntity('67d8928150621bcef434a282', 'unnamed-peer', 'Unnamed Peer'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual([
+      'particle-peer',
+      'unnamed-peer',
+      'surname-peer',
+    ]);
+  });
+
+  it('keeps the embedding order when the viewed row has no person names to compare', async () => {
+    mocks.getDocument.mockRejectedValue(new Error('document not found'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a270', 'first', 0.8),
+          leadProfessorNames: ['Bo Fixture'],
+        },
+        similarHit('67d8928150621bcef434a271', 'second', 0.7),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a270', 'first', 'First'),
+      mongoEntity('67d8928150621bcef434a271', 'second', 'Second'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+    consoleError.mockRestore();
+
+    expect(result.map((entity) => entity.slug)).toEqual(['first', 'second']);
+  });
+
   it('caps results at the bounded maximum', async () => {
     const ids = Array.from(
       { length: 20 },
@@ -5292,13 +5531,18 @@ describe('listSimilarResearchEntities', () => {
       mocks.researchEntityServesPublicDetail.mockClear();
     });
 
-    it('asks the index for ids and slugs only', async () => {
+    it('asks the index for ids, slugs and the person names it compares only', async () => {
       mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
 
       await listSimilarResearchEntities(viewedEntity);
 
       const [request] = mocks.searchSimilarDocuments.mock.calls.at(-1) as [Record<string, any>];
-      expect(request.attributesToRetrieve).toEqual(['id', 'slug']);
+      expect(request.attributesToRetrieve).toEqual([
+        'id',
+        'slug',
+        'leadProfessorNames',
+        'professorNames',
+      ]);
       expect(request.showRankingScore).toBe(true);
     });
 

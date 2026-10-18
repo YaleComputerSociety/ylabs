@@ -252,7 +252,7 @@ describe('getStructuredEligibilityDetails', () => {
       { label: 'School', value: 'Yale College students only' },
       { label: 'Year of study', value: 'Sophomore, Junior' },
       { label: 'Term', value: 'Summer' },
-      { label: 'Citizenship', value: 'U.S. citizens are eligible' },
+      { label: 'Citizenship', value: 'U.S. citizens only' },
     ]);
   });
 

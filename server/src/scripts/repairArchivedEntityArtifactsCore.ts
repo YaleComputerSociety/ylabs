@@ -13,8 +13,17 @@ import {
   planAccessSignalSettlements,
   type AccessSignalSettlement,
 } from '../services/archivedResearchEntityAccessSignals';
+import {
+  planRelationshipEdgeSettlements,
+  type RelationshipEdgeSettlement,
+  type RelationshipEndpoints,
+} from '../services/archivedResearchEntityRelationships';
 
-export const archivedEntityArtifactTypes = ['RoleAssignment', 'AccessSignal'] as const;
+export const archivedEntityArtifactTypes = [
+  'RoleAssignment',
+  'AccessSignal',
+  'ResearchEntityRelationship',
+] as const;
 export type ArchivedEntityArtifactType = (typeof archivedEntityArtifactTypes)[number];
 
 export const archivedEntityRepairClasses = [
@@ -68,6 +77,7 @@ export interface ArchivedEntityArtifact {
   role?: string;
   signalType?: string;
   derivationKey?: string;
+  relationship?: RelationshipEndpoints;
 }
 
 export interface ArchivedEntityRepairScope {
@@ -83,6 +93,7 @@ interface PlanItemBase {
   repairClass: ArchivedEntityRepairClass;
   archivedEntityId: string;
   archivedReason: string;
+  relationship?: RelationshipEndpoints;
 }
 
 export interface ArchivedEntityArtifactRepairPlan {
@@ -95,7 +106,11 @@ export interface ArchivedEntityArtifactRepairPlan {
   skipped: Array<
     PlanItemBase & {
       id: string;
-      reason: 'merge-chain-dead-end' | 'missing-disposition' | 'not-an-operator-archive';
+      reason:
+        | 'merge-chain-dead-end'
+        | 'missing-disposition'
+        | 'not-an-operator-archive'
+        | 'no-live-endpoint';
     }
   >;
 }
@@ -204,6 +219,7 @@ export function buildArchivedEntityArtifactRepairPlan({
   };
   const settleableRoleEdges: ArchivedEntityArtifact[] = [];
   const settleableSignals: ArchivedEntityArtifact[] = [];
+  const settleableRelationships: ArchivedEntityArtifact[] = [];
 
   for (const artifact of artifacts) {
     const disposition = dispositions.get(artifact.researchEntityId);
@@ -243,6 +259,10 @@ export function buildArchivedEntityArtifactRepairPlan({
       settleableRoleEdges.push(artifact);
       continue;
     }
+    if (artifact.artifactType === 'ResearchEntityRelationship') {
+      settleableRelationships.push(artifact);
+      continue;
+    }
     if (disposition.repairClass === 'merge-survivor' && !disposition.survivorId) {
       plan.skipped.push({ ...base, id: artifact.id, reason: 'merge-chain-dead-end' });
       continue;
@@ -252,6 +272,7 @@ export function buildArchivedEntityArtifactRepairPlan({
 
   addAccessSignalSettlementsToPlan(plan, settleableSignals, dispositions, canonicalArtifacts);
   addRoleEdgeSettlementsToPlan(plan, settleableRoleEdges, dispositions, canonicalArtifacts);
+  addRelationshipSettlementsToPlan(plan, settleableRelationships, dispositions, canonicalArtifacts);
   return plan;
 }
 
@@ -366,6 +387,86 @@ function addRoleEdgeSettlementsToPlan(
       plan.archiveWithoutCanonical.push({ ...base, id: settlement.edgeId });
     }
   }
+}
+
+// Relationship edges are planned by the same function an archive runs inline. Each artifact
+// carries both endpoints already resolved to their live rows, because an edge has two ends
+// and only one of them is the archived row this plan is keyed by.
+function addRelationshipSettlementsToPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+  edges: ArchivedEntityArtifact[],
+  dispositions: ReadonlyMap<string, ArchivedEntityDisposition>,
+  canonicalArtifacts: ArchivedEntityArtifact[],
+): void {
+  const relationshipOf = (artifact: ArchivedEntityArtifact): RelationshipEndpoints =>
+    artifact.relationship || { sourceId: '', targetId: '', relationshipType: '' };
+  const archivedEntityIdByEdgeId = new Map(edges.map((edge) => [edge.id, edge.researchEntityId]));
+  const endpointsByEdgeId = new Map(edges.map((edge) => [edge.id, relationshipOf(edge)]));
+  const settlements = planRelationshipEdgeSettlements({
+    edges: edges.map((edge) => ({ id: edge.id, ...relationshipOf(edge) })),
+    heldEdges: canonicalArtifacts
+      .filter((artifact) => artifact.artifactType === 'ResearchEntityRelationship')
+      .map((artifact) => ({ id: artifact.id, ...relationshipOf(artifact) })),
+  });
+  for (const settlement of settlements) {
+    const disposition = dispositions.get(archivedEntityIdByEdgeId.get(settlement.edgeId) || '');
+    if (!disposition) continue;
+    const base = {
+      ...planItemBase('ResearchEntityRelationship', disposition),
+      relationship: endpointsByEdgeId.get(settlement.edgeId),
+    };
+    if (settlement.action === 'repoint') {
+      plan.relink.push({
+        ...base,
+        id: settlement.edgeId,
+        canonicalResearchEntityId: disposition.survivorId || '',
+      });
+    } else if (settlement.action === 'archive-redundant') {
+      plan.mergeAndArchive.push({
+        ...base,
+        duplicateId: settlement.edgeId,
+        canonicalId: settlement.survivorEdgeId,
+        canonicalResearchEntityId: disposition.survivorId || '',
+      });
+    } else if (settlement.action === 'archive-self-loop') {
+      plan.archiveWithoutCanonical.push({ ...base, id: settlement.edgeId });
+    } else {
+      plan.skipped.push({ ...base, id: settlement.edgeId, reason: 'no-live-endpoint' });
+    }
+  }
+}
+
+export function relationshipSettlementsFromRepairPlan(
+  plan: ArchivedEntityArtifactRepairPlan,
+): RelationshipEdgeSettlement[] {
+  const endpointsOf = (item: PlanItemBase) => ({
+    sourceId: item.relationship?.sourceId || '',
+    targetId: item.relationship?.targetId || '',
+  });
+  const isRelationship = (item: PlanItemBase) =>
+    item.artifactType === 'ResearchEntityRelationship' && Boolean(item.relationship);
+  return [
+    ...plan.relink.filter(isRelationship).map((item): RelationshipEdgeSettlement => ({
+      action: 'repoint',
+      edgeId: item.id,
+      ...endpointsOf(item),
+      liveSourceId: item.relationship?.liveSourceId || '',
+      liveTargetId: item.relationship?.liveTargetId || '',
+    })),
+    ...plan.mergeAndArchive.filter(isRelationship).map((item): RelationshipEdgeSettlement => ({
+      action: 'archive-redundant',
+      edgeId: item.duplicateId,
+      ...endpointsOf(item),
+      survivorEdgeId: item.canonicalId,
+    })),
+    ...plan.archiveWithoutCanonical
+      .filter(isRelationship)
+      .map((item): RelationshipEdgeSettlement => ({
+        action: 'archive-self-loop',
+        edgeId: item.id,
+        ...endpointsOf(item),
+      })),
+  ];
 }
 
 export function roleEdgeSettlementsFromRepairPlan(

@@ -58,12 +58,6 @@ const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project 
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
 
-const sentenceCaseLabel = (label: string): string =>
-  label
-    .split(' ')
-    .map((word, index) => (index === 0 ? word : word.toLowerCase()))
-    .join(' ');
-
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const titleAlreadyNamesKind = (title: string, kind: string): boolean =>
@@ -169,7 +163,7 @@ const ResearchHomeCard = ({
     leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
-  const kindLabel = sentenceCaseLabel(entityKindLabel(home.entities[0]));
+  const kindLabel = entityKindLabel(home.entities[0]);
   const showsKindLabel =
     isCompact &&
     home.entities.length === 1 &&
@@ -237,7 +231,7 @@ const ResearchHomeCard = ({
     mobileMoreCount > 0 && (
       <span
         key="more-mobile"
-        className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+        className={`self-center px-1 text-xs font-medium text-muted ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
       >
         +{mobileMoreCount} more
       </span>
@@ -245,7 +239,7 @@ const ResearchHomeCard = ({
     moreCountIsResponsive && desktopMoreCount > 0 && (
       <span
         key="more-desktop"
-        className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+        className="hidden self-center px-1 text-xs font-medium text-muted sm:inline"
       >
         +{desktopMoreCount} more
       </span>
@@ -270,7 +264,7 @@ const ResearchHomeCard = ({
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
                 state={profileOpenState}
-                className="yr-link yr-focus-ring rounded-control"
+                className="yr-link yr-focus-ring -my-1.5 inline-block rounded-control py-1.5"
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpen?.(home);

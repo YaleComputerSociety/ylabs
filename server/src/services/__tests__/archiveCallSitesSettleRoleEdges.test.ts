@@ -14,7 +14,8 @@ const SERVER_SRC = path.resolve(HERE, '../..');
 const REVIEWED_ARCHIVED_ENTITY_UPDATE_CALLERS: Record<string, { sites: number; reason: string }> = {
   'services/archivedResearchEntityRoleEdges.ts': {
     sites: 1,
-    reason: 'the helper itself, which settles role edges and access signals in the same step',
+    reason:
+      'the helper itself, which settles role edges, access signals and relationship edges in the same step',
   },
   'scrapers/entityMaterializer.ts': {
     sites: 1,
@@ -43,6 +44,10 @@ const REVIEWED_ATTRIBUTED_ARCHIVE_SET_CALLERS: Record<string, { sites: number; r
     reason: 'archives access signals, for archiveResearchEntities and the repair alike',
   },
   'scripts/dedupeResearchEntitiesByPi.ts': { sites: 1, reason: 'archives self-relationships' },
+  'services/archivedResearchEntityRelationships.ts': {
+    sites: 1,
+    reason: 'archives relationship edges, for archiveResearchEntities and the repair alike',
+  },
   'scripts/repairDuplicateAccessSignals.ts': { sites: 1, reason: 'archives access signals' },
 };
 
@@ -78,7 +83,7 @@ describe('every research-entity archive settles its role edges and access signal
     );
   });
 
-  it('settles both role edges and access signals inside archiveResearchEntities', () => {
+  it('settles role edges, access signals and relationship edges inside archiveResearchEntities', () => {
     const helper = fs.readFileSync(
       path.join(SERVER_SRC, 'services/archivedResearchEntityRoleEdges.ts'),
       'utf8',
@@ -86,6 +91,7 @@ describe('every research-entity archive settles its role edges and access signal
     const body = helper.slice(helper.indexOf('export async function archiveResearchEntities('));
     expect(body).toMatch(/await settleRoleEdgesOfArchivedResearchEntities\(\{/);
     expect(body).toMatch(/await settleAccessSignalsOfArchivedResearchEntities\(\{/);
+    expect(body).toMatch(/await settleRelationshipEdgesOfArchivedResearchEntities\(\{/);
   });
 
   it('routes each lane that archives a research entity through archiveResearchEntities', () => {

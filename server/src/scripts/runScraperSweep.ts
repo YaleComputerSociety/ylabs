@@ -301,6 +301,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'data-quality'
     | 'integrity-gate'
     | 'trust-contract'
+    | 'survivor-alias-derivation'
     | 'archived-cleanup'
     | 'dead-data-prune';
   status: 'succeeded' | 'failed';
@@ -1809,6 +1810,13 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     buildArgs: () => ['--collection=all', '--mode=student-ready-only', '--strict'],
     isEnabled: () => true,
     judgeResult: judgeTrustContractResult,
+  },
+  {
+    name: 'survivor-alias-derivation',
+    command: 'research-entity:derive-survivor-aliases',
+    artifactName: 'development-survivor-alias-derivation.json',
+    buildArgs: () => ['--apply', '--confirm-derive-survivor-aliases'],
+    isEnabled: () => true,
   },
   {
     name: 'archived-cleanup',

@@ -27,11 +27,14 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { materializeEntity } from '../entityMaterializer';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const SLUG = 'dept-synthetic-member';
-const PERSON_ROW_NAME = 'Synthetic Member Faculty Research';
+const LEAD_NAME = 'Synthetic Member';
+const PERSON_ROW_NAME = `${LEAD_NAME} Faculty Research`;
 const HOME_NAME = 'Synthetic Center for Coastal Studies';
 const PROFILE_URL = 'https://synthetic.yale.edu/profile/synthetic-member/';
 const LANE = 'official-profile-pi-backfill';
@@ -56,7 +59,7 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'role_assignments']) {
+    for (const name of ['observations', 'research_entities', 'researchers', 'role_assignments']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -146,5 +149,136 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
     expect(row?.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(row?.kind).not.toBe('center');
     expect(row?.name).toBe(PERSON_ROW_NAME);
+  });
+
+  describe('a merged survivor left holding the withdrawn type', () => {
+    const SURVIVOR_SLUG = 'synthetic-lab-sm1';
+    const LOSER_SLUG = 'dept-synthetic-member';
+
+    const seedOn = (entityKey: string, field: string, value: unknown, sourceName: string) =>
+      Observation.create({
+        entityType: 'researchEntity',
+        entityKey,
+        field,
+        value,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName,
+        sourceUrl: PROFILE_URL,
+        confidence: sourceName === LANE ? 0.96 : 0.8,
+        observedAt: new Date('2026-07-25T00:00:00Z'),
+        superseded: false,
+      });
+
+    const seedMergedSurvivor = async ({
+      survivorName = PERSON_ROW_NAME,
+      leadName = LEAD_NAME as string | null,
+    } = {}) => {
+      const survivor = await ResearchEntity.create({
+        slug: SURVIVOR_SLUG,
+        name: survivorName,
+        kind: 'center',
+        entityType: 'CENTER',
+        archived: false,
+        sourceUrls: [PROFILE_URL],
+      });
+      if (leadName) {
+        const lead = await Researcher.create({ displayName: leadName });
+        await RoleAssignment.create({
+          personId: lead._id,
+          target: { kind: 'RESEARCH_ENTITY', id: survivor._id },
+          role: 'PI',
+          state: 'UNKNOWN',
+          confidence: 0.9,
+        });
+      }
+      await ResearchEntity.create({
+        slug: LOSER_SLUG,
+        name: PERSON_ROW_NAME,
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        archived: true,
+        canonicalGroupId: survivor._id,
+      });
+      await seedOn(SURVIVOR_SLUG, 'entityType', 'CENTER', LANE);
+      await seedOn(SURVIVOR_SLUG, 'kind', 'center', LANE);
+      await seedOn(LOSER_SLUG, 'name', PERSON_ROW_NAME, 'dept-faculty-roster');
+      await seedOn(LOSER_SLUG, 'entityType', 'FACULTY_RESEARCH_AREA', 'dept-faculty-roster');
+    };
+
+    const survivorRow = async () =>
+      ResearchEntity.findOne({ slug: SURVIVOR_SLUG }).lean<{
+        entityType?: string;
+        kind?: string;
+      }>();
+
+    it('re-derives a faculty-research-named survivor as faculty research once the type is withdrawn', async () => {
+      await seedMergedSurvivor();
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      const row = await survivorRow();
+      expect(row?.entityType).toBe('FACULTY_RESEARCH_AREA');
+      expect(row?.kind).toBe('individual');
+    });
+
+    it('keeps the organizational type while a live observation states it', async () => {
+      await seedMergedSurvivor();
+      await seedOn(SURVIVOR_SLUG, 'entityType', 'CENTER', 'manual-admin-edit');
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('CENTER');
+    });
+
+    it('re-derives the survivor when the only live observation of its type is refused', async () => {
+      await seedMergedSurvivor();
+      await seedOn(SURVIVOR_SLUG, 'entityType', 'CENTER', 'dept-center-directory');
+      await ResearchEntity.updateOne(
+        { slug: SURVIVOR_SLUG },
+        {
+          $set: {
+            fieldValueRefusals: {
+              entityType: [
+                {
+                  valueKey: fieldValueRefusalKey('entityType', 'CENTER'),
+                  rule: 'not_this_rows_research',
+                  refusedBy: 'research-entity:refuse-field-value',
+                  refusedAt: new Date('2026-09-24T00:00:00Z'),
+                  note: 'synthetic',
+                },
+              ],
+            },
+          },
+        },
+      );
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('FACULTY_RESEARCH_AREA');
+    });
+
+    it('leaves an organization-named survivor alone', async () => {
+      await seedMergedSurvivor({ survivorName: HOME_NAME });
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('CENTER');
+    });
+
+    it('leaves a survivor alone when the words before the suffix are not its lead', async () => {
+      await seedMergedSurvivor({ survivorName: 'Office of Synthetic Faculty Research' });
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('CENTER');
+    });
+
+    it('leaves a leadless survivor alone', async () => {
+      await seedMergedSurvivor({ leadName: null });
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('CENTER');
+    });
   });
 });

@@ -369,6 +369,16 @@ describe('researchEntitySearchIndexService', () => {
     expect(withoutMethods).not.toHaveProperty('methods');
   });
 
+  it('indexes the methods the detail page serves, not a bare verb chip (#5109)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-verb-methods',
+      name: 'Verb Methods Lab',
+      archived: false,
+      methods: ['examines', 'flow cytometry', 'Highly-Controllable'],
+    });
+    expect(doc?.methods).toEqual(['flow cytometry']);
+  });
+
   it('adds curated student topic aliases to searchable index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-ai',

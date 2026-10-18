@@ -134,6 +134,40 @@ describe('ResearchTeamSection', () => {
     expect(screen.getByRole('link', { name: 'Official roster source' })).toBeTruthy();
   });
 
+  it('heads a past-only roster with the past list itself, never an empty current heading', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Past undergraduate researchers (1)']);
+    expect(screen.queryByRole('heading', { name: 'Undergraduate researchers' })).toBeNull();
+  });
+
+  it('keeps the past list as a subheading under current undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [
+            { name: 'Current Fixture', status: 'current', startYear: 2024 },
+            { name: 'Former Fixture', status: 'past', endYear: 2021 },
+          ],
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Undergraduate researchers' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 4, name: 'Past undergraduate researchers (1)' }),
+    ).toBeTruthy();
+  });
+
   it('orders past undergraduates by year, newest first, then by last name', () => {
     render(
       <ResearchTeamSection

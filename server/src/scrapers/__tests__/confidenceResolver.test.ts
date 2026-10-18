@@ -1074,7 +1074,7 @@ describe('person-bio demotion for fullDescription', () => {
     const CREDENTIAL_BIO =
       'Avery Lindqvist, PhD, is an assistant professor in the department of applied physics. She completed doctoral training in optics and joined the faculty after two postdoctoral appointments.';
     const RECRUITING_PITCH =
-      'We are recruiting a postdoctoral fellow and two graduate students to join the group; if you are interested in joining, please reach out by email.';
+      'We are recruiting a postdoctoral fellow and two graduate students to join the group; if you are interested in joining, please reach out by email. The group values open collaboration across chemistry and engineering.';
     const RESEARCH_PROSE =
       'Research focuses on catalytic reactions in aqueous media, developing earth-abundant metal complexes that convert waste carbon dioxide into liquid fuels.';
     const ranked = resolveFieldRanked(

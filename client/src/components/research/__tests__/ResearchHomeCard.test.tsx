@@ -399,7 +399,9 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Epsilon Data Curation').className).toContain('sm:inline-flex');
     expect(screen.queryByText('Zeta Visualization')).toBeNull();
     expect(screen.getByText('+3 more').className).toContain('sm:hidden');
-    expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
+    expect(screen.getByText('+1 more').className).toContain('sm:inline');
+    expect(screen.getByText('+3 more').className).not.toContain('yr-pill');
+    expect(screen.getByText('+1 more').className).not.toContain('yr-pill');
   });
 
   it('keeps the compact card topic count visible at every width', () => {
@@ -443,7 +445,7 @@ describe('ResearchHomeCard', () => {
     expect(actionRow?.className.split(/\s+/)).toEqual(expect.arrayContaining(['mt-auto', 'pt-4']));
   });
 
-  it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
+  it('renders research-area topic chips in blue to match the entity-page "Topics" chips', () => {
     render(
       <MemoryRouter>
         <ResearchHomeCard

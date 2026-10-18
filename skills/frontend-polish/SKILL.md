@@ -39,6 +39,7 @@ These are the tells that have actually been measured in this client, so check ea
 - **Pressed state, not just hover.** An interactive card or button needs an `:active` that moves, or it feels like a picture of a button.
 - **Sentence case in headings and labels**, not Title Case On Every Header.
 The `/programs` quick filters, board section titles, cycle badges, and program modal headings are held to it by `fellowships.test.tsx` and `FellowshipModal.test.tsx` (#4273).
+The research kind labels come from one source, `entityKindLabel` in `client/src/utils/researchEntityCopy.ts`, which returns sentence case ("Faculty research", "Core facility"), so the detail chip and the browse card never need their own case conversion (#5111).
 - **No em dash anywhere**, per `AGENTS.md`. Plain hyphens.
 - **Real copy and real data.** No Lorem Ipsum, no "Acme", no `99.99%`, no `Jane Doe`. No "Elevate", "Seamless", "Unleash", "Next-Gen". No `Oops!` and no exclamation mark in a success message: "Connection failed. Please try again."
 - **No three equal cards** as a feature row, and no equal-height cards forced by flex when the content length varies.
@@ -82,6 +83,10 @@ A tab strip inside a fixed-width popover wraps instead, because a scrolled strip
 A summary row's shape is fixed before data arrives, never derived from it: the `/programs` status tiles once added a tile per non-empty optional section, so a loaded board grew a row at 375 and 768px and widened every column at 1440px (#4356).
 They are now the four timing tiles at every load state, and the other sections keep their counts in their own headers.
 The student-journey smoke holds the first programs search until the loading tiles paint, then fails when the page shifts by 0.01 or more once the data arrives at 375, 768, or 1440px.
+- Count round trips before bytes on a first load.
+`/programs` used to wait for the filter options before its search and then page the 172-row catalog 100 rows at a time, so the first card sat behind four requests in series; with every API call delayed by 1 second it painted at about 4.9s (#5135).
+The search now starts as soon as the student is signed in, beside the filter options request, and asks for 250 rows a page (`PROGRAM_SEARCH_PAGE_SIZE`, the route cap in `programController.ts` and `fellowshipService.ts`), which brought the first card to about 3.0s to 3.4s and the settled page from 5.3s to 3.6s.
+Production and Beta already compress API responses at the Cloudflare edge in front of Render (`content-encoding: br`, measured on `/api/ready`), so Express compression middleware would not shrink what a student downloads.
 - A block that appears above results only once they land reserves its slot while they load.
 The `/research` programs handoff renders `invisible` with the same copy while a programs-intent search loads, so the results section no longer moves down when it appears (#4524).
 - A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
@@ -124,6 +129,8 @@ The footer shift this removed scored 0.094 on `/about` at 1440px and 0.159 at 37
 - Validate on submit and on blur, with errors tied to their field.
 - Support autofill and password managers; do not block paste.
 - Submitting is idempotent and keyboard accessible (Enter submits).
+- An autosaved field shows its state from the first keystroke, never a blank line while a debounce waits, and flushes a pending save on blur, `pagehide`, a hidden document, and unmount, and holds an unload while a save is pending or in flight (`client/src/hooks/usePlanNoteAutosave.ts`, #5126).
+The unload flush goes through `client/src/utils/keepalivePut.ts`, a direct `fetch` with `keepalive`, because axios reaches its adapter through a promise chain that an unloading document never runs, so an axios request made from `pagehide` is silently never sent.
 
 ## Animation
 

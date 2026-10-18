@@ -58,6 +58,29 @@ describe('programBoardSectionOf', () => {
   });
 });
 
+describe('programCardFacts states a citizenship restriction (#5130)', () => {
+  it('names a U.S.-only program on its card', () => {
+    expect(programCardFacts(served({ citizenshipStatus: ['U.S. citizens are eligible'] }))).toEqual(
+      ['U.S. citizens only'],
+    );
+  });
+
+  it('names a non-U.S.-only program on its card', () => {
+    expect(
+      programCardFacts(served({ citizenshipStatus: ['Non-U.S. citizens are eligible'] })),
+    ).toEqual(['Non-U.S. citizens only']);
+  });
+
+  it('says nothing on the card for an open or not-stated program', () => {
+    for (const citizenshipStatus of [
+      ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+      [],
+    ]) {
+      expect(programCardFacts(served({ citizenshipStatus }))).toEqual([]);
+    }
+  });
+});
+
 describe('programCardFacts', () => {
   it('states the award and that a mentor comes first', () => {
     expect(

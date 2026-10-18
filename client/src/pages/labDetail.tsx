@@ -31,6 +31,7 @@ import ResearchProfileSkeleton, {
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
+import { searchQueryFromResearchSlug } from '../utils/researchSlugSearchQuery';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
@@ -61,7 +62,11 @@ import {
   servedResearchWebsiteUrl,
   resolveOutreachOfficialSource,
   vettedJoinPageUrls,
+  ACCESS_SIGNAL_SOURCE_CONTEXTS,
+  joinPageLinkLabel,
 } from '../utils/researchDetailSources';
+import { formatGrantSummary } from '../utils/grantAgencyNames';
+import LeadRoleExplanation from '../components/research/LeadRoleExplanation';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
 import { formatTitleCaseLabel, formatTopicChipLabel } from '../utils/displayText';
@@ -106,6 +111,17 @@ const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="yr-kicker mb-3">{children}</h2>
+);
+
+const PRINCIPAL_INVESTIGATOR_HEADING = /^Principal Investigators?$/;
+
+const LeadSectionHeading = ({ heading }: { heading: string }) => (
+  <>
+    <SectionHeading>{heading}</SectionHeading>
+    {PRINCIPAL_INVESTIGATOR_HEADING.test(heading) && (
+      <LeadRoleExplanation plural={heading.endsWith('s')} />
+    )}
+  </>
 );
 
 const RelatedResearchEntitiesSection = ({
@@ -369,27 +385,6 @@ const PendingSaveActionSlot = () => (
   </div>
 );
 
-/**
- * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
- * since the chip conveys breadth, not specific awards. (Relocated from the
- * retired contact-route card so the decision summary owns the evidence signals.)
- */
-const formatGrantSummary = (group: any): string | null => {
-  const grants = group.recentGrants || [];
-  if (grants.length === 0) return null;
-  const counts: Record<string, number> = {};
-  for (const g of grants) {
-    const agency = (g.agency || '').trim();
-    if (!agency) continue;
-    counts[agency] = (counts[agency] || 0) + 1;
-  }
-  const parts = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([agency, n]) => `${n}× ${agency}`);
-  if (parts.length === 0) return null;
-  return `Funded: ${parts.join(', ')}`;
-};
-
 const emeritusResearchLabel = (group: any): string => {
   if (isCreativePracticeEntity(group)) return 'Emeritus faculty';
   if (group.entityType === 'LAB') return 'Emeritus lab';
@@ -466,7 +461,7 @@ const DecisionSummary = ({
     if (description) return;
     void captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
-  const grantSummary = formatGrantSummary(group);
+  const grantSummary = formatGrantSummary(group.recentGrants);
   const pastAdvisees = formatPastAdvisees(group, rosterListsUndergraduates);
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
@@ -577,9 +572,7 @@ const DecisionSummary = ({
           )}
           {topics.length > 0 && (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                Best fit for
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Topics</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {topics.map((topic) => (
                   <span
@@ -654,9 +647,12 @@ const DecisionSummary = ({
           )}
           {principalInvestigator && (
             <div className="py-4 first:pt-0 last:pb-0">
-              <SectionHeading>
-                {leadSectionHeading([principalInvestigator], leadRoleLabelForEntity(group, 'pi'))}
-              </SectionHeading>
+              <LeadSectionHeading
+                heading={leadSectionHeading(
+                  [principalInvestigator],
+                  leadRoleLabelForEntity(group, 'pi'),
+                )}
+              />
               <div>
                 <LabMembersList
                   members={[principalInvestigator]}
@@ -697,7 +693,7 @@ const DecisionSummary = ({
                       rel={EXTERNAL_LINK_REL}
                       className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
                     >
-                      See how to join
+                      {joinPageLinkLabel(joinPageLinkUrl)}
                       <ArrowRightIcon />
                     </a>
                   )}
@@ -727,7 +723,7 @@ const DecisionSummary = ({
                     rel={EXTERNAL_LINK_REL}
                     className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                   >
-                    See how to get involved
+                    {joinPageLinkLabel(applyPageUrl, 'See how to get involved')}
                   </a>
                 </div>
               ) : showsProfileButton ? (
@@ -801,7 +797,7 @@ const SourcesSection = ({
    * have (#3341).
    */
   const hasActionContext = sources.some((source) =>
-    source.contexts.some((context) => /\bevidence$/i.test(context)),
+    source.contexts.some((context) => ACCESS_SIGNAL_SOURCE_CONTEXTS.has(context)),
   );
 
   return (
@@ -809,7 +805,7 @@ const SourcesSection = ({
       <div className="border-b border-[var(--yr-line)] px-4 py-3">
         <p className="text-sm text-muted">
           {hasActionContext
-            ? 'These official pages support the profile details and action evidence shown above.'
+            ? 'These official pages support the profile details and the undergraduate information on this page.'
             : describesCreativePractice
               ? 'These official pages support the profile details shown above.'
               : 'These official pages support the research profile details shown above.'}
@@ -826,7 +822,7 @@ const SourcesSection = ({
                     <p className="text-sm font-semibold text-ink">{source.label}</p>
                     {isSameActionDestination(source.url, primaryProfileUrl) && (
                       <span className="inline-flex items-center rounded-card border border-line-brand bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-ink-soft">
-                        opened above
+                        also linked above
                       </span>
                     )}
                     {source.isLikelyUnavailable && (
@@ -876,6 +872,8 @@ const SourcesSection = ({
   );
 };
 
+const PROFILE_NOT_FOUND_STATUSES = new Set([400, 404]);
+
 const LabDetail = () => {
   const { isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
@@ -918,7 +916,7 @@ const LabDetail = () => {
         const finalUrl: string = res.request?.responseURL || '';
         const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
         const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
-        if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
+        if (canonicalSlug && canonicalSlug !== slug) {
           void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, {
             replace: true,
             state: locationStateRef.current,
@@ -933,7 +931,7 @@ const LabDetail = () => {
       })
       .catch((err) => {
         if (isCancel(err) || requestId !== requestIdRef.current) return;
-        if (err?.response?.status === 404) {
+        if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
           dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_NOT_FOUND_ERROR });
         } else {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
@@ -961,7 +959,7 @@ const LabDetail = () => {
 
   if (error && !payload) {
     if (error === RESEARCH_PROFILE_NOT_FOUND_ERROR) {
-      return <NotFound />;
+      return <NotFound suggestedQuery={searchQueryFromResearchSlug(slug)} />;
     }
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
@@ -1079,7 +1077,7 @@ const LabDetail = () => {
     singleLeadIsGenuinePrincipalInvestigator,
   );
   const showDedicatedPrincipalInvestigatorSection =
-    leadIdentityUnderReview || principalInvestigators.length !== 1;
+    leadIdentityUnderReview || principalInvestigators.length > 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
   const leadProfilesLinkedInline =
@@ -1196,15 +1194,18 @@ const LabDetail = () => {
 
           {showDedicatedPrincipalInvestigatorSection && (
             <section>
-              <SectionHeading>
-                {leadSectionHeading(principalInvestigators, leadRoleLabelForEntity(group, 'pi'))}
-              </SectionHeading>
+              <LeadSectionHeading
+                heading={leadSectionHeading(
+                  principalInvestigators,
+                  leadRoleLabelForEntity(group, 'pi'),
+                )}
+              />
               {leadIdentityUnderReview ? (
                 <div
                   className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
                   role="status"
                 >
-                  <p className="font-semibold">Lead identity under review</p>
+                  <p className="font-semibold">Lead not confirmed yet</p>
                   <p className="mt-1">
                     The research information remains available, but this lead and profile link are
                     not shown until their sources agree.

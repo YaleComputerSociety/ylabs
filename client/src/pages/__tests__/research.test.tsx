@@ -364,9 +364,9 @@ describe('Research page', () => {
     const { container } = renderResearch();
 
     expect(container.textContent).toContain('Search y/labs');
-    expect(container.textContent).toContain('Find a Yale lab that fits you.');
+    expect(container.textContent).toContain('Find Yale research that fits you.');
     expect(container.textContent).toContain(
-      'Search by interest, professor, course topic, method, or question.',
+      'Labs, centers, and faculty research in every field. Search by interest, professor, course topic, method, or question.',
     );
     expect(container.textContent).not.toContain('when the source evidence is strong enough');
     expect(container.textContent).not.toMatch(/\bways? in\b/i);
@@ -838,7 +838,7 @@ describe('Research page', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Core Facility' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Core facility' }));
     await waitFor(() => {
       expect(
         mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
@@ -874,7 +874,7 @@ describe('Research page', () => {
         mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
       ).toEqual(expect.objectContaining({ filters: { entityType: ['CORE_FACILITY'] } })),
     );
-    expect(screen.getByRole('button', { name: 'Remove Type: Core Facility' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Type: Core facility' })).toBeTruthy();
   });
 
   // A retired type (#2219) is the same confidently-labelled empty result set as a
@@ -3078,7 +3078,7 @@ describe('Research landing watched-deadline urgency signal', () => {
     renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
 
     const cta = await screen.findByRole('link', {
-      name: '1 watched program closes within 2 weeks, 1 not started',
+      name: '1 watched program closes within 2 weeks, 1 still marked Saved',
     });
     expect(cta).toHaveAttribute('href', '/dashboard?tab=programs');
   });
@@ -3255,7 +3255,7 @@ describe('Research zero-result recovery', () => {
     renderRecovery(['/research?q=machine+learning&type=CORE_FACILITY']);
 
     const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
-    fireEvent.click(within(region).getByRole('button', { name: 'Remove Type: Core Facility' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Remove Type: Core facility' }));
 
     expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();

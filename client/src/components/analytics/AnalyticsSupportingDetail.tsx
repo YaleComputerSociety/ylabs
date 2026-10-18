@@ -461,7 +461,7 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title="Avg Events Per User"
             value={data.engagement.userActivity.avgEventsPerUser.toFixed(1)}
-            subtitle={`Events (logins, searches, research views) per active user in ${selectedRangeLabel}`}
+            subtitle={`Events (logins, searches, research views) per user with activity in ${selectedRangeLabel}`}
           />
         </div>
       </section>

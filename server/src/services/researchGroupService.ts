@@ -107,6 +107,10 @@ import {
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
+import {
+  isPageLeadsOwnFacultyResearch,
+  servedRelationshipLabel,
+} from './researchDetailRelatedRows';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SearchUnavailableError } from '../utils/errors';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
@@ -114,7 +118,7 @@ import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
-import { sanitizePersonName } from '../utils/personNameHygiene';
+import { isPersonNameParticleOrSuffixToken, sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
@@ -174,6 +178,7 @@ import { unexpiredSignalClause } from './servedSignalExpiry';
  */
 export interface PublicLeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
+  leadPersonIdsByEntityId?: ReadonlyMap<string, readonly string[]>;
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<string, Readonly<EmeritusWayInDecision>>;
@@ -201,6 +206,7 @@ export const optionalPublicLeadMemberNames = async (
   options: PublicLeadMemberNameReadOptions = {},
 ): Promise<PublicLeadMemberNameRead> => {
   const byEntityId = new Map<string, readonly string[]>();
+  const leadPersonIdsByEntityId = new Map<string, readonly string[]>();
   const identityLeadDirectorEntityIds = new Set<string>();
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
@@ -218,6 +224,8 @@ export const optionalPublicLeadMemberNames = async (
       );
       const leadNames = publicLeadMemberNames(leadMembers);
       if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+      const leadPersonIds = leadPersonIdsOf(leadMembers);
+      if (leadPersonIds.length > 0) leadPersonIdsByEntityId.set(entityId, leadPersonIds);
       if (identityLeadDirectsOrganization(leadMembers)) identityLeadDirectorEntityIds.add(entityId);
       if (options.withEmeritusWayIn) {
         emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers) });
@@ -232,6 +240,7 @@ export const optionalPublicLeadMemberNames = async (
     : undefined;
   return {
     byEntityId,
+    leadPersonIdsByEntityId,
     identityLeadDirectorEntityIds,
     unavailable: false,
     ...(emeritusWayInByEntityId ? { emeritusWayInByEntityId } : {}),
@@ -257,6 +266,17 @@ const PUBLIC_TEAM_ROLES: ReadonlySet<string> = new Set([
   'undergrad',
   'staff',
 ]);
+
+function leadPersonIdsOf(members: Array<{ role: string; row?: Record<string, any> }>): string[] {
+  return Array.from(
+    new Set(
+      members
+        .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+        .map((member) => String(member.row?.identityKey || ''))
+        .filter(Boolean),
+    ),
+  );
+}
 
 function leadTitlesOf(members: Array<{ user?: any; role: string }>): unknown[] {
   return members
@@ -2845,6 +2865,32 @@ const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;
 // neighbors so the section stays absent unless a genuinely similar home exists.
 const SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD = 0.35;
 
+export const personNameWordKeys = (document: unknown): Set<string> => {
+  const record = (document ?? {}) as Record<string, unknown>;
+  return new Set(
+    PERSON_FIELD_ATTRIBUTES.flatMap((attribute) => {
+      const value = record[attribute];
+      return Array.isArray(value) ? value : [value];
+    })
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap((value) => foldLatinDiacritics(value.toLowerCase()).split(/[^a-z0-9]+/))
+      .filter((word) => word.length >= 2 && !isPersonNameParticleOrSuffixToken(word)),
+  );
+};
+
+// The embedded document text opens with the row's name and its professors' names,
+// so a thinly described row's nearest vectors were other people sharing a first or
+// last name: a history-of-medicine page recommended same-surname English and Law
+// faculty above its own field's historians. A neighbour sharing a person-name word
+// with the viewed row is ranked after every neighbour that does not, keeping the
+// embedding order within each group, so names never decide what is similar.
+const rankSharedPersonNamesLast = <T>(hits: readonly T[], viewedNameWords: Set<string>): T[] => {
+  if (viewedNameWords.size === 0) return [...hits];
+  const sharesAName = (hit: T) =>
+    [...personNameWordKeys(hit)].some((word) => viewedNameWords.has(word));
+  return [...hits.filter((hit) => !sharesAName(hit)), ...hits.filter(sharesAName)];
+};
+
 const firstServableDistinctCandidates = <T extends Record<string, any>>(
   orderedCandidateIds: readonly string[],
   candidateEntities: readonly T[],
@@ -2898,20 +2944,24 @@ const publicRelationshipForResearchDetail = (
   relatedResearchEntityId: relatedResearchEntity?.id || relatedResearchEntity?.slug,
   relatedResearchEntitySlug: relatedResearchEntity?.slug,
   relationshipType: relationship.relationshipType,
-  label: relationship.label,
+  label: servedRelationshipLabel(relatedResearchEntity),
   evidenceStrength: relationship.evidenceStrength,
   sourceUrl: publicHttpUrl(relationship.sourceUrl),
   confidence: relationship.confidence,
   lastObservedAt: relationship.lastObservedAt,
 });
 
-export async function listResearchEntityRelationshipPayload(entityId: unknown): Promise<{
+export async function listResearchEntityRelationshipPayload(
+  entityId: unknown,
+  { pageLeadPersonIds = [] }: { pageLeadPersonIds?: readonly string[] } = {},
+): Promise<{
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   affiliatedRelationships: any[];
   affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
+  pageLeadOwnResearchEntityKeys: string[];
 }> {
   const safeEntityId = normalizeResearchGroupObjectId(entityId);
   if (!safeEntityId) {
@@ -2922,6 +2972,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     };
   }
 
@@ -3003,8 +3054,28 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     }),
   );
 
+  const pageLeads = new Set(pageLeadPersonIds);
+  const pageLeadOwnFacultyResearchIds = new Set(
+    publicRelatedEntities
+      .filter((relatedEntity) =>
+        isPageLeadsOwnFacultyResearch(
+          relatedEntity,
+          relatedLeadNameRead.leadPersonIdsByEntityId?.get(
+            researchGroupDocumentId(relatedEntity._id),
+          ),
+          pageLeads,
+        ),
+      )
+      .map((relatedEntity) => researchGroupDocumentId(relatedEntity._id)),
+  );
+  const servedRelatedRelationships = relatedRelationships.filter(
+    (relationship) =>
+      !pageLeadOwnFacultyResearchIds.has(
+        researchGroupDocumentId(relationship.targetResearchEntityId),
+      ),
+  );
   const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
-    relatedEntityIds,
+    servedRelatedRelationships.map((relationship) => relationship.targetResearchEntityId),
     publicEntitiesByInternalId,
   );
   const affiliatedResearchEntities = dedupePublicResearchEntitiesInOrder(
@@ -3013,7 +3084,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
   );
 
   return {
-    entityRelationships: relatedRelationships
+    entityRelationships: servedRelatedRelationships
       .map((relationship) => ({
         relationship,
         relatedResearchEntity: publicEntitiesByInternalId.get(
@@ -3045,6 +3116,12 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       returned: affiliatedResearchEntities.length,
       truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
     },
+    pageLeadOwnResearchEntityKeys: Array.from(pageLeadOwnFacultyResearchIds).flatMap(
+      (internalId) => {
+        const entity = publicEntitiesByInternalId.get(internalId);
+        return entity ? [entity.slug, entity.id].filter(Boolean) : [];
+      },
+    ),
   };
 }
 
@@ -3088,6 +3165,14 @@ export async function listSimilarResearchEntities(
     `studentVisibilityTier IN [${publicStudentVisibilityTiers.map((tier) => `"${tier}"`).join(', ')}]`,
   ].join(' AND ');
 
+  const viewedPersonNameWords = (async () =>
+    personNameWordKeys(
+      await (index as any).getDocument(entityId, { fields: PERSON_FIELD_ATTRIBUTES }),
+    ))().catch((error: unknown) => {
+    console.error('Similar research name read failed:', sanitizeLogValue(error));
+    return new Set<string>();
+  });
+
   let hits: any[];
   try {
     const result = await (index as any).searchSimilarDocuments({
@@ -3095,7 +3180,7 @@ export async function listSimilarResearchEntities(
       embedder: RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
       limit: SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL,
       filter: visibilityFilter,
-      attributesToRetrieve: ['id', 'slug'],
+      attributesToRetrieve: ['id', 'slug', ...PERSON_FIELD_ATTRIBUTES],
       showRankingScore: true,
     });
     hits = Array.isArray(result?.hits) ? result.hits : [];
@@ -3117,7 +3202,7 @@ export async function listSimilarResearchEntities(
 
   const orderedCandidateIds: string[] = [];
   const seenCandidateIds = new Set<string>();
-  for (const hit of hits) {
+  for (const hit of rankSharedPersonNamesLast(hits, await viewedPersonNameWords)) {
     if (!hit || typeof hit !== 'object') continue;
     if (
       typeof hit._rankingScore === 'number' &&
@@ -3858,11 +3943,17 @@ export async function getResearchGroupDetail(
       .map((signal) => publicAccessSignalForResearchDetail(signal, group))
       .filter(servedAccessSignalStandsWithItsPage),
   );
-  const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
+  const { pageLeadOwnResearchEntityKeys, ...relationshipPayload } =
+    await listResearchEntityRelationshipPayload((group as any)._id, {
+      pageLeadPersonIds: leadPersonIdsOf(dedupedMembersWithRows),
+    });
   const structuralRelationExclusionKeys = [
-    ...relationshipPayload.relatedResearchEntities,
-    ...relationshipPayload.affiliatedResearchEntities,
-  ].flatMap((related) => [related.slug, related.id]);
+    ...[
+      ...relationshipPayload.relatedResearchEntities,
+      ...relationshipPayload.affiliatedResearchEntities,
+    ].flatMap((related) => [related.slug, related.id]),
+    ...pageLeadOwnResearchEntityKeys,
+  ];
   const similarResearchEntities = await listSimilarResearchEntities(group as Record<string, any>, {
     excludeEntityKeys: structuralRelationExclusionKeys,
   });
