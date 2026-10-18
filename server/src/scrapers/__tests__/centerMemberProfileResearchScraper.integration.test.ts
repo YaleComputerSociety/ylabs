@@ -77,6 +77,7 @@ describe(
   () => {
     let replSet: MongoMemoryReplSet;
     let rowId: mongoose.Types.ObjectId;
+    let joinedPerson: mongoose.Types.ObjectId;
 
     beforeAll(async () => {
       replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -110,7 +111,7 @@ describe(
         archived: false,
       });
       rowId = row._id as mongoose.Types.ObjectId;
-      const joinedPerson = new mongoose.Types.ObjectId();
+      joinedPerson = new mongoose.Types.ObjectId();
       const namedPerson = new mongoose.Types.ObjectId();
       const membership = (
         personId: mongoose.Types.ObjectId,
@@ -186,6 +187,42 @@ describe(
         [NAME_ONLY]: profileHtml(),
       });
       await runLane({ [ROSTER_URL]: rosterHtml, [NAME_ONLY]: profileHtml() });
+      const statements = (await liveTexts()).filter((obs) => obs.field === 'researchSummary');
+      expect(statements.map((obs) => obs.value)).toEqual([STATEMENT]);
+    });
+
+    it('retracts nothing when a profile page answers without the profile block', async () => {
+      const pages = { [ROSTER_URL]: rosterHtml, [NAME_ONLY]: profileHtml() };
+      await runLane({ ...pages, [JOINED]: profileHtml(STATEMENT) });
+      await runLane({ ...pages, [JOINED]: '<html><body><p>Please wait.</p></body></html>' });
+      const statements = (await liveTexts()).filter((obs) => obs.field === 'researchSummary');
+      expect(statements.map((obs) => obs.value)).toEqual([STATEMENT]);
+    });
+
+    it('retracts a row once its page no longer joins to it by identity', async () => {
+      const pages = {
+        [ROSTER_URL]: rosterHtml,
+        [JOINED]: profileHtml(STATEMENT),
+        [NAME_ONLY]: profileHtml(),
+      };
+      await runLane(pages);
+      await RoleAssignment.updateMany(
+        { personId: joinedPerson, 'rosterProvenance.profileUrl': JOINED },
+        { $set: { state: 'HISTORICAL' } },
+      );
+      await runLane(pages);
+      const live = await liveTexts();
+      expect(live.map((obs) => obs.value)).toEqual(['', '']);
+      expect(gatherCoverageSnippets(live)).toEqual([]);
+    });
+
+    it('fails rather than retracting when the roster lists no member profiles', async () => {
+      await runLane({
+        [ROSTER_URL]: rosterHtml,
+        [JOINED]: profileHtml(STATEMENT),
+        [NAME_ONLY]: profileHtml(),
+      });
+      await expect(runLane({ [ROSTER_URL]: '<html><body></body></html>' })).rejects.toThrow();
       const statements = (await liveTexts()).filter((obs) => obs.field === 'researchSummary');
       expect(statements.map((obs) => obs.value)).toEqual([STATEMENT]);
     });

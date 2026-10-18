@@ -19,7 +19,7 @@ export interface CenterMemberProfileText {
   biography?: string;
 }
 
-export type CenterMemberProfileExtractor = (html: string) => CenterMemberProfileText;
+export type CenterMemberProfileExtractor = (html: string) => CenterMemberProfileText | undefined;
 
 const collapseWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
@@ -33,28 +33,27 @@ const FDS_EDIT_PROFILE_LINK = /\/wp-login\.php/i;
 
 export const fdsMemberProfileExtractor: CenterMemberProfileExtractor = (html) => {
   const $ = cheerio.load(html);
+  const description = $('.author-description').first();
+  if (!description.length) return undefined;
   const biography: string[] = [];
   const statement: string[] = [];
   let pastHeading = false;
-  $('.author-description')
-    .first()
-    .children('p')
-    .each((_i, el) => {
-      const paragraph = $(el);
-      const text = collapseWhitespace(paragraph.text());
-      if (!text) return;
-      if (FDS_STATEMENT_HEADING.test(text)) {
-        pastHeading = true;
-        return;
-      }
-      if (
-        paragraph.find('a').filter((_j, a) => FDS_EDIT_PROFILE_LINK.test($(a).attr('href') || ''))
-          .length
-      ) {
-        return;
-      }
-      (pastHeading ? statement : biography).push(text);
-    });
+  description.children('p').each((_i, el) => {
+    const paragraph = $(el);
+    const text = collapseWhitespace(paragraph.text());
+    if (!text) return;
+    if (FDS_STATEMENT_HEADING.test(text)) {
+      pastHeading = true;
+      return;
+    }
+    if (
+      paragraph.find('a').filter((_j, a) => FDS_EDIT_PROFILE_LINK.test($(a).attr('href') || ''))
+        .length
+    ) {
+      return;
+    }
+    (pastHeading ? statement : biography).push(text);
+  });
   return { researchStatement: keptText(statement), biography: keptText(biography) };
 };
 
@@ -74,12 +73,19 @@ export interface PersonalResearchRow {
   slug: string;
 }
 
+export interface LiveProfileTextRow {
+  entityId: string;
+  slug: string;
+  profileUrl: string;
+}
+
 export type CenterMemberProfileSkip =
   | 'profile-unread'
   | 'no-identity-joined-member'
   | 'ambiguous-member'
   | 'leads-no-research-row'
-  | 'leads-several-research-rows';
+  | 'leads-several-research-rows'
+  | 'row-led-by-several-members';
 
 export interface CenterMemberProfilePlan {
   observations: ObservationInput[];
@@ -96,7 +102,7 @@ const FIELD_VALUE: Record<
 };
 
 export function profileTextObservations(
-  row: PersonalResearchRow,
+  row: Pick<PersonalResearchRow, 'entityId' | 'slug'>,
   profileUrl: string,
   text: CenterMemberProfileText,
 ): ObservationInput[] {
@@ -117,7 +123,8 @@ export function profileTextObservations(
 /**
  * A profile page joins to a person only through a membership edge whose identity the
  * centers lane proved, and its text lands only on the one personal research row that
- * person leads, because a statement cannot say which of several rows it describes.
+ * person leads, because a statement cannot say which of several rows it describes. A row
+ * several joined members lead is skipped too, because their pages would overwrite each other.
  */
 export function planCenterMemberProfileResearch(input: {
   reads: readonly CenterMemberProfileRead[];
@@ -130,6 +137,7 @@ export function planCenterMemberProfileResearch(input: {
     'ambiguous-member': 0,
     'leads-no-research-row': 0,
     'leads-several-research-rows': 0,
+    'row-led-by-several-members': 0,
   };
   const peopleByProfileUrl = new Map<string, Set<string>>();
   for (const join of input.joins) {
@@ -138,10 +146,14 @@ export function planCenterMemberProfileResearch(input: {
     peopleByProfileUrl.set(join.profileUrl, people);
   }
   const rowsByPerson = new Map<string, Map<string, PersonalResearchRow>>();
+  const leadersByRow = new Map<string, Set<string>>();
   for (const row of input.rows) {
     const rows = rowsByPerson.get(row.personId) ?? new Map<string, PersonalResearchRow>();
     rows.set(row.entityId, row);
     rowsByPerson.set(row.personId, rows);
+    const leaders = leadersByRow.get(row.entityId) ?? new Set<string>();
+    leaders.add(row.personId);
+    leadersByRow.set(row.entityId, leaders);
   }
 
   const observations: ObservationInput[] = [];
@@ -169,8 +181,37 @@ export function planCenterMemberProfileResearch(input: {
       skipped['leads-several-research-rows'] += 1;
       continue;
     }
+    if ((leadersByRow.get(rows[0].entityId)?.size ?? 0) > 1) {
+      skipped['row-led-by-several-members'] += 1;
+      continue;
+    }
     observations.push(...profileTextObservations(rows[0], read.profileUrl, read.text));
     emittedRows += 1;
   }
   return { observations, emittedRows, skipped };
+}
+
+/**
+ * A row this lane gave text to in an earlier run loses it once a run decides the page no
+ * longer belongs there: the page was read and attached elsewhere or nowhere, or it left
+ * every roster. A page this run did not read decides nothing, so its text stays live.
+ */
+export function staleProfileTextRetractions(input: {
+  live: readonly LiveProfileTextRow[];
+  reads: readonly CenterMemberProfileRead[];
+  rosterProfileUrls: ReadonlySet<string>;
+  attachedEntityIds: ReadonlySet<string>;
+}): ObservationInput[] {
+  const readProfileUrls = new Set(
+    input.reads.filter((read) => read.text).map((read) => read.profileUrl),
+  );
+  const retracted = new Set<string>();
+  return input.live.flatMap((row) => {
+    if (input.attachedEntityIds.has(row.entityId) || retracted.has(row.entityId)) return [];
+    if (input.rosterProfileUrls.has(row.profileUrl) && !readProfileUrls.has(row.profileUrl)) {
+      return [];
+    }
+    retracted.add(row.entityId);
+    return profileTextObservations(row, row.profileUrl, {});
+  });
 }

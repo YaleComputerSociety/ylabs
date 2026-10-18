@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fdsMemberProfileExtractor,
   planCenterMemberProfileResearch,
+  staleProfileTextRetractions,
 } from '../utils/centerMemberProfileResearch';
 
 const BIOGRAPHY =
@@ -47,11 +48,10 @@ describe('fdsMemberProfileExtractor', () => {
     expect(text).toEqual({ biography: undefined, researchStatement: undefined });
   });
 
-  it('reads nothing from a page without the profile description block', () => {
-    expect(fdsMemberProfileExtractor('<html><body><p>Not a profile.</p></body></html>')).toEqual({
-      biography: undefined,
-      researchStatement: undefined,
-    });
+  it('treats a page without the profile description block as unread', () => {
+    expect(
+      fdsMemberProfileExtractor('<html><body><p>Not a profile.</p></body></html>'),
+    ).toBeUndefined();
   });
 });
 
@@ -144,6 +144,23 @@ describe('planCenterMemberProfileResearch', () => {
     expect(several.skipped['leads-several-research-rows']).toBe(1);
   });
 
+  it('skips a row two joined members lead, so neither page overwrites the other', () => {
+    const OTHER = 'https://fds.yale.edu/people/zz0002/';
+    const plan = planCenterMemberProfileResearch({
+      reads: [
+        { profileUrl: PROFILE, text },
+        { profileUrl: OTHER, text: { biography: BIOGRAPHY } },
+      ],
+      joins: [
+        { profileUrl: PROFILE, personId: 'person-a' },
+        { profileUrl: OTHER, personId: 'person-b' },
+      ],
+      rows: [row, { ...row, personId: 'person-b' }],
+    });
+    expect(plan.observations).toEqual([]);
+    expect(plan.skipped['row-led-by-several-members']).toBe(2);
+  });
+
   it('counts a row led through two roles once', () => {
     const plan = planCenterMemberProfileResearch({
       reads: [{ profileUrl: PROFILE, text }],
@@ -154,5 +171,57 @@ describe('planCenterMemberProfileResearch', () => {
       rows: [row, row],
     });
     expect(plan.emittedRows).toBe(1);
+  });
+});
+
+describe('staleProfileTextRetractions', () => {
+  const live = [{ entityId: row.entityId, slug: row.slug, profileUrl: PROFILE }];
+  const roster = new Set([PROFILE]);
+
+  it('retracts both texts from a row a read page no longer attaches to', () => {
+    const retractions = staleProfileTextRetractions({
+      live,
+      reads: [{ profileUrl: PROFILE, text: { biography: BIOGRAPHY } }],
+      rosterProfileUrls: roster,
+      attachedEntityIds: new Set(),
+    });
+    expect(retractions).toEqual([
+      expect.objectContaining({
+        entityId: row.entityId,
+        entityKey: row.slug,
+        field: 'researchSummary',
+        assertsNoValueFor: ['researchSummary'],
+      }),
+      expect.objectContaining({ field: 'bio', assertsNoValueFor: ['bio'] }),
+    ]);
+  });
+
+  it('retracts a row whose page left every roster', () => {
+    const retractions = staleProfileTextRetractions({
+      live,
+      reads: [],
+      rosterProfileUrls: new Set(),
+      attachedEntityIds: new Set(),
+    });
+    expect(retractions).toHaveLength(2);
+  });
+
+  it('keeps text on a row this run attached again or whose page it did not read', () => {
+    expect(
+      staleProfileTextRetractions({
+        live,
+        reads: [{ profileUrl: PROFILE, text: {} }],
+        rosterProfileUrls: roster,
+        attachedEntityIds: new Set([row.entityId]),
+      }),
+    ).toEqual([]);
+    expect(
+      staleProfileTextRetractions({
+        live,
+        reads: [{ profileUrl: PROFILE }],
+        rosterProfileUrls: roster,
+        attachedEntityIds: new Set(),
+      }),
+    ).toEqual([]);
   });
 });

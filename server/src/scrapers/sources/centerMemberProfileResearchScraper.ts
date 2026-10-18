@@ -1,17 +1,21 @@
 import mongoose from 'mongoose';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment, rosterIdentityBases } from '../../models/roleAssignment';
 import { CENTERS_INSTITUTES_SOURCE_NAME } from '../centerRosterRetirement';
-import type { IScraper, ScraperContext, ScraperResult } from '../types';
+import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
+  CENTER_MEMBER_PROFILE_RESEARCH_FIELDS,
   CENTER_MEMBER_PROFILE_RESEARCH_SOURCE,
   PERSONAL_RESEARCH_ROW_TYPES,
   fdsMemberProfileExtractor,
   planCenterMemberProfileResearch,
+  staleProfileTextRetractions,
   type CenterMemberIdentityJoin,
   type CenterMemberProfileExtractor,
   type CenterMemberProfileRead,
+  type LiveProfileTextRow,
   type PersonalResearchRow,
 } from '../utils/centerMemberProfileResearch';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
@@ -86,6 +90,27 @@ export async function loadPersonalResearchRows(
   });
 }
 
+export async function loadLiveProfileTextRows(): Promise<LiveProfileTextRow[]> {
+  const live = (await Observation.find({
+    sourceName: CENTER_MEMBER_PROFILE_RESEARCH_SOURCE,
+    entityType: 'researchEntity',
+    field: { $in: [...CENTER_MEMBER_PROFILE_RESEARCH_FIELDS] },
+    superseded: false,
+  })
+    .select('entityId entityKey sourceUrl value')
+    .lean()) as Array<{
+    entityId?: unknown;
+    entityKey?: string;
+    sourceUrl?: string;
+    value?: unknown;
+  }>;
+  return live.flatMap((obs) =>
+    obs.entityId && obs.entityKey && obs.sourceUrl && typeof obs.value === 'string' && obs.value
+      ? [{ entityId: String(obs.entityId), slug: obs.entityKey, profileUrl: obs.sourceUrl }]
+      : [],
+  );
+}
+
 export class CenterMemberProfileResearchScraper implements IScraper {
   readonly name = CENTER_MEMBER_PROFILE_RESEARCH_SOURCE;
   readonly displayName = 'Center member profile research';
@@ -98,21 +123,34 @@ export class CenterMemberProfileResearchScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const only = ctx.options.only?.length ? new Set(ctx.options.only) : null;
+    const inScope = (obs: ObservationInput) => !only || only.has(String(obs.entityKey));
     let observationCount = 0;
-    let entitiesObserved = 0;
+    const entitiesObserved = new Set<string>();
     const notes: string[] = [];
+    const allReads: CenterMemberProfileRead[] = [];
+    const rosterProfileUrls = new Set<string>();
+    const attachedEntityIds = new Set<string>();
+    const emitInScope = async (planned: ObservationInput[]) => {
+      const observations = planned.filter(inScope);
+      if (observations.length) await ctx.emit(observations);
+      observationCount += observations.length;
+      for (const obs of observations) entitiesObserved.add(String(obs.entityId));
+    };
     for (const lane of this.laneConfigs) {
       const center = this.centerConfigs.find((config) => config.centerKey === lane.centerKey);
       if (!center) throw new Error(`No center config for ${lane.centerKey}`);
       const rosterHtml = await this.pageFetcher(center.url);
-      const profileUrls = [
+      const rosterUrls = [
         ...new Set(
           center
             .extractor(rosterHtml, { pageUrl: center.url, centerName: center.centerName })
             .members.map((member) => member.profileUrl || '')
             .filter(Boolean),
         ),
-      ].slice(0, ctx.options.limit ?? undefined);
+      ];
+      if (rosterUrls.length === 0) throw new Error(`No member profiles on ${center.url}`);
+      for (const url of rosterUrls) rosterProfileUrls.add(url);
+      const profileUrls = rosterUrls.slice(0, ctx.options.limit ?? undefined);
       const reads: CenterMemberProfileRead[] = profileUrls.map((profileUrl) => ({ profileUrl }));
       await mapWithConcurrency(reads, PROFILE_FETCH_CONCURRENCY, async (read) => {
         try {
@@ -121,19 +159,26 @@ export class CenterMemberProfileResearchScraper implements IScraper {
           read.text = undefined;
         }
       });
+      allReads.push(...reads);
       const joins = await loadIdentityJoins(profileUrls);
       const rows = await loadPersonalResearchRows([...new Set(joins.map((join) => join.personId))]);
       const plan = planCenterMemberProfileResearch({ reads, joins, rows });
-      const observations = plan.observations.filter(
-        (obs) => !only || only.has(String(obs.entityKey)),
-      );
-      if (observations.length) await ctx.emit(observations);
-      observationCount += observations.length;
-      entitiesObserved += new Set(observations.map((obs) => obs.entityId)).size;
+      for (const obs of plan.observations) attachedEntityIds.add(String(obs.entityId));
+      await emitInScope(plan.observations);
       const summary = `${lane.centerKey}: ${profileUrls.length} profiles, ${plan.emittedRows} rows; skipped ${JSON.stringify(plan.skipped)}`;
       ctx.log(summary);
       notes.push(summary);
     }
-    return { observationCount, entitiesObserved, notes: notes.join('; ') };
+    const retractions = staleProfileTextRetractions({
+      live: await loadLiveProfileTextRows(),
+      reads: allReads,
+      rosterProfileUrls,
+      attachedEntityIds,
+    });
+    await emitInScope(retractions);
+    notes.push(
+      `retracted ${retractions.length / CENTER_MEMBER_PROFILE_RESEARCH_FIELDS.length} rows`,
+    );
+    return { observationCount, entitiesObserved: entitiesObserved.size, notes: notes.join('; ') };
   }
 }
