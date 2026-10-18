@@ -2000,6 +2000,10 @@ A faculty member tied to the project counts: required supervision by faculty, ap
 A recommendation letter with no tie to the project, from any writer or from "a faculty advisor", is not a requirement.
 A graduate record asserts an adviser only when its page states one or its prose mentions a dissertation and its title names no conference, so a conference-travel grant no longer inherits the requirement.
 
+The same pass derives `citizenshipStatus` from the prose (`utils/programCitizenship.ts`, #5129).
+A sentence restricting the program to U.S. citizens states that, plus "U.S. permanent residents are eligible" when the same sentence admits them; a sentence opening it to every nationality states both U.S. and non-U.S.; a sentence excluding U.S. citizens states non-U.S. only.
+A preference, a condition on one group, or a page whose sentences disagree states nothing, so the Student Grants Database facet the lanes observed stands, and a locked `citizenshipStatus` is never derived.
+
 It replaced `programs:backfill-classification`, a post-sweep repair that re-ran the classifier over stored rows but refused any apply that would demote a served row or replace a served `studentFacingCategory`.
 Those refusals were right about the classifier and wrong as a mechanism: measured on Development on 2026-09-29 they had frozen 100 of 459 live rows on a label today's classifier no longer produces, including 12 served travel and research awards still labelled `Internship program` after the #2925 classifier fix meant to remove that label.
 
