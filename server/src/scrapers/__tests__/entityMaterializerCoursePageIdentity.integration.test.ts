@@ -43,6 +43,7 @@ type PersistedEntity = {
   fullDescription?: string;
   sourceUrls?: string[];
   researchAreas?: string[];
+  currentUndergradCount?: number;
   manuallyLockedFields?: string[];
 };
 
@@ -132,6 +133,7 @@ describe('materializeEntity never lets a course page name, type or describe a ro
       ['kind', 'lab'],
       ['fullDescription', COURSE_DESCRIPTION],
       ['researchAreas', ['fixture dissection']],
+      ['currentUndergradCount', 0],
     ] as const) {
       await seedObservation({ field, value, ...fromCoursePage });
     }
@@ -146,6 +148,7 @@ describe('materializeEntity never lets a course page name, type or describe a ro
     expect(entity.websiteUrl ?? '').not.toBe(COURSE_PAGE);
     expect(entity.sourceUrls ?? []).not.toContain(COURSE_PAGE);
     expect(entity.researchAreas ?? []).not.toContain('fixture dissection');
+    expect(entity.currentUndergradCount).toBeUndefined();
     expect(entity.manuallyLockedFields ?? []).toEqual([]);
   };
 
@@ -158,7 +161,10 @@ describe('materializeEntity never lets a course page name, type or describe a ro
       entityType: 'LAB',
       fullDescription: COURSE_DESCRIPTION,
       sourceUrls: [COURSE_PAGE],
+      researchAreas: ['fixture dissection'],
+      currentUndergradCount: 0,
       fieldProvenance: {
+        researchAreas: courseProvenance(),
         name: courseProvenance(),
         displayName: courseProvenance(),
         entityType: courseProvenance(),
@@ -171,6 +177,20 @@ describe('materializeEntity never lets a course page name, type or describe a ro
     await seedLead();
     await seedRosterEvidence();
     await seedCoursePageReading();
+    const countObservation = await Observation.findOne({ field: 'currentUndergradCount' }).lean<{
+      _id: unknown;
+    }>();
+    await ResearchEntity.updateOne(
+      { slug: ENTITY_KEY },
+      {
+        $set: {
+          'fieldProvenance.currentUndergradCount': {
+            ...courseProvenance(),
+            observationId: countObservation?._id,
+          },
+        },
+      },
+    );
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
     expectRowStatesItsOwnEvidence(await persisted());

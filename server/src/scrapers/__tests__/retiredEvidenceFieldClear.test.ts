@@ -54,6 +54,22 @@ describe('planRetiredEvidenceFieldClears', () => {
     expect(await plan({ fieldsWithLiveObservation: new Set(['website']) })).toEqual([]);
   });
 
+  it('clears a field whose live cited observation was read off a course page (#5213)', async () => {
+    const coursePage = 'https://fixturedept.example.test/courses/fixture-anatomy';
+    const fromCoursePage = {
+      _id: 'obs-website',
+      value: WEBSITE,
+      superseded: false,
+      sourceUrl: coursePage,
+    };
+    expect(
+      await plan({
+        citedObservations: lookupOf(fromCoursePage),
+        liveFieldValues: async () => [{ field: 'website', value: WEBSITE, sourceUrl: coursePage }],
+      }),
+    ).toEqual(['website']);
+  });
+
   it('keeps the field while its cited observation is live', async () => {
     const live = { _id: 'obs-website', value: WEBSITE, superseded: false };
     expect(await plan({ citedObservations: lookupOf(live) })).toEqual([]);
