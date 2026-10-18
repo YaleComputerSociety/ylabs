@@ -6,6 +6,7 @@ import {
   parseProgramDate,
   programDeadlineClosingInstant,
 } from './programDates';
+import { programCitizenshipSummary } from './programBoard';
 
 export const CLOSING_SOON_DAYS = 30;
 
@@ -270,7 +271,7 @@ export const getStructuredEligibilityDetails = (
     details.push({ label: 'Term', value: fellowship.termOfAward.join(', ') });
   }
   if ((fellowship.citizenshipStatus?.length || 0) > 0) {
-    details.push({ label: 'Citizenship', value: fellowship.citizenshipStatus.join(', ') });
+    details.push({ label: 'Citizenship', value: programCitizenshipSummary(fellowship) });
   }
   if ((fellowship.globalRegions?.length || 0) > 0) {
     details.push({ label: 'Regions', value: fellowship.globalRegions.join(', ') });
