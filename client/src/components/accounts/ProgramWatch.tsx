@@ -364,7 +364,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     <section>
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="yr-display text-2xl font-semibold text-ink">Program watch</h2>
+          <h2 className="yr-display text-2xl font-semibold text-ink">Watched programs</h2>
           <p className="mt-1 text-sm text-muted">
             Programs and fellowships you are watching, with their deadlines, accepting status, and
             eligibility. Open one to see its details, or unwatch it.
@@ -443,9 +443,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                             aria-label={
                               isEditing
                                 ? `Hide note for ${program.title}`
-                                : `Add note for ${program.title}`
+                                : note
+                                  ? `Edit note for ${program.title}`
+                                  : `Add note for ${program.title}`
                             }
-                            title={isEditing ? 'Hide note' : 'Add note'}
+                            title={isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note'}
                             className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
                               note
                                 ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'

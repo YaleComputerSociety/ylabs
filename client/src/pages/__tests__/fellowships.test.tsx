@@ -1006,7 +1006,7 @@ describe('Programs page', () => {
     expect(screen.getByText(/due in the next 30 days/i)).toBeTruthy();
   });
 
-  it('shows the first-save callout with a dashboard next step', async () => {
+  it('shows the first-watch callout pointing to the Watched programs tab', async () => {
     mockedAxios.put.mockResolvedValue({ data: {} });
     renderPage([
       baseFellowship({
@@ -1019,9 +1019,10 @@ describe('Programs page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Save program open' }));
 
-    expect(screen.getByText('Program saved')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open Dashboard' }).getAttribute('href')).toBe(
-      '/dashboard',
+    expect(screen.getByText('Watching this program')).toBeTruthy();
+    expect(screen.queryByText('Program saved')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open Watched programs' }).getAttribute('href')).toBe(
+      '/dashboard?tab=programs',
     );
     expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
       withCredentials: true,
@@ -1043,7 +1044,7 @@ describe('Programs page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Save program open' }));
 
-    expect(screen.queryByText('Program saved')).toBeNull();
+    expect(screen.queryByText('Watching this program')).toBeNull();
   });
 
   it('opens a deep-linked program once and keeps it closed after dismissal', async () => {

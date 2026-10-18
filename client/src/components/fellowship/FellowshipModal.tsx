@@ -37,7 +37,7 @@ import {
   createEmptyStudentProgramFilters,
 } from '../../reducers/fellowshipSearchReducer';
 import useModalDialog from '../../hooks/useModalDialog';
-import FavoriteButton from '../shared/FavoriteButton';
+import FavoriteButton, { watchControlLabel, watchControlVerb } from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
 import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
 
@@ -348,6 +348,8 @@ const FellowshipModal = ({
                     toggleFavorite();
                   }}
                   size={22}
+                  ariaLabel={watchControlLabel(fellowship.title, isFavorite)}
+                  title={watchControlVerb(isFavorite)}
                 />
                 <button
                   onClick={onClose}

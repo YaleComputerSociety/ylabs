@@ -504,7 +504,7 @@ await screenshot('04-detail-saved');
 await step('the saved entity appears on the dashboard', async () => {
   await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
-  await page.getByRole('tab', { name: /^Dashboard/ }).click();
+  await page.getByRole('tab', { name: /^Saved research/ }).click();
   await page
     .getByRole('heading', { name: 'Saved research plans', exact: true })
     .waitFor({ timeout: 20000 });
@@ -532,15 +532,15 @@ await screenshot('05-account-saved');
 
 await step('each dashboard surface tab paints a full keyboard focus ring', async () => {
   const tabs = page.getByRole('tablist', { name: 'Dashboard surfaces' });
-  const plansTab = tabs.getByRole('tab', { name: /^Dashboard/ });
-  const programsTab = tabs.getByRole('tab', { name: /^Program Watch/ });
+  const plansTab = tabs.getByRole('tab', { name: /^Saved research/ });
+  const programsTab = tabs.getByRole('tab', { name: /^Watched programs/ });
   await plansTab.scrollIntoViewIfNeeded();
   await plansTab.focus();
   await page.keyboard.press('ArrowRight');
-  await assertFocusRingPaintsEverySide(programsTab, 'The Program Watch tab');
+  await assertFocusRingPaintsEverySide(programsTab, 'The Watched programs tab');
   await programsTab.focus();
   await page.keyboard.press('ArrowLeft');
-  await assertFocusRingPaintsEverySide(plansTab, 'The Dashboard tab');
+  await assertFocusRingPaintsEverySide(plansTab, 'The Saved research tab');
 });
 
 await step('each program view-mode segment paints a full keyboard focus ring', async () => {
