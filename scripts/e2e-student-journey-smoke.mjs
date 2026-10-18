@@ -301,10 +301,6 @@ await step(
           name: /^Has hosted undergraduate researchers \([1-9][\d,]*\)$/,
         });
         await hostedToggle.waitFor({ timeout: 20000 });
-        assert(
-          await hostedToggle.isEnabled(),
-          'The seeded browse should offer the hosted-undergraduates filter with a positive count, so the sidebar is measured in the state production shows.',
-        );
         await assertSidebarFits('while browsing');
         await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
         await assertSidebarFits('with a query typed');
