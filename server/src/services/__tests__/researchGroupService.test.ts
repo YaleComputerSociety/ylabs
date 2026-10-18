@@ -6280,7 +6280,7 @@ describe('a query word no row carries does not empty the search', () => {
   const searchWithKeywordRowsFor = async (query: string, matchingTexts: string[]) => {
     mocks.search.mockImplementation(async (text: string, params: Record<string, any>) => {
       if (params.hybrid) return { hits: [], estimatedTotalHits: 0, totalHits: 0 };
-      return { hits: matchingTexts.includes(text) ? [keywordHit] : [] };
+      return { hits: matchingTexts.includes(text.trim()) ? [keywordHit] : [] };
     });
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
@@ -6313,6 +6313,19 @@ describe('a query word no row carries does not empty the search', () => {
       'medieval-history-row',
     ]);
     expect(keywordLegTexts()).toContain('medieval plague');
+  });
+
+  it('probes every word but the last whole, since only the last is matched as a prefix', async () => {
+    await searchWithKeywordRowsFor(`${unmatchedWord} medieval plague`, [
+      'medieval',
+      'plague',
+      'medieval plague',
+    ]);
+
+    expect(keywordLegTexts()).toEqual(
+      expect.arrayContaining([`${unmatchedWord} `, 'medieval ', 'plague']),
+    );
+    expect(keywordLegTexts()).not.toContain('plague ');
   });
 
   it('keeps the typed order of the words it keeps', async () => {
@@ -6349,7 +6362,9 @@ describe('a query word no row carries does not empty the search', () => {
       [],
     );
 
-    const probedWords = keywordLegTexts().filter((text) => !text.includes(' '));
+    const probedWords = keywordLegTexts()
+      .map((text) => text.trim())
+      .filter((text) => !text.includes(' '));
     expect(probedWords.filter((text) => text === unmatchedWord)).toHaveLength(1);
     expect(probedWords).toEqual(expect.arrayContaining(searchedWords.slice(1)));
     expect(probedWords.filter((text) => text.startsWith('extra'))).toEqual([]);

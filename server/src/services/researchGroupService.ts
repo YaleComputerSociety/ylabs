@@ -2030,11 +2030,16 @@ async function searchResearchGroupsForQuery(
   // the whole search, while the same word typed last was dropped harmlessly. Such a
   // word is searched for alone, and when no row matches it the rest of the query is
   // searched as if it had not been typed.
+  // Meilisearch matches only a query's last word as a prefix, so every other word is
+  // probed whole, which a trailing space asks for: probed alone, the first word of
+  // "pure math" reached "purely" by prefix and was kept, though no row carries it.
   const wordsSomeRowMatches = async (words: string[]): Promise<string[]> => {
     const distinctWords = [...new Set(words)];
+    const lastWord = words[words.length - 1];
+    const probeText = (word: string) => (word === lastWord ? word : `${word} `);
     const matched = await Promise.all(
       distinctWords.map(
-        async (word) => !servesNoKeywordRow(await searchKeywordLeg(word, 'all', 1)),
+        async (word) => !servesNoKeywordRow(await searchKeywordLeg(probeText(word), 'all', 1)),
       ),
     );
     const matchedWords = new Set(distinctWords.filter((_word, position) => matched[position]));
