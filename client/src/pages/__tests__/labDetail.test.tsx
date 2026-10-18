@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LabDetail from '../labDetail';
@@ -334,6 +334,52 @@ describe('LabDetail page', () => {
       ),
     );
     expect(screen.queryByText('Research profile not found.')).toBeNull();
+  });
+
+  it('moves a mixed-case address onto the lower-case canonical profile address', async () => {
+    const MIXED_CASE_SLUG = 'Named-Canonical-LAB';
+    const CANONICAL_SLUG = 'named-canonical-lab';
+    const canonicalPayload: LabDetailPayload = {
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        _id: 'canonical-1',
+        slug: CANONICAL_SLUG,
+        name: 'Canonical Lab Name',
+      },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url === `/research/${MIXED_CASE_SLUG}` || url === `/research/${CANONICAL_SLUG}`) {
+        return Promise.resolve({
+          data: canonicalPayload,
+          request: { responseURL: `http://localhost/api/research/${CANONICAL_SLUG}` },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+    const LocationProbe = () => <output aria-label="Current path">{useLocation().pathname}</output>;
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${MIXED_CASE_SLUG}`]}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    await screen.findByText('Canonical Lab Name');
+    await waitFor(() =>
+      expect(screen.getByLabelText('Current path').textContent).toBe(`/research/${CANONICAL_SLUG}`),
+    );
   });
 
   it('keeps generic source review separate from a qualified action', async () => {
@@ -3166,6 +3212,38 @@ describe('LabDetail display name unification', () => {
     const exploreLink = screen.getByRole('link', { name: /explore research/i });
     expect(exploreLink.getAttribute('href')).toBe('/research');
     await waitFor(() => expect(document.title).toContain('Page not found'));
+  });
+
+  it('treats a slug the profile route rejects as malformed as a missing page, not a load failure', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url.startsWith('/research/')) {
+        return Promise.reject({ response: { status: 400 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={['/research/dept-psych-missing-example-lab']}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: /we couldn't find that y\/labs page/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Something went wrong loading this research profile/)).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search y/labs' })).toHaveValue(
+      'missing example lab',
+    );
   });
 
   it('offers an Explore Research recovery CTA when the profile fails to load for a non-404 reason', async () => {
