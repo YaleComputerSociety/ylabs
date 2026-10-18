@@ -54,6 +54,7 @@ Take the tells, not the taste.
 ## Interactions
 
 - Every interactive element has a visible `focus-visible` state and a minimum 44px touch target.
+A link inside a sentence or a one-line notice is the exception: it takes 24px or more through `-my-1.5 inline-block py-1.5`, per `client/DESIGN.md` §4.
 - Full keyboard access: nothing is reachable only by mouse or hover.
 - Pages scroll inside `[data-scroll-container]`, not the document, so PageDown and Space only work while focus is inside it.
 `ScrollToTop` moves focus to `#main-content` (with `preventScroll`) on every client-side push or replace navigation, and on back navigation when nothing holds focus.
