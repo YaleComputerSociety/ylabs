@@ -242,6 +242,11 @@ const ResearchFilterDisclosure = ({
     </p>
   );
 
+  const selectFieldLabelClassName = isSidebar
+    ? 'grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-sm font-medium text-ink'
+    : 'block min-w-0 text-sm font-medium text-ink';
+  const selectClassName = `yr-focus-ring ${isSidebar ? '' : 'mt-1 '}min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink`;
+
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
@@ -271,14 +276,14 @@ const ResearchFilterDisclosure = ({
           </div>
         )}
         {showEntityType && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             Type
             <select
               ref={firstVisibleField === 'entityType' ? setFirstFieldNode : undefined}
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              className={selectClassName}
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
@@ -291,14 +296,14 @@ const ResearchFilterDisclosure = ({
           </label>
         )}
         {showSchool && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             School
             <select
               ref={firstVisibleField === 'school' ? setFirstFieldNode : undefined}
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              className={selectClassName}
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
@@ -311,14 +316,14 @@ const ResearchFilterDisclosure = ({
           </label>
         )}
         {showDepartment && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             Department
             <select
               ref={firstVisibleField === 'department' ? setFirstFieldNode : undefined}
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              className={selectClassName}
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (

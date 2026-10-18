@@ -77,9 +77,7 @@ describe('ResearchFilterDisclosure', () => {
       name: 'Has hosted undergraduate researchers (0)',
     });
     expect(toggle).toBeDisabled();
-    expect(toggle).toHaveAccessibleDescription(
-      'No undergraduate evidence is recorded for these results yet, which is not proof there is none.',
-    );
+    expect(toggle).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
   });
 
   it('moves desktop focus past a disabled hosted-undergraduates toggle to the first usable field', async () => {
