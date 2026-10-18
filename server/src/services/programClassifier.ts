@@ -90,7 +90,7 @@ function textForProgram(input: ProgramClassificationInput): string {
 // `purpose` is a multi-select of permitted uses, so its "Senior Research Project or Senior
 // Essay" entry sits on awards open to first-years (#3904). A statement about who the award
 // is for has to come from the record's own prose.
-function proseForProgram(input: ProgramClassificationInput): string {
+function proseFieldsForProgram(input: ProgramClassificationInput): string[] {
   return [
     input.title,
     input.competitionType,
@@ -101,9 +101,14 @@ function proseForProgram(input: ProgramClassificationInput): string {
     input.additionalInformation,
   ]
     .map(normalizeText)
-    .filter(Boolean)
-    .join(' ');
+    .filter(Boolean);
 }
+
+function proseForProgram(input: ProgramClassificationInput): string {
+  return proseFieldsForProgram(input).join(' ');
+}
+
+const SENTENCE_BOUNDARY = /(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/;
 
 const AWARD_INSTRUMENT_TITLE =
   /\b(?:awards?|grants?|funds?|funding|scholarships?|prizes?|stipends?)\b/;
@@ -197,7 +202,7 @@ export function mentorRequirementSentence(input: ProgramClassificationInput): st
   return [proseForProgram(input), normalizeText(input.fullSourceDescription)]
     .filter(Boolean)
     .join(' ')
-    .split(/(?<=[.!?])\s+|\n+|(?<=[a-z])(?=[A-Z][a-z]+:)/)
+    .split(SENTENCE_BOUNDARY)
     .find(
       (sentence) =>
         MENTOR_REQUIREMENT_SENTENCE.test(sentence) && !MENTOR_NOT_REQUIRED_SENTENCE.test(sentence),
@@ -260,21 +265,29 @@ const COLLECTIONS_RESEARCH_HOST =
 
 const DISSERTATION_FUNDING = new RegExp(
   [
-    `\\bdissertation (?:(?:research|fieldwork|writing|completion) )?(?:fellowships?|grants?|awards?|funding)\\b`,
+    `\\bdissertation (?:(?:research|fieldwork|writing|completion|year) )?(?:fellowships?|grants?|awards?|funding)\\b`,
     `\\b(?:fund|support)\\w*\\s(?:\\w+\\s){0,3}?for (?:\\w+\\s){0,2}?dissertations?\\b`,
-    `\\b(?:fund|support|conduct)\\w*\\s(?:\\w+\\s){0,2}?dissertation research\\b`,
+    `\\b(?:fund|support|conduct)\\w*\\s(?:\\w+\\s){0,4}?dissertation (?:research|writing|fieldwork|completion)\\b`,
   ].join('|'),
 );
 
-// A dissertation has an adviser by construction, so prose funding one states the
-// requirement; any other graduate record asserts an adviser only when its page does. The
-// `purpose` multi-select is not read, because its "Dissertation Support" entry sits on
-// conference-travel grants too.
+const DISSERTATION_PRESENTATION = /\bpresent\w*|\bconferences?\b/;
+
+// A dissertation has an adviser by construction, so a sentence funding one states the
+// requirement, unless it funds presenting the dissertation at a conference; any other
+// graduate record asserts an adviser only when its page does. The `purpose` multi-select
+// is not read, because its "Dissertation Support" entry sits on conference-travel grants too.
+function fundsDissertation(input: ProgramClassificationInput): boolean {
+  return proseFieldsForProgram(input)
+    .flatMap((field) => field.toLowerCase().split(SENTENCE_BOUNDARY))
+    .some(
+      (sentence) =>
+        DISSERTATION_FUNDING.test(sentence) && !DISSERTATION_PRESENTATION.test(sentence),
+    );
+}
+
 function graduateRecordRequiresAdviser(input: ProgramClassificationInput): boolean {
-  return (
-    DISSERTATION_FUNDING.test(proseForProgram(input).toLowerCase()) ||
-    statesMentorRequirement(input)
-  );
+  return fundsDissertation(input) || statesMentorRequirement(input);
 }
 
 function graduateResearchClassification(

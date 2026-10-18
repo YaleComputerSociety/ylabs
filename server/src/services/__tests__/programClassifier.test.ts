@@ -109,6 +109,23 @@ describe('classifyProgram', () => {
     });
   });
 
+  it.each([
+    ['Fixture Dissertation Year Fellowship', 'PhD students in history are eligible. Fellows present their work at a spring conference.'],
+    [
+      'Fixture Graduate Research Fellowship',
+      'The fellowship supports the final year of dissertation writing for PhD students.',
+    ],
+  ])(
+    'claims an adviser for a graduate fellowship that funds a dissertation (#5100): %s',
+    (title, description) => {
+      expect(classifyProgram({ title, description })).toMatchObject({
+        studentFacingCategory: 'Graduate research funding',
+        entryMode: 'SECURE_MENTOR_THEN_APPLY',
+        requiresMentorBeforeApply: true,
+      });
+    },
+  );
+
   it('claims no adviser for a graduate travel grant whose page names none (#5100)', () => {
     expect(
       classifyProgram({
@@ -134,6 +151,9 @@ describe('classifyProgram', () => {
   it.each([
     'The grant provides travel support for Yale University graduate students to present their dissertation research at conferences.',
     'The grant provides travel support to conferences for Yale University graduate students in the dissertation phase.',
+    'Travel support for students presenting dissertation research at conferences.',
+    'Conference travel funding for dissertation research presentations.',
+    'The travel grant supports students presenting dissertation research at conferences.',
   ])(
     'claims no adviser for a graduate travel grant that only mentions a dissertation (#5100): %s',
     (description) => {
