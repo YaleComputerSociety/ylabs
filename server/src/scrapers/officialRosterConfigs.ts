@@ -311,7 +311,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     researchEntityKey: 'ysm-faculty-sathish-ramakrishnan',
     url: 'https://skrlab.org/our-team/',
     template: 'heading-list',
-    currentSectionLabels: [],
+    currentSectionLabels: ['Our Team'],
     pastSectionLabels: ['Our Lab Alumni'],
   },
   {
