@@ -51,7 +51,7 @@ child.on('close', (code) => {
     console.log(
       options.apply
         ? '\nReindex complete. Run the verification queries in docs/meilisearch-reindex-runbook.md before reindexing the next environment.'
-        : '\nDry run complete. Nothing changed. Re-run with --apply to clear and rebuild.',
+        : '\nDry run complete. Nothing changed. Re-run with --apply to write the index, adding --full to force a rebuild.',
     );
   } else {
     console.error(

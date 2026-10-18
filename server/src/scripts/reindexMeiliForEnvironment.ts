@@ -5,8 +5,11 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  compareResearchEntitySearchIndexToCode,
   rebuildResearchEntitySearchIndex,
+  reconcileResearchEntitySearchIndex,
   researchEntitySearchStagingIndexUid,
+  type ResearchEntitySearchIndexCodeComparison,
 } from '../services/researchEntitySearchIndexService';
 import { getMeiliClient } from '../utils/meiliClient';
 import {
@@ -29,8 +32,40 @@ dotenv.config({ quiet: true });
 
 export interface ReindexMeiliCliOptions {
   confirm: boolean;
+  full: boolean;
   pageSize: number;
   output?: string;
+}
+
+export type ReindexMode = 'incremental' | 'full';
+
+export interface ReindexModeDecision {
+  mode: ReindexMode;
+  reason: string;
+  drift: string[];
+}
+
+export function chooseReindexMode(args: {
+  forceFull: boolean;
+  comparison: Pick<ResearchEntitySearchIndexCodeComparison, 'indexExists' | 'drift'>;
+}): ReindexModeDecision {
+  const { forceFull, comparison } = args;
+  if (forceFull) return { mode: 'full', reason: 'forced with --full', drift: comparison.drift };
+  if (!comparison.indexExists) {
+    return { mode: 'full', reason: 'the live index does not exist', drift: comparison.drift };
+  }
+  if (comparison.drift.length > 0) {
+    return {
+      mode: 'full',
+      reason: `the live index differs from the code: ${comparison.drift.join(', ')}`,
+      drift: comparison.drift,
+    };
+  }
+  return {
+    mode: 'incremental',
+    reason: 'the live index settings and embedder match the code',
+    drift: [],
+  };
 }
 
 export interface ReindexMeiliPreflight {
@@ -86,12 +121,16 @@ async function deleteMeiliIndex(uid: string): Promise<void> {
 }
 
 export function parseReindexMeiliArgs(argv: string[]): ReindexMeiliCliOptions {
-  const options: ReindexMeiliCliOptions = { confirm: false, pageSize: 250 };
+  const options: ReindexMeiliCliOptions = { confirm: false, full: false, pageSize: 250 };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--confirm') {
       options.confirm = true;
+      continue;
+    }
+    if (arg === '--full') {
+      options.full = true;
       continue;
     }
     if (arg.startsWith('--page-size=')) {
@@ -194,10 +233,41 @@ async function main() {
     );
   }
 
+  const decision = chooseReindexMode({
+    forceFull: options.full,
+    comparison: await compareResearchEntitySearchIndexToCode(),
+  });
+  console.log(JSON.stringify({ reindexMode: decision }, null, 2));
+
   if (!options.confirm) {
     console.log(
-      'Dry run. Re-run with --confirm to rebuild the model index into a fresh index, swap it in, and delete retired indexes.',
+      decision.mode === 'incremental'
+        ? 'Dry run. Re-run with --confirm to write only the changed documents to the live index and delete retired indexes, or add --full to rebuild instead.'
+        : 'Dry run. Re-run with --confirm to rebuild the model index into a fresh index, swap it in, and delete retired indexes.',
     );
+    return;
+  }
+
+  if (decision.mode === 'incremental') {
+    const guard = assertRebuildResearchEntitySearchIndexAllowed({ confirmMeiliRebuild: true });
+    const reconcileResult = await reconcileResearchEntitySearchIndex({
+      apply: true,
+      pageSize: options.pageSize,
+    });
+    for (const uid of reconcile.retire) {
+      await deleteMeiliIndex(uid);
+      console.log(`Deleted retired index ${uid}.`);
+    }
+    const output = {
+      ...reconcileResult,
+      mode: decision.mode,
+      modeReason: decision.reason,
+      environment: guard.environment,
+      db: database,
+      retiredIndexes: reconcile.retire,
+    };
+    console.log(JSON.stringify(output, null, 2));
+    writeRebuildResearchEntitySearchIndexOutput(output, options.output);
     return;
   }
 
@@ -221,11 +291,14 @@ async function main() {
     db: database,
     options: rebuildOptions,
   });
-  console.log(JSON.stringify({ ...output, retiredIndexes: reconcile.retire }, null, 2));
-  writeRebuildResearchEntitySearchIndexOutput(
-    { ...output, retiredIndexes: reconcile.retire },
-    options.output,
-  );
+  const fullOutput = {
+    ...output,
+    mode: decision.mode,
+    modeReason: decision.reason,
+    retiredIndexes: reconcile.retire,
+  };
+  console.log(JSON.stringify(fullOutput, null, 2));
+  writeRebuildResearchEntitySearchIndexOutput(fullOutput, options.output);
 }
 
 const isDirectRun = process.argv[1]

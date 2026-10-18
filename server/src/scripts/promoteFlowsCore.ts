@@ -183,7 +183,10 @@ export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Pro
     problems.push(...mirrorPlanProblems(plan.report));
   }
 
-  const remoteOptions = { confirmBetaBackup: Boolean(args.backupRef) };
+  const remoteOptions = {
+    confirmBetaBackup: Boolean(args.backupRef),
+    fullSearchRebuild: args.fullSearchRebuild,
+  };
   if (!args.skipRemotePhase) deps.log(formatRemotePhasePlan('beta', remoteOptions));
 
   if (args.dryRun) {
@@ -280,7 +283,12 @@ export async function runPromoteProduction(
     problems.push(...productionPlanProblems(plan.report));
   }
   if (!args.skipRemotePhase) {
-    deps.log(formatRemotePhasePlan('production', { confirmBetaBackup: false }));
+    deps.log(
+      formatRemotePhasePlan('production', {
+        confirmBetaBackup: false,
+        fullSearchRebuild: args.fullSearchRebuild,
+      }),
+    );
   }
 
   if (args.dryRun) {
@@ -329,7 +337,7 @@ export async function runPromoteProduction(
     'production',
     render.serviceId!,
     render.dashboardUrl,
-    { confirmBetaBackup: false },
+    { confirmBetaBackup: false, fullSearchRebuild: args.fullSearchRebuild },
   );
   if (exitCode === 0) {
     deps.log(

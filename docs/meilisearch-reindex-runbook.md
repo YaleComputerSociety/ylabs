@@ -43,8 +43,8 @@ Use the one that matches the environment.
 | ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Development (local) | `yarn development:search:sync`                     | The default. Wraps `meili:sync-research-entities --apply`: diffs every corpus document against the live index, upserts only the ones that differ, and deletes index documents with no live row. |
 | Development (local) | `yarn development:search:rebuild`                  | Only for a settings, embedder, or document-shape change. Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild`, which re-embeds every document. |
-| Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell or as a one-off job (see below). Dry run. Add `--apply` to rebuild.                                                                                  |
-| Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to rebuild. Run Beta first.                                                            |
+| Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell or as a one-off job (see below). Dry run. Add `--apply` to write: it reconciles incrementally when the live index matches the code and rebuilds otherwise; add `--full` to force the rebuild. |
+| Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to write, with the same mode choice and `--full` flag. Run Beta first.                 |
 
 `reindex:meili`'s own error text points at "the development sweep search-sync stage" for local rebuilds.
 That is a description of the pipeline stage, not a command you can type; `yarn development:search:sync` is the command.
@@ -57,6 +57,17 @@ The replacing rebuild builds every document into a fresh `_next` index, which ha
 Measured on 2026-10-12 (#5023): Development had 23 replacing rebuilds in nine days; one sync of a 4,224-document index after a sweep upserted 4,081 documents and deleted 4 in 25 seconds, and the next run upserted none.
 The sync refuses when the index has no stored embedder, when the corpus yields no documents, or when it would delete more than a fifth of the index, and it never changes index settings.
 Run the rebuild only when the settings, the embedder, or the shape of an index document changed.
+
+### Beta and Production choose between a reconcile and a rebuild (#5107)
+
+`reindex:meili --confirm` compares the live prefixed index with what the code would build before it writes anything, and prints the decision as `reindexMode`.
+When the live index exists and its settings and embedder match the code, it runs the same reconcile as `development:search:sync`: it upserts only the documents whose canonical JSON differs and deletes the ones with no live row, so unchanged documents keep their vectors.
+Otherwise it runs the replacing rebuild, and `--full` forces the rebuild.
+`compareResearchEntitySearchIndexToCode` decides: the settings compare key by key against `getResearchEntitySearchIndexSettings`, with attribute sets as sorted lists because Meilisearch returns them sorted, and the embedder compares by source, model, and document template, because Meilisearch redacts its stored key.
+A changed document shape needs no rebuild, because `addDocuments` replaces a whole document and the diff reaches every document whose shape changed.
+The reconcile reads every corpus row and every indexed document, so it is complete after a whole-collection copy rather than scoped to a run.
+A reconcile that fails part-way exits non-zero and says how many upserts and deletes landed; re-run it, or run the rebuild with `--full`.
+The output records `mode`, `modeReason`, and the added, updated, deleted, and unchanged counts, and `promote:remote-phase` copies them into the search reindex step of `PROMOTE_REMOTE_PHASE_RESULT`.
 
 Do not use `meili:rebuild-research-entities` directly against Beta or Production.
 It rebuilds the model index but does not reconcile retired indexes, and it does not cross-check the Mongo target against the environment.

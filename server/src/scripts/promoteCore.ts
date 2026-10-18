@@ -27,12 +27,14 @@ export interface PromoteBetaArgs {
   allowWithoutWeeklyRun: boolean;
   backupRef?: string;
   skipRemotePhase: boolean;
+  fullSearchRebuild: boolean;
 }
 
 export interface PromoteProductionArgs {
   dryRun: boolean;
   datasetVersion: string;
   skipRemotePhase: boolean;
+  fullSearchRebuild: boolean;
 }
 
 function readValue(argv: string[], index: number, flag: string): string {
@@ -48,6 +50,7 @@ export function parsePromoteBetaArgs(argv: string[]): PromoteBetaArgs {
     weeklyRunIds: [],
     allowWithoutWeeklyRun: false,
     skipRemotePhase: false,
+    fullSearchRebuild: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -56,6 +59,7 @@ export function parsePromoteBetaArgs(argv: string[]): PromoteBetaArgs {
     else if (arg === '--yes') args.yes = true;
     else if (arg === '--allow-without-weekly-run') args.allowWithoutWeeklyRun = true;
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;
+    else if (arg === '--full-search-rebuild') args.fullSearchRebuild = true;
     else if (arg === '--weekly-run') args.weeklyRunIds.push(readValue(argv, index++, arg));
     else if (arg === '--backup-ref') args.backupRef = readValue(argv, index++, arg);
     else throw new Error(`Unknown promote:beta argument: ${arg}`);
@@ -75,12 +79,14 @@ export function parsePromoteProductionArgs(
     dryRun: false,
     datasetVersion: datasetVersionFor(now),
     skipRemotePhase: false,
+    fullSearchRebuild: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') args.dryRun = true;
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;
+    else if (arg === '--full-search-rebuild') args.fullSearchRebuild = true;
     else if (arg === '--dataset-version') args.datasetVersion = readValue(argv, index++, arg);
     else if (arg === '--yes') {
       throw new Error(
@@ -269,10 +275,33 @@ export interface RemotePhaseStep {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  resultFile?: string;
 }
 
 export interface RemotePhaseOptions {
   confirmBetaBackup: boolean;
+  fullSearchRebuild?: boolean;
+}
+
+export const searchReindexResultFile = (target: PromotionTarget): string =>
+  `/tmp/ylabs-${target}-search-reindex.json`;
+
+function searchReindexStep(target: PromotionTarget, options: RemotePhaseOptions): RemotePhaseStep {
+  return {
+    label: 'search reindex',
+    cwd: 'repo',
+    command: 'node',
+    args: [
+      'scripts/reindex-search-index.mjs',
+      target,
+      '--apply',
+      ...(options.fullSearchRebuild ? ['--full'] : []),
+      '--output',
+      searchReindexResultFile(target),
+    ],
+    ...(target === 'production' ? { env: { CONFIRM_PROD_SCRAPE: 'true' } } : {}),
+    resultFile: searchReindexResultFile(target),
+  };
 }
 
 const VISIBILITY_GATE_ARGS = [
@@ -325,12 +354,7 @@ export function remotePhaseSteps(
           '--fail-on-public-visibility-violation',
         ],
       },
-      {
-        label: 'search reindex',
-        cwd: 'repo',
-        command: 'node',
-        args: ['scripts/reindex-search-index.mjs', 'beta', '--apply'],
-      },
+      searchReindexStep('beta', options),
       {
         label: 'beta readiness',
         cwd: 'server',
@@ -352,13 +376,7 @@ export function remotePhaseSteps(
       args: ['database:verify-names', '--serving', 'production'],
     },
     { label: 'visibility gate', cwd: 'server', command: 'yarn', args: VISIBILITY_GATE_ARGS },
-    {
-      label: 'search reindex',
-      cwd: 'repo',
-      command: 'node',
-      args: ['scripts/reindex-search-index.mjs', 'production', '--apply'],
-      env: { CONFIRM_PROD_SCRAPE: 'true' },
-    },
+    searchReindexStep('production', options),
     {
       label: 'production smoke',
       cwd: 'repo',
@@ -405,21 +423,25 @@ export function remotePhaseStartCommand(
     'yarn --cwd server promote:remote-phase',
     `--environment ${target}`,
     ...(target === 'beta' && options.confirmBetaBackup ? ['--confirm-beta-backup'] : []),
+    ...(options.fullSearchRebuild ? ['--full-search-rebuild'] : []),
   ].join(' ');
 }
 
 export interface RemotePhaseArgs {
   environment: PromotionTarget;
   confirmBetaBackup: boolean;
+  fullSearchRebuild: boolean;
 }
 
 export function parseRemotePhaseArgs(argv: string[]): RemotePhaseArgs {
   let environment: PromotionTarget | undefined;
   let confirmBetaBackup = false;
+  let fullSearchRebuild = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--confirm-beta-backup') confirmBetaBackup = true;
+    else if (arg === '--full-search-rebuild') fullSearchRebuild = true;
     else if (arg === '--environment') {
       const value = readValue(argv, index++, arg);
       if (value !== 'beta' && value !== 'production') {
@@ -432,7 +454,7 @@ export function parseRemotePhaseArgs(argv: string[]): RemotePhaseArgs {
   if (confirmBetaBackup && environment !== 'beta') {
     throw new Error('--confirm-beta-backup applies only to --environment beta');
   }
-  return { environment, confirmBetaBackup };
+  return { environment, confirmBetaBackup, fullSearchRebuild };
 }
 
 export function formatRemotePhasePlan(
@@ -483,4 +505,33 @@ export function renderServiceProblems(
     problems.push(`the ${target} operator service deploys ${service.branch}, expected ${branch}`);
   }
   return problems;
+}
+
+const SEARCH_REINDEX_SUMMARY_FIELDS = [
+  'mode',
+  'modeReason',
+  'addedDocumentCount',
+  'updatedDocumentCount',
+  'deletedDocumentCount',
+  'unchangedDocumentCount',
+  'indexedDocumentCount',
+  'durationMs',
+] as const;
+
+export function summarizeSearchReindexResult(raw: string): Record<string, unknown> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  const record = parsed as Record<string, unknown>;
+  const summary = Object.fromEntries(
+    SEARCH_REINDEX_SUMMARY_FIELDS.filter((field) => record[field] !== undefined).map((field) => [
+      field,
+      record[field],
+    ]),
+  );
+  return Object.keys(summary).length > 0 ? summary : undefined;
 }
