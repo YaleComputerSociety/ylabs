@@ -21,6 +21,7 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
+import { orderYearOfStudyOptions } from './programYearOfStudyOrder';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { Observation } from '../models/observation';
 import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
@@ -1147,7 +1148,7 @@ export const getFilterOptions = async () => {
   ]);
 
   return {
-    yearOfStudy: yearOfStudyOptions.filter(Boolean).sort(),
+    yearOfStudy: orderYearOfStudyOptions(yearOfStudyOptions.filter(Boolean)),
     termOfAward: termOfAwardOptions.filter(Boolean).sort(),
     purpose: purposeOptions.filter(Boolean).sort(),
     globalRegions: globalRegionsOptions.filter(Boolean).sort(),
