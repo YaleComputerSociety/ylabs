@@ -20,6 +20,12 @@ describe('formatServedAwardAmount (#5205)', () => {
     ['Up to 5000 per semester', 'Up to $5,000 per semester'],
     ['Typically 500 to 2500, and 3000 each', 'Typically $500 to $2,500, and $3,000 each'],
     ['Total award 1200.', 'Total award $1,200.'],
+    ['Up to 2000', 'Up to $2,000'],
+    ['Maximum award of 2000', 'Maximum award of $2,000'],
+    ['Up to 2000 per year', 'Up to $2,000 per year'],
+    ['Awards range from 1000 to 5000', 'Awards range from $1,000 to $5,000'],
+    ['Award amount: 5000', 'Award amount: $5,000'],
+    ['Stipend 4000', 'Stipend $4,000'],
   ])('writes %j as %j', (stored, served) => {
     expect(formatServedAwardAmount(stored)).toBe(served);
   });
@@ -42,7 +48,8 @@ describe('formatServedAwardAmount (#5205)', () => {
     '1,000 to 2,000 dollars',
     '$1500 or 1,200 GBP',
     'Spend by June 30, 2026',
-    'Class of 2027',
+    '2025-2026',
+    '2026-27',
     'Up to 150 participants',
     'Top 100 applicants',
     'Grant ID 12345',
