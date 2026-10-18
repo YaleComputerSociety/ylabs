@@ -110,6 +110,12 @@ The derivation is enforced in the scraper projection rather than in the schema, 
 Two escapes are deliberate: an operator lock on `kind` still wins over the derivation, and an entity with no recognizable `entityType` has no derivable kind, so `kind` observations still classify it at mint time.
 Classify a research home by observing `entityType`: a source that observes only `kind` cannot correct an entity another source already minted under a different `entityType`.
 
+A live row also carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, one entry per archived row whose `canonicalGroupId` chain ends on it (#5148).
+It is derived rather than written by a lane: `research-entity:derive-survivor-aliases` (`server/src/services/researchEntityMergedFrom.ts`) reads every tombstone, flattens chains onto the final live survivor, credits nobody for a chain that cycles, points at a missing row, or ends on an archived row, and sets each survivor's list exactly, clearing it from a row left with none.
+It runs as the `survivor-alias-derivation` Development sweep stage, writes with `timestamps: false` because the field is neither served nor indexed, and a second run plans no write.
+It exists so Beta and Production can resolve an old slug or id from the live survivor once promotion stops copying archived rows; until a reader uses it, the tombstones stay the source of truth and `mergedFrom` changes no served output.
+On Development on 2026-10-18 it planned 3,640 entries on 1,850 survivors from 3,715 tombstones, 75 of which name no live survivor.
+
 ### `RoleAssignment` (`role_assignments`)
 
 The person-to-research-entity membership edge (the roster); replaces the retired `ResearchGroupMember`.

@@ -208,6 +208,21 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       required: false,
       default: null,
     },
+    // Derived from the canonicalGroupId tombstones by research-entity:derive-survivor-aliases,
+    // never written by a lane: the rows merged into this one, so Beta and Production can
+    // resolve an old slug or id without carrying the archived rows (#5148).
+    mergedFrom: {
+      type: [
+        {
+          _id: false,
+          slug: { type: String, required: true },
+          entityId: { type: mongoose.Schema.Types.ObjectId, required: true },
+          mergedAt: { type: Date, required: false },
+          archivedReason: { type: String, required: false },
+        },
+      ],
+      default: undefined,
+    },
     kind: {
       type: String,
       enum: [...researchGroupKinds],
@@ -591,6 +606,8 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
 researchEntitySchema.index({ kind: 1 });
 researchEntitySchema.index({ entityType: 1 });
 researchEntitySchema.index({ canonicalGroupId: 1 });
+researchEntitySchema.index({ 'mergedFrom.slug': 1 });
+researchEntitySchema.index({ 'mergedFrom.entityId': 1 });
 // Not unique on purpose: 130 live website-url identity groups already hold more than
 // one row, so a unique index would refuse to build until those are resolved. The
 // resolver's ambiguity guard is what keeps a shared URL from merging (#3036).
