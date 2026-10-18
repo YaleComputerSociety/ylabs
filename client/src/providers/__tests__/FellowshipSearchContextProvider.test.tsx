@@ -7,6 +7,7 @@ import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import UserContext from '../../contexts/UserContext';
 import FellowshipSearchContextProvider from '../FellowshipSearchContextProvider';
 import FellowshipModal from '../../components/fellowship/FellowshipModal';
+import { useProgramSearchUrlSync } from '../../hooks/useProgramSearchUrlSync';
 import { Fellowship } from '../../types/types';
 import { createFellowship } from '../../utils/createFellowship';
 import axios from '../../utils/axios';
@@ -28,6 +29,11 @@ vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
+};
+
+const ProgramSearchUrlSync = () => {
+  useProgramSearchUrlSync();
+  return null;
 };
 
 const renderProvider = (userType: 'student' | 'admin' = 'student') =>
@@ -216,6 +222,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
           }}
         >
           <FellowshipSearchContextProvider>
+            <ProgramSearchUrlSync />
             <FellowshipSearchContext.Consumer>
               {(context) => (
                 <div>
