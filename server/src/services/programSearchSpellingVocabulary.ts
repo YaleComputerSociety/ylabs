@@ -31,13 +31,20 @@ export const PROGRAM_QUERY_STOP_WORDS = [
   'a',
   'an',
   'and',
+  'as',
+  'at',
+  'by',
   'for',
+  'from',
   'in',
+  'is',
+  'my',
   'of',
   'on',
   'or',
   'the',
   'to',
+  'with',
 ];
 
 const PROGRAM_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(

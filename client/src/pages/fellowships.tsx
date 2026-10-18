@@ -229,8 +229,10 @@ const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: strin
   { value: 'suppressed', label: 'Suppressed' },
 ];
 
+type ProgramDisplaySection = ProgramBoardSection | 'bestMatches';
+
 const boardSections: Array<{
-  key: ProgramBoardSection;
+  key: ProgramDisplaySection;
   title: string;
   description: string;
 }> = [
@@ -272,6 +274,16 @@ const boardSections: Array<{
     description:
       'Retained records that need eligibility review or should not be treated as active undergraduate options.',
   },
+];
+
+const searchResultSections: typeof boardSections = [
+  {
+    key: 'bestMatches',
+    title: 'Best matches',
+    description:
+      'Closest match to your search first. Each card shows whether it is open, closing soon, or closed.',
+  },
+  ...boardSections.filter((section) => section.key === 'archive'),
 ];
 
 const dateValue = (value?: string | null) => {
@@ -401,6 +413,7 @@ const Fellowships = () => {
   const {
     queryString,
     queryCorrection,
+    resultsRankedByRelevance,
     searchTypedSpelling,
     fellowships,
     isLoading,
@@ -699,12 +712,17 @@ const Fellowships = () => {
       if (quickFilter === 'noMentorFirst') return !needsMentorBeforeApplying(f);
       return true;
     };
-    const byKey = {} as Record<ProgramBoardSection, BrowsableItem[]>;
+    const byKey = {} as Record<ProgramDisplaySection, BrowsableItem[]>;
     for (const key of PROGRAM_BOARD_SECTIONS) {
       byKey[key] = toBrowsable(boardGroups[key].filter(matchesQuickFilter));
     }
+    byKey.bestMatches = toBrowsable(
+      fellowships.filter(
+        (f) => programBoardSectionOf(f, cycleOf.get(f)!) !== 'archive' && matchesQuickFilter(f),
+      ),
+    );
     return byKey;
-  }, [boardGroups, cycleOf, quickFilter]);
+  }, [boardGroups, cycleOf, fellowships, quickFilter]);
 
   const watchProgram = (programId: string) => {
     if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {
@@ -764,6 +782,7 @@ const Fellowships = () => {
     }
   };
 
+  const showSearchRanking = resultsRankedByRelevance && sortBy === 'default';
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
   const chooseQuickFilter = (value: FellowshipQuickFilter) => {
@@ -1020,7 +1039,7 @@ const Fellowships = () => {
                     </p>
                   </div>
                 )}
-                {boardSections.map((section) =>
+                {(showSearchRanking ? searchResultSections : boardSections).map((section) =>
                   boardItems[section.key].length > 0 ? (
                     <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
                       <SectionHeader

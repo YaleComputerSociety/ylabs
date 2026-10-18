@@ -10,7 +10,7 @@ Subjects are inferred at read time only from existing source-backed program fiel
 An inferred subject is a discovery aid, not a claim that an operator curated the program.
 Programs with no supported topic evidence receive no inferred subjects.
 
-A program text query also widens a student's word for their year to the value the sources store: `freshman`, `freshmen`, and `first year` add `first-year`, and `sophomores` adds `sophomore` (`yearOfStudyAliasesForQuery`, #4369).
+A program text query also accepts the value the sources store for a student's word for their year: `freshman` and `freshmen` are satisfied by `first-year`, and `first year` and `sophomores` reach `first-year` and `sophomore` through prefix and stem matching (`yearOfStudyWordAlternatives` in `programSearchRelevance.ts`, #4369, #5118).
 `journey:eval --case=programs-student-year-words-reach-sourced-year` checks that those words serve every row `first-year` serves.
 
 The same taxonomy normalizes saved-plan research areas and research-home names for fellowship matching.

@@ -1,13 +1,8 @@
 /**
  * Service layer for fellowship CRUD, search, and filter operations.
  */
-import { escapeRegex } from '../utils/regex';
-import { foldLatinDiacritics } from '../utils/latinDiacritics';
-import {
-  correctProgramSearchQuerySpelling,
-  PROGRAM_QUERY_STOP_WORDS,
-  PROGRAM_SEARCH_SPELLING_FIELDS,
-} from './programSearchSpellingVocabulary';
+import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
+import { PROGRAM_SEARCH_FIELDS, rankProgramSearchMatches } from './programSearchRelevance';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import {
   Fellowship,
@@ -46,9 +41,6 @@ import {
 import {
   inferProgramSubjects,
   PROGRAM_TOPIC_TAXONOMY,
-  resolveTopicSubjects,
-  topicAliasesForSubjects,
-  yearOfStudyAliasesForQuery,
   topicRegexForSubjects,
 } from './programTopicService';
 
@@ -866,25 +858,6 @@ export const deleteFellowship = async (id: any) => {
   }
 };
 
-const PROGRAM_WORD_PREFIX_MIN_LENGTH = 2;
-const PROGRAM_WORD_PREFIX_STOP_WORDS: ReadonlySet<string> = new Set(PROGRAM_QUERY_STOP_WORDS);
-
-// MongoDB `$text` matches whole stemmed words only, so a student typing into the live search
-// box sees nothing until the word is finished: `Com` matched no program while 87 carry a word
-// starting with it. Every typed word must start some word in the program. See #4537.
-export const programQueryWordPrefixClauses = (query: string): Record<string, unknown>[] =>
-  [...new Set(foldLatinDiacritics(query.toLowerCase()).match(/[a-z0-9]+/g) ?? [])]
-    .filter(
-      (token) =>
-        token.length >= PROGRAM_WORD_PREFIX_MIN_LENGTH &&
-        !PROGRAM_WORD_PREFIX_STOP_WORDS.has(token),
-    )
-    .map((token) => ({
-      $or: PROGRAM_SEARCH_SPELLING_FIELDS.map((field) => ({
-        [field]: { $regex: `(?:^|[^a-z0-9])${escapeRegex(token)}`, $options: 'i' },
-      })),
-    }));
-
 // A program that states no citizenship is unknown rather than ineligible, so a citizenship
 // filter keeps it and the card says the official page decides (#5130).
 const CITIZENSHIP_NOT_STATED = { citizenshipStatus: { $in: [null, []] } };
@@ -982,16 +955,6 @@ export const searchFellowships = async (params: {
     filter.studentVisibilityTier = { $in: publicStudentVisibilityTiers };
   }
 
-  const querySubjects = resolveTopicSubjects([safeQuery]);
-  const queryTopicAliases = topicAliasesForSubjects(querySubjects);
-  if (safeQuery) {
-    const searchTerms = [
-      safeQuery,
-      ...queryTopicAliases,
-      ...yearOfStudyAliasesForQuery(safeQuery),
-    ].filter(Boolean);
-    filter.$text = { $search: searchTerms.join(' ') };
-  }
   if (safeSubjects.length > 0) {
     const subjectPattern = topicRegexForSubjects(safeSubjects);
     filter.$or = [
@@ -1082,40 +1045,21 @@ export const searchFellowships = async (params: {
     };
   }
 
-  const { $text: _textClause, ...filterWithoutText } = filter;
-  const prefixClauses = programQueryWordPrefixClauses(safeQuery);
-  const [textMatches, prefixMatches] = await Promise.all([
-    Fellowship.find(filter, { _id: 1, score: { $meta: 'textScore' } })
-      .sort({ score: { $meta: 'textScore' }, ...fieldSortOptions })
-      .lean(),
-    prefixClauses.length > 0
-      ? Fellowship.find(
-          { ...filterWithoutText, $and: [...(filterWithoutText.$and ?? []), ...prefixClauses] },
-          { _id: 1 },
-        )
-          .sort(fieldSortOptions)
-          .lean()
-      : Promise.resolve([]),
-  ]);
-  const scoreById = new Map<string, number>(
-    (textMatches as any[]).map((match) => [String(match._id), match.score]),
+  const candidates = (await Fellowship.find(filter, {
+    _id: 1,
+    ...Object.fromEntries(PROGRAM_SEARCH_FIELDS.map((field) => [field, 1])),
+  })
+    .sort(fieldSortOptions)
+    .lean()) as Array<Record<string, unknown>>;
+  const orderedIds = rankProgramSearchMatches(safeQuery, candidates).map((candidate) =>
+    String(candidate._id),
   );
-  const orderedIds = [
-    ...new Set([...(textMatches as any[]), ...(prefixMatches as any[])].map((m) => String(m._id))),
-  ];
   const pageIds = orderedIds.slice(skip, skip + pageSize);
   const pageDocuments = pageIds.length
     ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
     : [];
   const documentById = new Map(pageDocuments.map((document) => [String(document._id), document]));
-  const fellowships = pageIds
-    .map((id) => documentById.get(id))
-    .filter(Boolean)
-    .map((document) =>
-      scoreById.has(String(document._id))
-        ? { ...document, score: scoreById.get(String(document._id)) }
-        : document,
-    );
+  const fellowships = pageIds.map((id) => documentById.get(id)).filter(Boolean);
 
   return {
     fellowships: servePrograms(fellowships),
