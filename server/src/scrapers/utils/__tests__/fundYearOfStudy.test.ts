@@ -80,6 +80,8 @@ describe('resolveFundYearOfStudy phrasing shapes', () => {
 describe('resolveFundYearOfStudy reads a level quantified by "at any level" as the whole level (#5121)', () => {
   const nonEligibility = (text: string, filter: string[]) =>
     resolveFundYearOfStudy([{ text, isEligibilitySection: false }], filter);
+  const valuesOf = (resolution: ReturnType<typeof resolveFundYearOfStudy>) =>
+    'values' in resolution ? resolution.values : undefined;
   const listedFilter = ['First-Year Student', 'Sophomore', 'Junior', 'Master’s Student'];
 
   it('admits every undergraduate year when the prose funds undergraduates at any level', () => {
@@ -141,16 +143,18 @@ describe('resolveFundYearOfStudy reads a level quantified by "at any level" as t
     'Open to undergraduates at any level and graduate students.',
     'Open to undergraduates at any level or graduate students.',
   ])('admits every undergraduate year when the quantifier continues into "%s"', (text) => {
-    expect(nonEligibility(text, listedFilter).values).toEqual(
+    expect(valuesOf(nonEligibility(text, listedFilter))).toEqual(
       expect.arrayContaining(['First-Year Student', 'Sophomore', 'Junior', 'Senior']),
     );
   });
 
   it('refines the level by the listing filter when the quantifier continues into a phrase it does not read', () => {
     expect(
-      nonEligibility('Open to graduate students at any stage of their degree.', [
-        'PhD Post-Candidacy',
-      ]).values,
+      valuesOf(
+        nonEligibility('Open to graduate students at any stage of their degree.', [
+          'PhD Post-Candidacy',
+        ]),
+      ),
     ).toEqual(['PhD Post-Candidacy']);
   });
 
