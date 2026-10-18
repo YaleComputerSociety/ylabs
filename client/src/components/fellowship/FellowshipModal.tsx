@@ -30,6 +30,11 @@ import {
   labelizeResearchDetailValue,
 } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
+import { writeProgramSearchUrlState } from '../../utils/programSearchUrlState';
+import {
+  StudentProgramFilters,
+  createEmptyStudentProgramFilters,
+} from '../../reducers/fellowshipSearchReducer';
 import useModalDialog from '../../hooks/useModalDialog';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
@@ -119,6 +124,15 @@ const trackGuidanceClick = (fellowshipId: string, url: string) => {
 
 const PROGRAMS_PATH = '/programs';
 
+const MODAL_FILTER_KEYS = {
+  yearOfStudy: 'selectedYearOfStudy',
+  termOfAward: 'selectedTermOfAward',
+  purpose: 'selectedPurpose',
+  globalRegions: 'selectedRegions',
+} as const satisfies Record<string, keyof StudentProgramFilters>;
+
+type ModalFilterType = keyof typeof MODAL_FILTER_KEYS;
+
 const sectionHeadingClass = 'mb-3 text-xs font-semibold uppercase tracking-wider text-muted';
 
 const FellowshipModal = ({
@@ -130,14 +144,7 @@ const FellowshipModal = ({
 }: FellowshipModalProps) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const {
-    setSelectedYearOfStudy,
-    setSelectedTermOfAward,
-    setSelectedPurpose,
-    setSelectedRegions,
-    setQueryString,
-    resetProgramFilters,
-  } = useContext(FellowshipSearchContext);
+  const { sortBy, sortDirection } = useContext(FellowshipSearchContext);
 
   const {
     overlayRef,
@@ -166,38 +173,26 @@ const FellowshipModal = ({
       ? 'Not first, the program helps match you with a mentor'
       : 'Not usually';
 
-  const handleFilterClick = (
-    filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions',
-    value: string,
-  ) => {
-    setQueryString('');
-    resetProgramFilters();
-
-    switch (filterType) {
-      case 'yearOfStudy':
-        setSelectedYearOfStudy([value]);
-        break;
-      case 'termOfAward':
-        setSelectedTermOfAward([value]);
-        break;
-      case 'purpose':
-        setSelectedPurpose([value]);
-        break;
-      case 'globalRegions':
-        setSelectedRegions([value]);
-        break;
-    }
-
+  const handleFilterClick = (filterType: ModalFilterType, value: string) => {
     void trackResearchEvent({
       eventType: 'ways_in_click',
       entityType: 'fellowship',
       entityId: fellowship.id,
       payload: { waysInKind: 'best_next_step', label: filterType },
     });
-    onClose();
-    if (pathname !== PROGRAMS_PATH) {
-      void navigate(PROGRAMS_PATH);
+    const search = writeProgramSearchUrlState(new URLSearchParams(), {
+      ...createEmptyStudentProgramFilters(),
+      [MODAL_FILTER_KEYS[filterType]]: [value],
+      queryString: '',
+      sortBy,
+      sortDirection,
+    }).toString();
+    if (pathname === PROGRAMS_PATH) {
+      void navigate({ search }, { replace: true });
+      return;
     }
+    onClose();
+    void navigate({ pathname: PROGRAMS_PATH, search });
   };
 
   const hasContactInfo =

@@ -256,6 +256,7 @@ const renderPage = (
     quickFilter: null,
     setQuickFilter: vi.fn(),
     resetProgramFilters: vi.fn(),
+    applyUrlState: vi.fn(),
     filterBarHeight: 0,
     setFilterBarHeight: vi.fn(),
     ...overrides,
@@ -366,6 +367,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 quickFilter,
                 setQuickFilter,
                 resetProgramFilters: () => setQuickFilter(null),
+                applyUrlState: vi.fn(),
                 filterBarHeight: 0,
                 setFilterBarHeight: vi.fn(),
               }}
@@ -650,24 +652,35 @@ describe('Programs page', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
   });
 
-  it('seeds the search from a handed-off query and then drops it from the URL', async () => {
-    const setQueryString = vi.fn();
-    renderPage([baseFellowship()], { setQueryString }, ['/programs?q=summer+funding&type=x']);
+  it('restores the search, quick filter, and filters a shared programs link carries', async () => {
+    const applyUrlState = vi.fn();
+    renderPage([baseFellowship()], { applyUrlState }, [
+      '/programs?q=summer+funding&quick=firstYear&year=Junior&term=Summer&type=x',
+    ]);
 
-    await waitFor(() =>
-      expect(screen.getByTestId('current-location').textContent).toBe('/programs?type=x'),
+    await waitFor(() => expect(applyUrlState).toHaveBeenCalledTimes(1));
+    expect(applyUrlState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryString: 'summer funding',
+        quickFilter: 'firstYear',
+        selectedYearOfStudy: ['Junior'],
+        selectedTermOfAward: ['Summer'],
+        selectedSubjects: [],
+        sortBy: 'default',
+      }),
     );
-    expect(setQueryString).toHaveBeenCalledTimes(1);
-    expect(setQueryString).toHaveBeenCalledWith('summer funding');
+    expect(screen.getByTestId('current-location').textContent).toBe(
+      '/programs?q=summer+funding&quick=firstYear&year=Junior&term=Summer&type=x',
+    );
   });
 
-  it('starts from an empty search when the URL carries no handed-off query', async () => {
-    const setQueryString = vi.fn();
-    renderPage([baseFellowship()], { setQueryString });
+  it('leaves the search untouched when the URL already matches it', async () => {
+    const applyUrlState = vi.fn();
+    renderPage([baseFellowship()], { applyUrlState });
 
     await screen.findByText('Summer Research Fellowship');
-    expect(setQueryString).toHaveBeenCalledTimes(1);
-    expect(setQueryString).toHaveBeenCalledWith('');
+    expect(applyUrlState).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-location').textContent).toBe('/programs');
   });
 
   it('keeps keyboard focus on the program search after Enter and Escape', async () => {
