@@ -1187,40 +1187,6 @@ describe('Research page', () => {
     expect(screen.queryByRole('heading', { name: /Showing research matches/ })).toBeNull();
   });
 
-  it('keeps the page heading for assistive technology but gives a phone screen to results once a search runs', async () => {
-    mockSearchResponses((url) =>
-      url === '/research/search'
-        ? researchSearchResponse([researchEntity], { estimatedTotalHits: 29 })
-        : unexpectedSearchEndpoint(url),
-    );
-
-    renderResearch(departments, ['/research?q=machine+learning']);
-
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    const pageHeading = screen.getByRole('heading', {
-      level: 1,
-      name: 'Find a Yale lab that fits you.',
-    });
-    expect(pageHeading.className).toContain('max-sm:sr-only');
-  });
-
-  it('shows the page heading on phones before any search runs', async () => {
-    mockSearchResponses((url) =>
-      url === '/research/search'
-        ? researchSearchResponse([researchEntity])
-        : unexpectedSearchEndpoint(url),
-    );
-
-    renderResearch(departments, ['/research']);
-
-    await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    const pageHeading = screen.getByRole('heading', {
-      level: 1,
-      name: 'Find a Yale lab that fits you.',
-    });
-    expect(pageHeading.className).not.toContain('sr-only');
-  });
-
   it('applies a filter toggle in place without re-running the previous query', async () => {
     const searchFilters: Array<Record<string, unknown>> = [];
     mockedAxios.post.mockImplementation(

@@ -66,8 +66,7 @@ It stops at the first pointer press, because a click gives the browser its own s
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet and returns focus to its trigger, because the student cannot see the results change behind the scrim.
 `ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.
-- On a phone, a submitted `/research` search gives the first screen to results: the tagline heading becomes `sr-only` and the signed-in or guest notice is hidden below 640px, so the first result card is no longer below the fold.
-Session-dependent banners such as the watched-deadline notice sit after the search form, so the search box is the first stop in the page's own focus order.
+- Session-dependent banners such as the watched-deadline notice sit after the `/research` search form, so the search box is the first stop in the page's own focus order.
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
 - A control that switches between panels is a tablist, not a row of plain buttons.
