@@ -30,6 +30,8 @@ import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { useRestoreOpenedResearchResultFocus } from '../hooks/useRestoreOpenedResearchResultFocus';
+import { forgetOpenedResearchResults } from '../utils/researchResultsReturn';
 import {
   approachingDeadlineAriaLabel,
   approachingDeadlineLabel,
@@ -394,6 +396,7 @@ const researchClusterByEntity = new WeakMap<ResearchEntity, ResearchCluster>();
 
 const Research = () => {
   const location = useLocation();
+  useRestoreOpenedResearchResultFocus();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const {
@@ -2105,6 +2108,7 @@ const Research = () => {
 
 export const __resetResearchPageSnapshotForTests = () => {
   researchPageSnapshot = null;
+  forgetOpenedResearchResults();
 };
 
 export default Research;

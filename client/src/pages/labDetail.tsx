@@ -29,6 +29,8 @@ import ResearchProfileSkeleton, {
   researchProfilePageClassName,
 } from '../components/labs/ResearchProfileSkeleton';
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
+import ResearchResultsBackLink from '../components/research/ResearchResultsBackLink';
+import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
@@ -108,12 +110,17 @@ const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="yr-kicker mb-3">{children}</h2>
 );
 
+type RelatedProfileOpenState = ReturnType<typeof researchProfileOpenState> &
+  ReturnType<typeof deeperResearchResultsReturnState>;
+
 const RelatedResearchEntitiesSection = ({
   relationships,
   relatedResearchEntities,
+  relatedProfileOpenState,
 }: {
   relationships: LabEntityRelationship[];
   relatedResearchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
 }) => {
   const relationshipByEntityKey = new Map(
     relationships.flatMap((relationship) =>
@@ -142,7 +149,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              state={researchProfileOpenState('related_research')}
+              state={relatedProfileOpenState}
               className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
@@ -171,8 +178,10 @@ const RelatedResearchEntitiesSection = ({
 
 const AffiliatedResearchEntitiesSection = ({
   affiliatedResearchEntities,
+  relatedProfileOpenState,
 }: {
   affiliatedResearchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
 }) => (
   <section>
     <SectionHeading>Affiliated with</SectionHeading>
@@ -203,7 +212,7 @@ const AffiliatedResearchEntitiesSection = ({
           <Link
             key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
-            state={researchProfileOpenState('related_research')}
+            state={relatedProfileOpenState}
             className={`${className} hover:border-line-strong hover:shadow-yr-raised`}
           >
             {content}
@@ -220,8 +229,10 @@ const AffiliatedResearchEntitiesSection = ({
 
 const SimilarResearchEntitiesSection = ({
   similarResearchEntities,
+  relatedProfileOpenState,
 }: {
   similarResearchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
 }) => (
   <section>
     <SectionHeading>More like this</SectionHeading>
@@ -231,7 +242,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          state={researchProfileOpenState('related_research')}
+          state={relatedProfileOpenState}
           className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
@@ -956,7 +967,7 @@ const LabDetail = () => {
   }, [location.key, location.state, payload, slug]);
 
   if (loading && !payload) {
-    return <ResearchProfileSkeleton />;
+    return <ResearchProfileSkeleton leading={<ResearchResultsBackLink />} />;
   }
 
   if (error && !payload) {
@@ -1095,6 +1106,10 @@ const LabDetail = () => {
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl, decisionSummaryActionLinks.activityCheckUrl];
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
+  const relatedProfileOpenState = {
+    ...researchProfileOpenState('related_research'),
+    ...deeperResearchResultsReturnState(location.state),
+  };
   const handleDetailLinkOpen = (event: React.MouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest('a');
     const href = anchor?.getAttribute('href');
@@ -1154,6 +1169,7 @@ const LabDetail = () => {
     <div className={researchProfilePageClassName} onClickCapture={handleDetailLinkOpen}>
       <div className={researchProfileGridClassName}>
         <div className={researchProfileColumnClassName}>
+          <ResearchResultsBackLink />
           {operatorPreview && <OperatorPreviewNotice preview={operatorPreview} />}
           {showResearchPlanSavedCallout && (
             <FirstSaveCallout
@@ -1229,18 +1245,21 @@ const LabDetail = () => {
             <RelatedResearchEntitiesSection
               relationships={entityRelationships}
               relatedResearchEntities={dedupedRelatedResearchEntities}
+              relatedProfileOpenState={relatedProfileOpenState}
             />
           )}
 
           {hasAffiliatedResearchEntities && (
             <AffiliatedResearchEntitiesSection
               affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
+              relatedProfileOpenState={relatedProfileOpenState}
             />
           )}
 
           {hasSimilarResearchEntities && (
             <SimilarResearchEntitiesSection
               similarResearchEntities={dedupedSimilarResearchEntities}
+              relatedProfileOpenState={relatedProfileOpenState}
             />
           )}
 
