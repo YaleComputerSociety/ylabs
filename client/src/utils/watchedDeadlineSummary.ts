@@ -5,6 +5,8 @@
  * once for the /research landing) into a near-term urgency signal: how many
  * watched programs close within a short window, how many of those the student
  * has not started yet, and the approaching deadlines ordered soonest-first.
+ * Programs the student already marked Applied or Closed are left out, because
+ * their deadline is no longer something to act on.
  *
  * It is a
  * pure surfacing layer over `fellowshipFutureDeadlineDate` (the same future-
