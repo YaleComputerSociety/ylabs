@@ -95,3 +95,41 @@ describe('programCitizenshipStatement (#5129)', () => {
     ).toEqual({ kind: 'us-only', values: [US_CITIZENS_ELIGIBLE] });
   });
 });
+
+describe('programCitizenshipStatement reads a negated citizenship subject (#5129)', () => {
+  it.each([
+    'Students who are not U.S. citizens are ineligible.',
+    'Non-U.S. citizens are not eligible for this award.',
+  ])('reads an exclusion of non-citizens as U.S. citizens only: %s', (text) => {
+    expect(programCitizenshipStatement([text])).toEqual({
+      kind: 'us-only',
+      values: [US_CITIZENS_ELIGIBLE],
+    });
+  });
+
+  it('keeps permanent residents an exclusion of non-citizens exempts', () => {
+    expect(
+      programCitizenshipStatement([
+        'Applicants who are not U.S. citizens or permanent residents are not eligible.',
+      ]),
+    ).toEqual({
+      kind: 'us-only',
+      values: [US_CITIZENS_ELIGIBLE, US_PERMANENT_RESIDENTS_ELIGIBLE],
+    });
+  });
+
+  it.each([
+    'Applicants need not be U.S. citizens, and neither U.S. citizens nor others are ineligible.',
+    'It is not only U.S. citizens who may apply.',
+  ])('states nothing for any other negation ahead of the citizenship term: %s', (text) => {
+    expect(programCitizenshipStatement([text])).toBeUndefined();
+  });
+});
+
+it('does not read a second clause about another eligibility route as an exclusion of non-citizens (#5129)', () => {
+  expect(
+    programCitizenshipStatement([
+      'Graduating seniors who are non-US citizens, and are not eligible to apply through any existing constituency.',
+    ]),
+  ).toBeUndefined();
+});

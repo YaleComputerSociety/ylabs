@@ -37,7 +37,8 @@ const ELIGIBILITY_CUE = /\b(?:eligible|open to|must|only|limited)\b/i;
 
 const ANOTHER_GROUP = /\b(?:others|international (?:students|applicants))\b/i;
 
-const NEGATION = /\b(?:not need|(?:do|does)(?: not|n't) (?:need|have) to|not required|need not|regardless)\b/i;
+const NEGATION =
+  /\b(?:not need|(?:do|does)(?: not|n't) (?:need|have) to|not required|need not|regardless)\b/i;
 
 const OPEN_SENTENCE = new RegExp(
   [
@@ -59,6 +60,22 @@ const NON_US_ONLY_SENTENCE = new RegExp(
   ].join('|'),
   'i',
 );
+
+const EXCLUDES_NON_US_CITIZENS = new RegExp(
+  String.raw`(?:\bwho are not |\bnon-?\s?)${US} citizens?\b(?:(?!\b(?:but|while|and)\b)[^,;]){0,80}?\b(?:are|is) (?:not eligible|ineligible)\b`,
+  'i',
+);
+
+const US_CITIZEN_TERM = new RegExp(String.raw`${US} citizen`, 'i');
+
+const NEGATION_WORD = /\b(?:not|no|never|neither|nor|ineligible)\b|\bnon-/i;
+
+// Negation ahead of the citizenship term flips what the sentence says, so it states
+// nothing unless it is the one exclusion of non-citizens the reader knows how to read.
+function negatesBeforeCitizenship(sentence: string): boolean {
+  const term = US_CITIZEN_TERM.exec(sentence);
+  return term !== null && NEGATION_WORD.test(sentence.slice(0, term.index));
+}
 
 const PREFERENCE = /\b(?:prefer(?:ence|red)?|priority)\b/i;
 
@@ -95,10 +112,18 @@ export function programCitizenshipStatement(prose: string[]): CitizenshipStateme
   let permanentResidents = false;
   for (const sentence of prose.flatMap(sentencesOf)) {
     if (PREFERENCE.test(sentence)) continue;
+    if (EXCLUDES_NON_US_CITIZENS.test(sentence)) {
+      usOnly = true;
+      if (PERMANENT_RESIDENT.test(sentence)) permanentResidents = true;
+      continue;
+    }
+    if (OPEN_SENTENCE.test(sentence)) {
+      open = true;
+      continue;
+    }
+    if (negatesBeforeCitizenship(sentence)) continue;
     if (NON_US_ONLY_SENTENCE.test(sentence)) {
       nonUsOnly = true;
-    } else if (OPEN_SENTENCE.test(sentence)) {
-      open = true;
     } else if (restrictsToUsCitizens(sentence)) {
       usOnly = true;
       if (PERMANENT_RESIDENT.test(sentence)) permanentResidents = true;
