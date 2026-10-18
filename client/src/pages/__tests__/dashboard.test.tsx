@@ -214,11 +214,11 @@ describe('Dashboard page', () => {
       </MemoryRouter>,
     );
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    fireEvent.click(screen.getByRole('tab', { name: 'Program Watch (1)' }));
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Watched programs (1)' }));
     expect(screen.getByTestId('location').textContent).toBe('?tab=programs');
 
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Program Watch (1)' }), { key: 'Home' });
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Watched programs (1)' }), { key: 'Home' });
     expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByTestId('location').textContent).toBe('');
   });
@@ -243,7 +243,7 @@ describe('Dashboard page', () => {
 
     fireEvent.click(screen.getByRole('link', { name: 'Go to programs' }));
     expect(
-      screen.getByRole('tab', { name: 'Program Watch (1)' }).getAttribute('aria-selected'),
+      screen.getByRole('tab', { name: 'Watched programs (1)' }).getAttribute('aria-selected'),
     ).toBe('true');
   });
 
