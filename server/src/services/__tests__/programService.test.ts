@@ -45,6 +45,9 @@ const mockFindChain = () => {
   return chain;
 };
 
+const facetFilterValues = (filter: any, field: string): unknown[] | undefined =>
+  filter.$and?.find((clause: any) => clause.$or?.[0]?.[field])?.$or[0][field].$in;
+
 describe('program search service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -250,10 +253,10 @@ describe('program search service', () => {
     const filter = mocks.find.mock.calls[0][0];
     expect(filter.$text).toBeUndefined();
     expect(JSON.stringify(filter)).not.toContain('qqq');
-    expect(filter.yearOfStudy.$in).toHaveLength(50);
-    expect(filter.yearOfStudy.$in).toContain('Year 49');
-    expect(filter.yearOfStudy.$in).not.toContain('Year 50');
-    expect(filter.purpose.$in).toEqual(['x'.repeat(120)]);
+    expect(facetFilterValues(filter, 'yearOfStudy')).toHaveLength(50);
+    expect(facetFilterValues(filter, 'yearOfStudy')).toContain('Year 49');
+    expect(facetFilterValues(filter, 'yearOfStudy')).not.toContain('Year 50');
+    expect(facetFilterValues(filter, 'purpose')).toEqual(['x'.repeat(120)]);
   });
 
   it('drops non-string direct program filter values and avoids object pagination coercion', async () => {
@@ -271,7 +274,7 @@ describe('program search service', () => {
     expect(page.toString).not.toHaveBeenCalled();
     expect(pageSize.toString).not.toHaveBeenCalled();
     expect(badFilter.toString).not.toHaveBeenCalled();
-    expect(filter.yearOfStudy.$in).toEqual(['First-year']);
+    expect(facetFilterValues(filter, 'yearOfStudy')).toEqual(['First-year']);
     expect(result).toMatchObject({
       page: 1,
       pageSize: 20,
