@@ -109,7 +109,8 @@ Sharing one gated set across requests would keep those documents resident: the m
 After the change the same three requests answer `503` in 1 ms to 3 ms with no measurable event-loop block, and healthy searches are unchanged.
 The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so only a failed primary query answers `503`.
 Do not reintroduce an in-process corpus scan on the request path as a substitute for the index.
-The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForTask` polls with its own overall timeout.
+The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForMeiliTask` in `server/src/utils/meiliTask.ts` polls `getTask` with its own overall timeout.
+It does not call the client's `waitForTask`, because meilisearch 0.62 gives every poll one shared abort signal and its per-request timeout leaves a listener on it per poll, which flooded rebuild logs with `MaxListenersExceededWarning`.
 An enqueue is not an outcome: every index write that reports a result confirms its task through `assertMeiliTaskSucceeded` in `server/src/utils/meiliTask.ts`, with a bounded wait, and a failed or timed-out task counts as a failure, so `syncEntity`, `syncEntities`, `deleteFromIndex`, and the rebuild's `indexedDocumentCount` report what the index applied (#3720).
 A pass that writes thousands of rows confirms at the end rather than per row: `withDeferredIndexConfirmation` in `meiliSyncService.ts` makes `syncEntity` enqueue only for the duration of the callback and then confirms the latest write per document, returning `failedDocumentIds`, which is the outcome to read instead of the per-call boolean.
 `materializeFromRun` wraps its whole pass in it and unions those ids into `indexSyncFailures`.
@@ -128,7 +129,7 @@ Relevant config:
 | -------------------------- | ---------------------------------------------------------- |
 | `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700` locally; required in deployed runtimes. |
 | `MEILISEARCH_SEARCH_API_KEY` | Search-only key for the web service (`search`, `settings.get` on `<prefix>_researchentities`). |
-| `MEILISEARCH_WRITE_API_KEY` | Write key for the reindex and scripts, scoped to its environment's `<prefix>_*` indexes (#4859); stored on the operator services and the Beta web service, never on the Production web service (`docs/deployment-inventory.md` records where each service holds it). |
+| `MEILISEARCH_WRITE_API_KEY` | On an operator service, the reindex key, scoped to its environment's `<prefix>_*` indexes (#4859). On a web service, a document-sync key that can only add and delete documents in its own `<prefix>_researchentities` index, for live sync after edits; no web service holds the reindex key (`docs/meilisearch-reindex-runbook.md`, "Meilisearch keys"). |
 | `MEILISEARCH_API_KEY`      | Legacy single key; the fallback for either role, logged as a warning when deployed. |
 | `MEILISEARCH_INDEX_PREFIX` | Environment prefix (`beta`, `prod`), giving e.g. `beta_researchentities`; unset locally, required in deployed runtimes. |
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
@@ -639,6 +640,8 @@ A word is corrected only when all of these hold:
 
 - It is not a protected query word: a stop word, a question-frame or institution-context word, an alias or synonym key, or a `disableOnWords` entry (`SPELLING_PROTECTED_QUERY_TERMS` in `researchGroupService.ts`), because the alias layer already owns `orgo` and a correction would take it away.
 - It does not appear in a name field (`name`, `displayName`, `leadProfessorNames`, `professorNames`), however rarely, because a rare surname is exactly the shape of a typo and rewriting it hides the person searched for.
+- It does not start a person's name (`leadProfessorNames`, `professorNames`) and is not within the allowed edits of one, because a surname typed in part or with one wrong letter is a name being looked up: a four- or five-letter surname prefix became the corpus word one edit away (one became `non` and served 373 rows, none the person), and a given name with a one-letter surname typo became the given name plus an unrelated topic word, each hiding the person Meilisearch's own prefix and typo matching would have found; `journey:eval --case=person-name-lookup-reaches-the-person` measured 8 of 22 such queries respelled before the guard and none after. Lab and center titles are not person names, so `canser` still becomes `cancer`.
+- It was not typed in capitals, because a capitalised word is an acronym the student means exactly: `CEID` became `reid`. This rule lives in `correctSearchQuerySpelling`, so program search keeps acronyms too.
 - It appears in no served document, and the replacement appears in at least three; a word the corpus carries even once is never rewritten, because a rare correctly spelled topic word would lose the only rows that match it.
 - The replacement is within one edit for a word of four to eight letters and two edits for nine or more, counting a swapped pair of letters as one edit; the nearer candidate wins, then the more frequent, then the alphabetically first.
 

@@ -244,8 +244,9 @@ The two exhaustive Development modes (`development-full`, `development-increment
 25. `data-quality` (`beta:data-quality --strict`)
 26. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
 27. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-28. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-29. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+28. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
+29. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+30. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
 `integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.
@@ -1999,6 +2000,11 @@ Run it twice and the second pass plans nothing, which is what makes it a derivat
 A faculty member tied to the project counts: required supervision by faculty, approval or endorsement from the applicant's adviser, a letter from the applicant's own project adviser ("your senior essay advisor", "their dissertation supervisor", "their dissertation director"), or a letter from a faculty member who knows, supports, or is related to the project.
 A recommendation letter with no tie to the project, from any writer or from "a faculty advisor", is not a requirement.
 A graduate record asserts an adviser only when its page states one or its prose mentions a dissertation and its title names no conference, so a conference-travel grant no longer inherits the requirement.
+
+The same pass derives `citizenshipStatus` from the prose (`utils/programCitizenship.ts`, #5129).
+A sentence restricting the program to U.S. citizens states that, plus "U.S. permanent residents are eligible" when the same sentence admits them; a sentence opening it to every nationality states both U.S. and non-U.S.; a sentence excluding U.S. citizens states non-U.S. only.
+The reader fails closed: a sentence that also names another group (international students, non-U.S. citizens, others) is never a U.S.-only restriction, and a negation ahead of the U.S.-citizen term states nothing, except that "applicants who are not U.S. citizens are not eligible" and "Non-U.S. citizens are ineligible" read as U.S.-only.
+A preference, a condition on one group, or a page whose sentences disagree states nothing, so the Student Grants Database facet the lanes observed stands, and a locked `citizenshipStatus` is never derived.
 
 It replaced `programs:backfill-classification`, a post-sweep repair that re-ran the classifier over stored rows but refused any apply that would demote a served row or replace a served `studentFacingCategory`.
 Those refusals were right about the classifier and wrong as a mechanism: measured on Development on 2026-09-29 they had frozen 100 of 459 live rows on a label today's classifier no longer produces, including 12 served travel and research awards still labelled `Internship program` after the #2925 classifier fix meant to remove that label.

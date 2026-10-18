@@ -15,12 +15,17 @@ const nextIndexForKey = (key: string, currentIndex: number, count: number): numb
   }
 };
 
-const useRovingTabs = <T extends string>(tabs: readonly T[], initialTab: T) => {
+const useRovingTabs = <T extends string>(
+  tabs: readonly T[],
+  initialTab: T,
+  onActivate?: (tab: T) => void,
+) => {
   const [activeTab, setActiveTab] = useState<T>(initialTab);
   const tabElements = useRef(new Map<T, HTMLButtonElement>());
 
   const activateTab = (next: T, focusTab = false) => {
     setActiveTab(next);
+    onActivate?.(next);
     if (focusTab) tabElements.current.get(next)?.focus();
   };
 
@@ -36,7 +41,7 @@ const useRovingTabs = <T extends string>(tabs: readonly T[], initialTab: T) => {
     else tabElements.current.delete(tab);
   };
 
-  return { activeTab, activateTab, handleTabKeyDown, registerTab };
+  return { activeTab, activateTab, followTab: setActiveTab, handleTabKeyDown, registerTab };
 };
 
 export default useRovingTabs;

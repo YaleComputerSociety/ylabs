@@ -139,24 +139,28 @@ describe('FellowshipModal', () => {
     expect(within(dialog).queryByText('Program Route')).toBeNull();
   });
 
-  it('leaves the programs page URL to the host when a filter chip closes the modal', () => {
+  it('replaces the open program on the programs page with the chosen filter in one step', () => {
     const onClose = vi.fn();
-    renderModalAt('/programs?program=program-1', onClose);
+    renderModalAt('/programs?q=summer&quick=open&year=Senior&program=program-1', onClose);
 
     fireEvent.click(screen.getByRole('button', { name: 'Master’s Student' }));
 
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('current-location').textContent).toBe('/programs?program=program-1');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-location').textContent).toBe(
+      '/programs?year=Master%E2%80%99s+Student',
+    );
   });
 
-  it('opens the programs page when a filter chip is chosen from another page', () => {
+  it('opens the programs page filtered to the chosen chip from another page', () => {
     const onClose = vi.fn();
     renderModalAt('/dashboard', onClose);
 
     fireEvent.click(screen.getByRole('button', { name: 'Master’s Student' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('current-location').textContent).toBe('/programs');
+    expect(screen.getByTestId('current-location').textContent).toBe(
+      '/programs?year=Master%E2%80%99s+Student',
+    );
   });
 
   it('makes source-backed research application requirements scannable', () => {

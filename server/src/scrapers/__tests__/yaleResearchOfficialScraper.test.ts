@@ -11,6 +11,9 @@ import {
   parseResearchYaleCenters,
   parseResearchYaleCoreFacilities,
   canonicalResearchYaleUrl,
+  officialRecordSchool,
+  recordOwnWebsiteUrl,
+  schoolNamedByOfficialName,
   slugifyResearchYaleEntity,
 } from '../sources/yaleResearchOfficialScraper';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -366,6 +369,104 @@ describe('yaleResearchOfficialScraper', () => {
 
     await expect(scraper.run(ctx)).rejects.toThrow(/--limit must be a safe positive integer/);
     expect(fetchHtml).not.toHaveBeenCalled();
+  });
+
+  describe('school evidenced by the directory record', () => {
+    const recordUrl = 'https://research.yale.edu/cores/fixture-core';
+    const directoryUrl = 'https://research.yale.edu/cores';
+    const recordWithButton = (href: string, label = 'Core website') =>
+      `<main><h1>Fixture Core</h1><a href="https://maps.example.com/x" class="external">Building 1</a><a href="${href}" class="btn external">${label}</a></main>`;
+
+    it('reads a core website button on a school host as that school', () => {
+      expect(
+        officialRecordSchool(
+          { name: 'Fixture Imaging Core', url: recordUrl },
+          directoryUrl,
+          recordWithButton('https://medicine.yale.edu/fixture-core/'),
+        ),
+      ).toEqual({ school: 'School of Medicine', sourceUrl: recordUrl });
+    });
+
+    it('yields no school for a core website off every school host, or a page with no button', () => {
+      expect(
+        officialRecordSchool(
+          { name: 'Fixture Imaging Core', url: recordUrl },
+          directoryUrl,
+          recordWithButton('https://fixture-core.yale.edu/'),
+        ),
+      ).toBeUndefined();
+      expect(
+        officialRecordSchool(
+          { name: 'Fixture Imaging Core', url: recordUrl },
+          directoryUrl,
+          '<main><a href="https://medicine.yale.edu/news/item" class="external">A news story</a></main>',
+        ),
+      ).toBeUndefined();
+    });
+
+    it("only trusts a button labelled as the unit's own website", () => {
+      expect(
+        recordOwnWebsiteUrl(
+          recordWithButton('https://medicine.yale.edu/x/', 'Book a session'),
+          recordUrl,
+        ),
+      ).toBe('');
+      expect(
+        recordOwnWebsiteUrl(
+          recordWithButton('https://medicine.yale.edu/x/', 'Main website'),
+          recordUrl,
+        ),
+      ).toBe('');
+      expect(recordOwnWebsiteUrl(recordWithButton('/cores/elsewhere'), recordUrl)).toBe(
+        'https://research.yale.edu/cores/elsewhere',
+      );
+    });
+
+    it('reads a school acronym only when no other Yale unit shares it', () => {
+      expect(schoolNamedByOfficialName('YSM Fixture Shop')).toBe('School of Medicine');
+      expect(schoolNamedByOfficialName('YSPH Fixture Resource')).toBe('School of Public Health');
+      expect(schoolNamedByOfficialName('SEAS Fixture Council')).toBe('');
+      expect(schoolNamedByOfficialName('Fixture Cleanroom Facilities')).toBe('');
+    });
+
+    it('cites a school read from the official name to the directory page it was read from', () => {
+      expect(
+        officialRecordSchool(
+          { name: 'YSM Fixture Center', url: 'https://fixture-center.example.org/' },
+          directoryUrl,
+        ),
+      ).toEqual({ school: 'School of Medicine', sourceUrl: directoryUrl });
+    });
+
+    it('does not read a school from a page other than the research.yale.edu record', () => {
+      expect(
+        officialRecordSchool(
+          { name: 'Fixture Center', url: 'https://fixture-center.yale.edu/' },
+          directoryUrl,
+          recordWithButton('https://medicine.yale.edu/fixture-center/'),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('emits the school cited to the record page during a run', async () => {
+      const directory = `<main><article class="card"><h2><a href="/cores/fixture-core">Fixture Imaging Core</a></h2><p>A fixture core that images fixture samples for many groups.</p></article></main>`;
+      const fetchHtml = vi.fn(async (url: string) => {
+        if (url === recordUrl) return recordWithButton('https://medicine.yale.edu/fixture-core/');
+        return url.includes('page=1') ? '<main></main>' : directory;
+      });
+      const scraper = new YaleResearchOfficialScraper(undefined, fetchHtml);
+      const { ctx, emitted } = makeContext({ only: ['core-facilities'] });
+
+      await scraper.run(ctx);
+
+      expect(emitted).toContainEqual(
+        expect.objectContaining({
+          field: 'school',
+          value: 'School of Medicine',
+          sourceUrl: recordUrl,
+        }),
+      );
+    });
   });
 
   it('bundles the active research.yale.edu directory configs', () => {

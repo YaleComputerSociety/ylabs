@@ -5,6 +5,7 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export type FellowshipQuickFilter =
   | 'open'
@@ -96,6 +97,10 @@ export type FellowshipSearchAction =
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SET_QUICK_FILTER'; payload: FellowshipQuickFilter }
   | { type: 'RESET_PROGRAM_FILTERS' }
+  | {
+      type: 'APPLY_URL_STATE';
+      payload: ProgramSearchUrlState;
+    }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }
   | { type: 'SEARCH_REQUEST'; payload?: { queryString: string } }
@@ -238,6 +243,20 @@ export function fellowshipSearchReducer(
 
     case 'RESET_PROGRAM_FILTERS':
       return { ...state, ...createEmptyStudentProgramFilters() };
+
+    case 'APPLY_URL_STATE': {
+      const { queryString, sortBy, sortDirection, ...filters } = action.payload;
+      const sortChanged = sortBy !== 'default';
+      return {
+        ...state,
+        ...filters,
+        queryString,
+        exactSpelling: queryString === state.queryString ? state.exactSpelling : false,
+        sortBy,
+        sortDirection: sortChanged ? sortDirection : state.sortDirection,
+        sortOrder: sortChanged ? (sortDirection === 'asc' ? 1 : -1) : state.sortOrder,
+      };
+    }
 
     case 'SET_FILTER_BAR_HEIGHT':
       return { ...state, filterBarHeight: action.payload };

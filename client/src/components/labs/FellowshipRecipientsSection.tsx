@@ -32,23 +32,21 @@ function ProgramRecipients({
 
   return (
     <div>
-      <h3 className="mb-1 text-sm font-semibold text-ink">
+      <h3 className="mb-2 text-sm font-semibold text-ink">
         {programName} fellows mentored here ({recipients.length})
       </h3>
-      <ul id={listId} className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+      <ul id={listId} className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
         {shown.map((recipient) => (
           <li
             key={`${recipient.studentName}-${recipient.year}`}
-            className="min-w-0 text-sm leading-relaxed"
+            className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
           >
-            <span className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0 font-medium text-ink">{recipient.studentName}</span>
-              <span className="shrink-0 text-xs tabular-nums text-muted">{recipient.year}</span>
+            <span className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-ink-soft yr-num">
+              {recipient.year}
             </span>
+            <p className="mt-3 text-sm font-semibold text-ink">{recipient.studentName}</p>
             {recipient.projectTitle && (
-              <span className="block text-xs leading-relaxed text-muted">
-                {recipient.projectTitle}
-              </span>
+              <p className="mt-1 text-sm leading-relaxed text-muted">{recipient.projectTitle}</p>
             )}
           </li>
         ))}
@@ -70,7 +68,7 @@ function ProgramRecipients({
             href={sourceUrl}
             target="_blank"
             rel={EXTERNAL_LINK_REL}
-            className="text-xs font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
+            className="yr-pressable inline-flex min-h-11 items-center rounded-control text-xs font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
           >
             {programName} symposium booklet
           </a>
@@ -94,10 +92,7 @@ export default function FellowshipRecipientsSection({
 
   return (
     <section aria-labelledby="fellowship-recipients-heading">
-      <h2
-        id="fellowship-recipients-heading"
-        className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted"
-      >
+      <h2 id="fellowship-recipients-heading" className="yr-kicker mb-3">
         Undergraduate fellows
       </h2>
       <div className="space-y-5">

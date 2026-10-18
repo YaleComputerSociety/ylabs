@@ -19,6 +19,7 @@ import {
   type ProgramClassificationInput,
 } from '../services/programClassifier';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { programCitizenshipStatement } from './utils/programCitizenship';
 import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
 import { FELLOWSHIP_DESCRIPTION_FIELDS } from './fellowshipProse';
 
@@ -184,8 +185,26 @@ function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
 
+const CITIZENSHIP_FIELD = 'citizenshipStatus';
+
+/**
+ * The citizenship the prose states replaces the listing facet; silent prose leaves the
+ * row's value, which keeps whatever the lanes observed (#5129).
+ */
+function derivedCitizenship(
+  input: ProgramClassificationInput,
+  standing: unknown,
+): string[] | undefined {
+  const prose = CLASSIFIER_PROSE_FIELDS.map((field) => input[field]).filter(
+    (value): value is string => typeof value === 'string',
+  );
+  const statement = programCitizenshipStatement(prose);
+  if (!statement || sameValue(stringList(standing), statement.values)) return undefined;
+  return statement.values;
+}
+
 export interface FellowshipClassificationPlan {
-  set: Partial<ProgramClassification>;
+  set: Partial<ProgramClassification> & { citizenshipStatus?: string[] };
   withdrawn: string[];
   unset: string[];
   classification: ProgramClassification;
@@ -201,7 +220,8 @@ export function planFellowshipClassification(input: {
   const staged = input.staged ?? {};
   const lockedFields = input.lockedFields ?? [];
   const observedValues = input.observedValues ?? {};
-  const classifierReading = classifyProgram(fellowshipClassifierInput(input));
+  const classifierInput = fellowshipClassifierInput(input);
+  const classifierReading = classifyProgram(classifierInput);
   const standingKind = lockedFields.includes('programKind')
     ? (input.stored?.programKind as ProgramKind)
     : classifierReading.programKind;
@@ -224,7 +244,19 @@ export function planFellowshipClassification(input: {
     if (!(field in staged) && sameValue(input.stored?.[field], derived)) continue;
     set[field] = derived;
   }
-  return { set: set as Partial<ProgramClassification>, withdrawn, unset: cleared, classification };
+  if (!lockedFields.includes(CITIZENSHIP_FIELD)) {
+    const citizenship = derivedCitizenship(
+      classifierInput,
+      standingValue(CITIZENSHIP_FIELD, input.stored, staged, input.unset ?? {}),
+    );
+    if (citizenship) set[CITIZENSHIP_FIELD] = citizenship;
+  }
+  return {
+    set: set as FellowshipClassificationPlan['set'],
+    withdrawn,
+    unset: cleared,
+    classification,
+  };
 }
 
 export function classificationFromObservedFacts(

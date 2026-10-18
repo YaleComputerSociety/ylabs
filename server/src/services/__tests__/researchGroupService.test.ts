@@ -4748,6 +4748,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(mocks.researchEntityRelationshipFind).not.toHaveBeenCalled();
   });
@@ -4838,6 +4839,7 @@ describe('listResearchEntityRelationshipPayload', () => {
         }),
       ],
       affiliatedResearchEntitiesMeta: { returned: 1, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     });
     expect(result.affiliatedRelationships[0].sourceUrl).toBeUndefined();
     expect(result.affiliatedRelationships[0]).not.toHaveProperty('evidenceQuote');
@@ -4937,6 +4939,142 @@ describe('listResearchEntityRelationshipPayload', () => {
     ]);
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
     expect(result.affiliatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+  });
+
+  it('labels a related row by its own kind rather than the stored edge label', async () => {
+    const currentEntityId = '67d8928150621bcef434a1f5';
+    const facultyResearchId = '67d8928150621bcef434a1f6';
+    const labId = '67d8928150621bcef434a1f7';
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [facultyResearchId, labId].map((targetResearchEntityId) => ({
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId,
+            relationshipType: 'AFFILIATED_LAB',
+            label: 'Affiliated lab',
+          })),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: facultyResearchId,
+          slug: 'synthetic-faculty-research',
+          name: 'Synthetic Faculty Research',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+        {
+          _id: labId,
+          slug: 'synthetic-member-lab',
+          name: 'Synthetic Member Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(
+      result.entityRelationships.map((edge) => [edge.relatedResearchEntitySlug, edge.label]),
+    ).toEqual([
+      ['synthetic-faculty-research', 'Member'],
+      ['synthetic-member-lab', 'Affiliated'],
+    ]);
+  });
+
+  it("drops the page lead's own faculty research row from the related list", async () => {
+    const currentEntityId = '67d8928150621bcef434a1f8';
+    const leadFacultyResearchId = '67d8928150621bcef434a1f9';
+    const otherFacultyResearchId = '67d8928150621bcef434a1fa';
+    const leadLabId = '67d8928150621bcef434a1fb';
+    const leadPersonId = new mongoose.Types.ObjectId();
+    const otherPersonId = new mongoose.Types.ObjectId();
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [leadFacultyResearchId, otherFacultyResearchId, leadLabId].map(
+            (targetResearchEntityId) => ({
+              sourceResearchEntityId: currentEntityId,
+              targetResearchEntityId,
+              relationshipType: 'AFFILIATED_LAB',
+              label: 'Affiliated lab',
+            }),
+          ),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    const facultyRow = (id: string, slug: string) => ({
+      _id: id,
+      slug,
+      name: 'Synthetic Faculty Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...validPublicDescriptions,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        facultyRow(leadFacultyResearchId, 'synthetic-lead-faculty-research'),
+        facultyRow(otherFacultyResearchId, 'synthetic-other-faculty-research'),
+        {
+          _id: leadLabId,
+          slug: 'synthetic-lead-lab',
+          name: 'Synthetic Lead Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    const piAssignment = (personId: mongoose.Types.ObjectId, entityId: string) => ({
+      _id: new mongoose.Types.ObjectId(),
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(entityId) },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+      reviewStatus: 'APPROVED',
+    });
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        piAssignment(leadPersonId, leadFacultyResearchId),
+        piAssignment(otherPersonId, otherFacultyResearchId),
+        piAssignment(leadPersonId, leadLabId),
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        { _id: leadPersonId, displayName: 'Ada Fixture' },
+        { _id: otherPersonId, displayName: 'Bea Fixture' },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId, {
+      pageLeadPersonIds: [String(leadPersonId)],
+    });
+
+    expect(result.relatedResearchEntities.map((entity) => entity.slug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.entityRelationships.map((edge) => edge.relatedResearchEntitySlug)).toEqual([
+      'synthetic-other-faculty-research',
+      'synthetic-lead-lab',
+    ]);
+    expect(result.pageLeadOwnResearchEntityKeys).toContain('synthetic-lead-faculty-research');
   });
 
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {

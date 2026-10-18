@@ -229,8 +229,8 @@ describe('ResearchFilterDisclosure', () => {
     const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
       'All types',
-      'Core Facility (50)',
-      'Faculty Research (2149)',
+      'Core facility (50)',
+      'Faculty research (2149)',
       'Lab (1322)',
     ]);
 
@@ -259,8 +259,8 @@ describe('ResearchFilterDisclosure', () => {
     const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
       'All types',
-      'Faculty Project (2)',
-      'Faculty Research (2149)',
+      'Faculty project (2)',
+      'Faculty research (2149)',
     ]);
     expect(Array.from(typeSelect.options).map((option) => option.value)).toEqual([
       '',
@@ -276,8 +276,8 @@ describe('ResearchFilterDisclosure', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
-    const chip = screen.getByRole('button', { name: 'Remove Type: Core Facility' });
-    expect(chip.textContent).toContain('Type: Core Facility');
+    const chip = screen.getByRole('button', { name: 'Remove Type: Core facility' });
+    expect(chip.textContent).toContain('Type: Core facility');
     fireEvent.click(chip);
     expect(props.onEntityTypeChange).toHaveBeenCalledWith('');
   });

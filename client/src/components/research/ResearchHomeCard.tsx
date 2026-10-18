@@ -64,12 +64,6 @@ const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project 
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
 
-const sentenceCaseLabel = (label: string): string =>
-  label
-    .split(' ')
-    .map((word, index) => (index === 0 ? word : word.toLowerCase()))
-    .join(' ');
-
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const titleAlreadyNamesKind = (title: string, kind: string): boolean =>
@@ -185,7 +179,7 @@ const ResearchHomeCard = ({
     leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
-  const kindLabel = sentenceCaseLabel(entityKindLabel(home.entities[0]));
+  const kindLabel = entityKindLabel(home.entities[0]);
   const showsKindLabel =
     isCompact &&
     home.entities.length === 1 &&

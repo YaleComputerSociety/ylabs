@@ -253,6 +253,10 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
   if (!slug) {
     return response.status(400).json({ error: 'Invalid slug' });
   }
+  const caseFoldedSlug = slug.toLowerCase();
+  if (caseFoldedSlug !== slug) {
+    return response.redirect(302, `${request.baseUrl}/${encodeURIComponent(caseFoldedSlug)}`);
+  }
 
   const currentUser = request.user as
     { netId?: string; netid?: string; userType?: string } | undefined;

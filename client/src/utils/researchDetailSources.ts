@@ -515,6 +515,46 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean =>
 const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
   sourcePathMatches(url, APPLY_OR_JOIN_PATH);
 
+/**
+ * The materializer admits a join route by what the page says, wherever it sits on the site,
+ * so a lab's invitation to undergraduates can be cited from its press or news page. The
+ * page is a fair citation; a label promising a join page over it is not. Only the final
+ * segment names the page, so a join word in a parent segment (often a lab's own slug) does not count.
+ */
+const JOIN_SHAPED_PATH =
+  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-_.][^/]*)?$/i;
+
+export const isJoinShapedSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, JOIN_SHAPED_PATH);
+
+export const JOIN_PAGE_LINK_LABEL = 'See how to join';
+export const JOIN_NOTE_LINK_LABEL = 'Read what they say about joining';
+
+export const joinPageLinkLabel = (
+  url?: string | null,
+  joinShapedLabel: string = JOIN_PAGE_LINK_LABEL,
+): string => (isJoinShapedSourceUrl(url) ? joinShapedLabel : JOIN_NOTE_LINK_LABEL);
+
+const ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS: Record<string, string> = {
+  POSTED_OPENING: 'Posted opening',
+  CREDIT_FORMALIZATION_POSSIBLE: 'Course credit option',
+  PAST_UNDERGRADS: 'Past undergraduate members',
+  CURRENT_UNDERGRADS: 'Current undergraduate members',
+  FACULTY_SUPERVISES_STUDENT_PROJECTS: 'Supervises student projects',
+  APPLICATION_FORM_EXISTS: 'Mentions how to join',
+};
+
+const UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT = 'Undergraduate access';
+
+export const ACCESS_SIGNAL_SOURCE_CONTEXTS: ReadonlySet<string> = new Set([
+  ...Object.values(ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS),
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT,
+]);
+
+export const accessSignalSourceContext = (signalType?: string): string =>
+  ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS[(signalType || '').toUpperCase()] ||
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
+
 // Mirrors `PERSON_SCOPED_RESEARCH_ENTITY_TYPES` in
 // server/src/models/storedVocabularies.ts, including the retired types a stored
 // row may still carry; changing the arms there requires updating this copy.
@@ -1225,7 +1265,13 @@ export const sourceLabelForUrl = (url: string): string => {
       return 'Undergraduate initiatives page';
     }
     if (host === 'nsf.gov' && path.startsWith('/awardsearch')) {
-      return 'NSF Award Search';
+      const awardId = parsed.searchParams.get('AWD_ID')?.trim();
+      return awardId ? `NSF award ${awardId}` : 'NSF Award Search';
+    }
+    const nihProjectId =
+      host === 'reporter.nih.gov' && path.match(/^\/project-details\/([^/]+)/)?.[1];
+    if (nihProjectId) {
+      return `NIH RePORTER project ${decodeURIComponent(nihProjectId).toUpperCase()}`;
     }
     if (host.endsWith('yale.edu')) {
       return titleFromPath(parsed.pathname);
@@ -1282,6 +1328,39 @@ const withPersonProfilesRanked = <T extends { url: string; isLikelyUnavailable: 
 export const firstCitedResearchDetailSource = (
   sources: ResearchDetailSource[],
 ): ResearchDetailSource | undefined => sources.find((source) => !source.isAttributionOnly);
+
+const sourcePathHint = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const leaf = parsed.pathname.split('/').filter(Boolean).pop();
+    return leaf ? decodeURIComponent(leaf).slice(0, 40) : '';
+  } catch {
+    return '';
+  }
+};
+
+const withDistinctLabels = <T extends { url: string; label: string }>(sources: T[]): T[] => {
+  const groups = new Map<string, T[]>();
+  sources.forEach((source) =>
+    groups.set(source.label, [...(groups.get(source.label) ?? []), source]),
+  );
+  const distinctLabelBySource = new Map<T, string>();
+  groups.forEach((group, label) => {
+    if (group.length < 2) return;
+    const hints = group.map((source) => sourcePathHint(source.url));
+    const hintsAreDistinct = hints.every(Boolean) && new Set(hints).size === hints.length;
+    group.forEach((source, index) =>
+      distinctLabelBySource.set(
+        source,
+        `${label} (${hintsAreDistinct ? hints[index] : `${index + 1} of ${group.length}`})`,
+      ),
+    );
+  });
+  return sources.map((source) => {
+    const label = distinctLabelBySource.get(source);
+    return label ? { ...source, label } : source;
+  });
+};
 
 export const buildResearchDetailSources = ({
   group,
@@ -1368,7 +1447,7 @@ export const buildResearchDetailSources = ({
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
-    addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
+    addSource(signal.sourceUrl, accessSignalSourceContext(signal.signalType));
   });
 
   /**
@@ -1415,5 +1494,5 @@ export const buildResearchDetailSources = ({
         Number(right.isLikelyUnavailable || right.isPrivateNetworkOnly),
     );
 
-  return withPersonProfilesRanked(withHealth, entityRankingContext(group));
+  return withDistinctLabels(withPersonProfilesRanked(withHealth, entityRankingContext(group)));
 };

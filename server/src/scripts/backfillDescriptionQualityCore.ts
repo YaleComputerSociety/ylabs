@@ -66,6 +66,8 @@ const OFF_TOPIC_FLAGS: DescriptionQualityFlag[] = [
   'role-biography',
   'third-party-page',
   'instruction-offering',
+  'joining-instructions',
+  'event-narration',
   'practice-biography',
   'broken-template',
   'malformed-generated-text',

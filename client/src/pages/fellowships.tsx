@@ -5,7 +5,6 @@
 import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
 import { showWarningDialog } from '../utils/warningDialog';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { PROGRAMS_QUERY_PARAM } from '../utils/researchProgramsHandoff';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -13,6 +12,7 @@ import UserContext from '../contexts/UserContext';
 import BrowseGrid from '../components/shared/BrowseGrid';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import { useProgramSearchUrlSync } from '../hooks/useProgramSearchUrlSync';
 import LoadErrorNotice from '../components/shared/LoadErrorNotice';
 import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
 import CombinedFilterDropdown, {
@@ -468,22 +468,7 @@ const Fellowships = () => {
     adminEditItem: adminEditFellowship,
   } = state;
 
-  const [handedOffQuery] = useState(() => searchParams.get(PROGRAMS_QUERY_PARAM) ?? '');
-  useEffect(() => {
-    setQueryString(handedOffQuery);
-  }, [handedOffQuery, setQueryString]);
-
-  const urlCarriesHandedOffQuery = searchParams.has(PROGRAMS_QUERY_PARAM);
-  useEffect(() => {
-    if (!urlCarriesHandedOffQuery) return;
-    setSearchParams(
-      (params) => {
-        params.delete(PROGRAMS_QUERY_PARAM);
-        return params;
-      },
-      { replace: true },
-    );
-  }, [urlCarriesHandedOffQuery, setSearchParams]);
+  useProgramSearchUrlSync();
 
   useEffect(() => {
     if (!isModalOpen) restartUndoWindow();

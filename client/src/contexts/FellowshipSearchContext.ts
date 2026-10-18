@@ -7,6 +7,7 @@ import {
   FellowshipQuickFilter,
   ProgramSearchQueryCorrection,
 } from '../reducers/fellowshipSearchReducer';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export interface FellowshipSearchContextType {
   queryString: string;
@@ -64,6 +65,7 @@ export interface FellowshipSearchContextType {
   quickFilter: string | null;
   setQuickFilter: (filter: FellowshipQuickFilter) => void;
   resetProgramFilters: () => void;
+  applyUrlState: (state: ProgramSearchUrlState) => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -128,6 +130,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   quickFilter: null,
   setQuickFilter: () => {},
   resetProgramFilters: () => {},
+  applyUrlState: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
 };
