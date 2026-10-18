@@ -25,7 +25,7 @@ import { setResearchSearchSpellingVocabularyForTests } from '../researchSearchSp
 const vocabulary = buildSearchSpellingVocabulary(
   Array.from({ length: 20 }, () => ({
     nameText: ['Example Lab'],
-    bodyText: ['immunology and organic chemistry, ergo'],
+    bodyText: ['immunology and organic chemistry, ergo, chronic pain'],
     served: true,
   })),
 );
@@ -61,6 +61,13 @@ describe('a misspelled query word is searched as the corpus word it was meant to
     expect(searchedTexts().length).toBeGreaterThan(0);
     expect(searchedTexts().every((text) => text === 'immunology')).toBe(true);
     expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledWith('immunology', undefined);
+  });
+
+  it("never rewrites a student's access word into a topic word one edit away", async () => {
+    const result = await searchResearchGroupsViaMeili('paid chemistry', {}, 1, 18);
+
+    expect(result.queryCorrection).toBeUndefined();
+    expect(searchedTexts().some((text) => text.includes('pain'))).toBe(false);
   });
 
   it('reports what was typed and what was searched', async () => {

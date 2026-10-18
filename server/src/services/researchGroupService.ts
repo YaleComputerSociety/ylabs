@@ -659,6 +659,33 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'takes',
 ]);
 
+// A student's access words say who is asking or on what terms, not what the
+// research is about, and almost no row carries them: under the all-words keyword
+// strategy "neuroscience undergraduate" admitted only rows whose text happened to
+// say "undergraduate" and served an unrelated theorist first, and the spelling
+// correction rewrote "paid" to "pain". `internship` (the MeSH "Internship and
+// Residency") and `students` ("Students, Medical") name indexed topics, so they
+// are absent.
+const STUDENT_ACCESS_INTENT_WORDS = new Set([
+  'undergraduate',
+  'undergraduates',
+  'undergrad',
+  'undergrads',
+  'paid',
+  'unpaid',
+  'freshman',
+  'freshmen',
+  'sophomore',
+  'sophomores',
+  'internships',
+  'opportunities',
+]);
+
+// "history major" names the student, while "major depression" and "Major
+// Histocompatibility Complex" name a topic, so `major` is filler only after a
+// meaningful word and before the end of the query or a filler word.
+const ACADEMIC_MAJOR_WORDS = new Set(['major', 'majors']);
+
 // `work` and `working` name real fields on their own ("Sex Work", "Working
 // Memory"), so they are filler only where they govern a preposition, which no
 // indexed field name does.
@@ -693,11 +720,22 @@ const isInstitutionContext = (tokens: string[], index: number): boolean =>
   (INSTITUTION_CONTEXT_SUFFIXES.has(tokens[index]) &&
     tokens[index - 1] === INSTITUTION_CONTEXT_TOKEN);
 
+const isPlainStudentQueryFiller = (tokens: string[], index: number): boolean =>
+  STUDENT_QUERY_STOP_WORDS.has(tokens[index]) ||
+  STUDENT_ACCESS_INTENT_WORDS.has(tokens[index]) ||
+  isInstitutionContext(tokens, index);
+
+const namesTheStudentsMajor = (tokens: string[], index: number): boolean => {
+  if (!ACADEMIC_MAJOR_WORDS.has(tokens[index]) || index === 0) return false;
+  if (isPlainStudentQueryFiller(tokens, index - 1)) return false;
+  return index === tokens.length - 1 || isPlainStudentQueryFiller(tokens, index + 1);
+};
+
 const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
   const token = tokens[index];
   if (completesWorkingStylePhrase(tokens, index)) return false;
-  if (STUDENT_QUERY_STOP_WORDS.has(token)) return true;
-  if (isInstitutionContext(tokens, index)) return true;
+  if (isPlainStudentQueryFiller(tokens, index)) return true;
+  if (namesTheStudentsMajor(tokens, index)) return true;
   return (
     QUESTION_FRAME_VERBS_BEFORE_PREPOSITION.has(token) &&
     QUESTION_FRAME_VERB_PREPOSITIONS.has(tokens[index + 1] ?? '')
@@ -780,7 +818,18 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   const raw = boundedResearchSearchQuery(value);
   const tokens = tokenizeStudentResearchQuery(raw);
   const meaningfulTokens = tokens.filter((_token, index) => !isStudentQueryFiller(tokens, index));
-  const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
+  const accessQueryTokens = tokens.filter(
+    (token, index) =>
+      !isStudentQueryFiller(tokens, index) ||
+      STUDENT_ACCESS_INTENT_WORDS.has(token) ||
+      ACADEMIC_MAJOR_WORDS.has(token),
+  );
+  const queryTokens =
+    meaningfulTokens.length > 0
+      ? meaningfulTokens
+      : accessQueryTokens.length > 0
+        ? accessQueryTokens
+        : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
   const workingStyle = expandWorkingStylePhrases(queryTokens);
   // A topic alias expands only when it is the whole query. Inside a phrase every
@@ -1420,6 +1469,8 @@ export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'e
 const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [
     ...STUDENT_QUERY_STOP_WORDS,
+    ...STUDENT_ACCESS_INTENT_WORDS,
+    ...ACADEMIC_MAJOR_WORDS,
     ...QUESTION_FRAME_VERBS_BEFORE_PREPOSITION,
     ...QUESTION_FRAME_VERB_PREPOSITIONS,
     INSTITUTION_CONTEXT_TOKEN,

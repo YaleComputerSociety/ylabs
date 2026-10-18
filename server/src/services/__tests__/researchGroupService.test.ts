@@ -432,6 +432,36 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it("strips a student's access words so they cannot narrow the topic", () => {
+    for (const [typed, topic] of [
+      ['neuroscience undergraduate', 'neuroscience'],
+      ['LLM undergraduate research', 'llm'],
+      ['paid undergraduate research chemistry', 'chemistry'],
+      ['unpaid internships in economics', 'economics'],
+      ['robotics for freshmen', 'robotics'],
+      ['can a history major join a lab', 'history'],
+      ['cs majors interested in robotics', 'cs robotics'],
+    ]) {
+      expect(normalizeResearchSearchQuery(typed)).toMatchObject({ query: topic });
+    }
+  });
+
+  it('keeps a major that names a topic and an access query that names nothing else', () => {
+    expect(normalizeResearchSearchQuery('major depression')).toMatchObject({
+      query: 'major depression',
+    });
+    expect(normalizeResearchSearchQuery('major histocompatibility complex')).toMatchObject({
+      query: 'major histocompatibility complex',
+    });
+    expect(normalizeResearchSearchQuery('history major depression')).toMatchObject({
+      query: 'history major depression',
+    });
+    expect(normalizeResearchSearchQuery('undergraduate research opportunities')).toMatchObject({
+      query: 'undergraduate opportunities',
+    });
+    expect(normalizeResearchSearchQuery('paid')).toMatchObject({ query: 'paid' });
+  });
+
   it('strips a field-naming verb only where it governs a preposition', () => {
     expect(normalizeResearchSearchQuery('labs that work on protein folding')).toMatchObject({
       query: 'protein folding',
@@ -941,7 +971,7 @@ describe('searchResearchGroupsViaMeili', () => {
       isAliasExpanded: true,
     });
     expect(normalizeResearchSearchQuery('dry lab opportunities')).toMatchObject({
-      query: 'computational simulation modeling opportunities',
+      query: 'computational simulation modeling',
       isAliasExpanded: true,
     });
 
