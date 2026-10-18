@@ -305,7 +305,9 @@ import {
   isMapOrDirectionsUrl,
   isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
+  isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
+  withoutUncreditedLinkedPublicationOrDocumentCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { namesAPostingRatherThanResearch } from '../utils/postingName';
@@ -2355,7 +2357,12 @@ export function bestMaterializationProvenanceSourceUrl(
         )
       : ranked,
   );
-  return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
+  if (!Array.isArray(sanitized)) return undefined;
+  // A paper or file a lane read only to verify the lead is not the page to cite when a
+  // profile or roster page also produced the row; it stays the fallback when nothing
+  // else did, where the caller still refuses it unless a served field was read from it (#5114).
+  return (sanitized.find((url) => !isLinkedPublicationOrDocumentUrl(url)) ?? sanitized[0]) as
+    string | undefined;
 }
 
 /**
@@ -9155,6 +9162,23 @@ export async function projectFromLog(
       set.sourceUrls = readmittedCitations;
       fieldsWritten++;
     }
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const citedThisPass = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
+      const projected = documentAsProjected(set, unset, entityDoc);
+      const keptCitations = withoutUncreditedLinkedPublicationOrDocumentCitations(
+        citedThisPass,
+        projected.fieldProvenance,
+        projected,
+      );
+      if (keptCitations.length !== citedThisPass.length) {
+        set.sourceUrls = keptCitations;
+        fieldsWritten++;
+      }
+    }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
         if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
@@ -9223,10 +9247,18 @@ export async function projectFromLog(
             currentSourceUrls,
           ),
         );
-        if (provenanceSourceUrl) {
+        const projected = documentAsProjected(set, unset, entityDoc);
+        const citableProvenanceSourceUrl =
+          provenanceSourceUrl &&
+          withoutUncreditedLinkedPublicationOrDocumentCitations(
+            [provenanceSourceUrl],
+            projected.fieldProvenance,
+            projected,
+          )[0];
+        if (citableProvenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
             ...currentSourceUrls,
-            provenanceSourceUrl,
+            citableProvenanceSourceUrl,
           ]);
           fieldsWritten++;
         }

@@ -202,6 +202,8 @@ Historical `paper` observations and source rows are retained as read-only archiv
 `/programs` is an application board, so it groups by application status rather than by role: due in the next 30 days, accepting applications, opening soon, the next cycle, department research guidance, and no dates posted (`client/src/utils/programBoard.ts`).
 A program whose served deadline is stale sits under no dates posted and in no timing quick filter, because its window is unknown rather than open or closed (#4363).
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
+A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
+The citizenship filter keeps a not-stated program, because unknown is not ineligible.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
 The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.

@@ -254,7 +254,7 @@ const ResearchHomeCard = ({
     mobileMoreCount > 0 && (
       <span
         key="more-mobile"
-        className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+        className={`self-center px-1 text-xs font-medium text-muted ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
       >
         +{mobileMoreCount} more
       </span>
@@ -262,7 +262,7 @@ const ResearchHomeCard = ({
     moreCountIsResponsive && desktopMoreCount > 0 && (
       <span
         key="more-desktop"
-        className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+        className="hidden self-center px-1 text-xs font-medium text-muted sm:inline"
       >
         +{desktopMoreCount} more
       </span>
@@ -288,7 +288,7 @@ const ResearchHomeCard = ({
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
                 state={profileOpenState}
                 data-research-result-slug={singleLinkedEntity.slug}
-                className="yr-link yr-focus-ring rounded-control"
+                className="yr-link yr-focus-ring -my-1.5 inline-block rounded-control py-1.5"
                 onClick={(event) => {
                   event.stopPropagation();
                   rememberOpenedProfile(singleLinkedEntity.slug);
