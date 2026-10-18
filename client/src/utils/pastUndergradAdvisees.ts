@@ -29,6 +29,8 @@ const withYearRange = (text: string, entries: PastAdviseeEntry[]): string => {
  * program's mentee count is not the lab's undergraduate roster, so it is named by
  * its program; the roster-alumni count is left to the roster section whenever the
  * page renders one, because two counts of the same people read as a contradiction.
+ * The advised line carries no number: a lab-site read undercounts long alumni lists
+ * (5 of 29 graded rows, 2026-10-18), while the claim that undergrads were advised held.
  */
 export const formatPastAdvisees = (
   group: { pastUndergradAdvisees?: PastAdviseeEntry[] | null },
@@ -50,15 +52,7 @@ export const formatPastAdvisees = (
     byProgram.set(program, [...(byProgram.get(program) || []), entry]);
   }
   const lines: string[] = [];
-  const advisedTotal = adviseeTotal(advised);
-  if (advisedTotal > 0) {
-    lines.push(
-      withYearRange(
-        `Advised ${advisedTotal} ${advisedTotal === 1 ? 'undergrad' : 'undergrads'}`,
-        advised,
-      ),
-    );
-  }
+  if (adviseeTotal(advised) > 0) lines.push(withYearRange('Has advised undergrads', advised));
   for (const [program, programEntries] of byProgram) {
     const total = adviseeTotal(programEntries);
     if (total <= 0) continue;

@@ -41,12 +41,12 @@ describe('formatPastAdvisees', () => {
       'Mentored 1 Fixture Scholars recipient (2025)',
     ]);
     expect(formatPastAdvisees(group, false)).toEqual([
-      'Advised 4 undergrads',
+      'Has advised undergrads',
       'Mentored 1 Fixture Scholars recipient (2025)',
     ]);
   });
 
-  it('counts an entry naming no program as advised, beside roster alumni, without claiming a program', () => {
+  it('says an entry naming no program was advised, beside roster alumni, without a count or a program', () => {
     const group = {
       pastUndergradAdvisees: [
         { count: 1 },
@@ -54,8 +54,14 @@ describe('formatPastAdvisees', () => {
         { programName: ROSTER_ALUMNI, count: 2 },
       ],
     };
-    expect(formatPastAdvisees(group, false)).toEqual(['Advised 4 undergrads (2021)']);
-    expect(formatPastAdvisees(group, true)).toEqual(['Advised 2 undergrads (2021)']);
+    expect(formatPastAdvisees(group, false)).toEqual(['Has advised undergrads (2021)']);
+    expect(formatPastAdvisees(group, true)).toEqual(['Has advised undergrads (2021)']);
+  });
+
+  it('never states how many undergrads were advised', () => {
+    expect(
+      formatPastAdvisees({ pastUndergradAdvisees: [{ programName: ROSTER_ALUMNI, count: 2 }] }),
+    ).toEqual(['Has advised undergrads']);
   });
 
   it('says nothing when there is nothing to count', () => {
