@@ -124,7 +124,10 @@ describe('classifyProgram', () => {
   });
 
   it.each([
-    ['Fixture Dissertation Year Fellowship', 'PhD students in history are eligible. Fellows present their work at a spring conference.'],
+    [
+      'Fixture Dissertation Year Fellowship',
+      'PhD students in history are eligible. Fellows present their work at a spring conference.',
+    ],
     [
       'Fixture Graduate Research Fellowship',
       'The fellowship supports the final year of dissertation writing for PhD students.',
