@@ -1,5 +1,6 @@
 import { Fellowship } from '../types/types';
 import {
+  isDateOnlyProgramDeadline,
   newYorkCalendarDateParts,
   programDeadlineClosingInstant,
   programStatedClockLabel,
@@ -63,6 +64,27 @@ const formatIcsTimestamp = (date: Date): string =>
 
 const ICS_LINE_BREAK = '\r\n';
 
+const DATE_ONLY_REMINDER_TRIGGERS = ['-P6DT15H', '-PT15H'];
+const STATED_TIME_REMINDER_TRIGGERS = ['-P7D', '-P1D'];
+
+const reminderAlarm = (trigger: string, title: string): string =>
+  [
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `TRIGGER:${trigger}`,
+    `DESCRIPTION:${escapeIcsText(`${title} application deadline`)}`,
+    'END:VALARM',
+  ].join(ICS_LINE_BREAK);
+
+const eventTimingLines = (date: Date): string[] => {
+  if (!isDateOnlyProgramDeadline(date)) return [`DTSTART:${formatIcsTimestamp(date)}`];
+  const { year, month, day } = newYorkCalendarDateParts(date);
+  return [
+    `DTSTART;VALUE=DATE:${formatIcsDate(year, month, day)}`,
+    `DTEND;VALUE=DATE:${formatIcsDate(year, month, day + 1)}`,
+  ];
+};
+
 const buildVEvent = (event: ProgramDeadlineEvent, now: Date): string => {
   const statedTime = programStatedClockLabel(event.date);
   const deadlineSentence = statedTime
@@ -71,16 +93,18 @@ const buildVEvent = (event: ProgramDeadlineEvent, now: Date): string => {
   const description = event.link
     ? `${deadlineSentence} Program link: ${event.link}`
     : deadlineSentence;
-  const { year, month, day } = newYorkCalendarDateParts(event.date);
+  const reminderTriggers = isDateOnlyProgramDeadline(event.date)
+    ? DATE_ONLY_REMINDER_TRIGGERS
+    : STATED_TIME_REMINDER_TRIGGERS;
   return [
     'BEGIN:VEVENT',
     `UID:program-deadline-${event.programId}@ylabs.app`,
     `DTSTAMP:${formatIcsTimestamp(now)}`,
-    `DTSTART;VALUE=DATE:${formatIcsDate(year, month, day)}`,
-    `DTEND;VALUE=DATE:${formatIcsDate(year, month, day + 1)}`,
+    ...eventTimingLines(event.date),
     `SUMMARY:${escapeIcsText(`${event.title} application deadline`)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     ...(event.link ? [`URL:${escapeIcsText(event.link)}`] : []),
+    ...reminderTriggers.map((trigger) => reminderAlarm(trigger, event.title)),
     'END:VEVENT',
   ].join(ICS_LINE_BREAK);
 };
