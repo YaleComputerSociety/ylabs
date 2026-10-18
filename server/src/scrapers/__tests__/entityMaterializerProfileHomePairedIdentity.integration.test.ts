@@ -230,6 +230,33 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
       expect((await survivorRow())?.entityType).toBe('CENTER');
     });
 
+    it('re-derives the survivor when the only live observation of its type is refused', async () => {
+      await seedMergedSurvivor();
+      await seedOn(SURVIVOR_SLUG, 'entityType', 'CENTER', 'dept-center-directory');
+      await ResearchEntity.updateOne(
+        { slug: SURVIVOR_SLUG },
+        {
+          $set: {
+            fieldValueRefusals: {
+              entityType: [
+                {
+                  valueKey: fieldValueRefusalKey('entityType', 'CENTER'),
+                  rule: 'not_this_rows_research',
+                  refusedBy: 'research-entity:refuse-field-value',
+                  refusedAt: new Date('2026-09-24T00:00:00Z'),
+                  note: 'synthetic',
+                },
+              ],
+            },
+          },
+        },
+      );
+
+      await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+      expect((await survivorRow())?.entityType).toBe('FACULTY_RESEARCH_AREA');
+    });
+
     it('leaves an organization-named survivor alone', async () => {
       await seedMergedSurvivor({ survivorName: HOME_NAME });
 

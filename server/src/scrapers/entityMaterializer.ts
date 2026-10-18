@@ -7653,6 +7653,15 @@ function enforceResearchEntityNameAuthority(input: {
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
     siteStatedLabName,
   });
+  fieldsWritten += reclassifyUnstatedOrganizationTypeOnFacultyResearchName({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    materializationObs: input.materializationObs,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
+  });
   fieldsWritten += reclassifyEvidencedFacultyResearchAsLab({
     set,
     unset,
@@ -7669,15 +7678,6 @@ function enforceResearchEntityNameAuthority(input: {
     manuallyLockedFields: input.manuallyLockedFields,
     authority: input.nameIdentityAuthority,
     siteStatedLab,
-  });
-  fieldsWritten += reclassifyUnstatedOrganizationTypeOnFacultyResearchName({
-    set,
-    unset,
-    confidenceByField,
-    entityDoc,
-    manuallyLockedFields: input.manuallyLockedFields,
-    materializationObs: input.materializationObs,
-    leadPersonName: input.nameIdentityAuthority.leadPersonName,
   });
   // A heading composed from a bare person name gains its suffix here, after the
   // observation normalizer ran on the suffix-less value.
@@ -7985,7 +7985,7 @@ const ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED = new Set(['CENTER', 'INITIATI
  * losers may not state a survivor-owned field, so the stored graft persisted with no
  * evidence behind it while the name, which only a person-scoped roster composes,
  * said faculty research. A live observation of the type, an operator edit included,
- * keeps the row as it is.
+ * keeps the row as it is, unless the operator has refused that type on the row.
  *
  * The suffix alone does not make a row person-scoped, so every word before it has to
  * be a word of the lead's own name, as for `reclassifyUnbackedLabAsFacultyResearch`;
@@ -8014,7 +8014,9 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
   if (names.length === 0 || !names.every(namesTheLeadsFacultyResearch)) return 0;
   const typeIsStated = input.materializationObs.some(
     (observation) =>
-      observation.field === 'entityType' && textValue(observation.value).toUpperCase() === type,
+      observation.field === 'entityType' &&
+      textValue(observation.value).toUpperCase() === type &&
+      !valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', observation.value),
   );
   if (typeIsStated) return 0;
 
