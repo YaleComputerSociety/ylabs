@@ -70,10 +70,31 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
 
-  it('hides the hosted-undergraduates filter when no result carries the evidence', () => {
+  it('shows the hosted-undergraduates filter at zero with a note that missing evidence is not absence', () => {
     renderFilters({ variant: 'sidebar', facetDistribution: { hostsUndergrads: { true: 0 } } });
 
-    expect(screen.queryByRole('checkbox', { name: /hosted undergraduate/ })).toBeNull();
+    const toggle = screen.getByRole('checkbox', {
+      name: 'Has hosted undergraduate researchers (0)',
+    });
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
+  });
+
+  it('moves desktop focus past a disabled hosted-undergraduates toggle to the first usable field', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      facetDistribution: {
+        hostsUndergrads: { true: 0 },
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Has hosted undergraduate researchers (0)' }),
+    ).toBeDisabled();
+    await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
   });
 
   it('moves and contains mobile focus, then restores the trigger on Escape and backdrop close', async () => {
@@ -324,10 +345,10 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onEntityTypeChange).toHaveBeenCalledWith('');
   });
 
-  it('hides single and non-positive facets unless selected', () => {
+  it('hides non-positive facets unless selected', () => {
     renderFilters({
       facetDistribution: {
-        school: { 'Yale College': 1, Unknown: 0 },
+        school: { Unknown: 0 },
         departments: { Neuroscience: -1 },
       },
     });
@@ -336,5 +357,27 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.queryByLabelText('Filter by school')).toBeNull();
     expect(screen.queryByLabelText('Filter by department')).toBeNull();
     expect(screen.getByText('No additional filters can narrow these results.')).toBeTruthy();
+  });
+
+  it('shows a facet with one value, so a filtered list still says which type and department it holds', () => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        entityType: { FACULTY_RESEARCH_AREA: 24 },
+        departments: { Music: 23 },
+      },
+      selectedSchool: 'School of Music',
+    });
+
+    expect(
+      within(screen.getByLabelText('Filter by type'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All types', 'Faculty research (24)']);
+    expect(
+      within(screen.getByLabelText('Filter by department'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['All departments', 'Music (23)']);
   });
 });

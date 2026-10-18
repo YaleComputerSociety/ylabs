@@ -1416,18 +1416,19 @@ const Research = () => {
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
 
-  const hasRelaxedQueryCandidate =
-    isZeroResultSearch &&
-    activeSearchRequest !== null &&
-    Boolean(relaxResearchQuery(activeSearchRequest.searchQuery ?? ''));
+  // A filter that removed every match is what the student should change, and the
+  // panel already offers to clear it; a shorter query would drop the word they meant.
+  const zeroResultQueryToRelax =
+    isZeroResultSearch && activeSearchRequest && !hasStructuredFilters(activeSearchRequest.filters)
+      ? (activeSearchRequest.searchQuery ?? '')
+      : '';
+  const hasRelaxedQueryCandidate = Boolean(relaxResearchQuery(zeroResultQueryToRelax));
   if (!hasRelaxedQueryCandidate && relaxedQuerySuggestion !== null) {
     setRelaxedQuerySuggestion(null);
   }
 
   useEffect(() => {
-    const relaxedQuery = isZeroResultSearch
-      ? relaxResearchQuery(activeSearchRequest?.searchQuery ?? '')
-      : null;
+    const relaxedQuery = relaxResearchQuery(zeroResultQueryToRelax);
     if (!relaxedQuery || !activeSearchRequest) {
       relaxProbeRequestIdRef.current += 1;
       return;
@@ -1462,7 +1463,7 @@ const Research = () => {
     })();
 
     return () => controller.abort();
-  }, [isZeroResultSearch, activeSearchRequest]);
+  }, [zeroResultQueryToRelax, activeSearchRequest]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
   const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
