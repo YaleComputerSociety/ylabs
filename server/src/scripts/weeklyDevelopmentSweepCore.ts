@@ -22,6 +22,7 @@ import {
 import type { SweepCodeFreshness } from './sweepCodeFreshness';
 import { FAILURE_TAIL_MAX_CHARS } from './scraperSweepLogging';
 import type { StageCountRegression, StageUnscoredBenchmark } from './sweepStageJudgement';
+import { SCRAPER_SWEEP_DEADLINE_ENV } from './sweepSourceRetry';
 
 export const WEEKLY_SWEEP_MODES = weeklySweepModes;
 
@@ -124,9 +125,11 @@ export function weeklySweepEnvironmentProblems(env: NodeJS.ProcessEnv): string[]
 export function weeklySweepChildEnvironment(
   env: NodeJS.ProcessEnv,
   tmpDir: string,
+  deadline?: Date,
 ): NodeJS.ProcessEnv {
   const childEnv: NodeJS.ProcessEnv = {
     ...env,
+    ...(deadline ? { [SCRAPER_SWEEP_DEADLINE_ENV]: deadline.toISOString() } : {}),
     SCRAPER_ENV: 'development',
     CONFIRM_PROD_SCRAPE: 'false',
     ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
@@ -241,6 +244,10 @@ export function buildCorpusSnapshotArgs(): string[] {
 
 export const RENDER_CRON_RUN_LIMIT_MS = 12 * 60 * 60 * 1000;
 
+export function weeklySweepRunDeadline(processStartedAtMs: number): Date {
+  return new Date(processStartedAtMs + RENDER_CRON_RUN_LIMIT_MS);
+}
+
 export const WEEKLY_SWEEP_ERROR_TEXT_LIMIT = 500;
 
 export function capWeeklySweepErrorText(text: string | undefined | null): string | undefined {
@@ -329,9 +336,13 @@ export interface WeeklySweepSourceRecord {
   fetchBlocked?: number;
   throttleRecovered?: number;
   throttleExhausted?: number;
+  databaseWriteRecovered?: number;
+  databaseWriteExhausted?: number;
   materializationErrors?: number;
   error?: string;
   failureTail?: string;
+  attempts?: number;
+  firstAttemptError?: string;
 }
 
 export interface WeeklySweepStageRecord {
@@ -481,9 +492,13 @@ function sourceRecords(outcome: WeeklySweepModeOutcome): WeeklySweepSourceRecord
       fetchBlocked: optionalNumber(row.fetchBlocked),
       throttleRecovered: optionalNumber(row.throttleRecovered),
       throttleExhausted: optionalNumber(row.throttleExhausted),
+      databaseWriteRecovered: optionalNumber(row.databaseWriteRecovered),
+      databaseWriteExhausted: optionalNumber(row.databaseWriteExhausted),
       materializationErrors: optionalNumber(row.materializationErrors),
       error: capWeeklySweepErrorText(optionalString(row.error)),
       failureTail: capWeeklySweepFailureTail(optionalString(row.failureTail)),
+      attempts: optionalNumber(row.attempts),
+      firstAttemptError: capWeeklySweepErrorText(optionalString(row.firstAttemptError)),
     }),
   );
 }

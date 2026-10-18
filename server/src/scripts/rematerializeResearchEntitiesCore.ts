@@ -5,7 +5,10 @@ import {
 } from '../scrapers/rowKeyedContactEvidence';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import type { UnbackedResearchAreaOutcome } from '../scrapers/entityMaterializer';
+import {
+  materializerProjectionPathIsStorable,
+  type UnbackedResearchAreaOutcome,
+} from '../scrapers/entityMaterializer';
 import { fieldProvenanceEntryIsUnbacked } from '../scrapers/neverBackedFieldProvenance';
 import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
 
@@ -382,11 +385,17 @@ function plannedValuesAsStored(
   );
 }
 
+function researchEntityStoresPath(field: string): boolean {
+  return materializerProjectionPathIsStorable(Object.keys(ResearchEntity.schema.paths), field);
+}
+
 /**
  * The row a dry run's plan would leave, in the same shape an apply re-reads, so the
  * two modes diff the same way. A re-read omits an unset field, which is why the apply
  * side must not fall back to the stored value for an absent key, and carries the
  * schema's subdocument defaults, which is why the plan is cast through the schema.
+ * A planned path the schema does not declare keeps its stored value, because the
+ * strict schema drops it from the apply's update and the re-read never sees it.
  */
 export function rematerializeStateAfterPlan(
   before: Record<string, unknown>,
@@ -394,9 +403,14 @@ export function rematerializeStateAfterPlan(
   plannedUnset: Record<string, unknown>,
   fields: readonly string[],
 ): Record<string, unknown> {
-  const plannedAsStored = plannedValuesAsStored(plannedSet, fields);
+  const storedFields = fields.filter(researchEntityStoresPath);
+  const plannedAsStored = plannedValuesAsStored(plannedSet, storedFields);
   const after: Record<string, unknown> = {};
   for (const field of fields) {
+    if (!researchEntityStoresPath(field)) {
+      if (before[field] !== undefined) after[field] = before[field];
+      continue;
+    }
     if (Object.prototype.hasOwnProperty.call(plannedUnset, field)) continue;
     const value = Object.prototype.hasOwnProperty.call(plannedAsStored, field)
       ? plannedAsStored[field]
@@ -582,6 +596,7 @@ export interface RematerializeEntityReport {
   clearedContactFields?: string[];
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   accessSignalChanges?: AccessSignalChangePlan;
+  cardSynthesisPending?: true;
   skipped?: string;
   error?: string;
 }
@@ -600,6 +615,7 @@ export function rematerializeEntityReportFromChanges(input: {
   changes: RematerializeReportedChange[];
   foreignContact: boolean;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
+  cardSynthesisPending?: boolean;
   skipped?: string;
 }): RematerializeEntityReport {
   return {
@@ -619,6 +635,7 @@ export function rematerializeEntityReportFromChanges(input: {
         }
       : {}),
     ...(input.unbackedResearchAreas ? { unbackedResearchAreas: input.unbackedResearchAreas } : {}),
+    ...(input.cardSynthesisPending ? { cardSynthesisPending: true as const } : {}),
     skipped: input.skipped,
   };
 }
@@ -654,8 +671,10 @@ export function summarizeRematerializeEntities(
   clearedContactFields?: number;
   unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>>;
   researchAreaChips: { added: number; removed: number };
+  entitiesAwaitingCardSynthesis: number;
 } {
   let entitiesChanged = 0;
+  let entitiesAwaitingCardSynthesis = 0;
   let fieldsWritten = 0;
   let clearedContactFields = 0;
   const unbackedResearchAreas: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
@@ -667,6 +686,7 @@ export function summarizeRematerializeEntities(
     if (entity.changes.length > 0) entitiesChanged += 1;
     fieldsWritten += entity.changes.length;
     clearedContactFields += entity.clearedContactFields?.length ?? 0;
+    if (entity.cardSynthesisPending) entitiesAwaitingCardSynthesis += 1;
     if (entity.unbackedResearchAreas) {
       unbackedResearchAreas[entity.unbackedResearchAreas] =
         (unbackedResearchAreas[entity.unbackedResearchAreas] ?? 0) + 1;
@@ -678,6 +698,7 @@ export function summarizeRematerializeEntities(
     ...(options.foreignContact ? { clearedContactFields } : {}),
     unbackedResearchAreas,
     researchAreaChips,
+    entitiesAwaitingCardSynthesis,
   };
 }
 

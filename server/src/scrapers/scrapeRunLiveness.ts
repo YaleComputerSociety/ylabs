@@ -2,6 +2,11 @@ import { hostname } from 'os';
 
 import { ScrapeRun } from '../models/scrapeRun';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  lastScrapeRunProgressAtMs,
+  SCRAPE_RUN_STALL_WINDOW_MS,
+  type ScrapeRunStall,
+} from './scrapeRunProgress';
 
 export const SCRAPE_RUN_HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
@@ -67,6 +72,8 @@ export function isLocalProcessAlive(pid: number): boolean {
 
 export interface ScrapeRunHeartbeatDependencies {
   beat: (runId: unknown, at: Date) => Promise<{ matched: boolean }>;
+  now?: () => number;
+  lastProgressAtMs?: () => number;
 }
 
 export async function writeScrapeRunHeartbeat(
@@ -81,17 +88,42 @@ export async function writeScrapeRunHeartbeat(
 }
 
 export function startScrapeRunHeartbeat(
-  input: { runId: unknown; sourceName: string; intervalMs?: number },
+  input: {
+    runId: unknown;
+    sourceName: string;
+    intervalMs?: number;
+    stallWindowMs?: number;
+    onStall?: (stall: ScrapeRunStall) => void;
+  },
   deps: ScrapeRunHeartbeatDependencies = { beat: writeScrapeRunHeartbeat },
 ): { stop: () => void } {
   const intervalMs = input.intervalMs ?? SCRAPE_RUN_HEARTBEAT_INTERVAL_MS;
   if (intervalMs <= 0) return { stop: () => undefined };
+  const stallWindowMs = input.stallWindowMs ?? SCRAPE_RUN_STALL_WINDOW_MS;
+  const now = deps.now ?? Date.now;
+  const lastProgressAtMs = deps.lastProgressAtMs ?? lastScrapeRunProgressAtMs;
 
   let stopped = false;
   let reportedClosed = false;
+  const stop = () => {
+    stopped = true;
+    clearInterval(timer);
+  };
   const timer = setInterval(() => {
+    const nowMs = now();
+    const progressAtMs = lastProgressAtMs();
+    if (nowMs - progressAtMs > stallWindowMs) {
+      stop();
+      input.onStall?.({
+        sourceName: input.sourceName,
+        lastProgressAt: new Date(progressAtMs),
+        detectedAt: new Date(nowMs),
+        stallWindowMs,
+      });
+      return;
+    }
     deps
-      .beat(input.runId, new Date())
+      .beat(input.runId, new Date(nowMs))
       .then(({ matched }) => {
         if (matched || stopped || reportedClosed) return;
         reportedClosed = true;
@@ -108,10 +140,5 @@ export function startScrapeRunHeartbeat(
   }, intervalMs);
   timer.unref?.();
 
-  return {
-    stop: () => {
-      stopped = true;
-      clearInterval(timer);
-    },
-  };
+  return { stop };
 }

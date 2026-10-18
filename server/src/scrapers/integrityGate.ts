@@ -374,30 +374,9 @@ const researcherIdentityCollisionPipeline = (
 ): mongoose.PipelineStage[] => [
   { $match: { archived: { $ne: true } } },
   {
-    $lookup: {
-      from: 'accounts',
-      localField: 'accountId',
-      foreignField: '_id',
-      as: 'account',
-    },
-  },
-  {
     $project: {
       personId: { $toString: '$_id' },
-      researcherValue: normalizedIdentityValue(`$identifiers.${identityField}`),
-      accountValue: normalizedIdentityValue({ $arrayElemAt: [`$account.${identityField}`, 0] }),
-    },
-  },
-  {
-    $project: {
-      personId: 1,
-      identityValue: {
-        $cond: [
-          { $in: ['$researcherValue', PLACEHOLDER_IDENTITY_VALUES] },
-          '$accountValue',
-          '$researcherValue',
-        ],
-      },
+      identityValue: normalizedIdentityValue(`$identifiers.${identityField}`),
     },
   },
   { $match: { identityValue: { $nin: PLACEHOLDER_IDENTITY_VALUES } } },

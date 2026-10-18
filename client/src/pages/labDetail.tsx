@@ -31,6 +31,7 @@ import ResearchProfileSkeleton, {
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
+import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
@@ -465,6 +466,7 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach = false,
   principalInvestigator,
   leadProfilesLinkedInline = false,
+  rosterListsUndergraduates = false,
 }: {
   group: any;
   profileUrl?: string;
@@ -474,6 +476,7 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
+  rosterListsUndergraduates?: boolean;
 }) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   const topics = detailTopics(group, 5);
@@ -511,7 +514,10 @@ const DecisionSummary = ({
   const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const undergradQuote = wayInWithheld ? undefined : undergradQuoteEvidenceFromEntity(group);
+  const undergradQuote =
+    wayInWithheld || rosterListsUndergraduates
+      ? undefined
+      : undergradQuoteEvidenceFromEntity(group);
   const hasEvidenceList =
     Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
@@ -1203,6 +1209,7 @@ const LabDetail = () => {
             preferOrgEngagementOutreach={preferOrgEngagementOutreach}
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
+            rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
           />
 
           {showDedicatedPrincipalInvestigatorSection && (
@@ -1233,6 +1240,8 @@ const LabDetail = () => {
           )}
 
           <ResearchTeamSection members={members} roster={roster} />
+
+          <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
 
           {hasRelatedResearchEntities && (
             <RelatedResearchEntitiesSection

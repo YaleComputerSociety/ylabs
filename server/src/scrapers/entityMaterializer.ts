@@ -149,7 +149,15 @@ import {
   type CanonicalKey,
   type CanonicalResolution,
 } from './resolveCanonical';
-import { websiteUrlIdentityKeyVariants } from '../scripts/researchEntityPiDedupeCore';
+import {
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityKeyVariants,
+} from '../scripts/researchEntityPiDedupeCore';
+import {
+  RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
+  relationshipTargetIdentities,
+  type RelationshipTargetIdentity,
+} from './centerRelationshipTarget';
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import {
@@ -227,6 +235,10 @@ import {
   withoutLaneRefusedWebsiteUrls,
 } from './laneRefusedWebsiteUrl';
 import {
+  REFUSED_RESEARCH_HOME_NAME_FIELD,
+  withoutLaneRefusedResearchHomeNames,
+} from './laneRefusedResearchHomeName';
+import {
   LANE_PAGE_HEALTH_FIELD,
   planGoneLanePageFieldClears,
   withoutGoneLanePageObservations,
@@ -251,7 +263,6 @@ import {
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
 import {
@@ -268,7 +279,10 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
-import { isUnbackedLabNameShell } from '../services/studentVisibilityTier';
+import {
+  SITE_TITLE_LAB_NAME_SOURCE,
+  isUnbackedLabNameShell,
+} from '../services/studentVisibilityTier';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafety';
@@ -289,10 +303,12 @@ import {
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
   isMapOrDirectionsUrl,
+  isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
   researchHomeWebsiteUrlWriteRefusal,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
+import { namesAPostingRatherThanResearch } from '../utils/postingName';
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
@@ -347,6 +363,10 @@ import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUr
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
+import {
+  OFFICIAL_PROFILE_DIRECTOR_LANE,
+  reconcileOfficialProfileDirectorRetirementsFromRun,
+} from './officialProfileDirectorRetirement';
 import {
   CENTER_AFFILIATION_ROSTER_LANE,
   CENTERS_INSTITUTES_ROSTER_LANE,
@@ -416,6 +436,7 @@ import {
   yaleStatusCacheIsWritable,
 } from '../utils/researchEntityYaleStatus';
 import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLocks';
+import { recordScrapeRunProgress } from './scrapeRunProgress';
 import {
   canonicalRoleForLegacy,
   LEAD_ROLE_LEGACY_LABELS,
@@ -951,6 +972,7 @@ interface MaterializeResult {
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
+  plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -976,12 +998,6 @@ export type UserIdentityJoin =
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 // Retained only to fail closed on historical observations after the producer was retired.
 const OFFICIAL_PROFILE_PUBLICATIONS_FIELD = 'officialProfilePublications';
-const PUBLIC_QUOTE_FIELDS = new Set([
-  'undergradEvidenceQuote',
-  'undergradRoleEvidenceQuote',
-  'contactInstructionsQuote',
-  'undergradConstraintQuote',
-]);
 const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
   'fullDescription',
   'shortDescription',
@@ -1037,6 +1053,15 @@ export function materializerProjectionPathIsStorable(
     if (declared.some((path) => path === ancestor || path.startsWith(nested))) return true;
   }
   return false;
+}
+
+function plannedWriteSkipReason(
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+): 'no-scoped-fields' | 'unchanged' {
+  return Object.keys(set).length === 0 && Object.keys(unset).length === 0
+    ? 'no-scoped-fields'
+    : 'unchanged';
 }
 
 // A re-projection over an unchanged observation log recomputes the same field
@@ -1786,6 +1811,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     isResearchEntityObservationType(entityType) &&
     (observation.field === REFUSED_WEBSITE_URL_FIELD ||
+      observation.field === REFUSED_RESEARCH_HOME_NAME_FIELD ||
       observation.field === LANE_PAGE_HEALTH_FIELD)
   ) {
     return true;
@@ -1897,13 +1923,6 @@ export function materializedFieldValue(
     typeof value === 'string'
   ) {
     return fellowshipDisplayProse(field, value) ?? value;
-  }
-  if (
-    isResearchEntityObservationType(entityType) &&
-    PUBLIC_QUOTE_FIELDS.has(field) &&
-    typeof value === 'string'
-  ) {
-    return redactDirectContactInfo(value);
   }
   if (
     isResearchEntityObservationType(entityType) &&
@@ -2055,11 +2074,17 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
   const sourceUrl = textValue(enrichment.sourceUrl);
   const observedAt = enrichment.observedAt;
   const freshnessExpiresAt = enrichment.freshnessExpiresAt;
-  if (memberKeys.length === 0 || !sourceUrl || !observedAt || !freshnessExpiresAt) return undefined;
+  const undergraduates = Array.isArray(enrichment.undergraduates) ? enrichment.undergraduates : [];
+  if (memberKeys.length === 0 && undergraduates.length === 0) return undefined;
+  if (!sourceUrl || !observedAt || !freshnessExpiresAt) return undefined;
   return {
     state: enrichment.state,
     memberKeys,
     sourceUrl,
+    ...(undergraduates.length > 0 ? { undergraduates } : {}),
+    ...(textValue(enrichment.alumniSourceUrl)
+      ? { alumniSourceUrl: textValue(enrichment.alumniSourceUrl) }
+      : {}),
     ...(enrichment.sourcePublishedAt ? { sourcePublishedAt: enrichment.sourcePublishedAt } : {}),
     observedAt,
     freshnessExpiresAt,
@@ -2412,8 +2437,14 @@ function fieldProvenanceForResolvedObservation(
         obs._id && obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
     )
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
-  if (!match?._id) return null;
+  return match ? observationFieldProvenance(match, resolved.confidence) : null;
+}
 
+function observationFieldProvenance(
+  match: MaterializerObservationLike,
+  fallbackConfidence?: number,
+): Record<string, unknown> | null {
+  if (!match._id) return null;
   // `observationId` is the reference observation retention reads to decide a row
   // is still cited (`OBSERVATION_REFERENCE_SPECS`), so writing the observation's
   // id into `sourceId` left every cited row unprotected while the protection
@@ -2431,7 +2462,7 @@ function fieldProvenanceForResolvedObservation(
     sourceUrl: match.sourceUrl || '',
     observationId: match._id,
     observedAt: match.observedAt || new Date(),
-    confidence: match.confidence ?? resolved.confidence,
+    confidence: match.confidence ?? fallbackConfidence,
   };
 }
 
@@ -2758,13 +2789,6 @@ export type RosterMemberIdentity = (
   profileUrlNamesAnotherSiteLead?: boolean;
 };
 
-async function liveResearcherForAccount(accountId: unknown): Promise<any | null> {
-  if (!accountId) return null;
-  return Researcher.findOne({ accountId, archived: { $ne: true } })
-    .select('_id displayName')
-    .lean();
-}
-
 async function liveResearcherById(researcherId: unknown): Promise<any | null> {
   return Researcher.findOne({ _id: researcherId, archived: { $ne: true } })
     .select('_id displayName')
@@ -2772,20 +2796,10 @@ async function liveResearcherById(researcherId: unknown): Promise<any | null> {
 }
 
 async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
-  const accounts: any[] = await Account.find({ netid })
-    .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
-    .lean();
-  const byAccount = await Promise.all(
-    accounts.filter(accountIsLive).map((account) => liveResearcherForAccount(account._id)),
-  );
-  const byIdentifier: any[] = await Researcher.find({
-    'identifiers.netid': netid,
-    archived: { $ne: true },
-  })
+  return Researcher.find({ 'identifiers.netid': netid, archived: { $ne: true } })
     .select('_id displayName')
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
-  return [...byAccount, ...byIdentifier].filter(Boolean);
 }
 
 async function researchersNamedByIdentityEvidence(
@@ -3043,6 +3057,7 @@ export function buildRosterMemberCanonicalPlan(
 
   const evidenceStatus = textValue(resolved.evidenceStatus?.value);
   const sectionLabel = textValue(resolved.sectionLabel?.value);
+  const listingTitle = textValue(resolved.title?.value);
 
   return {
     role,
@@ -3061,6 +3076,7 @@ export function buildRosterMemberCanonicalPlan(
         sourceUrl: sourceUrl || undefined,
         profileUrl: profileUrl || undefined,
         sectionLabel: sectionLabel || undefined,
+        listingTitle: listingTitle || undefined,
         evidenceStatus: evidenceStatus || undefined,
         membershipKey: membershipKey || undefined,
         observedAt,
@@ -3690,19 +3706,12 @@ async function canonicalResearcherIdentity(
 ): Promise<{ netid?: string; email?: string; orcid?: string; displayName: string }> {
   if (!researcherId) return { displayName: '' };
   const researcher: any = await Researcher.findById(researcherId)
-    .select('displayName accountId identifiers')
+    .select('displayName identifiers')
     .lean();
   if (!researcher) return { displayName: '' };
-  let netid = textValue(researcher.identifiers?.netid) || undefined;
-  let email = textValue(researcher.identifiers?.email) || undefined;
-  if ((!netid || !email) && researcher.accountId) {
-    const account: any = await Account.findById(researcher.accountId).select('netid email').lean();
-    netid ??= textValue(account?.netid) || undefined;
-    email ??= textValue(account?.email) || undefined;
-  }
   return {
-    netid,
-    email,
+    netid: textValue(researcher.identifiers?.netid) || undefined,
+    email: textValue(researcher.identifiers?.email) || undefined,
     orcid: textValue(researcher.identifiers?.orcid) || undefined,
     displayName: textValue(researcher.displayName),
   };
@@ -3783,23 +3792,10 @@ async function resolveSingleLeadResearcherId(
 }
 
 async function leadResearcherDepartment(researcherId: string): Promise<string | undefined> {
-  const researcher = (await Researcher.findById(researcherId)
-    .select('profile accountId')
-    .lean()) as {
+  const researcher = (await Researcher.findById(researcherId).select('profile').lean()) as {
     profile?: { primaryDepartment?: unknown };
-    accountId?: unknown;
   } | null;
-  if (!researcher) return undefined;
-  const direct = textValue(researcher.profile?.primaryDepartment);
-  if (direct) return direct;
-  if (researcher.accountId) {
-    const account = (await Account.findById(materializerDocumentId(researcher.accountId))
-      .select('department')
-      .lean()) as { department?: unknown } | null;
-    const accountDepartment = textValue(account?.department);
-    if (accountDepartment) return accountDepartment;
-  }
-  return undefined;
+  return textValue(researcher?.profile?.primaryDepartment) || undefined;
 }
 
 export type LeadPiSchoolInheritanceSkip =
@@ -4706,27 +4702,78 @@ function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date
   return new Date(Math.max(...timestamps));
 }
 
-async function resolveRelationshipTarget(
+interface ResolvedRelationshipTargetRow {
+  _id?: unknown;
+  name?: unknown;
+  slug?: unknown;
+  entityType?: unknown;
+}
+
+export async function resolveRelationshipTarget(
   researchEntityModel: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>,
-  targetEntityKey: string,
+  identity: RelationshipTargetIdentity,
 ): Promise<{
   canonicalFacultyResearchAreaTarget: { _id?: unknown } | null;
-  target: { _id?: unknown; name?: unknown; slug?: string } | null;
-  resolvedTarget: { _id?: unknown; slug?: unknown } | null;
+  target: ResolvedRelationshipTargetRow | null;
+  resolvedTarget: ResolvedRelationshipTargetRow | null;
 }> {
+  const { targetEntityKey } = identity;
   const canonicalFacultyResearchAreaTarget =
     (await findExistingResearchEntityByFacultyResearchAreaIdentity(researchEntityModel as any, {
       entityKey: targetEntityKey,
       entityType: 'FACULTY_RESEARCH_AREA',
-    })) as { _id?: unknown } | null;
+    })) as ResolvedRelationshipTargetRow | null;
   const target = (await researchEntityModel
-    .findOne({ slug: targetEntityKey, archived: { $ne: true } }, { _id: 1, name: 1, slug: 1 })
-    .lean()) as { _id?: unknown; name?: unknown; slug?: string } | null;
+    .findOne(
+      { slug: targetEntityKey, archived: { $ne: true } },
+      { _id: 1, name: 1, slug: 1, entityType: 1 },
+    )
+    .lean()) as ResolvedRelationshipTargetRow | null;
+  const namedTarget = canonicalFacultyResearchAreaTarget || target;
   return {
     canonicalFacultyResearchAreaTarget,
     target,
-    resolvedTarget: canonicalFacultyResearchAreaTarget || target,
+    resolvedTarget:
+      namedTarget || (await rowLedByListedPersonAtListedWebsite(researchEntityModel, identity)),
   };
+}
+
+export async function rowLedByListedPersonAtListedWebsite(
+  researchEntityModel: Pick<typeof ResearchEntity, 'find'>,
+  identity: RelationshipTargetIdentity,
+): Promise<ResolvedRelationshipTargetRow | null> {
+  const websiteKey = normalizeWebsiteUrlIdentityKey(identity.targetWebsiteUrl);
+  const personName = personNameFromFacultyResearchArea(identity.targetEntityKey);
+  if (!websiteKey || !personName) return null;
+  const rowsAtWebsite = (await researchEntityModel
+    .find(
+      { websiteUrl: { $in: websiteUrlIdentityKeyVariants(websiteKey) }, archived: { $ne: true } },
+      { _id: 1, name: 1, slug: 1, entityType: 1 },
+    )
+    .lean()) as ResolvedRelationshipTargetRow[];
+  if (rowsAtWebsite.length === 0) return null;
+  const researcherId = toMaterializerObjectId(await findUniqueResearcherIdByPersonName(personName));
+  if (!researcherId) return null;
+  const ledRowIds = new Set(
+    (
+      (await RoleAssignment.find({
+        personId: researcherId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': { $in: rowsAtWebsite.map((row) => row._id) },
+        role: 'PI',
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      })
+        .select('target.id')
+        .lean()) as Array<{ target?: { id?: unknown } }>
+    )
+      .map((assignment) => normalizeMaterializerObjectId(assignment.target?.id))
+      .filter(Boolean),
+  );
+  const ledRows = rowsAtWebsite.filter((row) =>
+    ledRowIds.has(normalizeMaterializerObjectId(row._id) || ''),
+  );
+  return ledRows.length === 1 ? ledRows[0] : null;
 }
 
 async function materializeResearchEntityRelationship(
@@ -4773,7 +4820,10 @@ async function materializeResearchEntityRelationship(
   if (!source?._id) return skip('source-not-resolved');
 
   const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =
-    await resolveRelationshipTarget(researchEntityModel, targetEntityKey);
+    await resolveRelationshipTarget(researchEntityModel, {
+      targetEntityKey,
+      targetWebsiteUrl: textValue(resolved[RELATIONSHIP_TARGET_WEBSITE_URL_FIELD]?.value),
+    });
   if (!resolvedTarget?._id) return skip('target-not-resolved');
   if (relationshipEndpointsAreSameEntity(source._id, resolvedTarget._id)) {
     return skip('self-relationship');
@@ -4810,10 +4860,10 @@ async function materializeResearchEntityRelationship(
   const targetResearchEntityId = normalizeMaterializerObjectId(resolvedTarget._id) || '';
   if (!sourceResearchEntityId || !targetResearchEntityId) return skip('target-not-resolved');
   // Prefer linking the center to the member's existing PI-led lab (a rich page)
-  // over a thin faculty-research-area stub: a resolved target whose slug is not a
-  // generated `faculty-research-area-*` is a real research home → AFFILIATED_LAB.
+  // over a thin faculty-research-area stub: a resolved target that is not a
+  // `FACULTY_RESEARCH_AREA` row is a real research home → AFFILIATED_LAB.
   const resolvedRelationshipType = centerRelationshipTypeForResolvedTarget(
-    textValue((resolvedTarget as { slug?: unknown }).slug),
+    resolvedTarget,
     relationshipType,
   );
   const label = relationshipLabelForType(resolvedRelationshipType);
@@ -4876,15 +4926,19 @@ export function relationshipLabelForType(relationshipType: string): string {
 }
 
 /**
- * Pick the relationship type for a center→target edge. A resolved target whose
- * slug is a generated `faculty-research-area-*` stub stays MEMBER_RESEARCH_AREA;
- * anything else is a real research home (the member's PI-led lab) → AFFILIATED_LAB.
+ * Pick the relationship type for a center→target edge. The resolved row's own
+ * `entityType` decides: a `FACULTY_RESEARCH_AREA` row stays MEMBER_RESEARCH_AREA and
+ * any other kind of row is a real research home → AFFILIATED_LAB. Slug shape is only
+ * the fallback for a row with no stored type, because a faculty research row promoted
+ * to a lab keeps its generated `faculty-research-area-*` slug (#5068).
  */
 export function centerRelationshipTypeForResolvedTarget(
-  resolvedTargetSlug: string,
+  resolvedTarget: { slug?: unknown; entityType?: unknown } | null | undefined,
   fallbackType: string,
 ): string {
-  const slug = (resolvedTargetSlug || '').trim();
+  const entityType = textValue(resolvedTarget?.entityType).toUpperCase();
+  if (entityType) return entityType === 'FACULTY_RESEARCH_AREA' ? fallbackType : 'AFFILIATED_LAB';
+  const slug = textValue(resolvedTarget?.slug);
   return slug && !slug.startsWith('faculty-research-area-') ? 'AFFILIATED_LAB' : fallbackType;
 }
 
@@ -6042,45 +6096,48 @@ function accountIsLive(account: { archived?: boolean; status?: string } | undefi
  * The one person an address names, counting a researcher's own `identifiers.email` and every
  * live account that claims it as claimants of one identity space, so the join fails closed
  * exactly as it did when every address lived on an account (#5000). An account and the
- * researcher it is linked to are one claimant, and an account linked to no researcher still
- * counts, because it is still a second person holding the address.
+ * researcher holding its netid are one claimant, and an account no researcher's netid matches
+ * still counts, because it is still a second person holding the address. Accounts are
+ * environment-local (#5088), so the link is the netid rather than a stored account `_id`.
  */
 async function soleLiveResearcherClaimingEmail(email: string): Promise<any | undefined> {
   const accounts: any[] = (
     await Account.find({ email }).limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT).lean()
   ).filter(accountIsLive);
-  const linked: any[] = accounts.length
-    ? await Researcher.find({ accountId: { $in: accounts.map((account) => account._id) } })
-        .select('_id displayName accountId')
+  const accountNetids = accounts.map((account) => normalizedAccountNetid(account.netid));
+  const linkableNetids = accountNetids.filter((netid): netid is string => Boolean(netid));
+  const linked: any[] = linkableNetids.length
+    ? await Researcher.find({ 'identifiers.netid': { $in: linkableNetids } })
+        .select('_id displayName identifiers.netid')
         .lean()
     : [];
   const holders: any[] = await Researcher.find({
     'identifiers.email': email,
     archived: { $ne: true },
   })
-    .select('_id displayName accountId')
+    .select('_id displayName identifiers.netid')
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
   const claimants = new Map<string, any>();
   for (const researcher of [...linked, ...holders])
     claimants.set(String(researcher._id), researcher);
-  const linkedAccountIds = new Set(linked.map((researcher) => String(researcher.accountId)));
-  const unlinkedAccounts = accounts.filter((account) => !linkedAccountIds.has(String(account._id)));
+  const linkedNetids = new Set(linked.map((researcher) => researcher.identifiers?.netid));
+  const unlinkedAccounts = accounts.filter(
+    (_account, index) => !accountNetids[index] || !linkedNetids.has(accountNetids[index]),
+  );
   if (claimants.size + unlinkedAccounts.length !== 1) return undefined;
   return claimants.values().next().value;
 }
 
 /**
- * The researcher a `user` key's netid reaches: the researcher linked to the account holding
- * the netid, then a researcher holding it as `identifiers.netid`. An alias the directory maps
- * to another live holder's netid resolves to that holder, as it did when every alias twin was
- * an account (#4988), and either side may hold the alias or its target (#5000).
+ * The researcher a `user` key's netid reaches: the researcher holding it as
+ * `identifiers.netid`. An alias the directory maps to another live holder's netid resolves to
+ * that holder, as it did when every alias twin was an account (#4988), and either side may
+ * hold the alias or its target (#5000).
  */
 async function researcherReachedByIdentityNetid(netid: string): Promise<any | null> {
   const target = (await aliasNetidWithLiveHolder(netid)) ?? netid;
-  const account: any = await Account.findOne({ netid: target }).lean();
-  const linked = account?._id ? await Researcher.findOne({ accountId: account._id }) : null;
-  return linked ?? Researcher.findOne({ 'identifiers.netid': target });
+  return Researcher.findOne({ 'identifiers.netid': target });
 }
 
 async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefined> {
@@ -6093,16 +6150,12 @@ async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefin
   const resolution = await resolveNetidForRosterEmailAlias(netid);
   if (resolution.status !== 'resolved' || resolution.netid === netid) return undefined;
   const targetAccount: any = await Account.findOne({ netid: resolution.netid }).lean();
-  const targetResearcher: any =
-    (targetAccount?._id
-      ? await Researcher.findOne({ accountId: targetAccount._id }).select('displayName').lean()
-      : null) ??
-    (await Researcher.findOne({
-      'identifiers.netid': resolution.netid,
-      archived: { $ne: true },
-    })
-      .select('displayName')
-      .lean());
+  const targetResearcher: any = await Researcher.findOne({
+    'identifiers.netid': resolution.netid,
+    archived: { $ne: true },
+  })
+    .select('displayName')
+    .lean();
   if (aliasAccountHeld) {
     const liveTarget = accountIsLive(targetAccount ?? undefined) || Boolean(targetResearcher);
     return liveTarget ? resolution.netid : undefined;
@@ -6403,8 +6456,9 @@ export async function joinUserIdentityToExistingResearcher(
       !displayName || observedPersonNameAgreesWith(emailResearcher?.displayName, displayName);
     if (emailResearcher && emailAccountNamesThisPerson) {
       researcher = emailResearcher;
-      account = emailResearcher.accountId
-        ? ((await Account.findById(emailResearcher.accountId).lean()) ?? null)
+      const emailResearcherNetid = normalizedAccountNetid(emailResearcher.identifiers?.netid);
+      account = emailResearcherNetid
+        ? ((await Account.findOne({ netid: emailResearcherNetid }).lean()) ?? null)
         : null;
       identityJoinedOnEmailAlone = true;
       identityJoin = 'account-email';
@@ -6563,7 +6617,6 @@ async function materializeUserIdentityToResearcher(
     }
     researcher = new Researcher({
       displayName,
-      ...(accountId ? { accountId } : {}),
       // Stamped from the directory's own observation of this person's netid, never from the
       // alias itself, so the alias is not promoted to a join key (`research-model.md:36`).
       ...(resolvedNetid ? { identifiers: { netid: resolvedNetid } } : {}),
@@ -6590,10 +6643,6 @@ async function materializeUserIdentityToResearcher(
     researcher.displayName = displayName;
     fieldsWritten += 1;
   }
-  if (accountId && !researcher.accountId) {
-    researcher.accountId = accountId;
-    fieldsWritten += 1;
-  }
   researcher.profile = researcher.profile || {};
   for (const [key, value] of [
     ['title', title],
@@ -6617,7 +6666,7 @@ async function materializeUserIdentityToResearcher(
     orcidFieldsWritten += 1;
   }
   const priorNetid: string | undefined = researcher.identifiers?.netid;
-  const netidToStamp = await accountNetidForResearcherLink(researcher.accountId, account);
+  const netidToStamp = await accountNetidForResearcherLink(accountId, account);
   let netidFieldsWritten = 0;
   if (netidToStamp && priorNetid !== netidToStamp) {
     researcher.identifiers = { ...(researcher.identifiers || {}), netid: netidToStamp };
@@ -7407,6 +7456,8 @@ function enforceResearchEntityNameAuthority(input: {
   ].sort();
   const namesNothingUsable = (candidateName: unknown, websiteUrl: unknown): boolean =>
     isPlaceholderEntityName(candidateName) ||
+    namesAPostingRatherThanResearch(candidateName) ||
+    isPostingPageUrl(websiteUrl) ||
     // An external platform's brand names no research home, and it is refused here
     // as well as at ingest for the same reason filler is: an already-stored
     // "Google Scholar" is re-projected from its own active observation on every
@@ -7586,6 +7637,12 @@ function enforceResearchEntityNameAuthority(input: {
     }
     fieldsWritten++;
   }
+  const siteStatedLab = siteStatedLabForWebsite(
+    input.materializationObs,
+    documentAsProjected(set, unset, entityDoc).websiteUrl,
+    entityDoc?.fieldValueRefusals,
+  );
+  const siteStatedLabName = textValue(siteStatedLab?.name.value);
   fieldsWritten += reclassifyUnbackedLabAsFacultyResearch({
     set,
     unset,
@@ -7594,6 +7651,7 @@ function enforceResearchEntityNameAuthority(input: {
     manuallyLockedFields: input.manuallyLockedFields,
     labAssertedByLiveObservation,
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
+    siteStatedLabName,
   });
   fieldsWritten += reclassifyEvidencedFacultyResearchAsLab({
     set,
@@ -7602,6 +7660,15 @@ function enforceResearchEntityNameAuthority(input: {
     entityDoc,
     manuallyLockedFields: input.manuallyLockedFields,
     authority: input.nameIdentityAuthority,
+  });
+  fieldsWritten += reclassifySiteNamedResearchAsLab({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    authority: input.nameIdentityAuthority,
+    siteStatedLab,
   });
   // A heading composed from a bare person name gains its suffix here, after the
   // observation normalizer ran on the suffix-less value.
@@ -7690,6 +7757,118 @@ function reclassifyEvidencedFacultyResearchAsLab(input: {
   return 1;
 }
 
+/**
+ * The lab name and type the row's own current website states in its title, as the
+ * faculty-research promotion read them (#5059). Tied to the current website: a name read
+ * from a site the row no longer serves says nothing about it, so it is not evidence once
+ * the website moves. A refused name or a refused `LAB` type is not evidence either, since
+ * this reads observations the resolver's refusal screen never saw.
+ */
+export function siteStatedLabForWebsite(
+  observations: readonly MaterializerObservationLike[],
+  websiteUrl: unknown,
+  fieldValueRefusals: unknown,
+): { name: MaterializerObservationLike; entityType: MaterializerObservationLike } | null {
+  const website = websiteIdentity(textValue(websiteUrl));
+  if (!website || valueIsRefused(fieldValueRefusals, 'entityType', 'LAB')) return null;
+  const latestFromSite = (field: string, admits: (value: unknown) => boolean) => {
+    let latest: MaterializerObservationLike | undefined;
+    for (const observation of observations) {
+      if (observation.sourceName !== SITE_TITLE_LAB_NAME_SOURCE || observation.field !== field) {
+        continue;
+      }
+      if (websiteIdentity(textValue(observation.sourceUrl)) !== website) continue;
+      if (!admits(observation.value)) continue;
+      const observedAt =
+        observation.observedAt instanceof Date ? observation.observedAt.getTime() : 0;
+      const latestAt = latest?.observedAt instanceof Date ? latest.observedAt.getTime() : -1;
+      if (observedAt > latestAt) latest = observation;
+    }
+    return latest;
+  };
+  const name = latestFromSite(
+    'name',
+    (value) => Boolean(textValue(value)) && !valueIsRefused(fieldValueRefusals, 'name', value),
+  );
+  const entityType = latestFromSite(
+    'entityType',
+    (value) => textValue(value).toUpperCase() === 'LAB',
+  );
+  return name && entityType ? { name, entityType } : null;
+}
+
+/**
+ * A row whose own current website states a lab name in its title is that lab, so it is
+ * re-derived as `LAB` under that name on every resolve, with no lock (#5059).
+ *
+ * The rosters that mint faculty research rows each assert the default type and the
+ * placeholder name, and two agreeing rosters outvote the one observation read from the
+ * lab's own site, so resolution alone reverted promoted rows. The promotion wrote the
+ * observation only after refusing a shared group, another researcher's site, and a name
+ * the identity authority does not read as the row's own. Withheld when the lead already
+ * has another lab row, which is a merge rather than a retype (2026-08-25 precedence).
+ * The name and type keep the site observations as provenance, which is what the serve
+ * gate (`isUnbackedLabNameShell`) reads as a name read off the row's own website.
+ */
+function reclassifySiteNamedResearchAsLab(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  authority: ResearchEntityNameIdentityAuthority;
+  siteStatedLab: ReturnType<typeof siteStatedLabForWebsite>;
+}): number {
+  const { set, unset, confidenceByField, entityDoc, authority, siteStatedLab } = input;
+  if (!siteStatedLab) return 0;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return 0;
+  }
+  const siteStatedLabName = textValue(siteStatedLab.name.value);
+  const projected = documentAsProjected(set, unset, entityDoc);
+  const type = textValue(projected.entityType).toUpperCase();
+  if (type !== 'FACULTY_RESEARCH_AREA' && type !== 'LAB') return 0;
+  const provenanceFor = {
+    name: observationFieldProvenance(siteStatedLab.name),
+    entityType: observationFieldProvenance(siteStatedLab.entityType),
+  };
+  if (
+    type === 'LAB' &&
+    textValue(projected.name) === siteStatedLabName &&
+    materializerValuesDeepEqual(projected.fieldProvenance?.name, provenanceFor.name) &&
+    materializerValuesDeepEqual(projected.fieldProvenance?.entityType, provenanceFor.entityType)
+  ) {
+    return 0;
+  }
+  const leadPersonId = textValue(authority.leadPersonId);
+  const selfId = serializedDocumentId(entityDoc?._id) || '';
+  if (
+    leadPersonId &&
+    othersThan(authority.labRowRoster?.labIdsByLeadPersonId.get(leadPersonId), selfId)
+  ) {
+    return 0;
+  }
+
+  const labIdentity = { entityType: 'LAB', kind: mapEntityTypeToResearchGroupKind('LAB') };
+  set.entityType = labIdentity.entityType;
+  set.kind = labIdentity.kind;
+  for (const field of ['kind', ...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS]) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  for (const [field, provenance] of Object.entries(provenanceFor)) {
+    if (!provenance) continue;
+    delete unset[`fieldProvenance.${field}`];
+    set[`fieldProvenance.${field}`] = provenance;
+  }
+  set.name = siteStatedLabName;
+  if (textValue(projected.displayName) && !input.manuallyLockedFields.includes('displayName')) {
+    set.displayName = siteStatedLabName;
+  }
+  return 1;
+}
+
 function documentAsProjected(
   set: Record<string, unknown>,
   unset: Record<string, ''>,
@@ -7735,12 +7914,15 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
   manuallyLockedFields: string[];
   labAssertedByLiveObservation: boolean;
   leadPersonName: unknown;
+  siteStatedLabName?: string;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
   if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
     return 0;
   }
   const projected = documentAsProjected(set, unset, entityDoc);
+  // A name the row's own current website states in its title is read, not composed (#5059).
+  if (input.siteStatedLabName && textValue(projected.name) === input.siteStatedLabName) return 0;
   // A composed full-name heading is what the live name observations repeat, so their
   // assertion of a lab is not evidence of one.
   if (
@@ -9834,7 +10016,13 @@ export async function materializeEntity(
       ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
       : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
-    ? withoutLaneRefusedWebsiteUrls(gonePageWithdrawal.observations, laneScopedRowIdentities)
+    ? withoutLaneRefusedWebsiteUrls(
+        withoutLaneRefusedResearchHomeNames(
+          gonePageWithdrawal.observations,
+          laneScopedRowIdentities,
+        ),
+        laneScopedRowIdentities,
+      )
     : { observations: obs, withdrawnValues: [] };
   const fellowshipEvidence =
     entityType === 'fellowship'
@@ -10117,6 +10305,15 @@ export async function materializeEntity(
       : {}),
   };
 
+  const entityScalarUnchanged =
+    Boolean(entityDoc) &&
+    isMaterializerProjectionNoOp(
+      entityDoc as Record<string, unknown>,
+      set,
+      unset,
+      Object.keys(Model.schema?.paths ?? {}),
+    );
+
   if (options.dryRun) {
     return {
       entityType,
@@ -10128,6 +10325,7 @@ export async function materializeEntity(
       resolved,
       plannedSet: set,
       plannedUnset: unset,
+      ...(entityScalarUnchanged ? { plannedWriteSkip: plannedWriteSkipReason(set, unset) } : {}),
       ...reportedProjectionOutcomes,
     };
   }
@@ -10154,15 +10352,6 @@ export async function materializeEntity(
     textValue(entityDoc?.slug),
   );
   if (!entityDoc) options.chunkPrefetch?.markCreated();
-
-  const entityScalarUnchanged =
-    Boolean(entityDoc) &&
-    isMaterializerProjectionNoOp(
-      entityDoc as Record<string, unknown>,
-      set,
-      unset,
-      Object.keys(Model.schema?.paths ?? {}),
-    );
 
   let created = false;
   if (entityDoc) {
@@ -10585,20 +10774,29 @@ async function centerRelationshipTargetIdsAssertedByOtherSources(
     {
       entityType: 'researchEntityRelationship',
       entityKey: { $in: relationshipKeys },
-      field: 'targetEntityKey',
+      field: { $in: ['targetEntityKey', RELATIONSHIP_TARGET_WEBSITE_URL_FIELD] },
     },
     sourceName,
   );
   const targetIds = new Set<string>();
-  for (const targetKey of uniqueStrings(targetRows.map((row) => textValue(row.value)))) {
-    const targetId = await resolveCenterRelationshipTargetId(targetKey);
+  const targets = relationshipTargetIdentities(
+    targetRows.map((row) => ({
+      entityKey: textValue(row.entityKey),
+      field: textValue(row.field),
+      value: row.value,
+    })),
+  );
+  for (const target of targets) {
+    const targetId = await resolveCenterRelationshipTargetId(target);
     if (targetId) targetIds.add(targetId);
   }
   return targetIds;
 }
 
-async function resolveCenterRelationshipTargetId(targetEntityKey: string): Promise<string | null> {
-  const { resolvedTarget } = await resolveRelationshipTarget(ResearchEntity, targetEntityKey);
+async function resolveCenterRelationshipTargetId(
+  target: RelationshipTargetIdentity,
+): Promise<string | null> {
+  const { resolvedTarget } = await resolveRelationshipTarget(ResearchEntity, target);
   return normalizeMaterializerObjectId(resolvedTarget?._id) || null;
 }
 
@@ -10702,6 +10900,7 @@ export async function materializeObservedEntitiesInChunks(
       } catch (error) {
         outcome = { error };
       }
+      recordScrapeRunProgress();
       onRow(row, outcome);
     }
     start = end;
@@ -10862,6 +11061,17 @@ export async function materializeFromRun(
   if (centerDirectorRetirement) {
     console.info(
       `[center-director-retirement] ${centerDirectorRetirement.dryRun ? 'planned' : 'reconciled'} ${centerDirectorRetirement.centersRead} center read(s): ${centerDirectorRetirement.retiredEdges} lead edge(s) ended, ${centerDirectorRetirement.edgesAwaitingSecondRead} awaiting a second read, ${centerDirectorRetirement.unjudgedEdges} not judged, ${centerDirectorRetirement.indexSyncFailures} center index sync failure(s)`,
+    );
+  }
+  const officialProfileDirectorRetirement =
+    await reconcileOfficialProfileDirectorRetirementsFromRun(
+      scrapeRunId,
+      centerRosterRetirementDeps(options, OFFICIAL_PROFILE_DIRECTOR_LANE),
+      { dryRun: options.dryRun },
+    );
+  if (officialProfileDirectorRetirement) {
+    console.info(
+      `[official-profile-director-retirement] ${JSON.stringify(officialProfileDirectorRetirement)}`,
     );
   }
   // Runs beside the centres retirement because it is the same contract over another lane's claims.

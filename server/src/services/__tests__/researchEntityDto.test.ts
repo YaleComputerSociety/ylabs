@@ -4,6 +4,7 @@ import {
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
+  publicFellowshipRecipients,
 } from '../researchEntityDto';
 import { servedCitationIsWithheld } from '../servedCitationPolicy';
 import { MAX_SHORT_DESCRIPTION_LENGTH } from '../../utils/descriptionHygiene';
@@ -628,7 +629,7 @@ describe('researchEntityDto', () => {
     expect(dto.websiteUrl).toBe('http://het.yale.edu/');
   });
 
-  it('redacts direct contact details from public evidence-style fields', () => {
+  it('serves the email and phone number in an evidence quote as written', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-evidence-redaction',
       slug: 'evidence-redaction-lab',
@@ -638,8 +639,19 @@ describe('researchEntityDto', () => {
     });
 
     expect(dto.undergradEvidenceQuote).toBe(
-      'Interested students can email [email redacted] or call [phone redacted].',
+      'Interested students can email private-contact@yale.edu or call 203-432-1234.',
     );
+  });
+
+  it('withholds a quote that lists members with their own contact details (#5041)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-people-listing',
+      slug: 'people-listing-lab',
+      name: 'People Listing Lab',
+      undergradEvidenceQuote:
+        'Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
+    });
+    expect(dto.undergradEvidenceQuote).toBeUndefined();
   });
 
   it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
@@ -2231,5 +2243,40 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
       ],
     } as Record<string, unknown>);
     expect(dto.sourceFieldContributions).toEqual([]);
+  });
+});
+
+describe('publicFellowshipRecipients', () => {
+  it('serves bounded recipients with a public source link and drops malformed rows', () => {
+    expect(
+      publicFellowshipRecipients([
+        {
+          studentName: 'Avery Quill',
+          year: 2025,
+          programName: 'STARS II',
+          projectTitle: 'Mapping Circuit Activity',
+          piAsPrinted: 'Jordan Alder, MD PhD',
+          sourceUrl: 'https://example.yale.edu/2025-symposium.pdf',
+        },
+        { studentName: '', year: 2025, programName: 'STARS II' },
+        { studentName: 'Harper Wren', year: 25, programName: 'STARS II' },
+        {
+          studentName: 'Rowan Thistle',
+          year: 2024,
+          programName: 'STARS II',
+          sourceUrl: 'javascript:alert(1)',
+        },
+      ]),
+    ).toEqual([
+      {
+        studentName: 'Avery Quill',
+        year: 2025,
+        programName: 'STARS II',
+        projectTitle: 'Mapping Circuit Activity',
+        sourceUrl: 'https://example.yale.edu/2025-symposium.pdf',
+      },
+      { studentName: 'Rowan Thistle', year: 2024, programName: 'STARS II' },
+    ]);
+    expect(publicFellowshipRecipients('not a list')).toEqual([]);
   });
 });

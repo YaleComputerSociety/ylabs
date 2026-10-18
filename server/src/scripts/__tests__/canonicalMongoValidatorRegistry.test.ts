@@ -135,7 +135,18 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5000. The only drift is researchers.identifiers gaining email, an optional
+    // Reviewed for #5092. The only drift is researchers losing accountId, an optional objectId
+    // linking a researcher to a login. Accounts are environment-local since #5088, no code
+    // writes or reads the link, and 0 Development and Beta researchers carry it. No other
+    // collection or property changed.
+    //
+    // Reviewed for #5039 before that. The only drift is role_assignments.rosterProvenance gaining
+    // listingTitle, an optional bounded string holding the title a roster page lists beside
+    // the member, which the detail card shows when the person's own record has no title.
+    // Edges written before it, and edges from lanes that list no title, carry none. No other
+    // collection or property changed.
+    //
+    // Reviewed for #5000 before that. The only drift is researchers.identifiers gaining email, an optional
     // lowercased string of at most 254 characters, so a researcher's address no longer lives
     // only on its linked account. Researchers written before it carry none until the
     // backfill copies the linked account's email. No other collection or property changed.
@@ -199,6 +210,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('405d9432f4aad56bafe9aeffc94d2138968388e38a878377212f9290447d7855');
+    ).toBe('b11d3b3402a1d3a73c93e381eeff38f63ce536bdbf3f6ae1dffe2135c5b4259a');
   });
 });

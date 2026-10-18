@@ -607,7 +607,7 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     collection: 'users',
     field: 'facultyMemberId',
     meaning: 'Faculty identity reference',
-    target: 'Researcher.accountId after identity reconciliation',
+    target: 'Researcher.identifiers.netid after identity reconciliation',
   },
   {
     collection: 'users',

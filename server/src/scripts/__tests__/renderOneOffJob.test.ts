@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createRenderJob,
   describeRenderService,
+  listRenderDeploys,
+  listRenderJobs,
   waitForRenderJob,
   type FetchLike,
 } from '../renderOneOffJob';
@@ -112,5 +114,40 @@ describe('Render one-off jobs', () => {
       }),
     ).rejects.toThrow('it keeps running on Render');
     expect(calls.every((call) => call.method === 'GET')).toBe(true);
+  });
+
+  it('lists deploys and jobs from the wrapped REST shape and the flat CLI shape', async () => {
+    const { fetch, calls } = fakeFetch([
+      {
+        body: [
+          {
+            deploy: { id: 'dep-1', status: 'build_failed', commit: { id: 'sha-new' } },
+            cursor: 'a',
+          },
+          { id: 'dep-2', status: 'live', commit: { id: 'sha-live' } },
+          { cursor: 'no-id' },
+        ],
+      },
+      {
+        body: [
+          { job: { id: 'job-1', serviceId: 'crn-1', status: 'running' }, cursor: 'a' },
+          { id: 'job-2', serviceId: 'crn-1', status: 'succeeded' },
+        ],
+      },
+    ]);
+    const deploys = await listRenderDeploys({ apiKey: 'rnd_key', fetch }, 'crn-1');
+    expect(deploys.map((deploy) => [deploy.id, deploy.status, deploy.commitId])).toEqual([
+      ['dep-1', 'build_failed', 'sha-new'],
+      ['dep-2', 'live', 'sha-live'],
+    ]);
+    const jobs = await listRenderJobs({ apiKey: 'rnd_key', fetch }, 'crn-1');
+    expect(jobs.map((job) => [job.id, job.status])).toEqual([
+      ['job-1', 'running'],
+      ['job-2', 'succeeded'],
+    ]);
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api.render.com/v1/services/crn-1/deploys?limit=20',
+      'https://api.render.com/v1/services/crn-1/jobs?limit=20',
+    ]);
   });
 });

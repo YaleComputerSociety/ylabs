@@ -5,7 +5,7 @@ import {
   type ResearchEntityPiDedupeGroup,
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
-import { isCenterOrInstituteEntity } from '../utils/profileAreaDuplicateRisk';
+import { isOrganizationalHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import {
   addIndexSyncOutcomes,
@@ -71,7 +71,7 @@ export function selectEponymousFraLabMergeGroups(
     if (group.dedupeCategory !== 'profile_area_shell_with_concrete_home') return false;
     if (!groupShadowsFacultyResearchArea(group, entitiesById)) return false;
     const canonical = entitiesById.get(group.canonicalEntityId);
-    if (canonical && isCenterOrInstituteEntity(canonical)) return false;
+    if (canonical && isOrganizationalHomeEntity(canonical)) return false;
     return true;
   });
 }

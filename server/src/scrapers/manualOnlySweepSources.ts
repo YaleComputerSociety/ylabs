@@ -6,8 +6,6 @@ const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
     'backward-looking recipients source with no clean public feed; run from curated input',
   'undergrad-research-posting':
     'no official public page publishes postings in the shape the lane reads, so its page list is empty and it would trip the barren-streak guard on every sweep (#3550, #3553); return it to the sweep when a replacement page is configured (#3551)',
-  'official-research-home-roster':
-    'sampled roster precision review not yet recorded by a person: the lane claims named non-lead people are current members, and research-homes:audit-rosters --strict has never been recorded reporting broadEnablementReady (#2412, #4025); after the lane fix, the 2026-10-04 strict re-run on Development measured brokenLanes 0, every snapshot key holding one fresh CURRENT edge and no twin, and 7 of 7 sampled roles honest on an agent check, which is not a recorded review (#4758); return it to the sweep when a person reviews the sample and records it with --sampled-precision-reviewed-by',
   'lab-microsite-undergrad-llm':
     "stays manual-only for runtime, not precision, by owner decision on 2026-10-11 (#3569): the 2026-09-29 re-measure with journey:eval --case=undergrad-evidence-quote-precision judged all 50 drawn served quotes and read badge precision 42/50 = 0.84 (95% Wilson 0.71 to 0.92), up from 0.36 at #3569, so the browse card shows the quote beside its badge; but a full pass at about 4 to 19 labs per minute over 4,808 labs takes 4 to 20 hours against a weekly sweep of about 8 hours and Render's 12-hour job limit (#3636), so run it scoped by hand when the quotes need refreshing",
 };

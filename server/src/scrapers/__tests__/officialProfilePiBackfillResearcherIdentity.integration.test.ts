@@ -72,31 +72,9 @@ describe('official profile backfill reads researcher-held identity (#5000)', () 
     });
   });
 
-  it('still finds a profile user through a linked account when the researcher holds no netid', async () => {
-    const account = await Account.create({
-      netid: 'jf777',
-      email: 'jules.fixture@example.test',
-      status: 'ACTIVE',
-      archived: false,
-    });
-    const researcher = await seedIdentityHolder({ identifiers: {}, accountId: account._id });
-
-    const users = await profileUsersByNetids(['jf777']);
-
-    expect(users.map((user) => [user._id, user.netid, user.email])).toEqual([
-      [String(researcher._id), 'jf777', 'jules.fixture@example.test'],
-    ]);
-  });
-
   it('resolves nobody when two researchers answer for one netid', async () => {
-    const account = await Account.create({
-      netid: 'jf777',
-      email: 'jules.fixture@example.test',
-      status: 'ACTIVE',
-      archived: false,
-    });
     await seedIdentityHolder();
-    await seedIdentityHolder({ identifiers: {}, accountId: account._id });
+    await seedIdentityHolder({ identifiers: { netid: 'JF777' } });
 
     expect(await profileUsersByNetids(['jf777'])).toEqual([]);
   });
@@ -123,21 +101,8 @@ describe('official profile backfill reads researcher-held identity (#5000)', () 
     });
   });
 
-  it('reads an advisor netid from the researcher before any linked account', async () => {
-    const account = await Account.create({
-      netid: 'old9',
-      email: 'jules.fixture@example.test',
-      status: 'ACTIVE',
-      archived: false,
-    });
-
+  it('reads an advisor netid from the researcher identifiers only', async () => {
     expect(await netidForAdvisorResearcher({ identifiers: { netid: 'jf777' } })).toBe('jf777');
-    expect(
-      await netidForAdvisorResearcher({ identifiers: { netid: 'jf777' }, accountId: account._id }),
-    ).toBe('jf777');
-    expect(await netidForAdvisorResearcher({ identifiers: {}, accountId: account._id })).toBe(
-      'old9',
-    );
     expect(await netidForAdvisorResearcher({ identifiers: {} })).toBe('');
   });
 });

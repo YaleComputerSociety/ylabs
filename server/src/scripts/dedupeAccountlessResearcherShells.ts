@@ -35,7 +35,7 @@ import {
   planAliasTwinFolds,
   type AliasTwinFoldRefusal,
 } from './dedupeAccountlessResearcherShellsCore';
-import { isLocalPartAccount } from './mergeLocalPartNetidAccountsCore';
+import { isLocalPartNetid } from '../utils/localPartNetid';
 
 dotenv.config({ quiet: true });
 
@@ -167,12 +167,10 @@ async function loadRosterIdentityCandidates(
   researcherIdentities: ReadonlyArray<{
     id: string;
     displayName?: unknown;
-    accountId?: unknown;
     email?: unknown;
     orcid?: unknown;
     netid?: unknown;
   }>,
-  netidByAccountId: Map<string, unknown>,
 ): Promise<Map<string, RosterIdentityCandidate[]>> {
   const candidatesByShellId = new Map<string, RosterIdentityCandidate[]>();
   if (shellIds.length === 0) return candidatesByShellId;
@@ -221,18 +219,14 @@ async function loadRosterIdentityCandidates(
     for (const personId of (key && provenPersonIdsByKey.get(key)) || []) {
       const identity = identityById.get(personId);
       if (!identity || personId === shellId) continue;
-      const netid = identity.netid ?? netidByAccountId.get(idKey(identity.accountId));
+      const netid = identity.netid;
       const list = candidatesByShellId.get(shellId) ?? [];
       list.push({
         id: personId,
         displayName: identity.displayName,
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
-        tier: researcherIdentityTier({
-          accountId: identity.accountId,
-          email: identity.email,
-          netid,
-        }),
+        tier: researcherIdentityTier({ email: identity.email, netid }),
       });
       candidatesByShellId.set(shellId, list);
     }
@@ -247,13 +241,11 @@ async function loadSharedRowCandidates(
   researcherIdentities: ReadonlyArray<{
     id: string;
     displayName?: unknown;
-    accountId?: unknown;
     email?: unknown;
     orcid?: unknown;
     netid?: unknown;
     title?: unknown;
   }>,
-  netidByAccountId: Map<string, unknown>,
 ): Promise<Map<string, SharedRowCandidate[]>> {
   const candidatesByShellId = new Map<string, SharedRowCandidate[]>();
   if (shellIds.length === 0) return candidatesByShellId;
@@ -302,26 +294,20 @@ async function loadSharedRowCandidates(
       const identity = identityById.get(personId);
       if (!identity || personId === shellId || list.some((entry) => entry.id === personId))
         continue;
-      const netid = identity.netid ?? netidByAccountId.get(idKey(identity.accountId));
+      const netid = identity.netid;
       list.push({
         id: personId,
         displayName: identity.displayName,
         title: identity.title,
         orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
         netid: bareNetid(netid),
-        tier: researcherIdentityTier({
-          accountId: identity.accountId,
-          email: identity.email,
-          netid,
-        }),
+        tier: researcherIdentityTier({ email: identity.email, netid }),
       });
     }
     candidatesByShellId.set(shellId, list);
   }
   return candidatesByShellId;
 }
-
-const idText = (value: unknown): string => (value == null ? '' : String(value));
 
 /** An alias twin's `identifiers.netid` is the email local part, never a netid to hand on. */
 function withoutNetidIdentifier(
@@ -335,40 +321,31 @@ function withoutNetidIdentifier(
 }
 
 async function planAliasTwinFoldsFor(
-  accounts: Array<Record<string, unknown>>,
-  researchers: ReadonlyArray<{ id: string; accountId?: unknown; displayName?: unknown }>,
+  researchers: ReadonlyArray<{
+    id: string;
+    displayName?: unknown;
+    netid?: unknown;
+    email?: unknown;
+  }>,
+  loginNetids: ReadonlySet<string>,
 ) {
-  const asTwinAccount = (doc: Record<string, unknown>) => ({
-    id: idText(doc._id),
-    netid: typeof doc.netid === 'string' ? doc.netid : '',
-    live: doc.archived !== true && doc.status !== 'DISABLED',
-    hasLogin: doc.lastLoginAt != null,
-  });
-  const twinAccounts = accounts
-    .filter((doc) => isLocalPartAccount(doc as { netid?: unknown; email?: unknown }))
-    .map(asTwinAccount);
+  const twinResearchers = researchers
+    .filter((entry) => isLocalPartNetid(entry))
+    .map((entry) => ({ id: entry.id, netid: String(entry.netid), displayName: entry.displayName }));
   const aliasNetidByTwinNetid = new Map<string, string>();
-  for (const twin of twinAccounts) {
+  for (const twin of twinResearchers) {
     const resolution = await resolveNetidForRosterEmailAlias(twin.netid);
     if (resolution.status === 'resolved') aliasNetidByTwinNetid.set(twin.netid, resolution.netid);
   }
   return planAliasTwinFolds({
-    twinAccounts,
-    accountsByNetid: new Map(
-      accounts
-        .map(asTwinAccount)
-        .filter((account) => account.netid)
-        .map((a) => [a.netid, a]),
+    twinResearchers,
+    researcherByNetid: new Map(
+      researchers
+        .filter((entry) => typeof entry.netid === 'string' && entry.netid)
+        .map((entry) => [String(entry.netid), { id: entry.id, displayName: entry.displayName }]),
     ),
     aliasNetidByTwinNetid,
-    researcherByAccountId: new Map(
-      researchers
-        .filter((entry) => entry.accountId)
-        .map((entry) => [
-          idText(entry.accountId),
-          { id: entry.id, displayName: entry.displayName },
-        ]),
-    ),
+    loginNetids,
   });
 }
 
@@ -383,7 +360,6 @@ export async function dedupeAccountlessResearcherShells(options: {
     {
       projection: {
         displayName: 1,
-        accountId: 1,
         'identifiers.orcid': 1,
         'identifiers.netid': 1,
         'identifiers.email': 1,
@@ -397,7 +373,6 @@ export async function dedupeAccountlessResearcherShells(options: {
   const researcherIdentities = (liveResearchers as any[]).map((doc) => ({
     id: idKey(doc._id),
     displayName: doc.displayName,
-    accountId: doc.accountId,
     email: doc.identifiers?.email,
     orcid: doc.identifiers?.orcid,
     netid: doc.identifiers?.netid,
@@ -408,33 +383,19 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
 
-  // A netid twin carries no `identifiers.netid` of its own, so its netid is only
-  // reachable through the account it is keyed on. Joining through `accounts` is
-  // what makes the pair visible at all (#3166).
-  const Account = mongoose.connection.collection('accounts');
-  const accounts = await Account.find(
-    {},
-    { projection: { netid: 1, email: 1, archived: 1, status: 1, lastLoginAt: 1 } },
-  ).toArray();
-  const netidByAccountId = new Map<string, unknown>(
-    (accounts as any[]).map((doc) => [idKey(doc._id), doc.netid]),
+  const loginNetids = new Set(
+    (
+      await mongoose.connection
+        .collection('accounts')
+        .find({ lastLoginAt: { $ne: null } }, { projection: { netid: 1 } })
+        .toArray()
+    )
+      .map((doc: any) => (typeof doc.netid === 'string' ? doc.netid : ''))
+      .filter(Boolean),
   );
-  const canonicalNetidIndex = buildCanonicalNetidIndex(
-    researcherIdentities.map((entry) => ({
-      id: entry.id,
-      accountId: entry.accountId,
-      email: entry.email,
-      orcid: entry.orcid,
-      netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
-    })),
-  );
+  const canonicalNetidIndex = buildCanonicalNetidIndex(researcherIdentities);
 
-  const verifiedProfileIndex = buildVerifiedPrimaryProfileIndex(
-    researcherIdentities.map((entry) => ({
-      ...entry,
-      netid: entry.netid ?? netidByAccountId.get(idKey(entry.accountId)),
-    })),
-  );
+  const verifiedProfileIndex = buildVerifiedPrimaryProfileIndex(researcherIdentities);
 
   const foldableShells = researcherIdentities.filter(
     (entry) => researcherIdentityTier(entry) !== 'DIRECTORY',
@@ -456,7 +417,6 @@ export async function dedupeAccountlessResearcherShells(options: {
     RoleAssignment,
     foldableShells.map((entry) => entry.id),
     researcherIdentities,
-    netidByAccountId,
   );
 
   const sharedRowCandidatesByShellId = await loadSharedRowCandidates(
@@ -464,7 +424,6 @@ export async function dedupeAccountlessResearcherShells(options: {
     mongoose.connection.collection('research_entities'),
     foldableShells.map((entry) => entry.id),
     researcherIdentities,
-    netidByAccountId,
   );
 
   const decidedTargetByShellId = new Map<string, string>();
@@ -486,7 +445,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
     }
   }
-  const aliasTwinPlan = await planAliasTwinFoldsFor(accounts as any[], researcherIdentities);
+  const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
   for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
     decidedTargetByShellId.set(twinId, realId);
   }
@@ -692,7 +651,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       identifiers: {},
       profile: {},
     };
-    const shellSnapshot = aliasTwinPlan.twinAccountIdByTwinResearcherId.has(shellId)
+    const shellSnapshot = aliasTwinPlan.targetByTwinResearcherId.has(shellId)
       ? withoutNetidIdentifier(storedShellSnapshot)
       : storedShellSnapshot;
     const plan = planResearcherAttributeUnion(canonicalState, shellSnapshot);
@@ -746,13 +705,10 @@ export async function dedupeAccountlessResearcherShells(options: {
         transferredUniqueIdentifierUnsets[`identifiers.${field}`] = '';
       }
     }
-    // The twin account is merged into the real one next, which repoints `accountId`, and the
-    // index allows one researcher per account, so the archived twin lets go of it (#4988).
-    // It lets go of a local-part `identifiers.netid` too: the netid resolver does not skip an
-    // archived researcher, so a twin still holding the alias would keep answering for it, and
-    // the account merge refuses while any researcher holds it.
-    if (aliasTwinPlan.twinAccountIdByTwinResearcherId.has(shellId)) {
-      transferredUniqueIdentifierUnsets.accountId = '';
+    // The archived twin lets go of its local-part `identifiers.netid`: the netid resolver does
+    // not skip an archived researcher, so a twin still holding the alias would keep answering
+    // for it (#4988).
+    if (aliasTwinPlan.targetByTwinResearcherId.has(shellId)) {
       transferredUniqueIdentifierUnsets['identifiers.netid'] = '';
     }
     if (Object.keys(transferredUniqueIdentifierUnsets).length) {

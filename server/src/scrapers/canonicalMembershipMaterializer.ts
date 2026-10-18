@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { Account } from '../models/account';
 import { Researcher, isValidOrcid } from '../models/researcher';
 import {
   isRosterIdentityBasis,
@@ -254,6 +253,7 @@ const cleanRosterProvenance = (
   if (trimmed(provenance.sourceUrl)) cleaned.sourceUrl = trimmed(provenance.sourceUrl);
   if (trimmed(provenance.profileUrl)) cleaned.profileUrl = trimmed(provenance.profileUrl);
   if (trimmed(provenance.sectionLabel)) cleaned.sectionLabel = trimmed(provenance.sectionLabel);
+  if (trimmed(provenance.listingTitle)) cleaned.listingTitle = trimmed(provenance.listingTitle);
   if (trimmed(provenance.evidenceStatus))
     cleaned.evidenceStatus = trimmed(provenance.evidenceStatus);
   if (trimmed(provenance.membershipKey)) cleaned.membershipKey = trimmed(provenance.membershipKey);
@@ -349,10 +349,9 @@ export function buildCanonicalRoleAssignmentUpsert(
 }
 
 /**
- * Accounts are created only at login (#5000), so a roster identity reaches a researcher
- * through `identifiers.netid` and mints the researcher alone: the scraper never writes
- * `accounts`. A researcher already linked to an account keeps that link, which is why the
- * account lookup survives as the second key.
+ * Accounts are created only at login (#5000) and stay in the environment that made them
+ * (#5088), so a roster identity reaches a researcher through `identifiers.netid` and mints
+ * the researcher alone: the scraper never writes `accounts`.
  */
 async function researcherIdHoldingIdentityNetid(
   netid: string,
@@ -360,13 +359,7 @@ async function researcherIdHoldingIdentityNetid(
   const byIdentifier = await Researcher.findOne({ 'identifiers.netid': netid })
     .select('_id')
     .lean();
-  const holderId = toObjectId((byIdentifier as { _id?: unknown } | null)?._id);
-  if (holderId) return holderId;
-  const account = await Account.findOne({ netid }).select('_id').lean();
-  const accountId = toObjectId((account as { _id?: unknown } | null)?._id);
-  if (!accountId) return undefined;
-  const linked = await Researcher.findOne({ accountId }).select('_id').lean();
-  return toObjectId((linked as { _id?: unknown } | null)?._id);
+  return toObjectId((byIdentifier as { _id?: unknown } | null)?._id);
 }
 
 async function mintResearcherForIdentityNetid(
@@ -408,7 +401,7 @@ async function resolveOrCreateResearcherId(
 
   if (orcid) {
     const existing = await Researcher.findOne({ 'identifiers.orcid': orcid })
-      .select('_id accountId identifiers.netid')
+      .select('_id identifiers.netid')
       .lean();
     if (existing) {
       if (researcherHoldsYaleIdentity(existing)) return undefined;
@@ -426,7 +419,7 @@ async function resolveOrCreateResearcherId(
     } catch (error) {
       if (isDuplicateKeyError(error)) {
         const fallback = await Researcher.findOne({ 'identifiers.orcid': orcid })
-          .select('_id accountId identifiers.netid')
+          .select('_id identifiers.netid')
           .lean();
         if (fallback && researcherHoldsYaleIdentity(fallback)) return undefined;
         return toObjectId((fallback as { _id?: unknown } | null)?._id);
@@ -463,7 +456,6 @@ async function adoptNoisyNameOnlyResearcherId(
   const candidates = await Researcher.find({
     displayName: new RegExp(escapeRegex(displayName), 'i'),
     archived: { $ne: true },
-    accountId: { $exists: false },
     'identifiers.orcid': { $exists: false },
   })
     .select('_id displayName')
@@ -488,7 +480,6 @@ async function findOrCreateNameOnlyResearcherId(
   const nameOnlyFilter = {
     displayName,
     archived: { $ne: true },
-    accountId: { $exists: false },
     'identifiers.orcid': { $exists: false },
   };
   const existingNameOnly = await Researcher.findOne(nameOnlyFilter).select('_id').lean();
@@ -525,10 +516,8 @@ async function resolveOrCreateNameOnlyResearcherId(
 }
 
 function researcherHoldsYaleIdentity(researcher: unknown): boolean {
-  const record = researcher as { accountId?: unknown; identifiers?: { netid?: unknown } };
-  return (
-    Boolean(toObjectId(record.accountId)) || Boolean(normalizedNetid(record.identifiers?.netid))
-  );
+  const record = researcher as { identifiers?: { netid?: unknown } };
+  return Boolean(normalizedNetid(record.identifiers?.netid));
 }
 
 async function liveResearcherId(
@@ -543,7 +532,7 @@ async function liveResearcherId(
 
 /**
  * Whether a name-only mint under this display name would stand beside a researcher who
- * already carries an identity (an account, a netid or an ORCID) under the same name.
+ * already carries an identity (a netid or an ORCID) under the same name.
  *
  * The comparison is the one the mint and the accountless-shell dedupe both make, the
  * canonical display name compared without case or spacing, so the answer here is exactly
@@ -556,7 +545,6 @@ export async function identifiedResearcherHoldsDisplayName(displayName: unknown)
     displayName: new RegExp(`^\\s*${tokens.map(escapeRegex).join('\\s+')}\\s*$`, 'i'),
     archived: { $ne: true },
     $or: [
-      { accountId: { $exists: true, $ne: null } },
       { 'identifiers.netid': { $exists: true, $nin: [null, ''] } },
       { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
     ],

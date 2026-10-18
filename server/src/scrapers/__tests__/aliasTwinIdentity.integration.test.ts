@@ -70,13 +70,15 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
       archived: false,
     });
     realResearcherId = (
-      await Researcher.create({ displayName: 'Sam Synthetic', accountId: real._id })
+      await Researcher.create({
+        displayName: 'Sam Synthetic',
+        identifiers: { netid: real.netid },
+      })
     )._id;
     twinResearcherId = (
       await Researcher.create({
         displayName: 'Sam R. Synthetic',
-        accountId: twinAccountId,
-        identifiers: { netid: LOCAL_PART },
+        identifiers: { netid: LOCAL_PART, email: EMAIL },
       })
     )._id;
     await Observation.create({
@@ -116,7 +118,6 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
 
     const twin = await Researcher.findById(twinResearcherId).lean();
     expect(twin?.archived).toBe(true);
-    expect(twin?.accountId).toBeUndefined();
     expect(twin?.identifiers?.netid).toBeUndefined();
     const edges = await RoleAssignment.find({ archived: { $ne: true } }).lean();
     expect(edges.map((edge) => String(edge.personId))).toEqual([String(realResearcherId)]);

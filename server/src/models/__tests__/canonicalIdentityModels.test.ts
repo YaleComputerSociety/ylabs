@@ -128,15 +128,13 @@ describe('canonical identity and reference models', () => {
     }
   });
 
-  it('keeps the account-person relationship only on Person.accountId', () => {
+  it('keeps no account relationship on a researcher, because accounts are environment-local (#5092)', () => {
     expect(accountSchema.path('personId')).toBeUndefined();
     expect(accountSchema.path('roles')).toBeUndefined();
-    expect(Researcher.schema.path('accountId')?.options.ref).toBe('Account');
-
-    const accountIndex = Researcher.schema
-      .indexes()
-      .find(([fields]) => fields.accountId === 1 && Object.keys(fields).length === 1);
-    expect(accountIndex?.[1]).toMatchObject({ unique: true, sparse: true });
+    expect(Researcher.schema.path('accountId')).toBeUndefined();
+    expect(
+      Researcher.schema.indexes().some(([fields]) => Object.keys(fields).includes('accountId')),
+    ).toBe(false);
     expect(
       Researcher.schema
         .indexes()

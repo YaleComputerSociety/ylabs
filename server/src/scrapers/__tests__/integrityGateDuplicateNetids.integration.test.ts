@@ -28,36 +28,6 @@ describe('runPostMaterializationIntegrityGate duplicate netid detection', () => 
     return summary.samples.duplicatePeople.filter((group) => group.identityField === 'netid');
   };
 
-  it('surfaces one netid split across an account-backed researcher and an accountless twin', async () => {
-    const db = mongoose.connection.db!;
-    const accountId = new mongoose.Types.ObjectId();
-    const accountBacked = new mongoose.Types.ObjectId();
-    const accountlessTwin = new mongoose.Types.ObjectId();
-
-    await db.collection('accounts').insertOne({
-      _id: accountId,
-      netid: 'jr55',
-      email: 'jr55@example.test',
-      archived: false,
-    });
-    await db.collection('researchers').insertMany([
-      { _id: accountBacked, displayName: 'Jane Roe', accountId, archived: false },
-      {
-        _id: accountlessTwin,
-        displayName: 'Jane Roe',
-        archived: false,
-        identifiers: { netid: 'jr55' },
-      },
-    ]);
-
-    const groups = await netidGroups();
-    expect(groups).toHaveLength(1);
-    expect(groups[0].identityValue).toBe('jr55');
-    expect(groups[0].userIds.sort()).toEqual(
-      [String(accountBacked), String(accountlessTwin)].sort(),
-    );
-  });
-
   it('surfaces case-variant duplicate netids written directly onto researchers', async () => {
     const db = mongoose.connection.db!;
     const lowerCased = new mongoose.Types.ObjectId();
@@ -227,31 +197,6 @@ describe('runPostMaterializationIntegrityGate duplicate email detection', () => 
     expect(groups).toHaveLength(1);
     expect(groups[0].identityValue).toBe('ada.fixture@example.test');
     expect(groups[0].userIds.sort()).toEqual([String(first), String(second)].sort());
-  });
-
-  it('falls back to the linked account email for a researcher that holds none', async () => {
-    const db = mongoose.connection.db!;
-    const accountId = new mongoose.Types.ObjectId();
-    const holder = new mongoose.Types.ObjectId();
-    const linked = new mongoose.Types.ObjectId();
-    await db.collection('accounts').insertOne({
-      _id: accountId,
-      email: 'ada.fixture@example.test',
-      archived: false,
-    });
-    await db.collection('researchers').insertMany([
-      {
-        _id: holder,
-        displayName: 'Ada Fixture',
-        archived: false,
-        identifiers: { email: 'ada.fixture@example.test' },
-      },
-      { _id: linked, displayName: 'Ada Fixture', accountId, archived: false, identifiers: {} },
-    ]);
-
-    const groups = await emailGroups();
-    expect(groups).toHaveLength(1);
-    expect(groups[0].userIds.sort()).toEqual([String(holder), String(linked)].sort());
   });
 
   it('counts a researcher once when it holds the same email as its linked account', async () => {

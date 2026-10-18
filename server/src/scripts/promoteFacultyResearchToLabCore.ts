@@ -62,7 +62,9 @@ export type FacultyResearchPromotionHoldReason =
   | 'website_url_is_department_bio_page'
   | 'only_shared_citations'
   | 'website_unreachable'
-  | 'website_declares_no_lab';
+  | 'website_declares_no_lab'
+  | 'website_states_no_lab_name'
+  | 'website_is_a_shared_group';
 
 /**
  * Promoting a row to `LAB` keeps it person-scoped, so the shared-citation defence
@@ -83,6 +85,9 @@ export interface FacultyResearchPromotionCandidate {
   sourceUrlUsageCounts?: number[];
   websiteStatus?: number;
   websiteText?: string;
+  /** The site's own title lines: `og:site_name`, `<title>`, and the first `<h1>`. */
+  websiteTitles?: string[];
+  nameLocked?: boolean;
 }
 
 export interface FacultyResearchPromotionRow {
@@ -95,6 +100,8 @@ export interface FacultyResearchPromotionRow {
   fromKind?: string;
   toKind?: string;
   websiteUrl?: string;
+  /** The lab's name as its own site states it, asserted with the type. */
+  toName?: string;
   holdReason?: FacultyResearchPromotionHoldReason;
 }
 
@@ -129,6 +136,44 @@ export function websiteDeclaresLaboratory(candidate: {
   const status = candidate.websiteStatus ?? 0;
   if (status < 200 || status >= 400) return false;
   return LAB_SELF_DECLARATION_RE.test(candidate.websiteText ?? '');
+}
+
+export const TITLE_SEGMENT_SEPARATOR = /\s+[|\u2013\u2014\u00b7\u2022\u00bb:]\s+|\s+-\s+/;
+const LAB_NOUN_RE = /\b(?:lab|labs|laboratory|group)\b/i;
+const TITLE_SEGMENT_FURNITURE_RE = /^(?:welcome\s+to\s+(?:the\s+)?|home\s*$)/i;
+const MAX_LAB_NAME_WORDS = 10;
+
+/**
+ * The lab's own name, read from the title lines the site gives itself.
+ *
+ * A title is the one place a lab's site states its name in a fixed slot, so this
+ * reads a segment rather than prose: "Forest Ecology & Resilience Lab", or "Liu lab"
+ * out of "Proteomics | West Haven | Liu lab". The segment must name a lab, laboratory
+ * or group, which is also what makes the site a laboratory for promotion, and the
+ * trailing noun is capitalised because a name is a proper noun ("DEEP lab" serves as
+ * "DEEP Lab"). An institution's "National Laboratory" is never one person's lab.
+ */
+export function labNameFromSiteTitles(titles: readonly string[] | undefined): string {
+  for (const raw of titles ?? []) {
+    const title = String(raw ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!title) continue;
+    for (const piece of title.split(TITLE_SEGMENT_SEPARATOR)) {
+      const segment = piece.replace(TITLE_SEGMENT_FURNITURE_RE, '').trim();
+      if (!segment || !LAB_NOUN_RE.test(segment)) continue;
+      if (/\bnational\s+laborator(?:y|ies)\b/i.test(segment)) continue;
+      if (segment.split(/\s+/).length > MAX_LAB_NAME_WORDS) continue;
+      return segment
+        .replace(/(?:,\s*|\s+at\s+)(?:yale(?:\s+university)?|yale\s+school\s+of\s+[a-z ]+)$/i, '')
+        .trim()
+        .replace(
+          /\b(lab|labs|laboratory|group)$/i,
+          (noun) => noun.charAt(0).toUpperCase() + noun.slice(1).toLowerCase(),
+        );
+    }
+  }
+  return '';
 }
 
 export function websiteWasReachable(candidate: { websiteStatus?: number }): boolean {
@@ -209,8 +254,42 @@ export function hasOnlySharedCitations(
   return sourceUrlUsageCounts.every((count) => count > threshold);
 }
 
+/**
+ * Whether a site-stated lab name may become this row's name. Supplied by the caller,
+ * because the judgement needs the name-identity authority and the surname roster,
+ * which refuse an umbrella organization or another person's lab.
+ */
+export type LabNameAdmissibility = (
+  labName: string,
+  candidate: FacultyResearchPromotionCandidate,
+) => boolean;
+
+/**
+ * A group site one level below a department or sites host: `<group>.cs.yale.edu`,
+ * `<group>.sites.yale.edu`. Both shared groups the 2026-10-16 dry run would have renamed
+ * a member after sat on this shape, and none of the single-lead labs it promoted did.
+ */
+export function isDepartmentGroupSubdomain(value: string): boolean {
+  const parts = urlParts(value);
+  if (!parts) return false;
+  const labels = parts.host.split('.');
+  return labels.length >= 4 && labels.slice(-2).join('.') === 'yale.edu';
+}
+
+function labNameNamesThePerson(labName: string, rowName: string): boolean {
+  const tokens = normalizeEntityName(rowName)
+    .replace(PLACEHOLDER_NAME_SUFFIX, '')
+    .split(/[^a-z]+/)
+    .filter((token) => token.length > 2);
+  const name = normalizeEntityName(labName);
+  return tokens.some((token) => new RegExp(`\\b${token}\\b`).test(name));
+}
+
+const ADMIT_EVERY_LAB_NAME: LabNameAdmissibility = () => true;
+
 export function classifyFacultyResearchPromotion(
   candidate: FacultyResearchPromotionCandidate,
+  isAdmissibleLabName: LabNameAdmissibility = ADMIT_EVERY_LAB_NAME,
 ): FacultyResearchPromotionRow {
   const name = String(candidate.name ?? '').trim();
   const row: FacultyResearchPromotionRow = {
@@ -254,13 +333,31 @@ export function classifyFacultyResearchPromotion(
     row.holdReason = 'website_unreachable';
     return row;
   }
-  if (!websiteDeclaresLaboratory(candidate)) {
+  // A lab that names itself in its own title has declared itself a laboratory, and a
+  // promotion without that name would serve a LAB still titled "<Name> Faculty
+  // Research", so the stated name is what the promotion rests on (#5059).
+  const labName = labNameFromSiteTitles(candidate.websiteTitles);
+  if (!labName && !websiteDeclaresLaboratory(candidate)) {
     row.holdReason = 'website_declares_no_lab';
+    return row;
+  }
+  if (!labName || !isAdmissibleLabName(labName, candidate)) {
+    row.holdReason = 'website_states_no_lab_name';
+    return row;
+  }
+  // A topic-named group on a department's group subdomain (`graphics.cs.yale.edu`,
+  // `cmtheory.sites.yale.edu`) is shared by the department's faculty in that area, so
+  // naming one member's row after it would hand that member the whole group (#5059).
+  // The member keeps the group site as a website; only the rename is held. An eponymous
+  // name on such a host still names its own lead.
+  if (isDepartmentGroupSubdomain(websiteUrl) && !labNameNamesThePerson(labName, name)) {
+    row.holdReason = 'website_is_a_shared_group';
     return row;
   }
 
   row.decision = 'PROMOTE';
   row.toEntityType = PROMOTED_ENTITY_TYPE;
+  if (!candidate.nameLocked) row.toName = labName;
   if (candidate.kind !== PROMOTED_KIND) {
     row.fromKind = candidate.kind == null ? '' : String(candidate.kind);
     row.toKind = PROMOTED_KIND;
@@ -270,8 +367,11 @@ export function classifyFacultyResearchPromotion(
 
 export function planFacultyResearchPromotion(
   candidates: FacultyResearchPromotionCandidate[],
+  isAdmissibleLabName?: LabNameAdmissibility,
 ): FacultyResearchPromotionRow[] {
-  return candidates.map((candidate) => classifyFacultyResearchPromotion(candidate));
+  return candidates.map((candidate) =>
+    classifyFacultyResearchPromotion(candidate, isAdmissibleLabName),
+  );
 }
 
 export interface FacultyResearchPromotionSummary {

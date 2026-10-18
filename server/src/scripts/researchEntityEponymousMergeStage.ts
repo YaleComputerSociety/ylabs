@@ -21,7 +21,7 @@ import {
   applyResearchEntityMergeGroupsWithCanonicalResync,
   selectEponymousFraLabMergeGroups,
 } from '../services/researchEntityEponymousMergeService';
-import { isCenterOrInstituteEntity } from '../utils/profileAreaDuplicateRisk';
+import { isOrganizationalHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { connectScriptMongo } from '../db/connections';
@@ -119,7 +119,7 @@ export function countCenterGuardedPis(rows: ResearchEntityPiDedupeRow[]): number
   return rows.filter(
     (row) =>
       row.entities.some(isFacultyResearchAreaShellEntity) &&
-      row.entities.some((entity) => isCenterOrInstituteEntity(entity)) &&
+      row.entities.some((entity) => isOrganizationalHomeEntity(entity)) &&
       selectEponymousFraLabMergeGroups([row]).length === 0,
   ).length;
 }

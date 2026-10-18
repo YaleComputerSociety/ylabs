@@ -19,7 +19,7 @@ Incident response, including how to rotate every secret named here, is owned by 
 | Meilisearch private service | Search index, reachable only inside Render at `http://<meili-private-service>:7700` | none | The Meilisearch image | Holds `MEILI_MASTER_KEY`. Each environment's indexes are namespaced by prefix (`beta_*`, `prod_*`). |
 | Beta operator service | Render cron job that exists so a one-off job can run `promote:remote-phase` for Beta | `beta` | `true`, on a schedule that never matters, such as `0 0 1 1 *` | Same region as the private Meilisearch (Ohio). Owned by `docs/data-refresh-runbook.md` ("What to set up once"). |
 | Production operator service | The same for Production | `main` | The same | Holds the only stored copy of the Production write key. |
-| `ylabs-scraper` | Weekly Development sweep cron job | `beta`, but each run clones `beta` HEAD itself | `deploy/sweep-runner/Dockerfile` and its `entrypoint.sh` | Virginia (US East), Docker, `4c-8g`. Owned by `docs/data-refresh-runbook.md` ("Render Cron Job Settings"). |
+| `ylabs-scraper` | Weekly Development sweep cron job, and the one-off jobs `yarn ops:sweep` starts | `beta`, but each run clones `beta` HEAD itself | `deploy/sweep-runner/Dockerfile` and its `entrypoint.sh` | Virginia (US East), Docker, `4c-8g`. The build filter is `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, so the image rebuilds only when its toolchain or the entrypoint changes and its own copy of the code is routinely older than `beta`. Owned by `docs/data-refresh-runbook.md` ("Render Cron Job Settings"). |
 
 The repository does not record whether Beta and Production share one Meilisearch private service or run one each.
 The reindex runbook's key table names a single private service, and the prefix-scoped keys from #4859 are what keep the two environments apart on a shared instance.
@@ -140,7 +140,8 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `SCRAPLING_RENDERER_ENABLED` | No | Defaults to `false`, so the rendered-fetch lanes fetch plainly. | No |
 | `SCRAPER_PER_HOST_CONCURRENCY` | No | Per-host pacing uses its defaults. | No |
 | `SWEEP_REPOSITORY_URL` | No | Leave it unset on Render; it overrides the repository the entrypoint clones. | No |
-| `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` | No | Each sweep stage runs by default; a value such as `0` or `false` turns that stage off (`server/src/scripts/sweepStageFlags.ts`). | No |
+| `SWEEP_RUNNER_APP_DIR` | No | Leave it unset on Render; it overrides the image directory, `/app`, so `scripts/sweep-runner-entrypoint.test.mjs` can run the entrypoint against stubs. | No |
+| `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_PROMOTE_FACULTY_RESEARCH_LABS`, `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` | No | Each sweep stage runs by default; a value such as `0` or `false` turns that stage off (`server/src/scripts/sweepStageFlags.ts`). | No |
 
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
 The job refuses when `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `PROD_MONGODBURL`, or any other copy-pair URL is present, because it holds Development credentials only.
@@ -154,7 +155,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | -------- | ------- | ------ |
 | `MONGODBURL` | Development work and `yarn promote:beta` | Yes |
 | `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `ATLAS_DEVELOPMENT_MONGODBURL` | The copy pairs: `database:verify-names --pair <pair>`, the two mirrors, and `production:promote-beta-copy` | Yes |
-| `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs | Yes |
+| `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs, and `yarn ops:sweep`, which falls back to the render CLI's `~/.render/cli.yaml` login when it is unset | Yes |
 | `RENDER_BETA_OPERATOR_SERVICE_ID`, `RENDER_PRODUCTION_OPERATOR_SERVICE_ID` | The same | No |
 | `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:sync` or `:rebuild` | Yes |
 | `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX`, `MEILISEARCH_WRITE_API_KEY`, `MEILISEARCH_API_KEY` | Local Development search, where the prefix is unset | Local keys only |
@@ -190,6 +191,8 @@ None of these is a secret, and none belongs on a web service.
 | `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
 | `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
 | `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |
+| `SCRAPER_SWEEP_DEADLINE_AT` | Run deadline the weekly wrapper passes to `scrape:sweep`, so a source that failed on a transient database error is re-run only when the Render limit has room; never set it by hand |
+| `SCRAPER_RUN_STALL_WINDOW_MS` | The scrape-run stall window (`scrapers/scrapeRunProgress.ts`, default 20 minutes): a run with no progress for longer stops heartbeating and exits as `interrupted` with reason `stalled`; a value that is not a positive whole number is ignored |
 | `SCRAPLING_RENDERER_ENABLED`, `SCRAPLING_FETCH_MODE`, `SCRAPLING_PYTHON_COMMAND`, `SCRAPLING_BRIDGE_PATH`, `SCRAPLING_TIMEOUT_MS` | The rendered-fetch bridge |
 | `SCRAPER_SWEEP_CANARY_LIMIT`, `SCRAPER_SWEEP_CANARY_CONCURRENCY`, `SCRAPER_SWEEP_CANARY_TIMEOUT_MS`, `SCRAPER_SWEEP_CLUSTER_QUOTA_MB`, `SCRAPER_SWEEP_MIN_HEADROOM_MB` | The sweep preflight |
 | `SWEEP_TARGET_SHA`, `SEARCH_INDEX_WRITES` | Set by the sweep entrypoint, as above |

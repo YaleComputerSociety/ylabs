@@ -37,6 +37,8 @@ const runLane = async (args: {
   url?: string;
   knownPersonSurnames?: ReadonlySet<string>;
   row?: { slug: string; name: string; entityType: string; kind: string };
+  sourceUrls?: string[];
+  fetchPage?: (url: string) => Promise<{ url: string; html: string }>;
 }) => {
   const url = args.url ?? SITE_URL;
   const emitted: ObservationInput[] = [];
@@ -67,9 +69,10 @@ const runLane = async (args: {
         kind: 'individual',
         ...args.row,
         websiteUrl: url,
+        sourceUrls: args.sourceUrls,
       },
     ],
-    fetchPage: vi.fn(async () => ({ url, html: args.html })),
+    fetchPage: vi.fn(args.fetchPage ?? (async () => ({ url, html: args.html }))),
     callLLM: vi.fn(async () => args.extraction),
     callCardLLM: vi.fn(async () => ''),
   });
@@ -247,5 +250,46 @@ describe('the microsite lane emits the page-stated lab name on every description
     expect(
       pageStatedLabNameObservations(extraction({ fullDescription: orgBody }), personScoped, html),
     ).toHaveLength(0);
+  });
+
+  it('withholds every name a job or fellowship posting page states', async () => {
+    const { valueOf } = await runLane({
+      url: 'https://quillcircuits.example.org/jobs/quill-postdoctoral-fellowship/',
+      html: proseHtml(`${LAB_NAME} - Home`),
+      extraction: extraction({ fullDescription: 'Prose the page never states.' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+    expect(valueOf('displayName')).toBeUndefined();
+  });
+
+  it('never reads a posting page a row still cites into its description', async () => {
+    const postingUrl = 'https://otherlab.example.org/jobs/postdoctoral-fellowship/';
+    const fetchedUrls: string[] = [];
+    const { emitted } = await runLane({
+      html: proseHtml(`${LAB_NAME} - Home`),
+      extraction: extraction({ fullDescription: RESEARCH_PROSE.trim() }),
+      sourceUrls: [postingUrl],
+      fetchPage: async (requestedUrl) => {
+        fetchedUrls.push(requestedUrl);
+        if (requestedUrl === SITE_URL) throw new Error('site unreachable');
+        return { url: requestedUrl, html: proseHtml(`${LAB_NAME} - Home`) };
+      },
+    });
+
+    expect(fetchedUrls).not.toContain(postingUrl);
+    expect(emitted.filter((obs) => obs.sourceUrl === postingUrl)).toHaveLength(0);
+    expect(emitted.find((obs) => obs.field === 'fullDescription')).toBeUndefined();
+  });
+
+  it('withholds a name that names a fellowship rather than a lab', async () => {
+    const fellowship = 'The Quill Postdoctoral Fellowship in Neural Circuits';
+    const { valueOf } = await runLane({
+      html: proseHtml(fellowship).replace(`<h1>${LAB_NAME}</h1>`, `<h1>${fellowship}</h1>`),
+      extraction: extraction({ name: fellowship, fullDescription: 'Prose the page never states.' }),
+    });
+
+    expect(valueOf('name')).toBeUndefined();
+    expect(valueOf('displayName')).toBeUndefined();
   });
 });

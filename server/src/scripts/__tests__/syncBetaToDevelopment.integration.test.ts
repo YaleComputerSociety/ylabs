@@ -1,7 +1,6 @@
-import { MongoClient, ObjectId, type Db, type Document } from 'mongodb';
+import { MongoClient, ObjectId, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CANONICAL_MONGO_VALIDATORS } from '../canonicalMongoValidatorRegistry';
 import {
   applySync,
   assertNoUnclassifiedBetaCollections,
@@ -12,7 +11,6 @@ import {
   localNonMirrorCollectionNames,
   parseBetaToDevelopmentOptions,
   preservedDevelopmentCollectionNames,
-  researchPersonAccountIds,
   unclassifiedBetaCollectionNames,
   type BetaToDevelopmentOptions,
 } from '../syncBetaToDevelopment';
@@ -26,16 +24,16 @@ const orgUnitId = new ObjectId('68d0000000000000000000d1');
 const observationId = new ObjectId('68d0000000000000000000e1');
 const frozenBenchmarkId = 'example-lane-gold-v1';
 
-const accountsValidator = CANONICAL_MONGO_VALIDATORS.find(
-  (candidate) => candidate.collectionName === 'accounts',
-)!;
+const targetAccount = {
+  _id: new ObjectId('68d0000000000000000000a3'),
+  schemaVersion: 1,
+  netid: 'stale001',
+  email: 'stale.person@yale.edu',
+  status: 'ACTIVE',
+  archived: false,
+};
 
 async function seedSource(sourceDb: Db): Promise<void> {
-  await sourceDb.createCollection('accounts', {
-    validator: accountsValidator.validator,
-    validationLevel: accountsValidator.validationLevel,
-    validationAction: accountsValidator.validationAction,
-  });
   await sourceDb.collection('accounts').insertMany([
     {
       _id: facultyAccountId,
@@ -83,7 +81,7 @@ async function seedSource(sourceDb: Db): Promise<void> {
     _id: researcherId,
     schemaVersion: 1,
     displayName: 'Faculty Person',
-    accountId: facultyAccountId,
+    identifiers: { netid: 'abc123' },
     profileLinks: [],
     status: 'ACTIVE',
     archived: false,
@@ -164,13 +162,7 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('research_entities')
     .insertOne({ name: 'Stale Development Entity', slug: 'stale-development-entity' });
-  await targetDb.collection('accounts').insertOne({
-    schemaVersion: 1,
-    netid: 'stale001',
-    email: 'stale.person@yale.edu',
-    status: 'ACTIVE',
-    archived: false,
-  });
+  await targetDb.collection('accounts').insertOne(targetAccount);
   await targetDb
     .collection('analytics_events')
     .insertOne({ event: 'development_student_search', netid: 'local001' });
@@ -196,6 +188,9 @@ async function seedTarget(targetDb: Db): Promise<void> {
     .collection('engine_benchmark_snapshots')
     .insertOne({ benchmarkId: frozenBenchmarkId, planned: 3 });
   await targetDb.collection('weekly_sweep_runs').insertOne({ status: 'succeeded', exitCode: 0 });
+  await targetDb
+    .collection('research_plans')
+    .insertOne({ accountId: targetAccount._id, title: 'Target plan' });
   await targetDb
     .collection('login_signal_tallies')
     .insertOne({ date: '2026-10-04', undergrad_usable_major: 1 });
@@ -228,8 +223,7 @@ describe('Beta to Development mirror against MongoDB', () => {
       MONGODBURL: 'mongodb+srv://user:pass@development.example.test/Development',
     });
 
-    const researchAccountIds = await researchPersonAccountIds(sourceDb);
-    const collections = collectionsForOptions(options, researchAccountIds);
+    const collections = collectionsForOptions(options);
     const sourceCollectionNames = (await sourceDb.listCollections({}, { nameOnly: true }).toArray())
       .map((row) => row.name)
       .sort();
@@ -282,7 +276,6 @@ describe('Beta to Development mirror against MongoDB', () => {
       'signals',
       'researchers',
       'role_assignments',
-      'accounts',
       'sources',
       'scrape_runs',
       'departments',
@@ -337,59 +330,12 @@ describe('Beta to Development mirror against MongoDB', () => {
     expect(await targetDb.collection('scrape_snapshots').countDocuments()).toBe(0);
   });
 
-  it('keeps the researcher-backed account resolvable without mirroring its student PII', async () => {
-    const facultyAccount = await targetDb.collection('accounts').findOne({ _id: facultyAccountId });
-
-    expect(facultyAccount).toMatchObject({
-      netid: 'abc123',
-      email: 'faculty.person@yale.edu',
-      status: 'ACTIVE',
-      archived: false,
-      profile: {
-        firstName: 'Faculty',
-        lastName: 'Person',
-        userType: 'professor',
-        title: 'Professor of Example Studies',
-        department: 'Example Department',
-      },
+  it("keeps the target's own accounts and copies none from the source", async () => {
+    expect(await targetDb.collection('accounts').find({}).toArray()).toEqual([targetAccount]);
+    expect(await targetDb.collection('accounts').findOne({ _id: facultyAccountId })).toBeNull();
+    expect(await targetDb.collection('accounts').findOne({ _id: studentAccountId })).toBeNull();
+    expect(await targetDb.collection('researchers').findOne({ _id: researcherId })).toMatchObject({
+      identifiers: { netid: 'abc123' },
     });
-    expect(facultyAccount?.profile).not.toHaveProperty('college');
-    expect(facultyAccount?.profile).not.toHaveProperty('year');
-    expect(facultyAccount?.profile).not.toHaveProperty('major');
-    expect(facultyAccount).not.toHaveProperty('lastLoginAt');
-
-    const researcher = await targetDb.collection('researchers').findOne({ _id: researcherId });
-    expect(researcher?.accountId).toEqual(facultyAccount?._id);
-  });
-
-  it('pseudonymizes every account no researcher references', async () => {
-    const studentAccount = await targetDb.collection('accounts').findOne({ _id: studentAccountId });
-
-    expect(studentAccount).toMatchObject({
-      netid: `mirrored-${studentAccountId.toHexString()}`,
-      email: `mirrored-${studentAccountId.toHexString()}@example.invalid`,
-      status: 'ACTIVE',
-      archived: false,
-    });
-    expect(studentAccount).not.toHaveProperty('profile');
-    expect(studentAccount).not.toHaveProperty('lastLoginAt');
-    expect(await targetDb.collection('accounts').findOne({ netid: 'xyz789' })).toBeNull();
-    expect(await targetDb.collection('accounts').findOne({ netid: 'stale001' })).toBeNull();
-  });
-
-  it('carries the canonical accounts validator onto the mirrored collection', async () => {
-    const [mirroredAccounts] = (await targetDb
-      .listCollections({ name: 'accounts' })
-      .toArray()) as Array<{ options?: Document }>;
-
-    expect(mirroredAccounts.options).toMatchObject({
-      validator: accountsValidator.validator,
-      validationLevel: accountsValidator.validationLevel,
-      validationAction: accountsValidator.validationAction,
-    });
-
-    await expect(
-      targetDb.collection('accounts').insertOne({ email: 'no.netid@yale.edu' }),
-    ).rejects.toThrow(/[Dd]ocument failed validation/);
   });
 });

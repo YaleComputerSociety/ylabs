@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  planAliasTwinFolds,
   applyUnionPlanToSnapshot,
   bareNetid,
   buildCanonicalNameIndex,
@@ -28,8 +29,10 @@ describe('normalizeResearcherName', () => {
 });
 
 describe('researcherIdentityTier', () => {
-  it('ranks an account link above a netid and a netid above a bare name', () => {
-    expect(researcherIdentityTier({ accountId: 'account-1', netid: 'ab12' })).toBe('DIRECTORY');
+  it('ranks a directory email above a netid and a netid above a bare name', () => {
+    expect(researcherIdentityTier({ email: 'account-1@example.test', netid: 'ab12' })).toBe(
+      'DIRECTORY',
+    );
     expect(researcherIdentityTier({ netid: 'ab12' })).toBe('NETID');
     expect(researcherIdentityTier({})).toBe('NAME_ONLY');
   });
@@ -43,7 +46,7 @@ describe('researcherIdentityTier', () => {
   it('treats a blank or non-string netid as no identity at all', () => {
     expect(researcherIdentityTier({ netid: '   ' })).toBe('NAME_ONLY');
     expect(researcherIdentityTier({ netid: null })).toBe('NAME_ONLY');
-    expect(researcherIdentityTier({ accountId: null, netid: '' })).toBe('NAME_ONLY');
+    expect(researcherIdentityTier({ email: null, netid: '' })).toBe('NAME_ONLY');
   });
 });
 
@@ -52,12 +55,12 @@ describe('decideShellMerge', () => {
     {
       id: 'canonical-roe',
       displayName: 'Jane Roe',
-      accountId: 'account-roe',
+      email: 'account-roe@example.test',
       orcid: '0000-0001-2222-3333',
     },
-    { id: 'canonical-doe', displayName: 'John Doe', accountId: 'account-doe' },
-    { id: 'namesake-a', displayName: 'Sam Twin', accountId: 'account-twin-a' },
-    { id: 'namesake-b', displayName: 'Sam Twin', accountId: 'account-twin-b' },
+    { id: 'canonical-doe', displayName: 'John Doe', email: 'account-doe@example.test' },
+    { id: 'namesake-a', displayName: 'Sam Twin', email: 'account-twin-a@example.test' },
+    { id: 'namesake-b', displayName: 'Sam Twin', email: 'account-twin-b@example.test' },
   ]);
 
   it('merges when exactly one same-name account-linked canonical exists', () => {
@@ -131,7 +134,7 @@ describe('decideShellMerge', () => {
   });
 
   const mixedIndex = buildCanonicalNameIndex([
-    { id: 'account-backed', displayName: 'Nina Netid', accountId: 'account-nina' },
+    { id: 'account-backed', displayName: 'Nina Netid', email: 'account-nina@example.test' },
     { id: 'netid-backed', displayName: 'Nina Netid', netid: 'nn42' },
   ]);
 
@@ -162,7 +165,7 @@ describe('decideShellMerge', () => {
     {
       id: 'canonical-account-netid',
       displayName: 'Nina Netid',
-      accountId: 'account-nina',
+      email: 'account-nina@example.test',
       netid: 'nn42',
     },
   ]);
@@ -324,7 +327,7 @@ describe('bareNetid', () => {
 
 describe('decideShellMerge netid arm (#3166)', () => {
   const netidIndex = buildCanonicalNetidIndex([
-    { id: 'twin', accountId: 'account-1', netid: 'ab12' },
+    { id: 'twin', email: 'account-1@example.test', netid: 'ab12' },
     { id: 'nameonly', netid: 'zz99' },
   ]);
   const emptyNameIndex = buildCanonicalNameIndex([]);
@@ -371,7 +374,7 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('refuses a netid fold when the two rows disagree on ORCID', () => {
     const index = buildCanonicalNetidIndex([
-      { id: 'twin', accountId: 'account-1', netid: 'ab12', orcid: '0000-0001-2222-3333' },
+      { id: 'twin', email: 'account-1@example.test', netid: 'ab12', orcid: '0000-0001-2222-3333' },
     ]);
     expect(
       decideShellMerge(
@@ -384,7 +387,7 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('leaves the name arm reachable and labelled when no netid matches', () => {
     const nameIndex = buildCanonicalNameIndex([
-      { id: 'canonical', displayName: 'Jane Roe', accountId: 'account-9' },
+      { id: 'canonical', displayName: 'Jane Roe', email: 'account-9@example.test' },
     ]);
     expect(
       decideShellMerge({ id: 'shell', displayName: 'Jane Roe' }, nameIndex, netidIndex),
@@ -405,7 +408,7 @@ describe('decideShellMerge verified-profile arm', () => {
   ];
   const account = (over: Record<string, unknown> = {}) => ({
     id: 'c'.repeat(24),
-    accountId: 'd'.repeat(24),
+    email: 'sample.fixture@example.test',
     displayName: 'Sample Fixture',
     title: 'Associate Professor of Medicine',
     profileLinks: verified('https://www.dept.example.edu/p/1001'),
@@ -436,9 +439,8 @@ describe('decideShellMerge verified-profile arm', () => {
     });
   });
 
-  it('folds into a directory record that holds its own email and links no account', () => {
+  it('folds into a directory record that holds its own email', () => {
     const directoryRecord = account({
-      accountId: undefined,
       email: 'sample.fixture@example.test',
       netid: 'sf1',
     });
@@ -451,7 +453,7 @@ describe('decideShellMerge verified-profile arm', () => {
   });
 
   it('does not fold into a record that holds only a netid', () => {
-    const netidRecord = account({ accountId: undefined, netid: 'sf1' });
+    const netidRecord = account({ email: undefined, netid: 'sf1' });
     expect(decide(shell(), [netidRecord]).reason).toBe('NO_CANONICAL');
   });
 
@@ -508,14 +510,14 @@ describe('decideShellMerge verified-profile arm', () => {
   });
 
   it('resolves to nobody when two accounts hold the page', () => {
-    const second = account({ id: 'e'.repeat(24), accountId: 'f'.repeat(24) });
+    const second = account({ id: 'e'.repeat(24), email: 'second.fixture@example.test' });
     expect(decide(shell(), [account(), second]).reason).toBe('AMBIGUOUS_MULTIPLE_CANONICAL');
   });
 
   it('does not let a vetoed second holder of the page block the fold', () => {
     const wrongPerson = account({
       id: 'e'.repeat(24),
-      accountId: 'f'.repeat(24),
+      email: 'second.fixture@example.test',
       displayName: 'Sample Otherfamily',
     });
     expect(decide(shell(), [account(), wrongPerson])).toEqual({
@@ -809,7 +811,7 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
 
   it('never folds a record into one that does not outrank it', () => {
     expect(
-      decide({ displayName: 'Avery Placeholder', accountId: 'a' }, [
+      decide({ displayName: 'Avery Placeholder', email: 'a@example.test' }, [
         account('acct', 'Avery Placeholder'),
       ]),
     ).toEqual({ merge: false, reason: 'NO_CANONICAL' });
@@ -900,5 +902,36 @@ describe('sameAddressHolderNamesAgree', () => {
     expect(sameAddressHolderNamesAgree('Robin Example', 'Casey Example')).toBe(false);
     expect(sameAddressHolderNamesAgree('Robin Example', 'Robin Sample')).toBe(false);
     expect(sameAddressHolderNamesAgree('Robin', 'Robin Example')).toBe(false);
+  });
+});
+
+describe('planAliasTwinFolds (#4988, #5092)', () => {
+  const real = { id: 'real', displayName: 'Jordan Q. Example' };
+  const plan = (over: Partial<Parameters<typeof planAliasTwinFolds>[0]> = {}) =>
+    planAliasTwinFolds({
+      twinResearchers: [{ id: 'twin', netid: 'jordan.example', displayName: 'Jordan Example' }],
+      researcherByNetid: new Map([['jqe7', real]]),
+      aliasNetidByTwinNetid: new Map([['jordan.example', 'jqe7']]),
+      loginNetids: new Set(),
+      ...over,
+    });
+
+  it('folds a local-part twin into the researcher holding the netid its alias resolves to', () => {
+    expect([...plan().targetByTwinResearcherId]).toEqual([['twin', 'real']]);
+  });
+
+  it('refuses a twin whose netid has signed in to this environment', () => {
+    const refused = plan({ loginNetids: new Set(['jordan.example']) });
+    expect(refused.targetByTwinResearcherId.size).toBe(0);
+    expect(refused.refusals['twin-netid-has-login']).toBe(1);
+  });
+
+  it('refuses an unresolved alias, a missing real researcher, and disagreeing names', () => {
+    expect(plan({ aliasNetidByTwinNetid: new Map() }).refusals['alias-unresolved']).toBe(1);
+    expect(plan({ researcherByNetid: new Map() }).refusals['no-real-researcher']).toBe(1);
+    expect(
+      plan({ researcherByNetid: new Map([['jqe7', { id: 'real', displayName: 'Casey Other' }]]) })
+        .refusals['names-disagree'],
+    ).toBe(1);
   });
 });

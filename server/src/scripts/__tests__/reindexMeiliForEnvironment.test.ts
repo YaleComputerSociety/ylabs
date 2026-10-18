@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   assertReindexMeiliEnvironment,
+  chooseReindexMode,
   parseReindexMeiliArgs,
   planIndexReconcile,
 } from '../reindexMeiliForEnvironment';
@@ -14,7 +15,11 @@ const BETA_ENV = {
 
 describe('parseReindexMeiliArgs', () => {
   it('defaults to a guarded dry run', () => {
-    expect(parseReindexMeiliArgs([])).toEqual({ confirm: false, pageSize: 250 });
+    expect(parseReindexMeiliArgs([])).toEqual({ confirm: false, full: false, pageSize: 250 });
+  });
+
+  it('parses --full', () => {
+    expect(parseReindexMeiliArgs(['--confirm', '--full']).full).toBe(true);
   });
 
   it('parses confirm and page size', () => {
@@ -173,5 +178,32 @@ describe('planIndexReconcile', () => {
     expect(plan.keep).toEqual(['beta_researchentities']);
     expect(plan.retire).toEqual(['beta_listings']);
     expect(plan.unknown).toEqual(['beta_operator_researchentities', 'beta_operator_listings']);
+  });
+});
+
+describe('chooseReindexMode', () => {
+  const match = { indexExists: true, drift: [] };
+
+  it('reconciles incrementally when the live index matches the code', () => {
+    expect(chooseReindexMode({ forceFull: false, comparison: match })).toMatchObject({
+      mode: 'incremental',
+    });
+  });
+
+  it('rebuilds when forced, when the index is missing, or when settings or the embedder differ', () => {
+    expect(chooseReindexMode({ forceFull: true, comparison: match }).mode).toBe('full');
+    expect(
+      chooseReindexMode({
+        forceFull: false,
+        comparison: { indexExists: false, drift: ['index:missing'] },
+      }),
+    ).toMatchObject({ mode: 'full', reason: 'the live index does not exist' });
+    const drifted = chooseReindexMode({
+      forceFull: false,
+      comparison: { indexExists: true, drift: ['settings:filterableAttributes', 'embedder:model'] },
+    });
+    expect(drifted.mode).toBe('full');
+    expect(drifted.reason).toContain('settings:filterableAttributes');
+    expect(drifted.reason).toContain('embedder:model');
   });
 });

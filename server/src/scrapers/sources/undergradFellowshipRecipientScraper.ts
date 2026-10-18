@@ -25,10 +25,10 @@
  *           Unmatched advisors are logged and skipped — we deliberately do NOT
  *           create synthetic Researcher records for advisors we can't disambiguate
  *           (those would pollute the researcher collection with low-quality stubs).
- *        b. resolve to a ResearchGroup via `findOrCreateForOwner` (the same
- *           helper Listing-creation uses), then emit observations against the
- *           returned slug. This guarantees the past-advisee history lands on
- *           the canonical group, not a synthetic key.
+ *        b. resolve to the advisor's EXISTING lead row (their own lab or faculty
+ *           research profile before a facility or center they direct), then emit
+ *           observations against its slug. No row is ever created here: an
+ *           advisor with no lead row is logged as unmatched (#5048).
  *   4. Emit ResearchGroup observations:
  *        - `pastUndergradAdvisees`: FULL aggregated array for the PI on every
  *          run. The resolver picks the highest-confidence (most recent) value
@@ -62,10 +62,10 @@ import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
-import { findOrCreateForOwner } from '../../services/researchGroupService';
+import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { researcherNetid } from '../../utils/researcherIdentity';
@@ -136,6 +136,8 @@ export interface FellowshipRecipient {
   advisorOrcid?: string;
   /** Project title as it appears on the recipient list, when available. */
   projectTitle?: string;
+  piAsPrinted?: string;
+  classYear?: number;
   /** Row-level source URL for manual accepted inputs, when available. */
   sourceUrl?: string;
   /** Optional source page or text block pointer for review traceability. */
@@ -177,6 +179,16 @@ export interface ProgramConfig {
   manualUploadRequired?: boolean;
   /** Reason string surfaced in the log line when manualUploadRequired=true. */
   skipReason?: string;
+  pdfExtractor?: RecipientExtractor;
+}
+
+export interface FellowshipRecipientListing {
+  studentName: string;
+  year: number;
+  programName: string;
+  projectTitle?: string;
+  piAsPrinted?: string;
+  sourceUrl?: string;
 }
 
 /** Aggregated advisee history for one advisor, ready to emit. */
@@ -200,6 +212,7 @@ export interface AdvisorAggregateRow {
   sourceUrls: Set<string>;
   /** Most recent year observed across this advisor's rows; used as lastObservedAt. */
   latestYear: number;
+  recipients: FellowshipRecipientListing[];
 }
 
 /** Lightweight User shape returned by the user-resolver. */
@@ -414,6 +427,147 @@ export const manualRecipientPdfTextExtractor: RecipientExtractor = (text, ctx) =
   return out;
 };
 
+const SYMPOSIUM_PI_LINE =
+  /^(?:PI|P\.I\.|Principal Investigators?|Faculty (?:Mentor|Advisor|Adviser))\s*:\s*(.*)$/i;
+const SYMPOSIUM_LABEL_LINE =
+  /^[A-Za-z’' ]{0,30}\b(?:mentors?|department|advisors?|advisers?|lab|PI)\b[A-Za-z’' ]{0,15}:/i;
+const SYMPOSIUM_LABEL_CONTINUATION =
+  /;|\b(?:name|mentors?|department)\b[^:]*:|\b(?:Professor|Ph\.?\s?D\.?|Lab|Laboratory|School|Department|Biology|Science|Sciences|Pharmacology|Diseases?|Engineering|Medicine|Public Health|Computing|Center|Institute|Postdoc\w*|Candidate)\b/i;
+const SYMPOSIUM_CLASS_YEAR_LINE = /^Class of ((?:19|20)\d{2})\b/i;
+const SYMPOSIUM_SLOT_LINE = /^\d{1,2}:\d{2}\s*(?:[AP]M)?\s*[–-]\s*\d{1,2}:\d{2}\s*(?:[AP]M)?$/i;
+const SYMPOSIUM_NOT_A_STUDENT =
+  /\b(?:Department|Dept\.?|School|Program|Lab|Laboratory|Biology|Engineering|Medicine|Science|Sciences|Physics|Chemistry|Psychiatry|Psychology|Neuroscience|Biochemistry|Biophysics|Genetics|Immunobiology|Pharmacology|Pathology|Mathematics|Statistics|Economics|Symposium|STARS|Session|Presentations?|Fellowships?)\b/i;
+const CREDENTIAL_TOKEN =
+  /^(?:Ph\.?\s?D\.?|M\.?\s?D\.?|MD\s?PhD|M\.?\s?S\.?|M\.?\s?P\.?\s?H\.?|Dr\.?|Prof\.?)$/i;
+const SYMPOSIUM_TITLE_LINES_MAX = 6;
+
+const looksLikeSymposiumStudent = (line: string): boolean => {
+  if (line.length > 60 || /[\d:,;&/()]/.test(line) || SYMPOSIUM_NOT_A_STUDENT.test(line)) {
+    return false;
+  }
+  const tokens = line.split(/\s+/);
+  return (
+    tokens.length >= 2 &&
+    tokens.length <= 5 &&
+    /^\p{Lu}/u.test(tokens[0]) &&
+    /^\p{Lu}/u.test(tokens[tokens.length - 1])
+  );
+};
+
+export function primarySymposiumPiName(value: string): string {
+  const parts = value
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/,|;|\s&\s|\sand\s/)
+    .map((part) =>
+      part
+        .trim()
+        .replace(/^(?:Dr|Prof|Professor)\.?\s+/i, '')
+        .split(' ')
+        .filter((token) => !CREDENTIAL_TOKEN.test(token))
+        .join(' ')
+        .replace(/\s+/g, ' '),
+    )
+    .filter((part) => part && !part.split(' ').every((token) => CREDENTIAL_TOKEN.test(token)));
+  return parts.find((part) => part.split(' ').length >= 2) ?? parts[0] ?? '';
+}
+
+/**
+ * STARS II symposium booklets list each presenter as a name, a department, an optional
+ * class year, a `PI:` line and an optional `Mentor:` line, then the project title. The
+ * lab is the PI's: the mentor is usually a graduate student or postdoc, so a block with
+ * no `PI:` line is skipped rather than attributed to its mentor.
+ */
+export const starsSymposiumPiExtractor: RecipientExtractor = (text, ctx) => {
+  const lines = text
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const year =
+    ctx.defaultYear ??
+    parseExactYear(
+      lines
+        .slice(0, 40)
+        .join(' ')
+        .match(/\b20\d{2}\b/)?.[0],
+    );
+  if (!year) return [];
+  const sourceUrl = ctx.sourceUrl || ctx.pageUrl;
+  const piIndexes = lines.flatMap((line, index) => (SYMPOSIUM_PI_LINE.test(line) ? [index] : []));
+  const studentIndexes = piIndexes.map((piIndex, order) => {
+    const floor = order > 0 ? piIndexes[order - 1] + 1 : 0;
+    for (let index = piIndex - 1; index >= Math.max(floor, piIndex - 6); index -= 1) {
+      if (SYMPOSIUM_SLOT_LINE.test(lines[index])) break;
+      if (looksLikeSymposiumStudent(lines[index])) return index;
+    }
+    return -1;
+  });
+  const out: FellowshipRecipient[] = [];
+  const seen = new Set<string>();
+  piIndexes.forEach((piIndex, order) => {
+    const studentIndex = studentIndexes[order];
+    if (studentIndex < 0) return;
+    const studentName = lines[studentIndex];
+    const piValue = (
+      SYMPOSIUM_PI_LINE.exec(lines[piIndex])?.[1] ||
+      lines[piIndex + 1] ||
+      ''
+    ).trim();
+    const advisorName = primarySymposiumPiName(piValue);
+    if (!advisorName || seen.has(studentName)) return;
+    seen.add(studentName);
+    const classYear = parseExactYear(
+      lines
+        .slice(studentIndex, piIndex)
+        .map((line) => SYMPOSIUM_CLASS_YEAR_LINE.exec(line)?.[1])
+        .find(Boolean),
+    );
+    const nextStudent = studentIndexes.slice(order + 1).find((index) => index > piIndex);
+    const end = Math.min(nextStudent ?? lines.length, piIndex + 1 + SYMPOSIUM_TITLE_LINES_MAX + 4);
+    const titleLines: string[] = [];
+    for (let index = piIndex + 1; index < end; index += 1) {
+      const line = lines[index];
+      if (SYMPOSIUM_SLOT_LINE.test(line)) break;
+      if (SYMPOSIUM_LABEL_LINE.test(line) || (index === piIndex + 1 && line === piValue)) continue;
+      if (titleLines.length >= SYMPOSIUM_TITLE_LINES_MAX) break;
+      titleLines.push(line);
+    }
+    while (
+      titleLines.length > 1 &&
+      titleLines[0].split(' ').length <= 6 &&
+      SYMPOSIUM_LABEL_CONTINUATION.test(titleLines[0])
+    ) {
+      titleLines.shift();
+    }
+    const projectTitle = titleLines
+      .join(' ')
+      .replace(/\s+([,.;:])/g, '$1')
+      .slice(0, 300)
+      .trim();
+    out.push({
+      studentName,
+      advisorName,
+      piAsPrinted: piValue,
+      ...(projectTitle ? { projectTitle } : {}),
+      ...(classYear ? { classYear } : {}),
+      sourceUrl,
+      year,
+    });
+  });
+  return out;
+};
+
+export function manualPdfInputsFor(
+  config: Pick<ProgramConfig, 'programKey' | 'urls'>,
+): Array<{ fileKey: string; sourceUrl: string }> {
+  const pdfUrls = config.urls.filter((url) => /\.pdf(?:$|[?#])/i.test(url));
+  const primary = pdfUrls[0] || config.urls[0] || `manual-pdf://${config.programKey}.pdf`;
+  const byYear = pdfUrls.flatMap((url) => {
+    const year = inferYearFromUrl(url);
+    return year ? [{ fileKey: `${config.programKey}-${year}`, sourceUrl: url }] : [];
+  });
+  return [{ fileKey: config.programKey, sourceUrl: primary }, ...byYear];
+}
+
 export async function extractFellowshipPdfText(body: Buffer): Promise<string> {
   const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
   const loadingTask = pdfjs.getDocument({
@@ -499,6 +653,7 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
       'https://science.yalecollege.yale.edu/sites/default/files/files/2024%20STARS2%20Symposium%20(1)%20(002).pdf',
     ],
     extractor: manualUploadStub,
+    pdfExtractor: starsSymposiumPiExtractor,
     manualUploadRequired: true,
     skipReason: 'STARS II symposium abstracts published as PDF only',
   },
@@ -607,6 +762,7 @@ export function aggregateAdviseesByAdvisor(
         advisees: [] as PastUndergradAdviseeEntry[],
         sourceUrls: new Set<string>(),
         latestYear: 0,
+        recipients: [] as FellowshipRecipientListing[],
       } satisfies AdvisorAggregateRow);
 
     // Merge into the right (year, programName) bucket.
@@ -626,6 +782,22 @@ export function aggregateAdviseesByAdvisor(
 
     const url = r.sourceUrl || sourceUrlByRecipient?.get(r);
     if (url) existing.sourceUrls.add(url);
+    const studentName = r.studentName?.trim();
+    if (
+      studentName &&
+      !existing.recipients.some(
+        (listed) => listed.studentName === studentName && listed.year === r.year,
+      )
+    ) {
+      existing.recipients.push({
+        studentName,
+        year: r.year,
+        programName,
+        ...(r.projectTitle ? { projectTitle: r.projectTitle } : {}),
+        ...(r.piAsPrinted ? { piAsPrinted: r.piAsPrinted } : {}),
+        ...(url ? { sourceUrl: url } : {}),
+      });
+    }
 
     out.set(key, existing);
   }
@@ -650,15 +822,9 @@ export function aggregateAdviseesByAdvisor(
 export type AdvisorResearcherResolver = (name: string, orcid?: string) => Promise<UserMatch | null>;
 
 export async function netidForAdvisorResearcher(researcher: {
-  accountId?: unknown;
   identifiers?: { netid?: unknown } | null;
 }): Promise<string> {
-  const heldNetid = researcherNetid(researcher);
-  if (heldNetid || !researcher.accountId) return heldNetid;
-  const account: any = await Account.findById(researcher.accountId as any)
-    .select('netid')
-    .lean();
-  return researcherNetid(researcher, account);
+  return researcherNetid(researcher);
 }
 
 function researcherToUserMatch(researcher: any, netid: string): UserMatch {
@@ -683,7 +849,7 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
       'identifiers.orcid': cleaned.toUpperCase(),
       archived: { $ne: true },
     })
-      .select('_id displayName accountId profile identifiers')
+      .select('_id displayName profile identifiers')
       .lean();
     if (!researcher) return null;
     return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
@@ -691,7 +857,7 @@ export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async
   const resolution = await resolveResearcherIdForPersonName(name);
   if (resolution.status !== 'matched' || !resolution.researcherId) return null;
   const researcher: any = await Researcher.findById(resolution.researcherId)
-    .select('_id displayName accountId profile identifiers')
+    .select('_id displayName profile identifiers')
     .lean();
   if (!researcher) return null;
   return researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
@@ -704,28 +870,58 @@ async function findUserForAdvisorRow(
   return advisorResolver(row.canonicalName, row.advisorOrcid || undefined);
 }
 
+const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
+const OWN_RESEARCH_ROW_TYPES = ['LAB', 'FACULTY_RESEARCH_AREA'];
+
+export interface LeadRowCandidate {
+  slug: string;
+  entityType?: string;
+  role?: string;
+}
+
 /**
- * Default group-slug resolver: hits Mongo via `findOrCreateForOwner`, the same
- * canonical helper Listing-creation uses. Returns the resulting ResearchGroup's
- * `slug`, or null on failure (don't surface the error — the caller logs and
- * moves on so one bad row can't kill the run).
+ * The row a fellow's PI mentors them in: the PI's own lab or faculty research profile
+ * before a core facility, center or program they direct, then a PI role before a
+ * directorship, then the slug for a stable choice.
  */
-async function defaultOwnerToGroupSlug(owner: UserMatch): Promise<string | null> {
-  try {
-    const { group } = await findOrCreateForOwner({
-      _id: owner._id,
-      netid: owner.netid,
-      fname: owner.fname,
-      lname: owner.lname,
-      primaryDepartment: owner.primaryDepartment,
-    });
-    return group?.slug || null;
-  } catch {
-    const fullName = `${owner.fname || ''} ${owner.lname || ''}`.trim();
-    const nameSlug = slugify(fullName || owner.netid || 'advisor');
-    const netidSlug = slugify(owner.netid || '');
-    return netidSlug ? `${nameSlug}-${netidSlug}` : nameSlug;
-  }
+export function preferredLeadRowSlug(candidates: LeadRowCandidate[]): string | null {
+  const rank = (candidate: LeadRowCandidate) => [
+    OWN_RESEARCH_ROW_TYPES.includes(candidate.entityType ?? '') ? 0 : 1,
+    candidate.role === 'PI' || candidate.role === 'CO_PI' ? 0 : 1,
+  ];
+  const [best] = [...candidates].sort((left, right) => {
+    const [leftType, leftRole] = rank(left);
+    const [rightType, rightRole] = rank(right);
+    return leftType - rightType || leftRole - rightRole || left.slug.localeCompare(right.slug);
+  });
+  return best?.slug ?? null;
+}
+
+export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<string | null> {
+  const edges: any[] = await RoleAssignment.find({
+    personId: owner._id,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('target role')
+    .lean();
+  if (edges.length === 0) return null;
+  const roleByEntityId = new Map(edges.map((edge) => [String(edge.target?.id), edge.role]));
+  const rows: any[] = await ResearchEntity.find({
+    _id: { $in: edges.map((edge) => edge.target?.id).filter(Boolean) },
+    archived: { $ne: true },
+  })
+    .select('slug entityType')
+    .lean();
+  return preferredLeadRowSlug(
+    rows.map((row) => ({
+      slug: String(row.slug),
+      entityType: row.entityType,
+      role: roleByEntityId.get(String(row._id)),
+    })),
+  );
 }
 
 /**
@@ -740,6 +936,7 @@ export function buildObservationsForAdvisor(
   groupSlug: string,
   advisees: PastUndergradAdviseeEntry[],
   sourceUrl: string,
+  recipients: FellowshipRecipientListing[] = [],
 ): ObservationInput[] {
   const base = {
     entityType: 'researchEntity' as const,
@@ -748,6 +945,9 @@ export function buildObservationsForAdvisor(
   };
   return [
     { ...base, field: 'pastUndergradAdvisees', value: advisees },
+    ...(recipients.length > 0
+      ? [{ ...base, field: 'fellowshipRecipients', value: recipients }]
+      : []),
     { ...base, field: 'lastObservedAt', value: new Date() },
   ];
 }
@@ -821,7 +1021,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     const sourceName = this.name;
     this.fetchPage = deps.fetchPage ?? ((url, useCache) => fetchHtml(url, useCache, sourceName));
     this.advisorResolver = deps.advisorResolver ?? defaultAdvisorResearcherResolver;
-    this.ownerToGroupSlug = deps.ownerToGroupSlug ?? defaultOwnerToGroupSlug;
+    this.ownerToGroupSlug = deps.ownerToGroupSlug ?? existingLeadRowSlugForOwner;
     this.defaultManualRecipientCsvDir =
       deps.defaultManualRecipientCsvDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
     this.defaultManualRecipientPdfDir =
@@ -876,28 +1076,37 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         }
       }
       const manualRecipientPdfDir = this.defaultManualRecipientPdfDir;
+      const manualPdfBodies = new Map<string, { body: string; sourceUrl: string }>();
       if (config.manualUploadRequired && !manualBody && manualRecipientPdfDir) {
-        const pdfPath = resolveSafeManualRecipientInputPath(
-          manualRecipientPdfDir,
-          config.programKey,
-          '.pdf',
-        );
-        try {
-          const pdfBody = await fs.readFile(pdfPath);
-          manualBody = await this.pdfTextExtractor(Buffer.from(pdfBody));
-          manualSourceUrl =
-            config.urls.find((url) => /\.pdf(?:$|[?#])/i.test(url)) ||
-            config.urls[0] ||
-            `manual-pdf://${config.programKey}.pdf`;
+        for (const input of manualPdfInputsFor(config)) {
+          const pdfPath = resolveSafeManualRecipientInputPath(
+            manualRecipientPdfDir,
+            input.fileKey,
+            '.pdf',
+          );
+          try {
+            const pdfBody = await fs.readFile(pdfPath);
+            if ([...manualPdfBodies.values()].some((read) => read.sourceUrl === input.sourceUrl)) {
+              continue;
+            }
+            manualPdfBodies.set(`manual-pdf://${input.fileKey}.pdf`, {
+              body: await this.pdfTextExtractor(Buffer.from(pdfBody)),
+              sourceUrl: input.sourceUrl,
+            });
+            ctx.log(`[${config.programKey}] using manual recipient PDF ${pdfPath}`);
+          } catch (err: any) {
+            ctx.log(
+              `[${config.programKey}] manual PDF not found/readable: ${sanitizeLogValue(err)}`,
+            );
+          }
+        }
+        if (manualPdfBodies.size > 0) {
           effectiveConfig = {
             ...config,
             manualUploadRequired: false,
-            urls: [`manual-pdf://${config.programKey}.pdf`],
-            extractor: manualRecipientPdfTextExtractor,
+            urls: [...manualPdfBodies.keys()],
+            extractor: config.pdfExtractor ?? manualRecipientPdfTextExtractor,
           };
-          ctx.log(`[${config.programKey}] using manual recipient PDF ${pdfPath}`);
-        } catch (err: any) {
-          ctx.log(`[${config.programKey}] manual PDF not found/readable: ${sanitizeLogValue(err)}`);
         }
       }
 
@@ -916,7 +1125,11 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
       // Fetch + extract per URL, accumulating recipients across the program's URLs.
       const recipients: FellowshipRecipient[] = [];
       const sourceByRecipient = new Map<FellowshipRecipient, string>();
-      let representativeUrl = manualSourceUrl || effectiveConfig.urls[0] || '';
+      let representativeUrl =
+        manualSourceUrl ||
+        manualPdfBodies.values().next().value?.sourceUrl ||
+        effectiveConfig.urls[0] ||
+        '';
       let extractFailed = false;
 
       for (const url of effectiveConfig.urls) {
@@ -924,16 +1137,17 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
         let html: string;
         try {
           html =
-            manualBody && /^manual(?:-pdf)?:\/\//i.test(url)
+            manualPdfBodies.get(url)?.body ??
+            (manualBody && /^manual(?:-pdf)?:\/\//i.test(url)
               ? manualBody
-              : await this.fetchPage(url, ctx.options.useCache);
+              : await this.fetchPage(url, ctx.options.useCache));
         } catch (err: any) {
           ctx.log(
             `[${config.programKey}] fetch failed for configured source: ${sanitizeLogValue(err)}`,
           );
           continue;
         }
-        const sourceUrl = manualSourceUrl || url;
+        const sourceUrl = manualPdfBodies.get(url)?.sourceUrl || manualSourceUrl || url;
         const defaultYear = inferYearFromUrl(sourceUrl) || inferYearFromUrl(url);
         let pageRecipients: FellowshipRecipient[];
         try {
@@ -1002,18 +1216,16 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           continue;
         }
 
-        // Resolve User → ResearchGroup slug (via findOrCreateForOwner)
         const slug = await this.ownerToGroupSlug(user);
         if (!slug) {
-          ctx.log(
-            `[${config.programKey}] could not resolve research-group slug for ${user.netid || user.lname}; skipping`,
-          );
+          ctx.log(`[${config.programKey}] matched advisor leads no existing row; skipping`);
+          programUnmatched++;
           continue;
         }
 
         const sourceUrl =
           row.sourceUrls.values().next().value || representativeUrl || effectiveConfig.urls[0];
-        const obs = buildObservationsForAdvisor(slug, row.advisees, sourceUrl);
+        const obs = buildObservationsForAdvisor(slug, row.advisees, sourceUrl, row.recipients);
         await ctx.emit(obs);
         totalObs += obs.length;
         programAdvisorsEmitted++;

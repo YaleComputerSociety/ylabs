@@ -135,3 +135,80 @@ describe('startScrapeRunHeartbeat (#3595)', () => {
     expect(consoleError.mock.calls.flat().join(' ')).toContain('socket closed');
   });
 });
+
+describe('startScrapeRunHeartbeat stall window (#5086)', () => {
+  const INTERVAL_MS = 1_000;
+  const WINDOW_MS = 5_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function startWithProgressClock(onStall = vi.fn()) {
+    vi.useFakeTimers();
+    let lastProgressAtMs = Date.now();
+    const beat = vi.fn().mockResolvedValue({ matched: true });
+    const heartbeat = startScrapeRunHeartbeat(
+      {
+        runId: 'run-1',
+        sourceName: 'fixture-source',
+        intervalMs: INTERVAL_MS,
+        stallWindowMs: WINDOW_MS,
+        onStall,
+      },
+      { beat, lastProgressAtMs: () => lastProgressAtMs },
+    );
+    const progress = () => {
+      lastProgressAtMs = Date.now();
+    };
+    return { beat, heartbeat, onStall, progress };
+  }
+
+  it('keeps heartbeating a run that keeps making progress, long past the window', async () => {
+    const { beat, heartbeat, onStall, progress } = startWithProgressClock();
+
+    for (let elapsed = 0; elapsed < 4 * WINDOW_MS; elapsed += INTERVAL_MS) {
+      progress();
+      await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    }
+    heartbeat.stop();
+
+    expect(beat).toHaveBeenCalledTimes((4 * WINDOW_MS) / INTERVAL_MS);
+    expect(onStall).not.toHaveBeenCalled();
+  });
+
+  it('stops heartbeating and reports the stall once the window passes with no progress', async () => {
+    const startedAt = Date.now();
+    const { beat, onStall } = startWithProgressClock();
+
+    await vi.advanceTimersByTimeAsync(WINDOW_MS);
+    expect(beat).toHaveBeenCalledTimes(WINDOW_MS / INTERVAL_MS);
+    expect(onStall).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(10 * WINDOW_MS);
+
+    expect(beat).toHaveBeenCalledTimes(WINDOW_MS / INTERVAL_MS);
+    expect(onStall).toHaveBeenCalledTimes(1);
+    expect(onStall.mock.calls[0]?.[0]).toEqual({
+      sourceName: 'fixture-source',
+      lastProgressAt: new Date(startedAt),
+      detectedAt: new Date(startedAt + WINDOW_MS + INTERVAL_MS),
+      stallWindowMs: WINDOW_MS,
+    });
+  });
+
+  it('restarts the window from the latest progress', async () => {
+    const { beat, onStall, progress } = startWithProgressClock();
+
+    await vi.advanceTimersByTimeAsync(WINDOW_MS - INTERVAL_MS);
+    progress();
+    await vi.advanceTimersByTimeAsync(WINDOW_MS);
+    expect(onStall).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2 * INTERVAL_MS);
+    expect(onStall).toHaveBeenCalledTimes(1);
+    expect(beat).toHaveBeenCalledTimes((2 * WINDOW_MS - INTERVAL_MS) / INTERVAL_MS);
+  });
+});

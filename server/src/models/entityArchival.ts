@@ -40,6 +40,7 @@ export const ARCHIVED_PRESERVED_STUDENT_VISIBILITY_FIELDS: readonly StudentVisib
   'studentVisibilitySuppressionReason',
   'studentVisibilityReviewedAt',
   'studentVisibilityReviewedByAccountId',
+  'studentVisibilityReviewedByNetid',
 ];
 
 export const studentVisibilityFieldNames = (): StudentVisibilityField[] =>

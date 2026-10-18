@@ -557,6 +557,7 @@ export async function synthesizeCoverageDescription(
 export function defaultCoverageSynthesisLLM(
   apiKey: string,
   model: string = COVERAGE_SYNTHESIS_MODEL,
+  now: () => Date = () => new Date(),
 ): CoverageSynthesisLLMFn {
   return async ({ snippets, entityName }) => {
     const safeName = redactDirectContactInfo(entityName).slice(0, 240);
@@ -574,9 +575,12 @@ export function defaultCoverageSynthesisLLM(
           { role: 'system', content: COVERAGE_SYNTHESIS_PROMPT },
           {
             role: 'user',
-            content: [`Research entity: ${safeName}`, 'EVIDENCE SNIPPETS:', snippetBlock].join(
-              '\n\n',
-            ),
+            content: [
+              `TODAY: ${now().toISOString().slice(0, 10)}`,
+              `Research entity: ${safeName}`,
+              'EVIDENCE SNIPPETS:',
+              snippetBlock,
+            ].join('\n\n'),
           },
         ],
       },

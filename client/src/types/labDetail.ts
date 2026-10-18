@@ -60,6 +60,16 @@ export interface LabRosterDisclosure {
   sourceUrl?: string;
   observedAt?: string;
   freshnessExpiresAt?: string;
+  undergraduates?: LabRosterUndergraduate[];
+  alumniSourceUrl?: string;
+}
+
+export interface LabRosterUndergraduate {
+  name: string;
+  status: 'current' | 'past';
+  startYear?: number;
+  endYear?: number;
+  profileUrl?: string;
 }
 
 export interface LabAccessSignal {

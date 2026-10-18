@@ -321,8 +321,7 @@ describe('researcherIdentityAnchored', () => {
     expect(researcherIdentityAnchored({ identifiers: { email: 'robin@example.test' } })).toBe(true);
   });
 
-  it('still anchors a researcher on a linked account, a title, or a department', () => {
-    expect(researcherIdentityAnchored({ accountId: 'account-1' })).toBe(true);
+  it('still anchors a researcher on a title or a department', () => {
     expect(researcherIdentityAnchored({ profile: { title: 'Professor' } })).toBe(true);
     expect(researcherIdentityAnchored({ profile: { primaryDepartment: 'Geology' } })).toBe(true);
   });

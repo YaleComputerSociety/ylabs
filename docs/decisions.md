@@ -5,6 +5,53 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-17: Accounts Are Environment-Local (#5088)
+
+Decision (owner, 2026-10-17): Development, Beta and Production each keep their own `accounts`, made by sign-ins in that environment, and only the research corpus is shared by promotion.
+Copying accounts between environments was incorrect: a sign-in belongs to the environment it happened in, and the carry that restored a target's logins after each copy was the machinery that orphaned 277 of 319 Production plans when it was missing (#4091).
+Measured before the change, the corpus held almost no account references after #5000: 0 researcher links and 0 reviewer stamps in Development and Beta, and 2 researcher links in Production, both with `identifiers.netid`.
+`accounts` joins `NEVER_COPY_COLLECTIONS` and is preserved by every refresh; the carry, the Beta-login exclusion and the account pseudonymization are deleted.
+No code writes an account `_id` onto a corpus row: the materializer no longer sets `researchers.accountId`, and a fellowship reviewer stamp records `studentVisibilityReviewedByNetid`.
+Both promotion steps and both mirror directions refuse a copy whose source corpus still carries `researchers.accountId` or `studentVisibilityReviewedByAccountId`, so an account reference cannot cross by accident.
+`research_plans` is environment-local by the same decision (#5092): a plan belongs to one of that environment's accounts, so it is in `NEVER_COPY_COLLECTIONS` and preserved by every refresh, including `--clear-development-non-mirror-data`.
+The Researcher schema no longer declares `accountId`, every reader resolves a researcher to a login by `identifiers.netid`, and the one-off #5000 migrations that read the link (`accounts:merge-local-part-netid-twins`, `accounts:retire-identity-only`, `researchers:backfill-identity-from-accounts`) were deleted after their Development dry runs found nothing to do.
+
+## 2026-10-16: A Description Says What Is Studied Now, Measured By Date (#5074)
+
+Decision (owner, 2026-10-16), part of the one-writer description standard on #5020.
+1. Recent work counts: the topic of work from about the last 5 years, such as a book, paper, trial or project, may be described as what the person studies ("Studies X").
+2. Finished work is never ongoing: a finished book, paper, trial or project never takes an ongoing verb ("current project", "leads", "is working on", "ongoing").
+3. Current projects come first: when the evidence names a current project, the description leads with it rather than with the topic of a finished book.
+4. Older work needs proof: a topic backed only by work older than about 5 years counts as current only if the page says it continues.
+5. Emeritus or retired: their past work counts as what they study only if the page says it continues.
+
+The rule is in the writer prompt (`server/src/scrapers/prompts/coverageSynthesis.md`), clause 2 is in the rules the card and the body share (`synthesisFidelityRules.md`), and the writer is given today's date so it can apply the 5-year window.
+It replaces a line that forbade presenting any book as current research, which contradicted clause 1.
+The prompt carries the rule; enforcing it in code (an ongoing verb refused on a quote about finished or dated work, a quote dated more than 5 years back refused unless it says the work continues) belongs to the quote-checked writer built under #5020.
+
+Measured on 29 rows of the frozen description benchmark with two independent blind graders: accurate rows rose from 18 and 19 to 24 and 24, the 8 rows previously wrong on tense went from 0 and 1 accurate to 7 and 7, and supported specifics fell by about 9%.
+Clause 3 did not measurably change which item leads, so it needs its own check.
+
+## 2026-10-14: A Lab's Undergraduate Researchers Are Listed By Name (#5039)
+
+Owner decision: when a lab's own page names its undergraduate researchers, the detail page lists every one of them, current and past, at the top of the team section.
+A student deciding whether to join a lab learns most from the undergraduates already in it, so the current list carries one line saying a current undergraduate can tell them what research there is like.
+That line is the one invitation to contact a named non-lead person anywhere on the page; every other team member stays team context only.
+A past undergraduate is listed only when the page itself marks them past, through an alumni or former section or toggle or an end or class year that has passed, and their position after leaving the lab is never stored.
+The list replaces the "Mentions undergraduate research" quote on that row, because the quote is a weaker statement of the same fact, often a single name lifted from the same page.
+An undergraduate needs no profile page to be listed, since the listing resolves no person record; a profile link, when the page has one, makes the entry a linked card.
+Only Yale undergraduates are listed (owner, 2026-10-16): a visitor, a high-school student, a student of another school, or a student of the lead's previous institution is left out, because the list answers which Yale students a student can ask about the lab.
+
+## 2026-10-14: Quoted Contact Details Are Shown, Not Redacted (#5041)
+
+A quote such as "contact [email redacted] and inquire about opportunities" hid an address the lab publishes on the very page the quote links to, and often the same address the detail page already shows as the lead's contact.
+Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidenceQuote`, `undergradRoleEvidenceQuote`, `undergradConstraintQuote`, `contactInstructionsQuote`) keep the email addresses and phone numbers of the page they quote, and the detail page serves them as written.
+The owner first kept phone numbers redacted, then reversed that the same day for the same reason: the lab publishes them on the cited page.
+The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
+Descriptions, signal excerpts, logs and the search index keep redacting both.
+A quote that carries a contact detail but states no instruction to use it is refused: it is a slice of a people page listing members with their own emails, such as an "Undergraduate Students" heading followed by names and addresses, not evidence of how to reach the lab (`quoteListsPeopleWithTheirContactDetails`).
+On Development that was 7 of the 12 quotes that had contacts restored, and the roster section, not the quote, is where a lab's undergraduates are listed.
+
 ## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
 
 This narrows where the 2026-10-11 entry below renders a quote, and keeps everything else it decided.

@@ -126,7 +126,7 @@ export const INGEST_REJECTABLE_PERSON_NAME_FIELDS: ReadonlySet<string> = new Set
   ...PERSON_NAME_FIELDS,
 ]);
 
-const CONTACT_REDACTED_QUOTE_FIELDS = new Set([
+const VERBATIM_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
   'undergradRoleEvidenceQuote',
   'undergradConstraintQuote',
@@ -319,8 +319,8 @@ export function sanitizeObservationField(
   }
   if (isResearchEntity && ENTITY_NAME_FIELDS.has(field)) return sanitizeEntityNameField(value);
   if (PROSE_FIELDS.has(field)) return sanitizeProseField(value);
-  if (CONTACT_REDACTED_QUOTE_FIELDS.has(field)) {
-    return accepted(normalizeHygieneWhitespace(redactDirectContactInfo(value)));
+  if (VERBATIM_QUOTE_FIELDS.has(field)) {
+    return accepted(normalizeHygieneWhitespace(value));
   }
   return accepted(value);
 }

@@ -12,6 +12,8 @@ import {
   remotePhaseStartCommand,
   remotePhaseSteps,
   renderServiceProblems,
+  searchReindexResultFile,
+  summarizeSearchReindexResult,
   renderSetupProblems,
   missingWeeklyRunIds,
   weeklyRunCoverage,
@@ -167,7 +169,10 @@ describe('argument parsing', () => {
       allowWithoutWeeklyRun: false,
       backupRef: 'snap-1',
       skipRemotePhase: false,
+      fullSearchRebuild: false,
     });
+    expect(parsePromoteBetaArgs(['--full-search-rebuild']).fullSearchRebuild).toBe(true);
+    expect(parsePromoteProductionArgs(['--full-search-rebuild']).fullSearchRebuild).toBe(true);
     expect(() => parsePromoteBetaArgs(['--backup-ref'])).toThrow('--backup-ref requires a value');
     expect(() => parsePromoteBetaArgs(['--apply'])).toThrow('Unknown promote:beta argument');
   });
@@ -187,7 +192,12 @@ describe('argument parsing', () => {
     expect(parseRemotePhaseArgs(['--environment', 'beta', '--confirm-beta-backup'])).toEqual({
       environment: 'beta',
       confirmBetaBackup: true,
+      fullSearchRebuild: false,
     });
+    expect(
+      parseRemotePhaseArgs(['--environment', 'production', '--full-search-rebuild'])
+        .fullSearchRebuild,
+    ).toBe(true);
     expect(() => parseRemotePhaseArgs([])).toThrow('--environment beta|production is required');
     expect(() =>
       parseRemotePhaseArgs(['--environment', 'production', '--confirm-beta-backup']),
@@ -218,14 +228,14 @@ describe('plan checks', () => {
       productionPlanProblems({
         sourceEnvironment: 'beta',
         targetEnvironment: 'production',
-        syntheticReferenceBlockersClear: false,
+        accountReferenceBlockersClear: false,
         applyBlockers: ['empty source accounts'],
         includesObservations: true,
         includesScrapeRuns: true,
         collections: [{ name: 'accounts' }],
       }),
     ).toEqual([
-      'synthetic-user reference blockers are not clear',
+      'promoted corpus rows still carry account _id references',
       'apply blockers: empty source accounts',
       'plan would promote observations',
       'plan would promote scrape_runs',
@@ -271,6 +281,50 @@ describe('remote phase', () => {
       'production smoke',
     ]);
     expect(steps[2].env).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
+  });
+
+  it('lets the reindex choose its mode unless a full rebuild is forced, and records its result', () => {
+    for (const target of ['beta', 'production'] as const) {
+      const step = remotePhaseSteps(target).find((s) => s.label === 'search reindex')!;
+      expect(step.args).not.toContain('--full');
+      expect(step.args).toEqual(
+        expect.arrayContaining(['--apply', '--output', searchReindexResultFile(target)]),
+      );
+      expect(step.resultFile).toBe(searchReindexResultFile(target));
+      const forced = remotePhaseSteps(target, {
+        confirmBetaBackup: false,
+        fullSearchRebuild: true,
+      }).find((s) => s.label === 'search reindex')!;
+      expect(forced.args).toContain('--full');
+    }
+    expect(
+      remotePhaseStartCommand('production', { confirmBetaBackup: false, fullSearchRebuild: true }),
+    ).toBe('yarn --cwd server promote:remote-phase --environment production --full-search-rebuild');
+  });
+
+  it('summarizes the reindex result for the phase report', () => {
+    expect(
+      summarizeSearchReindexResult(
+        JSON.stringify({
+          mode: 'incremental',
+          modeReason: 'match',
+          addedDocumentCount: 4,
+          updatedDocumentCount: 30,
+          deletedDocumentCount: 1,
+          unchangedDocumentCount: 9550,
+          environment: 'beta',
+        }),
+      ),
+    ).toEqual({
+      mode: 'incremental',
+      modeReason: 'match',
+      addedDocumentCount: 4,
+      updatedDocumentCount: 30,
+      deletedDocumentCount: 1,
+      unchangedDocumentCount: 9550,
+    });
+    expect(summarizeSearchReindexResult('not json')).toBeUndefined();
+    expect(summarizeSearchReindexResult('{}')).toBeUndefined();
   });
 
   it('builds the start command the Render job runs', () => {

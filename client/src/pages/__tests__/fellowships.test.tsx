@@ -233,6 +233,7 @@ const renderPage = (
     onToggleSortDirection: vi.fn(),
     fellowships,
     isLoading: false,
+    isSearchPending: false,
     loadError: false,
     searchExhausted: true,
     page: 1,
@@ -342,6 +343,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                   setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc')),
                 fellowships,
                 isLoading: false,
+                isSearchPending: false,
                 loadError: false,
                 searchExhausted: true,
                 page: 1,
@@ -428,6 +430,33 @@ describe('Programs page', () => {
     expect(screen.queryByText('Get started')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
+  });
+
+  it('marks the previous results as stale while a new search is in flight', async () => {
+    renderPage(
+      [
+        baseFellowship({
+          id: 'open',
+          title: 'Open Fellowship',
+          isAcceptingApplications: true,
+          deadline: isoDaysFromNow(60),
+        }),
+      ],
+      { isLoading: true, isSearchPending: true, total: 1 },
+    );
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
+    });
+
+    const results = screen.getByText('Open Fellowship').closest('[aria-busy]');
+    expect(results).toHaveAttribute('aria-busy', 'true');
+    expect(results).toHaveClass('opacity-50');
+    expect(screen.getByText('Searching…')).toBeTruthy();
+    expect(screen.queryByText(/^1 result$/)).toBeNull();
+    expect(screen.queryByText('Loading more results')).toBeNull();
   });
 
   it('does not claim zero results while the first load is still in flight', async () => {

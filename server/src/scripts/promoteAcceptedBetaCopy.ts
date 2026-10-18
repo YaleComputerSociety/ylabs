@@ -1,16 +1,9 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import {
-  MongoClient,
-  type AnyBulkWriteOperation,
-  type Db,
-  type Document,
-  type ObjectId,
-} from 'mongodb';
+import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
-import { reduceAccountToMirroredFields } from './mirroredAccountFields';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -21,13 +14,10 @@ import {
 } from './databaseCopyPairs';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  ACCOUNT_ID_REFERENCE_FIELDS,
-  accountCountChange,
-  applyAccountCarry,
-  loadAccountCarryPlan,
-  summarizeAccountCarry,
-  type AccountCarryPlan,
-} from './accountSwapCarry';
+  corpusAccountReferenceBlockers,
+  corpusAccountReferences,
+  type CorpusAccountReference,
+} from './corpusAccountReferences';
 import {
   applyStagedCollectionSwap,
   mirroredValidationOptions,
@@ -49,15 +39,6 @@ interface PromotionCollection {
 const DATASET_VERSION_PATTERN = /^prod-promote-\d{4}-\d{2}-\d{2}-lane-a-beta-copy$/;
 const BATCH_SIZE = 1000;
 
-const SYNTHETIC_USER_MATCHES: Document[] = [
-  { netid: { $in: ['devadmin', 'test123'] } },
-  { email: /@example\.invalid$/i },
-  { email: /^test[+@.]/i },
-];
-
-const SYNTHETIC_USER_MATCH: Document = { $or: SYNTHETIC_USER_MATCHES };
-const SYNTHETIC_USER_FILTER: Document = { $nor: SYNTHETIC_USER_MATCHES };
-
 const PROMOTION_ACTOR_NETID_PATTERN = /^[a-z0-9]{2,12}$/;
 const RETIRE_SCRAPE_RUNS_ACTION = 'promotion.retire_production_scrape_runs';
 
@@ -67,7 +48,6 @@ const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
-  { name: 'accounts', category: 'research-discovery', filter: SYNTHETIC_USER_FILTER },
   { name: 'researchers', category: 'research-discovery' },
   { name: 'role_assignments', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
@@ -103,12 +83,6 @@ export interface CollectionPlan {
   excludedCount: number;
 }
 
-export interface SyntheticUserReference {
-  collection: string;
-  field: string;
-  count: number;
-}
-
 interface CollectionCategorySummary {
   category: PromotionCollectionCategory;
   collectionCount: number;
@@ -131,15 +105,13 @@ export interface PromotionSummary {
   includesScrapeRuns: boolean;
   collections: CollectionPlan[];
   collectionCategories: CollectionCategorySummary[];
-  excludedSyntheticUsers: number;
-  excludedBetaLoginAccounts: number;
-  syntheticReferenceBlockersClear: boolean;
+  accountReferenceBlockersClear: boolean;
   emptySourceBlockersClear: boolean;
   runEvidenceBlockersClear: boolean;
   retiresProductionScrapeRuns: boolean;
   retireScrapeRunsBlockersClear: boolean;
   applyBlockers: string[];
-  blockedSyntheticUserReferences: SyntheticUserReference[];
+  blockedAccountReferences: CorpusAccountReference[];
 }
 
 const COLLECTION_CATEGORY_ORDER: PromotionCollectionCategory[] = [
@@ -347,9 +319,8 @@ export function buildRetireScrapeRunsBlockers(args: {
 export function buildPromotionSummary(
   options: PromotionOptions,
   plan: CollectionPlan[],
-  blockedSyntheticUserReferences: SyntheticUserReference[],
+  blockedAccountReferences: CorpusAccountReference[],
   productionObservationCount = 0,
-  excludedBetaLoginAccounts = 0,
 ): PromotionSummary {
   const collectionCategories = COLLECTION_CATEGORY_ORDER.flatMap((category) => {
     const rows = plan.filter((row) => row.category === category);
@@ -363,7 +334,7 @@ export function buildPromotionSummary(
       excludedCount: rows.reduce((sum, row) => sum + row.excludedCount, 0),
     };
   });
-  const syntheticReferenceBlockers = buildApplyBlockers(blockedSyntheticUserReferences);
+  const accountReferenceBlockers = corpusAccountReferenceBlockers(blockedAccountReferences);
   const emptySourceBlockers = buildEmptySourceBlockers(plan);
   const auditTrailBlockers = buildRunEvidenceBlockers(plan);
   const retireBlockers = buildRetireScrapeRunsBlockers({
@@ -371,7 +342,7 @@ export function buildPromotionSummary(
     productionObservationCount,
   });
   const applyBlockers = [
-    ...syntheticReferenceBlockers,
+    ...accountReferenceBlockers,
     ...emptySourceBlockers,
     ...auditTrailBlockers,
     ...retireBlockers,
@@ -390,27 +361,18 @@ export function buildPromotionSummary(
     includesScrapeRuns: options.includeScrapeRuns,
     collections: plan,
     collectionCategories,
-    // The accounts row's excludedCount now covers both exclusions, so the
-    // synthetic count is what remains once the Beta logins are taken out.
-    excludedSyntheticUsers: Math.max(
-      (plan.find((row) => row.name === 'accounts')?.excludedCount || 0) - excludedBetaLoginAccounts,
-      0,
-    ),
-    excludedBetaLoginAccounts,
-    syntheticReferenceBlockersClear: syntheticReferenceBlockers.length === 0,
+    accountReferenceBlockersClear: accountReferenceBlockers.length === 0,
     emptySourceBlockersClear: emptySourceBlockers.length === 0,
     runEvidenceBlockersClear: auditTrailBlockers.length === 0,
     retiresProductionScrapeRuns: Boolean(options.retireScrapeRunsActor),
     retireScrapeRunsBlockersClear: retireBlockers.length === 0,
     applyBlockers,
-    blockedSyntheticUserReferences,
+    blockedAccountReferences,
   };
 }
 
 // copyCollection deletes the whole target before inserting, so a collection that
-// is empty on beta would empty production rather than leave it untouched. Compare
-// sourceCopyCount, not sourceCount: accounts copies through SYNTHETIC_USER_FILTER,
-// so its raw count overstates what would actually be written.
+// is empty on beta would empty production rather than leave it untouched.
 function buildEmptySourceBlockers(plan: CollectionPlan[]): string[] {
   return plan
     .filter((row) => row.sourceCopyCount === 0 && row.targetCount > 0)
@@ -420,19 +382,6 @@ function buildEmptySourceBlockers(plan: CollectionPlan[]): string[] {
           row.targetCount === 1 ? 'document' : 'documents'
         }, which would empty it.`,
     );
-}
-
-function buildApplyBlockers(blockedSyntheticUserReferences: SyntheticUserReference[]): string[] {
-  if (blockedSyntheticUserReferences.length === 0) return [];
-
-  const totalReferences = blockedSyntheticUserReferences.reduce((sum, row) => sum + row.count, 0);
-  const referenceWord = totalReferences === 1 ? 'link' : 'links';
-  const fieldWord =
-    blockedSyntheticUserReferences.length === 1 ? 'collection field' : 'collection fields';
-
-  return [
-    `Copied records reference ${totalReferences} excluded synthetic-user ${referenceWord} across ${blockedSyntheticUserReferences.length} ${fieldWord}.`,
-  ];
 }
 
 export function assertPromotionSummaryCanApply(summary: PromotionSummary) {
@@ -460,110 +409,6 @@ function promotionCollectionsForOptions(options: PromotionOptions): PromotionCol
 
 export function promotionCollectionNamesForOptions(options: PromotionOptions): string[] {
   return promotionCollectionsForOptions(options).map((collection) => collection.name);
-}
-
-function collectionExists(db: Db, name: string): Promise<boolean> {
-  return db.listCollections({ name }, { nameOnly: true }).hasNext();
-}
-
-async function distinctReferenceKeys(
-  db: Db,
-  collectionName: string,
-  field: string,
-): Promise<string[]> {
-  if (!(await collectionExists(db, collectionName))) return [];
-  const values = await db.collection(collectionName).distinct(field);
-  return values.filter((value) => value != null).map(String);
-}
-
-/**
- * Beta accounts that describe a Beta login rather than the identity spine.
- *
- * Since #4139 the Development-to-Beta sync carries Beta's own login accounts
- * across the swap, so Beta holds real logins indefinitely. Production's accounts
- * are authoritative for Production, and a Beta login is not one of them, so such
- * a row must not cross: once promoted its Beta `lastLoginAt` makes it read as a
- * Production login to the carry, which then re-carries it forever (#4244).
- *
- * Login evidence is the same predicate the carry uses - a `lastLoginAt`, or an
- * owned `research_plans` row - read against Beta. Reachability is deliberately
- * measured over the promoted collections only, so a row the promotion itself
- * references is kept and no promoted reference is left dangling. `research_plans`
- * is not promoted, which is why owning one is evidence of a login rather than of
- * spine membership.
- *
- * Synthetic rows are read out under `SYNTHETIC_USER_FILTER` even though they are
- * excluded anyway, so that this set and the synthetic exclusion stay disjoint:
- * `excludedSyntheticUsers` is `excludedCount` minus this count, and an overlap
- * would under-report it.
- */
-export async function betaOnlyLoginAccountIds(
-  betaDb: Db,
-  promotedCollectionNames: readonly string[],
-): Promise<ObjectId[]> {
-  const planOwnerKeys = new Set(await distinctReferenceKeys(betaDb, 'research_plans', 'accountId'));
-  const accounts = await betaDb
-    .collection('accounts')
-    .find(SYNTHETIC_USER_FILTER, { projection: { _id: 1, lastLoginAt: 1 } })
-    .toArray();
-  const withLoginEvidence = accounts.filter(
-    (account) => account.lastLoginAt != null || planOwnerKeys.has(String(account._id)),
-  );
-  if (withLoginEvidence.length === 0) return [];
-
-  const promotedReferenceKeys = new Set<string>();
-  for (const { collection, field } of ACCOUNT_ID_REFERENCE_FIELDS) {
-    if (!promotedCollectionNames.includes(collection)) continue;
-    for (const key of await distinctReferenceKeys(betaDb, collection, field)) {
-      promotedReferenceKeys.add(key);
-    }
-  }
-
-  return withLoginEvidence
-    .filter((account) => !promotedReferenceKeys.has(String(account._id)))
-    .map((account) => account._id as ObjectId);
-}
-
-function accountsPromotionFilter(excludedBetaLoginIds: readonly ObjectId[]): Document {
-  if (excludedBetaLoginIds.length === 0) return SYNTHETIC_USER_FILTER;
-  return { $and: [SYNTHETIC_USER_FILTER, { _id: { $nin: excludedBetaLoginIds } }] };
-}
-
-export interface ResolvedPromotionManifest {
-  collections: PromotionCollection[];
-  excludedBetaLoginAccounts: number;
-}
-
-/**
- * The promotion manifest with the `accounts` rule applied.
- *
- * Both halves belong to the same rule and must be resolved together: the filter
- * drops Beta-only logins, and the transform reduces every row that does cross to
- * the mirror allow-list so no `lastLoginAt` or student profile field leaves Beta.
- * The filter has to be known at plan time rather than at insert time because the
- * cutover verifies the promoted count against it.
- */
-export async function resolvePromotionManifest(
-  betaDb: Db,
-  options: PromotionOptions,
-): Promise<ResolvedPromotionManifest> {
-  const collections = promotionCollectionsForOptions(options);
-  const excludedBetaLoginIds = await betaOnlyLoginAccountIds(
-    betaDb,
-    collections.map((collection) => collection.name),
-  );
-  return {
-    excludedBetaLoginAccounts: excludedBetaLoginIds.length,
-    collections: collections.map((collection) =>
-      collection.name === 'accounts'
-        ? {
-            ...collection,
-            filter: accountsPromotionFilter(excludedBetaLoginIds),
-            transform: reduceAccountToMirroredFields,
-          }
-        : collection,
-    ),
-  };
 }
 
 async function countCollection(db: Db, collection: PromotionCollection): Promise<CollectionPlan> {
@@ -608,30 +453,11 @@ async function buildPlan(
   );
 }
 
-export async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReference[]> {
-  const excludedUsers = await betaDb
-    .collection('accounts')
-    .find(SYNTHETIC_USER_MATCH, { projection: { _id: 1 } })
-    .toArray();
-  const excludedIds = excludedUsers.map((user) => user._id);
-  if (excludedIds.length === 0) return [];
-
-  const rows = await Promise.all(
-    ACCOUNT_ID_REFERENCE_FIELDS.filter(({ collection }) =>
-      COPY_COLLECTIONS.some((copied) => copied.name === collection),
-    ).map(async ({ collection, field }) => {
-      const exists = await betaDb
-        .listCollections({ name: collection }, { nameOnly: true })
-        .hasNext();
-      if (!exists) return { collection, field, count: 0 };
-      const count = await betaDb
-        .collection(collection)
-        .countDocuments({ [field]: { $in: excludedIds } });
-      return { collection, field, count };
-    }),
-  );
-
-  return rows.filter((row) => row.count > 0);
+export function promotionAccountReferences(
+  betaDb: Db,
+  options: PromotionOptions,
+): Promise<CorpusAccountReference[]> {
+  return corpusAccountReferences(betaDb, promotionCollectionNamesForOptions(options));
 }
 
 async function syncIndexes(
@@ -758,42 +584,19 @@ async function recordScrapeRunsRetirement(
   });
 }
 
-function withCarriedAccounts(plan: CollectionPlan[], carriedAccounts: number): CollectionPlan[] {
-  return plan.map((row) =>
-    row.name === 'accounts'
-      ? { ...row, sourceCopyCount: row.sourceCopyCount + carriedAccounts }
-      : row,
-  );
-}
-
-// Reads the accounts rule the apply will use, so the dry run's
-// `productionAccountCarry` describes the same promoted set the apply promotes.
-export async function previewAccountCarry(
-  betaDb: Db,
-  productionDb: Db,
-  manifest: ResolvedPromotionManifest,
-): Promise<AccountCarryPlan> {
-  const accounts = manifest.collections.find((collection) => collection.name === 'accounts');
-  return loadAccountCarryPlan({
-    targetDb: productionDb,
-    targetAccountsCollection: 'accounts',
-    loadPromotedAccounts: () =>
-      betaDb
-        .collection('accounts')
-        .find(accounts?.filter ?? SYNTHETIC_USER_FILTER)
-        .toArray(),
-  });
-}
-
 export async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
-  const { collections } = await resolvePromotionManifest(betaDb, options);
+  const accountReferenceBlockers = corpusAccountReferenceBlockers(
+    await promotionAccountReferences(betaDb, options),
+  );
+  if (accountReferenceBlockers.length > 0) {
+    throw new Error(`Apply mode blocked: ${accountReferenceBlockers.join(' ')}`);
+  }
+  const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, collections);
   const retiring = Boolean(options.retireScrapeRunsActor);
   const retiredCount = retiring
     ? await productionDb.collection('scrape_runs').countDocuments({})
     : 0;
-
-  let carriedAccountCountChange = 0;
 
   await applyStagedCollectionSwap({
     targetDb: productionDb,
@@ -803,18 +606,6 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     label: 'Beta to Production promotion',
     stage: (collection, operationId) =>
       stageCollection(betaDb, productionDb, collection, operationId),
-    afterCutover: async (backups) => {
-      const productionAccounts = backups.get('accounts');
-      if (!productionAccounts) return;
-      const carry = await loadAccountCarryPlan({
-        targetDb: productionDb,
-        targetAccountsCollection: productionAccounts,
-        loadPromotedAccounts: () =>
-          productionDb.collection('accounts').find(SYNTHETIC_USER_FILTER).toArray(),
-      });
-      await applyAccountCarry(productionDb, carry);
-      carriedAccountCountChange = accountCountChange(summarizeAccountCarry(carry));
-    },
     verify: async () => {
       const actualCounts = new Map<string, number>();
       for (const collection of collections) {
@@ -824,10 +615,7 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
         );
       }
       const mismatches = buildPromotionCutoverMismatches(
-        withCarriedAccounts(
-          plan.filter((row) => collections.some((collection) => collection.name === row.name)),
-          carriedAccountCountChange,
-        ),
+        plan.filter((row) => collections.some((collection) => collection.name === row.name)),
         actualCounts,
       );
       if (mismatches.length > 0) {
@@ -864,9 +652,8 @@ async function main() {
     const betaDb = betaClient.db();
     const productionDb = productionClient.db();
     assertDatabaseCopyPair('beta-to-production', betaDb.databaseName, productionDb.databaseName);
-    const manifest = await resolvePromotionManifest(betaDb, options);
-    const plan = await buildPlan(betaDb, productionDb, manifest.collections);
-    const blockedSyntheticUserReferences = await syntheticUserReferences(betaDb);
+    const plan = await buildPlan(betaDb, productionDb, promotionCollectionsForOptions(options));
+    const blockedAccountReferences = await promotionAccountReferences(betaDb, options);
     // Counted directly rather than read off the plan: observations is opt-in, so it
     // is usually absent from the plan entirely and the guard would read 0 and pass.
     const productionObservationCount = await productionDb
@@ -876,28 +663,17 @@ async function main() {
     const summary = buildPromotionSummary(
       options,
       plan,
-      blockedSyntheticUserReferences,
+      blockedAccountReferences,
       productionObservationCount,
-      manifest.excludedBetaLoginAccounts,
     );
 
-    const report = {
-      ...summary,
-      productionAccountCarry: summarizeAccountCarry(
-        await previewAccountCarry(betaDb, productionDb, manifest),
-      ),
-    };
-    console.log(JSON.stringify(report, null, 2));
-    writePromotionOutput(report, options.output);
+    console.log(JSON.stringify(summary, null, 2));
+    writePromotionOutput(summary, options.output);
 
     if (options.mode === 'apply') {
       assertPromotionSummaryCanApply(summary);
       await applyCopy(betaDb, productionDb, options);
-      const after = await buildPlan(
-        betaDb,
-        productionDb,
-        (await resolvePromotionManifest(betaDb, options)).collections,
-      );
+      const after = await buildPlan(betaDb, productionDb, promotionCollectionsForOptions(options));
       console.log(
         JSON.stringify(
           {

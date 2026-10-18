@@ -29,7 +29,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import * as cheerio from 'cheerio';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
@@ -38,6 +37,7 @@ import {
   OFFICIAL_ROSTER_CONFIGS,
   OFFICIAL_ROSTER_MAX_PUBLISH_AGE_DAYS,
   extractOfficialResearchHomeRoster,
+  officialRosterSectionLabels,
   type OfficialRosterConfig,
 } from '../scrapers/sources/officialResearchHomeRosterScraper';
 import { fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
@@ -111,19 +111,6 @@ export function selectRosterConfigs(
     throw new Error(`--only names no roster config: ${unknown.sort().join(', ')}`);
   }
   return configs.filter((config) => only.has(config.researchEntityKey.toLowerCase()));
-}
-
-function sectionLabelsOnPage(html: string): string[] {
-  const $ = cheerio.load(html);
-  const labels: string[] = [];
-  $('section.organization-member-listing').each((_index, element) => {
-    const section = $(element);
-    const label = (section.attr('aria-label') || section.find('h2,h3').first().text() || '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (label) labels.push(label.slice(0, 120));
-  });
-  return labels;
 }
 
 async function readStoredLaneState(
@@ -243,7 +230,7 @@ export async function auditOfficialRosterLane(
     }));
     base.withheldCount = roster.withheldCount;
     base.duplicateCount = roster.duplicateCount;
-    base.sectionsOnPage = sectionLabelsOnPage(page.html);
+    base.sectionsOnPage = officialRosterSectionLabels(page.html, config.template);
     if (roster.sourcePublishedAt) {
       base.sourcePublishedAt = roster.sourcePublishedAt.toISOString();
       const ageDays = (observedAt.getTime() - roster.sourcePublishedAt.getTime()) / DAY_MS;

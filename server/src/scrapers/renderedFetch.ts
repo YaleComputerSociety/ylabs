@@ -26,6 +26,7 @@ import {
   type SsrfGuardedForwardProxy,
 } from './utils/ssrfGuardedForwardProxy';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { withScrapeRunProgress } from './scrapeRunProgress';
 import { resolveServerPackageRoot } from '../utils/serverPackageRoot';
 import type {
   ScraperFetchAttemptMetrics,
@@ -149,7 +150,7 @@ export async function fetchUsableRenderedPage({
     const cached = await getCached<RenderedFetchResult>(sourceName, cacheKey);
     if (cached && renderedPageFailureReason(cached) === null) return cached;
   }
-  const result = await renderedFetcher(request);
+  const result = await withScrapeRunProgress(() => renderedFetcher(request));
   if (!result) return null;
   const failureReason = renderedPageFailureReason(result);
   if (failureReason !== null) return { ...result, html: '', blockedReason: failureReason };

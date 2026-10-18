@@ -156,8 +156,9 @@ The row flattens both modes' `summary.json` into queryable fields rather than st
 - `codeSha`, `status` (`running`, `succeeded`, `failed`, or `refused`), `exitCode`, `refusals` (the preflight refusal and any `codeDrift` messages), `codeDrift`, and a capped `error`.
 - `preflight`: the held lock sources, storage before and after the fetch-cache drop as `usedMb`, `quotaMb`, `headroomMb` and `minHeadroomMb`, and whether the cache was dropped.
 - `modes`: per mode, its wall time, source counts, post-run status and duration, and throttle totals.
-- `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle recovered and exhausted, and materialization errors.
+- `sources`: one entry per source per mode, with phase, status, exit code, start, finish and duration, observations written, fetch counts, throttle and database-write recovered and exhausted, and materialization errors.
   A failed source also carries its redacted `failureTail`, so why it failed survives the container (#4852).
+  A source re-run after a transient database error carries `attempts` and `firstAttemptError` (#5078).
 - `stages`: one entry per post-run stage per mode, with status, exit code, start, finish and duration.
   A failed stage also carries `failureKind` (`crashed`, `regression`, or `violation`), and a crashed one its redacted `failureTail`.
   A counting stage carries the `counts` it recorded, which are the baseline the next run judges it against, its `regressions` as `{ name, previous, current }`, and for `lane-scorecard` the `unscored` benchmarks that need a recapture.
@@ -206,7 +207,9 @@ Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server sc
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
 The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
-The service builds from `beta` and redeploys on every commit, but each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even when the image is stale; only a new system dependency, or a file outside the paths `.dockerignore` admits, needs a change under `deploy/sweep-runner/`.
+The service builds from `beta`, but since 2026-10-17 its build filter is only `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, because rebuilding on every `server/**` commit exhausted the workspace's build minutes while buying the weekly sweep nothing.
+Each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even though the image is stale; only a new system dependency, a change to the entrypoint, or a file outside the paths `.dockerignore` admits needs a change under `deploy/sweep-runner/`.
+The image's own copy of the code under `/app` is therefore routinely older than `beta`, so a one-off job must never run `yarn --cwd /app/server ...` directly: start it with `yarn ops:sweep rerun`, below, which runs current `beta` through the entrypoint.
 Read the service with `render services --output json` and its builds with `render deploys list <service id> --output json`.
 
 Shared settings:
@@ -229,6 +232,53 @@ Those ranges are shared by every Render service in the region, so scope the data
 Read the job's first duration with `yarn --cwd server scrape:sweep:weekly-runs --limit 1` against the 12-hour limit.
 
 The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
+
+### Operating The Hosted Sweep: `yarn ops:sweep` (#5097)
+
+One operator command reads the last weekly run, re-runs sources on Render at current `beta`, and checks the sweep's database role.
+It runs from a laptop checkout whose `server/.env` points at Development, through the `development` data profile, and refuses unless `MONGODBURL` names `Development` and `SCRAPER_ENV` resolves to development.
+It reads the Render API key from `RENDER_API_KEY`, or from the render CLI's login in `~/.render/cli.yaml` when that is unset.
+The logic is in `server/src/scripts/opsSweepCore.ts`; the command is `server/src/scripts/opsSweep.ts`.
+
+```bash
+yarn ops:sweep status
+yarn ops:sweep rerun <source>... [--override-hold] [--dry-run]
+yarn ops:sweep probe-permissions [--dry-run]
+```
+
+`status` prints the newest `weekly_sweep_runs` row: its status, start and duration (or elapsed time for a `running` row, and whether it outlived Render's 12-hour limit), its `codeSha` against the current `beta` HEAD, the search index state and remedy, any refusal or error, and each failed source and stage with its error and, for a stage, its `failureKind`.
+`yarn --cwd server scrape:sweep:weekly-runs` remains the fuller history.
+
+`rerun` re-runs one or more sweep sources on the `ylabs-scraper` service as a Render one-off job:
+
+1. It refuses a name that is not in the research or fellowship sweep manifest, including every manual-only source, because there are no sweep flags to run it with.
+2. It refuses a source under the owner hold on description, writer, card and lab-microsite runs (#5020) unless `--override-hold` is passed; pass it only with the owner's say-so.
+The held list is `OWNER_HELD_SOURCES`; of the sweep sources only `lab-microsite-description-llm` is on it.
+3. It refuses unless the live image's entrypoint has the `--rerun-source` mode, read from the entrypoint at the commit of the service's newest `live` deploy, so a job never falls back to the image's stale code.
+4. It refuses while the newest `weekly_sweep_runs` row is `running` and younger than the 12-hour limit, while any sweep source holds a live scrape job lock, while a run of a named source is `running` with a live heartbeat (`server/src/scrapers/scrapeRunLiveness.ts`), or while another one-off job on the service is not finished.
+5. It records each source's last comparable successful `scrape_runs` row: exhaustive, not a dry run, not `--force-llm`, and not scoped by `--only`, `--limit` or a benchmark.
+6. It starts `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --rerun-source <source>...` and polls the job every minute.
+The entrypoint resolves `beta` HEAD, clones and installs it exactly as for the weekly sweep, and runs `yarn --cwd server scrape:sweep:rerun-source` (`server/src/scripts/sweepSourceRerun.ts`) from that checkout with `SEARCH_INDEX_WRITES=deferred`.
+That script repeats the environment, source, and activity refusals inside the job, applies the weekly sweep's code freshness refusal (`server/src/scripts/sweepCodeFreshness.ts`), and runs each source in turn with `SCRAPER_ENV=development` and `ALLOW_NON_PROD_SCRAPER_WRITES=true` and exactly the `development-full` flags, `--ignore-work-planner --exhaustive --auto-materialize`, stopping at the first source that fails.
+It never passes `--force-llm`.
+7. When the job ends it reads each source's new `scrape_runs` row and compares it with the recorded one.
+A source is flagged when its run is missing or failed, when it wrote no observations (`producedNothing`), or when its observation count or its entities updated fell by more than 25% and by at least 10.
+Comparable exhaustive runs from 2026-09-20 to 2026-10-17 fell by at most 12.7% on every lane outside the hold (an LLM lane), and once by 20.6% in one lane's updates, so 25% clears the measured noise while a broken selector or a lost page list falls far further; the floor of 10 keeps a lane with a handful of rows from flagging a change of two.
+8. After a job that succeeded it runs `yarn development:search:sync` from the checkout, because the job deferred every index write.
+It exits nonzero when the job failed, the sync failed, or any source was flagged; read a flagged run before trusting it.
+When the wait itself stops, on the timeout or a Render API error, it exits nonzero without comparing or syncing and prints the job id, the sync command, and each source's recorded baseline row, because the job may still be writing Development; once the job ends, run the sync and compare the new `scrape_runs` rows by hand.
+
+Render's logs are not always available, so the outcome comes from the job status and the `scrape_runs` rows, never from the log.
+`--dry-run` runs every refusal and prints the start command without starting a job.
+The rerun mode exists only once an image built with it is live; until then `rerun` refuses at step 3.
+
+`probe-permissions` reads the `ylabs-sweep-dev` custom role with `atlas customDbRoles describe ylabs-sweep-dev --projectId 685b36661a9a1101c14a007b -o json`, so it needs a current `atlas auth login`.
+It builds a probe of every granted find, insert, update and remove per collection, plus `listCollections`, `listIndexes`, `dbStats` and `listDatabases` where granted, and the expected denials: an update on Development `accounts`, a `createIndex` and a `drop`, and a find and an update on Beta and Prod `research_entities`.
+It refuses to build a probe for a role that grants one of those denials or inherits another role.
+The probe runs as a Render one-off job on `ylabs-scraper` with the cron's own `MONGODBURL`, from `server/src/scripts/sweepPermissionProbeRuntime.cjs` sent as the job's start command, so it runs on any live image.
+It never writes: every read, update and remove matches a fresh `_id` that no row holds, and the insert and the `createIndex` run inside a transaction that is always aborted.
+An error matching `/not allowed|not authorized|unauthorized/i`, or code 13, is a denial, because Atlas refuses with "user is not allowed to do action".
+The job exits 4 when the authenticated user is not `ylabs-sweep-dev`, 3 on any unexpected result, and 0 when every check came out as expected, and the command reports pass or fail from the job status.
 
 ### Probing Yale Hosts From The Runner
 
@@ -339,9 +389,10 @@ Development holds roughly 1.07 GB across 514,366 objects, and 412,997 of those o
 A mirror that carried observations would copy 436,026 documents and duplicate that footprint inside the same quota, which can exhaust the cluster and take the live site down to populate a staging environment.
 Without them the same mirror copies about 23,000 documents across the reviewable corpus and the identity spine.
 
-What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `signals`, `researchers`, `role_assignments`, `accounts`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
+What the mirror does copy is the corpus a reviewer reads plus the identity that resolves it: `research_entities`, `research_entity_relationships`, `signals`, `researchers`, `role_assignments`, `sources`, `scrape_runs`, `departments`, `org_units`, `research_areas`, `taxonomy_terms`, and `fellowships`.
 Identity is not optional in that list.
-A mirrored environment holding `research_entities` without `researchers`, `role_assignments`, and `accounts` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
+A mirrored environment holding `research_entities` without `researchers` and `role_assignments` serves a corpus whose every lead is unresolvable, which fails as `missing_lead` across the whole dataset rather than in one place.
+A researcher's identity is its own `identifiers.netid` and `identifiers.email`, so `accounts` is not part of it: accounts are environment-local, each environment keeps the sign-ins made there, and no copy reads, writes, or clears them (#5088).
 `canonical_aliases` is retired (#3027) and is listed as an excluded collection rather than dropped from the classification, because a collection still present on the source but classified neither way blocks apply.
 Copying `taxonomy_terms` also carries the approved research-area vocabulary, which nothing else can currently seed into a fresh environment.
 
@@ -437,15 +488,10 @@ The sync mirrors every document in the approved Beta research-discovery, identit
 See ["Observations stay in Development"](#observations-stay-in-development) above for the exact copy set and why it is drawn that way.
 The standard plan declares, and the standard apply clears, Atlas Development collections that are outside that approved mirror, except for the environment-local measurement history named later in this section, which the refresh preserves.
 It never reads Beta analytics, admin grants, admin audit and access-review projections, job locks, scraper caches, student profiles, applications, tracking, outreach, claims, private research plans, or release queues; the plan artifact's `excludedOperationalCollections` is the authoritative list.
-Every Beta account and role assignment has a Development counterpart so references and role distributions remain valid.
-Accounts reachable from a `Researcher` keep the directory netid and email Yale already publishes, every other account is deterministically pseudonymized, and each copied account is reduced to an allow-list of identity fields so student profile and account-activity state never crosses.
-The target's own logins are never lost to the copy: every target account with login evidence (`lastLoginAt`, or an owned research plan) is carried from the pre-swap backup before verification, keeping its `_id` so the target's `research_plans` still resolve (#4130).
-Where a source row shares that `_id` or netid, the carry writes the target's `lastLoginAt`, `profile`, `sessionVersion` and `status` onto it, because the target is authoritative for its own logins (#5000).
-Where the source holds that `_id` as a `mirrored-<id>` pseudonym, which is what the opposite-direction mirror mints for the target's own login, the target row replaces the pseudonym.
-Where the source also re-created that login's netid under a new `_id`, the source row is re-keyed onto the target `_id` over the pseudonym, so the netid stays unique.
-Read `accountCarry` in the artifact: `restored` counts round-tripped logins, `merged` counts re-created ones, and `inserted` counts target-only ones.
-A dry run reports the preview, and an apply reports the carry it actually ran after cutover.
-Both mirror directions share this carry, as does `production:promote-beta-copy`.
+Accounts and research plans never cross (#5088, #5092): `accounts` and `research_plans` are in `NEVER_COPY_COLLECTIONS` and `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the target keeps exactly the accounts and plans it had, and no refresh clears either.
+Because accounts are environment-local, an account `_id` stored on a copied corpus row would name nobody in the target, so the copy refuses a source whose `researchers.accountId` or `studentVisibilityReviewedByAccountId` is set.
+The plan artifact's `accountReferences` lists any such row by collection and field, and an apply refuses until it is empty.
+Both mirror directions share this rule, as does `production:promote-beta-copy`.
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -496,14 +542,6 @@ Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preser
 The refusal itself sits in `applyStagedCollectionSwap`, the staged swap every whole-collection replacement goes through, so any caller that hands it a clear list naming a preserved collection fails before a single drop, promotion included.
 A deliberate full wipe is not part of this script; drop the collections directly with the operator tooling instead.
 
-### Retiring identity-only accounts (#5000)
-
-`yarn --cwd server accounts:retire-identity-only` deletes every account nobody signed into, after copying its netid and email onto each linked researcher that lacks them and unsetting `Researcher.accountId`, so `accounts` holds only logins.
-It holds an account that owns a research plan, is a reviewer stamp, is named by an admin grant, or whose researcher holds a different netid or email, and reports each hold by reason.
-It is dry-run by default, `--apply` needs `--confirm-retire-identity-only-accounts`, it refuses any target but Development, and an apply writes a mode-0600 backup of the deleted rows and unset links to the OS temp directory first.
-Run `beta:refresh-from-development` after it and before any `development:refresh-from-beta`: Beta still holds the retired rows until then, and a Beta-to-Development refresh in between copies them back.
-Production converges on the next `production:promote-beta-copy`, whose account carry keeps every Production login and its plans while the swap drops the rest.
-
 ## One-Command Promotion
 
 The weekly runner does all the scraping, observation, and materialization in Development.
@@ -522,7 +560,7 @@ It prints which run satisfied each mode.
 5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
 6. Applies the mirror and stops unless it reports `"status": "applied"`.
 7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
-That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, rebuilds the Beta index, and runs `beta:readiness`, stopping at the first step that fails.
+That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents when its settings and embedder match the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
 The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
 
 ### What `yarn promote:production` does
@@ -530,12 +568,11 @@ The trust contract runs with `--fail-on-public-visibility-violation`, so it fail
 1. Runs `database:verify-names --pair beta-to-production`.
 2. Reads every open pull request to `main` and refuses while any carries the `hold` label, or when GitHub cannot be read.
 A draft does not hold the data copy, because `docs/release-process.md` copies data before the code merge.
-3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared synthetic-reference blocker, or a plan that would promote observations or `scrape_runs`.
-It prints the Production login carry; an `inserted` of 0 while Production has logged-in users is still a stop you read for yourself.
+3. Runs the Phase 4 dry-run with the dataset version derived from today's date, `prod-promote-YYYY-MM-DD-lane-a-beta-copy`, and refuses on any apply blocker, an uncleared account-reference blocker, or a plan that would promote observations or `scrape_runs`.
 4. Checks the Production operator service, which must deploy `main`.
 5. Requires the operator to type `production`; it never accepts `--yes`.
 6. Applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
-7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, rebuilds the Production index with `CONFIRM_PROD_SCRAPE=true`, and runs the Production smoke.
+7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its settings and embedder match the code, otherwise a full rebuild), and runs the Production smoke.
 It refuses when `PFR3_MEILI_RESTORE_POINT` is not set on that service.
 8. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
 
@@ -642,7 +679,7 @@ Only run it after the bounded sample succeeds.
 After the source sweep, the same command projects active faculty into the Account/Researcher model, runs a full-corpus student-visibility gate so gate-logic changes propagate before the index rebuild, rebuilds local Development Meilisearch, runs the coverage audit, strict data-quality audit, integrity gate, and strict student trust contract, and finishes with a report-only archived-cleanup stage that lists deletable dedup-residue archived entities without ever deleting them.
 Every post-run stage executes even when an earlier quality gate fails, so the operator receives every report; `docs/research-data-pipeline.md` owns the authoritative stage list.
 The overall command exits nonzero when a source or post-run stage fails.
-`integrity-gate`, `trust-contract` and `lane-scorecard` fail on a regression, a crash, or a public visibility violation, not on a standing count, as `docs/research-data-pipeline.md` describes after the stage list (#4852).
+`integrity-gate`, `trust-contract` and `lane-scorecard` fail on a regression, a crash, or a public visibility violation, not on a standing count, and `data-quality` fails as a `violation` that names each failing error check, as `docs/research-data-pipeline.md` describes after the stage list (#4852).
 The runner prints an output directory under `/tmp`.
 That directory contains one JSON report per source, `summary.json`, the faculty projection report, the student-visibility gate report, the search rebuild report, all four coverage and quality reports, and the report-only archived-cleanup report.
 Each summary row includes observation and entity yield, fetch successes and failures, blocked requests, selector breakages, warnings, and materialization counts.
@@ -775,7 +812,8 @@ SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   
 ```
 
 Create and verify the required Beta Meilisearch restore point or export.
-Then rebuild the Beta search index after the gate, never before it, because the gate writes the tiers the index carries.
+Then update the Beta search index after the gate, never before it, because the gate writes the tiers the index carries.
+The command reconciles only the changed documents when the live index's settings and embedder match the code and rebuilds otherwise; add `--full` to force the rebuild.
 Follow [the reindex runbook](meilisearch-reindex-runbook.md), which owns the command, the required variables, and how to confirm the rebuilt count:
 
 ```bash
@@ -843,13 +881,9 @@ Review the artifact and confirm all of the following:
 
 - `sourceEnvironment` is `beta`.
 - `targetEnvironment` is `production`.
-- `syntheticReferenceBlockersClear` is `true`.
+- `accountReferenceBlockersClear` is `true`, and `blockedAccountReferences` is empty.
+  `docs/release-process.md` ("Promoting data, not just code") owns why accounts are environment-local and never promoted.
 - `applyBlockers` is empty.
-- `productionAccountCarry` accounts for every Production login: an `inserted` of 0 while Production has logged-in users is a stop.
-  `docs/release-process.md` ("Promoting data, not just code") owns why the promotion carries them and how a same-netid Beta row is re-keyed.
-- `excludedBetaLoginAccounts` is not a blocker at any value: Beta holds its own logins, and an account whose only evidence is one of them does not cross.
-  Every account that does cross is reduced to the mirror allow-list, so no Beta login timestamp or student profile field reaches Production.
-  The same `docs/release-process.md` section owns both halves of that rule and why `excludedSyntheticUsers` is reported separately.
 - `includesObservations` is `false` unless the evidence log was deliberately requested with `--include-observations`.
 - `includesScrapeRuns` is `false` unless `--include-scrape-runs` was passed, and leaving it off is the correct default.
   Production has never scraped anything - Development is the only environment that does - so a promoted `scrape_runs` is a copy of Development's history wearing Production's name.
@@ -885,7 +919,7 @@ The promotion no longer requires an operator-supplied restore point, and no long
 `ATLAS_RESTORE_POINT` was the script's only rollback story and it was unverifiable: any non-empty string satisfied the check, so it recorded an operator's intention rather than a recoverable state (#2347).
 
 The rollback is now in the script.
-`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, carries Production's logged-in accounts out of the `accounts` backup, verifies that each promoted collection holds the row count Beta offered plus those carried accounts, and only then drops the backups.
+`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, verifies that each promoted collection holds the row count Beta offered, and only then drops the backups.
 Any failure before that verification passes rolls every collection back to its pre-run state, which is asserted against a real mongod rather than a mocked driver.
 
 An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
@@ -908,12 +942,12 @@ CONFIRM_PROD_SCRAPE=true \
   --output /tmp/ylabs-production-promotion-apply.json
 ```
 
-Stop if the command does not print `"status": "applied"` or if any post-copy count differs from the Beta source copy count, `accounts` excepted: it is expected to exceed Beta's count by the accounts carried from Production.
+Stop if the command does not print `"status": "applied"` or if any post-copy count differs from the Beta source copy count.
 
 ## Phase 5: Production Search and Smoke Gate - Run in the Production Render Shell
 
 The current accepted-Beta copy replaces complete allowlisted MongoDB collections.
-Until a durable run-scoped search outbox exists, the safe supported Production search step is a full rebuild.
+The search step reads every promoted row and every indexed document, so a reconcile is complete after a whole-collection copy, and it falls back to a full rebuild when the live index's settings or embedder differ from the code (#5107).
 
 Run all commands in this phase from the Production Render shell.
 First verify the Production environment without printing credentials:
@@ -932,7 +966,7 @@ Stop if the reference is missing:
 test -n "$PFR3_MEILI_RESTORE_POINT"
 ```
 
-Re-gate visibility and then rebuild the Production search index from the newly promoted Production MongoDB, in that order.
+Re-gate visibility and then update the Production search index from the newly promoted Production MongoDB, in that order.
 `docs/release-process.md` ("Promoting data, not just code") owns the gate command and why the order matters, and [the reindex runbook](meilisearch-reindex-runbook.md) owns the reindex command:
 
 ```bash

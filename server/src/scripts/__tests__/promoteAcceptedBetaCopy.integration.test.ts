@@ -4,44 +4,38 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CANONICAL_MONGO_VALIDATORS } from '../canonicalMongoValidatorRegistry';
 import { applyCopy, type PromotionOptions } from '../promoteAcceptedBetaCopy';
 
-const facultyAccountId = new ObjectId('68e0000000000000000000a1');
+const betaLoginAccountId = new ObjectId('68e0000000000000000000a1');
+const productionLoginAccountId = new ObjectId('68e0000000000000000000a2');
+const productionPlanId = new ObjectId('68e0000000000000000000a3');
 const researcherId = new ObjectId('68e0000000000000000000b1');
 const researchEntityId = new ObjectId('68e0000000000000000000c1');
 const orgUnitId = new ObjectId('68e0000000000000000000d1');
 
-const accountsValidator = CANONICAL_MONGO_VALIDATORS.find(
-  (candidate) => candidate.collectionName === 'accounts',
+const researchersValidator = CANONICAL_MONGO_VALIDATORS.find(
+  (candidate) => candidate.collectionName === 'researchers',
 )!;
 
 async function seedBeta(betaDb: Db): Promise<void> {
-  await betaDb.createCollection('accounts', {
-    validator: accountsValidator.validator,
-    validationLevel: accountsValidator.validationLevel,
-    validationAction: accountsValidator.validationAction,
-  });
   await betaDb.collection('accounts').insertOne({
-    _id: facultyAccountId,
+    _id: betaLoginAccountId,
     schemaVersion: 1,
     netid: 'abc123',
-    email: 'faculty.person@yale.edu',
+    email: 'beta.login@example.test',
     status: 'ACTIVE',
-    profile: {
-      firstName: 'Faculty',
-      lastName: 'Person',
-      userType: 'professor',
-      title: 'Professor of Example Studies',
-      department: 'Example Department',
-    },
     archived: false,
-    createdAt: new Date('2026-01-01T00:00:00Z'),
-    updatedAt: new Date('2026-08-01T12:00:00Z'),
+    lastLoginAt: new Date('2026-10-01T12:00:00Z'),
   });
 
+  await betaDb.createCollection('researchers', {
+    validator: researchersValidator.validator,
+    validationLevel: researchersValidator.validationLevel,
+    validationAction: researchersValidator.validationAction,
+  });
   await betaDb.collection('researchers').insertOne({
     _id: researcherId,
     schemaVersion: 1,
     displayName: 'Faculty Person',
-    accountId: facultyAccountId,
+    identifiers: { netid: 'abc123' },
     profileLinks: [],
     status: 'ACTIVE',
     archived: false,
@@ -89,14 +83,21 @@ async function seedBeta(betaDb: Db): Promise<void> {
   await betaDb.collection('fellowships').insertOne({ name: 'Example Fellowship' });
 }
 
+const productionLogin = {
+  _id: productionLoginAccountId,
+  schemaVersion: 1,
+  netid: 'xyz789',
+  email: 'production.login@example.test',
+  status: 'ACTIVE',
+  archived: false,
+  lastLoginAt: new Date('2026-10-02T12:00:00Z'),
+};
+
 async function seedProduction(productionDb: Db): Promise<void> {
-  await productionDb.collection('accounts').insertOne({
-    schemaVersion: 1,
-    netid: 'xyz789',
-    email: 'stale.person@yale.edu',
-    status: 'ACTIVE',
-    archived: false,
-  });
+  await productionDb.collection('accounts').insertOne(productionLogin);
+  await productionDb
+    .collection('research_plans')
+    .insertOne({ _id: productionPlanId, accountId: productionLoginAccountId, items: [] });
   await productionDb
     .collection('research_entities')
     .insertOne({ name: 'Stale Production Entity', slug: 'stale-production-entity' });
@@ -138,11 +139,15 @@ describe('Beta to Production promotion against MongoDB', () => {
     await memoryServer?.stop();
   });
 
-  it('replaces the promoted corpus with what Beta offered', async () => {
-    expect(await productionDb.collection('accounts').countDocuments()).toBe(1);
-    expect(await productionDb.collection('accounts').findOne({})).toMatchObject({
-      netid: 'abc123',
+  it('leaves Production accounts and their plans exactly as they were', async () => {
+    expect(await productionDb.collection('accounts').find({}).toArray()).toEqual([productionLogin]);
+    expect(await productionDb.collection('research_plans').findOne({})).toMatchObject({
+      _id: productionPlanId,
+      accountId: productionLoginAccountId,
     });
+  });
+
+  it('replaces the promoted corpus with what Beta offered', async () => {
     expect(
       await productionDb
         .collection('research_entities')
@@ -153,24 +158,57 @@ describe('Beta to Production promotion against MongoDB', () => {
     });
   });
 
-  it('carries the canonical accounts validator onto Production so a strict flip survives', async () => {
-    const [promotedAccounts] = (await productionDb
-      .listCollections({ name: 'accounts' })
+  it('carries the canonical researchers validator onto Production so a strict flip survives', async () => {
+    const [promotedResearchers] = (await productionDb
+      .listCollections({ name: 'researchers' })
       .toArray()) as Array<{ options?: Document }>;
 
-    expect(promotedAccounts.options).toMatchObject({
-      validator: accountsValidator.validator,
-      validationLevel: accountsValidator.validationLevel,
-      validationAction: accountsValidator.validationAction,
+    expect(promotedResearchers.options).toMatchObject({
+      validator: researchersValidator.validator,
+      validationLevel: researchersValidator.validationLevel,
+      validationAction: researchersValidator.validationAction,
     });
-
-    await expect(
-      productionDb.collection('accounts').insertOne({ email: 'no.netid@yale.edu' }),
-    ).rejects.toThrow(/[Dd]ocument failed validation/);
   });
 
   it('creates no Production collection the promotion manifest excludes', async () => {
     expect(await productionDb.listCollections({ name: 'observations' }).hasNext()).toBe(false);
     expect(await productionDb.listCollections({ name: 'scrape_runs' }).hasNext()).toBe(false);
+  });
+});
+
+describe('Beta to Production promotion with a corpus account reference', () => {
+  let memoryServer: MongoMemoryServer | undefined;
+  let client: MongoClient | undefined;
+  let betaDb: Db;
+  let productionDb: Db;
+
+  beforeAll(async () => {
+    memoryServer = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
+    client = new MongoClient(memoryServer.getUri());
+    await client.connect();
+    betaDb = client.db('Beta_promotion_blocked_source');
+    productionDb = client.db('Prod_promotion_blocked_target');
+    await seedBeta(betaDb);
+    await betaDb
+      .collection('researchers')
+      .updateOne({ _id: researcherId }, { $set: { accountId: betaLoginAccountId } });
+    await seedProduction(productionDb);
+  });
+
+  afterAll(async () => {
+    await client?.close();
+    await memoryServer?.stop();
+  });
+
+  it('refuses the copy and leaves Production untouched', async () => {
+    await expect(applyCopy(betaDb, productionDb, promotionOptions())).rejects.toThrow(
+      '1 researchers row carries an account _id in accountId',
+    );
+    expect(
+      await productionDb
+        .collection('research_entities')
+        .findOne({ slug: 'stale-production-entity' }),
+    ).not.toBeNull();
+    expect(await productionDb.collection('accounts').find({}).toArray()).toEqual([productionLogin]);
   });
 });

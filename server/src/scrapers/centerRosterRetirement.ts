@@ -55,6 +55,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { escapeRegex } from '../utils/regex';
 import { retireObservations } from './observationStore';
+import {
+  relationshipTargetIdentities,
+  type RelationshipTargetIdentity,
+} from './centerRelationshipTarget';
 import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
 import { attributedArchiveSet } from '../models/entityArchival';
 
@@ -133,6 +137,12 @@ export interface CenterRosterHealthSnapshot {
   complete?: unknown;
   discoveredCount?: unknown;
   members?: unknown;
+  /**
+   * Official-profile identity keys of the single-person pages this read confirmed were about
+   * their own subject and parsed. Only a single-subject lane records them, because on such a
+   * page a statement that is missing is evidence once the subject itself was read (#5091).
+   */
+  subjectKeys?: unknown;
   read?: {
     pagesRead?: unknown;
     readMode?: unknown;
@@ -151,6 +161,7 @@ export function buildCenterRosterHealthSnapshot(input: {
   stopReason: CenterRosterStopReason;
   cacheAllowed: boolean;
   readAt: Date;
+  subjectKeys?: readonly string[];
 }): CenterRosterHealthSnapshot {
   const members = [...input.members].sort((left, right) =>
     left.memberKey.localeCompare(right.memberKey),
@@ -168,6 +179,7 @@ export function buildCenterRosterHealthSnapshot(input: {
     complete: status === 'ok',
     discoveredCount: members.length,
     members,
+    ...(input.subjectKeys ? { subjectKeys: [...new Set(input.subjectKeys)].sort() } : {}),
     read: {
       pagesRead: input.pagesRead,
       readMode: input.readMode,
@@ -179,12 +191,18 @@ export function buildCenterRosterHealthSnapshot(input: {
 }
 
 /**
- * Only `read-listed-members` is evidence. A cache-permitted read is excluded because two
- * runs inside the snapshot cache's lifetime replay one fetch, which would let a single
- * parse satisfy the two-read rule; the exhaustive sweep modes never pass `--use-cache`.
+ * Only `read-listed-members` is evidence for a roster. A cache-permitted read is excluded
+ * because two runs inside the snapshot cache's lifetime replay one fetch, which would let a
+ * single parse satisfy the two-read rule; the exhaustive sweep modes never pass `--use-cache`.
+ *
+ * `read-subject-stated-nothing` is a single-subject read that confirmed its subject and found
+ * no claim. A roster read that lists nobody cannot be told apart from a broken selector, so it
+ * stays inadmissible; a person's own profile whose subject was parsed can, so a single-subject
+ * lane may weigh that read as an absence (#5091). The roster planner never admits it.
  */
 export type CenterRosterReadAdmissibility =
   | 'read-listed-members'
+  | 'read-subject-stated-nothing'
   | 'read-listed-nobody'
   | 'incomplete'
   | 'cache-permitted'
@@ -208,6 +226,13 @@ export function snapshotMembers(snapshot: CenterRosterHealthSnapshot): CenterRos
     .filter((entry) => entry.memberKey && entry.role);
 }
 
+export function snapshotSubjectKeys(snapshot: CenterRosterHealthSnapshot): string[] {
+  if (!Array.isArray(snapshot.subjectKeys)) return [];
+  return snapshot.subjectKeys.filter(
+    (key): key is string => typeof key === 'string' && key.trim().length > 0,
+  );
+}
+
 export function centerRosterReadAdmissibility(
   snapshot: CenterRosterHealthSnapshot,
 ): CenterRosterReadAdmissibility {
@@ -218,7 +243,10 @@ export function centerRosterReadAdmissibility(
   if (pagesRead <= 0 || (read.readMode !== 'html' && read.readMode !== 'rendered')) {
     return 'not-read';
   }
-  if (snapshot.status === 'empty') return 'read-listed-nobody';
+  if (snapshot.status === 'empty') {
+    if (snapshotSubjectKeys(snapshot).length === 0) return 'read-listed-nobody';
+    return read.cacheAllowed !== false ? 'cache-permitted' : 'read-subject-stated-nothing';
+  }
   if (snapshot.complete !== true) return 'incomplete';
   if (snapshotMembers(snapshot).length === 0) return 'read-listed-nobody';
   if (read.cacheAllowed !== false) return 'cache-permitted';
@@ -622,7 +650,7 @@ export interface CenterRosterRetirementDeps {
   membershipKeysAssertedByOtherSources(centerEntityKey: string): Promise<Set<string>>;
   personRolesAssertedByOtherSources(centerEntityKey: string): Promise<Set<string>>;
   relationshipTargetIdsAssertedByOtherSources(centerEntityKey: string): Promise<Set<string>>;
-  resolveRelationshipTargetId(targetEntityKey: string): Promise<string | null>;
+  resolveRelationshipTargetId(target: RelationshipTargetIdentity): Promise<string | null>;
   rematerializeMemberKey(memberKey: string): Promise<void>;
 }
 
@@ -759,7 +787,7 @@ export async function loadCenterRosterRetirementInputs(
   };
 }
 
-async function retireObservationRows(
+export async function retireObservationRows(
   observationIds: readonly string[],
   reason: string,
 ): Promise<void> {
@@ -795,18 +823,8 @@ export async function applyCenterRosterRetirementPlan(
   if (plan.verdict !== 'retire') return applied;
 
   const retiredRelationshipKeys = new Set(plan.retiredRelationshipKeys);
-  const retiredTargetKeys = Array.from(
-    new Set(
-      inputs.relationshipObservations
-        .filter(
-          (row) =>
-            retiredRelationshipKeys.has(row.entityKey) &&
-            row.field === 'targetEntityKey' &&
-            typeof row.value === 'string',
-        )
-        .map((row) => String(row.value).trim())
-        .filter(Boolean),
-    ),
+  const retiredTargets = relationshipTargetIdentities(
+    inputs.relationshipObservations.filter((row) => retiredRelationshipKeys.has(row.entityKey)),
   );
 
   await retireObservationRows(plan.observationIds, lane.retirementReason);
@@ -822,27 +840,20 @@ export async function applyCenterRosterRetirementPlan(
     );
   }
 
-  if (retiredTargetKeys.length > 0) {
+  if (retiredTargets.length > 0) {
     const protectedTargets = await deps.relationshipTargetIdsAssertedByOtherSources(plan.entityKey);
-    const targetKeysThisSourceStillAsserts = new Set(
-      inputs.relationshipObservations
-        .filter(
-          (row) =>
-            !retiredRelationshipKeys.has(row.entityKey) &&
-            !row.superseded &&
-            row.field === 'targetEntityKey' &&
-            typeof row.value === 'string',
-        )
-        .map((row) => String(row.value).trim())
-        .filter(Boolean),
+    const targetsThisSourceStillAsserts = relationshipTargetIdentities(
+      inputs.relationshipObservations.filter(
+        (row) => !retiredRelationshipKeys.has(row.entityKey) && !row.superseded,
+      ),
     );
-    for (const targetKey of targetKeysThisSourceStillAsserts) {
-      const targetId = await deps.resolveRelationshipTargetId(targetKey);
+    for (const target of targetsThisSourceStillAsserts) {
+      const targetId = await deps.resolveRelationshipTargetId(target);
       if (targetId) protectedTargets.add(targetId);
     }
     const centerObjectId = new mongoose.Types.ObjectId(inputs.centerEntityId);
-    for (const targetKey of retiredTargetKeys) {
-      const targetId = await deps.resolveRelationshipTargetId(targetKey);
+    for (const target of retiredTargets) {
+      const targetId = await deps.resolveRelationshipTargetId(target);
       if (!targetId || protectedTargets.has(targetId)) continue;
       const result = await ResearchEntityRelationship.updateMany(
         {

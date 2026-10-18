@@ -1,3 +1,6 @@
+import { isOrganizationalResearchEntity } from './researchEntityOrganizational';
+import { nameDenotesOrganization } from './researchHomeNameIdentityAuthority';
+
 export interface ProfileAreaDuplicateEntity {
   slug?: string;
   name?: string;
@@ -95,6 +98,21 @@ export function isCenterOrInstituteEntity(entity: ProfileAreaDuplicateEntity): b
   const entityType = (entity.entityType || '').toUpperCase();
   const kind = (entity.kind || '').toLowerCase();
   return centerOrInstituteEntityTypes.has(entityType) || centerOrInstituteKinds.has(kind);
+}
+
+/**
+ * An organization a professor directs or belongs to, which a faculty research area must
+ * never fold into (#1957). A centre or institute is one by type alone; an initiative or a
+ * core facility is one only when its name also denotes an organization, because a
+ * person-keyed shell typed `INITIATIVE` and titled after the person is a duplicate of
+ * that person's other row rather than an organization (#5085).
+ */
+export function isOrganizationalHomeEntity(entity: ProfileAreaDuplicateEntity): boolean {
+  if (isCenterOrInstituteEntity(entity)) return true;
+  return (
+    isOrganizationalResearchEntity({ entityType: entity.entityType }) &&
+    nameDenotesOrganization(entity.name)
+  );
 }
 
 export function isConcreteResearchHomeEntity(entity: ProfileAreaDuplicateEntity): boolean {

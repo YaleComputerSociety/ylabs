@@ -28,7 +28,6 @@ import {
   userLookupFiltersForInferredPiUserKey,
   userLookupValueForInferredPiUserKey,
 } from '../entityMaterializer';
-import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
 describe('materializedFieldValue research-entity name hygiene', () => {
   it('strips a description sentence glued onto a materialized name (#797)', () => {
@@ -803,10 +802,19 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
-  it('redacts direct contact details consistently for materialized public excerpts', () => {
-    expect(redactDirectContactInfo('Email ada@yale.edu or call 203-432-1234.')).toBe(
-      'Email [email redacted] or call [phone redacted].',
-    );
+  it.each([
+    'undergradEvidenceQuote',
+    'undergradRoleEvidenceQuote',
+    'contactInstructionsQuote',
+    'undergradConstraintQuote',
+  ])('writes the contact details a %s quotes as they appear on the page', (field) => {
+    expect(
+      materializedFieldValue(
+        'researchEntity',
+        field,
+        'Email ada@example.edu or call 555-010-0000.',
+      ),
+    ).toBe('Email ada@example.edu or call 555-010-0000.');
   });
 
   it('states the lead facts an inferredPiUserId observation carries, sourceName included (#3254)', () => {
@@ -900,6 +908,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     // fields the retired update carried and `CanonicalMemberFacts` has no place for
     // (`title`, `identityKey`, `confidenceByField.*`, `fieldProvenance.*`) were
     // asserted here and nowhere else, which is what made the dead shape look alive.
+    expect(patch?.facts.rosterProvenance?.listingTitle).toBe('Director, Cowles Foundation');
     expect(patch).toMatchObject({
       role: 'director',
       matchName: 'Jane Doe',
@@ -1067,6 +1076,24 @@ describe('entityMaterializer post-materialization metrics', () => {
     );
 
     expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
+  });
+
+  it('retains listed undergraduates of the last successful snapshot across a failed refresh', () => {
+    const undergraduates = [{ name: 'Listed Fixture', status: 'current', startYear: 2024 }];
+    const current = rosterEnrichmentWithRetainedSuccessfulSnapshot({
+      state: 'current',
+      memberKeys: [],
+      undergraduates,
+      sourceUrl: 'https://fixturegroup.yale.edu/research-team',
+      observedAt: new Date('2026-10-14T00:00:00Z'),
+      freshnessExpiresAt: new Date('2026-11-04T00:00:00Z'),
+    });
+    const failed = rosterEnrichmentWithRetainedSuccessfulSnapshot(
+      { state: 'failed', memberKeys: [], observedAt: new Date('2026-10-15T00:00:00Z') },
+      current,
+    );
+
+    expect(failed).toMatchObject({ lastSuccessfulSnapshot: { undergraduates } });
   });
 });
 
@@ -1448,24 +1475,51 @@ describe('bestMaterializationProvenanceSourceUrl (#1802 source-url projection)',
 
 describe('center relationship type + label resolution', () => {
   it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
-    expect(centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA')).toBe(
-      'AFFILIATED_LAB',
-    );
+    expect(
+      centerRelationshipTypeForResolvedTarget({ slug: 'amy-arnsten-lab' }, 'MEMBER_RESEARCH_AREA'),
+    ).toBe('AFFILIATED_LAB');
   });
 
   it('keeps the fallback type for a generated faculty-research-area target', () => {
     expect(
       centerRelationshipTypeForResolvedTarget(
-        'faculty-research-area-amy-arnsten',
+        { slug: 'faculty-research-area-amy-arnsten' },
         'MEMBER_RESEARCH_AREA',
       ),
     ).toBe('MEMBER_RESEARCH_AREA');
   });
 
   it('keeps the fallback type when the slug is empty', () => {
-    expect(centerRelationshipTypeForResolvedTarget('', 'MEMBER_RESEARCH_AREA')).toBe(
+    expect(centerRelationshipTypeForResolvedTarget({ slug: '' }, 'MEMBER_RESEARCH_AREA')).toBe(
       'MEMBER_RESEARCH_AREA',
     );
+    expect(centerRelationshipTypeForResolvedTarget(null, 'MEMBER_RESEARCH_AREA')).toBe(
+      'MEMBER_RESEARCH_AREA',
+    );
+  });
+
+  it('links a lab promoted from a faculty research row as an affiliated lab despite its generated slug', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget(
+        { slug: 'faculty-research-area-synthetic-person', entityType: 'LAB' },
+        'MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe('AFFILIATED_LAB');
+    expect(
+      centerRelationshipTypeForResolvedTarget(
+        { slug: 'dept-cs-synthetic-person', entityType: 'LAB' },
+        'MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe('AFFILIATED_LAB');
+  });
+
+  it('keeps a faculty research row as a member even under a non-generated slug', () => {
+    expect(
+      centerRelationshipTypeForResolvedTarget(
+        { slug: 'synthetic-person-research', entityType: 'FACULTY_RESEARCH_AREA' },
+        'MEMBER_RESEARCH_AREA',
+      ),
+    ).toBe('MEMBER_RESEARCH_AREA');
   });
 
   it('labels each relationship type, with a generic fallback', () => {

@@ -21,6 +21,7 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
+import { orderYearOfStudyOptions } from './programYearOfStudyOrder';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { Observation } from '../models/observation';
 import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
@@ -85,6 +86,14 @@ const POSITIVE_INTEGER_PARAM_RE = /^[1-9]\d*$/;
 const PROGRAM_CATEGORIES = new Set<string>(programCategories);
 const PROGRAM_KINDS = new Set<string>(programKinds);
 const PROGRAM_ENTRY_MODES = new Set<string>(programEntryModes);
+
+const REVIEWER_NETID_PATTERN = /^[a-z0-9]{2,12}$/;
+
+const normalizeReviewerNetid = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const netid = value.trim().toLowerCase();
+  return REVIEWER_NETID_PATTERN.test(netid) ? netid : undefined;
+};
 
 const normalizeFellowshipObjectId = (id: unknown): string | undefined => {
   const value = serializedDocumentId(id);
@@ -619,7 +628,7 @@ const FELLOWSHIP_ADMIN_UPDATABLE_FIELDS = [
   'studentVisibilitySuppressionReason',
   'studentVisibilityComputedAt',
   'studentVisibilityReviewedAt',
-  'studentVisibilityReviewedByAccountId',
+  'studentVisibilityReviewedByNetid',
   'archived',
   'audited',
 ] as const;
@@ -742,10 +751,10 @@ const filterFellowshipUpdate = (data: any): Record<string, any> => {
   if ('programKind' in update) update.programRole = programRoleForKind(update.programKind);
   if ('entryMode' in update && !PROGRAM_ENTRY_MODES.has(update.entryMode)) delete update.entryMode;
 
-  if ('studentVisibilityReviewedByAccountId' in update) {
-    const id = normalizeFellowshipObjectId(update.studentVisibilityReviewedByAccountId);
-    if (id !== undefined) update.studentVisibilityReviewedByAccountId = id;
-    else delete update.studentVisibilityReviewedByAccountId;
+  if ('studentVisibilityReviewedByNetid' in update) {
+    const netid = normalizeReviewerNetid(update.studentVisibilityReviewedByNetid);
+    if (netid !== undefined) update.studentVisibilityReviewedByNetid = netid;
+    else delete update.studentVisibilityReviewedByNetid;
   }
 
   return update;
@@ -1139,7 +1148,7 @@ export const getFilterOptions = async () => {
   ]);
 
   return {
-    yearOfStudy: yearOfStudyOptions.filter(Boolean).sort(),
+    yearOfStudy: orderYearOfStudyOptions(yearOfStudyOptions.filter(Boolean)),
     termOfAward: termOfAwardOptions.filter(Boolean).sort(),
     purpose: purposeOptions.filter(Boolean).sort(),
     globalRegions: globalRegionsOptions.filter(Boolean).sort(),

@@ -488,7 +488,7 @@ describe('extractionToObservations contact quote admission (#3928)', () => {
     expect(
       contactObservation('Interested students should email fixture.person@example.edu with a CV.')
         ?.value,
-    ).toBe('Interested students should email [email redacted] with a CV.');
+    ).toBe('Interested students should email fixture.person@example.edu with a CV.');
   });
 });
 
@@ -550,6 +550,53 @@ describe('evidenceQuoteRecitationObservation (#3831)', () => {
         { url: 'https://lab.example.edu/profile', text: 'Nothing here.' },
       ]),
     ).toBeNull();
+  });
+});
+
+describe('evidenceQuoteRecitationObservation contact restoration (#5041)', () => {
+  it('restates a kept quote with the contact details its cited page publishes', () => {
+    const live = {
+      value: 'Interested undergraduates should email [email redacted] or call [phone redacted].',
+      sourceUrl: 'https://lab.example.edu/join',
+    };
+    const recited = evidenceQuoteRecitationObservation('lab-a', live, [
+      {
+        url: 'https://lab.example.edu/join',
+        text: 'Join. Interested undergraduates should email pi.person@example.edu or call 555-010-0000.',
+      },
+    ]);
+    expect(recited).toMatchObject({
+      field: 'undergradEvidenceQuote',
+      sourceUrl: 'https://lab.example.edu/join',
+      value: 'Interested undergraduates should email pi.person@example.edu or call 555-010-0000.',
+    });
+  });
+});
+
+describe('extractionToObservations people listing quote (#5041)', () => {
+  it('emits no quote when the restored quote lists members with their own contact details', () => {
+    const listing = 'Undergraduate Students Jane Doe [email redacted] John Roe [email redacted]';
+    const obs = extractionToObservations(
+      'lab-l',
+      'https://x/people',
+      {
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: listing,
+        evidenceSource: 'members_section',
+        joinPageUrl: null,
+      },
+      new Date('2026-04-27T12:00:00Z'),
+      {
+        sourcePages: [
+          {
+            url: 'https://x/people',
+            text: 'People. Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
+          },
+        ],
+      },
+    );
+    expect(obs.find((o) => o.field === 'undergradEvidenceQuote')).toBeUndefined();
   });
 });
 
@@ -1238,11 +1285,11 @@ describe('extractionToObservations', () => {
     );
   });
 
-  it('redacts direct contact details from legacy public quote fields', () => {
+  it('restores the page emails and phone numbers in public quote fields', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'yes',
       currentUndergradCount: 0,
-      evidenceQuote: 'Email pi.person@yale.edu to discuss undergraduate research.',
+      evidenceQuote: 'Email [email redacted] to discuss undergraduate research.',
       evidenceSource: 'explicit_text',
       joinPageUrl: 'https://x.example/join',
       undergradRoleQuote: '',
@@ -1259,10 +1306,10 @@ describe('extractionToObservations', () => {
     });
 
     expect(obs.find((o) => o.field === 'undergradEvidenceQuote')!.value).toBe(
-      'Email [email redacted] to discuss undergraduate research.',
+      'Email pi.person@yale.edu to discuss undergraduate research.',
     );
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
-      'Call [phone redacted] or email [email redacted] to arrange a visit.',
+      'Call 203-432-1234 or email manager@yale.edu to arrange a visit.',
     );
     expect(
       (obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote,

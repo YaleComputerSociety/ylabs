@@ -1232,6 +1232,7 @@ describe('runScraperSweep', () => {
     const withOptional = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       dedupeResearchers: true,
       portGrantShells: true,
+      promoteFacultyResearchLabs: true,
       autoMergeEponymousFra: true,
       mergeUrlIdentityDuplicates: true,
       pruneDeadObservations: true,

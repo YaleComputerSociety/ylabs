@@ -51,6 +51,7 @@ export interface ProgramSearchQueryCorrection {
 
 export interface FellowshipSearchState extends StudentProgramFilters {
   queryString: string;
+  searchedQueryString: string;
   exactSpelling: boolean;
   queryCorrection: ProgramSearchQueryCorrection | null;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
@@ -97,7 +98,7 @@ export type FellowshipSearchAction =
   | { type: 'RESET_PROGRAM_FILTERS' }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }
-  | { type: 'SEARCH_REQUEST' }
+  | { type: 'SEARCH_REQUEST'; payload?: { queryString: string } }
   | {
       type: 'SEARCH_SUCCESS';
       payload: {
@@ -117,6 +118,7 @@ export const createInitialFellowshipSearchState = (
   overrides: Partial<FellowshipSearchState> = {},
 ): FellowshipSearchState => ({
   queryString: '',
+  searchedQueryString: '',
   exactSpelling: false,
   queryCorrection: null,
   ...createEmptyStudentProgramFilters(),
@@ -244,7 +246,12 @@ export function fellowshipSearchReducer(
       return { ...state, filterOptions: action.payload };
 
     case 'SEARCH_REQUEST':
-      return { ...state, isLoading: true, loadError: false };
+      return {
+        ...state,
+        isLoading: true,
+        loadError: false,
+        searchedQueryString: action.payload?.queryString ?? state.searchedQueryString,
+      };
 
     case 'SEARCH_SUCCESS': {
       const { fellowships, total, pageSize, append, queryCorrection } = action.payload;
@@ -288,3 +295,7 @@ export function fellowshipSearchReducer(
       return state;
   }
 }
+
+export const isFellowshipSearchPending = (state: FellowshipSearchState): boolean =>
+  state.isLoading ||
+  (state.filterOptionsLoaded && state.queryString.trim() !== state.searchedQueryString);

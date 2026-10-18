@@ -782,6 +782,134 @@ describe('studentVisibilityGateService', () => {
     ]).toEqual(['atoz-owner']);
   });
 
+  describe("a director's profile cited by an organization and by the director's own row (#5085)", () => {
+    const directorProfileUrl = 'https://medicine.yale.edu/profile/a-fixture-director/';
+    const personRow = (overrides: Record<string, unknown> = {}) => ({
+      _id: 'director-own-research',
+      slug: 'ysm-faculty-a-fixture-director',
+      name: 'A Fixture Director Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      studentVisibilityTier: 'student_ready',
+      fullDescription:
+        'Neuroimaging studies of mood regulation across adolescence and adulthood at Yale.',
+      sourceUrls: [directorProfileUrl],
+      ...overrides,
+    });
+    const organizationRow = (overrides: Record<string, unknown> = {}) => ({
+      _id: 'directed-organization',
+      slug: 'fixture-director-lab-fd1',
+      name: 'Fixture Mood Research Program',
+      entityType: 'INITIATIVE',
+      studentVisibilityTier: 'suppressed',
+      fullDescription:
+        'A multidisciplinary program studying the causes and treatment of mood disorders at Yale.',
+      websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
+      sourceUrls: [
+        directorProfileUrl,
+        'https://orcid.org/9999-9000-9999-9005',
+        'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
+      ],
+      ...overrides,
+    });
+    const leadRows = [{ researchEntityId: 'director-own-research', userId: 'user-director' }];
+
+    it('does not call either row a duplicate of the other', () => {
+      const entities = [personRow(), organizationRow()];
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, leadRows)]).toEqual([]);
+      expect(exactDuplicateUrlGroups(entities)).toEqual([]);
+    });
+
+    it('does not call the person row a duplicate when the organization would win the group', () => {
+      const entities = [
+        personRow({ studentVisibilityTier: 'suppressed', fullDescription: '' }),
+        organizationRow({ studentVisibilityTier: 'student_ready' }),
+      ];
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, [])]).toEqual([]);
+    });
+
+    it("treats the director's ORCID record as a person page too", () => {
+      const entities = [
+        personRow({ sourceUrls: ['https://orcid.org/9999-9000-9999-9005'] }),
+        organizationRow(),
+      ];
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, leadRows)]).toEqual([]);
+    });
+
+    it('still groups two person-scoped rows citing one profile', () => {
+      const entities = [
+        personRow(),
+        personRow({
+          _id: 'director-lab-shell',
+          slug: 'fixture-director-lab',
+          name: 'Fixture Director Lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'operator_review',
+        }),
+      ];
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, leadRows)]).toEqual([
+        'director-lab-shell',
+      ]);
+    });
+
+    it('still groups a person-named row that only carries an organizational type', () => {
+      const entities = [personRow(), organizationRow({ name: 'Fixture Director Lab' })];
+
+      expect([...selectExactUrlDuplicateRiskEntityIds(entities, leadRows)]).toEqual([
+        'directed-organization',
+      ]);
+    });
+
+    it('still groups two organizations sharing the profile with no person row beside them', () => {
+      const entities = [
+        organizationRow(),
+        organizationRow({
+          _id: 'second-organization',
+          slug: 'fixture-mood-program-copy',
+          studentVisibilityTier: 'operator_review',
+          websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood-copy/',
+          sourceUrls: [directorProfileUrl],
+        }),
+      ];
+
+      expect(exactDuplicateUrlGroups(entities).map((group) => group.url)).toEqual([
+        'https://medicine.yale.edu/profile/a-fixture-director',
+      ]);
+    });
+
+    it('still groups two organizations sharing the profile beside a person row, apart from it', () => {
+      const entities = [
+        personRow(),
+        organizationRow(),
+        organizationRow({
+          _id: 'second-organization',
+          slug: 'fixture-mood-program-copy',
+          studentVisibilityTier: 'operator_review',
+          websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood-copy/',
+          sourceUrls: [directorProfileUrl],
+        }),
+      ];
+
+      expect(
+        exactDuplicateUrlGroups(entities).map((group) =>
+          group.members.map((member) => member._id).sort(),
+        ),
+      ).toEqual([['directed-organization', 'second-organization']]);
+      expect(
+        selectExactUrlDuplicateRiskEntityIds(entities, leadRows).has('director-own-research'),
+      ).toBe(false);
+    });
+
+    it('still lets an organization contest a profile it publishes as its own home', () => {
+      const entities = [personRow(), organizationRow({ websiteUrl: directorProfileUrl })];
+
+      expect(exactDuplicateUrlGroups(entities)).toHaveLength(1);
+    });
+  });
+
   describe('a same-lead pair colliding only on a profile page neither publishes', () => {
     const sharedProfileUrl = 'https://medicine.yale.edu/profile/a-shared-lead/';
     const indexPublishedLab = (studentVisibilityTier: string) => ({

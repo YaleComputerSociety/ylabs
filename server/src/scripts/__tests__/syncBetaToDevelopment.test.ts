@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import mongoose from 'mongoose';
-import { ObjectId, type Db, type Document } from 'mongodb';
+import { type Db, type Document } from 'mongodb';
 import '../../models';
 import '../../models/observation';
 import '../../models/scrapeRun';
@@ -15,9 +15,7 @@ import {
   localNonMirrorCollectionNames,
   parseBetaToDevelopmentOptions,
   preservedDevelopmentCollectionNames,
-  researchPersonAccountIds,
   replaceMongoDatabaseName,
-  sanitizeMirroredAccount,
   unclassifiedBetaCollectionNames,
 } from '../syncBetaToDevelopment';
 import {
@@ -28,6 +26,14 @@ import {
   NEVER_COPY_COLLECTIONS,
   PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS,
 } from '../mirrorCollectionPolicy';
+
+const matchesFilter = (document: Document, filter: Document = {}): boolean =>
+  Object.entries(filter).every(([field, condition]) => {
+    if (condition && typeof condition === 'object' && '$nin' in condition) {
+      return !(condition.$nin as unknown[]).includes(document[field] ?? null);
+    }
+    return document[field] === condition;
+  });
 
 const baseEnv = {
   BETA_MONGODBURL: 'mongodb+srv://user:pass@beta.example.test/Beta',
@@ -62,7 +68,8 @@ describe('Beta to Development sync guards', () => {
             },
             close: async () => undefined,
           }),
-          countDocuments: async () => (data.get(name) || []).length,
+          countDocuments: async (filter?: Document) =>
+            (data.get(name) || []).filter((document) => matchesFilter(document, filter)).length,
           bulkWrite: async (operations: Array<{ insertOne: { document: Document } }>) => {
             data.get(name)!.push(...operations.map((operation) => operation.insertOne.document));
           },
@@ -135,7 +142,9 @@ describe('Beta to Development sync guards', () => {
           distinct: async (field: string) => [
             ...new Set((data.get(name)?.documents || []).map((document) => document[field])),
           ],
-          countDocuments: async () => (data.get(name)?.documents || []).length,
+          countDocuments: async (filter?: Document) =>
+            (data.get(name)?.documents || []).filter((document) => matchesFilter(document, filter))
+              .length,
           bulkWrite: async (operations: Array<{ insertOne: { document: Document } }>) => {
             data
               .get(name)!
@@ -154,13 +163,15 @@ describe('Beta to Development sync guards', () => {
       return { db: db as unknown as Db, data };
     };
 
-    const accountsValidator = { $jsonSchema: { bsonType: 'object', required: ['netid'] } };
+    const researchersValidator = {
+      $jsonSchema: { bsonType: 'object', required: ['displayName'] },
+    };
     const signalsValidator = { $jsonSchema: { bsonType: 'object', required: ['type'] } };
     const beta = createFakeDb({
-      accounts: {
-        documents: [{ _id: 'account-1', netid: 'faculty.person' }],
+      researchers: {
+        documents: [{ _id: 'researcher-1', displayName: 'Faculty Person' }],
         options: {
-          validator: accountsValidator,
+          validator: researchersValidator,
           validationLevel: 'strict',
           validationAction: 'error',
         },
@@ -168,7 +179,7 @@ describe('Beta to Development sync guards', () => {
       signals: { documents: [{ _id: 'signal-1' }], options: {} },
     });
     const development = createFakeDb({
-      accounts: { documents: [], options: {} },
+      researchers: { documents: [], options: {} },
       signals: { documents: [], options: { validator: signalsValidator } },
     });
 
@@ -176,15 +187,15 @@ describe('Beta to Development sync guards', () => {
       beta.db,
       development.db,
       [
-        { name: 'accounts', category: 'identity-spine' },
+        { name: 'researchers', category: 'identity-spine' },
         { name: 'signals', category: 'research-discovery' },
       ],
       [],
       async () => undefined,
     );
 
-    expect(development.data.get('accounts')?.options).toEqual({
-      validator: accountsValidator,
+    expect(development.data.get('researchers')?.options).toEqual({
+      validator: researchersValidator,
       validationLevel: 'strict',
       validationAction: 'error',
     });
@@ -295,6 +306,7 @@ describe('Beta to Development sync guards', () => {
 
   it('pins the preserved collections so dropping one from the list fails', () => {
     expect([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort()).toEqual([
+      'accounts',
       'analytics_events',
       'corpus_quality_snapshots',
       'engine_benchmark_rows',
@@ -305,6 +317,7 @@ describe('Beta to Development sync guards', () => {
       'lane_benchmarks',
       'lane_scorecard_snapshots',
       'login_signal_tallies',
+      'research_plans',
       'weekly_sweep_runs',
     ]);
     expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
@@ -367,7 +380,6 @@ describe('Beta to Development sync guards', () => {
         'signals',
         'researchers',
         'role_assignments',
-        'accounts',
         'sources',
         'scrape_runs',
         'observations',
@@ -391,6 +403,7 @@ describe('Beta to Development sync guards', () => {
       expect(names).not.toContain(retired);
     }
     for (const operational of [
+      'accounts',
       'analytics_events',
       'admin_grants',
       'scrape_job_locks',
@@ -401,163 +414,51 @@ describe('Beta to Development sync guards', () => {
     expect(betaToDevelopmentCollectionNames(false)).not.toContain('observations');
   });
 
-  it('resolves accounts to preserve solely from researchers', async () => {
-    const researchAccountId = new ObjectId('507f1f77bcf86cd799439011');
-    const unreferencedAccountId = new ObjectId('507f1f77bcf86cd799439012');
-    const queriedCollections: string[] = [];
-    const distinctById: Record<string, ObjectId[]> = {
-      researchers: [researchAccountId, researchAccountId],
-      accounts: [researchAccountId, unreferencedAccountId],
-    };
-    const betaDb = {
+  it('refuses a sync whose source corpus still carries an account _id', async () => {
+    const source = {
       listCollections: (filter: { name?: string } = {}) => ({
-        hasNext: async () => filter.name !== undefined && filter.name in distinctById,
+        hasNext: async () => filter.name === 'researchers',
       }),
-      collection: (name: string) => ({
-        distinct: async (field: string) => {
-          queriedCollections.push(`${name}.${field}`);
-          return distinctById[name] ?? [];
-        },
+      collection: () => ({
+        countDocuments: async (filter?: Document) =>
+          [{ accountId: 'account-1' }, { accountId: null }].filter((document) =>
+            matchesFilter(document, filter),
+          ).length,
       }),
     } as unknown as Db;
 
-    const resolved = await researchPersonAccountIds(betaDb);
-
-    expect(resolved.map((id) => id.toHexString())).toEqual([researchAccountId.toHexString()]);
-    expect(queriedCollections).toEqual(['researchers.accountId']);
-  });
-
-  // The previous rule read `faculty_members`, a collection that no longer
-  // exists, so it silently protected nothing while every helper-level test
-  // passed. Drive the wiring, not the helper.
-  it('wires the accounts transform so a non-research account is pseudonymized by value', () => {
-    const researchAccountId = new ObjectId('507f1f77bcf86cd799439011');
-    const studentAccountId = new ObjectId('507f1f77bcf86cd799439022');
-    const collections = collectionsForOptions({ includeObservations: false } as never, [
-      researchAccountId,
-    ]);
-    const accounts = collections.find((collection) => collection.name === 'accounts');
-
-    expect(accounts?.category).toBe('identity-spine');
-    expect(accounts?.transform).toBeTypeOf('function');
-
-    const preserved = accounts?.transform?.({
-      _id: researchAccountId,
-      netid: 'faculty.person',
-      email: 'faculty.person@yale.edu',
-      status: 'ACTIVE',
-      lastLoginAt: new Date('2026-07-25T00:00:00Z'),
-      profile: { userType: 'professor', college: 'Example', major: ['Computer Science'] },
-    }) as Document;
-
-    expect(preserved.netid).toBe('faculty.person');
-    expect(preserved.email).toBe('faculty.person@yale.edu');
-    expect(preserved).not.toHaveProperty('lastLoginAt');
-    expect(preserved.profile).toEqual({ userType: 'professor' });
-
-    const pseudonymized = accounts?.transform?.({
-      _id: studentAccountId,
-      netid: 'student.person',
-      email: 'student.person@yale.edu',
-      status: 'ACTIVE',
-      profile: { college: 'Example', major: ['Computer Science'] },
-    }) as Document;
-
-    expect(pseudonymized.netid).toBe('mirrored-507f1f77bcf86cd799439022');
-    expect(pseudonymized.email).toBe('mirrored-507f1f77bcf86cd799439022@example.invalid');
-    expect(pseudonymized).not.toHaveProperty('profile');
-  });
-
-  it('strips nested student profile fields and login state from a preserved account', () => {
-    const sanitized = sanitizeMirroredAccount({
-      _id: 'account-1',
-      schemaVersion: 1,
-      netid: 'faculty.person',
-      email: 'faculty.person@yale.edu',
-      status: 'ACTIVE',
-      lastLoginAt: new Date('2026-07-25T00:00:00Z'),
-      profile: {
-        firstName: 'Faculty',
-        lastName: 'Person',
-        userType: 'professor',
-        title: 'Professor of Example Studies',
-        department: 'Example Department',
-        college: 'Example College',
-        year: '2027',
-        major: ['Computer Science'],
-      },
-      archived: false,
-      createdAt: new Date('2026-01-01T00:00:00Z'),
-      updatedAt: new Date('2026-07-25T00:00:00Z'),
-    });
-
-    expect(sanitized).toMatchObject({
-      _id: 'account-1',
-      schemaVersion: 1,
-      netid: 'faculty.person',
-      email: 'faculty.person@yale.edu',
-      status: 'ACTIVE',
-      archived: false,
-      profile: {
-        firstName: 'Faculty',
-        lastName: 'Person',
-        userType: 'professor',
-        title: 'Professor of Example Studies',
-        department: 'Example Department',
-      },
-    });
-    expect(sanitized.profile).not.toHaveProperty('college');
-    expect(sanitized.profile).not.toHaveProperty('year');
-    expect(sanitized.profile).not.toHaveProperty('major');
-    expect(sanitized).not.toHaveProperty('lastLoginAt');
-  });
-
-  it('drops the profile entirely when it carries only student PII', () => {
-    const sanitized = sanitizeMirroredAccount({
-      _id: 'account-2',
-      schemaVersion: 1,
-      netid: 'student.person',
-      email: 'student.person@yale.edu',
-      status: 'ACTIVE',
-      profile: { college: 'Example College', year: '2027', major: ['Computer Science'] },
-      archived: false,
-    });
-
-    expect(sanitized).not.toHaveProperty('profile');
-  });
-
-  it('pseudonymizes accounts no Researcher references while preserving IDs', () => {
-    const id = new ObjectId('507f1f77bcf86cd799439011');
-    const sanitized = sanitizeMirroredAccount(
-      {
-        _id: id,
-        schemaVersion: 1,
-        netid: 'student.person',
-        email: 'student.person@yale.edu',
-        status: 'ACTIVE',
-        profile: {
-          firstName: 'Student',
-          lastName: 'Person',
-          userType: 'undergraduate',
-          college: 'Example College',
-          year: '2027',
-          major: ['Computer Science'],
-        },
-        archived: false,
-        lastLoginAt: new Date('2026-07-25T00:00:00Z'),
-      },
-      false,
+    await expect(
+      applySync(
+        source,
+        {} as Db,
+        [{ name: 'researchers', category: 'identity-spine' }],
+        [],
+        async () => undefined,
+      ),
+    ).rejects.toThrow(
+      'Sync blocked: 1 researchers row carries an account _id in accountId; accounts are environment-local',
     );
+  });
 
-    expect(sanitized).toMatchObject({
-      _id: id,
-      schemaVersion: 1,
-      netid: 'mirrored-507f1f77bcf86cd799439011',
-      email: 'mirrored-507f1f77bcf86cd799439011@example.invalid',
-      status: 'ACTIVE',
-    });
-    expect(sanitized).not.toHaveProperty('profile');
-    expect(sanitized).not.toHaveProperty('lastLoginAt');
+  it('never copies accounts and never clears them from the target', () => {
+    expect(
+      collectionsForOptions({ includeObservations: true }).map(({ name }) => name),
+    ).not.toContain('accounts');
+    expect(NEVER_COPY_COLLECTIONS).toContain('accounts');
+    expect(PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS).toContain('accounts');
+    expect(
+      localNonMirrorCollectionNames(['accounts', 'research_entities'], ['research_entities']),
+    ).toEqual([]);
+  });
+
+  it('never copies research plans and never clears them from the target (#5092)', () => {
+    expect(
+      collectionsForOptions({ includeObservations: true }).map(({ name }) => name),
+    ).not.toContain('research_plans');
+    expect(NEVER_COPY_COLLECTIONS).toContain('research_plans');
+    expect(
+      localNonMirrorCollectionNames(['research_plans', 'research_entities'], ['research_entities']),
+    ).toEqual([]);
   });
 
   it('refuses to mirror environment-local collections and clears the real mirror set', () => {

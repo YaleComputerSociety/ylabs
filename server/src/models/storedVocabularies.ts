@@ -113,6 +113,7 @@ export const scrapeRunInterruptionReasons = [
   'signal',
   'heartbeat_stale',
   'legacy_abandoned',
+  'stalled',
 ] as const;
 export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[number];
 
@@ -199,3 +200,7 @@ export const loginSignalBuckets = [
   'yalies_unavailable',
 ] as const;
 export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
+
+export const officialRosterUndergraduateStatuses = ['current', 'past'] as const;
+export type OfficialRosterUndergraduateStatus =
+  (typeof officialRosterUndergraduateStatuses)[number];

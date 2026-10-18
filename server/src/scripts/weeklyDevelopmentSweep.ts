@@ -39,6 +39,7 @@ import {
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
   weeklySweepChildEnvironment,
+  weeklySweepRunDeadline,
   weeklySweepEnvironmentProblems,
   weeklySweepExitCode,
   weeklySweepVerdict,
@@ -134,7 +135,11 @@ function runSweeps(jobDir: string, modes: WeeklySweepMode[]): WeeklySweepModeOut
     console.log(`[weekly-sweep] starting ${mode}`);
     const exitCode = runYarn(
       buildWeeklySweepArgs(mode),
-      weeklySweepChildEnvironment(process.env, modeDir),
+      weeklySweepChildEnvironment(
+        process.env,
+        modeDir,
+        weeklySweepRunDeadline(performance.timeOrigin),
+      ),
     );
     const summaryPath = findSweepSummaryPath(modeDir, mode);
     let summary: unknown;

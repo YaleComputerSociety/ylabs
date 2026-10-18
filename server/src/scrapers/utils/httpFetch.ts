@@ -23,6 +23,7 @@ import {
 } from '../snapshotBenchmarkMode';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { recordThrottleRetryOutcome } from './throttleRetryStats';
+import { withScrapeRunProgress } from '../scrapeRunProgress';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 
@@ -325,7 +326,9 @@ async function fetchPageLive(
   const safeUrl = (await assertUrl(url)).toString();
   const host = hostOf(safeUrl);
   const limiter = options.limiter ?? sharedHostLimiter;
-  const request = options.request ?? defaultAxiosRequest;
+  const send = options.request ?? defaultAxiosRequest;
+  const request: HttpRequestFn = (target, requestConfig) =>
+    withScrapeRunProgress(() => send(target, requestConfig));
   const policy = resolveRetryPolicy(options, host);
 
   const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };

@@ -8,6 +8,7 @@ import {
   quoteStatesAnUndergraduateAccessFact,
   type QuotePageEntity,
 } from './undergradQuoteRelevance';
+import { quoteListsPeopleWithTheirContactDetails } from './contactInstructionQuoteAdmission';
 import {
   isHistoricalUndergradEvidence,
   namesNonYaleInstitution,
@@ -24,6 +25,7 @@ export function undergradEvidenceQuoteIsInadmissible(
     !isPlausibleUndergradEvidenceQuote(value) ||
     isHistoricalUndergradEvidence(value) ||
     namesNonYaleInstitution(value) ||
+    quoteListsPeopleWithTheirContactDetails(value) ||
     sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
     (sourceName === UNDERGRAD_MICROSITE_LANE &&
       (!quoteStatesAnUndergraduateAccessFact(value) ||

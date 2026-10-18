@@ -1,4 +1,6 @@
-// Copying any of these is a defect rather than a policy choice: telemetry
+// Copying any of these is a defect rather than a policy choice: an account is a
+// sign-in made in one environment and names nobody in another (#5088), a
+// research plan belongs to one of those accounts (#5092), telemetry
 // would attribute one environment's student behavior to another, a copied
 // lock lets a second environment's scraper believe a job is already held, a
 // copied quality snapshot both misdates the target's history and loses it,
@@ -6,6 +8,8 @@
 // the other's, because a promotion replaces the whole collection. A lane
 // benchmark and its scorecards are the same kind of environment-local history.
 export const NEVER_COPY_COLLECTIONS = [
+  'accounts',
+  'research_plans',
   'analytics_events',
   'scrape_job_locks',
   'corpus_quality_snapshots',
@@ -25,6 +29,8 @@ export const NEVER_COPY_COLLECTIONS = [
 // a named allowlist one routine refresh destroys them. A frozen lane benchmark
 // carries hand labels no code can re-derive, so the loss is permanent.
 export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
+  'accounts',
+  'research_plans',
   'analytics_events',
   'corpus_quality_snapshots',
   'gate_scorecard_snapshots',

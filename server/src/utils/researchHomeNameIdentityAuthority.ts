@@ -19,6 +19,7 @@ import {
   multiTenantAcademicHostLabelIsDistinctive,
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
+import { isOrganizationalResearchEntity } from './researchEntityOrganizational';
 import { researchEntityDisplayName } from './servedResearchEntityTitle';
 import { isNavigationMenuPhrase } from './titleHygiene';
 
@@ -445,6 +446,19 @@ export function namesAServiceFacility(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
   return SERVICE_FACILITY_NOUN_RE.test(name);
+}
+
+/**
+ * Whether a name denotes an organization rather than a person's research home.
+ *
+ * `isUmbrellaOrganizationName` is false for anything lab-headed by design, so a shared
+ * facility ("Yale CryoEM Resource") needs the service-noun test too. An organizational
+ * `entityType` alone is not enough wherever this is read: person-keyed shells typed
+ * `INITIATIVE` or `CENTER` and titled after the person are a duplicate-row problem wearing
+ * an organization's type.
+ */
+export function nameDenotesOrganization(value: unknown): boolean {
+  return isUmbrellaOrganizationName(value) || namesAServiceFacility(value);
 }
 
 const SUPPORT_OR_CONSULTING_UNIT_RE =
@@ -1049,15 +1063,19 @@ export function nameCarriesPersonIdentity(value: unknown, personName: unknown): 
   return nameCarriesIdentityToken(value, personIdentityTokens(personName));
 }
 
-// Path segments that structure a site rather than name a person, so they never
-// corroborate an eponym.
-const STRUCTURAL_URL_SEGMENT_WORDS = new Set([
+const RESEARCH_HOME_HEAD_NOUN_WORDS = new Set([
   'lab',
   'labs',
   'laboratory',
   'laboratories',
   'group',
   'groups',
+]);
+
+// Path segments that structure a site rather than name a person, so they never
+// corroborate an eponym.
+const STRUCTURAL_URL_SEGMENT_WORDS = new Set([
+  ...RESEARCH_HOME_HEAD_NOUN_WORDS,
   'research',
   'people',
   'person',
@@ -1172,6 +1190,48 @@ export function eponymousOrganizationNameSurnameCandidates(value: unknown): stri
  * segments count and never the host.
  */
 export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: unknown): string[] {
+  return labNameEponymsInUrlPath(harvestedName, websiteUrl, () => true);
+}
+
+/**
+ * The eponyms the URL path names as a person, which is `corroboratedLabNameEponyms`
+ * without the segments that only spell the candidate name's own slug. A page at
+ * `/<word>-lab` echoes "<Word> Lab" back and says nothing about whether the word is
+ * a person, so a place, topic or acronym lab on such a page was refused as another
+ * person's lab even though no researcher has that surname (#5069). A colleague's
+ * eponymous lab on that shape is still refused by the surname roster at the write
+ * choke points. The path-only entry point drops the echo too, because it guards the
+ * serve and index paths over names those choke points already judged, and counting
+ * the echo there withheld the very lab name the roster had admitted.
+ */
+export function labNameEponymsUrlPathNamesAsAPerson(
+  harvestedName: unknown,
+  websiteUrl: unknown,
+): string[] {
+  return labNameEponymsInUrlPath(
+    harvestedName,
+    websiteUrl,
+    (segment, candidates) => !segmentOnlySpellsLabName(segment, candidates),
+  );
+}
+
+function segmentOnlySpellsLabName(segment: string, eponymCandidates: string[]): boolean {
+  const words = segment.match(NAME_WORD_RE) || [];
+  if (!words.some((word) => RESEARCH_HOME_HEAD_NOUN_WORDS.has(word))) return false;
+  const nameWordsBeforeHeadNoun = words.filter(
+    (word) => !RESEARCH_HOME_HEAD_NOUN_WORDS.has(word) && word !== 'the',
+  );
+  return (
+    nameWordsBeforeHeadNoun.length > 0 &&
+    eponymCandidates.includes(nameWordsBeforeHeadNoun.join(''))
+  );
+}
+
+function labNameEponymsInUrlPath(
+  harvestedName: unknown,
+  websiteUrl: unknown,
+  segmentCounts: (segment: string, eponymCandidates: string[]) => boolean,
+): string[] {
   const candidates = eponymousLabNameSurnameCandidates(harvestedName);
   if (candidates.length === 0) return [];
   const raw = textValue(websiteUrl);
@@ -1183,9 +1243,14 @@ export function corroboratedLabNameEponyms(harvestedName: unknown, websiteUrl: u
     return [];
   }
   const pathWords = new Set(
-    (pathname.toLowerCase().match(NAME_WORD_RE) || []).filter(
-      (word) => word.length >= 2 && !STRUCTURAL_URL_SEGMENT_WORDS.has(word) && !/\d/.test(word),
-    ),
+    pathname
+      .toLowerCase()
+      .split('/')
+      .filter((segment) => segmentCounts(segment, candidates))
+      .flatMap((segment) => segment.match(NAME_WORD_RE) || [])
+      .filter(
+        (word) => word.length >= 2 && !STRUCTURAL_URL_SEGMENT_WORDS.has(word) && !/\d/.test(word),
+      ),
   );
   const corroborated = candidates.filter((candidate) => pathWords.has(candidate));
   return corroborated.length > 0 ? [corroborated[0]] : [];
@@ -1329,7 +1394,7 @@ export function personSurnamesFromDisplayNames(displayNames: Iterable<unknown>):
       (word) => word.length >= 2 && !PERSON_NAME_STOP_WORDS.has(word) && !/\d/.test(word),
     );
     const surname = words[words.length - 1];
-    if (surname) surnames.add(surname);
+    if (surname && !RESEARCH_HOME_HEAD_NOUN_WORDS.has(surname)) surnames.add(surname);
   }
   return surnames;
 }
@@ -1409,7 +1474,7 @@ export function claimsAnotherPersonsLabByUrlPath(args: {
   identityTokens: string[];
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  const pathCorroborated = labNameEponymsUrlPathNamesAsAPerson(args.harvestedName, args.websiteUrl);
   if (pathCorroborated.length === 0) return false;
   return !pathCorroborated.some((eponym) => eponymMatchesIdentity(eponym, args.identityTokens));
 }
@@ -1446,7 +1511,7 @@ export function claimsAnotherPersonsLab(args: {
   knownPersonSurnames: ReadonlySet<string>;
 }): boolean {
   if (args.identityTokens.length === 0) return false;
-  const pathCorroborated = corroboratedLabNameEponyms(args.harvestedName, args.websiteUrl);
+  const pathCorroborated = labNameEponymsUrlPathNamesAsAPerson(args.harvestedName, args.websiteUrl);
   // The path named a person, so it has already answered the question either way;
   // the roster must not overturn "this is the eponym holder's own lab".
   if (pathCorroborated.length > 0) {
@@ -1614,7 +1679,28 @@ export interface PersonScopedNameIdentityArgs {
    * organization they merely belong to.
    */
   siteDeclaredOwnNames?: readonly unknown[];
+  /**
+   * Whether the lead the name is judged against holds a director or co-director edge
+   * on this row. That edge is a lane's statement that the lead directs this very
+   * organization, so an organization's name on a row keyed to that person is the
+   * organization's own name rather than an umbrella the person merely belongs to
+   * (#5085). A PI edge states nothing of the kind.
+   */
+  identityLeadDirectsOrganization?: boolean;
 }
+
+const DIRECTOR_LEAD_ROLES: ReadonlySet<string> = new Set(['director', 'co-director']);
+
+export const leadRoleDirectsTheOrganization = (role: unknown): boolean =>
+  DIRECTOR_LEAD_ROLES.has(textValue(role).toLowerCase());
+
+// Symbol-keyed so a serve path can carry the roster fact through the spreads the copy
+// sanitizer copies the entity through without it ever serializing into a response.
+export const IDENTITY_LEAD_DIRECTS_ORGANIZATION = Symbol('identityLeadDirectsOrganization');
+
+export const servedIdentityLeadDirectsOrganization = (entity: unknown): boolean =>
+  Boolean(entity) &&
+  (entity as Record<symbol, unknown>)[IDENTITY_LEAD_DIRECTS_ORGANIZATION] === true;
 
 const nameNamesThisRecordsOwnPerson = (name: string, identityTokens: string[]): boolean =>
   eponymousOrganizationNameSurnameCandidates(name).some((eponym) =>
@@ -1739,6 +1825,13 @@ function personScopedNameIdentityPrelude(
   const personTokens = personIdentityTokens(args.personName);
   const identityTokens = researchHomeIdentityTokens(args);
   if (nameCarriesIdentityToken(name, personTokens)) return { settled: false };
+  if (
+    args.identityLeadDirectsOrganization &&
+    isOrganizationalResearchEntity({ entityType: args.entityType }) &&
+    isUmbrellaOrganizationName(name)
+  ) {
+    return { settled: false };
+  }
   if (
     isUmbrellaOrganizationName(name) &&
     !(

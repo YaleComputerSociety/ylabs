@@ -41,11 +41,10 @@ const productionPlan = {
   targetEnvironment: 'production',
   sourceDatabase: 'Beta',
   targetDatabase: 'Prod',
-  syntheticReferenceBlockersClear: true,
+  accountReferenceBlockersClear: true,
   applyBlockers: [],
   includesObservations: false,
   includesScrapeRuns: false,
-  productionAccountCarry: { inserted: 3 },
   collections: [{ name: 'research_entities', sourceCopyCount: 100, targetCount: 90 }],
 };
 

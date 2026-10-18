@@ -111,7 +111,7 @@ async function main(): Promise<void> {
 
   const directoryIdentityByPersonId = new Map<string, boolean>();
   const identityRows = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id accountId identifiers.email')
+    .select('_id identifiers.email')
     .lean()) as unknown as Array<{ _id: unknown } & ResearcherIdentitySource>;
   for (const row of identityRows) {
     const id = serializedDocumentId(row._id);

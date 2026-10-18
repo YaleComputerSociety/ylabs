@@ -15,7 +15,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'HIGH',
     notes:
-      'Reviewed official current-roster sections for allowlisted research homes. Manual-only and out of the sweep until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
+      'Reviewed official current-roster sections and owner-approved undergraduate lists for allowlisted research homes, read weekly in the sweep since the sampled precision review was recorded on 2026-10-17 (#5039).',
   },
   'lab-site-lead-verification': {
     priority: 1,
@@ -158,6 +158,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Web search for a researcher's own lab, research-group, or personal academic homepage, adopted only where the fetched page identifies that researcher's research unit. Emits websiteUrl and sourceUrls only, never a name, description, access, route, or opportunity evidence. DERIVED rather than PRIMARY because the address comes from a search engine's ranking and not from a Yale page that states it.",
   },
+  'operator-led-group-verdict': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "An operator's verdict on one row, reached by reading the group's own pages, that the row's lead runs the named group whose own site this is. Written by research-entity:adopt-led-group-site, never by a sweep, for the shape no lane predicate can separate from a member linking a colleague's group (#5037, #5040).",
+  },
   'lab-site-type-probe': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
@@ -263,10 +272,10 @@ export const sourceCoverageRegistry = {
     priority: 2,
     tier: 'OFFICIAL_INDEX',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'LAB_WEBSITE'],
     defaultConfidence: 'HIGH',
     notes:
-      'Targeted official Yale profile backfill for PI/user identity, visible professor bio repair, profile-derived source descriptions, and leadership-backed research-home websites without creating access claims.',
+      'Targeted official Yale profile backfill for PI/user identity, visible professor bio repair, profile-derived source descriptions, leadership-backed research-home websites, and the director of a lead-less organization whose own profile states the directorship and links its site, without creating access claims.',
   },
   'yale-directory': {
     priority: 2,

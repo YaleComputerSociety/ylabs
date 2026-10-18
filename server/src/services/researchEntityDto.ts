@@ -29,12 +29,17 @@ import {
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
   isMultiTenantAcademicHostRootUrl,
+  isPostingPageCitedAsResearchWebsite,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
-import { personScopedResearchEntityNameNamesSomethingElseByUrlPath } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  IDENTITY_LEAD_DIRECTS_ORGANIZATION,
+  personScopedResearchEntityNameNamesSomethingElseByUrlPath,
+  servedIdentityLeadDirectsOrganization,
+} from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
@@ -47,6 +52,7 @@ import {
   quotePageIsAboutAnotherEntity,
   quoteStatesAnUndergraduateAccessFact,
 } from '../scrapers/undergradQuoteRelevance';
+import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -160,6 +166,7 @@ function servedPersonScopedDisplayName(group: Record<string, any>, value: unknow
     websiteUrl: group.fieldProvenance?.displayName?.sourceUrl || group.websiteUrl || group.website,
     recordCitedUrls: [group.websiteUrl, group.website, group.sourceUrls],
     siteDeclaredOwnNames: group.siteDeclaredOwnNames,
+    identityLeadDirectsOrganization: servedIdentityLeadDirectsOrganization(group),
   })
     ? ''
     : displayName;
@@ -468,6 +475,46 @@ export function toPublicResearchEntitySummaryDto(
   };
 }
 
+const MAX_PUBLIC_FELLOWSHIP_RECIPIENTS = 60;
+
+const boundedFellowshipText = (value: unknown, maxLength: number): string => {
+  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  return text.slice(0, maxLength);
+};
+
+export interface PublicFellowshipRecipient {
+  studentName: string;
+  year: number;
+  programName: string;
+  projectTitle?: string;
+  sourceUrl?: string;
+}
+
+export function publicFellowshipRecipients(value: unknown): PublicFellowshipRecipient[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((entry: any): PublicFellowshipRecipient[] => {
+      const studentName = boundedFellowshipText(entry?.studentName, 80);
+      const programName = boundedFellowshipText(entry?.programName, 120);
+      const year = Number(entry?.year);
+      if (!studentName || !programName || !Number.isInteger(year) || year < 1980 || year > 2100) {
+        return [];
+      }
+      const projectTitle = boundedFellowshipText(entry?.projectTitle, 300);
+      const sourceUrl = publicHttpUrl(entry?.sourceUrl);
+      return [
+        {
+          studentName,
+          year,
+          programName,
+          ...(projectTitle ? { projectTitle } : {}),
+          ...(sourceUrl ? { sourceUrl } : {}),
+        },
+      ];
+    })
+    .slice(0, MAX_PUBLIC_FELLOWSHIP_RECIPIENTS);
+}
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
@@ -478,6 +525,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'currentUndergradCount',
   'undergradEvidenceQuote',
   'pastUndergradAdvisees',
+  'fellowshipRecipients',
   'recentGrants',
   'recentGrantCount',
   'fundingAgencies',
@@ -594,7 +642,8 @@ function derivePublicResearchEntityDto(
           !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
           !isPressOrNewsHostUrl(url) &&
           !isMapOrDirectionsUrl(url) &&
-          !isInstitutionalPublicityPageUrl(url);
+          !isInstitutionalPublicityPageUrl(url) &&
+          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }
@@ -621,12 +670,13 @@ function derivePublicResearchEntityDto(
         const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
         const withheld =
           isModelSearchNote(group[field]) ||
+          quoteListsPeopleWithTheirContactDetails(group[field]) ||
           provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
           (fromMicrositeLane &&
             (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
               quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
         if (!withheld) {
-          dto[field] = publicTextValue(group[field]);
+          dto[field] = String(group[field]).slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
           const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
           if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
         }
@@ -637,6 +687,11 @@ function derivePublicResearchEntityDto(
           group.fieldProvenance?.currentUndergradCount?.sourceName ===
           RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE;
         if (!retired) dto[field] = publicTextValue(group[field]);
+        continue;
+      }
+      if (field === 'fellowshipRecipients') {
+        const recipients = publicFellowshipRecipients(group[field]);
+        if (recipients.length > 0) dto[field] = recipients;
         continue;
       }
       if (field === 'profileResearchAreas') {
@@ -728,6 +783,7 @@ function derivePublicResearchEntityDto(
  */
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+  identityLeadDirectorEntityIds?: ReadonlySet<string>;
   leadMemberNamesUnavailable?: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<
     string,
@@ -789,6 +845,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 } {
   const {
     leadMemberNamesByEntityId,
+    identityLeadDirectorEntityIds,
     leadMemberNamesUnavailable,
     emeritusWayInByEntityId,
     ...entityOptions
@@ -798,9 +855,12 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
     (result.hits || []).map((hit) => {
       const hitKey = String(hit?._id || hit?.id || '');
       const leadMemberNames = leadMemberNamesByEntityId?.get(hitKey);
+      const servedHit = identityLeadDirectorEntityIds?.has(hitKey)
+        ? { ...hit, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+        : hit;
       return toPublicResearchEntityDto(
         {
-          ...researchEntityListServedSource(hit, leadMemberNames, leadMemberNamesUnavailable),
+          ...researchEntityListServedSource(servedHit, leadMemberNames, leadMemberNamesUnavailable),
           ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
         },
         { ...listOptions, leadMemberNames },

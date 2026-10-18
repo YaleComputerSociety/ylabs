@@ -956,6 +956,33 @@ describe('LabDetail page', () => {
     expect(container.querySelector('blockquote')).toBeNull();
   });
 
+  it('lists the roster undergraduates instead of the quote when the lab page names them', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        undergradEvidenceQuote: 'Listed Undergrad Undergraduate Email',
+        undergradEvidenceSourceUrl: 'https://example.yale.edu/people',
+      },
+      roster: {
+        status: 'current',
+        returned: 0,
+        truncated: false,
+        withheldCount: 0,
+        sourceUrl: 'https://example.yale.edu/people',
+        undergraduates: [{ name: 'Listed Undergrad', status: 'current', startYear: 2024 }],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
+    expect(container.querySelector('blockquote')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Undergraduate researchers' })).toBeTruthy();
+    expect(screen.getByText('Listed Undergrad')).toBeTruthy();
+    await expectNoAxeViolations(container);
+  });
+
   it.each([
     ['no quote', { undergradEvidenceQuote: undefined }],
     ['a blank quote', { undergradEvidenceQuote: '   ' }],

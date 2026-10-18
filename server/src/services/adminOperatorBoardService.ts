@@ -367,9 +367,8 @@ export type PromotionCopyDryRunArtifact =
       artifactStatus: 'loaded';
       artifactPath: string;
       datasetVersion: string;
-      syntheticReferenceBlockersClear: boolean;
+      accountReferenceBlockersClear: boolean;
       applyBlockerCount: number;
-      excludedSyntheticUsers: number;
       collectionCategoryCount: number;
     }
   | {
@@ -715,14 +714,13 @@ export function derivePromotionCopyGate(input?: PromotionCopyDryRunArtifact) {
     };
   }
 
-  if (!input.syntheticReferenceBlockersClear || input.applyBlockerCount > 0) {
+  if (!input.accountReferenceBlockersClear || input.applyBlockerCount > 0) {
     const blockerWord = input.applyBlockerCount === 1 ? 'blocker' : 'blockers';
     return {
       status: 'blocked' as const,
       command,
       note: `Latest Lane A dry-run artifact has ${input.applyBlockerCount} apply ${blockerWord}.`,
       applyBlockerCount: input.applyBlockerCount,
-      excludedSyntheticUsers: input.excludedSyntheticUsers,
       collectionCategoryCount: input.collectionCategoryCount,
     };
   }
@@ -732,7 +730,6 @@ export function derivePromotionCopyGate(input?: PromotionCopyDryRunArtifact) {
     command,
     note: 'Latest Lane A dry-run artifact has no apply blockers; operator review and smoke gates are still required.',
     applyBlockerCount: input.applyBlockerCount,
-    excludedSyntheticUsers: input.excludedSyntheticUsers,
     collectionCategoryCount: input.collectionCategoryCount,
   };
 }
@@ -773,11 +770,11 @@ export function readPromotionCopyDryRunArtifact(
         error: 'datasetVersion is required',
       };
     }
-    if (typeof parsed.syntheticReferenceBlockersClear !== 'boolean') {
+    if (typeof parsed.accountReferenceBlockersClear !== 'boolean') {
       return {
         artifactStatus: 'invalid',
         artifactPath: safeArtifactPath,
-        error: 'syntheticReferenceBlockersClear is required',
+        error: 'accountReferenceBlockersClear is required',
       };
     }
     if (!Array.isArray(parsed.applyBlockers)) {
@@ -792,9 +789,8 @@ export function readPromotionCopyDryRunArtifact(
       artifactStatus: 'loaded',
       artifactPath: safeArtifactPath,
       datasetVersion: parsed.datasetVersion,
-      syntheticReferenceBlockersClear: parsed.syntheticReferenceBlockersClear,
+      accountReferenceBlockersClear: parsed.accountReferenceBlockersClear,
       applyBlockerCount: parsed.applyBlockers.length,
-      excludedSyntheticUsers: Number(parsed.excludedSyntheticUsers || 0),
       collectionCategoryCount: Array.isArray(parsed.collectionCategories)
         ? parsed.collectionCategories.length
         : 0,

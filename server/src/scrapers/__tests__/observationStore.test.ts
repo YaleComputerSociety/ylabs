@@ -717,6 +717,72 @@ describe('appendObservations', () => {
     expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
   });
 
+  it('supersedes over every observation that landed when a transient insert failure is retried', async () => {
+    vi.useFakeTimers();
+    try {
+      const landedIds = new Set<string>();
+      const insertMany = vi
+        .spyOn(Observation, 'insertMany')
+        .mockImplementationOnce((async (pending: Array<{ _id: unknown }>) => {
+          landedIds.add(String(pending[0]._id));
+          throw Object.assign(
+            new Error(
+              'Error determining if update will go over space quota: Error computing current atlas size: internal atlas error',
+            ),
+            {
+              name: 'MongoBulkWriteError',
+              writeErrors: [
+                { err: { index: 1, code: 8000, errmsg: 'internal atlas error' }, index: 1 },
+              ],
+            },
+          );
+        }) as any)
+        .mockImplementationOnce((async (pending: Array<{ _id: unknown }>) => pending) as any);
+      vi.spyOn(Observation, 'find').mockImplementation(((filter: any) => ({
+        lean: async () =>
+          (filter._id.$in as unknown[])
+            .filter((id) => landedIds.has(String(id)))
+            .map((id) => ({ _id: id })),
+      })) as any);
+      const bulkWrite = vi
+        .spyOn(Observation, 'bulkWrite')
+        .mockResolvedValue({ modifiedCount: 2 } as any);
+
+      const appended = appendObservations(
+        [
+          {
+            entityType: 'user',
+            entityKey: 'synthetic-user',
+            field: 'name',
+            value: 'Synthetic Name',
+          },
+          { entityType: 'user', entityKey: 'synthetic-user', field: 'title', value: 'Professor' },
+        ],
+        {
+          scrapeRunId: 'run-1',
+          sourceId: 'source-1',
+          sourceName: 'yale-directory',
+          sourceWeight: 0.9,
+          dryRun: false,
+        },
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      const result = await appended;
+
+      const firstBatch = insertMany.mock.calls[0][0] as unknown as Array<{ _id: unknown }>;
+      const secondBatch = insertMany.mock.calls[1][0] as unknown as Array<{ _id: unknown }>;
+      expect(firstBatch).toHaveLength(2);
+      expect(secondBatch.map((doc) => String(doc._id))).toEqual([String(firstBatch[1]._id)]);
+      const supersededBy = (bulkWrite.mock.calls[0][0] as any[]).map((op) =>
+        String(op.updateMany.update.$set.supersededBy),
+      );
+      expect(supersededBy).toEqual(firstBatch.map((doc) => String(doc._id)));
+      expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('supersedes legacy fellowship values by source, entity, and field', async () => {
     vi.spyOn(Observation, 'insertMany').mockResolvedValue([
       {

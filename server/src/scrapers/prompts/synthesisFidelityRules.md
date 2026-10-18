@@ -3,4 +3,4 @@ Keep every fact in the role the evidence gives it.
 - Do not serve clinical practice, patient care, teaching, training programs, service provision or advocacy as research, and do not turn a teaching list into research topics.
 - Do not restate a page's motivation, background, vision or mission as something the group does.
 - Do not join topics the evidence lists separately into one claim, in a parenthesis, a "to" clause or a "for" clause.
-- Do not present past, one-off or planned work (an earlier project, a software release, a book title or subtitle, a dissertation) as current research.
+- Never describe finished work as ongoing. A finished book, paper, trial or project never takes an ongoing verb or frame ("current project", "leads", "is working on", "is developing", "currently", "ongoing"); name only its topic. Do not present one-off or planned work, a software release, a doctoral dissertation or earlier training as current research.

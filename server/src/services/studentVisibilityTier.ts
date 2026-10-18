@@ -1,6 +1,7 @@
 import { type StudentVisibilityTier } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { OPERATOR_AUTHORED_SOURCE_NAMES } from '../scrapers/seedSources';
+import { websiteIdentity } from '../scrapers/survivorOwnedWebsiteClear';
 import {
   LEAD_TITLE_RULED_NON_HOSTING_RANK_REASON,
   leadTitlesAreRuledNonHostingRanks,
@@ -44,6 +45,7 @@ import {
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
   researchHomeIdentitySource,
+  leadRoleDirectsTheOrganization,
   NO_SURNAME_ROSTER,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -461,7 +463,8 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
  * observation asserts the lab, its `entityType`, `kind` or `name` is locked, or its
  * name is not the row's own lead's name plus "Lab". A full-name heading
  * (`isComposedFullNameLabName`) is decided by that predicate instead, and its live
- * observations do not exempt it.
+ * observations do not exempt it; only a name the site-title lane read off the row's own
+ * current website does (`labNameAndTypeReadFromOwnSiteTitle`).
  *
  * The absence of a lab-named URL is the discriminator rather than the presence of
  * a person-page one, because a paginated department listing
@@ -478,6 +481,7 @@ export function isUnbackedLabNameShell(
   if (textValue(entity.entityType).toUpperCase() !== 'LAB') return false;
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
   if (OPERATOR_NAME_SOURCES.has(textValue(entity.fieldProvenance?.name?.sourceName))) return false;
+  if (labNameAndTypeReadFromOwnSiteTitle(entity)) return false;
   if (isComposedFullNameLabName(entity, leadPersonName)) {
     return !labNameBackedByOwnOfficialText(entity);
   }
@@ -515,6 +519,23 @@ function labNameAndTypeReadTogether(fieldProvenance: Record<string, any> | undef
   const sourceUrl = textValue(name.sourceUrl);
   if (!sourceName || !sourceUrl) return false;
   return sourceName === textValue(type.sourceName) && sourceUrl === textValue(type.sourceUrl);
+}
+
+export const SITE_TITLE_LAB_NAME_SOURCE = 'lab-site-type-probe';
+
+/**
+ * A name and `LAB` type the site-title lane read together off the row's own current
+ * website (#5059) are the lab's own statement, so a full-name heading read there was not
+ * composed. Only that lane: a lane that summarises a site's text can repeat a composed
+ * heading, so its reading backs a full-name lab no more than a roster's does. Tied to the
+ * current website, so a name read off a site the row no longer serves backs nothing.
+ */
+function labNameAndTypeReadFromOwnSiteTitle(entity: Record<string, any>): boolean {
+  if (!labNameAndTypeReadTogether(entity.fieldProvenance)) return false;
+  const name = entity.fieldProvenance.name;
+  if (textValue(name.sourceName) !== SITE_TITLE_LAB_NAME_SOURCE) return false;
+  const website = websiteIdentity(entity.websiteUrl);
+  return Boolean(website) && websiteIdentity(name.sourceUrl) === website;
 }
 
 function isNonOwnerGrantShell({
@@ -1106,8 +1127,8 @@ export function computeResearchEntityStudentVisibility({
   // holds, so `unusable_name` would shut the #1930 recovery lane over exactly its own
   // population and nothing could ever clear either reason.
   const recordCitedUrls = [entity.websiteUrl, entity.website, entity.sourceUrls];
-  const leadPersonName =
-    leadMembers.map((lead) => textValue(lead?.name || lead?.user?.displayName)).find(Boolean) || '';
+  const identityLead = leadMembers.find((lead) => textValue(lead?.name || lead?.user?.displayName));
+  const leadPersonName = textValue(identityLead?.name || identityLead?.user?.displayName);
   // The shared-host arm stays unconditional, because it asks whether the name belongs
   // to an organization at all rather than to which person, and answers that from the
   // URLs the row cites (#2360).
@@ -1133,6 +1154,7 @@ export function computeResearchEntityStudentVisibility({
       knownPersonSurnames,
       recordCitedUrls,
       siteDeclaredOwnNames: entity.siteDeclaredOwnNames,
+      identityLeadDirectsOrganization: leadRoleDirectsTheOrganization(identityLead?.role),
     });
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&

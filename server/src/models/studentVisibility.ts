@@ -63,6 +63,18 @@ export const studentVisibilityFields = {
     ref: 'Account',
     required: false,
   },
+  /**
+   * Who reviewed the row, by netid. Accounts are environment-local and never
+   * promoted (#5088), so an account `_id` written here would name nobody once the
+   * row reaches another environment; the netid names the same person everywhere.
+   */
+  studentVisibilityReviewedByNetid: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    maxlength: 32,
+    required: false,
+  },
 };
 
 export const isStudentVisibilityTier = (value: unknown): value is StudentVisibilityTier =>
