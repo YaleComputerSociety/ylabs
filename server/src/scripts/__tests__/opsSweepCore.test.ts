@@ -17,7 +17,7 @@ import {
 } from '../opsSweepCore';
 import type { StoredWeeklySweepRun } from '../weeklySweepRunsReportCore';
 
-const DEV_URL = 'mongodb+srv://user:secret@cluster.example.net/Development';
+const DEV_URL = 'mongodb+srv://cluster.example.net/Development';
 const NOW = new Date('2026-10-18T12:00:00Z');
 const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60_000);
 const idleActivity = { heldLockSources: [], runningScrapeRuns: [], now: NOW };
