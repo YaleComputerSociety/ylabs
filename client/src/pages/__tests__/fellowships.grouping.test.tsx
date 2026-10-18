@@ -116,10 +116,12 @@ const renderFellowships = ({
   fellowships,
   quickFilter = null,
   resultsRankedByRelevance = false,
+  resultsMissOneWord = false,
 }: {
   fellowships: Fellowship[];
   quickFilter?: FellowshipQuickFilter;
   resultsRankedByRelevance?: boolean;
+  resultsMissOneWord?: boolean;
 }) =>
   render(
     <MemoryRouter>
@@ -137,6 +139,7 @@ const renderFellowships = ({
             fellowships,
             quickFilter,
             resultsRankedByRelevance,
+            resultsMissOneWord,
             setQueryString: vi.fn(),
             refreshFellowships: vi.fn(),
           }}
@@ -183,6 +186,18 @@ describe('Fellowships grouping', () => {
     expect(titlesIn('Best matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
     expect(titlesIn('Archive / review')).toEqual(['Retained Match Record']);
     expect(screen.queryByRole('region', { name: 'Due in the next 30 days' })).toBeNull();
+  });
+
+  it('says no program carries every word and labels the partial matches', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsMissOneWord: true,
+    });
+
+    expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
+    expect(titlesIn('Close matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
+    expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
   });
 
   it('groups the same programs by deadline when they answer no search', () => {

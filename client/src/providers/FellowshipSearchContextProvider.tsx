@@ -62,6 +62,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     exactSpelling,
     queryCorrection,
     resultsRankedByRelevance,
+    resultsMissOneWord,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -337,6 +338,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       let currentPage = 1;
       let reportedTotal = Infinity;
       let queryCorrection = null;
+      let missOneWord = false;
 
       while (collected.length < reportedTotal) {
         const response = await axios.get(buildSearchUrl(currentPage, pageSize));
@@ -344,18 +346,21 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           createFellowship(elem),
         );
         collected.push(...pageResults);
-        if (currentPage === 1) queryCorrection = response.data.queryCorrection ?? null;
+        if (currentPage === 1) {
+          queryCorrection = response.data.queryCorrection ?? null;
+          missOneWord = response.data.queryMatch === 'allButOneWord';
+        }
         reportedTotal =
           typeof response.data.total === 'number' ? response.data.total : collected.length;
         if (pageResults.length < pageSize || collected.length >= reportedTotal) break;
         currentPage += 1;
       }
 
-      return { collected, reportedTotal, queryCorrection };
+      return { collected, reportedTotal, queryCorrection, missOneWord };
     };
 
     accumulate()
-      .then(({ collected, reportedTotal, queryCorrection }) => {
+      .then(({ collected, reportedTotal, queryCorrection, missOneWord }) => {
         if (loadRequestIdRef.current !== requestId) return;
         dispatch({
           type: 'SEARCH_SUCCESS',
@@ -366,6 +371,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             append: false,
             queryCorrection,
             rankedByRelevance,
+            missOneWord,
           },
         });
       })
@@ -475,6 +481,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setQueryString,
         queryCorrection,
         resultsRankedByRelevance,
+        resultsMissOneWord,
         searchTypedSpelling,
         selectedProgramCategory,
         setSelectedProgramCategory,

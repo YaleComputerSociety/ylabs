@@ -3853,7 +3853,7 @@ test('program and fellowship search bound query and filter inputs before search 
     fellowshipService,
     /const safeYearOfStudy = boundedSearchFilterValues\(yearOfStudy\)/,
   );
-  assert.match(fellowshipService, /rankProgramSearchMatches\(safeQuery, candidates\)/);
+  assert.match(fellowshipService, /rankProgramSearch\(safeQuery, candidates\)/);
   assert.doesNotMatch(fellowshipService, /\$search:/);
   assert.match(
     fellowshipService,

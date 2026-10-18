@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   programQueryContentWords,
   programSearchWordStem,
+  rankProgramSearch,
   rankProgramSearchMatches,
 } from '../programSearchRelevance';
 
@@ -166,6 +167,31 @@ describe('rankProgramSearchMatches', () => {
 
   it('serves nothing for a query of only stop words', () => {
     expect(rankProgramSearchMatches('of the', [program('Grant', 'Of the people.')])).toEqual([]);
+  });
+});
+
+describe('rankProgramSearch', () => {
+  const catalog = [
+    program('History Research Grant', 'Research in history.'),
+    program('Laboratory Science Scholarship', 'Research in the natural sciences.'),
+  ];
+
+  it('says when every served program is missing one of three or more words', () => {
+    expect(rankProgramSearch('history humanities research', catalog)).toEqual({
+      programs: [catalog[0]],
+      missingOneWord: true,
+    });
+  });
+
+  it('does not flag results that carry every word', () => {
+    expect(rankProgramSearch('history research', catalog).missingOneWord).toBe(false);
+  });
+
+  it('does not flag an empty result', () => {
+    expect(rankProgramSearch('quantum origami', catalog)).toEqual({
+      programs: [],
+      missingOneWord: false,
+    });
   });
 });
 
