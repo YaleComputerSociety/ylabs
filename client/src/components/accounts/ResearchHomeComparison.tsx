@@ -115,6 +115,7 @@ const officialLinks = (
   const candidates = [entity.websiteUrl, ...(entity.sourceUrls || [])];
   const links: Array<{ href: string; label: string }> = [];
   const seen = new Set<string>();
+  const usedLabels = new Set<string>();
   for (const candidate of candidates) {
     const href = safeHttpUrl(candidate);
     if (!href) continue;
@@ -127,16 +128,13 @@ const officialLinks = (
     const key = normalizeSourceUrl(href) || href;
     if (seen.has(key)) continue;
     seen.add(key);
-    links.push({ href, label: officialLinkRoleLabel(entity, leadPersonNames, href, key) });
+    const label = officialLinkRoleLabel(entity, leadPersonNames, href, key);
+    if (usedLabels.has(label)) continue;
+    usedLabels.add(label);
+    links.push({ href, label });
     if (links.length >= MAX_OFFICIAL_LINKS) break;
   }
-  const labelCounts = new Map<string, number>();
-  links.forEach((link) => labelCounts.set(link.label, (labelCounts.get(link.label) || 0) + 1));
-  return links.map((link) =>
-    (labelCounts.get(link.label) || 0) > 1 && link.label !== hostLabel(link.href)
-      ? { ...link, label: `${link.label} (${hostLabel(link.href)})` }
-      : link,
-  );
+  return links;
 };
 
 const UnknownCell = () => <span className="text-xs italic text-muted">Unknown</span>;

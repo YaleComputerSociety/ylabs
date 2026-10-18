@@ -119,6 +119,32 @@ describe('ResearchHomeComparison', () => {
     expect(screen.queryByText(/ source$/)).toBeNull();
   });
 
+  it('gives every official link in a cell a distinct accessible name', async () => {
+    mockDetailBySlug({
+      'lab-a': {
+        ...entityA,
+        websiteUrl: '',
+        sourceUrls: [
+          'https://news.example.edu/story-one',
+          'https://news.example.edu/story-two',
+          'https://other.example.org/page',
+        ],
+      },
+      'lab-b': entityB,
+    });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    const sameHost = await screen.findAllByRole('link', { name: 'news.example.edu' });
+    expect(sameHost).toHaveLength(1);
+    expect(sameHost[0].getAttribute('href')).toBe('https://news.example.edu/story-one');
+    expect(screen.getByRole('link', { name: 'other.example.org' })).toBeTruthy();
+  });
+
   it('links each column header to the canonical research profile and dedupes repeated entities', async () => {
     mockDetailBySlug({ 'lab-a': entityA });
 
