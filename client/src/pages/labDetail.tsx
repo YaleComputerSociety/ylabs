@@ -33,6 +33,7 @@ import ResearchResultsBackLink from '../components/research/ResearchResultsBackL
 import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
+import SessionLoginPrompt from '../components/shared/SessionLoginPrompt';
 import { searchQueryFromResearchSlug } from '../utils/researchSlugSearchQuery';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
@@ -112,6 +113,7 @@ const buildYaleDirectorySearchUrl = (name?: string): string => {
   return `${YALE_DIRECTORY_URL}?query=${encodeURIComponent(trimmed)}`;
 };
 const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
+const RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR = 'Research profile needs a fresh login.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="yr-kicker mb-3">{children}</h2>
@@ -956,7 +958,9 @@ const LabDetail = () => {
       })
       .catch((err) => {
         if (isCancel(err) || requestId !== requestIdRef.current) return;
-        if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
+        if (err?.response?.status === 401) {
+          dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR });
+        } else if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
           dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_NOT_FOUND_ERROR });
         } else {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
@@ -985,6 +989,9 @@ const LabDetail = () => {
   if (error && !payload) {
     if (error === RESEARCH_PROFILE_NOT_FOUND_ERROR) {
       return <NotFound suggestedQuery={searchQueryFromResearchSlug(slug)} />;
+    }
+    if (error === RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR) {
+      return <SessionLoginPrompt subject="this research profile" />;
     }
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">

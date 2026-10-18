@@ -3422,6 +3422,38 @@ describe('LabDetail display name unification', () => {
     );
   });
 
+  it('asks for one fresh login instead of a retryable failure when the profile answers 401', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      if (url === `/research/${DEFAULT_SLUG}`) {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session needs a fresh login' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Log in with Yale' }).getAttribute('href')).toBe(
+      '/login',
+    );
+    expect(screen.queryByText(/Something went wrong loading this research profile/)).toBeNull();
+  });
+
   it('offers an Explore Research recovery CTA when the profile fails to load for a non-404 reason', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/users/savedResearchEntityIds') {
