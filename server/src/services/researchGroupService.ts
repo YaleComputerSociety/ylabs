@@ -2790,6 +2790,32 @@ const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;
 // neighbors so the section stays absent unless a genuinely similar home exists.
 const SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD = 0.35;
 
+export const personNameWordKeys = (document: unknown): Set<string> => {
+  const record = (document ?? {}) as Record<string, unknown>;
+  return new Set(
+    PERSON_FIELD_ATTRIBUTES.flatMap((attribute) => {
+      const value = record[attribute];
+      return Array.isArray(value) ? value : [value];
+    })
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap((value) => foldLatinDiacritics(value.toLowerCase()).split(/[^a-z0-9]+/))
+      .filter((word) => word.length >= 2),
+  );
+};
+
+// The embedded document text opens with the row's name and its professors' names,
+// so a thinly described row's nearest vectors were other people sharing a first or
+// last name: a history-of-medicine page recommended same-surname English and Law
+// faculty above its own field's historians. A neighbour sharing a person-name word
+// with the viewed row is ranked after every neighbour that does not, keeping the
+// embedding order within each group, so names never decide what is similar.
+const rankSharedPersonNamesLast = <T>(hits: readonly T[], viewedNameWords: Set<string>): T[] => {
+  if (viewedNameWords.size === 0) return [...hits];
+  const sharesAName = (hit: T) =>
+    [...personNameWordKeys(hit)].some((word) => viewedNameWords.has(word));
+  return [...hits.filter((hit) => !sharesAName(hit)), ...hits.filter(sharesAName)];
+};
+
 const firstServableDistinctCandidates = <T extends Record<string, any>>(
   orderedCandidateIds: readonly string[],
   candidateEntities: readonly T[],
@@ -3033,6 +3059,14 @@ export async function listSimilarResearchEntities(
     `studentVisibilityTier IN [${publicStudentVisibilityTiers.map((tier) => `"${tier}"`).join(', ')}]`,
   ].join(' AND ');
 
+  const viewedPersonNameWords = (async () =>
+    personNameWordKeys(
+      await (index as any).getDocument(entityId, { fields: PERSON_FIELD_ATTRIBUTES }),
+    ))().catch((error: unknown) => {
+    console.error('Similar research name read failed:', sanitizeLogValue(error));
+    return new Set<string>();
+  });
+
   let hits: any[];
   try {
     const result = await (index as any).searchSimilarDocuments({
@@ -3040,7 +3074,7 @@ export async function listSimilarResearchEntities(
       embedder: RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
       limit: SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL,
       filter: visibilityFilter,
-      attributesToRetrieve: ['id', 'slug'],
+      attributesToRetrieve: ['id', 'slug', ...PERSON_FIELD_ATTRIBUTES],
       showRankingScore: true,
     });
     hits = Array.isArray(result?.hits) ? result.hits : [];
@@ -3062,7 +3096,7 @@ export async function listSimilarResearchEntities(
 
   const orderedCandidateIds: string[] = [];
   const seenCandidateIds = new Set<string>();
-  for (const hit of hits) {
+  for (const hit of rankSharedPersonNamesLast(hits, await viewedPersonNameWords)) {
     if (!hit || typeof hit !== 'object') continue;
     if (
       typeof hit._rankingScore === 'number' &&

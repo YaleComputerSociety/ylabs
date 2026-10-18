@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchSimilarDocuments: vi.fn(),
+  getDocument: vi.fn(),
   getEmbedders: vi.fn(),
   listingDistinct: vi.fn(),
   listingFind: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../../utils/meiliClient', () => ({
   getMeiliSearchIndex: vi.fn(async () => ({
     search: mocks.search,
     searchSimilarDocuments: mocks.searchSimilarDocuments,
+    getDocument: mocks.getDocument,
     getEmbedders: mocks.getEmbedders,
   })),
 }));
@@ -166,6 +168,8 @@ beforeEach(() => {
   mocks.search.mockReset();
   mocks.searchSimilarDocuments.mockReset();
   mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
+  mocks.getDocument.mockReset();
+  mocks.getDocument.mockResolvedValue({});
   mocks.getEmbedders.mockReset();
   mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
   mocks.getResearchSearchQueryVector.mockReset();
@@ -5235,6 +5239,71 @@ describe('listSimilarResearchEntities', () => {
     expect(encoded).not.toContain('example.edu/private');
   });
 
+  it('ranks a neighbour sharing a person name with the viewed row after every topical neighbour', async () => {
+    mocks.getDocument.mockResolvedValue({
+      leadProfessorNames: ['Ada Q. Fixture'],
+      professorNames: ['Ada Q. Fixture'],
+    });
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a260', 'same-surname', 0.85),
+          leadProfessorNames: ['Bo Fixture'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a261', 'same-first-name', 0.63),
+          professorNames: ['Ada Other'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a262', 'field-peer', 0.6),
+          leadProfessorNames: ['Cy Peer'],
+        },
+        similarHit('67d8928150621bcef434a263', 'unnamed-peer', 0.55),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a260', 'same-surname', 'Same Surname'),
+      mongoEntity('67d8928150621bcef434a261', 'same-first-name', 'Same First Name'),
+      mongoEntity('67d8928150621bcef434a262', 'field-peer', 'Field Peer'),
+      mongoEntity('67d8928150621bcef434a263', 'unnamed-peer', 'Unnamed Peer'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual([
+      'field-peer',
+      'unnamed-peer',
+      'same-surname',
+      'same-first-name',
+    ]);
+    expect(mocks.getDocument).toHaveBeenCalledWith('67d8928150621bcef434a1d5', {
+      fields: ['leadProfessorNames', 'professorNames'],
+    });
+  });
+
+  it('keeps the embedding order when the viewed row has no person names to compare', async () => {
+    mocks.getDocument.mockRejectedValue(new Error('document not found'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a270', 'first', 0.8),
+          leadProfessorNames: ['Bo Fixture'],
+        },
+        similarHit('67d8928150621bcef434a271', 'second', 0.7),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a270', 'first', 'First'),
+      mongoEntity('67d8928150621bcef434a271', 'second', 'Second'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+    consoleError.mockRestore();
+
+    expect(result.map((entity) => entity.slug)).toEqual(['first', 'second']);
+  });
+
   it('caps results at the bounded maximum', async () => {
     const ids = Array.from(
       { length: 20 },
@@ -5293,13 +5362,18 @@ describe('listSimilarResearchEntities', () => {
       mocks.researchEntityServesPublicDetail.mockClear();
     });
 
-    it('asks the index for ids and slugs only', async () => {
+    it('asks the index for ids, slugs and the person names it compares only', async () => {
       mocks.searchSimilarDocuments.mockResolvedValue({ hits: [] });
 
       await listSimilarResearchEntities(viewedEntity);
 
       const [request] = mocks.searchSimilarDocuments.mock.calls.at(-1) as [Record<string, any>];
-      expect(request.attributesToRetrieve).toEqual(['id', 'slug']);
+      expect(request.attributesToRetrieve).toEqual([
+        'id',
+        'slug',
+        'leadProfessorNames',
+        'professorNames',
+      ]);
       expect(request.showRankingScore).toBe(true);
     });
 

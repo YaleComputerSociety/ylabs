@@ -566,6 +566,14 @@ That is an index settings change, so it reaches search only after the settings a
 The synonym was not the whole defect: index-time `studentSearchTerms` tagged rows with the computer-vision cluster from a bare "CV" in prose ("Download CV", "his CV lists over 100 publications"), 9 of the 12 such rows on Development.
 A bare `cv` now triggers only when the same field also carries vision vocabulary (`CV_CORROBORATING_CONTEXT_PATTERN`), never a department or title elsewhere on the row and never a lone generic word such as `imaging`, `visual`, or `detection`, which none of those 9 did and a lab abbreviating its field ("Our CV group builds algorithms for object detection") does; the phrases `computer vision` and `computational vision` trigger on their own (#3853).
 
+### "More like this" ranks on meaning, not on a shared name
+
+The detail page's similar-research rail is `listSimilarResearchEntities`, which asks Meilisearch's `searchSimilarDocuments` for the 40 nearest stored vectors and serves the first six that pass the live serve gate.
+The embedder's document template opens with the row's name and its professors' names, so a thinly described row's nearest vectors were other people sharing a first or last name: measured on Development over the first 40 default-browse rows, 13 of 240 rail cards shared a person-name word with the viewed row and 3 rails were led by one, and a history-of-medicine page led with same-surname English and Law faculty.
+A neighbour sharing a person-name word (`personNameWordKeys` over `leadProfessorNames` and `professorNames`, read from the viewed row's index document) is now ranked after every neighbour that does not, keeping the embedding order within each group, which brought both figures to 0 with no re-embedding.
+Removing names from the embedder template would fix it at the source, but it re-embeds every document and the same template serves the search leg, so it is a search-wide change rather than a rail change.
+`journey:eval --case=similar-rail-ranks-topics-above-names` reads the rail for the first 40 default-browse rows, asserts that no shared-name card ranks above one that does not, and reports both rates.
+
 ### A student's working-style words are not the corpus's (#2715)
 
 `wet lab experience for a beginner` returned nothing, and the reason was not that the corpus cannot answer it.
