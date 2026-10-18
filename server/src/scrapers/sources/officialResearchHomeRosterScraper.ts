@@ -433,7 +433,8 @@ function cardHeadingEntry($: cheerio.CheerioAPI, heading: cheerio.Cheerio<any>):
   return { ...entry, years: [entry.years, ...laterLines].join(' ').trim() };
 }
 
-const FACULTY_TITLE = /\b(?:professor|director|chair|principal investigator|lecturer|instructor)\b/i;
+const FACULTY_TITLE =
+  /\b(?:professor|director|chair|principal investigator|lecturer|instructor)\b/i;
 
 function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
   const sections: RosterSection[] = [];
@@ -461,7 +462,12 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
         }
         const previous = section?.listItems[section.listItems.length - 1];
         const previousCardLevel = previous && cardHeadingLevels.get(previous);
-        if (previous && previousCardLevel && level > previousCardLevel && FACULTY_TITLE.test(text)) {
+        if (
+          previous &&
+          previousCardLevel &&
+          level > previousCardLevel &&
+          FACULTY_TITLE.test(text)
+        ) {
           previous.years = `${previous.years} ${text}`.trim();
           return;
         }
