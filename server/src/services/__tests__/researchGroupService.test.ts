@@ -5281,6 +5281,38 @@ describe('listSimilarResearchEntities', () => {
     });
   });
 
+  it('does not treat a shared name particle or generational suffix as a shared name', async () => {
+    mocks.getDocument.mockResolvedValue({
+      professorNames: ['Ada de la Fixture Jr.'],
+    });
+    mocks.searchSimilarDocuments.mockResolvedValue({
+      hits: [
+        {
+          ...similarHit('67d8928150621bcef434a280', 'particle-peer', 0.8),
+          professorNames: ['Bo de Other Jr'],
+        },
+        {
+          ...similarHit('67d8928150621bcef434a281', 'surname-peer', 0.7),
+          professorNames: ['Cy Fixture'],
+        },
+        similarHit('67d8928150621bcef434a282', 'unnamed-peer', 0.6),
+      ],
+    });
+    hydrateFromMongo([
+      mongoEntity('67d8928150621bcef434a280', 'particle-peer', 'Particle Peer'),
+      mongoEntity('67d8928150621bcef434a281', 'surname-peer', 'Surname Peer'),
+      mongoEntity('67d8928150621bcef434a282', 'unnamed-peer', 'Unnamed Peer'),
+    ]);
+
+    const result = await listSimilarResearchEntities(viewedEntity);
+
+    expect(result.map((entity) => entity.slug)).toEqual([
+      'particle-peer',
+      'unnamed-peer',
+      'surname-peer',
+    ]);
+  });
+
   it('keeps the embedding order when the viewed row has no person names to compare', async () => {
     mocks.getDocument.mockRejectedValue(new Error('document not found'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);

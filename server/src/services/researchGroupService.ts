@@ -108,7 +108,7 @@ import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
-import { sanitizePersonName } from '../utils/personNameHygiene';
+import { isPersonNameParticleOrSuffixToken, sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
@@ -2799,7 +2799,7 @@ export const personNameWordKeys = (document: unknown): Set<string> => {
     })
       .filter((value): value is string => typeof value === 'string')
       .flatMap((value) => foldLatinDiacritics(value.toLowerCase()).split(/[^a-z0-9]+/))
-      .filter((word) => word.length >= 2),
+      .filter((word) => word.length >= 2 && !isPersonNameParticleOrSuffixToken(word)),
   );
 };
 
