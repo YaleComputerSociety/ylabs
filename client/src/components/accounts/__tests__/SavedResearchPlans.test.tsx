@@ -1167,7 +1167,7 @@ describe('SavedResearchPlans', () => {
     const select = (await screen.findByRole('combobox', {
       name: 'Outreach stage for Owner Lab',
     })) as HTMLSelectElement;
-    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    fireEvent.click(screen.getByRole('button', { name: /note/i }));
     const note = (await screen.findByRole('textbox', {
       name: 'Note for Owner Lab',
     })) as HTMLTextAreaElement;
@@ -1211,7 +1211,7 @@ describe('SavedResearchPlans', () => {
     const select = (await screen.findByRole('combobox', {
       name: 'Outreach stage for Owner Lab',
     })) as HTMLSelectElement;
-    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    fireEvent.click(screen.getByRole('button', { name: /note/i }));
     const note = (await screen.findByRole('textbox', {
       name: 'Note for Owner Lab',
     })) as HTMLTextAreaElement;
@@ -1298,7 +1298,7 @@ describe('SavedResearchPlans', () => {
         </MemoryRouter>,
       );
       await screen.findByText('Owner Lab');
-      fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+      fireEvent.click(screen.getByRole('button', { name: /note/i }));
       const note = (await screen.findByRole('textbox', {
         name: 'Note for Owner Lab',
       })) as HTMLTextAreaElement;
@@ -1337,7 +1337,7 @@ describe('SavedResearchPlans', () => {
         </MemoryRouter>,
       );
       await screen.findByText('Owner Lab');
-      fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+      fireEvent.click(screen.getByRole('button', { name: /note/i }));
       const note = (await screen.findByRole('textbox', {
         name: 'Note for Owner Lab',
       })) as HTMLTextAreaElement;
