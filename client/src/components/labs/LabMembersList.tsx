@@ -227,16 +227,7 @@ const LabMembersList = ({
   resolveLeadRoleLabel,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
-  if (!members || members.length === 0) {
-    return (
-      <div className="rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
-        <p className="text-sm font-semibold text-ink">No principal investigator is attached yet</p>
-        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
-          Check the official profile for current leadership.
-        </p>
-      </div>
-    );
-  }
+  if (!members || members.length === 0) return null;
 
   // Don't mutate the prop.
   const sorted = [...members]
