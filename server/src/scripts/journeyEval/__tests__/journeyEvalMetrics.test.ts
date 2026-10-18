@@ -6,6 +6,7 @@ import {
   checkDefaultBrowseOrderIsRepeatable,
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
+  checkPersonNameWordsAreNotRespelled,
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
@@ -611,5 +612,28 @@ describe('checkMeshDescriptorOnlyRowsRankBelowOwnEvidence', () => {
       still,
     );
     expect(result.status).toBe('inconclusive');
+  });
+});
+
+describe('checkPersonNameWordsAreNotRespelled', () => {
+  it('passes when no person-name query was respelled, whatever the ranks', () => {
+    expect(
+      checkPersonNameWordsAreNotRespelled([
+        { variant: 'prefix', respelled: false, rank: 1 },
+        { variant: 'typo', respelled: false, rank: null },
+      ]).status,
+    ).toBe('pass');
+  });
+
+  it('fails when a person-name query was respelled', () => {
+    const result = checkPersonNameWordsAreNotRespelled([
+      { variant: 'prefix', respelled: true, rank: null },
+    ]);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ respelledByVariant: { prefix: 1, typo: 0 } });
+  });
+
+  it('is inconclusive when no person name was queried', () => {
+    expect(checkPersonNameWordsAreNotRespelled([]).status).toBe('inconclusive');
   });
 });

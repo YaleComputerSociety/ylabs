@@ -30,6 +30,7 @@ import {
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
+  checkPersonNameWordsAreNotRespelled,
   checkQueryRelevance,
   checkSortOrdering,
   checkSurvivorWebsiteAttribution,
@@ -49,6 +50,7 @@ import {
   type CreativePracticeLabelObservation,
   type FacetAgreementObservation,
   type InvariantResult,
+  type PersonNameQueryObservation,
   type QueryEvidenceClass,
   type RateResult,
   type QuoteAttributionObservation,
@@ -66,6 +68,7 @@ import {
 
 export interface ServedBrowseResult {
   researchEntities?: unknown[];
+  queryCorrection?: { originalQuery?: string; correctedQuery?: string };
   estimatedTotalHits?: number;
   degraded?: unknown;
   facetDistribution?: Record<string, Record<string, number>>;
@@ -1039,6 +1042,100 @@ const meshDescriptorRanksBelowOwnEvidence: JourneyCase = {
   },
 };
 
+const PERSON_NAME_SAMPLE_WINDOW = 60;
+const PERSON_NAME_SAMPLE_SIZE = 15;
+const PERSON_NAME_MIN_SURNAME_LENGTH = 6;
+const PERSON_NAME_PREFIX_LENGTH = 5;
+const PERSON_NAME_RANK_DEPTH = 10;
+const PERSON_TITLED_FACULTY_RESEARCH = /^(.+?)\s+Faculty Research$/;
+
+const personNameParts = (storedRow: Record<string, unknown> | undefined) => {
+  if (!storedRow || storedRow.kind !== 'individual' || typeof storedRow.name !== 'string') {
+    return null;
+  }
+  const personTitle = storedRow.name.trim().match(PERSON_TITLED_FACULTY_RESEARCH);
+  if (!personTitle) return null;
+  const words = personTitle[1].split(/\s+/);
+  const surname = words.at(-1) ?? '';
+  if (words.length < 2 || !/^[A-Za-z]+$/.test(surname)) return null;
+  if (surname.length < PERSON_NAME_MIN_SURNAME_LENGTH) return null;
+  return { givenName: words[0], surname };
+};
+
+const withOneLetterDropped = (word: string): string =>
+  word.slice(0, word.length - 2) + word.slice(word.length - 1);
+
+const personNameLookupReachesThePerson: JourneyCase = {
+  id: 'person-name-lookup-reaches-the-person',
+  title:
+    'A partly typed or one-letter-misspelled surname is searched as typed and reaches the person',
+  run: async (context) => {
+    const keys = servedRows(await context.browse({ pageSize: PERSON_NAME_SAMPLE_WINDOW }))
+      .map(rowKey)
+      .filter(Boolean);
+    const storedRows = await context.readStoredRows(keys);
+    const people = keys
+      .map((key) => ({ key, parts: personNameParts(storedRows.get(key)) }))
+      .filter((person): person is { key: string; parts: { givenName: string; surname: string } } =>
+        Boolean(person.parts),
+      )
+      .slice(0, PERSON_NAME_SAMPLE_SIZE);
+    const observations: PersonNameQueryObservation[] = [];
+    for (const { key, parts } of people) {
+      const variants = [
+        {
+          variant: 'prefix' as const,
+          query: parts.surname.slice(0, PERSON_NAME_PREFIX_LENGTH).toLowerCase(),
+          typedSurname: parts.surname.slice(0, PERSON_NAME_PREFIX_LENGTH).toLowerCase(),
+        },
+        {
+          variant: 'typo' as const,
+          query: `${parts.givenName} ${withOneLetterDropped(parts.surname)}`,
+          typedSurname: withOneLetterDropped(parts.surname),
+        },
+      ];
+      for (const { variant, query, typedSurname } of variants) {
+        const result = await context.browse({ query, pageSize: PERSON_NAME_RANK_DEPTH });
+        const corrected = result.queryCorrection?.correctedQuery;
+        const servedKeys = servedRows(result).map(rowKey);
+        observations.push({
+          variant,
+          respelled:
+            typeof corrected === 'string' &&
+            !corrected.toLowerCase().split(/\s+/).includes(typedSurname.toLowerCase()),
+          rank: servedKeys.includes(key) ? servedKeys.indexOf(key) + 1 : null,
+        });
+      }
+    }
+    const reached = (variant: PersonNameQueryObservation['variant']) => {
+      const ofVariant = observations.filter((observation) => observation.variant === variant);
+      return [
+        ofVariant.filter((observation) => observation.rank !== null).length,
+        ofVariant.length,
+      ];
+    };
+    const [prefixReached, prefixQueried] = reached('prefix');
+    const [typoReached, typoQueried] = reached('typo');
+    return {
+      invariants: [checkPersonNameWordsAreNotRespelled(observations)],
+      rates: [
+        buildRate(
+          'surname-prefix-reaches-the-person',
+          'Share of five-letter surname prefixes that serve the person in the top 10',
+          prefixReached,
+          prefixQueried,
+        ),
+        buildRate(
+          'surname-typo-reaches-the-person',
+          'Share of given names with a one-letter-misspelled surname that serve the person in the top 10',
+          typoReached,
+          typoQueried,
+        ),
+      ],
+    };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
@@ -1054,4 +1151,5 @@ export const journeyCases: readonly JourneyCase[] = [
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
   meshDescriptorRanksBelowOwnEvidence,
+  personNameLookupReachesThePerson,
 ];

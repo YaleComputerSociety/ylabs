@@ -912,3 +912,35 @@ export function checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
   }
   return buildInvariant(id, title, violations === 0, detail);
 }
+
+export interface PersonNameQueryObservation {
+  variant: 'prefix' | 'typo';
+  respelled: boolean;
+  rank: number | null;
+}
+
+export function checkPersonNameWordsAreNotRespelled(
+  observations: readonly PersonNameQueryObservation[],
+): InvariantResult {
+  const id = 'person-name-words-are-not-respelled';
+  const title =
+    'A query word that starts or is one edit from a served person name is searched as typed, never spelling-corrected';
+  const respelled = observations.filter((observation) => observation.respelled);
+  const detail = {
+    queried: observations.length,
+    respelled: respelled.length,
+    respelledByVariant: {
+      prefix: respelled.filter((observation) => observation.variant === 'prefix').length,
+      typo: respelled.filter((observation) => observation.variant === 'typo').length,
+    },
+  };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No served row offered a person name to query, so a zero respelled count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, respelled.length === 0, detail);
+}
