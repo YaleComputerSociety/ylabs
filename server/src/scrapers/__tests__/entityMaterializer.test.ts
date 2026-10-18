@@ -587,6 +587,32 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(false);
   });
 
+  it('ignores a course page as a person website and as research-entity evidence (#5213)', () => {
+    const coursePage = 'https://fixturedept.example.test/courses/laboratory-fixture-anatomy';
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: coursePage,
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: 'https://fixturelab.example.test/',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'name',
+        sourceName: 'lab-microsite-description-llm',
+        sourceUrl: coursePage,
+        value: 'Laboratory for Fixture Anatomy',
+      }),
+    ).toBe(true);
+  });
+
   it('ignores a person title cut off at a connective, so a complete title wins (#5109)', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {
