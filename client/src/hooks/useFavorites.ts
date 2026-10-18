@@ -52,8 +52,8 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
 
 /**
  * One id's desired state and the request chain carrying it to the server. A toggle made while
- * a request is in flight only moves `favorite`; the chain sends again when it settles, so the
- * server never applies two requests for one id out of order (#5115).
+ * a request is in flight only moves `favorite` and `surface`; the chain sends again when it
+ * settles, so the server never applies two requests for one id out of order (#5115).
  */
 interface FavoriteIntent {
   favorite: boolean;
