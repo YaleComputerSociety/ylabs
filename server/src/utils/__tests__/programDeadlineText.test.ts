@@ -54,6 +54,28 @@ describe('programTextDeadlineConflict reads only the application deadline (#5158
     expect(programTextDeadlineConflict(deadline, [text])).toBeUndefined();
   });
 
+  it.each([
+    'Due to high demand, interviews will be held on March 3, 2027.',
+    'Fellows work in close collaboration with faculty from June 1, 2027.',
+    'The lab sits close to campus and hosts a retreat on June 1, 2027.',
+  ])('does not read due to or close as a deadline cue: %s', (text) => {
+    expect(programTextDeadlineConflict(deadline, [text])).toBeUndefined();
+  });
+
+  it.each([
+    ['Applications close on March 1, 2027.', '2027-03-01'],
+    ['Applications close Monday, March 1, 2027.', '2027-03-01'],
+  ])('reads close followed by on or a date as the deadline: %s', (text, expected) => {
+    expect(programTextDeadlineConflict(deadline, [text])).toBe(expected);
+  });
+
+  it.each(['Application Deadline - March 1, 2027', 'Deadline \u2013 March 1, 2027'])(
+    'reads a deadline label followed by a dash: %s',
+    (text) => {
+      expect(programTextDeadlineConflict(deadline, [text])).toBe('2027-03-01');
+    },
+  );
+
   it('reads the deadline that follows an opening date in the same sentence', () => {
     expect(
       programTextDeadlineConflict(deadline, [

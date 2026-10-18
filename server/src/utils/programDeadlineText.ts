@@ -20,12 +20,18 @@ const STATED_DATE = new RegExp(
   'gi',
 );
 
-const DEADLINE_CUE = /\b(?:due|deadlines?|submitted|submissions?|received|apply by|close[sd]?)\b/gi;
+const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+const DEADLINE_CUE = new RegExp(
+  `\\b(?:due(?!\\s+to\\b)|deadlines?|submitted|submissions?|received|apply by|close[sd]?(?=\\s+(?:on|at|by|${[...MONTHS, ...WEEKDAYS].join('|')})\\b))\\b`,
+  'gi',
+);
 
 const OTHER_EVENT =
   /\b(?:notif(?:y|ied|ication)|decisions?|announced|interviews?|reports?|symposium|begins?|start(?:s|ing)?|dates?|held|present(?:ed|ations?)?|opens?|between|until|from|letters?|recommendations?|references?|transcripts?)\b/gi;
 
-const DATE_RANGE_END = /[-\u2013\u2014]\s*(?:[a-z]+\.?\s+\d{1,2}\s*[-\u2013\u2014]\s*)?$/i;
+const DATE_RANGE_END =
+  /(?:^|\d{1,2}(?:st|nd|rd|th)?,?)\s*[-\u2013\u2014]\s*(?:[a-z]+\.?\s+\d{1,2}\s*[-\u2013\u2014]\s*)?$/i;
 
 function firstIndexOf(pattern: RegExp, text: string): number {
   for (const match of text.matchAll(pattern)) return match.index ?? -1;
