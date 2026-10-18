@@ -16,6 +16,11 @@ describe('personInitials', () => {
     expect(personInitials('Ada (Addie) Q. Fixture, PhD')).toBe('AF');
   });
 
+  it('skips a credential written with internal periods', () => {
+    expect(personInitials('Ada Fixture, M.D.')).toBe('AF');
+    expect(personInitials('Ada Fixture, Ph.D.')).toBe('AF');
+  });
+
   it('uses one letter for a single-token name and none for an empty one', () => {
     expect(personInitials('Fixture')).toBe('F');
     expect(personInitials('   ')).toBe('');

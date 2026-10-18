@@ -7,7 +7,8 @@ const nameTokens = (name: string): string[] =>
     .map((token) => token.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ''))
     .filter(Boolean);
 
-const isSuffix = (token: string): boolean => NAME_SUFFIXES.has(token.toLowerCase());
+const isSuffix = (token: string): boolean =>
+  NAME_SUFFIXES.has(token.replace(/\./g, '').toLowerCase());
 
 export const personInitials = (name: string): string => {
   const tokens = nameTokens(name);
