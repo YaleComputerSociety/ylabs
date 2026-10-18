@@ -98,6 +98,7 @@ import {
   personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
   isOffSitePageTitleForPersonScopedName,
+  isInadmissibleProfileLinkedHomeName,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -1780,6 +1781,20 @@ const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
   'undergraduateLogisticsCurrentAvailability',
 ]);
 
+/**
+ * A name this lane stored before it refused that shape at the name step. A refusal retracts
+ * nothing, so the stored value stays live, and where the lane's re-read emits nothing (a
+ * profile gone, a home now refused) it is the only name the lane offers (#5226). The type and
+ * kind it was paired with then fall through `withoutUnpairedProfileHomeIdentity`.
+ */
+function isInadmissibleProfileHomeName(observation: MaterializerObservationLike): boolean {
+  return (
+    observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+    (observation.field === 'name' || observation.field === 'displayName') &&
+    isInadmissibleProfileLinkedHomeName(observation.value)
+  );
+}
+
 export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
   observation: MaterializerObservationLike,
@@ -1844,6 +1859,9 @@ export function shouldIgnoreObservationForEntityMaterialization(
   // entity: dropping it here keeps an already-stored course name, type or description
   // inert on every resolve without a lock (#5213).
   if (isResearchEntityObservationType(entityType) && isCoursePageUrl(observation.sourceUrl)) {
+    return true;
+  }
+  if (isResearchEntityObservationType(entityType) && isInadmissibleProfileHomeName(observation)) {
     return true;
   }
   if (

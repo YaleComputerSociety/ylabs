@@ -107,6 +107,8 @@ const LINK_LABEL_WORDS = new Set([
   'view',
   'external',
   'portfolio',
+  'author',
+  'learn',
 ]);
 const MAX_LINK_LABEL_WORDS = 4;
 
@@ -176,6 +178,34 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
   if (!remainder) return true;
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
+}
+
+const MIN_SENTENCE_NAME_WORDS = 6;
+const FIRST_PERSON_CLAUSE_IN_NAME_RE = /\S\s+(?:We|Our|My)\s+[a-z]/;
+
+function isSentenceShapedName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (FIRST_PERSON_CLAUSE_IN_NAME_RE.test(name)) return true;
+  return name.endsWith('.') && name.split(/\s+/).length >= MIN_SENTENCE_NAME_WORDS;
+}
+
+/**
+ * A value `official-profile-pi-backfill` would assert as a profile-linked home's name at
+ * 0.96 that names no organization: a link label ("Lab", "Author Website"), a placeholder
+ * ("n/a"), a person-page label, a site menu item ("About Us"), or prose. The lane refuses
+ * one in every arm, and the materializer ignores one the lane stored before it did (#5226).
+ */
+export function isInadmissibleProfileLinkedHomeName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return (
+    isNonIdentifyingLinkLabelName(name) ||
+    isPlaceholderEntityName(name) ||
+    isPersonPageLinkLabelName(name) ||
+    isNavigationMenuPhrase(name) ||
+    isSentenceShapedName(name)
+  );
 }
 
 // The furniture a page hangs off a brand ("Google Scholar Profile", "ORCID

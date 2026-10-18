@@ -25,7 +25,10 @@ import {
   researchHomeIdentityTokens,
   eponymMatchesIdentity,
   eponymousLabNameSurnameCandidates,
+  isInadmissibleProfileLinkedHomeName,
+  isNonIdentifyingLinkLabelName,
   nameDenotesOrganization,
+  stripResearchHomeNameLinkChrome,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
@@ -1083,11 +1086,13 @@ function jsonLdProfiles($: cheerio.CheerioAPI): Array<Record<string, any>> {
 }
 
 function canonicalResearchHomeName(value: unknown): string {
-  return stripTrailingResearchHomeDescription(
-    textValue(value)
-      .replace(/\s*\(([A-Z][A-Z0-9&/ -]{1,24})\)\s*$/g, '')
-      .replace(/^Director of (?:the )?/i, '')
-      .trim(),
+  return stripResearchHomeNameLinkChrome(
+    stripTrailingResearchHomeDescription(
+      textValue(value)
+        .replace(/\s*\(([A-Z][A-Z0-9&/ -]{1,24})\)\s*$/g, '')
+        .replace(/^Director of (?:the )?/i, '')
+        .trim(),
+    ),
   );
 }
 
@@ -1733,21 +1738,72 @@ function cleanProfileCardLabWebsiteLabel(value: string): string {
   );
 }
 
+/**
+ * The title of the profile's lab-website card, read on its own. The card's flattened text
+ * glues the title to the blurb under it ("The Quill LabDistributed models of ..."), and a
+ * blurb that does not open on a description verb survives every strip as part of the name.
+ * Undefined when the link is not in such a card, so other page shapes keep the text path.
+ */
+function profileLabCardTitle(link: cheerio.Cheerio<any>): string | undefined {
+  const card = link.closest('[class*="profile-details-lab"]');
+  const title = card.find('[class*="profile-details-lab__title"]').first();
+  return title.length > 0 ? textValue(title.text()) : undefined;
+}
+
+function namesOnlyThePerson(name: string, personName: string): boolean {
+  const personTokens = personIdentityTokens(personName);
+  const words = name
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}'’-]+/u)
+    .filter(Boolean);
+  return words.length > 0 && words.every((word) => personTokens.includes(word));
+}
+
+function leavesLabWebsiteSlotUnnamed(label: string, profileName: string): boolean {
+  return (
+    !label ||
+    /^View\s+Lab\s+Website$/i.test(label) ||
+    isNonIdentifyingLinkLabelName(label) ||
+    genericOrganizationName(label) ||
+    namesOnlyThePerson(label, profileName)
+  );
+}
+
+function admissibleLabWebsiteSlotName(label: string, profileName: string): string {
+  return leavesLabWebsiteSlotUnnamed(label, profileName) ||
+    isInadmissibleProfileLinkedHomeName(label)
+    ? ''
+    : label;
+}
+
+/**
+ * An untitled slot falls back to "<person> Lab". A titled card whose title names no
+ * organization ("Lab Website", "n/a", "About Us", the person alone) adopts nothing: its
+ * links went to personal sites, code repositories, bio pages and department pages, so a
+ * minted "<person> Lab" there would be a claim the profile never made.
+ */
 function profileLinkedLabWebsiteName(
   rawName: string,
   context: string,
   profileName: string,
+  cardTitle?: string,
 ): string {
+  if (cardTitle !== undefined) {
+    const title = canonicalResearchHomeName(
+      dedupeRepeatedProfileCardLabel(cleanProfileCardLabWebsiteLabel(cardTitle).trim()),
+    );
+    return admissibleLabWebsiteSlotName(title, profileName);
+  }
   const labelText = cleanProfileCardLabWebsiteLabel(
     textValue(context || rawName)
       .replace(/View\s+Lab\s+Website\b[\s\S]*$/i, '')
       .replace(/\b(?:Research at a Glance|News|Academic Achievements)\b[\s\S]*$/i, ''),
   ).trim();
   const label = canonicalResearchHomeName(dedupeRepeatedProfileCardLabel(labelText));
-  if (label && !/^View\s+Lab\s+Website$/i.test(label) && !genericOrganizationName(label)) {
-    return label;
+  if (leavesLabWebsiteSlotUnnamed(label, profileName)) {
+    return profileName ? `${profileName} Lab` : '';
   }
-  return profileName ? `${profileName} Lab` : '';
+  return admissibleLabWebsiteSlotName(label, profileName);
 }
 
 function disallowedProfileLinkedResearchHome(name: string, url: string): boolean {
@@ -1918,8 +1974,11 @@ function profileLinkedLabWebsitesFromHtml(
     if (/\/(?:internal-medicine|intmed)\/ctra\//i.test(new URL(url).pathname)) return;
     const name = isEponymousGroupLink
       ? canonicalResearchHomeName(rawName)
-      : ledGroupName || profileLinkedLabWebsiteName(rawName, context, profileName);
-    if (!name || genericOrganizationName(name)) return;
+      : ledGroupName ||
+        profileLinkedLabWebsiteName(rawName, context, profileName, profileLabCardTitle(link));
+    if (!name || genericOrganizationName(name) || isInadmissibleProfileLinkedHomeName(name)) {
+      return;
+    }
     if (disallowedProfileLinkedResearchHome(name, url)) return;
     const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
     if (
@@ -1955,7 +2014,7 @@ function linkedResearchHomesFromHtml(
 
     const rawName = textValue(link.text());
     const name = canonicalResearchHomeName(rawName);
-    if (!name || genericOrganizationName(name)) return;
+    if (!name || genericOrganizationName(name) || isInadmissibleProfileLinkedHomeName(name)) return;
     const url = publicOfficialYaleResearchHomeUrl(link.attr('href'), profileUrl);
     if (!url) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
@@ -2021,6 +2080,7 @@ export function extractOfficialProfileResearchHomes(
     const name = canonicalResearchHomeName(rawName);
     const url = publicOfficialYaleResearchHomeUrl(record.url || record['@id'], profileUrl);
     if (!name || !url || genericOrganizationName(name)) continue;
+    if (isInadmissibleProfileLinkedHomeName(name)) continue;
     if (disallowedProfileLinkedResearchHome(name, url)) continue;
     const classification = classifyResearchHome(name, url);
     if (!classification) continue;
