@@ -30,6 +30,7 @@ import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyH
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -575,6 +576,10 @@ export function buildResearchEntitySearchIndexDocument(
   const out: Record<string, any> = {
     ...doc,
     id,
+    // Derived from the row rather than copied from the stored flag, so the
+    // `hostsUndergrads` filter and facet read the predicate the served badge reads
+    // even when a writer changed its inputs without recomputing the flag (#5123).
+    hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;

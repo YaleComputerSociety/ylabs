@@ -945,6 +945,58 @@ describe('Research page', () => {
       });
   });
 
+  it('filters by hosted undergraduate researchers through the URL, the request, and a removable chip', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          school: { 'Yale College': 8, 'School of Medicine': 4 },
+          hostsUndergrads: { true: 3 },
+        },
+      });
+    });
+    const lastSearchBody = () =>
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1];
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&undergrad=1']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(lastSearchBody()).toEqual(
+        expect.objectContaining({ q: 'machine learning', filters: { hostsUndergrads: true } }),
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
+    await waitFor(() => {
+      expect(lastSearchBody()).toEqual(expect.objectContaining({ filters: {}, page: 1 }));
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (3)' }),
+    );
+    await waitFor(() => {
+      expect(lastSearchBody()).toEqual(
+        expect.objectContaining({ filters: { hostsUndergrads: true }, page: 1 }),
+      );
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=machine+learning&undergrad=1',
+      );
+    });
+  });
+
   it('keeps school and department filters compact, URL-backed, and individually clearable', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

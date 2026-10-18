@@ -1376,7 +1376,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'entityType'],
+        facets: ['schools', 'departments', 'entityType', 'hasUndergradHostingEvidence'],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -2812,6 +2812,7 @@ describe('searchResearchGroupsViaMeili', () => {
         Chemistry: 1,
       },
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
+      hostsUndergrads: { true: 0 },
     });
   });
 
