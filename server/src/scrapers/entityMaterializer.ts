@@ -306,6 +306,7 @@ import {
   isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
   researchHomeWebsiteUrlWriteRefusal,
+  withoutUncreditedLinkedPublicationOrDocumentCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { namesAPostingRatherThanResearch } from '../utils/postingName';
@@ -9154,6 +9155,21 @@ export async function projectFromLog(
     if (readmittedCitations) {
       set.sourceUrls = readmittedCitations;
       fieldsWritten++;
+    }
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const citedThisPass = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
+      const keptCitations = withoutUncreditedLinkedPublicationOrDocumentCitations(
+        citedThisPass,
+        documentAsProjected(set, unset, entityDoc).fieldProvenance,
+      );
+      if (keptCitations.length !== citedThisPass.length) {
+        set.sourceUrls = keptCitations;
+        fieldsWritten++;
+      }
     }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {

@@ -1,5 +1,6 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
+import { buildSourceFieldContributions } from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 const URL_MAXLENGTH = 2048;
@@ -218,14 +219,91 @@ const FILE_SHARE_HOSTS = new Set([
   '1drv.ms',
 ]);
 
+const SHAREPOINT_HOST = /(?:^|\.)sharepoint\.com$/i;
+
 const DIRECT_DOCUMENT_PATH = /\.(?:pdf|docx?|pptx?|xlsx?)$/i;
 
 export function isFileShareOrDocumentUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
+  const host = url.hostname.toLowerCase();
   return (
-    FILE_SHARE_HOSTS.has(url.hostname.toLowerCase()) || DIRECT_DOCUMENT_PATH.test(url.pathname)
+    FILE_SHARE_HOSTS.has(host) ||
+    SHAREPOINT_HOST.test(host) ||
+    DIRECT_DOCUMENT_PATH.test(url.pathname)
   );
+}
+
+const PUBLICATION_RECORD_HOSTS = new Set(['pubmed.ncbi.nlm.nih.gov', 'pmc.ncbi.nlm.nih.gov']);
+
+const NCBI_PUBLICATION_RECORD_PATH = /^\/(?:pubmed|pmc\/articles)\//i;
+
+/**
+ * A DOI, or a PubMed or PubMed Central record: the address of one paper.
+ *
+ * The DOI arm reads the same shape the roster lane's website signal refuses (#5052), a
+ * `doi.org` host or a `/doi/` path segment, so the citation and the website refusals
+ * agree on what a paper link is.
+ */
+export function isPublicationRecordUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (/(?:^|\.)doi\.org$/.test(host) || /\/doi\//i.test(url.pathname)) return true;
+  if (PUBLICATION_RECORD_HOSTS.has(host)) return true;
+  return host === 'ncbi.nlm.nih.gov' && NCBI_PUBLICATION_RECORD_PATH.test(url.pathname);
+}
+
+/**
+ * A link a page carries to one of the person's papers or files, rather than a page about
+ * the row: a file share, a direct document, a DOI, or a PubMed record.
+ */
+export function isLinkedPublicationOrDocumentUrl(value: unknown): boolean {
+  return isFileShareOrDocumentUrl(value) || isPublicationRecordUrl(value);
+}
+
+const citationIdentityKey = (value: unknown): string | undefined => {
+  const url = parseHttpUrl(value);
+  if (!url) return undefined;
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  const path = url.pathname.replace(/\/+$/, '');
+  return `${host}${path}${url.search}`;
+};
+
+/**
+ * The pages a row's student-facing fields were read from, as `fieldProvenance` credits
+ * them. Bookkeeping provenance (`leadVerification`, a content hash) is not a fact a
+ * student reads, so it does not make a page a source.
+ */
+export function servedFieldSourceUrlKeys(fieldProvenance: unknown): Set<string> {
+  return new Set(
+    buildSourceFieldContributions(fieldProvenance, () => true)
+      .map((contribution) => citationIdentityKey(contribution.sourceUrl))
+      .filter((key): key is string => Boolean(key)),
+  );
+}
+
+/**
+ * Drops a paper, DOI, PubMed record, file share or document from a row's citations
+ * unless one of the row's student-facing fields was read from it.
+ *
+ * Such a link reaches `sourceUrls` as a value, never as the page a lane read: the
+ * roster lane cites the website it harvests from a profile, and before #5051/#5052 that
+ * harvest took a paper or a shared PDF as the website. Refusing the website (and an
+ * operator clearing it) left the same link cited, because a stored citation is
+ * re-admitted on every pass (#3476). A document a lane actually read and took a served
+ * field from is real provenance, which is what the `fieldProvenance` exemption keeps.
+ */
+export function withoutUncreditedLinkedPublicationOrDocumentCitations<T>(
+  sourceUrls: readonly T[],
+  fieldProvenance: unknown,
+): T[] {
+  const credited = servedFieldSourceUrlKeys(fieldProvenance);
+  return sourceUrls.filter((url) => {
+    if (!isLinkedPublicationOrDocumentUrl(url)) return true;
+    const key = citationIdentityKey(url);
+    return Boolean(key && credited.has(key));
+  });
 }
 
 const MAP_AND_DIRECTIONS_HOSTS = [
