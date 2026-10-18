@@ -963,6 +963,46 @@ const institutionWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
+const ACCESS_WORD_QUERY_PAIRS = [
+  { baselineQuery: 'neuroscience', variantQuery: 'neuroscience undergraduate' },
+  { baselineQuery: 'chemistry', variantQuery: 'paid undergraduate research chemistry' },
+  { baselineQuery: 'history', variantQuery: 'can a history major join a lab' },
+  { baselineQuery: 'machine learning', variantQuery: 'machine learning for undergrads' },
+];
+
+const accessWordKeepsTopicRanking: JourneyCase = {
+  id: 'access-word-keeps-topic-ranking',
+  title: "Adding a student's access words to a topic query serves the same top rows as the topic",
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of ACCESS_WORD_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'access-word-serves-the-topic-ranking',
+          'A topic query with "undergraduate", "paid", or "major" added serves the same ordered top rows as the topic alone',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 const MESH_DESCRIPTOR_PROBE_QUERIES = [
   'robotics',
   'machine learning',
@@ -1053,5 +1093,6 @@ export const journeyCases: readonly JourneyCase[] = [
   undergradEvidenceQuotePrecision,
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
+  accessWordKeepsTopicRanking,
   meshDescriptorRanksBelowOwnEvidence,
 ];
