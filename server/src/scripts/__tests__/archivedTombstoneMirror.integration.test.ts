@@ -38,20 +38,18 @@ const heavyArchived = (id: ObjectId, slug: string, canonicalGroupId?: ObjectId) 
 });
 
 async function seedDevelopment(db: Db): Promise<void> {
-  await db
-    .collection('research_entities')
-    .insertMany([
-      {
-        _id: liveId,
-        slug: 'live-lab',
-        name: 'Live Lab',
-        archived: false,
-        fullDescription: 'Live.',
-      },
-      { _id: liveTwoId, slug: 'live-two', name: 'Live Two', archived: false },
-      heavyArchived(mergedId, 'merged-lab', liveId),
-      heavyArchived(retiredId, 'retired-lab'),
-    ]);
+  await db.collection('research_entities').insertMany([
+    {
+      _id: liveId,
+      slug: 'live-lab',
+      name: 'Live Lab',
+      archived: false,
+      fullDescription: 'Live.',
+    },
+    { _id: liveTwoId, slug: 'live-two', name: 'Live Two', archived: false },
+    heavyArchived(mergedId, 'merged-lab', liveId),
+    heavyArchived(retiredId, 'retired-lab'),
+  ]);
   await db.collection('signals').insertMany([
     { _id: new ObjectId(), researchEntityId: liveId, orgUnitId: null, type: 'A' },
     { _id: new ObjectId(), researchEntityId: mergedId, orgUnitId: null, type: 'B' },
