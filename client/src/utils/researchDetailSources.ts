@@ -520,7 +520,7 @@ const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
  * page is a fair citation; a label promising a join page over it is not.
  */
 const JOIN_SHAPED_PATH =
-  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?|undergrad(?:uate)?s?|students?)([-/_.]|$)/i;
+  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-/_.]|$)/i;
 
 export const isJoinShapedSourceUrl = (url?: string | null): boolean =>
   sourcePathMatches(url, JOIN_SHAPED_PATH);

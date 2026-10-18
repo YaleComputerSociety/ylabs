@@ -632,6 +632,16 @@ describe('joinPageLinkLabel', () => {
     );
   });
 
+  it('never promises a join page over a member roster', () => {
+    for (const rosterUrl of [
+      'https://lab.example.test/students',
+      'https://lab.example.test/undergraduates',
+      'https://lab.example.test/members/undergraduates',
+    ]) {
+      expect(joinPageLinkLabel(rosterUrl)).toBe('Read what they say about joining');
+    }
+  });
+
   it('keeps a caller-chosen label for a join-shaped page', () => {
     expect(joinPageLinkLabel('https://lab.example.test/join', 'See how to get involved')).toBe(
       'See how to get involved',

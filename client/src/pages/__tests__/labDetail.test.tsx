@@ -1445,7 +1445,7 @@ describe('LabDetail page', () => {
       JOIN_PAGE_URL,
     );
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.queryByText('opened above')).toBeNull();
+    expect(screen.queryByText('also linked above')).toBeNull();
   });
 
   it('offers the research homepage over an own-button profile and links the join page beneath it', async () => {

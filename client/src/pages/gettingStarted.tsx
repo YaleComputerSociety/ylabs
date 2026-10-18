@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link, useLocation, useNavigationType } from 'react-router-dom';
 
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import { linkedSectionElement } from '../utils/linkedSection';
 import { scrollBehavior } from '../utils/scrollBehavior';
 import { EXTERNAL_LINK_REL } from '../utils/url';
 import {
@@ -34,9 +35,7 @@ const useRevealLinkedSection = () => {
   const { hash } = useLocation();
   const navigationType = useNavigationType();
   useEffect(() => {
-    const sectionId = decodeURIComponent(hash.replace(/^#/, ''));
-    if (!sectionId) return;
-    const heading = document.getElementById(sectionId);
+    const heading = linkedSectionElement(hash);
     if (!heading) return;
     if (navigationType !== 'POP') heading.focus({ preventScroll: true });
     heading.scrollIntoView?.({ behavior: scrollBehavior(), block: 'start' });
