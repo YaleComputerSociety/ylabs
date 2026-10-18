@@ -518,10 +518,11 @@ const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
 /**
  * The materializer admits a join route by what the page says, wherever it sits on the site,
  * so a lab's invitation to undergraduates can be cited from its press or news page. The
- * page is a fair citation; a label promising a join page over it is not.
+ * page is a fair citation; a label promising a join page over it is not. Only the final
+ * segment names the page, so a join word in a parent segment (often a lab's own slug) does not count.
  */
 const JOIN_SHAPED_PATH =
-  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-/_.]|$)/i;
+  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-_.][^/]*)?$/i;
 
 export const isJoinShapedSourceUrl = (url?: string | null): boolean =>
   sourcePathMatches(url, JOIN_SHAPED_PATH);

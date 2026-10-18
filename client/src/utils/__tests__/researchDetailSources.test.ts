@@ -634,6 +634,17 @@ describe('joinPageLinkLabel', () => {
     );
   });
 
+  it('judges a page by its own address segment, not by a parent segment', () => {
+    for (const nestedUrl of [
+      'https://lab.example.test/sample-join-lab/press',
+      'https://lab.example.test/careers/news/2025',
+      'https://lab.example.test/apply/about/',
+    ]) {
+      expect(joinPageLinkLabel(nestedUrl)).toBe('Read what they say about joining');
+    }
+    expect(joinPageLinkLabel('https://lab.example.test/about/join-us/')).toBe('See how to join');
+  });
+
   it('never promises a join page over a member roster', () => {
     for (const rosterUrl of [
       'https://lab.example.test/students',
