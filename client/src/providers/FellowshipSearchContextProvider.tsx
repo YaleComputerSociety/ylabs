@@ -29,7 +29,10 @@ import {
   FellowshipQuickFilter,
   isFellowshipSearchPending,
 } from '../reducers/fellowshipSearchReducer';
-import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
+import {
+  readProgramSearchUrlState,
+  type ProgramSearchUrlState,
+} from '../utils/programSearchUrlState';
 
 interface FellowshipSearchContextProviderProps {
   children: ReactNode;
@@ -50,11 +53,26 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const { user } = useContext(UserContext);
-  const authReady = !authLoading && isAuthenticated;
+  const maySearchBeforeSignIn = authLoading || isAuthenticated;
+  const authLoadingRef = useRef(authLoading);
+  useLayoutEffect(() => {
+    authLoadingRef.current = authLoading;
+  });
+  const quietWhileSigningIn = useCallback(
+    (): [] | [{ skipHttpStatusEvents: true }] =>
+      authLoadingRef.current ? [{ skipHttpStatusEvents: true }] : [],
+    [],
+  );
   const isAdmin = user?.isAdmin ?? false;
 
   const [state, dispatch] = useReducer(fellowshipSearchReducer, undefined, () =>
-    createInitialFellowshipSearchState({ sortBy: sortableKeys[0] }),
+    fellowshipSearchReducer(createInitialFellowshipSearchState({ sortBy: sortableKeys[0] }), {
+      type: 'APPLY_URL_STATE',
+      payload: readProgramSearchUrlState(
+        new URLSearchParams(isActive ? location.search : ''),
+        sortableKeys,
+      ),
+    }),
   );
 
   const {
@@ -231,10 +249,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   useEffect(() => {
     if (!isActive) return;
-    if (!authReady) return;
+    if (!maySearchBeforeSignIn) return;
 
     axios
-      .get('/programs/filters')
+      .get('/programs/filters', ...quietWhileSigningIn())
       .then((response) => {
         dispatch({
           type: 'SET_FILTER_OPTIONS',
@@ -257,7 +275,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         console.error('Error loading fellowship filter options.');
         dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
       });
-  }, [isActive, authReady]);
+  }, [isActive, maySearchBeforeSignIn, quietWhileSigningIn]);
 
   const buildSearchUrl = useCallback(
     (searchPage: number, searchPageSize: number) => {
@@ -339,7 +357,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       let queryCorrection = null;
 
       while (collected.length < reportedTotal) {
-        const response = await axios.get(buildSearchUrl(currentPage, pageSize));
+        const response = await axios.get(
+          buildSearchUrl(currentPage, pageSize),
+          ...quietWhileSigningIn(),
+        );
         const pageResults: Fellowship[] = (response.data.results || []).map((elem: any) =>
           createFellowship(elem),
         );
@@ -374,7 +395,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         console.error('Error loading programs.');
         dispatch({ type: 'SEARCH_FAILURE' });
       });
-  }, [buildSearchUrl, pageSize]);
+  }, [buildSearchUrl, pageSize, quietWhileSigningIn]);
 
   const handleSearch = useCallback(
     (searchPage: number) => {
@@ -427,7 +448,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     runFirstPageSearch();
   }, [runFirstPageSearch]);
 
-  const searchReady = isActive && authReady;
+  const searchReady = isActive && maySearchBeforeSignIn;
 
   useEffect(() => {
     if (!searchReady) return;

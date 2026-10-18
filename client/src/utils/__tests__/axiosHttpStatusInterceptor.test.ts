@@ -48,6 +48,16 @@ describe('axios client http status interceptor', () => {
     expect(rateLimited).not.toHaveBeenCalled();
   });
 
+  it('stays quiet on a 401 for a request sent before sign-in is known', async () => {
+    await expect(
+      client.get('/synthetic-endpoint', {
+        adapter: failingWith(401),
+        skipHttpStatusEvents: true,
+      }),
+    ).rejects.toMatchObject({ response: { status: 401 } });
+    expect(authRequired).not.toHaveBeenCalled();
+  });
+
   it('announces a rate limit on a 429 using the Retry-After header and the server message', async () => {
     await expect(
       requestFailingWith(429, { 'retry-after': '42' }, { error: 'Slow down, synthetic.' }),

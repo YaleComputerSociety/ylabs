@@ -551,3 +551,62 @@ describe('FellowshipSearchContextProvider spelling correction (#4537)', () => {
     });
   });
 });
+
+describe('FellowshipSearchContextProvider before sign-in is known', () => {
+  const renderWhileSignInLoads = (initialEntry: string) => {
+    const probe = (
+      <FellowshipSearchContext.Consumer>
+        {(context) => <p data-testid="query">{context.queryString}</p>}
+      </FellowshipSearchContext.Consumer>
+    );
+    const tree = (isLoading: boolean) => (
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <UserContext.Provider
+          value={{
+            isLoading,
+            isAuthenticated: !isLoading,
+            user: isLoading ? undefined : ({ userType: 'student' } as any),
+            checkContext: vi.fn(),
+          }}
+        >
+          <FellowshipSearchContextProvider>{probe}</FellowshipSearchContextProvider>
+        </UserContext.Provider>
+      </MemoryRouter>
+    );
+    const view = render(tree(true));
+    return { resolveSignIn: () => view.rerender(tree(false)) };
+  };
+
+  const searchCalls = () =>
+    mockedAxios.get.mock.calls.filter(([url]) => String(url).startsWith('/programs/search'));
+
+  it('starts the search and filter requests while the sign-in check is still running', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === '/programs/filters' ? {} : { results: [], total: 0 } }),
+    );
+
+    const { resolveSignIn } = renderWhileSignInLoads('/programs');
+
+    await waitFor(() => expect(searchCalls()).toHaveLength(1));
+    expect(searchCalls()[0][1]).toEqual({ skipHttpStatusEvents: true });
+    expect(mockedAxios.get).toHaveBeenCalledWith('/programs/filters', {
+      skipHttpStatusEvents: true,
+    });
+
+    resolveSignIn();
+    await act(async () => {});
+    expect(searchCalls()).toHaveLength(1);
+  });
+
+  it('searches a deep link with its URL query on the first request', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === '/programs/filters' ? {} : { results: [], total: 0 } }),
+    );
+
+    renderWhileSignInLoads('/programs?q=marine');
+
+    expect(screen.getByTestId('query').textContent).toBe('marine');
+    await waitFor(() => expect(searchCalls()).toHaveLength(1), { timeout: 3000 });
+    expect(String(searchCalls()[0][0])).toContain('query=marine');
+  });
+});
