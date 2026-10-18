@@ -116,6 +116,10 @@ export interface FacetAgreementObservation {
 
 export function checkFacetAgreement(
   observations: readonly FacetAgreementObservation[],
+  invariant: { id: string; title: string } = {
+    id: 'facet-count-agrees-with-filtered-total',
+    title: 'A facet value count equals the total of a search filtered to that value',
+  },
 ): InvariantResult {
   const disagreements = observations
     .filter((observation) => observation.facetCount !== observation.filteredTotal)
@@ -125,12 +129,10 @@ export function checkFacetAgreement(
       filteredTotal: observation.filteredTotal,
     }));
 
-  return buildInvariant(
-    'facet-count-agrees-with-filtered-total',
-    'A facet value count equals the total of a search filtered to that value',
-    disagreements.length === 0,
-    { checked: observations.length, disagreements },
-  );
+  return buildInvariant(invariant.id, invariant.title, disagreements.length === 0, {
+    checked: observations.length,
+    disagreements,
+  });
 }
 
 export interface CorpusFingerprint {

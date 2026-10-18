@@ -47,7 +47,6 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
-  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
@@ -68,7 +67,14 @@ import {
   normalizeOfficialProfileDestination,
   resolveLeadOfficialProfileUrl,
 } from './leadProfileIdentity';
-import { buildResearchGroupFilterString, ResearchGroupFilterInput } from './researchGroupFilters';
+import {
+  buildResearchGroupFilterString,
+  candidateMatchesStudentFilters,
+  HOSTS_UNDERGRADS_INDEX_FIELD,
+  ResearchGroupFilterInput,
+  tallyCandidateFacetDistribution,
+  visibilityScopeOnly,
+} from './researchGroupFilters';
 import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
@@ -560,13 +566,20 @@ export const HYBRID_CANDIDATE_POOL_SIZE = 200;
 // read, so adding a helper that reads another indexed field means adding it here
 // or that helper silently sees `undefined`: `promoteExactAliasFieldMatches` reads
 // `departments` and `researchAreas`, and everything else keys on the id.
+// The student filters and facets of a locally paginated search are applied to
+// these hits too, so every field `candidateMatchesStudentFilters` and
+// `tallyCandidateFacetDistribution` read must be listed (#5101).
 // `_rankingScoreDetails` is response metadata rather than a document attribute,
 // so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
 // (verified against the running index, not assumed). See #3185.
 const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'id',
+  'kind',
+  'entityType',
+  'schools',
   'departments',
   'researchAreas',
+  HOSTS_UNDERGRADS_INDEX_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
@@ -1682,7 +1695,18 @@ async function searchResearchGroupsForQuery(
   // large enough to force an exhaustive scan (see the companion count query
   // below, which forces that scan on every request). See #885.
   const paginateHybridPoolLocally = searchParams.rankingScoreThreshold !== undefined;
+  // A locally paginated search serves a fused pool whose legs are top-K windows,
+  // so membership under a filter is not the unfiltered membership narrowed: the
+  // semantic leg drawn from one department admits that whole department. The pool
+  // is therefore built under the visibility scope alone and the student's filters
+  // narrow it here, which makes every facet count, tallied over the same pool,
+  // the number of results applying it returns (#5101).
+  const candidatePoolFilterString = paginateHybridPoolLocally
+    ? buildResearchGroupFilterString(visibilityScopeOnly(visibilityScopedFilters))
+    : filterString;
   if (paginateHybridPoolLocally) {
+    searchParams.filter = candidatePoolFilterString;
+    delete searchParams.facets;
     searchParams.page = 1;
     searchParams.hitsPerPage = HYBRID_CANDIDATE_POOL_SIZE;
     delete searchParams.limit;
@@ -1788,40 +1812,15 @@ async function searchResearchGroupsForQuery(
     }
   };
 
-  // The per-page totalHits and facetDistribution above only become exhaustive
-  // once Meilisearch has scanned deep enough to have examined every candidate
-  // that could pass rankingScoreThreshold, so a shallow first page can still
-  // report the pre-threshold estimate/distribution over the whole k-NN
-  // candidate pool. Run one companion query deep enough to force the
-  // exhaustive, threshold-aware count and facet distribution regardless of
-  // which page was actually requested. See #885, #941.
-  const exhaustiveCountSearch =
-    finalSearchParams.rankingScoreThreshold !== undefined
-      ? settleSearch<Record<string, any>>(() =>
-          index.search(meiliQueryText, {
-            filter: filterString,
-            hybrid: finalSearchParams.hybrid,
-            ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
-            rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
-            ...(finalSearchParams.matchingStrategy
-              ? { matchingStrategy: finalSearchParams.matchingStrategy }
-              : {}),
-            page: 1,
-            hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-            attributesToRetrieve: ['id'],
-            ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
-          }),
-        )
-      : null;
-
   // For any facet the request is actively filtering on, recompute its
   // distribution disjunctively (excluding only its own filter clause) so the
   // dropdown keeps every sibling option and its comparative counts under the
   // other active filters. Without this, a conjunctive distribution collapses
   // the facet to just the chosen value, turning the filter into a dead end.
-  // Each supplementary query mirrors the primary query's mode (hybrid +
-  // threshold, topic-alias attribute scoping, or plain browse) so counts stay
-  // consistent; a failure degrades to the conjunctive counts for that facet.
+  // Each supplementary query mirrors the primary query's mode (topic-alias
+  // attribute scoping or plain browse) so counts stay consistent; a failure
+  // degrades to the conjunctive counts for that facet. A locally paginated
+  // search tallies its facets over its own pool instead.
   const searchFacetDistributionForFilter = async (
     overrideFilterString: string,
     facetFields: string[],
@@ -1833,16 +1832,7 @@ async function searchResearchGroupsForQuery(
     if (finalSearchParams.matchingStrategy) {
       params.matchingStrategy = finalSearchParams.matchingStrategy;
     }
-    if (finalSearchParams.rankingScoreThreshold !== undefined) {
-      params.hybrid = finalSearchParams.hybrid;
-      if (finalSearchParams.vector) params.vector = finalSearchParams.vector;
-      params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
-      params.page = 1;
-      params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
-      params.attributesToRetrieve = ['id'];
-    } else {
-      params.limit = 0;
-    }
+    params.limit = 0;
     const result = (await index.search(meiliQueryText, params)) as {
       facetDistribution?: Record<string, Record<string, number>>;
     };
@@ -1855,7 +1845,7 @@ async function searchResearchGroupsForQuery(
       )
     : [];
   const disjunctiveFacetSearches = Promise.all(
-    activeDisjunctiveFacets.map(({ filterKey, meiliField }) =>
+    (paginateHybridPoolLocally ? [] : activeDisjunctiveFacets).map(({ filterKey, meiliField }) =>
       settleSearch(() =>
         searchFacetDistributionForFilter(
           buildResearchGroupFilterString(
@@ -1895,7 +1885,7 @@ async function searchResearchGroupsForQuery(
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
   const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
   const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
-    filter: filterString,
+    filter: candidatePoolFilterString,
     ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
     ...(matchingStrategy ? { matchingStrategy } : {}),
   });
@@ -1978,7 +1968,7 @@ async function searchResearchGroupsForQuery(
     runsSemanticLeg && dropCoincidentalTypoOnlyHits(rawHits).hits.length > 0
       ? settleSearch<Record<string, any>>(() =>
           index.search(meiliQueryText, {
-            filter: filterString,
+            filter: candidatePoolFilterString,
             hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
             ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
             attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -2023,7 +2013,6 @@ async function searchResearchGroupsForQuery(
   );
 
   const [
-    exhaustiveCountOutcome,
     disjunctiveFacetOutcomes,
     keywordLeg,
     semanticLegOutcome,
@@ -2031,7 +2020,6 @@ async function searchResearchGroupsForQuery(
     deepPoolOutcome,
     deepKeywordLegRawHits,
   ] = await Promise.all([
-    exhaustiveCountSearch,
     disjunctiveFacetSearches,
     keywordLegSearch,
     semanticLegSearch,
@@ -2039,25 +2027,6 @@ async function searchResearchGroupsForQuery(
     deepPoolSearch,
     deepKeywordLegSearch,
   ]);
-
-  if (exhaustiveCountOutcome?.error !== undefined) {
-    console.error(
-      'Optional exhaustive hybrid total-hits count failed:',
-      sanitizeLogValue(exhaustiveCountOutcome.error),
-    );
-    degraded = true;
-  } else if (exhaustiveCountOutcome) {
-    const exhaustiveCountResult = exhaustiveCountOutcome.value;
-    if (typeof exhaustiveCountResult?.totalHits === 'number') {
-      searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
-    }
-    if (exhaustiveCountResult?.facetDistribution) {
-      searchResult = {
-        ...searchResult,
-        facetDistribution: exhaustiveCountResult.facetDistribution,
-      };
-    }
-  }
 
   const { estimatedTotalHits, totalHits, facetDistribution: rawFacetDistribution } = searchResult;
   const resolvedTotalHits = totalHits ?? estimatedTotalHits;
@@ -2085,16 +2054,18 @@ async function searchResearchGroupsForQuery(
 
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
-  const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
-    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
+  const toClientFacetDistribution = (
+    rawDistribution: Record<string, Record<string, number>> | undefined,
+  ): Record<string, Record<string, number>> | undefined => {
+    if (!rawDistribution) return rawDistribution;
+    const { schools, researchAreas, ...rest } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
     };
-  })();
+  };
 
   const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLeg.rawHits).hits;
 
@@ -2186,13 +2157,29 @@ async function searchResearchGroupsForQuery(
     ? appendUnlistedHits(candidatePoolHead.hits, deepCandidatePoolOrder.hits)
     : candidatePoolHead.hits;
   const droppedCoincidentalHits = (deepCandidatePoolOrder ?? candidatePoolHead).dropped;
+  const servedPool = paginateHybridPoolLocally
+    ? reorderedPool.filter((hit: Record<string, unknown>) =>
+        candidateMatchesStudentFilters(hit, safeFilters),
+      )
+    : reorderedPool;
   // The reorder helpers run across the whole fixed candidate pool so the ordering
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const orderedHits = paginateHybridPoolLocally
-    ? reorderedPool.slice(offset, offset + safePageSize)
+    ? servedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
+  const facetsTalliedOverPool = DISJUNCTIVE_RESEARCH_FACETS.filter(
+    (facet) =>
+      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(facet.meiliField) ||
+      activeDisjunctiveFacets.includes(facet),
+  ).map(({ filterKey, meiliField }) => ({ filterKey, indexField: meiliField }));
+  const rawServedFacetDistribution = paginateHybridPoolLocally
+    ? safeOptions.includeFacets
+      ? tallyCandidateFacetDistribution(reorderedPool, safeFilters, facetsTalliedOverPool)
+      : undefined
+    : disjunctiveRawFacetDistribution;
+  const facetDistribution = toClientFacetDistribution(rawServedFacetDistribution);
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
@@ -2229,22 +2216,15 @@ async function searchResearchGroupsForQuery(
     };
   });
 
-  // The companion count above counts what cleared the blended cutoff, so it omits
-  // the keyword-leg rows merged into the pool. Those rows are reachable by paging
-  // through the pool, and the client stops its pagination walk once a short page
-  // reaches the reported total, so the locally reachable pool is a floor on the
-  // count rather than something the count may fall below. See #2732.
-  // Withheld semantic-only rows still count in the companion total, so a withheld
-  // result reports only the rows it can serve.
-  const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
-  const companionTotalHits =
-    typeof resolvedTotalHits === 'number' && !withholdSemanticOnlyRows
-      ? resolvedTotalHits - droppedCoincidentalHits
-      : 0;
+  // A locally paginated search reports exactly the pool it pages through and
+  // tallies its facets over, so the total, the facet counts and the rows a
+  // student can reach are one population (#2732, #5101). Every other search
+  // reports Meilisearch's own count for the filtered query.
+  const meiliTotalHits =
+    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0;
   const adjustedTotalHits = Math.max(
     normalizedHits.length,
-    locallyReachableHits,
-    companionTotalHits,
+    paginateHybridPoolLocally ? servedPool.length : meiliTotalHits,
   );
 
   return addResearchEntitySearchAliases(
