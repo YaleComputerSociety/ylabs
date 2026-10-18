@@ -891,4 +891,19 @@ describe('classifyProgram reads a program that excludes Yale students as out of 
       }).studentFacingCategory,
     ).not.toBe('Archive / review');
   });
+
+  it('keeps a Yale-only program that says non-Yale students are not eligible', () => {
+    for (const eligibility of [
+      'Open to Yale College juniors; non-Yale students are not eligible.',
+      'Open to Yale College juniors; non Yale students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Summer Undergraduate Research Program',
+          description: 'A summer research program in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
+    }
+  });
 });
