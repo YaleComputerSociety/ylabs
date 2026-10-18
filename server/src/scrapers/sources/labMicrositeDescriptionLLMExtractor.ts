@@ -114,6 +114,7 @@ import { isProfileTemplateChrome } from '../../utils/profileTemplateChrome';
 import { DESCRIPTION_EXTRACTION_PROMPT, DESCRIPTION_EXTRACTION_PROMPT_HASH } from '../prompts';
 import { groundMethods, isMethodGroundedInText } from '../utils/methodGrounding';
 import {
+  isCoursePageUrl,
   isPersonCmsProfileUrl,
   isPersonProfileOrDirectoryUrl,
   isPostingPageUrl,
@@ -484,7 +485,7 @@ export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
 }
 
 function isRefusedDescriptionLaneSourceUrl(value: unknown): boolean {
-  return isRejectedDescriptionSourceUrl(value) || isPostingPageUrl(value);
+  return isRejectedDescriptionSourceUrl(value) || isPostingPageUrl(value) || isCoursePageUrl(value);
 }
 
 const idValue = (value: unknown): string => {

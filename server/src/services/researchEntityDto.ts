@@ -25,6 +25,7 @@ import {
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
 import {
+  isCoursePageUrl,
   isDisallowedResearchEntitySourceUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
@@ -644,7 +645,8 @@ function derivePublicResearchEntityDto(
           !isPressOrNewsHostUrl(url) &&
           !isMapOrDirectionsUrl(url) &&
           !isInstitutionalPublicityPageUrl(url) &&
-          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity);
+          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity) &&
+          !isCoursePageUrl(url);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }
