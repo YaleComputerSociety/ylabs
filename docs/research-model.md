@@ -210,6 +210,7 @@ A program whose served deadline is stale sits under no dates posted and in no ti
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
 An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
+The detail view says "not stated" for a missing year of study the same way (#5235).
 Every facet filter (year, term, purpose, region, citizenship) keeps a program that states no value for that facet, because unknown is not ineligible, and the filter says so (#5235).
 A program text's condition on international students' home country is shown under the citizenship answer (`programCitizenshipCondition`, #5235).
 Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
