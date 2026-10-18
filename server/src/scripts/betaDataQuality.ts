@@ -57,7 +57,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const ACTIVE_FILTER: Filter<Document> = { archived: { $ne: true } };
-const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
+export const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
   {
     name: 'observations.sourceId',
     collectionName: 'observations',
@@ -94,6 +94,28 @@ const BETA_SCORECARD_REFERENCE_EDGES: readonly ReferenceEdge[] = Object.freeze([
     required: false,
   },
   ...SIGNAL_TARGET_REFERENCE_EDGES,
+  {
+    name: 'role_assignments.target.id',
+    collectionName: 'role_assignments',
+    localField: 'target.id',
+    targetCollectionName: 'research_entities',
+    required: true,
+    ownerFilter: { 'target.kind': 'RESEARCH_ENTITY' },
+  },
+  {
+    name: 'research_entity_relationships.sourceResearchEntityId',
+    collectionName: 'research_entity_relationships',
+    localField: 'sourceResearchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+  },
+  {
+    name: 'research_entity_relationships.targetResearchEntityId',
+    collectionName: 'research_entity_relationships',
+    localField: 'targetResearchEntityId',
+    targetCollectionName: 'research_entities',
+    required: true,
+  },
   {
     name: 'signals.source.evidenceIds',
     collectionName: 'signals',

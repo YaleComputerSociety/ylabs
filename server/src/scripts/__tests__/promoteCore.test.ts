@@ -258,6 +258,7 @@ describe('remote phase', () => {
     const labels = remotePhaseSteps('beta', { confirmBetaBackup: true }).map((step) => step.label);
     expect(labels).toEqual([
       'verify database names',
+      'retarget saved plans',
       'visibility gate',
       'data quality',
       'integrity gate',
@@ -277,11 +278,28 @@ describe('remote phase', () => {
     const steps = remotePhaseSteps('production');
     expect(steps.map((step) => step.label)).toEqual([
       'verify database names',
+      'retarget saved plans',
       'visibility gate',
       'search reindex',
       'production smoke',
     ]);
-    expect(steps[2].env).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
+    expect(steps.find((step) => step.label === 'search reindex')!.env).toEqual({
+      CONFIRM_PROD_SCRAPE: 'true',
+    });
+  });
+
+  it('re-points saved plans to merge survivors in each environment before the gate (#5208)', () => {
+    for (const target of ['beta', 'production'] as const) {
+      const step = remotePhaseSteps(target).find((s) => s.label === 'retarget saved plans')!;
+      expect(step.args).toEqual([
+        'research-plans:retarget-merged',
+        '--apply',
+        '--confirm-research-plan-retarget',
+      ]);
+    }
+    expect(
+      remotePhaseSteps('production').find((s) => s.label === 'retarget saved plans')!.env,
+    ).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
   });
 
   it('lets the reindex choose its mode unless a full rebuild is forced, and records its result', () => {

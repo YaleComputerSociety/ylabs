@@ -7,6 +7,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
+import { archivedResearchEntityIds, withSlimArchivedTombstones } from './archivedTombstoneMirror';
 import {
   ACCOUNT_COPY_POLICY,
   applySync,
@@ -97,7 +98,10 @@ async function main(): Promise<void> {
     await Promise.all([sourceClient.connect(), targetClient.connect()]);
     const sourceDb = sourceClient.db();
     const targetDb = targetClient.db();
-    const collections = collectionsForOptions({ includeObservations: options.includeObservations });
+    const collections = withSlimArchivedTombstones(
+      collectionsForOptions({ includeObservations: options.includeObservations }),
+      await archivedResearchEntityIds(sourceDb),
+    );
     const before = await buildPlan(sourceDb, targetDb, collections);
     let after = before;
     const report = {
@@ -109,6 +113,8 @@ async function main(): Promise<void> {
       includesObservations: options.includeObservations,
       collections: before,
       preservedBetaOperationalCollections: true,
+      archivedTombstonePolicy:
+        'Archived research entities cross as slim tombstones; rows that hang off them stay in Development (#5208).',
       accountReferences: await syncAccountReferences(sourceDb, collections),
       userCopyPolicy: ACCOUNT_COPY_POLICY,
       observationPolicy: options.includeObservations
