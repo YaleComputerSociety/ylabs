@@ -1798,6 +1798,13 @@ export function shouldIgnoreObservationForEntityMaterialization(
   }
   if (
     entityType === 'user' &&
+    (observation.field === 'website' || observation.field === 'websiteUrl') &&
+    isCoursePageUrl(observation.value)
+  ) {
+    return true;
+  }
+  if (
+    entityType === 'user' &&
     observation.field === 'title' &&
     typeof observation.value === 'string' &&
     isTruncatedPersonTitle(observation.value)
