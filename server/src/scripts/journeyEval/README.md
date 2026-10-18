@@ -230,7 +230,7 @@ The `fellowships` surface is therefore the same route scoped to `programCategory
 Each surface runs the same seven cases, with ids prefixed by the surface:
 
 - `<surface>-cold-browse-card-contract` asserts that a cold browse fills the page, reports page arithmetic its total implies, and serves an id on every card, and reports the share of cards serving a deadline, a projected deadline, an open application, an apply link, eligibility, and a card summary.
-- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size of 100 and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
+- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size (`CLIENT_PROGRAM_PAGE_SIZE`, 250) and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
   The client loads the whole result set before it sorts and groups locally, so a missing or repeated row is a card the student never sees or sees twice.
 - `<surface>-text-query-total-is-stable` walks `--pages` pages of a text query and asserts the same total and no repeats.
 - `<surface>-filter-options-agree-with-filtered-browse` reads the options `getProgramFilterOptions` offers, which is what `GET /api/programs/filters` returns, and asserts that every row a filtered browse serves carries the chosen value, checking the `--facet-values` highest-total options of each field.
