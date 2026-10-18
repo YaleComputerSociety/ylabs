@@ -23,6 +23,10 @@ import {
   readRenderApiKey,
   rerunActivityRefusals,
   rerunJobStartCommand,
+  resumeJobStartCommand,
+  resumeRefusals,
+  entrypointSupportsResume,
+  type ResumableWeeklySweep,
   rerunSourceProblems,
   SWEEP_DATABASE_ROLE,
   SWEEP_ENTRYPOINT_PATH,
@@ -317,6 +321,67 @@ async function runProbePermissions(dryRun: boolean): Promise<number> {
   );
 }
 
+async function runResume(runId: string | undefined, dryRun: boolean): Promise<number> {
+  const client = renderClient();
+  const { commitId, entrypoint } = await liveImageEntrypoint(client);
+  if (!entrypointSupportsResume(entrypoint)) {
+    return fail(
+      `refusing: the live ylabs-scraper image (commit ${commitId ?? 'unknown'}) has no --resume-weekly-run mode; wait for the image build that includes ${SWEEP_ENTRYPOINT_PATH} with that mode to go live (render deploys list ${SWEEP_RENDER_SERVICE_ID} -o json)`,
+    );
+  }
+  const { run, heldLockSources } = await withDevelopment(async () => ({
+    run: (await (
+      runId
+        ? WeeklySweepRun.findById(runId)
+        : WeeklySweepRun.findOne({ status: 'running', finishedAt: { $exists: false } }).sort({
+            startedAt: -1,
+          })
+    )
+      .select('status startedAt finishedAt codeSha requestedModes')
+      .lean()) as ResumableWeeklySweep | null,
+    heldLockSources: await heldSweepSourceLocks(),
+  }));
+  const refusals = resumeRefusals({ run, heldLockSources, now: new Date() });
+  refusals.push(...inFlightJobRefusals(await listRenderJobs(client, SWEEP_RENDER_SERVICE_ID)));
+  if (refusals.length > 0) return fail(`refusing: ${refusals.join('; ')}`);
+  const id = String(run!._id);
+  const startCommand = resumeJobStartCommand(id, run!.codeSha!);
+  if (dryRun) {
+    log(
+      `dry run: would resume run ${id} with a one-off job on ${SWEEP_RENDER_SERVICE_ID}: ${startCommand}`,
+    );
+    return 0;
+  }
+  const job = await createRenderJob(client, SWEEP_RENDER_SERVICE_ID, startCommand);
+  log(`started Render one-off job ${job.id} to resume run ${id}: ${startCommand}`);
+  try {
+    const finished = await waitForRenderJob(client, SWEEP_RENDER_SERVICE_ID, job.id, {
+      intervalMs: RERUN_POLL_INTERVAL_MS,
+      timeoutMs: RENDER_CRON_RUN_LIMIT_MS + 30 * 60_000,
+      onStatus: (current) => log(`job ${current.id}: ${current.status ?? 'unknown'}`),
+    });
+    const recorded = await withDevelopment(async () =>
+      WeeklySweepRun.findById(id).select('status').lean(),
+    );
+    log(
+      `job ${finished.id} ended ${finished.status}; run ${id} is now ${String(recorded?.status ?? 'unknown')}`,
+    );
+    if (finished.status !== 'succeeded') return 1;
+    log(`syncing the Development search index: yarn ${DEVELOPMENT_SEARCH_SYNC_SCRIPT}`);
+    const synced = spawnSync('yarn', [DEVELOPMENT_SEARCH_SYNC_SCRIPT], {
+      cwd: REPO_ROOT,
+      stdio: 'inherit',
+    });
+    return synced.status === 0
+      ? 0
+      : fail(`yarn ${DEVELOPMENT_SEARCH_SYNC_SCRIPT} exited ${synced.status}`);
+  } catch (error) {
+    return fail(
+      `stopped waiting for job ${job.id} (${error instanceof Error ? error.message : String(error)}); read run ${id} with \`yarn ops:sweep status\` once it ends`,
+    );
+  }
+}
+
 export async function runOpsSweep(argv: string[]): Promise<number> {
   const command = parseOpsSweepArgs(argv);
   const targetProblems = developmentTargetProblems(process.env);
@@ -325,6 +390,7 @@ export async function runOpsSweep(argv: string[]): Promise<number> {
   if (command.command === 'rerun') {
     return runRerun(command.sources, command.overrideHold, command.dryRun);
   }
+  if (command.command === 'resume') return runResume(command.runId, command.dryRun);
   return runProbePermissions(command.dryRun);
 }
 
