@@ -1358,4 +1358,39 @@ describe('SavedResearchPlans', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('reverts a refused stage when the latest stage cannot be loaded', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(
+      async (_url: string, body: Parameters<typeof applyWrite>[0]) => applyWrite(body),
+    );
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+    server.plan = { stage: 'APPLIED', privateNotes: '', updatedAt: '2026-01-05T00:00:00.000Z' };
+    const serve = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === '/users/savedResearchEntityPlans'
+        ? Promise.reject(new Error('network down'))
+        : serve(url),
+    );
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+
+    expect(
+      await screen.findByText('Not saved. Check your connection or sign in again, then retry.'),
+    ).toBeTruthy();
+    expect(select.value).toBe('CONTACTED');
+    expect(screen.queryByText('Changed in another tab. Showing the latest stage.')).toBeNull();
+  });
 });

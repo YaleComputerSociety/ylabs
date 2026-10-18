@@ -377,8 +377,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         });
       } catch (error) {
         console.error('Error saving watched program stage.');
-        if (isPlanVersionConflict(error)) {
-          await takeServerStage(programId);
+        if (isPlanVersionConflict(error) && (await takeServerStage(programId))) {
           setStageStatuses((statuses) => ({ ...statuses, [programId]: 'conflict' }));
           return;
         }

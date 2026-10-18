@@ -119,8 +119,10 @@ const usePlanDetailSync = ({
     async (options?: PlanRefreshOptions) => {
       try {
         applyFreshPlans(await fetchPlans(), options);
+        return true;
       } catch {
         console.error('Error refreshing plan details.');
+        return false;
       }
     },
     [applyFreshPlans, fetchPlans],

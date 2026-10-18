@@ -317,8 +317,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         });
       } catch (error) {
         console.error('Error saving research plan stage.');
-        if (isPlanVersionConflict(error)) {
-          await takeServerStage(entityId);
+        if (isPlanVersionConflict(error) && (await takeServerStage(entityId))) {
           setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'conflict' }));
           return;
         }
