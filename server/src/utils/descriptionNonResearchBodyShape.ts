@@ -10,7 +10,8 @@ export type NonResearchBodyShape =
   | 'third-party-page'
   | 'instruction-offering'
   | 'joining-instructions'
-  | 'event-narration';
+  | 'event-narration'
+  | 'source-narration';
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -262,6 +263,46 @@ export function isEventNarrationText(value: unknown): boolean {
   );
 }
 
+const SOURCE_DOCUMENT =
+  /(?:pages?|profiles?|websites?|sites?|listings?|entr(?:y|ies)|bios?|biograph(?:y|ies)|descriptions?|materials?|sources?|catalog(?:ue)?s?|directory|directories)/
+    .source;
+
+const NARRATING_VERB =
+  /(?:describes?|states?|lists?|notes?|mentions?|indicates?|says|shows?|highlights?|reports?|suggests?|outlines?|presents?|emphasi[sz]es?|focus(?:es)? on|provides?|references?|cites?|covers?|identif(?:y|ies)|names?|features?)/
+    .source;
+
+// The document has to be the sentence's subject, so at most four words may precede it and
+// none of them may be a research verb or a clause opener. "Her lab page describes" opens on
+// the page, while "Studies how news sites report" names sites as the object of research.
+const SUBJECT_PREFIX_WORD =
+  /(?!(?:how|whether|why|what|which|that|who|when|where|stud(?:y|ies|ying)|examin\w*|investigat\w*|analy[sz]\w*|explor\w*|compar\w*|measur\w*|model\w*)\b)[\w’'.&-]+\s+/
+    .source;
+
+const SOURCE_NARRATION_LEAD = new RegExp(
+  `^["“]?(?:${SUBJECT_PREFIX_WORD}){0,4}?${SOURCE_DOCUMENT}\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
+  'i',
+);
+
+const ACCORDING_TO_SOURCE = /^["“]?according to\b/i;
+
+const isSourceNarrationSentence = (sentence: string): boolean =>
+  SOURCE_NARRATION_LEAD.test(sentence) || ACCORDING_TO_SOURCE.test(sentence);
+
+/**
+ * Text that reports what the row's sources say rather than stating the research: "Course
+ * and department pages describe study of ...", "The profile lists ...", "According to the
+ * page ...". It names the pages a writer read, not what the person or group studies, so
+ * it is not a research statement (owner decision, 2026-10-12, #5020). Refused only when
+ * every sentence narrates a source, so research prose that opens by citing its page and
+ * then states the work keeps its body.
+ */
+export function isSourceNarrationText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const sentences = sentencesOf(text);
+  return sentences.length > 0 && sentences.every(isSourceNarrationSentence);
+}
+
 const isLabEntityType = (entityType?: ResearchEntityType): boolean =>
   typeof entityType === 'string' && entityType.toUpperCase() === 'LAB';
 
@@ -276,5 +317,6 @@ export function nonResearchBodyShape(
   if (isRoleBiographyWithoutResearchOrPractice(value)) return 'role-biography';
   if (isJoiningInstructionsText(value)) return 'joining-instructions';
   if (isEventNarrationText(value)) return 'event-narration';
+  if (isSourceNarrationText(value)) return 'source-narration';
   return null;
 }

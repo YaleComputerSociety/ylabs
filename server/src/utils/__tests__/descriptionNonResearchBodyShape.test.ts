@@ -3,6 +3,7 @@ import {
   isEventNarrationText,
   isJoiningInstructionsText,
   isRoleBiographyWithoutResearchOrPractice,
+  isSourceNarrationText,
   nonResearchBodyShape,
 } from '../descriptionNonResearchBodyShape';
 import {
@@ -261,5 +262,58 @@ describe('a body that says how to join or narrates events (#5109)', () => {
         entityType: 'LAB',
       }).flags,
     ).toContain('event-narration');
+  });
+});
+
+describe('text that narrates its own sources is not a research statement', () => {
+  const coursePageNarration =
+    'Course and department pages describe study of example reef morphology, phylogenetics, and the diversity of marine life.';
+
+  it('reads page, profile and site narration as source narration', () => {
+    for (const text of [
+      coursePageNarration,
+      'Course and departmental pages describe study of example reef morphology and techniques for studying body plans.',
+      "The example researcher's profile describes clinical research on example vascular disease.",
+      'Faculty profile describes translational research on an example skin disease.',
+      'The profile lists interests in example ecology and climate.',
+      'The site focuses on example forecasting models and price effects.',
+      'According to the department page, the group studies example songbirds.',
+      'The program page states that students study example policy. The page also lists example courses.',
+    ]) {
+      expect(isSourceNarrationText(text)).toBe(true);
+    }
+    expect(nonResearchBodyShape(coursePageNarration, 'FACULTY_RESEARCH_AREA')).toBe(
+      'source-narration',
+    );
+  });
+
+  it('keeps research prose that cites its page and then states the work', () => {
+    const citesPageThenStatesResearch =
+      'Her lab page describes work on example songbirds. She studies how juvenile songbirds learn their songs from adult tutors.';
+    expect(isSourceNarrationText(citesPageThenStatesResearch)).toBe(false);
+    expect(nonResearchBodyShape(citesPageThenStatesResearch, 'FACULTY_RESEARCH_AREA')).toBeNull();
+  });
+
+  it('keeps research whose object is a page, a site or a source', () => {
+    for (const text of [
+      'Studies how news sites report elections and how readers judge them.',
+      'The lab studies how web pages describe products to shoppers.',
+      'Examines how archival sources describe colonial trade networks.',
+      'The lab studies evolutionary novelties and their functional morphology.',
+      'Develops methods that identify which sources state reliable facts.',
+    ]) {
+      expect(isSourceNarrationText(text)).toBe(false);
+    }
+  });
+
+  it('fails the quality bar for both the body and the card', () => {
+    expect(
+      fullDescriptionQuality(coursePageNarration, undefined, 'FACULTY_RESEARCH_AREA').flags,
+    ).toContain('source-narration');
+    expect(
+      shortDescriptionQuality(coursePageNarration, coursePageNarration, undefined, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).isUseful,
+    ).toBe(false);
   });
 });
