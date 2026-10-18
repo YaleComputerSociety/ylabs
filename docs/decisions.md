@@ -15,7 +15,8 @@ The quality bar refuses it for both the body and the card, and `cardStatesResear
 A body that narrates its sources falls back to the row's research card as #5109 does for joining instructions and event narration, and a row with neither is held by the existing gate reasons.
 
 The text is refused only when every sentence narrates a source, so research prose that cites its page and then states the work keeps its body.
-The source document has to be the sentence's subject: at most four words may precede it and none may be a research verb or a clause opener, so "studies how news sites report elections" is research about sites rather than narration.
+The source document has to be the sentence's subject and has to be marked as a source, by a determiner or possessive or by a closed run of source qualifiers such as course, department or faculty.
+So "studies how news sites report elections" is research about sites, and "quantum materials feature exotic states" is research about materials, rather than narration.
 
 Measured on Development on 2026-10-18: of 50,344 live description observations, 64 are source narration, all from `lab-microsite-undergrad-llm` (24 cards, 40 bodies).
 Walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code, 5 served texts on 4 rows narrated their sources and only the one held by the owner's decision stopped serving at the route; 2 rows now serve their stored research card in place of the narrated text.

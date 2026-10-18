@@ -301,6 +301,9 @@ describe('text that narrates its own sources is not a research statement', () =>
       'Examines how archival sources describe colonial trade networks.',
       'The lab studies evolutionary novelties and their functional morphology.',
       'Develops methods that identify which sources state reliable facts.',
+      'Two-dimensional materials provide a platform for probing correlated electron physics.',
+      'Quantum materials feature exotic electronic states probed with ultrafast spectroscopy.',
+      'Enzyme active sites show remarkable selectivity, and the group designs catalysts that mimic them.',
     ]) {
       expect(isSourceNarrationText(text)).toBe(false);
     }

@@ -271,15 +271,23 @@ const NARRATING_VERB =
   /(?:describes?|states?|lists?|notes?|mentions?|indicates?|says|shows?|highlights?|reports?|suggests?|outlines?|presents?|emphasi[sz]es?|focus(?:es)? on|provides?|references?|cites?|covers?|identif(?:y|ies)|names?|features?)/
     .source;
 
-// The document has to be the sentence's subject, so at most four words may precede it and
-// none of them may be a research verb or a clause opener. "Her lab page describes" opens on
-// the page, while "Studies how news sites report" names sites as the object of research.
-const SUBJECT_PREFIX_WORD =
-  /(?!(?:how|whether|why|what|which|that|who|when|where|stud(?:y|ies|ying)|examin\w*|investigat\w*|analy[sz]\w*|explor\w*|compar\w*|measur\w*|model\w*)\b)[\w’'.&-]+\s+/
+// The document has to be the sentence's subject and has to be marked as a source: a
+// determiner or possessive, or a closed run of source qualifiers ("Course and department
+// pages describe"). An open slot reads research prose as narration, because "Quantum
+// materials feature exotic states" and "Enzyme active sites show selectivity" also put a
+// document noun before a narrating verb.
+const SOURCE_QUALIFIER =
+  /(?:course|department|departmental|faculty|program|lab|group|personal|official|university|school|yale|web|online|directory|people|and)/
     .source;
 
+const SOURCE_DETERMINER =
+  /(?:(?:the|this|that|these|those)\s+(?:[\w.-]+\s+){0,3}?[\w.-]+['’]s|the|this|that|these|those|her|his|their|its|our|[\w.-]+['’]s)\s+/
+    .source;
+
+const SOURCE_SUBJECT = `(?:${SOURCE_DETERMINER}(?:${SOURCE_QUALIFIER}\\s+){0,6}|(?:${SOURCE_QUALIFIER}\\s+){1,6})`;
+
 const SOURCE_NARRATION_LEAD = new RegExp(
-  `^["“]?(?:${SUBJECT_PREFIX_WORD}){0,4}?${SOURCE_DOCUMENT}\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
+  `^["“]?${SOURCE_SUBJECT}${SOURCE_DOCUMENT}\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
   'i',
 );
 
