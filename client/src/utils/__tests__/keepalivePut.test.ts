@@ -9,9 +9,11 @@ import { keepalivePut } from '../keepalivePut';
 const respondWith = (status: number, headers: Record<string, string> = {}, body?: unknown) =>
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue(
-      new Response(body === undefined ? null : JSON.stringify(body), { status, headers }),
-    ),
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(body === undefined ? null : JSON.stringify(body), { status, headers }),
+      ),
   );
 
 describe('keepalivePut http status events', () => {
