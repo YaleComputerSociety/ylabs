@@ -58,6 +58,9 @@ Take the tells, not the taste.
 - Pages scroll inside `[data-scroll-container]`, not the document, so PageDown and Space only work while focus is inside it.
 `ScrollToTop` moves focus to `#main-content` (with `preventScroll`) on every client-side push or replace navigation, and on back navigation when nothing holds focus.
 A page that wants focus somewhere else after a route change sets it in its own mount effect, which runs after that and wins.
+`/research` is that case on back navigation: a result card records the profile it opened against its history entry, and `useRestoreOpenedResearchResultFocus` puts focus back on that card's link when the student returns, so a keyboard user resumes where they left off instead of at the top of the list.
+A research profile opened from results carries the results' search string in its location state, and its back link returns through history (`navigate(-depth)`), so the restored scroll, focus, and loaded pages all come back.
+It reads "Back to results" when that search string holds a query or a filter, "Back to research" when it came from the unfiltered browse view, and "Browse research", linking to `/research`, when the profile was reached without that state.
 - `[data-scroll-container]` is `relative` so it is the containing block for every absolutely positioned descendant, `sr-only` text included.
 Without it, such an element resolves against the viewport, escapes the scroller's clip, and grows the document past the window, so a wheel at the end of the page scrolls the whole shell out of view (#4136).
 The student-journey smoke asserts the document never outgrows the window.
