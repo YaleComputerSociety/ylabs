@@ -794,6 +794,7 @@ const Fellowships = () => {
   };
 
   const showSearchRanking = resultsRankedByRelevance && sortBy === 'default';
+  const resultsAreCloseMatches = resultsRankedByRelevance && resultsMissOneWord;
   const showCloseMatches = showSearchRanking && resultsMissOneWord;
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
@@ -1051,7 +1052,7 @@ const Fellowships = () => {
                     </p>
                   </div>
                 )}
-                {showCloseMatches && (
+                {resultsAreCloseMatches && (
                   <p
                     role="status"
                     className="mb-4 rounded-card border border-line-brand bg-brand-soft px-4 py-3 text-sm text-brand-navy"

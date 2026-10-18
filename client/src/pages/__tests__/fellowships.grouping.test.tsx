@@ -117,11 +117,13 @@ const renderFellowships = ({
   quickFilter = null,
   resultsRankedByRelevance = false,
   resultsMissOneWord = false,
+  sortBy = 'default',
 }: {
   fellowships: Fellowship[];
   quickFilter?: FellowshipQuickFilter;
   resultsRankedByRelevance?: boolean;
   resultsMissOneWord?: boolean;
+  sortBy?: string;
 }) =>
   render(
     <MemoryRouter>
@@ -140,6 +142,7 @@ const renderFellowships = ({
             quickFilter,
             resultsRankedByRelevance,
             resultsMissOneWord,
+            sortBy,
             setQueryString: vi.fn(),
             refreshFellowships: vi.fn(),
           }}
@@ -198,6 +201,19 @@ describe('Fellowships grouping', () => {
     expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
     expect(titlesIn('Close matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
     expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
+  });
+
+  it('still says no program carries every word when the results are sorted by deadline', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsMissOneWord: true,
+      sortBy: 'deadline',
+    });
+
+    expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
+    expect(titlesIn('Due in the next 30 days')).toEqual(['Weaker Match Award']);
   });
 
   it('groups the same programs by deadline when they answer no search', () => {
