@@ -7,7 +7,11 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
-import { archivedResearchEntityIds, withSlimArchivedTombstones } from './archivedTombstoneMirror';
+import {
+  archivedResearchEntityIds,
+  mergedFromBySurvivorAtCopyTime,
+  withLiveResearchRowsOnly,
+} from './archivedTombstoneMirror';
 import {
   ACCOUNT_COPY_POLICY,
   applySync,
@@ -98,9 +102,10 @@ async function main(): Promise<void> {
     await Promise.all([sourceClient.connect(), targetClient.connect()]);
     const sourceDb = sourceClient.db();
     const targetDb = targetClient.db();
-    const collections = withSlimArchivedTombstones(
+    const collections = withLiveResearchRowsOnly(
       collectionsForOptions({ includeObservations: options.includeObservations }),
       await archivedResearchEntityIds(sourceDb),
+      await mergedFromBySurvivorAtCopyTime(sourceDb),
     );
     const before = await buildPlan(sourceDb, targetDb, collections);
     let after = before;
@@ -114,7 +119,7 @@ async function main(): Promise<void> {
       collections: before,
       preservedBetaOperationalCollections: true,
       archivedTombstonePolicy:
-        'Archived research entities cross as slim tombstones; rows that hang off them stay in Development (#5208).',
+        'Archived research entities and the rows that hang off them stay in Development; each live survivor carries its merged identities as mergedFrom (#5148).',
       accountReferences: await syncAccountReferences(sourceDb, collections),
       userCopyPolicy: ACCOUNT_COPY_POLICY,
       observationPolicy: options.includeObservations

@@ -113,7 +113,8 @@ Classify a research home by observing `entityType`: a source that observes only 
 A live row also carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, one entry per archived row whose `canonicalGroupId` chain ends on it (#5148).
 It is derived rather than written by a lane: `research-entity:derive-survivor-aliases` (`server/src/services/researchEntityMergedFrom.ts`) reads every tombstone, flattens chains onto the final live survivor, credits nobody for a chain that cycles, points at a missing row, or ends on an archived row, and sets each survivor's list exactly, clearing it from a row left with none.
 It runs as the `survivor-alias-derivation` Development sweep stage, writes with `timestamps: false` because the field is neither served nor indexed, and a second run plans no write.
-It exists so Beta and Production can resolve an old slug or id from the live survivor once promotion stops copying archived rows; until a reader uses it, the tombstones stay the source of truth and `mergedFrom` changes no served output.
+Beta and Production hold no archived rows, so they resolve a merge from it: the old-slug redirect behind the API 302 and the page-shell 301 falls back to the one live, publicly servable row whose `mergedFrom.slug` matches, `research-plans:retarget-merged` moves a plan on an id no row carries to the survivor whose `mergedFrom.entityId` names it, and saved-plan status reports such a plan as merged.
+The Development-to-Beta copy re-derives the list at copy time rather than trusting the stored one, so a merge made after the last sweep still reaches Beta with its survivor's entry.
 On Development on 2026-10-18 it planned 3,640 entries on 1,850 survivors from 3,715 tombstones, 75 of which name no live survivor.
 
 ### `RoleAssignment` (`role_assignments`)
@@ -183,12 +184,14 @@ Each merge planner's dry run reports `researchPlanCarry` and `researchPlansThatW
 The department-roster shell fold runs inside materialization and has no dry run.
 
 A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
-`REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.
+`MERGED` means the record was folded into a live survivor, found through its tombstone or, where no row carries the id, through a survivor's `mergedFrom`.
+`RETIRED` means the record is archived with no live survivor, or no `ResearchEntity` carries that id and no survivor names it, and the owner's only move is to remove the plan; the two are one reason because Beta and Production hold no archived rows (#5148), so there a retired row and a deleted one look the same.
+`UNAVAILABLE` means the record exists and is held by the visibility gate or failing the public-description invariant, either of which a repair or a re-gate reverses, so the plan and its private notes are kept.
 Only the id and the reason are reported, never the record's name or copy, because the gate exists to keep exactly that text away from a student, and the owner already holds the id.
 Before #2174 both classes were dropped from the payload and from the saved count, so a student could not tell an item they had removed from one the corpus had stopped serving; 4,907 of 8,281 research-entity records sat in a state that would drop a saved plan that way when measured on 2026-09-22.
 The dashboard count is the number of plans the owner has rather than the number the list can render, so `SavedResearchPlans` reports `savedSlugs.length + unavailable.length`: counting only the servable half is what let the dashboard read "0 research plans" beside a notice about a plan it was holding back.
 The notice copy claims only that the student directory is not listing the row, never that the research home cannot be opened, because this gate is name-agnostic while `getResearchGroupDetail` resolves lead names, and #2597 measured 3 tier-admitted rows that fail here yet serve their own detail page.
-`REMOVED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable record to key it to, so no surface can read that note back.
+`RETIRED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable record to key it to, so no surface can read that note back.
 A dedupe merge is the one removal path that relinks plans itself (`applyResearchEntityDedupeMergeGroup`), which is why repointing through the merged shell's `canonicalGroupId` tombstone is not a second mechanism here.
 
 ## Removed, Retired, And Frozen

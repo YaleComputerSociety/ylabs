@@ -709,6 +709,12 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
     });
   });
 
+  it('keeps the opening date beside a deadline that is not projected', () => {
+    const payload = publicFellowshipForStudent(recurring, new Date('2025-07-01T00:00:00.000Z'));
+    expect(payload.deadlineProjectedNextCycle).toBe(false);
+    expect(payload.applicationOpenDate).toEqual(recurring.applicationOpenDate);
+  });
+
   it('withholds the deadline once more than twelve months have passed', () => {
     const justAfter = new Date(oneCycleLater.getTime() + 1);
     expect(servedProgramDeadline(recurring, justAfter)).toEqual({
@@ -740,7 +746,7 @@ describe('a deadline that closed more than one cycle ago is stale (#4363)', () =
     expect(payload.deadline).toEqual(oneCycleLater);
     expect(payload.deadlineProjectedNextCycle).toBe(true);
     expect(payload.deadlineStale).toBe(false);
-    expect(payload.applicationOpenDate).toEqual(recurring.applicationOpenDate);
+    expect(payload.applicationOpenDate).toBeUndefined();
   });
 
   it('leaves an upcoming deadline unchanged', () => {

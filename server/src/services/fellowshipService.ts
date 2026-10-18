@@ -496,6 +496,11 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
     delete publicFellowship.deadline;
     delete publicFellowship.applicationOpenDate;
   }
+  const openDate = toValidDate(publicFellowship.applicationOpenDate);
+  if (served.projectedNextCycle && openDate && openDate.getTime() < now.getTime()) {
+    // The opening date belongs to the cycle the projected deadline replaced (#5239).
+    delete publicFellowship.applicationOpenDate;
+  }
   if (served.duplicateWindow?.applicationOpenDate) {
     publicFellowship.applicationOpenDate = served.duplicateWindow.applicationOpenDate;
   }
