@@ -7,7 +7,7 @@ import { dispatchHttpStatusEvent } from './httpStatusEvents';
 
 declare module 'axios' {
   interface AxiosRequestConfig {
-    skipHttpStatusEvents?: boolean;
+    skipAuthRequiredEvent?: boolean;
   }
 }
 
@@ -19,9 +19,10 @@ const client = axios.create({
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.config?.skipHttpStatusEvents) return Promise.reject(error);
+    const status = error?.response?.status;
+    if (status === 401 && error?.config?.skipAuthRequiredEvent) return Promise.reject(error);
     dispatchHttpStatusEvent(
-      error?.response?.status,
+      status,
       error?.response?.headers?.['retry-after'],
       error?.response?.data,
     );

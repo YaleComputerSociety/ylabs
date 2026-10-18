@@ -588,9 +588,9 @@ describe('FellowshipSearchContextProvider before sign-in is known', () => {
     const { resolveSignIn } = renderWhileSignInLoads('/programs');
 
     await waitFor(() => expect(searchCalls()).toHaveLength(1));
-    expect(searchCalls()[0][1]).toEqual({ skipHttpStatusEvents: true });
+    expect(searchCalls()[0][1]).toEqual({ skipAuthRequiredEvent: true });
     expect(mockedAxios.get).toHaveBeenCalledWith('/programs/filters', {
-      skipHttpStatusEvents: true,
+      skipAuthRequiredEvent: true,
     });
 
     resolveSignIn();

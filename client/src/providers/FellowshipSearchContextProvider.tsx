@@ -59,8 +59,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     authLoadingRef.current = authLoading;
   });
   const quietWhileSigningIn = useCallback(
-    (): [] | [{ skipHttpStatusEvents: true }] =>
-      authLoadingRef.current ? [{ skipHttpStatusEvents: true }] : [],
+    (): [] | [{ skipAuthRequiredEvent: true }] =>
+      authLoadingRef.current ? [{ skipAuthRequiredEvent: true }] : [],
     [],
   );
   const isAdmin = user?.isAdmin ?? false;
