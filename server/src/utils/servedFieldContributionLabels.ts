@@ -11,9 +11,9 @@ const SERVED_FIELD_CONTRIBUTION_LABELS: Record<string, string> = {
   researchAreas: 'Topics',
   methods: 'Methods',
   websiteUrl: 'Research website',
-  inferredPiUserId: 'Lead identity',
-  inferredPiUserKey: 'Lead identity',
-  leadProfessorPublicKey: 'Lead identity',
+  inferredPiUserId: 'Who leads it',
+  inferredPiUserKey: 'Who leads it',
+  leadProfessorPublicKey: 'Who leads it',
   departments: 'Department',
   school: 'School',
   name: 'Name',
@@ -35,7 +35,7 @@ export function servedFieldContributionLabel(field: unknown): string | undefined
  * with a label (#3922). A provenance entry is history and outlives the value it
  * recorded, so several clear arms empty `websiteUrl` or resolve `departments` to
  * nothing while the entry stays; crediting the page then tells a student it
- * supplied something the row does not show. `Lead identity` and `Name` are absent
+ * supplied something the row does not show. `Who leads it` and `Name` are absent
  * because the lead is served on the roster outside this payload and a row always
  * serves a name.
  */

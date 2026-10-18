@@ -445,7 +445,7 @@ describe('ResearchHomeCard', () => {
     expect(actionRow?.className.split(/\s+/)).toEqual(expect.arrayContaining(['mt-auto', 'pt-4']));
   });
 
-  it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
+  it('renders research-area topic chips in blue to match the entity-page "Topics" chips', () => {
     render(
       <MemoryRouter>
         <ResearchHomeCard

@@ -83,7 +83,7 @@ export const formatTitleCaseLabel = (value: string): string => {
  * A controlled-vocabulary heading is stored inverted so that it files under its head noun:
  * MeSH holds "Carcinoma, Renal Cell" and "Immunity, Innate" so both sort beside their
  * siblings. That is right for an index and wrong for a chip, which a student reads as a
- * phrase: "Best fit for: Endothelium, Vascular" reads like a truncation.
+ * phrase: "Topics: Endothelium, Vascular" reads like a truncation.
  *
  * Only the stored value is a heading; the chip is presentation. So this un-inverts for
  * display and changes nothing stored, which matters because the same value is a

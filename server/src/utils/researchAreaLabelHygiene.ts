@@ -151,7 +151,7 @@ export const isCorruptResearchAreaLabel = (value: unknown): boolean => {
 /**
  * A label so broad it distinguishes nothing, and so wrong for all three jobs a topic does:
  * it groups thousands of unlike rows as a facet, tells a student nothing about fit as
- * guidance, and matches everything as a search term. "Best fit for: Diseases" is the
+ * guidance, and matches everything as a search term. "Topics: Diseases" is the
  * clearest case.
  *
  * Deliberately a closed list of whole labels rather than a prefix or word rule. The

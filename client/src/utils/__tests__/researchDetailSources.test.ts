@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  accessSignalSourceContext,
   buildResearchDetailSources,
+  joinPageLinkLabel,
   firstCitedResearchDetailSource,
   isCitableAccessSignal,
   isDepartmentRosterProvenanceUrl,
@@ -63,7 +65,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources[1].label).toBe('program.example.test source');
     expect(sources[1].contexts).toHaveLength(2);
     expect(sources[1].contexts).toEqual(
-      expect.arrayContaining(['Profile source', 'Current Undergrads evidence']),
+      expect.arrayContaining(['Profile source', 'Current undergraduate members']),
     );
   });
 
@@ -353,7 +355,11 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe('https://lab.example.yale.edu/research');
     expect(sources[0].contexts).toEqual(
-      expect.arrayContaining(['Profile website', 'Profile source', 'Current Undergrads evidence']),
+      expect.arrayContaining([
+        'Profile website',
+        'Profile source',
+        'Current undergraduate members',
+      ]),
     );
   });
 
@@ -401,8 +407,8 @@ describe('buildResearchDetailSources', () => {
     expect(profileRows[0].contexts).toEqual(
       expect.arrayContaining([
         'Profile source',
-        'Current Undergrads evidence',
-        'Past Undergrads evidence',
+        'Current undergraduate members',
+        'Past undergraduate members',
       ]),
     );
   });
@@ -588,6 +594,74 @@ describe('buildResearchDetailSources', () => {
     });
 
     expect(sources.map((source) => source.url)).toEqual(['https://lab.example.test', evidenceUrl]);
+  });
+});
+
+describe('accessSignalSourceContext', () => {
+  it('names every stored access signal type in student wording', () => {
+    expect(accessSignalSourceContext('APPLICATION_FORM_EXISTS')).toBe('Mentions how to join');
+    expect(accessSignalSourceContext('CURRENT_UNDERGRADS')).toBe('Current undergraduate members');
+    expect(accessSignalSourceContext('PAST_UNDERGRADS')).toBe('Past undergraduate members');
+    expect(accessSignalSourceContext('POSTED_OPENING')).toBe('Posted opening');
+    expect(accessSignalSourceContext('CREDIT_FORMALIZATION_POSSIBLE')).toBe('Course credit option');
+    expect(accessSignalSourceContext('FACULTY_SUPERVISES_STUDENT_PROJECTS')).toBe(
+      'Supervises student projects',
+    );
+  });
+
+  it('never title-cases an unlisted enum into a chip', () => {
+    expect(accessSignalSourceContext('SOME_NEW_SIGNAL')).toBe('Undergraduate access');
+    expect(accessSignalSourceContext(undefined)).toBe('Undergraduate access');
+  });
+});
+
+describe('joinPageLinkLabel', () => {
+  it('promises a join page only when the address reads as one', () => {
+    expect(joinPageLinkLabel('https://lab.example.test/join-us')).toBe('See how to join');
+    expect(joinPageLinkLabel('https://lab.example.test/opportunities')).toBe('See how to join');
+    expect(joinPageLinkLabel('https://lab.example.test/prospective-students')).toBe(
+      'See how to join',
+    );
+    expect(joinPageLinkLabel('https://lab.example.test/positions.html')).toBe('See how to join');
+  });
+
+  it('says what a page is when its address names something else', () => {
+    expect(joinPageLinkLabel('https://lab.example.test/press')).toBe(
+      'Read what they say about joining',
+    );
+    expect(joinPageLinkLabel('https://lab.example.test/news/2025/award')).toBe(
+      'Read what they say about joining',
+    );
+  });
+
+  it('judges a page by its own address segment, not by a parent segment', () => {
+    for (const nestedUrl of [
+      'https://lab.example.test/sample-join-lab/press',
+      'https://lab.example.test/careers/news/2025',
+      'https://lab.example.test/apply/about/',
+    ]) {
+      expect(joinPageLinkLabel(nestedUrl)).toBe('Read what they say about joining');
+    }
+    expect(joinPageLinkLabel('https://lab.example.test/about/join-us/')).toBe('See how to join');
+  });
+
+  it('never promises a join page over a member roster', () => {
+    for (const rosterUrl of [
+      'https://lab.example.test/students',
+      'https://lab.example.test/undergraduates',
+      'https://lab.example.test/members/undergraduates',
+    ]) {
+      expect(joinPageLinkLabel(rosterUrl)).toBe('Read what they say about joining');
+    }
+  });
+
+  it('keeps a caller-chosen label for a join-shaped page', () => {
+    expect(joinPageLinkLabel('https://lab.example.test/join', 'See how to get involved')).toBe(
+      'See how to get involved',
+    );
+    expect(joinPageLinkLabel('https://lab.example.test/press', 'See how to get involved')).toBe(
+      'Read what they say about joining',
+    );
   });
 });
 
