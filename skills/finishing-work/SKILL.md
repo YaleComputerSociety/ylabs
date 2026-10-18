@@ -71,10 +71,7 @@ None of the above verifies served output. When a change is meant to improve the 
 
 ## Stop only what you started (#5222)
 
-Record the PID of every server, database, or watcher you start, and at teardown stop it by that PID or by your own reserved port (`lsof -ti tcp:<your port> -sTCP:LISTEN | xargs kill`).
-Never pattern-kill with `pkill -f`, `killall`, or `pgrep ... | xargs kill`.
-A pattern such as `tsx src/index.ts` matches every worktree's and every session's API server on the machine, and gate test runs stopped the primary checkout's server that way several times.
-Never stop or restart anything on ports 3000 or 4000, which belong to the primary checkout.
+At teardown, stop servers by the rule in `AGENTS.md` under "Worktree workflow": by your recorded PID or reserved port only, never by pattern, and never on ports 3000 or 4000.
 
 ## Review the final diff
 
