@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -91,6 +91,55 @@ describe('ProgramWatch', () => {
         expect.objectContaining({
           count: 2,
           nextDeadlineLabel: expect.stringContaining('Summer Research Grant'),
+        }),
+      ),
+    );
+  });
+
+  it('drops the closing-soon urgency from a program the student already applied to', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Applied Grant', deadline: soon },
+              { _id: 'p2', id: 'p2', title: 'Open Grant', deadline: soon },
+            ].map((program) => ({ ...program, isAcceptingApplications: true })),
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: { watchedProgramPlans: { p1: { stage: 'APPLIED' }, p2: { stage: 'SAVED' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const onSummaryChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch onSummaryChange={onSummaryChange} />
+      </MemoryRouter>,
+    );
+
+    const appliedCard = (await screen.findByText('Applied Grant')).closest('li') as HTMLElement;
+    const openCard = screen.getByText('Open Grant').closest('li') as HTMLElement;
+    expect(appliedCard.textContent).not.toMatch(/Closing soon|days left/);
+    expect(within(appliedCard).getByText('Applied', { selector: 'span' })).toBeTruthy();
+    expect(openCard.textContent).toMatch(/Closing soon|days left/);
+    expect(appliedCard.querySelector('.text-amber-700')).toBeNull();
+    expect(openCard.querySelector('.text-amber-700')).not.toBeNull();
+    await waitFor(() =>
+      expect(onSummaryChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          approachingCount: 1,
+          notStartedCount: 1,
+          nextDeadlineLabel: expect.stringContaining('Open Grant'),
         }),
       ),
     );

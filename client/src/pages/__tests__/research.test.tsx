@@ -3026,7 +3026,7 @@ describe('Research landing watched-deadline urgency signal', () => {
     renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
 
     const cta = await screen.findByRole('link', {
-      name: '1 watched program closes within 2 weeks, 1 not started',
+      name: '1 watched program closes within 2 weeks, 1 still marked Saved',
     });
     expect(cta).toHaveAttribute('href', '/dashboard?tab=programs');
   });
