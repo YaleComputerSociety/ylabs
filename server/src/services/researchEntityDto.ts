@@ -544,6 +544,12 @@ export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
   leadMemberNames?: readonly string[];
+  /**
+   * The hosting verdict read from the whole row, for a caller that narrowed away one of
+   * its inputs before building the DTO: the detail route withholds `rosterEnrichment`
+   * (#5232).
+   */
+  hasHostedUndergraduates?: boolean;
 }
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
@@ -705,7 +711,9 @@ function derivePublicResearchEntityDto(
     }
   }
 
-  if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
+  if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
+    dto.hasUndergradHostingEvidence = true;
+  }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 
   // The browse card is the same line `shortDescription` above carries, because both

@@ -13,10 +13,7 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  officialRosterUndergraduateStatuses,
-  type OfficialRosterUndergraduateStatus,
-} from '../models/storedVocabularies';
+import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
@@ -75,6 +72,11 @@ import {
   tallyCandidateFacetDistribution,
   visibilityScopeOnly,
 } from './researchGroupFilters';
+import {
+  entityHasHostedUndergraduates,
+  listedRosterUndergraduate,
+  servableRosterSnapshot,
+} from './hostedUndergraduates';
 import {
   type AppliedStudentFilters,
   resolveStudentFilterValuesInScope,
@@ -2807,22 +2809,15 @@ export interface PublicRosterUndergraduate {
 
 const MAX_PUBLIC_ROSTER_UNDERGRADUATES = 150;
 
-const boundedRosterText = (value: unknown, maxLength: number): string => {
-  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-  return text.length <= maxLength ? text : '';
-};
-
 const rosterYear = (value: unknown): number | undefined => {
   const year = Number(value);
   return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : undefined;
 };
 
 function publicRosterUndergraduate(value: any): PublicRosterUndergraduate | null {
-  const name = boundedRosterText(value?.name, 80);
-  const status = value?.status;
-  if (!name || !(officialRosterUndergraduateStatuses as readonly string[]).includes(status)) {
-    return null;
-  }
+  const listed = listedRosterUndergraduate(value);
+  if (!listed) return null;
+  const { name, status } = listed;
   const startYear = rosterYear(value?.startYear);
   const endYear = rosterYear(value?.endYear);
   const profileUrl = publicHttpUrl(value?.profileUrl);
@@ -2841,9 +2836,8 @@ export function publicRosterUndergraduates(
   enrichment: any,
   now = new Date(),
 ): PublicRosterUndergraduate[] {
-  const snapshot = enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
-  if (!['current', 'partial'].includes(snapshot?.state)) return [];
-  if (!Array.isArray(snapshot?.undergraduates)) return [];
+  const snapshot = servableRosterSnapshot(enrichment);
+  if (!snapshot) return [];
   const freshnessExpiresAt = new Date(snapshot?.freshnessExpiresAt || 0).getTime();
   const currentIsFresh = Number.isFinite(freshnessExpiresAt) && freshnessExpiresAt >= now.getTime();
   return snapshot.undergraduates
@@ -4064,7 +4058,7 @@ export async function getResearchGroupDetail(
     // lead set. That switched off the #2913 key-names-only-this-person arm for the one
     // surface a student lands on: 8 served rows titled themselves with an organization
     // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
-    { leadMemberNames },
+    { leadMemberNames, hasHostedUndergraduates: entityHasHostedUndergraduates(group as any) },
   );
   if (withheldBy.length === 0) return detail;
   return {

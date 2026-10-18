@@ -327,6 +327,23 @@ describe('researchEntitySearchIndexService', () => {
     expect(staleFalse?.hasUndergradHostingEvidence).toBe(true);
   });
 
+  it('indexes a row whose official roster lists undergraduates as hosting, without the roster (#5232)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-official-roster',
+      name: 'Official Roster Lab',
+      archived: false,
+      hasUndergradHostingEvidence: false,
+      rosterEnrichment: {
+        state: 'partial',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        undergraduates: [{ name: 'Synthetic Student', status: 'current' }],
+      },
+    });
+
+    expect(doc?.hasUndergradHostingEvidence).toBe(true);
+    expect(doc).not.toHaveProperty('rosterEnrichment');
+  });
+
   it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-area-facet',
