@@ -2217,7 +2217,7 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Example Member/ }).getAttribute('href')).toBe(
       '/research/faculty-research-area-example-member',
     );
-    expect(screen.getByText('Faculty Research')).toBeTruthy();
+    expect(screen.getByText('Faculty research')).toBeTruthy();
     expect(screen.queryByText('Individual')).toBeNull();
   });
 

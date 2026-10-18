@@ -1225,7 +1225,13 @@ export const sourceLabelForUrl = (url: string): string => {
       return 'Undergraduate initiatives page';
     }
     if (host === 'nsf.gov' && path.startsWith('/awardsearch')) {
-      return 'NSF Award Search';
+      const awardId = parsed.searchParams.get('AWD_ID')?.trim();
+      return awardId ? `NSF award ${awardId}` : 'NSF Award Search';
+    }
+    const nihProjectId =
+      host === 'reporter.nih.gov' && path.match(/^\/project-details\/([^/]+)/)?.[1];
+    if (nihProjectId) {
+      return `NIH RePORTER project ${decodeURIComponent(nihProjectId).toUpperCase()}`;
     }
     if (host.endsWith('yale.edu')) {
       return titleFromPath(parsed.pathname);
@@ -1282,6 +1288,39 @@ const withPersonProfilesRanked = <T extends { url: string; isLikelyUnavailable: 
 export const firstCitedResearchDetailSource = (
   sources: ResearchDetailSource[],
 ): ResearchDetailSource | undefined => sources.find((source) => !source.isAttributionOnly);
+
+const sourcePathHint = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const leaf = parsed.pathname.split('/').filter(Boolean).pop();
+    return leaf ? decodeURIComponent(leaf).slice(0, 40) : '';
+  } catch {
+    return '';
+  }
+};
+
+const withDistinctLabels = <T extends { url: string; label: string }>(sources: T[]): T[] => {
+  const groups = new Map<string, T[]>();
+  sources.forEach((source) =>
+    groups.set(source.label, [...(groups.get(source.label) ?? []), source]),
+  );
+  const distinctLabelBySource = new Map<T, string>();
+  groups.forEach((group, label) => {
+    if (group.length < 2) return;
+    const hints = group.map((source) => sourcePathHint(source.url));
+    const hintsAreDistinct = hints.every(Boolean) && new Set(hints).size === hints.length;
+    group.forEach((source, index) =>
+      distinctLabelBySource.set(
+        source,
+        `${label} (${hintsAreDistinct ? hints[index] : `${index + 1} of ${group.length}`})`,
+      ),
+    );
+  });
+  return sources.map((source) => {
+    const label = distinctLabelBySource.get(source);
+    return label ? { ...source, label } : source;
+  });
+};
 
 export const buildResearchDetailSources = ({
   group,
@@ -1415,5 +1454,5 @@ export const buildResearchDetailSources = ({
         Number(right.isLikelyUnavailable || right.isPrivateNetworkOnly),
     );
 
-  return withPersonProfilesRanked(withHealth, entityRankingContext(group));
+  return withDistinctLabels(withPersonProfilesRanked(withHealth, entityRankingContext(group)));
 };

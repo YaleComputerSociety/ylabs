@@ -312,6 +312,39 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([awardPage]);
   });
 
+  it('names each NIH RePORTER project so distinct grants never share one label', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/10000001',
+          'https://reporter.nih.gov/project-details/10000002',
+          'https://reporter.nih.gov/project-details/10000003',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual([
+      'NIH RePORTER project 10000001',
+      'NIH RePORTER project 10000002',
+      'NIH RePORTER project 10000003',
+    ]);
+  });
+
+  it('keeps every distinct page under a shared label and tells the rows apart', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: ['https://example.org/grants/alpha', 'https://example.org/grants/beta'],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual([
+      'example.org source (alpha)',
+      'example.org source (beta)',
+    ]);
+  });
+
   it('drops a raw RePORTER API endpoint from the source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
@@ -323,7 +356,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(0);
   });
 
-  it('labels the kept NSF award page as NSF Award Search rather than a bare host', () => {
+  it('labels the kept NSF award page by its award rather than a bare host', () => {
     const awardPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
 
     const sources = buildResearchDetailSources({
@@ -333,7 +366,7 @@ describe('buildResearchDetailSources', () => {
       },
     });
 
-    expect(sources.map((source) => source.label)).toEqual(['NSF Award Search']);
+    expect(sources.map((source) => source.label)).toEqual(['NSF award 2535171']);
   });
 
   it('collapses www and bare-host variants of one page into a single source row', () => {

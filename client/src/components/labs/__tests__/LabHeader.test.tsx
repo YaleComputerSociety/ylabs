@@ -196,7 +196,7 @@ describe('LabHeader', () => {
       />,
     );
 
-    expect(container.textContent).toContain('Faculty Research');
+    expect(container.textContent).toContain('Faculty research');
     expect(container.textContent).toContain('Visit research website');
     expect(container.textContent).not.toContain('Visit lab website');
   });
