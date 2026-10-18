@@ -28,6 +28,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import {
@@ -556,7 +557,9 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (Array.isArray(out.methods)) {
-    const methods = normalizeResearchAreaList(out.methods);
+    const methods = normalizeResearchAreaList(
+      out.methods.map((method: unknown) => sanitizeMethodChipLabel(method)).filter(Boolean),
+    );
     if (methods.length > 0) out.methods = methods;
     else delete out.methods;
   }

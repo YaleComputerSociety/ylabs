@@ -1065,6 +1065,56 @@ describe('fieldCollectionPersonExtractor', () => {
   });
 });
 
+describe('fieldCollectionPersonExtractor title continuation (#5109)', () => {
+  const row = (description: string) => `
+    <div class="field-collection-item-field-person-info">
+      <div class="field field-name-field-person-description"><div class="field-items"><div class="field-item even">
+        <h3><a href="https://example.yale.edu/" target="_blank">Robin Fixture</a></h3>
+        ${description}
+      </div></div></div>
+    </div>`;
+  const titleOf = (description: string) =>
+    fieldCollectionPersonExtractor(row(description), {
+      pageUrl: 'https://yibs.yale.edu/people/faculty-affiliates',
+    })[0]?.title;
+
+  it('completes a rank whose department is a sibling link', () => {
+    expect(
+      titleOf(
+        '<p><em><span>Example Chair Professor of</span></em><a href="https://example.yale.edu/"> Ecology &amp; Evolutionary Biology</a></p>',
+      ),
+    ).toBe('Example Chair Professor of Ecology & Evolutionary Biology');
+  });
+
+  it('keeps a linked department whole when its name carries commas', () => {
+    expect(
+      titleOf(
+        '<p><em>Assistant Professor of</em><a href="https://example.yale.edu/"> Molecular, Cellular, and Developmental Biology</a></p>',
+      ),
+    ).toBe('Assistant Professor of Molecular, Cellular, and Developmental Biology');
+  });
+
+  it('joins a title split across several emphasised spans and stops at the unit', () => {
+    expect(
+      titleOf(
+        '<p><em>Professor of Example </em><em>Plant </em><em>Ecology and Chair of Example Studies, </em><a href="https://example.yale.edu/">Example School</a></p>',
+      ),
+    ).toBe('Professor of Example Plant Ecology and Chair of Example Studies');
+    expect(titleOf('<p><em>Example</em> Professor of Biogeochemistry, Example School</p>')).toBe(
+      'Example Professor of Biogeochemistry',
+    );
+  });
+
+  it('leaves a complete title followed by its unit unchanged', () => {
+    expect(
+      titleOf(
+        '<p><em>Director,</em> <a href="https://example.yale.edu/">Example Institute</a></p>',
+      ),
+    ).toBe('Director');
+    expect(titleOf('<p><em>Example Dean</em>, Example School</p>')).toBe('Example Dean');
+  });
+});
+
 describe('facultyThumbnailExtractor', () => {
   it('emits a slug placeholder name plus profile URL for headshot-only cards', () => {
     const html = `

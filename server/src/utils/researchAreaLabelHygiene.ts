@@ -307,6 +307,112 @@ export const isActivityOrPublicationLabel = (value: unknown): boolean => {
   return ACTIVITY_LABEL_RE.test(words) || PUBLICATION_LABEL_RE.test(words);
 };
 
+const BARE_RESEARCH_VERB_FORMS = new Set(
+  [
+    'analyze analyzes analyzing analyse analysing',
+    'examine examines examining',
+    'evaluate evaluates evaluating',
+    'investigate investigates investigating',
+    'explore explores exploring',
+    'studying researches researching',
+    'develop develops developing',
+    'identify identifies identifying',
+    'discover discovers discovering',
+    'characterize characterizes characterizing characterise characterises characterising',
+    'quantify quantifies quantifying',
+    'compare compares comparing',
+    'assess assesses assessing',
+    'implement implements implementing',
+    'conduct conducts conducting',
+    'collaborate collaborates collaborating',
+    'engage engages',
+    'consider considers considering',
+    'use uses using utilize utilizes utilizing',
+    'perform performs performing',
+    'publish publishes',
+    'advise advises',
+    'understand understands',
+    'demonstrate demonstrates',
+    'induce induces',
+    'establish establishes',
+    'disseminate disseminates',
+    'synthesize synthesizes synthesizing',
+    'harmonize harmonizes',
+    'deliver delivers',
+    'predict predicts',
+    'restore restores restoring',
+    'provide provides providing',
+    'describe describes describing',
+    'designing projecting',
+    'maintain maintains maintaining',
+    'produce produces producing',
+    'directs directing',
+    'leading supervising',
+    'writes reads rereads composes edits',
+    'translate translates translating',
+    'recruit recruits recruiting',
+    'detect detects detecting',
+    'diagnose',
+    'mitigate mitigates mitigating',
+    'intervene intervenes intervening',
+    'enumerate enumerates enumerating',
+    'approximate approximating',
+    'supporting sponsoring preparing',
+    'collate subsidize co-create',
+    'focuses',
+  ].flatMap((forms) => forms.split(' ')),
+);
+
+const THIRD_PERSON_RESEARCH_VERBS = new Set(
+  [...BARE_RESEARCH_VERB_FORMS].filter((form) => /[^s]s$/.test(form) || /ses$/.test(form)),
+);
+
+const EVALUATIVE_ADJECTIVES = new Set([
+  'innovative',
+  'novel',
+  'rigorous',
+  'robust',
+  'efficient',
+  'scalable',
+  'cutting-edge',
+  'state-of-the-art',
+]);
+
+const CHIP_CONNECTIVES = new Set(['and', 'or', '&']);
+
+const chipWords = (value: string): string[] =>
+  value
+    .toLowerCase()
+    .replace(/[\u2010-\u2015]/g, '-')
+    .split(/[\s,/;]+/)
+    .filter(Boolean);
+
+const isEvaluativeAdjective = (word: string): boolean =>
+  EVALUATIVE_ADJECTIVES.has(word) ||
+  /^(?:highly|very|extremely|fully)-[a-z]+$/.test(word) ||
+  /^[a-z]{4,}(?:able|ible)$/.test(word);
+
+/**
+ * A chip that names an action or a quality rather than a technique, instrument or approach:
+ * only verb forms from a closed research-verb lexicon ("Analyzes", "Designing", "develop,
+ * evaluate and disseminate"), a clause led by a third-person verb ("develops strategies",
+ * "regularly writes") or a bare evaluative adjective ("Scalable", "Highly-Controllable").
+ * The lexicon is closed because many gerunds and base forms are technique nouns
+ * ("modeling", "sequencing", "screening", "mapping", "design"), so none of those is listed.
+ */
+export const isBareVerbOrAdjectiveMethodLabel = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const words = chipWords(value);
+  if (words.length === 0) return false;
+  if (words.length === 1 && isEvaluativeAdjective(words[0])) return true;
+  const content = words.filter((word) => !CHIP_CONNECTIVES.has(word));
+  if (content.length > 0 && content.every((word) => BARE_RESEARCH_VERB_FORMS.has(word))) {
+    return true;
+  }
+  const lead = /ly$/.test(words[0]) && words.length > 1 ? words[1] : words[0];
+  return THIRD_PERSON_RESEARCH_VERBS.has(lead);
+};
+
 /**
  * `methods` renders through the same chip pill as `researchAreas` but shares
  * none of its vocabulary, which is how a page's own prose reached students as a
@@ -322,6 +428,7 @@ export const sanitizeMethodChipLabel = (value: unknown): string => {
   if (isSentenceShapedChip(collapsed)) return '';
   const trimmed = stripChipSentenceStop(collapsed);
   if (isActivityOrPublicationLabel(trimmed)) return '';
+  if (isBareVerbOrAdjectiveMethodLabel(trimmed)) return '';
   return trimmed;
 };
 

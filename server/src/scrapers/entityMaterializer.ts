@@ -261,7 +261,7 @@ import {
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
-import { stripTitleFieldLabel } from '../utils/titleHygiene';
+import { isTruncatedPersonTitle, stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
@@ -1791,6 +1791,14 @@ export function shouldIgnoreObservationForEntityMaterialization(
     return true;
   }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
+    return true;
+  }
+  if (
+    entityType === 'user' &&
+    observation.field === 'title' &&
+    typeof observation.value === 'string' &&
+    isTruncatedPersonTitle(observation.value)
+  ) {
     return true;
   }
   if (

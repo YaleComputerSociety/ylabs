@@ -5,6 +5,28 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: Joining Instructions, Event Narration, Cut-Off Titles And Verb Chips Are Not Content (#5109)
+
+A served research summary says what a group studies.
+Two more body shapes passed the description quality bar and served as a row's summary although neither says that, so `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names them and the quality bar refuses each for both the body and the card.
+
+- **`joining-instructions`**: a page's "prospective students" paragraph, saying who to contact, which program to apply to or where openings are posted.
+- **`event-narration`**: news about the group, meaning talks or keynotes given, awards received or papers accepted, with announcement filler such as "More details to come soon".
+
+Each is refused only when every sentence is of that kind, so research prose that closes with a joining line or mentions an award keeps its body.
+An event sentence must open on the event, within its first 60 characters, because later in a sentence the same words are usually a research object ("who wins awards") or one clause among several kinds of work.
+The resolver's quality demotion then falls back to the next admissible candidate, and when the row has none the serve path serves the row's research card as its body rather than withholding the row, because a thin but accurate description serves (2026-10-04); a card that states no research is not served in its place.
+
+Two fragment classes are refused at ingest, at materialize and at serve.
+A person title cut off at a dangling connective ("Professor of") is a fragment (`isTruncatedPersonTitle` in `server/src/utils/titleHygiene.ts`), so a complete title from another observation wins; the institute affiliates roster that produced it now reads the title the emphasised span starts and the sibling link or text completes.
+A method chip made only of verb forms from a closed research-verb lexicon, led by a third-person verb, or a bare evaluative adjective names no technique (`isBareVerbOrAdjectiveMethodLabel` in `server/src/utils/researchAreaLabelHygiene.ts`); the lexicon is closed because many gerunds and base forms ("modeling", "sequencing", "design") are technique nouns.
+
+Measured on Development on 2026-10-18 by walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code: 3 served bodies changed, all 3 joining instructions or keynote narration, and each now serves the row's research text; 223 method chips left 150 rows, every one a verb, a verb-led clause or an evaluative adjective; 3 rows lost a cut-off lead title; no row stopped serving and no card changed.
+Across all live description observations the two shapes flag 6 texts, and across all live person title observations the fragment rule flags 37, all from one roster read.
+
+The method and description arms are serve-time.
+The stored body, the stored methods and the stored person title follow when the affected rows are next materialized.
+
 ## 2026-10-17: Accounts Are Environment-Local (#5088)
 
 Decision (owner, 2026-10-17): Development, Beta and Production each keep their own `accounts`, made by sign-ins in that environment, and only the research corpus is shared by promotion.

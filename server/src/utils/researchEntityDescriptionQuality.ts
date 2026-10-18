@@ -69,6 +69,8 @@ export type DescriptionQualityFlag =
   | 'role-biography'
   | 'third-party-page'
   | 'instruction-offering'
+  | 'joining-instructions'
+  | 'event-narration'
   | 'practice-biography'
   | 'full-not-useful';
 
