@@ -39,6 +39,8 @@ import FellowshipRecipientsSection from '../components/labs/FellowshipRecipients
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
+import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
+import useUndoableRemoval from '../hooks/useUndoableRemoval';
 import OperatorPreviewNotice from '../components/labs/OperatorPreviewNotice';
 import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
@@ -358,7 +360,9 @@ const ResearchPlanSaveButton = ({
         {isSaved ? 'Saved to Dashboard' : 'Save research plan'}
       </span>
       <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-        Keep private notes and reach out later
+        {isSaved
+          ? 'Press again to remove it. You can undo.'
+          : 'Keep private notes and reach out later'}
       </span>
     </span>
     <span className="sr-only" role="status">
@@ -902,6 +906,13 @@ const LabDetail = () => {
   const payloadSlugRef = useRef<string | undefined>(undefined);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
+  const {
+    undoableItem: undoableUnsave,
+    offerUndo,
+    undoRemoval,
+    dismissUndo,
+  } = useUndoableRemoval<{ entityId: string }>();
+
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } = useFavorites(
     'researchPlans',
     { enabled: isAuthenticated },
@@ -1156,7 +1167,14 @@ const LabDetail = () => {
       return;
     }
 
-    const saved = await setSavedResearchPlanFavorite(entityId, shouldSave);
+    const change = setSavedResearchPlanFavorite(entityId, shouldSave);
+    if (shouldSave) {
+      dismissUndo();
+    } else {
+      setShowResearchPlanSavedCallout(false);
+      offerUndo({ entityId }, change);
+    }
+    const saved = await change;
     if (saved && shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
@@ -1174,6 +1192,16 @@ const LabDetail = () => {
               kind="researchPlan"
               onDismiss={() => setShowResearchPlanSavedCallout(false)}
             />
+          )}
+
+          {undoableUnsave && (
+            <UndoRemovalBanner
+              onUndo={() =>
+                void undoRemoval(({ entityId }) => setSavedResearchPlanFavorite(entityId, true))
+              }
+            >
+              Removed from your Dashboard. Undo brings back its notes and stage.
+            </UndoRemovalBanner>
           )}
 
           <LabHeader
