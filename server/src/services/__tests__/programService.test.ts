@@ -231,11 +231,11 @@ describe('program search service', () => {
       pageSize: 500,
     });
 
-    expect(chain.skip).toHaveBeenCalledWith(99_900);
-    expect(chain.limit).toHaveBeenCalledWith(100);
+    expect(chain.skip).toHaveBeenCalledWith(249_750);
+    expect(chain.limit).toHaveBeenCalledWith(250);
     expect(result).toMatchObject({
       page: 1000,
-      pageSize: 100,
+      pageSize: 250,
       totalPages: 0,
     });
   });

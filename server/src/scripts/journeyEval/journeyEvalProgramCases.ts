@@ -79,9 +79,9 @@ export interface ProgramJourneyCase {
   }>;
 }
 
-export const CLIENT_PROGRAM_PAGE_SIZE = 100;
+export const CLIENT_PROGRAM_PAGE_SIZE = 250;
 export const MAX_PROGRAM_SEARCH_PAGE = 1000;
-export const MAX_PROGRAM_SEARCH_PAGE_SIZE = 100;
+export const MAX_PROGRAM_SEARCH_PAGE_SIZE = 250;
 const TEXT_QUERY_TOTAL_PROBE = 'research';
 
 export const CORPUS_DERIVED_FILTER_FIELDS = [
