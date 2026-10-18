@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: Beta And Production Carry No Archived Research Rows (#5148)
+
+This supersedes the slim-tombstone entry below the same day: the owner chose live rows only over slim stubs, confirmed in both sessions that built them.
+A student-facing environment needs exactly two things from a merge: an old slug that redirects, and a saved plan that follows its lab.
+Both are facts about the survivor, so each live row carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, derived from Development's tombstones by one writer (the `survivor-alias-derivation` sweep stage) and re-derived by the Development-to-Beta copy at copy time, so no environment can hold a list older than the merges it no longer has rows for.
+The copy filters `research_entities` to live rows and drops the rows that hang off archived ones; Beta-to-Production copies Beta as is.
+The old-slug redirect falls back to `mergedFrom.slug`, `research-plans:retarget-merged` resolves an id no row carries through `mergedFrom.entityId`, and a saved plan on such an id reads as merged, or as retired when no survivor names it, since a serving environment cannot tell a retired row from a deleted one.
+This is not the retired redirect ledger: that was a second collection written beside the rows and it drifted, whereas `mergedFrom` is derived from the tombstones on every sweep and every copy.
+Development keeps its full archive, and the Beta-to-Development refresh still carries it back from the swap backup; deleting it is #5189.
+
 ## 2026-10-18: Beta And Production Carry Slim Archived Tombstones (#5208)
 
 Development's engine needs every full archived row: re-scraped evidence for a merged duplicate routes to its survivor through the tombstone, and an archived slug is what stops the same duplicate being minted again (#3029).

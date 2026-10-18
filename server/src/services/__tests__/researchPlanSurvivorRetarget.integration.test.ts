@@ -82,4 +82,48 @@ describe('re-pointing saved plans to merge survivors after a promotion (#5208)',
     });
     expect(plans.some((plan) => String(plan.target.id) === String(retiredId))).toBe(true);
   });
+
+  it('moves a plan whose target no row carries to the survivor naming it in mergedFrom (#5148)', async () => {
+    const survivorId = oid();
+    const mergedId = oid();
+    const goneId = oid();
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id: survivorId,
+      slug: 'synthetic-survivor',
+      name: 'Survivor',
+      archived: false,
+      mergedFrom: [{ slug: 'synthetic-merged', entityId: mergedId }],
+    });
+    const accountId = oid();
+    await mongoose.connection.db!.collection('research_plans').insertMany([
+      {
+        accountId,
+        target: { kind: 'RESEARCH_ENTITY', id: mergedId },
+        stage: 'CONTACTED',
+        privateNotes: 'synthetic note',
+        archived: false,
+      },
+      { accountId, target: { kind: 'RESEARCH_ENTITY', id: goneId }, archived: false },
+    ]);
+
+    const report = await retargetResearchPlansToMergeSurvivors({ apply: true });
+
+    expect(report).toMatchObject({
+      archivedTargets: 0,
+      mergedTargets: 1,
+      retiredTargets: 1,
+      survivors: 1,
+    });
+    const plans = await mongoose.connection
+      .db!.collection('research_plans')
+      .find({ accountId, archived: { $ne: true } })
+      .toArray();
+    expect(plans.map((plan) => String(plan.target.id)).sort()).toEqual(
+      [String(survivorId), String(goneId)].sort(),
+    );
+    expect(plans.find((plan) => String(plan.target.id) === String(survivorId))).toMatchObject({
+      stage: 'CONTACTED',
+      privateNotes: 'synthetic note',
+    });
+  });
 });
