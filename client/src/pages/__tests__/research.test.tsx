@@ -1519,7 +1519,11 @@ describe('Research page', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText('Filter by school')).not.toBeDisabled();
-      expect(screen.queryByLabelText('Filter by department')).toBeNull();
+      expect(
+        within(screen.getByLabelText('Filter by department'))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['All departments', 'Computer Science (1)']);
     });
     const selectedOption = within(screen.getByLabelText('Filter by school')).getByRole('option', {
       name: 'Yale College',
@@ -3267,6 +3271,25 @@ describe('Research zero-result recovery', () => {
       (request) => request.q === 'quantum materials' && request.suggestionProbe === undefined,
     );
     expect(acceptedRequest).toBeTruthy();
+  });
+
+  it('offers no shorter query and claims no coverage gap when an active filter removed every match', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      if (body.q === 'digital') return researchSearchResponse([researchEntity]);
+      return researchSearchResponse([]);
+    });
+
+    renderRecovery(['/research?q=digital+humanities&undergrad=1']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    await within(region).findByRole('button', { name: 'Browse all research' });
+    expect(within(region).getByRole('button', { name: 'Clear all filters' })).toBeTruthy();
+    expect(within(region).queryByRole('button', { name: /Search .* instead/ })).toBeNull();
+    expect(searchRequests.some((request) => request.suggestionProbe === true)).toBe(false);
+    expect(region.textContent).not.toContain('coverage gap');
   });
 
   it('hides the relaxed-query retry when the relaxed query would also return nothing', async () => {

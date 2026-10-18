@@ -414,3 +414,5 @@ export const sanitizeFacultyResearchCopy = (
 
 export const HOSTED_UNDERGRADUATES_LABEL = 'Has hosted undergraduate researchers';
 export const HOSTED_UNDERGRADUATES_CHIP_VALUE = 'Hosted before';
+export const NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE =
+  'No undergraduate evidence is recorded for these results yet, which is not proof there is none.';

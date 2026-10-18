@@ -49,14 +49,16 @@ const ResearchZeroResultRecovery = ({
     aria-label="Ways to recover this search"
     className="yr-muted-surface rounded-card border-dashed p-4"
   >
-    <p className="text-sm leading-relaxed text-muted">
-      {isDepartmentSearch
-        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try one of the recovery options below while this department is being seeded.'
-        : 'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
-    </p>
+    {(isDepartmentSearch || activeFilterCount === 0) && (
+      <p className="text-sm leading-relaxed text-muted">
+        {isDepartmentSearch
+          ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try one of the recovery options below while this department is being seeded.'
+          : 'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.'}
+      </p>
+    )}
 
     {activeFilterCount > 0 && (
-      <div className="mt-4">
+      <div className={isDepartmentSearch ? 'mt-4' : ''}>
         <p className="text-sm font-medium text-ink">
           Active filters removed every match. Clear them to widen your search.
         </p>

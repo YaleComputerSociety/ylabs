@@ -5,6 +5,7 @@ import ActiveFilterChip from './ActiveFilterChip';
 import {
   HOSTED_UNDERGRADUATES_CHIP_VALUE,
   HOSTED_UNDERGRADUATES_LABEL,
+  NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE,
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
@@ -55,9 +56,6 @@ const positiveFacetOptions = (values: Record<string, number> | undefined): Facet
     .map(([value, count]) => ({ value, count }))
     .sort((a, b) => a.value.localeCompare(b.value));
 
-const positiveFacetCount = (count: number | undefined): number | undefined =>
-  Number.isFinite(count) && (count as number) > 0 ? count : undefined;
-
 const withSelectedOption = (options: FacetOption[], selected: string): FacetOption[] => {
   if (!selected || options.some((option) => option.value === selected)) return options;
   return [{ value: selected }, ...options];
@@ -106,6 +104,7 @@ const ResearchFilterDisclosure = ({
     firstFieldRef.current = node;
   }, []);
   const panelId = useId();
+  const hostsUndergradsNoteId = useId();
 
   const positiveEntityTypes = useMemo(
     () =>
@@ -135,10 +134,14 @@ const ResearchFilterDisclosure = ({
     () => withSelectedOption(positiveDepartments, selectedDepartment),
     [positiveDepartments, selectedDepartment],
   );
-  const showEntityType = positiveEntityTypes.length > 1 || Boolean(selectedEntityType);
-  const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
-  const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
-  const hostsUndergradsCount = positiveFacetCount(facetDistribution.hostsUndergrads?.true);
+  const showEntityType = positiveEntityTypes.length > 0 || Boolean(selectedEntityType);
+  const showSchool = positiveSchools.length > 0 || Boolean(selectedSchool);
+  const showDepartment = positiveDepartments.length > 0 || Boolean(selectedDepartment);
+  const servedHostsUndergradsCount = facetDistribution.hostsUndergrads?.true;
+  const hostsUndergradsCount = Number.isFinite(servedHostsUndergradsCount)
+    ? servedHostsUndergradsCount
+    : undefined;
+  const noHostedUndergraduateEvidence = hostsUndergradsCount === 0 && !selectedHostsUndergrads;
   const showHostsUndergrads =
     Boolean(onHostsUndergradsChange) &&
     (hostsUndergradsCount !== undefined || selectedHostsUndergrads);
@@ -242,19 +245,28 @@ const ResearchFilterDisclosure = ({
       <legend className="sr-only">Narrow research results</legend>
       <div className="min-w-0 space-y-4">
         {showHostsUndergrads && (
-          <label className="flex min-h-11 min-w-0 items-start gap-3 text-sm font-medium text-ink">
-            <input
-              ref={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
-              type="checkbox"
-              checked={selectedHostsUndergrads}
-              onChange={(event) => onHostsUndergradsChange?.(event.target.checked)}
-              className="yr-focus-ring mt-0.5 h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand"
-            />
-            <span className="min-w-0">
-              {HOSTED_UNDERGRADUATES_LABEL}
-              {hostsUndergradsCount !== undefined ? ` (${hostsUndergradsCount})` : ''}
-            </span>
-          </label>
+          <div className="min-w-0">
+            <label className="flex min-h-11 min-w-0 items-start gap-3 text-sm font-medium text-ink">
+              <input
+                ref={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
+                type="checkbox"
+                checked={selectedHostsUndergrads}
+                disabled={noHostedUndergraduateEvidence}
+                aria-describedby={noHostedUndergraduateEvidence ? hostsUndergradsNoteId : undefined}
+                onChange={(event) => onHostsUndergradsChange?.(event.target.checked)}
+                className="yr-focus-ring mt-0.5 h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
+              />
+              <span className={`min-w-0 ${noHostedUndergraduateEvidence ? 'text-muted' : ''}`}>
+                {HOSTED_UNDERGRADUATES_LABEL}
+                {hostsUndergradsCount !== undefined ? ` (${hostsUndergradsCount})` : ''}
+              </span>
+            </label>
+            {noHostedUndergraduateEvidence && (
+              <p id={hostsUndergradsNoteId} className="ml-8 text-xs leading-relaxed text-muted">
+                {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
+              </p>
+            )}
+          </div>
         )}
         {showEntityType && (
           <label className="block min-w-0 text-sm font-medium text-ink">
