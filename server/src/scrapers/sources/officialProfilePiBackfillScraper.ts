@@ -2152,12 +2152,12 @@ function acronymExpansionNamesIdentity(
   return words.some((word) => identityTokens.includes(word));
 }
 
-/**
- * Body text of a page for the acronym-expansion read, without script and style text.
- */
 const BLOCK_LEVEL_SELECTOR =
   'address, article, aside, blockquote, br, dd, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul';
 
+/**
+ * Body text of a page for the acronym-expansion read, without script and style text.
+ */
 export function pageBodyText(html: string): string {
   const $ = cheerio.load(html);
   $('script, style, noscript').remove();
