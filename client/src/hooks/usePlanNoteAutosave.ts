@@ -20,7 +20,7 @@ const usePlanNoteAutosave = (persistNote: PersistPlanNote) => {
   const pendingRef = useRef<Record<string, string>>({});
   const persistedRef = useRef<Record<string, string>>({});
   const requestedRef = useRef<Record<string, string>>({});
-  const savingCountRef = useRef(0);
+  const inFlightRef = useRef<Record<string, number>>({});
 
   const setStatus = (id: string, status: PlanNoteSaveStatus) =>
     setNoteSaveStatuses((statuses) => ({ ...statuses, [id]: status }));
@@ -45,13 +45,15 @@ const usePlanNoteAutosave = (persistNote: PersistPlanNote) => {
       clearPending(id);
       if (requestedRef.current[id] === note) {
         setNoteSaveStatuses((statuses) =>
-          statuses[id] === 'pending' ? { ...statuses, [id]: 'saved' } : statuses,
+          statuses[id] === 'pending'
+            ? { ...statuses, [id]: inFlightRef.current[id] ? 'saving' : 'saved' }
+            : statuses,
         );
         return;
       }
       requestedRef.current[id] = note;
       setStatus(id, 'saving');
-      savingCountRef.current += 1;
+      inFlightRef.current[id] = (inFlightRef.current[id] ?? 0) + 1;
       try {
         await (options ? persistNote(id, note, options) : persistNote(id, note));
         persistedRef.current[id] = note;
@@ -59,9 +61,11 @@ const usePlanNoteAutosave = (persistNote: PersistPlanNote) => {
       } catch {
         if (requestedRef.current[id] !== note) return;
         requestedRef.current[id] = persistedRef.current[id];
+        if (!(id in pendingRef.current)) pendingRef.current[id] = note;
         setStatus(id, 'error');
       } finally {
-        savingCountRef.current -= 1;
+        inFlightRef.current[id] -= 1;
+        if (inFlightRef.current[id] === 0) delete inFlightRef.current[id];
       }
     },
     [persistNote],
@@ -94,7 +98,9 @@ const usePlanNoteAutosave = (persistNote: PersistPlanNote) => {
       if (document.visibilityState === 'hidden') flushPendingNotes();
     };
     const holdUnloadWhileUnsaved = (event: BeforeUnloadEvent) => {
-      if (Object.keys(pendingRef.current).length === 0 && savingCountRef.current === 0) return;
+      const hasUnsavedNote =
+        Object.keys(pendingRef.current).length > 0 || Object.keys(inFlightRef.current).length > 0;
+      if (!hasUnsavedNote) return;
       flushPendingNotes();
       event.preventDefault();
     };

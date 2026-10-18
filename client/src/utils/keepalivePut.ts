@@ -1,4 +1,5 @@
 import { buildApiUrl } from './apiBaseUrl';
+import { dispatchHttpStatusEvent } from './httpStatusEvents';
 
 /**
  * A PUT the browser keeps sending after the page unloads. It calls fetch directly because
@@ -13,5 +14,8 @@ export const keepalivePut = async (path: string, body: unknown): Promise<void> =
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`Keepalive PUT failed with ${response.status}`);
+  if (response.ok) return;
+  const data = response.status === 429 ? await response.json().catch(() => undefined) : undefined;
+  dispatchHttpStatusEvent(response.status, response.headers.get('retry-after'), data);
+  throw new Error(`Keepalive PUT failed with ${response.status}`);
 };

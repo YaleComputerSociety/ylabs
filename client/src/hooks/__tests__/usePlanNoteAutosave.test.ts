@@ -86,4 +86,94 @@ describe('usePlanNoteAutosave', () => {
     expect(unsaved.defaultPrevented).toBe(true);
     expect(persist).toHaveBeenCalledWith('plan-1', 'draft', { keepalive: true });
   });
+
+  it('keeps a note whose save failed unsaved so an unload holds and retries it', async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(undefined);
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('error');
+
+    const unload = new Event('beforeunload', { cancelable: true });
+    await act(async () => {
+      window.dispatchEvent(unload);
+    });
+
+    expect(unload.defaultPrevented).toBe(true);
+    expect(persist).toHaveBeenLastCalledWith('plan-1', 'draft', { keepalive: true });
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('saved');
+  });
+
+  it('retries a note whose save failed when the document is hidden', async () => {
+    vi.useFakeTimers();
+    const persist = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(undefined);
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    await act(async () => {
+      setVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith('plan-1', 'draft', { keepalive: true });
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('saved');
+  });
+
+  it('stops holding a failed note once its save is cancelled', async () => {
+    vi.useFakeTimers();
+    const persist = vi.fn().mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    act(() => result.current.cancelNoteSave('plan-1'));
+
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+  });
+
+  it('reports saving rather than saved when an edit reverts to text still being saved', async () => {
+    vi.useFakeTimers();
+    let settle: () => void = () => {};
+    const persist = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft!'));
+    act(() => result.current.scheduleNoteSave('plan-1', 'draft'));
+    await act(async () => {
+      vi.advanceTimersByTime(700);
+    });
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('saving');
+
+    await act(async () => settle());
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('saved');
+  });
 });
