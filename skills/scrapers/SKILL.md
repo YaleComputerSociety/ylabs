@@ -935,6 +935,9 @@ The image needs a matching change only when a lane starts depending on something
 - a new Node major, because the image hard-codes `FROM node:26-bookworm-slim` rather than reading the `engines` range in `package.json`.
 
 After such a change, build the image locally (`docker build -f deploy/sweep-runner/Dockerfile .`, with at least 6 GB of VM memory) and run its `--dry-run` before merging.
+The image rebuilds only when `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` or `.yarnrc.yml` changes, so its `/app` code is routinely older than `beta`.
+Re-run a source on Render with `yarn ops:sweep rerun <source>`, which runs current `beta` through the entrypoint's `--rerun-source` mode and compares the run with the last comparable one; never start a one-off job that runs `/app/server` directly.
+`yarn ops:sweep status` reads the last weekly run and `yarn ops:sweep probe-permissions` tests the sweep's database role.
 `docs/data-refresh-runbook.md` owns the Render settings and the runbook for the job.
 
 ## Active source scrapers (`server/src/scrapers/sources/`)

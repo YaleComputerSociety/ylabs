@@ -8,6 +8,8 @@ export interface RenderJob {
   id: string;
   serviceId: string;
   status?: RenderJobStatus;
+  createdAt?: string;
+  startCommand?: string;
   startedAt?: string;
   finishedAt?: string;
 }
@@ -150,4 +152,65 @@ export async function waitForRenderJob(
     }
     await sleep(wait.intervalMs);
   }
+}
+
+export interface RenderDeploy {
+  id: string;
+  status?: string;
+  commitId?: string;
+  createdAt?: string;
+  finishedAt?: string;
+}
+
+const unwrapListItem = (item: unknown, key: string): Record<string, unknown> | null => {
+  if (!item || typeof item !== 'object') return null;
+  const record = item as Record<string, unknown>;
+  const inner = record[key];
+  return inner && typeof inner === 'object' ? (inner as Record<string, unknown>) : record;
+};
+
+export async function listRenderDeploys(
+  options: RenderClientOptions,
+  serviceId: string,
+  limit = 20,
+): Promise<RenderDeploy[]> {
+  const listed = await request(
+    options,
+    'GET',
+    `/services/${encodeURIComponent(serviceId)}/deploys?limit=${limit}`,
+  );
+  if (!Array.isArray(listed)) throw new Error('Render API returned no deploy list');
+  return listed.flatMap((item) => {
+    const deploy = unwrapListItem(item, 'deploy');
+    if (!deploy || typeof deploy.id !== 'string') return [];
+    const commit = deploy.commit as { id?: unknown } | undefined;
+    return [
+      {
+        id: deploy.id,
+        status: typeof deploy.status === 'string' ? deploy.status : undefined,
+        commitId: typeof commit?.id === 'string' ? commit.id : undefined,
+        createdAt: typeof deploy.createdAt === 'string' ? deploy.createdAt : undefined,
+        finishedAt: typeof deploy.finishedAt === 'string' ? deploy.finishedAt : undefined,
+      },
+    ];
+  });
+}
+
+export async function listRenderJobs(
+  options: RenderClientOptions,
+  serviceId: string,
+  limit = 20,
+): Promise<RenderJob[]> {
+  const listed = await request(
+    options,
+    'GET',
+    `/services/${encodeURIComponent(serviceId)}/jobs?limit=${limit}`,
+  );
+  if (!Array.isArray(listed)) throw new Error('Render API returned no job list');
+  return listed.flatMap((item) => {
+    const job = unwrapListItem(item, 'job');
+    return job && typeof job.id === 'string' && typeof job.serviceId === 'string'
+      ? [job as unknown as RenderJob]
+      : [];
+  });
 }
