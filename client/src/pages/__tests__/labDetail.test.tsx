@@ -281,6 +281,78 @@ describe('LabDetail page', () => {
     expect(await screen.findByRole('button', { name: 'Save research plan' })).toBeTruthy();
   });
 
+  it('offers an undo after unsaving from the detail page and re-saves on undo', async () => {
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    mockedAxios.put.mockResolvedValue({ data: { savedResearchEntityIds: [DEFAULT_SLUG] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+
+    const saved = await screen.findByRole('button', { name: 'Saved to Dashboard' });
+    expect(saved.textContent).toContain('Press again to remove it. You can undo.');
+    fireEvent.click(saved);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: [DEFAULT_SLUG] },
+      }),
+    );
+    expect(await screen.findByRole('button', { name: 'Saved to Dashboard' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  });
+
+  it('drops the unsave undo when following a link to another research page', async () => {
+    const OTHER_SLUG = 'related-example-research';
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+      relatedResearchEntities: [
+        {
+          id: OTHER_SLUG,
+          slug: OTHER_SLUG,
+          name: 'Neighbor Example Lab',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          departments: [],
+        },
+      ],
+    };
+    const otherPayload: LabDetailPayload = {
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        _id: OTHER_SLUG,
+        slug: OTHER_SLUG,
+        name: 'Neighbor Example Lab',
+      },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+    const serveDefault = mockedAxios.get.getMockImplementation() as (url: string) => unknown;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === `/research/${OTHER_SLUG}`
+        ? Promise.resolve({ data: otherPayload })
+        : serveDefault(url),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved to Dashboard' }));
+    expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('link', { name: /Neighbor Example Lab/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Neighbor Example Lab' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(screen.queryByText(/Removed from your Dashboard/)).toBeNull();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+  });
+
   it('redirects an archived slug to the canonical entity slug', async () => {
     const OLD_SLUG = 'nsf-pi-archived-shell';
     const CANONICAL_SLUG = 'named-canonical-lab';
