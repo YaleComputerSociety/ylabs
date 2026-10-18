@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { Account } from '../../models/account';
 import { AnalyticsEvent, AnalyticsEventType } from '../../models/analytics';
 import { parseAnalyticsRange } from '../../utils/analyticsRange';
 import { getAnalytics, invalidateAnalyticsCaches } from '../analyticsService';
@@ -20,6 +21,8 @@ describe('the per-card today breakdown over a real store', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('analytics_today_boundary_test'));
+    // getAnalytics $lookups `accounts`; without this the autoIndex build can create that collection mid-aggregate, which MongoDB rejects as appearing after a restore.
+    await Account.init();
   });
 
   afterAll(async () => {
