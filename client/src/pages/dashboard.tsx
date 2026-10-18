@@ -103,7 +103,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'dashboard')}
             >
-              {withCount('Dashboard', savedResearchCount)}
+              {withCount('Saved research', savedResearchCount)}
             </button>
             <button
               type="button"
@@ -117,7 +117,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'programs')}
             >
-              {withCount('Program Watch', programSummary.count)}
+              {withCount('Watched programs', programSummary.count)}
             </button>
           </div>
         </div>

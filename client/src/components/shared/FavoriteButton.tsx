@@ -4,6 +4,9 @@
 import React from 'react';
 import { BookmarkIcon } from './icons';
 
+export const watchControlLabel = (title: string, isWatched: boolean): string =>
+  `${isWatched ? 'Stop watching' : 'Watch'} ${title}`;
+
 interface FavoriteButtonProps {
   isFavorite: boolean;
   onToggle: (e: React.MouseEvent) => void;
@@ -37,7 +40,7 @@ const FavoriteButton = React.memo(
         type="button"
         onClick={onToggle}
         className={buttonClassName}
-        aria-label={ariaLabel || (isFavorite ? 'Remove from favorites' : 'Add to favorites')}
+        aria-label={ariaLabel || (isFavorite ? 'Stop watching' : 'Watch')}
         aria-pressed={isFavorite}
         title={title}
       >

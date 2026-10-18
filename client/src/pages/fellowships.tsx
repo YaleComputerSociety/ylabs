@@ -863,7 +863,7 @@ const Fellowships = () => {
                 to="/dashboard?tab=programs"
                 className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition-colors hover:bg-panel yr-focus-ring"
               >
-                Saved programs
+                Watched programs
               </Link>
               <a
                 href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"

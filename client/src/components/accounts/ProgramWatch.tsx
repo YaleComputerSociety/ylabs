@@ -443,9 +443,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                             aria-label={
                               isEditing
                                 ? `Hide note for ${program.title}`
-                                : `Add note for ${program.title}`
+                                : note
+                                  ? `Edit note for ${program.title}`
+                                  : `Add note for ${program.title}`
                             }
-                            title={isEditing ? 'Hide note' : 'Add note'}
+                            title={isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note'}
                             className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
                               note
                                 ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'

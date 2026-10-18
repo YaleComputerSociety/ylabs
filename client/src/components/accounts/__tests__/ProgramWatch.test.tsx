@@ -245,7 +245,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
 
     await waitFor(() =>
       expect(mockedAxios.delete).toHaveBeenCalledWith('/users/watchedPrograms', {
@@ -266,7 +266,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Travel Fellowship');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[1]);
 
     await waitFor(() => expect(mockedAxios.delete).toHaveBeenCalled());
     expect(
@@ -297,7 +297,7 @@ describe('ProgramWatch', () => {
     );
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() =>
@@ -333,7 +333,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
     expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
@@ -350,7 +350,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note for Summer Research Grant' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit note for Summer Research Grant' }));
     const note = screen.getByRole('textbox', { name: 'Note for Summer Research Grant' });
     act(() => note.focus());
     fireEvent.blur(note);
@@ -491,7 +491,7 @@ describe('ProgramWatch control containment', () => {
     for (const title of ['Summer Research Grant', 'Travel Fellowship']) {
       const card = cardOf(title);
       expect(card).toBeTruthy();
-      const noteButton = screen.getByRole('button', { name: `Add note for ${title}` });
+      const noteButton = screen.getByRole('button', { name: new RegExp(`^(Add|Edit) note for ${title}$`) });
       const stageControl = screen.getByLabelText(`Outreach stage for ${title}`);
       expect(card?.contains(noteButton)).toBe(true);
       expect(card?.contains(stageControl)).toBe(true);
@@ -525,7 +525,7 @@ describe('ProgramWatch control containment', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    const withNote = screen.getByRole('button', { name: 'Add note for Summer Research Grant' });
+    const withNote = screen.getByRole('button', { name: 'Edit note for Summer Research Grant' });
     const withoutNote = screen.getByRole('button', { name: 'Add note for Travel Fellowship' });
 
     expect(withNote.className).not.toMatch(/\byellow-/);
