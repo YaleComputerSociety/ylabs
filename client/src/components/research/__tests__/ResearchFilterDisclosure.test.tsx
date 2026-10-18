@@ -38,6 +38,13 @@ afterEach(() => {
 });
 
 describe('ResearchFilterDisclosure', () => {
+  it('says the filter options are loading, not that nothing can narrow the results, before the first counts arrive (#5146)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: {}, isLoadingOptions: true });
+
+    expect(screen.getByText('Filter options will appear when this search finishes.')).toBeTruthy();
+    expect(screen.queryByText('No additional filters can narrow these results.')).toBeNull();
+  });
+
   it('offers the hosted-undergraduates filter with the count it returns, and a chip that removes it', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props, rerender } = renderFilters({

@@ -945,6 +945,88 @@ describe('Research page', () => {
       });
   });
 
+  it('rewrites a department the corpus does not hold out of the URL and the chips instead of claiming a coverage gap (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], { appliedFilters: { departments: [] } });
+    });
+
+    render(
+      <MemoryRouter
+        initialEntries={['/research?q=machine+learning&department=Synthetic+Nonexistent+Dept']}
+      >
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning'),
+    );
+    expect(screen.queryByRole('button', { name: /Remove Department/ })).toBeNull();
+    expect(screen.queryByText(/coverage gap/)).toBeNull();
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      1,
+    );
+  });
+
+  it('keeps a department search narrowed to its department rather than letting the server drop it (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?dept=Computer+Science']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const searchBodies = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/research/search')
+      .map(
+        ([, body]) =>
+          body as { filters?: { departments?: string[] }; resolveFilterValues?: boolean },
+      );
+    expect(searchBodies.length).toBeGreaterThan(0);
+    for (const body of searchBodies) {
+      expect(body.filters?.departments).toContain('Computer Science');
+      expect(body.resolveFilterValues).toBe(false);
+    }
+  });
+
+  it('drops a type the page cannot read from the URL (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&type=NOT_A_TYPE']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning'),
+    );
+  });
+
   it('filters by hosted undergraduate researchers through the URL, the request, and a removable chip', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

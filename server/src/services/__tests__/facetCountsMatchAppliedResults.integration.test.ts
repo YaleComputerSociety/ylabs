@@ -26,6 +26,7 @@ import {
   invalidateResearchEntitySearchEmbedderCache,
 } from '../researchEntitySearchIndexService';
 import type { ResearchGroupFilterInput } from '../researchGroupFilters';
+import { clearResearchFilterVocabularyCache } from '../researchFilterVocabulary';
 
 type IndexDocument = {
   id: string;
@@ -324,6 +325,7 @@ describe('a research filter option count is the number of results applying it re
 
   beforeEach(() => {
     invalidateResearchEntitySearchEmbedderCache();
+    clearResearchFilterVocabularyCache();
     mocks.search.mockReset();
     mocks.search.mockImplementation(fakeSearch);
     mocks.getEmbedders.mockReset();
@@ -377,6 +379,41 @@ describe('a research filter option count is the number of results applying it re
     expect(
       applied.researchEntities.every((entity: any) => entity.hasUndergradHostingEvidence === true),
     ).toBe(true);
+  });
+
+  it('drops a school no row holds and reports the filters it applied, instead of answering empty (#5146)', async () => {
+    const result = await search(QUERY, {
+      school: ['Synthetic Nowhere School'],
+      entityType: ['LAB'],
+    });
+    const typeOnly = await search(QUERY, { entityType: ['LAB'] });
+
+    expect(result.appliedFilters).toEqual({ school: [] });
+    expect(result.estimatedTotalHits).toBe(typeOnly.estimatedTotalHits);
+    expect(result.estimatedTotalHits).toBeGreaterThan(0);
+  });
+
+  it('searches a department under the spelling the corpus holds (#5146)', async () => {
+    const result = await search('', { departments: ['chemistry'] });
+    const canonical = await search('', { departments: ['Chemistry'] });
+
+    expect(result.appliedFilters).toEqual({ departments: ['Chemistry'] });
+    expect(canonical.appliedFilters).toBeUndefined();
+    expect(result.estimatedTotalHits).toBe(canonical.estimatedTotalHits);
+  });
+
+  it('keeps a department no row holds when the caller opts out of resolving filter values', async () => {
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { departments: ['Synthetic Nowhere Department'] },
+      1,
+      24,
+      {},
+      { correctSpelling: false, resolveFilterValues: false },
+    );
+
+    expect(result.appliedFilters).toBeUndefined();
+    expect(result.estimatedTotalHits).toBe(0);
   });
 
   it('holds for a filters-only browse', async () => {
