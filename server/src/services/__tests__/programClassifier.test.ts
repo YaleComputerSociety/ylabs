@@ -892,6 +892,16 @@ describe('classifyProgram reads a program that excludes Yale students as out of 
     ).not.toBe('Archive / review');
   });
 
+  it('keeps a program that only closes one benefit to Yale students', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Open to all undergraduates. Program housing is not open to Yale students.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
   it('keeps a Yale-only program that says non-Yale students are not eligible', () => {
     for (const eligibility of [
       'Open to Yale College juniors; non-Yale students are not eligible.',
