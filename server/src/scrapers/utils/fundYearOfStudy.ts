@@ -147,7 +147,9 @@ const ANY_LEVEL = new RegExp(
 );
 
 const QUANTIFIED_LEVEL_AFTER =
-  /^\s*(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)\b/;
+  /^\s*(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)\b(?![\s,]+(?:after|except|unless|beyond|other\s+than)\b)/;
+
+const DIRECTLY_AFTER_FOR = /\bfor\s+$/;
 
 const ELIGIBILITY_CUE =
   /\b(?:eligib\w*|open(?: only)? to|available(?: only)? to|intended(?: only)? for|designed for|limited to|restricted to|reserved for|awarded(?: only)? to|awards? to|enrolled in|welcomed? from|applications? (?:are )?(?:accepted |invited |welcomed? )?from|must be(?: an?)?)\b/;
@@ -291,7 +293,7 @@ function roleOf(before: string, after: string): GroupRole {
 
 // "Senior essay" names a piece of work rather than who may apply, so it is not an unread year (#5121).
 const YEAR_WORD =
-  /\b(?:(?:first|second|third|fourth) years?|freshm[ae]n|sophomores?|juniors?|seniors?)\b(?!\s+(?:essays?|thes[ie]s|projects?|research)\b)/g;
+  /\b(?:(?:first|second|third|fourth) years?|freshm[ae]n|sophomores?|juniors?|seniors?(?!\s+(?:essays?|thes[ie]s|projects?|research)\b))\b/g;
 
 function yearWordCount(text: string): number {
   return Array.from(text.matchAll(YEAR_WORD)).length;
@@ -343,9 +345,11 @@ function groupsIn(sentence: string, isEligibilitySection: boolean): LevelGroup[]
     const negation = negationOf(before, after);
     if (negation === 'qualified') continue;
     const quantifiedAfter = !negation && QUANTIFIED_LEVEL_AFTER.test(after);
-    if (!negation && !quantifiedAfter && !isAdmissionCued(before, after, isEligibilitySection)) {
-      continue;
-    }
+    const cued =
+      Boolean(negation) ||
+      isAdmissionCued(before, after, isEligibilitySection) ||
+      (quantifiedAfter && DIRECTLY_AFTER_FOR.test(before));
+    if (!cued) continue;
     phrases.push(phrase);
     groups.push({
       terms: expandYearRange(phrase, termsOfPhrase(phrase)),

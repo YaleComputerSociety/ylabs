@@ -135,6 +135,28 @@ describe('resolveFundYearOfStudy reads a level quantified by "at any level" as t
     );
   });
 
+  it('does not read a past-recipient mention of a quantified level as admission evidence', () => {
+    expect(
+      nonEligibility('Recipients have included undergraduates at all levels.', ['Junior']),
+    ).toEqual({ kind: 'filter', values: ['Junior'] });
+  });
+
+  it('does not read a quantified level followed by a qualifier as the whole level', () => {
+    expect(
+      nonEligibility('Graduate students in all years after the first are eligible.', [
+        'PhD Post-Candidacy',
+      ]),
+    ).toEqual({ kind: 'filter', values: ['PhD Post-Candidacy'] });
+  });
+
+  it('still reads a year-named research grant as an unread year', () => {
+    expect(
+      nonEligibility('Any undergraduate students may apply for the first-year research grant.', [
+        'First-Year Student',
+      ]),
+    ).toEqual({ kind: 'prose', values: ['First-Year Student'] });
+  });
+
   it('keeps refining an unquantified level by the listing filter', () => {
     expect(
       nonEligibility('The program invites applications from undergraduate students.', [
