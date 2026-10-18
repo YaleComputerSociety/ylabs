@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import axios from '../utils/axios';
 
 type WatchedProgramStages = Record<string, string | undefined>;
 
-export const useWatchedProgramStages = (watchedIds: readonly string[]): WatchedProgramStages => {
+export const useWatchedProgramStages = (
+  watchedIds: readonly string[],
+): { stages: WatchedProgramStages; reloadStages: () => void } => {
   const [stages, setStages] = useState<WatchedProgramStages>({});
+  const [reloadToken, setReloadToken] = useState(0);
   const watchedKey = [...watchedIds].sort().join(',');
+  const reloadStages = useCallback(() => setReloadToken((token) => token + 1), []);
 
   useEffect(() => {
     if (!watchedKey) return;
@@ -26,7 +30,7 @@ export const useWatchedProgramStages = (watchedIds: readonly string[]): WatchedP
     return () => {
       isCurrent = false;
     };
-  }, [watchedKey]);
+  }, [watchedKey, reloadToken]);
 
-  return watchedKey ? stages : {};
+  return { stages: watchedKey ? stages : {}, reloadStages };
 };

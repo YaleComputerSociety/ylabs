@@ -475,7 +475,8 @@ const Fellowships = () => {
     setFavorite,
     reloadFavorites,
   } = useFavorites('watchedPrograms', { surface: 'search' });
-  const watchedProgramStages = useWatchedProgramStages(favFellowshipIds);
+  const { stages: watchedProgramStages, reloadStages: reloadWatchedProgramStages } =
+    useWatchedProgramStages(favFellowshipIds);
   const settledStageBadges = useMemo(
     () =>
       Object.fromEntries(
@@ -484,7 +485,11 @@ const Fellowships = () => {
     [favFellowshipIds, watchedProgramStages],
   );
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
-    useUndoableProgramUnwatch({ setFavorite, surface: 'search' });
+    useUndoableProgramUnwatch({
+      setFavorite,
+      surface: 'search',
+      onPlanRestored: reloadWatchedProgramStages,
+    });
   const capturingPlanIdsRef = useRef(new Set<string>());
   const {
     selectedItem: selectedFellowship,

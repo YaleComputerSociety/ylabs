@@ -1130,6 +1130,58 @@ describe('Programs page', () => {
     expect(within(pending).queryByText('Applied')).toBeNull();
   });
 
+  it('shows the restored stage again after undoing an unwatch', async () => {
+    let storedIds = ['applied-1'];
+    let storedPlans: Record<string, { stage: string }> = { 'applied-1': { stage: 'APPLIED' } };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: storedIds } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: { ...storedPlans } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.delete.mockImplementation(() => {
+      storedIds = [];
+      storedPlans = {};
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockImplementation(
+      (url: string, body?: { data?: { plan?: { stage: string } } }) => {
+        if (url === '/users/watchedPrograms') storedIds = ['applied-1'];
+        const plan = body?.data?.plan;
+        if (url === '/users/watchedProgramPlans/applied-1' && plan) {
+          return new Promise((resolve) =>
+            setTimeout(() => {
+              storedPlans = { 'applied-1': { stage: plan.stage } };
+              resolve({ data: {} });
+            }, 20),
+          );
+        }
+        return Promise.resolve({ data: {} });
+      },
+    );
+
+    renderPage([
+      baseFellowship({
+        id: 'applied-1',
+        title: 'Applied Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(5),
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: 'Due in the next 2 weeks' });
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Saved program applied-1' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+  });
+
   describe('a direct link that opens no program', () => {
     const failDetail = (status?: number) =>
       mockedAxios.get.mockImplementation((url: string) => {
