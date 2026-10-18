@@ -64,15 +64,14 @@ export const emptyRelationshipEdgeSettlementOutcome = (): RelationshipEdgeSettle
   refusedSurvivorNotLive: 0,
 });
 
-const edgeKey = (sourceId: string, targetId: string, relationshipType: string): string => {
-  const type = relationshipType.trim();
-  return sourceId && targetId && type ? `${sourceId}:${targetId}:${type}` : '';
-};
+const edgeKey = (sourceId: string, targetId: string): string =>
+  sourceId && targetId ? `${sourceId}:${targetId}` : '';
 
 // An edge with an endpoint that has no live home is left alone: the detail page already
-// hides it, and nothing names where it should point. The survivor's edges count whether
-// archived or not, because the unique index on (source, target, type) refuses a repoint
-// beside an archived one too, and an archived survivor edge is a retraction to respect.
+// hides it, and nothing names where it should point. A survivor edge holds its (source,
+// target) pair whatever its type, because the materializer keeps one edge per pair and the
+// detail page would otherwise serve two links between the same rows. The survivor's edges
+// count whether archived or not, because an archived survivor edge is a retraction to respect.
 // An edge moved here counts as held, so two archived rows never hand the survivor the
 // same link twice.
 export function planRelationshipEdgeSettlements({
@@ -84,7 +83,7 @@ export function planRelationshipEdgeSettlements({
 }): RelationshipEdgeSettlement[] {
   const heldEdgeIdByKey = new Map<string, string>();
   for (const edge of heldEdges) {
-    const key = edgeKey(edge.sourceId, edge.targetId, edge.relationshipType);
+    const key = edgeKey(edge.sourceId, edge.targetId);
     if (key && !heldEdgeIdByKey.has(key)) heldEdgeIdByKey.set(key, edge.id);
   }
 
@@ -93,7 +92,7 @@ export function planRelationshipEdgeSettlements({
     const { liveSourceId, liveTargetId } = edge;
     if (!liveSourceId || !liveTargetId) return { ...base, action: 'leave' };
     if (liveSourceId === liveTargetId) return { ...base, action: 'archive-self-loop' };
-    const key = edgeKey(liveSourceId, liveTargetId, edge.relationshipType);
+    const key = edgeKey(liveSourceId, liveTargetId);
     const survivorEdgeId = key ? heldEdgeIdByKey.get(key) : undefined;
     if (survivorEdgeId && survivorEdgeId !== edge.id) {
       return { ...base, action: 'archive-redundant', survivorEdgeId };

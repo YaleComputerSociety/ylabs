@@ -225,4 +225,32 @@ describe('archiving a research entity settles its live relationship edges (#5122
       'archive-redundant',
     ]);
   });
+
+  it('archives a moved link when the survivor already links the same rows under another type', async () => {
+    const center = await entity('synthetic-center');
+    const survivor = await entity('synthetic-survivor-lab');
+    const shell = await entity('synthetic-shell-area');
+    const held = await edge(center._id, survivor._id, { relationshipType: 'AFFILIATED_LAB' });
+    const moved = await edge(center._id, shell._id);
+
+    const result = await archiveResearchEntities({
+      ids: [shell._id],
+      archivedReason: 'synthetic:fold',
+      set: { canonicalGroupId: survivor._id },
+      survivorId: survivor._id,
+    });
+
+    expect(result.relationships).toMatchObject({ repointed: 0, archivedRedundant: 1 });
+    expect((await stored(held._id))?.archived).toBe(false);
+    const movedRow = await stored(moved._id);
+    expect(movedRow?.archived).toBe(true);
+    expect(String(movedRow?.targetResearchEntityId)).toBe(String(shell._id));
+    expect(
+      await ResearchEntityRelationship.countDocuments({
+        sourceResearchEntityId: center._id,
+        targetResearchEntityId: survivor._id,
+        archived: { $ne: true },
+      }),
+    ).toBe(1);
+  });
 });
