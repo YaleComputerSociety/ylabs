@@ -76,13 +76,13 @@ It rebuilds the model index but does not reconcile retired indexes, and it does 
 
 Set all four in the shell that runs the command.
 `MONGODBURL`, `MEILISEARCH_HOST` and `MEILISEARCH_INDEX_PREFIX` come from the Render dashboard for the target service.
-`MEILISEARCH_WRITE_API_KEY` lives on the Beta web service and the Production operator service, and never on the Production web service: for a Production run from the web service's shell, export it in that shell session (see [Meilisearch keys](#meilisearch-keys)).
+The reindex key lives only on the two operator services; each web service holds a narrower document-sync key in the same variable (see [Meilisearch keys](#meilisearch-keys)), so run a reindex as a one-off job on the operator service, or export the reindex key for one shell session.
 
 | Variable                   | Shape                                                  | Why                                                                                                                                                               |
 | -------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MONGODBURL`               | `mongodb+srv://<user>:<password>@<cluster>/<database>` | The database the index is rebuilt **from**. Cross-checked against the environment; a mismatch is refused.                                                         |
 | `MEILISEARCH_HOST`         | `http://<meili-private-service>:7700`                  | The instance to rebuild. Must not be empty or the rebuild targets localhost. This is Render's internal address, which is why the run happens in the Render shell. |
-| `MEILISEARCH_WRITE_API_KEY` | the environment's reindex key from [Meilisearch keys](#meilisearch-keys): on the Beta web service or the Production operator service, or exported in the Production shell | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged. The legacy `MEILISEARCH_API_KEY` is still accepted in its place until the scoped key exists. |
+| `MEILISEARCH_WRITE_API_KEY` | the environment's reindex key from [Meilisearch keys](#meilisearch-keys): on that environment's operator service, or exported in a shell session | Write access. Without it the rebuild fails before the swap, and the serving index is unchanged. The legacy `MEILISEARCH_API_KEY` is still accepted in its place until the scoped key exists. |
 | `MEILISEARCH_INDEX_PREFIX` | e.g. `beta` or `prod`, with **no** trailing underscore | Namespaces the indexes. An empty prefix is refused so a remote rebuild cannot clobber the unprefixed local index.                                                 |
 
 The trailing underscore matters, and getting it wrong fails quietly rather than loudly.
@@ -100,7 +100,8 @@ The server uses two keys with different rights (#4014).
 | Variable | Read by | Rights |
 | -------- | ------- | ------ |
 | `MEILISEARCH_SEARCH_API_KEY` | the web service: search, the similar-research rail, the embedder check, readiness | `search` and `settings.get` on `<prefix>_researchentities` only |
-| `MEILISEARCH_WRITE_API_KEY` | the reindex and the sync and repair scripts (`getMeiliIndex`, `getMeiliClient`) | document, index (including delete and swap) and settings writes on `<prefix>_*` only; no key management |
+| `MEILISEARCH_WRITE_API_KEY` on an operator service | the reindex and the sync and repair scripts (`getMeiliIndex`, `getMeiliClient`) | the reindex key: document, index (including delete and swap) and settings writes on `<prefix>_*` only; no key management |
+| `MEILISEARCH_WRITE_API_KEY` on a web service | live document sync after admin edits and gate changes (`meiliSyncService`) | the document-sync key: `documents.add`, `documents.delete`, `indexes.get` and `tasks.get` on `<prefix>_researchentities` only |
 | `MEILISEARCH_API_KEY` | legacy fallback for either role | whatever it is, usually the master key |
 
 `server/src/utils/meiliClient.ts` resolves each role's own variable first and falls back to `MEILISEARCH_API_KEY`.
@@ -141,19 +142,30 @@ Meilisearch records an index swap with no `indexUid`, so a prefix-scoped key can
 The rebuild therefore confirms the swap from state the key can read: an index's `createdAt` moves with its contents in a swap, so the swap is confirmed once the live index reports the `createdAt` the staging index was created with, polled for up to three minutes.
 An unconfirmed swap exits non-zero.
 Measured on the local Meilisearch on 2026-10-04: with a key scoped to one prefix, a full rebuild of 4,193 documents created, filled, swapped and deleted its staging index, and the same key answered 403 on another prefix's index for a read, a document read and a delete; the code before this change failed the same run with `Task ... not found`.
-The write key can delete and swap its environment's indexes, so where it lives is a per-environment decision.
-Beta stores its `beta_*` write key on the Beta web service, because the worst a compromised staging process can do with it is wipe Beta's index, which a rebuild restores, and storing it lets a Render one-off job run the rebuild.
-Production keeps its write key off the Production web service, because a compromised student-facing process holding it could take student search down.
-Its only stored copy is on the Production operator service, which serves no requests and exists so `promote:remote-phase` can reindex (`docs/data-refresh-runbook.md`, "What to set up once"); a manual rebuild from the web service's shell exports it for that session only.
-A sync or repair script that only adds or deletes documents works with a key scoped to `["<prefix>_*"]`, if one is ever stored for an automated job.
+The reindex key can delete and swap its environment's indexes, so it is stored only on that environment's operator service, which serves no requests and exists so `promote:remote-phase` can reindex (`docs/data-refresh-runbook.md`, "What to set up once").
+Each web service holds the document-sync key instead, because the web process does need to write: an admin edit or a visibility change re-syncs that row's document live.
+The sync key can add and delete documents in its own index and nothing else, so a compromised web process cannot drop, swap or reconfigure an index, read another environment's index, or create a dump (measured on Production on 2026-10-18: `indexes.get` and `tasks.get` answered `200`; a settings update, an index create, a dump and a read of the `beta_` index each answered `403`).
+
+The keys that exist, by name (names and uids are not secrets; values never go in a document):
+
+| Key name | Environment | Role |
+| -------- | ----------- | ---- |
+| `ylabs-beta-search`, `ylabs-prod-search` | Beta, Production | search key on the web service |
+| `ylabs-beta-web-docsync`, `ylabs-prod-web-docsync` | Beta, Production | document-sync key on the web service |
+| `ylabs-beta-reindex`, `ylabs-prod-reindex` | Beta, Production | reindex key on the operator service |
+| `ylabs-beta-server-v2`, `ylabs-prod-server-v2` | Beta, Production | retired broad keys, held by no service |
+
+A key's value is `HMAC-SHA256(master key, uid)` as hex, so rotating the master key changes every key's value while its uid and rights stay the same.
+That lets a rotation compute the new values before Meilisearch restarts, stage them on the services, and switch the master key last, which keeps search down only for the restart.
 
 ### Which Render service gets which variable
 
 | Render service | Set | Remove once the scoped keys are live |
 | -------------- | --- | ------------------------------------ |
-| Beta web service | `MEILISEARCH_SEARCH_API_KEY` = the `beta` search key, and `MEILISEARCH_WRITE_API_KEY` = the `beta` reindex key | `MEILISEARCH_API_KEY` |
-| Production web service | `MEILISEARCH_SEARCH_API_KEY` = the `prod` search key | `MEILISEARCH_API_KEY` |
-| Production operator service | `MEILISEARCH_WRITE_API_KEY` = the `prod` reindex key | |
+| Beta web service | `MEILISEARCH_SEARCH_API_KEY` = `ylabs-beta-search`, and `MEILISEARCH_WRITE_API_KEY` = `ylabs-beta-web-docsync` | `MEILISEARCH_API_KEY` |
+| Production web service | `MEILISEARCH_SEARCH_API_KEY` = `ylabs-prod-search`, and `MEILISEARCH_WRITE_API_KEY` = `ylabs-prod-web-docsync` | `MEILISEARCH_API_KEY` |
+| Beta operator service | `MEILISEARCH_WRITE_API_KEY` = `ylabs-beta-reindex` | |
+| Production operator service | `MEILISEARCH_WRITE_API_KEY` = `ylabs-prod-reindex` | |
 | Meilisearch private service | nothing new; `MEILI_MASTER_KEY` stays there | |
 
 Order: create the keys, set the variables, redeploy, confirm the fallback warning is gone from the logs and search works, then delete `MEILISEARCH_API_KEY` from the web service.
@@ -166,11 +178,17 @@ With a search key scoped as above, a search and an embedder read answered `200`,
 `yarn development:search:rebuild` with only `MEILISEARCH_WRITE_API_KEY` valid rebuilt 4,487 documents and swapped them in.
 The proof keys were deleted afterwards.
 
+## The pinned Meilisearch version
+
+The `meilisearch` private service runs `docker.io/getmeili/meilisearch:v1.54.3` with auto-deploy off.
+It ran `:latest` until 2026-10-18 with `MEILI_UPGRADE_DB` set, so any redeploy, including one only meant to pick up a changed environment variable, pulled whatever version was newest and upgraded the database; by then `latest` had already moved past the running image.
+Upgrade deliberately: read the running version (`GET /version` with the master key, from a job on the private service), take a dump first (`docs/data-refresh-runbook.md`, "Taking the Production restore point"), set the service's image tag to the new version, deploy, and confirm search on Beta and Production before anything else changes.
+
 ## Running it as a Render one-off job
 
 A one-off job runs a command on a copy of a service's **latest successful deploy** with that service's **current** environment variables, inside Render's network, so it reaches the private Meilisearch the same way the shell does.
 It needs no open shell, survives a dropped connection, and leaves its log on the service's **One-off Jobs** page.
-Beta can rebuild this way because its web service holds the `beta` write key; the Production web service holds none, so run a Production one-off rebuild on the Production operator service, or run it from the web service's shell.
+Run a rebuild on the environment's operator service, which holds the reindex key; neither web service can rebuild, because each holds only the document-sync key.
 
 Find the service id, then confirm the deploy you are about to run is the code you expect, because a job runs the deployed build and not the branch head:
 

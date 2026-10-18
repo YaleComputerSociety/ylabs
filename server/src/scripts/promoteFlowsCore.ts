@@ -9,6 +9,9 @@ import {
   formatProductionPlan,
   formatRemotePhasePlan,
   mirrorApplyProblems,
+  OPERATOR_SERVICE_BRANCHES,
+  operatorBuildDecision,
+  operatorDeployFailureMessage,
   mirrorPlanProblems,
   parsePromoteBetaArgs,
   parsePromoteProductionArgs,
@@ -24,11 +27,16 @@ import {
   type ProductionPromotionReport,
   type PromotionTarget,
   type PullRequestHoldState,
+  type OperatorBuildDecision,
   type RemotePhaseOptions,
 } from './promoteCore';
 import {
   createRenderJob,
   describeRenderService,
+  liveRenderDeploy,
+  RENDER_DEPLOY_LIVE_STATUS,
+  triggerRenderDeploy,
+  waitForRenderDeploy,
   waitForRenderJob,
   type FetchLike,
 } from './renderOneOffJob';
@@ -37,6 +45,8 @@ import { formatWeeklySweepRun, type StoredWeeklySweepRun } from './weeklySweepRu
 export const RENDER_JOB_POLL_INTERVAL_MS = 20_000;
 
 export const RENDER_JOB_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+
+export const RENDER_DEPLOY_TIMEOUT_MS = 45 * 60 * 1000;
 
 export interface PromoteDeps {
   env: NodeJS.ProcessEnv;
@@ -47,6 +57,7 @@ export interface PromoteDeps {
   workDir: string;
   prompt: (question: string) => Promise<string | null>;
   fetch?: FetchLike;
+  branchHead?: (branch: string) => Promise<string>;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   pollIntervalMs?: number;
@@ -67,10 +78,64 @@ function refuse(deps: PromoteDeps, problems: string[]): number {
   return 1;
 }
 
+interface RenderPreflight {
+  problems: string[];
+  serviceId?: string;
+  dashboardUrl?: string;
+  build?: OperatorBuildDecision;
+}
+
+async function operatorBuild(
+  deps: PromoteDeps,
+  target: PromotionTarget,
+  serviceId: string,
+): Promise<{ build?: OperatorBuildDecision; problem?: string }> {
+  if (!deps.branchHead) return { problem: 'no way to read the operator branch head' };
+  const branch = OPERATOR_SERVICE_BRANCHES[target];
+  try {
+    const headCommit = await deps.branchHead(branch);
+    const live = await liveRenderDeploy(
+      { apiKey: deps.env[RENDER_API_KEY_VARIABLE]!.trim(), fetch: deps.fetch },
+      serviceId,
+    );
+    const build = operatorBuildDecision(target, headCommit, live?.commitId);
+    deps.log(build.message);
+    return { build };
+  } catch (caught) {
+    return {
+      problem: `could not compare the ${target} operator build with ${branch}: ${caught instanceof Error ? caught.message : String(caught)}`,
+    };
+  }
+}
+
+async function deployOperatorAtHead(
+  deps: PromoteDeps,
+  target: PromotionTarget,
+  serviceId: string,
+  build: OperatorBuildDecision | undefined,
+): Promise<boolean> {
+  if (!build?.needsDeploy) return true;
+  const client = { apiKey: deps.env[RENDER_API_KEY_VARIABLE]!.trim(), fetch: deps.fetch };
+  const deploy = await triggerRenderDeploy(client, serviceId, build.headCommit);
+  deps.log(
+    `Deploying the ${target} operator service at ${build.headCommit.slice(0, 9)} (${deploy.id}).`,
+  );
+  const finished = await waitForRenderDeploy(client, serviceId, deploy.id, {
+    intervalMs: deps.pollIntervalMs ?? RENDER_JOB_POLL_INTERVAL_MS,
+    timeoutMs: deps.timeoutMs ?? RENDER_DEPLOY_TIMEOUT_MS,
+    sleep: deps.sleep,
+    now: deps.now,
+    onDeployStatus: (current) => deps.log(`  deploy ${current.id}: ${current.status ?? 'unknown'}`),
+  });
+  if (finished.status === RENDER_DEPLOY_LIVE_STATUS) return true;
+  deps.error(operatorDeployFailureMessage(target, finished.id, build.headCommit, finished.status));
+  return false;
+}
+
 async function renderPreflight(
   deps: PromoteDeps,
   target: PromotionTarget,
-): Promise<{ problems: string[]; serviceId?: string; dashboardUrl?: string }> {
+): Promise<RenderPreflight> {
   const setup = renderSetupProblems(target, deps.env);
   if (setup.length > 0) return { problems: setup };
   const serviceId = deps.env[RENDER_SERVICE_ID_VARIABLES[target]]!.trim();
@@ -82,11 +147,10 @@ async function renderPreflight(
     deps.log(
       `Render ${target} operator service: ${service.name ?? serviceId} (${service.type ?? 'unknown type'}, branch ${service.branch ?? 'unknown'})`,
     );
-    return {
-      problems: renderServiceProblems(target, service),
-      serviceId,
-      dashboardUrl: service.dashboardUrl,
-    };
+    const problems = renderServiceProblems(target, service);
+    const { build, problem } = await operatorBuild(deps, target, serviceId);
+    if (problem) problems.push(problem);
+    return { problems, serviceId, dashboardUrl: service.dashboardUrl, build };
   } catch (caught) {
     return { problems: [caught instanceof Error ? caught.message : String(caught)] };
   }
@@ -168,7 +232,9 @@ export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Pro
     problems.push(`a Development writer holds a live scrape job lock on ${heldLocks.join(', ')}`);
   }
 
-  const render = args.skipRemotePhase ? { problems: [] } : await renderPreflight(deps, 'beta');
+  const render: RenderPreflight = args.skipRemotePhase
+    ? { problems: [] }
+    : await renderPreflight(deps, 'beta');
   problems.push(...render.problems);
 
   const plan = await readReport<MirrorReport>(
@@ -209,6 +275,13 @@ export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Pro
       `Type "${BETA_CONFIRMATION_WORD}" to replace Beta's mirrored collections with Development and run the Beta gate: `,
       BETA_CONFIRMATION_WORD,
     ))
+  ) {
+    return 1;
+  }
+
+  if (
+    !args.skipRemotePhase &&
+    !(await deployOperatorAtHead(deps, 'beta', render.serviceId!, render.build))
   ) {
     return 1;
   }
@@ -266,7 +339,7 @@ export async function runPromoteProduction(
     );
   }
 
-  const render = args.skipRemotePhase
+  const render: RenderPreflight = args.skipRemotePhase
     ? { problems: [] }
     : await renderPreflight(deps, 'production');
   problems.push(...render.problems);
@@ -287,6 +360,7 @@ export async function runPromoteProduction(
       formatRemotePhasePlan('production', {
         confirmBetaBackup: false,
         fullSearchRebuild: args.fullSearchRebuild,
+        meiliRestorePoint: args.meiliRestorePoint,
       }),
     );
   }
@@ -304,6 +378,13 @@ export async function runPromoteProduction(
       `Type "${PRODUCTION_CONFIRMATION_WORD}" to replace Production's promoted collections with Beta (${args.datasetVersion}): `,
       PRODUCTION_CONFIRMATION_WORD,
     ))
+  ) {
+    return 1;
+  }
+
+  if (
+    !args.skipRemotePhase &&
+    !(await deployOperatorAtHead(deps, 'production', render.serviceId!, render.build))
   ) {
     return 1;
   }
@@ -337,7 +418,11 @@ export async function runPromoteProduction(
     'production',
     render.serviceId!,
     render.dashboardUrl,
-    { confirmBetaBackup: false, fullSearchRebuild: args.fullSearchRebuild },
+    {
+      confirmBetaBackup: false,
+      fullSearchRebuild: args.fullSearchRebuild,
+      meiliRestorePoint: args.meiliRestorePoint,
+    },
   );
   if (exitCode === 0) {
     deps.log(
