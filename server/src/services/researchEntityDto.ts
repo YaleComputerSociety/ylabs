@@ -326,7 +326,6 @@ function publicResearchEntitySourceUrls(
   value: unknown,
   hostOwnerIdentity: ResearchEntityHostOwnerIdentity,
   storedSourceLinkHealth?: unknown,
-  fieldProvenance?: unknown,
 ): string[] {
   // These are `provenance`, so the policy keeps them even when the corpus knows the page
   // is gone: the client marks a source unavailable from the health record and groups the
@@ -334,13 +333,10 @@ function publicResearchEntitySourceUrls(
   // withholding it starves the pathway built to qualify it (#2556/#3312). The call is
   // made rather than assumed, so a change to the policy reaches this surface instead of
   // leaving it to agree by coincidence.
-  return withoutUncreditedLinkedPublicationOrDocumentCitations(
-    publicHttpUrlArray(value).filter(
-      (url) =>
-        !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
-        !servedCitationIsWithheld('provenance', storedSourceLinkHealth, url),
-    ),
-    fieldProvenance,
+  return publicHttpUrlArray(value).filter(
+    (url) =>
+      !isDisallowedResearchEntitySourceUrl(url, hostOwnerIdentity) &&
+      !servedCitationIsWithheld('provenance', storedSourceLinkHealth, url),
   );
 }
 
@@ -621,7 +617,6 @@ function derivePublicResearchEntityDto(
       group.sourceUrls,
       hostOwnerIdentity,
       group.sourceLinkHealth,
-      group.fieldProvenance,
     ),
   };
 
@@ -738,15 +733,20 @@ function derivePublicResearchEntityDto(
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
+  const servedPayload = {
+    ...dto,
+    shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
+  };
+  dto.sourceUrls = withoutUncreditedLinkedPublicationOrDocumentCitations(
+    dto.sourceUrls,
+    group.fieldProvenance,
+    servedPayload,
+  );
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
       group.sourceLinkHealth,
-      {
-        ...dto,
-        shortDescription:
-          dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
-      },
+      servedPayload,
     );
   }
 

@@ -100,16 +100,29 @@ describe('the shape of a linked paper or file', () => {
 
   it('keeps a document a served field was read from', () => {
     expect(
-      withoutUncreditedLinkedPublicationOrDocumentCitations([OWN_PROFILE, DEPARTMENT_PDF], {
-        fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
-      }),
+      withoutUncreditedLinkedPublicationOrDocumentCitations(
+        [OWN_PROFILE, DEPARTMENT_PDF],
+        { fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF } },
+        { fullDescription: 'A synthetic research summary.' },
+      ),
     ).toEqual([OWN_PROFILE, DEPARTMENT_PDF]);
+  });
+  it('does not keep a document credited only for a field that no longer holds a value', () => {
+    expect(
+      withoutUncreditedLinkedPublicationOrDocumentCitations(
+        [OWN_PROFILE, DEPARTMENT_PDF],
+        { fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF } },
+        { fullDescription: '' },
+      ),
+    ).toEqual([OWN_PROFILE]);
   });
   it('does not keep a document only bookkeeping provenance credits', () => {
     expect(
-      withoutUncreditedLinkedPublicationOrDocumentCitations([OWN_PROFILE, SHAREPOINT_CV], {
-        leadVerification: { sourceName: 'synthetic-source', sourceUrl: SHAREPOINT_CV },
-      }),
+      withoutUncreditedLinkedPublicationOrDocumentCitations(
+        [OWN_PROFILE, SHAREPOINT_CV],
+        { leadVerification: { sourceName: 'synthetic-source', sourceUrl: SHAREPOINT_CV } },
+        {},
+      ),
     ).toEqual([OWN_PROFILE]);
   });
 });
@@ -164,6 +177,7 @@ describe('a linked paper or file is not cited as a source', () => {
         },
         entityDoc: facultyResearchRow({
           sourceUrls: [OWN_PROFILE, DEPARTMENT_PDF, SHAREPOINT_CV],
+          methods: ['synthetic fixture assay'],
           fieldProvenance: {
             methods: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
           },
@@ -171,6 +185,20 @@ describe('a linked paper or file is not cited as a source', () => {
       }),
     );
     expect(result.set.sourceUrls).toEqual([DEPARTMENT_PDF, OWN_PROFILE]);
+  });
+
+  it('does not project back an uncredited document it just dropped', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Fixture Faculty Research') },
+        materializationObs: [
+          { field: 'leadVerification', sourceUrl: SHAREPOINT_CV, confidence: 0.95 },
+        ] as never,
+        entityDoc: facultyResearchRow({ sourceUrls: [SHAREPOINT_CV] }),
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([]);
   });
 
   it('leaves a locked citation list alone', async () => {
@@ -203,13 +231,30 @@ describe('a linked paper or file is not cited as a source', () => {
         facultyResearchRow({
           studentVisibilityTier: 'student_ready',
           sourceUrls: [OWN_PROFILE, DEPARTMENT_PDF],
+          fullDescription:
+            'The synthetic fixture group studies how fixture lipids degrade in cold storage.',
           fieldProvenance: {
-            shortDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
+            fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
           },
         }),
       ),
     ) as Record<string, any>;
     expect(served.sourceUrls).toEqual([OWN_PROFILE, DEPARTMENT_PDF]);
+  });
+
+  it('withholds a document whose credited field is no longer served', () => {
+    const served = toPublicResearchEntityDto(
+      publicResearchDetailGroup(
+        facultyResearchRow({
+          studentVisibilityTier: 'student_ready',
+          sourceUrls: [OWN_PROFILE, DEPARTMENT_PDF],
+          fieldProvenance: {
+            fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
+          },
+        }),
+      ),
+    ) as Record<string, any>;
+    expect(served.sourceUrls).toEqual([OWN_PROFILE]);
   });
 
   it('projects a profile rather than a document the lead was verified from', () => {

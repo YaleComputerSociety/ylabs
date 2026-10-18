@@ -2360,7 +2360,7 @@ export function bestMaterializationProvenanceSourceUrl(
   if (!Array.isArray(sanitized)) return undefined;
   // A paper or file a lane read only to verify the lead is not the page to cite when a
   // profile or roster page also produced the row; it stays the fallback when nothing
-  // else did (#5114).
+  // else did, where the caller still refuses it unless a served field was read from it (#5114).
   return (sanitized.find((url) => !isLinkedPublicationOrDocumentUrl(url)) ?? sanitized[0]) as
     string | undefined;
 }
@@ -9168,9 +9168,11 @@ export async function projectFromLog(
         : Array.isArray(entityDoc?.sourceUrls)
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
+      const projected = documentAsProjected(set, unset, entityDoc);
       const keptCitations = withoutUncreditedLinkedPublicationOrDocumentCitations(
         citedThisPass,
-        documentAsProjected(set, unset, entityDoc).fieldProvenance,
+        projected.fieldProvenance,
+        projected,
       );
       if (keptCitations.length !== citedThisPass.length) {
         set.sourceUrls = keptCitations;
@@ -9245,10 +9247,18 @@ export async function projectFromLog(
             currentSourceUrls,
           ),
         );
-        if (provenanceSourceUrl) {
+        const projected = documentAsProjected(set, unset, entityDoc);
+        const citableProvenanceSourceUrl =
+          provenanceSourceUrl &&
+          withoutUncreditedLinkedPublicationOrDocumentCitations(
+            [provenanceSourceUrl],
+            projected.fieldProvenance,
+            projected,
+          )[0];
+        if (citableProvenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
             ...currentSourceUrls,
-            provenanceSourceUrl,
+            citableProvenanceSourceUrl,
           ]);
           fieldsWritten++;
         }

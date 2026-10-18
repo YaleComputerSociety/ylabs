@@ -1,6 +1,9 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
-import { buildSourceFieldContributions } from './servedFieldContributionLabels';
+import {
+  buildSourceFieldContributions,
+  contributionLabelIsServed,
+} from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 const URL_MAXLENGTH = 2048;
@@ -295,11 +298,18 @@ const citationIdentityKey = (value: unknown): string | undefined => {
 /**
  * The pages a row's student-facing fields were read from, as `fieldProvenance` credits
  * them. Bookkeeping provenance (`leadVerification`, a content hash) is not a fact a
- * student reads, so it does not make a page a source.
+ * student reads, so it does not make a page a source, and neither does an entry that
+ * outlived the value it recorded (#3922).
  */
-export function servedFieldSourceUrlKeys(fieldProvenance: unknown): Set<string> {
+export function servedFieldSourceUrlKeys(
+  fieldProvenance: unknown,
+  servedPayload: Record<string, unknown>,
+): Set<string> {
   return new Set(
     buildSourceFieldContributions(fieldProvenance, () => true)
+      .filter((contribution) =>
+        contribution.contributions.some((label) => contributionLabelIsServed(label, servedPayload)),
+      )
       .map((contribution) => citationIdentityKey(contribution.sourceUrl))
       .filter((key): key is string => Boolean(key)),
   );
@@ -319,8 +329,9 @@ export function servedFieldSourceUrlKeys(fieldProvenance: unknown): Set<string> 
 export function withoutUncreditedLinkedPublicationOrDocumentCitations<T>(
   sourceUrls: readonly T[],
   fieldProvenance: unknown,
+  servedPayload: Record<string, unknown>,
 ): T[] {
-  const credited = servedFieldSourceUrlKeys(fieldProvenance);
+  const credited = servedFieldSourceUrlKeys(fieldProvenance, servedPayload);
   return sourceUrls.filter((url) => {
     if (!isLinkedPublicationOrDocumentUrl(url)) return true;
     const key = citationIdentityKey(url);
