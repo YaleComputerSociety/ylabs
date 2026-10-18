@@ -154,7 +154,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const loadedIdsRef = useRef(new Set<string>());
 
   const loadPlans = useCallback(
-    async (mode: ListLoadMode = 'replace') => {
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
       const ticket = planRequest.begin();
       const merging = mode === 'merge';
       if (!merging) {
@@ -172,7 +172,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             signal: ticket.signal,
           }),
         ]);
-        if (!ticket.isCurrent()) return;
+        if (!ticket.isCurrent()) return false;
         const loadedEntities: SavedResearchEntity[] =
           entityResponse.data.savedResearchEntities || [];
         const loadedUnavailable: UnavailableSavedResearchEntity[] =
@@ -197,15 +197,16 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         setUnavailable(loadedUnavailable);
         setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
         setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        return true;
       } catch {
-        if (!ticket.isCurrent()) return;
-        if (merging) return;
+        if (!ticket.isCurrent() || merging) return false;
         console.error('Error fetching saved research plans.');
         setEntities([]);
         setUnavailable([]);
         setNotes({});
         setStages({});
         setPlansLoadFailed(true);
+        return false;
       } finally {
         if (ticket.isCurrent()) setIsLoading(false);
       }
@@ -226,7 +227,9 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     const unseen = savedSlugs.filter((id) => !known.has(id));
     if (unseen.length === 0) return;
     unseen.forEach((id) => requestedSaveIdsRef.current.add(id));
-    void loadPlans('merge');
+    void loadPlans('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedSaveIdsRef.current.delete(id));
+    });
   }, [isLoading, plansLoadFailed, savedSlugsLoaded, entities, unavailable, savedSlugs, loadPlans]);
 
   const retryLoad = () => {

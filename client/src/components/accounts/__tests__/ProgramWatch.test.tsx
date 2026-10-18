@@ -571,4 +571,55 @@ describe('ProgramWatch control containment', () => {
 
     expect(await screen.findByText('Travel Fellowship')).toBeTruthy();
   });
+
+  it('retries loading a program watched in another tab after a failed refresh', async () => {
+    let ids = ['p1'];
+    let failPrograms = false;
+    const all = [
+      { _id: 'p1', id: 'p1', title: 'Summer Research Grant', isAcceptingApplications: true },
+      { _id: 'p2', id: 'p2', title: 'Travel Fellowship', isAcceptingApplications: true },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: [...ids] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        if (failPrograms) return Promise.reject(new Error('network'));
+        return Promise.resolve({
+          data: { watchedPrograms: all.filter((program) => ids.includes(program.id)) },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+
+    ids = ['p1', 'p2'];
+    failPrograms = true;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() =>
+      expect(
+        mockedAxios.get.mock.calls.filter(([url]) => url === '/users/watchedPrograms'),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByText('Travel Fellowship')).toBeNull();
+
+    failPrograms = false;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Travel Fellowship')).toBeTruthy();
+  });
 });

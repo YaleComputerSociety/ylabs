@@ -151,7 +151,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const loadedProgramIdsRef = useRef(new Set<string>());
 
   const loadPrograms = useCallback(
-    async (mode: ListLoadMode = 'replace') => {
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
       const ticket = programRequest.begin();
       const merging = mode === 'merge';
       if (!merging) {
@@ -163,7 +163,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
           axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
         ]);
-        if (!ticket.isCurrent()) return;
+        if (!ticket.isCurrent()) return false;
         const rawPrograms = programResponse.data.watchedPrograms || [];
         const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
           createFellowship(program),
@@ -187,14 +187,15 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         setPrograms(loadedPrograms);
         setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
         setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        return true;
       } catch {
-        if (!ticket.isCurrent()) return;
-        if (merging) return;
+        if (!ticket.isCurrent() || merging) return false;
         console.error('Error fetching watched programs.');
         setPrograms([]);
         setNotes({});
         setStages({});
         setProgramsLoadFailed(true);
+        return false;
       } finally {
         if (ticket.isCurrent()) setIsLoading(false);
       }
@@ -214,7 +215,9 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     const unseen = watchedIds.filter((id) => !known.has(id));
     if (unseen.length === 0) return;
     unseen.forEach((id) => requestedWatchIdsRef.current.add(id));
-    void loadPrograms('merge');
+    void loadPrograms('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedWatchIdsRef.current.delete(id));
+    });
   }, [isLoading, programsLoadFailed, watchedIdsLoaded, programs, watchedIds, loadPrograms]);
 
   const retryLoad = () => {

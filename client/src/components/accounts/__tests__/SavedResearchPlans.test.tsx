@@ -923,4 +923,55 @@ describe('SavedResearchPlans', () => {
       (screen.getByRole('textbox', { name: 'Note for Owner Lab' }) as HTMLTextAreaElement).value,
     ).toBe('Unsaved local edit');
   });
+
+  it('retries loading a plan saved in another tab after a failed refresh', async () => {
+    let ids = ['owner-lab'];
+    let failEntities = false;
+    const entities = [
+      { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+      { _id: 'id2', slug: 'other-lab', name: 'Other Lab', kind: 'lab', departments: [] },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [...ids] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        if (failEntities) return Promise.reject(new Error('network'));
+        return Promise.resolve({
+          data: { savedResearchEntities: entities.filter((entity) => ids.includes(entity.slug)) },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+
+    ids = ['owner-lab', 'other-lab'];
+    failEntities = true;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() =>
+      expect(
+        mockedAxios.get.mock.calls.filter(([url]) => url === '/users/savedResearchEntities'),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByText('Other Lab')).toBeNull();
+
+    failEntities = false;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Other Lab')).toBeTruthy();
+  });
 });
