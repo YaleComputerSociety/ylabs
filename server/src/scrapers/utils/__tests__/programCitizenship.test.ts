@@ -12,6 +12,7 @@ describe('programCitizenshipStatement (#5129)', () => {
     'Applicants must be U.S. citizens or permanent resident aliens.',
     'Eligible are US citizens, permanent residents (Green Card holders), or US nationals.',
     'Applicants must be enrolled in college and be a US citizen or permanent resident.',
+    'Applicants must be U.S. citizens or U.S. Permanent Residents.',
   ])('reads a restriction that admits permanent residents: %s', (text) => {
     expect(programCitizenshipStatement([text])).toEqual({
       kind: 'us-only',
@@ -24,6 +25,8 @@ describe('programCitizenshipStatement (#5129)', () => {
     'Applicants must be citizens of the United States.',
     'All first years, sophomores and juniors who are U.S. citizens are eligible to apply.',
     'Students eligible to apply: Must be a U.S. citizen.',
+    'Applicants must be U.S. Citizens.',
+    'Proof of U.S. citizenship is required at the time of award.',
   ])('reads a restriction to U.S. citizens: %s', (text) => {
     expect(programCitizenshipStatement([text])).toEqual({
       kind: 'us-only',
@@ -52,11 +55,25 @@ describe('programCitizenshipStatement (#5129)', () => {
     ).toEqual({ kind: 'non-us-only', values: [NON_US_CITIZENS_ELIGIBLE] });
   });
 
+  it('reads an exclusion of U.S. citizens that names U.S. permanent residents in the same clause', () => {
+    expect(
+      programCitizenshipStatement([
+        'U.S. citizens and U.S. Permanent Residents are ineligible for this fellowship.',
+      ]),
+    ).toEqual({ kind: 'non-us-only', values: [NON_US_CITIZENS_ELIGIBLE] });
+  });
+
   it.each([
     'Preference for applicants who are U.S. citizens whose studies have demonstrated an interest in the region.',
     'In general, applications from international students proposing research projects in their country of origin are ineligible.',
     'International student applicants should inform the Office of International Students and Scholars of their plans.',
     'Submit a budget and a one-page statement.',
+    'You do not need to be a U.S. citizen to apply.',
+    'Applicants do not need to be U.S. citizens.',
+    'An applicant does not have to be a U.S. citizen.',
+    'International students must provide proof of citizenship and a valid visa.',
+    'Students who are U.S. citizens apply through FAFSA; others apply directly.',
+    'U.S. citizens are eligible, but international students are not eligible.',
   ])('states nothing for a preference, a condition on one group, or silence: %s', (text) => {
     expect(programCitizenshipStatement([text])).toBeUndefined();
   });

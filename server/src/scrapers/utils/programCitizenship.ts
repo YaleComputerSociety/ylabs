@@ -23,13 +23,21 @@ const US_ONLY_SENTENCE = new RegExp(
     String.raw`\b${US} citizenship (?:\[?or [^.\]]{0,40}\]? )?(?:is |are )?(?:required|necessary|mandatory)\b`,
     String.raw`\b(?:open|available|limited|restricted|awarded) (?:only )?to ${US} citizens\b`,
     String.raw`\b(?:only|exclusively) (?:for |to )?${US} citizens\b`,
-    String.raw`\bwho are ${US} citizens\b`,
     String.raw`\beligible (?:applicants |candidates |students )?(?:are|must be|include) (?:only )?${US} citizens\b`,
-    String.raw`\bproof of (?:${US} )?citizenship\b`,
     String.raw`\bbe an? ${US} citizens?\b`,
   ].join('|'),
   'i',
 );
+
+const PROOF_OF_US_CITIZENSHIP = new RegExp(String.raw`\bproof of ${US} citizenship\b`, 'i');
+
+const US_CITIZEN_GROUP = new RegExp(String.raw`\bwho are ${US} citizens\b`, 'i');
+
+const ELIGIBILITY_CUE = /\b(?:eligible|open to|must|only|limited)\b/i;
+
+const ANOTHER_GROUP = /\b(?:others|international (?:students|applicants))\b/i;
+
+const NEGATION = /\b(?:not need|(?:do|does)(?: not|n't) (?:need|have) to|not required|need not|regardless)\b/i;
 
 const OPEN_SENTENCE = new RegExp(
   [
@@ -46,7 +54,7 @@ const OPEN_SENTENCE = new RegExp(
 
 const NON_US_ONLY_SENTENCE = new RegExp(
   [
-    String.raw`\b${US} citizens?\b[^.;]{0,60}\b(?:are|is) (?:not eligible|ineligible)\b`,
+    String.raw`\b${US} citizens?\b(?:(?!\b(?:are|is|but|while)\b)[^,;]){0,60}\b(?:are|is) (?:not eligible|ineligible)\b`,
     String.raw`\bintended for (?:yale )?international (?:undergraduate |graduate )?students only\b`,
   ].join('|'),
   'i',
@@ -59,9 +67,19 @@ const PERMANENT_RESIDENT = /\bpermanent residen(?:ts?|cy|ce)\b|\bgreen card\b/i;
 function sentencesOf(text: string): string[] {
   return text
     .replace(/\s+/g, ' ')
-    .split(/(?<=[.!?;])\s+(?=[A-Z([])/)
+    .split(/(?<=[.!?;])(?<!\b[Uu]\.[Ss]\.(?:[Aa]\.)?)\s+(?=[A-Z([])/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
+}
+
+function restrictsToUsCitizens(sentence: string): boolean {
+  const match =
+    US_ONLY_SENTENCE.exec(sentence) ??
+    (ANOTHER_GROUP.test(sentence)
+      ? null
+      : (PROOF_OF_US_CITIZENSHIP.exec(sentence) ??
+        (ELIGIBILITY_CUE.test(sentence) ? US_CITIZEN_GROUP.exec(sentence) : null)));
+  return match !== null && !NEGATION.test(sentence.slice(0, match.index + match[0].length));
 }
 
 /**
@@ -81,7 +99,7 @@ export function programCitizenshipStatement(prose: string[]): CitizenshipStateme
       nonUsOnly = true;
     } else if (OPEN_SENTENCE.test(sentence)) {
       open = true;
-    } else if (US_ONLY_SENTENCE.test(sentence)) {
+    } else if (restrictsToUsCitizens(sentence)) {
       usOnly = true;
       if (PERMANENT_RESIDENT.test(sentence)) permanentResidents = true;
     }
