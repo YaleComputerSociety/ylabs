@@ -1239,4 +1239,86 @@ describe('SavedResearchPlans', () => {
       data: { plan: { privateNotes: 'Local edit', expectedUpdatedAt: '2026-01-01T00:00:00.000Z' } },
     });
   });
+
+  it('ignores a refresh that read the plan before this tab saved a newer stage', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(
+      async (_url: string, body: Parameters<typeof applyWrite>[0]) => applyWrite(body),
+    );
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+
+    const serve = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+    const heldReads: Array<() => void> = [];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url !== '/users/savedResearchEntityPlans') return serve(url);
+      const readBeforeWrite = { data: { savedResearchEntityPlans: { id1: server.plan } } };
+      return new Promise((resolve) => heldReads.push(() => resolve(readBeforeWrite)));
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(heldReads.length).toBeGreaterThan(0));
+
+    fireEvent.change(select, { target: { value: 'APPLIED' } });
+    await waitFor(() => expect(server.plan.stage).toBe('APPLIED'));
+    await act(async () => heldReads.forEach((release) => release()));
+
+    expect(select.value).toBe('APPLIED');
+    mockedAxios.get.mockImplementation(serve);
+    fireEvent.change(select, { target: { value: 'CLOSED' } });
+    await waitFor(() => expect(server.plan.stage).toBe('CLOSED'));
+    expect(screen.queryByText('Changed in another tab. Showing the latest stage.')).toBeNull();
+  });
+
+  it('sends a page-hide note flush at once while an earlier save is still in flight', async () => {
+    withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: 'Old note',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(() => new Promise(() => {}));
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+      await screen.findByText('Owner Lab');
+      fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+      const note = (await screen.findByRole('textbox', {
+        name: 'Note for Owner Lab',
+      })) as HTMLTextAreaElement;
+      await waitFor(() => expect(note.value).toBe('Old note'));
+      fireEvent.change(note, { target: { value: 'First edit' } });
+      fireEvent.blur(note);
+      await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
+      fireEvent.change(note, { target: { value: 'Last edit' } });
+
+      window.dispatchEvent(new Event('pagehide'));
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(JSON.parse(request.body as string)).toEqual({
+        data: {
+          plan: { privateNotes: 'Last edit', expectedUpdatedAt: '2026-01-01T00:00:00.000Z' },
+        },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

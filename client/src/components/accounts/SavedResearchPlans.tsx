@@ -150,7 +150,9 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           ?.savedResearchEntityPlans;
       };
       try {
-        await (sync ? sync.writePlan(entityId, send) : send(undefined));
+        await (sync
+          ? sync.writePlan(entityId, send, { immediate: options?.keepalive })
+          : send(undefined));
       } catch (error) {
         console.error('Error saving research plan note.');
         if (isPlanVersionConflict(error))

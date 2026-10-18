@@ -140,7 +140,9 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         return (served as { watchedProgramPlans?: ServedPlans } | undefined)?.watchedProgramPlans;
       };
       try {
-        await (sync ? sync.writePlan(programId, send) : send(undefined));
+        await (sync
+          ? sync.writePlan(programId, send, { immediate: options?.keepalive })
+          : send(undefined));
       } catch (error) {
         console.error('Error saving watched program plan.');
         if (isPlanVersionConflict(error))

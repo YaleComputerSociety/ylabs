@@ -26,6 +26,13 @@ export const isPlanVersionConflict = (error: unknown): boolean =>
   (isAxiosError(error) && error.response?.status === 409) ||
   (error instanceof Error && /\b409\b/.test(error.message));
 
+const isOlderThan = (fresh: PlanSnapshot, snapshot: PlanSnapshot | undefined) =>
+  Boolean(
+    fresh.updatedAt &&
+    snapshot?.updatedAt &&
+    Date.parse(fresh.updatedAt) < Date.parse(snapshot.updatedAt),
+  );
+
 const snapshotOf = (plan: ServedPlanDetail | undefined): PlanSnapshot => ({
   note: plan?.privateNotes || '',
   stage: normalizeResearchPlanStage(plan?.stage),
@@ -58,7 +65,7 @@ const usePlanDetailSync = ({
   markNotePersisted,
 }: PlanDetailSyncOptions) => {
   const snapshotsRef = useRef<Record<string, PlanSnapshot>>({});
-  const writesRef = useRef<Record<string, Promise<void>>>({});
+  const writesRef = useRef<Record<string, Promise<void> | undefined>>({});
   const notesRef = useRef(notes);
   const stagesRef = useRef(stages);
 
@@ -84,6 +91,7 @@ const usePlanDetailSync = ({
         const plan = plans[id];
         if (!plan) return;
         const fresh = snapshotOf(plan);
+        if (isOlderThan(fresh, snapshot)) return;
         const noteIsClean = (notesRef.current[id] ?? '') === snapshot.note;
         const shownStage = stagesRef.current[id] ?? snapshot.stage;
         const stageIsClean = takeStageOf === id || shownStage === snapshot.stage;
@@ -122,17 +130,21 @@ const usePlanDetailSync = ({
     (
       id: string,
       send: (expectedUpdatedAt: string | undefined) => Promise<ServedPlans | undefined>,
+      { immediate = false }: { immediate?: boolean } = {},
     ) => {
       const run = async () => {
         const plan = (await send(snapshotsRef.current[id]?.updatedAt))?.[id];
-        if (plan) snapshotsRef.current[id] = snapshotOf(plan);
+        if (!plan) return;
+        const served = snapshotOf(plan);
+        if (!isOlderThan(served, snapshotsRef.current[id])) snapshotsRef.current[id] = served;
       };
       const previous = writesRef.current[id];
-      const write = previous ? previous.then(run) : run();
+      const write = previous && !immediate ? previous.then(run) : run();
       const settled = write.catch(() => undefined);
-      writesRef.current[id] = settled;
-      void settled.then(() => {
-        if (writesRef.current[id] === settled) delete writesRef.current[id];
+      const tail = previous ? previous.then(() => settled) : settled;
+      writesRef.current[id] = tail;
+      void tail.then(() => {
+        if (writesRef.current[id] === tail) delete writesRef.current[id];
       });
       return write;
     },
