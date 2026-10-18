@@ -339,6 +339,16 @@ describe('profileLinkedHomeRefusal on an acronym lab', () => {
       ),
     ).toBe('names-another-persons-lab');
   });
+
+  it('refuses an acronym lab whose expansion shares only a topic word with the entity key', () => {
+    expect(
+      profileLinkedHomeRefusal(
+        { slug: 'faculty-research-area-quillfixture-quantum' },
+        { ...home, acronymExpansion: 'Quantum Model Systems Research Lab' },
+        'Jane Quillfixture',
+      ),
+    ).toBe('names-another-persons-lab');
+  });
 });
 
 const fixtureProfileHtml = `

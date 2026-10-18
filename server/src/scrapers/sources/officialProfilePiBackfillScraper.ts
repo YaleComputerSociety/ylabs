@@ -21,6 +21,7 @@ import {
   classifyHarvestedResearchHomeName,
   entityKeyNamesOnlyThisPerson,
   NO_SURNAME_ROSTER,
+  personIdentityTokens,
   researchHomeIdentityTokens,
   eponymMatchesIdentity,
   eponymousLabNameSurnameCandidates,
@@ -2088,8 +2089,10 @@ function homeNamesAnotherPersonsLab(
   home: OfficialProfileResearchHome,
   personName: unknown,
 ): boolean {
+  if (acronymExpansionNamesIdentity(home.acronymExpansion, personIdentityTokens(personName))) {
+    return false;
+  }
   const identityTokens = researchHomeIdentityTokens({ personName, slug: entity.slug });
-  if (acronymExpansionNamesIdentity(home.acronymExpansion, identityTokens)) return false;
   return claimsAnotherPersonsLabByUrlPath({
     harvestedName: home.name,
     websiteUrl: home.url,
