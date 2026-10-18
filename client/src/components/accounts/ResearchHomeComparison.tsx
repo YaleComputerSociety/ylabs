@@ -178,14 +178,16 @@ const involvementLinks = (
     if (safe && !links.some((link) => link.href === safe)) links.push({ href: safe, label });
   };
   if (context.wayInWithheld) {
-    add(actions.activityCheckUrl, 'Check current activity');
-    return links;
+    add(actions.activityCheckUrl, 'Open the official page');
+  } else {
+    if (actions.offersOrgEngagementPage) add(context.officialSource?.url, 'See how to get involved');
+    if (actions.offersApplyPage) add(context.applyPageUrl, 'See how to get involved');
+    if (actions.showsWebsiteCta) add(actions.websiteCtaUrl, researchWebsiteCtaLabel(entity));
+    if (actions.offersJoinLinkBesideWebsite) add(context.applyPageUrl, 'See how to join');
+    if (actions.showsProfileButton) add(actions.leadCardProfileUrl, 'Open official profile');
+    if (actions.offersOfficialPage) add(context.officialSource?.url, 'Open the official page');
   }
-  if (actions.offersOrgEngagementPage) add(context.officialSource?.url, 'See how to get involved');
-  if (actions.offersApplyPage) add(context.applyPageUrl, 'See how to get involved');
-  if (actions.showsWebsiteCta) add(actions.websiteCtaUrl, researchWebsiteCtaLabel(entity));
-  if (actions.offersJoinLinkBesideWebsite) add(context.applyPageUrl, 'See how to join');
-  if (actions.showsProfileButton || links.length === 0) {
+  if (links.length === 0 && actions.leadCardLinksProfile) {
     add(actions.leadCardProfileUrl, 'Open official profile');
   }
   return links;

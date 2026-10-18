@@ -55,6 +55,7 @@ export interface ResearchDetailActionLinks {
   offersOrgEngagementPage: boolean;
   offersApplyPage: boolean;
   offersJoinLinkBesideWebsite: boolean;
+  offersOfficialPage: boolean;
   activityCheckUrl?: string;
   leadCardLinksProfile: boolean;
   profileOpenedAbove: boolean;
@@ -84,6 +85,7 @@ function resolveWithheldWayInActionLinks(
     offersOrgEngagementPage: false,
     offersApplyPage: false,
     offersJoinLinkBesideWebsite: false,
+    offersOfficialPage: false,
     ...(activityCheckUrl ? { activityCheckUrl } : {}),
     leadCardLinksProfile,
     profileOpenedAbove:
@@ -129,6 +131,13 @@ export function resolveResearchDetailActionLinks(
   const showsProfileButton = profileTakesWebsiteSlot;
 
   const leadCardLinksProfile = hasLeadCard && Boolean(leadCardProfileUrl);
+  const offersOfficialPage =
+    Boolean(officialSource) &&
+    !showsWebsiteCta &&
+    !offersOrgEngagementPage &&
+    !offersApplyPage &&
+    !showsProfileButton &&
+    !leadCardLinksProfile;
   return {
     leadCardProfileUrl,
     websiteCtaUrl: showsWebsiteCta ? websiteUrl : undefined,
@@ -137,6 +146,7 @@ export function resolveResearchDetailActionLinks(
     offersOrgEngagementPage,
     offersApplyPage,
     offersJoinLinkBesideWebsite,
+    offersOfficialPage,
     leadCardLinksProfile,
     profileOpenedAbove: !profileNeedsOwnButton || showsProfileButton,
     // Read before the CTA suppression, so the audit can separate "both slots would

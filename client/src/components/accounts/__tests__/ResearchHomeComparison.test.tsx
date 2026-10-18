@@ -143,6 +143,36 @@ describe('ResearchHomeComparison', () => {
     expect(within(involvementRow).getByText('Unknown')).toBeTruthy();
   });
 
+  it('offers the official page the detail page offers when no lead card links a profile', async () => {
+    mockDetailBySlug({
+      'lab-a': {
+        ...entityA,
+        entityType: 'LAB',
+        websiteUrl: '',
+        leadIdentityStatus: 'under_review',
+        sourceUrls: [
+          'https://engineering.example.edu/research/lab-a',
+          'https://engineering.example.edu/groups/lab-a-overview',
+        ],
+      },
+      'lab-b': entityB,
+    });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    const involvementRow = (await screen.findByRole('rowheader', { name: 'How to get involved' }))
+      .parentElement as HTMLElement;
+    const officialPage = await within(involvementRow).findByRole('link', {
+      name: 'Open the official page',
+    });
+    expect(officialPage.getAttribute('href')).toMatch(/^https:\/\/engineering\.example\.edu\//);
+    expect(within(involvementRow).queryByRole('link', { name: 'Open official profile' })).toBeNull();
+  });
+
   it('labels official links by role rather than by URL slug', async () => {
     mockDetailBySlug({
       'lab-a': {

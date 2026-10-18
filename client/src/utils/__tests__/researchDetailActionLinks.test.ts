@@ -159,6 +159,34 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
     expect(links.websiteCtaUrl).toBeUndefined();
   });
 
+  it('offers the official page only when no other action or lead card link applies', () => {
+    expect(
+      resolveResearchDetailActionLinks({ ...base, officialSource: { url: JOIN } }).offersOfficialPage,
+    ).toBe(true);
+    expect(
+      resolveResearchDetailActionLinks({
+        ...base,
+        officialSource: { url: JOIN },
+        hasLeadCard: true,
+        profileUrl: PROFILE,
+      }).offersOfficialPage,
+    ).toBe(false);
+    expect(
+      resolveResearchDetailActionLinks({
+        ...base,
+        officialSource: { url: JOIN },
+        websiteUrl: WEBSITE,
+      }).offersOfficialPage,
+    ).toBe(false);
+    expect(
+      resolveResearchDetailActionLinks({
+        ...base,
+        officialSource: { url: JOIN },
+        wayInWithheld: true,
+      }).offersOfficialPage,
+    ).toBe(false);
+  });
+
   it('never repeats the profile the lead card already links', () => {
     const links = resolveResearchDetailActionLinks({
       ...base,

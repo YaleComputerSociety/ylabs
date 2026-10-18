@@ -530,13 +530,7 @@ const DecisionSummary = ({
    * homepage where it has one, so the generic page is offered only when no card links
    * a profile.
    */
-  const offersOfficialPage =
-    !wayInWithheld &&
-    Boolean(officialSource) &&
-    !showsWebsiteCta &&
-    !offersOrgEngagementPage &&
-    !applyPageUrl &&
-    !leadCardLinksProfile;
+  const offersOfficialPage = actionLinks.offersOfficialPage;
   const getInvolvedHasOwnAction =
     showsWebsiteCta ||
     offersOrgEngagementPage ||
