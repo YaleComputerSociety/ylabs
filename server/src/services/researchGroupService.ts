@@ -575,6 +575,8 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// Meilisearch ignores every query word past the tenth.
+const MEILISEARCH_QUERY_WORD_LIMIT = 10;
 // A candidate-pool hit is never served. It is reduced to its id, and the served
 // row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
 // 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
@@ -1961,11 +1963,12 @@ async function searchResearchGroupsForQuery(
     ...(matchingStrategy ? { matchingStrategy } : {}),
   });
   const searchKeywordLeg = async (
+    keywordText: string,
     matchingStrategy?: string,
     hitsPerPage: number = HYBRID_CANDIDATE_POOL_SIZE,
   ): Promise<any[]> => {
     try {
-      const keywordLegResult = await index.search(meiliQueryText, {
+      const keywordLegResult = await index.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showRankingScoreDetails: true,
         attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -1983,13 +1986,14 @@ async function searchResearchGroupsForQuery(
   // Match positions cost more than the rest of a 200-row keyword query, and only
   // the first surviving hit's are read, so that one row is re-read with them (#3949).
   const searchKeywordLegTopHitMatches = async (
+    keywordText: string,
     matchingStrategy: string | undefined,
     keywordLegRawHits: any[],
   ): Promise<{ hit: any; failed: boolean } | null> => {
     const topHit = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits[0];
     if (!topHit) return null;
     try {
-      const topHitResult = await index.search(meiliQueryText, {
+      const topHitResult = await index.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showMatchesPosition: true,
         attributesToRetrieve: [
@@ -2014,25 +2018,74 @@ async function searchResearchGroupsForQuery(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  const keywordLegSearch = (async (): Promise<{
+  type KeywordLegOutcome = {
+    keywordText: string;
     matchingStrategy: string | undefined;
     rawHits: any[];
-  }> => {
-    if (!runsHybridLegs) return { matchingStrategy: undefined, rawHits: [] };
-    const allWordsHits = await searchKeywordLeg(finalSearchParams.matchingStrategy);
+  };
+  const servesNoKeywordRow = (hits: any[]) => dropCoincidentalTypoOnlyHits(hits).hits.length === 0;
+  const searchKeywordLegWords = async (keywordText: string): Promise<KeywordLegOutcome> => {
+    const allWordsHits = await searchKeywordLeg(keywordText, finalSearchParams.matchingStrategy);
     // A phrase no single row carries in full ("immigration policy", "wind power")
     // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
     // matching the phrase's leading words are the next best evidence; a query
     // matching nothing at all still takes the thresholded path below. Measured as
     // part of the design: removing it cost concept queries 0.80 to 0.74 and
     // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
-    if (
-      dropCoincidentalTypoOnlyHits(allWordsHits).hits.length === 0 &&
-      finalSearchParams.matchingStrategy === 'all'
-    ) {
-      return { matchingStrategy: 'last', rawHits: await searchKeywordLeg('last') };
+    if (servesNoKeywordRow(allWordsHits) && finalSearchParams.matchingStrategy === 'all') {
+      return {
+        keywordText,
+        matchingStrategy: 'last',
+        rawHits: await searchKeywordLeg(keywordText, 'last'),
+      };
     }
-    return { matchingStrategy: finalSearchParams.matchingStrategy, rawHits: allWordsHits };
+    return {
+      keywordText,
+      matchingStrategy: finalSearchParams.matchingStrategy,
+      rawHits: allWordsHits,
+    };
+  };
+  // `last` never drops the first word, so one word no row carries at the front of
+  // the query ("xyzzy medieval plague podcast") emptied the keyword leg, and with it
+  // the whole search, while the same word typed last was dropped harmlessly. Such a
+  // word is searched for alone, and when no row matches it the rest of the query is
+  // searched as if it had not been typed.
+  // Meilisearch matches only a query's last word as a prefix, so every other word is
+  // probed whole, which a trailing space asks for: probed alone, the first word of
+  // "pure math" reached "purely" by prefix and was kept, though no row carries it.
+  const wordsSomeRowMatches = async (words: string[]): Promise<string[]> => {
+    const distinctWords = [...new Set(words)];
+    const lastWord = words[words.length - 1];
+    const probeText = (word: string) => (word === lastWord ? word : `${word} `);
+    const matched = await Promise.all(
+      distinctWords.map(
+        async (word) => !servesNoKeywordRow(await searchKeywordLeg(probeText(word), 'all', 1)),
+      ),
+    );
+    const matchedWords = new Set(distinctWords.filter((_word, position) => matched[position]));
+    return words.filter((word) => matchedWords.has(word));
+  };
+  const keywordLegSearch = (async (): Promise<KeywordLegOutcome> => {
+    if (!runsHybridLegs) {
+      return { keywordText: meiliQueryText, matchingStrategy: undefined, rawHits: [] };
+    }
+    const typedWordsOutcome = await searchKeywordLegWords(meiliQueryText);
+    if (
+      !servesNoKeywordRow(typedWordsOutcome.rawHits) ||
+      typedWordsOutcome.matchingStrategy !== 'last'
+    ) {
+      return typedWordsOutcome;
+    }
+    const searchedWords = meiliQueryText
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, MEILISEARCH_QUERY_WORD_LIMIT);
+    if (searchedWords.length <= 1) return typedWordsOutcome;
+    const matchedWords = await wordsSomeRowMatches(searchedWords);
+    if (matchedWords.length === 0 || matchedWords.length === searchedWords.length) {
+      return typedWordsOutcome;
+    }
+    return searchKeywordLegWords(matchedWords.join(' '));
   })();
 
   const semanticLegSearch = keywordLegSearch.then(({ rawHits }) =>
@@ -2074,13 +2127,17 @@ async function searchResearchGroupsForQuery(
       : keywordLegSearch.then(({ rawHits }) =>
           deepCandidatePoolWanted(rawHits) ? searchDeepPool() : null,
         );
-  const deepKeywordLegSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
-    runsHybridLegs && deepCandidatePoolWanted(rawHits)
-      ? searchKeywordLeg(matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
-      : [],
+  const deepKeywordLegSearch = keywordLegSearch.then(
+    ({ keywordText, matchingStrategy, rawHits }) =>
+      runsHybridLegs && deepCandidatePoolWanted(rawHits)
+        ? searchKeywordLeg(keywordText, matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
+        : [],
   );
-  const keywordLegTopHitSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
-    runsSemanticLeg ? searchKeywordLegTopHitMatches(matchingStrategy, rawHits) : null,
+  const keywordLegTopHitSearch = keywordLegSearch.then(
+    ({ keywordText, matchingStrategy, rawHits }) =>
+      runsSemanticLeg
+        ? searchKeywordLegTopHitMatches(keywordText, matchingStrategy, rawHits)
+        : null,
   );
 
   const [
