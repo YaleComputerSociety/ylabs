@@ -2,7 +2,7 @@
  * Service layer for fellowship CRUD, search, and filter operations.
  */
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
-import { PROGRAM_SEARCH_FIELDS, rankProgramSearchMatches } from './programSearchRelevance';
+import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import {
   Fellowship,
@@ -1055,9 +1055,8 @@ export const searchFellowships = async (params: {
   })
     .sort(fieldSortOptions)
     .lean()) as Array<Record<string, unknown>>;
-  const orderedIds = rankProgramSearchMatches(safeQuery, candidates).map((candidate) =>
-    String(candidate._id),
-  );
+  const ranked = rankProgramSearch(safeQuery, candidates);
+  const orderedIds = ranked.programs.map((candidate) => String(candidate._id));
   const pageIds = orderedIds.slice(skip, skip + pageSize);
   const pageDocuments = pageIds.length
     ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
@@ -1072,6 +1071,7 @@ export const searchFellowships = async (params: {
     pageSize,
     totalPages: Math.ceil(orderedIds.length / pageSize),
     ...(queryCorrection ? { queryCorrection } : {}),
+    ...(ranked.missingOneWord ? { queryMatch: 'allButOneWord' as const } : {}),
   };
 };
 

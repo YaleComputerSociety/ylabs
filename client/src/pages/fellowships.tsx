@@ -288,6 +288,16 @@ const searchResultSections: typeof boardSections = [
   ...boardSections.filter((section) => section.key === 'archive'),
 ];
 
+const closeMatchSections: typeof boardSections = [
+  {
+    key: 'bestMatches',
+    title: 'Close matches',
+    description:
+      'Each of these programs mentions all but one of the words you typed, closest match first.',
+  },
+  ...boardSections.filter((section) => section.key === 'archive'),
+];
+
 const dateValue = (value?: string | null) => {
   if (!value) return null;
   const time = new Date(value).getTime();
@@ -416,6 +426,7 @@ const Fellowships = () => {
     queryString,
     queryCorrection,
     resultsRankedByRelevance,
+    resultsMissOneWord,
     searchTypedSpelling,
     fellowships,
     isLoading,
@@ -796,6 +807,8 @@ const Fellowships = () => {
   };
 
   const showSearchRanking = resultsRankedByRelevance && sortBy === 'default';
+  const resultsAreCloseMatches = resultsRankedByRelevance && resultsMissOneWord;
+  const showCloseMatches = showSearchRanking && resultsMissOneWord;
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
   const chooseQuickFilter = (value: FellowshipQuickFilter) => {
@@ -1052,7 +1065,21 @@ const Fellowships = () => {
                     </p>
                   </div>
                 )}
-                {(showSearchRanking ? searchResultSections : boardSections).map((section) =>
+                {resultsAreCloseMatches && (
+                  <p
+                    role="status"
+                    className="mb-4 rounded-card border border-line-brand bg-brand-soft px-4 py-3 text-sm text-brand-navy"
+                  >
+                    <span className="font-semibold">No program mentions every word you typed.</span>{' '}
+                    Try fewer words, or look through the close matches below.
+                  </p>
+                )}
+                {(showCloseMatches
+                  ? closeMatchSections
+                  : showSearchRanking
+                    ? searchResultSections
+                    : boardSections
+                ).map((section) =>
                   boardItems[section.key].length > 0 ? (
                     <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
                       <SectionHeader
