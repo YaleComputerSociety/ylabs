@@ -57,6 +57,7 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
  */
 interface FavoriteIntent {
   favorite: boolean;
+  surface: ResearchSaveSurface;
   sequence: number;
   inFlight: boolean;
   settled?: Promise<boolean>;
@@ -137,30 +138,28 @@ export const useFavorites = (
   );
 
   const drainIntent = useCallback(
-    async (id: string, intent: FavoriteIntent, surface: ResearchSaveSurface) => {
+    async (id: string, intent: FavoriteIntent): Promise<boolean> => {
       let confirmed: boolean | undefined;
       let attempted = intent.favorite;
       try {
         while (confirmed !== intent.favorite) {
           attempted = intent.favorite;
-          await sendFavorite(id, attempted, surface);
+          await sendFavorite(id, attempted, intent.surface);
           confirmed = attempted;
         }
-        return true;
+        intent.inFlight = false;
+        intent.settled = undefined;
+        return attempted;
       } catch {
         intent.inFlight = false;
         intent.settled = undefined;
         console.error(`Error ${attempted ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
-        if (intentsRef.current.get(id) === intent) {
-          intentsRef.current.delete(id);
-          setFavIds((current) => withFavorite(current, id, confirmed ?? !attempted));
-        }
+        const restored = confirmed ?? !attempted;
+        intentsRef.current.delete(id);
+        setFavIds((current) => withFavorite(current, id, restored));
         void showWarningDialog(config.mutationFailureText(attempted));
         await reload();
-        return false;
-      } finally {
-        intent.inFlight = false;
-        intent.settled = undefined;
+        return restored;
       }
     },
     [config, kind, reload, sendFavorite],
@@ -172,15 +171,17 @@ export const useFavorites = (
       const pending = intentsRef.current.get(id);
       const intent: FavoriteIntent = pending?.inFlight
         ? pending
-        : { favorite, sequence: intentSequenceRef.current, inFlight: false };
+        : { favorite, surface, sequence: intentSequenceRef.current, inFlight: false };
       intent.favorite = favorite;
+      intent.surface = surface;
       intent.sequence = intentSequenceRef.current;
       intentsRef.current.set(id, intent);
       setFavIds((current) => withFavorite(current, id, favorite));
-      if (intent.settled) return intent.settled;
-      intent.inFlight = true;
-      intent.settled = drainIntent(id, intent, surface);
-      return intent.settled;
+      if (!intent.settled) {
+        intent.inFlight = true;
+        intent.settled = drainIntent(id, intent);
+      }
+      return intent.settled.then((finalFavorite) => finalFavorite === favorite);
     },
     [defaultSurface, drainIntent],
   );

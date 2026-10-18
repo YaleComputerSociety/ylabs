@@ -233,4 +233,34 @@ describe('useFavorites', () => {
     expect(mockedAxios.delete).not.toHaveBeenCalled();
     expect(result.current.favIds).toEqual(['entity-1']);
   });
+
+  it('reports an undo as applied when the removal it undid fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockedAxios.get.mockResolvedValue({ data: { savedResearchEntityIds: ['entity-1'] } });
+    let failFirst: () => void = () => {};
+    mockedAxios.delete.mockImplementationOnce(
+      () => new Promise((_, reject) => (failFirst = () => reject(new Error('offline')))),
+    );
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+    await waitFor(() => expect(result.current.favIds).toEqual(['entity-1']));
+
+    let removal: Promise<boolean> | undefined;
+    let undo: Promise<boolean> | undefined;
+    act(() => {
+      removal = result.current.setFavorite('entity-1', false);
+    });
+    act(() => {
+      undo = result.current.setFavorite('entity-1', true);
+    });
+
+    let outcomes: boolean[] = [];
+    await act(async () => {
+      failFirst();
+      outcomes = await Promise.all([removal!, undo!]);
+    });
+
+    expect(outcomes).toEqual([false, true]);
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(result.current.favIds).toEqual(['entity-1']);
+  });
 });
