@@ -244,8 +244,9 @@ The two exhaustive Development modes (`development-full`, `development-increment
 25. `data-quality` (`beta:data-quality --strict`)
 26. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
 27. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-28. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-29. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+28. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
+29. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+30. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
 `integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.
