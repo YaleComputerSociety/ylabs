@@ -224,6 +224,10 @@ import {
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import {
+  storedFieldIsCreditedToACoursePage,
+  withoutCoursePageEvidence,
+} from './coursePageEvidenceScreen';
+import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
 } from './personProfileTopicScreen';
@@ -10072,10 +10076,9 @@ export async function materializeEntity(
   }
 
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    obs = withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc);
-    researchAreaEvidenceObservations = withoutPersonProfileTopicsOnOrganizationRow(
-      researchAreaEvidenceObservations,
-      entityDoc,
+    obs = withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc));
+    researchAreaEvidenceObservations = withoutCoursePageEvidence(
+      withoutPersonProfileTopicsOnOrganizationRow(researchAreaEvidenceObservations, entityDoc),
     );
   }
 
@@ -10362,6 +10365,7 @@ export async function materializeEntity(
   const storedResearchAreasEvidenceRetired =
     researchAreasHaveNoLiveEvidence &&
     (storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
+      storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
   const projection = await projectFromLog(entityType, {
