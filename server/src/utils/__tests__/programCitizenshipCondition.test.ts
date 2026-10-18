@@ -20,4 +20,21 @@ describe('programCitizenshipCondition (#5235)', () => {
       programCitizenshipCondition([undefined, 'Return to your home country safely.']),
     ).toBeUndefined();
   });
+
+  it('returns nothing for a sentence that mentions the home country without setting a condition', () => {
+    expect(
+      programCitizenshipCondition([
+        'International students are welcome to conduct research in their home countries.',
+        'International students may travel to their home country during breaks.',
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('returns a restriction stated with a funding verb', () => {
+    expect(
+      programCitizenshipCondition([
+        'Projects by international students in their home country are not funded.',
+      ]),
+    ).toBe('Projects by international students in their home country are not funded.');
+  });
 });

@@ -73,9 +73,7 @@ export const US_CITIZENS_ELIGIBLE = 'U.S. citizens are eligible';
 export const NON_US_CITIZENS_ELIGIBLE = 'Non-U.S. citizens are eligible';
 export const US_PERMANENT_RESIDENTS_ELIGIBLE = 'U.S. permanent residents are eligible';
 
-export const CITIZENSHIP_NOT_STATED_LABEL = 'Not stated. Check the official page.';
-
-export const YEAR_NOT_STATED_LABEL = 'Not stated. Check the official page.';
+export const NOT_STATED_LABEL = 'Not stated. Check the official page.';
 
 export const PROGRAM_FACET_NOT_STATED_NOTE =
   'Programs that do not state this are included. Check the official page.';
@@ -114,7 +112,7 @@ export function programCitizenshipSummary(
   if (statuses.includes(US_CITIZENS_ELIGIBLE) && statuses.includes(NON_US_CITIZENS_ELIGIBLE)) {
     return 'Open to U.S. and non-U.S. citizens';
   }
-  return statuses.length > 0 ? statuses.join(', ') : CITIZENSHIP_NOT_STATED_LABEL;
+  return statuses.length > 0 ? statuses.join(', ') : NOT_STATED_LABEL;
 }
 
 const CARD_AWARD_MAX_LENGTH = 28;

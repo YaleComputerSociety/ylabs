@@ -3,6 +3,9 @@ const HOME_COUNTRY =
 
 const INTERNATIONAL_GROUP = /\b(?:international|non-u\.?\s?s\.?|foreign)\b/i;
 
+const ELIGIBILITY_TERM =
+  /\b(?:(?:in|not )?eligible|may not|cannot|not permitted|not normally given|are not funded)\b/i;
+
 function sentencesOf(text: string): string[] {
   return text
     .replace(/\s+/g, ' ')
@@ -19,7 +22,10 @@ export function programCitizenshipCondition(prose: readonly unknown[]): string |
   for (const text of prose) {
     if (typeof text !== 'string') continue;
     const sentence = sentencesOf(text).find(
-      (candidate) => HOME_COUNTRY.test(candidate) && INTERNATIONAL_GROUP.test(candidate),
+      (candidate) =>
+        HOME_COUNTRY.test(candidate) &&
+        INTERNATIONAL_GROUP.test(candidate) &&
+        ELIGIBILITY_TERM.test(candidate),
     );
     if (sentence) return sentence;
   }

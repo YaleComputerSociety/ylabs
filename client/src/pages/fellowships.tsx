@@ -652,7 +652,12 @@ const Fellowships = () => {
     { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
     { label: 'Subject', values: selectedSubjects, clear: () => setSelectedSubjects([]) },
     { label: 'Region', values: selectedRegions, clear: () => setSelectedRegions([]) },
-    { label: 'Citizenship', values: selectedCitizenship, clear: () => setSelectedCitizenship([]) },
+    {
+      label: 'Citizenship',
+      values: selectedCitizenship,
+      labelFn: citizenshipFilterOptionLabel,
+      clear: () => setSelectedCitizenship([]),
+    },
   ].filter((g) => g.values.length > 0);
 
   const fellowshipChips: ActiveFilterChip[] = fellowshipFilterGroups.map((group) => {

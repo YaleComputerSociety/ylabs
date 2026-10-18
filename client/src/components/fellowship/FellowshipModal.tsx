@@ -24,7 +24,7 @@ import {
   isDepartmentResearchGuidance,
   programKindLabel,
 } from '../../utils/programJourney';
-import { programCitizenshipSummary, YEAR_NOT_STATED_LABEL } from '../../utils/programBoard';
+import { programCitizenshipSummary, NOT_STATED_LABEL } from '../../utils/programBoard';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
@@ -577,7 +577,7 @@ const FellowshipModal = ({
                       {fellowship.yearOfStudy.length === 0 && (
                         <div>
                           <span className="text-xs text-muted">Year of study</span>
-                          <p className="mt-1 text-sm text-ink-soft">{YEAR_NOT_STATED_LABEL}</p>
+                          <p className="mt-1 text-sm text-ink-soft">{NOT_STATED_LABEL}</p>
                         </div>
                       )}
                       {fellowship.yearOfStudy.length > 0 && (
