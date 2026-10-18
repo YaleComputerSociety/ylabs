@@ -202,11 +202,11 @@ Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server sc
 
 | Service | Docker Command | Schedule |
 |---|---|---|
-| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 7 * * 0`, Sundays at 07:00 UTC |
+| `ylabs-scraper` | `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --confirm-weekly-development-sweep` | `0 4 * * 5`, Fridays at 04:00 UTC |
 
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
-The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
+The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Friday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
 The service builds from `beta` with auto-deploy on (trigger: checks pass) and a build filter, set on 2026-10-18, of only `deploy/sweep-runner/**`, `package.json`, `.yarnrc.yml`, `server/package.json` and `server/yarn.lock`, with no ignored paths.
 The entrypoint clones `beta` at run time and runs that commit, so the image needs rebuilding only when the runner, its Python and Docker setup, or the dependency manifests change; before the filter, ordinary server pull requests triggered 5 to 7 image builds a day and exhausted the workspace's build minutes on 2026-10-18, which blocked every deploy, including Production's.
 One exception runs the image's own code: `--probe-hosts` executes from the image rather than from a fresh clone, so it uses the server code from the last image build.
