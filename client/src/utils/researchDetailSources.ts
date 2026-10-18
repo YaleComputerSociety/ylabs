@@ -1362,6 +1362,10 @@ const withDistinctLabels = <T extends { url: string; label: string }>(sources: T
   });
 };
 
+const RESEARCH_WEBSITE_SOURCE_CONTEXT = 'Profile website';
+
+const RESEARCH_WEBSITE_CONTRIBUTION_LABEL = 'Research website';
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
@@ -1393,9 +1397,15 @@ export const buildResearchDetailSources = ({
     else contributionsByDedupeKey.set(key, [...labels]);
   });
   const contextsFor = (normalizedUrl: string, context: string): string[] => {
+    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '') ?? [];
+    if (context === RESEARCH_WEBSITE_SOURCE_CONTEXT) {
+      return [
+        context,
+        ...contributed.filter((label) => label !== RESEARCH_WEBSITE_CONTRIBUTION_LABEL),
+      ];
+    }
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
-    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
-    return contributed && contributed.length ? contributed : [context];
+    return contributed.length ? contributed : [context];
   };
 
   const addSource = (url: string | undefined, context: string, attributionOnly = false) => {
@@ -1412,9 +1422,10 @@ export const buildResearchDetailSources = ({
 
     const existing = sources.get(key);
     /**
-     * A contribution only ever creates a row. It never edits one an earlier pass made,
-     * because a `Profile website` or evidence row already states what it is and the repo
-     * deliberately does not append contribution labels to those.
+     * A contribution only ever creates a row. It never edits one an earlier pass made: an
+     * evidence row already states what it is, and the research website row takes its
+     * contributions when it is made, after its own role, because a research summary,
+     * topics or methods read off that site are otherwise backed by no row at all.
      */
     if (existing && attributionOnly) return;
 
@@ -1432,7 +1443,7 @@ export const buildResearchDetailSources = ({
     sources.set(key, {
       url: normalized,
       label:
-        context === 'Profile website'
+        context === RESEARCH_WEBSITE_SOURCE_CONTEXT
           ? 'Research website'
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts,
@@ -1442,7 +1453,7 @@ export const buildResearchDetailSources = ({
     });
   };
 
-  addSource(group?.websiteUrl, 'Profile website');
+  addSource(group?.websiteUrl, RESEARCH_WEBSITE_SOURCE_CONTEXT);
   group?.sourceUrls?.forEach((url) => addSource(url, GENERIC_PROFILE_SOURCE_CONTEXT));
 
   accessSignals.forEach((signal) => {
