@@ -1,6 +1,7 @@
 /**
  * Shared types and helpers for browsable research entities and fellowships.
  */
+import { yearOfStudyChipLabels } from '../utils/programYearOfStudyChips';
 import { Fellowship } from './types';
 import {
   DepartmentNameRecord,
@@ -150,7 +151,7 @@ export function getItemTags(item: BrowsableItem): TagInfo[] {
           },
         ]
       : []),
-    ...item.data.yearOfStudy.map((y) => ({
+    ...yearOfStudyChipLabels(item.data.yearOfStudy).map((y) => ({
       label: y,
       bg: 'bg-blue-50',
       text: 'text-blue-700',
