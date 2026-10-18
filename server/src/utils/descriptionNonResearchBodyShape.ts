@@ -193,7 +193,7 @@ const POSITION_POSTING =
   /\b(?:(?:job|position|employment) (?:openings?|postings?|listings?|opportunities)|open positions|positions? (?:are |is )?(?:currently )?available|(?:we are|we['’]re) (?:currently )?(?:recruiting|hiring)|posts? (?:job )?openings|post (?:job )?openings)\b/i;
 
 const APPLICANT_ACTION =
-  /\b(?:students?|applicants?|candidates?|postdocs?|researchers?|interested)\b[^.]{0,200}\b(?:should|may|can|must|are (?:welcome|encouraged|invited) to|please)\s+(?:\w+\s+){0,2}(?:contact|e-?mail|write to|reach out|apply|(?:send|submit)\s+(?:\w+\s+){0,2}(?:applications?|cv|curriculum vitae|resumes?|cover letters?|inquir(?:y|ies)|statements?|e-?mails?|messages?|letters?))\b/i;
+  /\b(?:students?|applicants?|candidates?|postdocs?)\b[^.]{0,200}\b(?:should|may|can|must|are (?:welcome|encouraged|invited) to|please)\s+(?:\w+\s+){0,2}(?:contact|e-?mail|write to|reach out|apply (?:to|for)|(?:send|submit)\s+(?:\w+\s+){0,2}(?:applications?|cv|curriculum vitae|resumes?|cover letters?|inquir(?:y|ies)|statements?|e-?mails?|messages?|letters?))\b/i;
 
 const APPLICATION_MATERIALS =
   /\b(?:send|submit|include|attach|email)\b[^.]{0,60}\b(?:cv|curriculum vitae|resume|cover letter|transcripts?|letters? of (?:recommendation|reference))\b/i;
@@ -224,10 +224,10 @@ const NAMED_TALK =
   /\b(?:keynotes?|(?:invited|plenary|distinguished|lightning) (?:talks?|speakers?|presentations?|lectures?|addresses))\b/i;
 
 const HONOUR_RECEIVED =
-  /\b(?:receiv(?:es|ed|ing)|won|wins|was awarded|has been awarded|is awarded|was named|has been named|was elected|has been elected|honou?red with)\b(?:(?!\b(?:support|funding|funds|grants?)\b)[^.]){0,100}\b(?:awards?|prizes?|medals?|honou?rs?)\b/i;
+  /\b(?:receiv(?:es|ed|ing)|won|wins|was awarded|has been awarded|is awarded|was named|has been named|was elected|has been elected|honou?red with)\b(?:(?!\b(?:support|funding|funds|grants?)\b)[^.]){0,100}\b(?:awards?|prizes?|medals?|honou?rs?(?!\s+of\b))\b/i;
 
 const WORK_ACCEPTED =
-  /\b(?:papers?|articles?|works?|preprints?)\b[^.]{0,40}\b(?:accepted|to appear)\s+(?:at|in|to|by)\b/i;
+  /\b(?:papers?|articles?|work|preprints?)\b(?:(?:(?!\b(?:how|why|whether|what|which|that|when|where)\b)[^.]){0,40}\b(?:has|have|was|were|is|are|been|got))?\s+(?:accepted|to appear)\s+(?:at|in|to|by)\b/i;
 
 const ANNOUNCEMENT_FILLER =
   /^(?:more (?:details|information|news) (?:to come|coming)(?: soon)?|stay tuned|congratulations|congrats)\b/i;

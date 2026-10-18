@@ -221,6 +221,38 @@ describe('a body that says how to join or narrates events (#5109)', () => {
     ).toBe(false);
   });
 
+  it('keeps research prose whose wording overlaps an application, a naming or an acceptance', () => {
+    expect(
+      isJoiningInstructionsText(
+        'We are interested in how cells can apply mechanical forces to their surroundings.',
+      ),
+    ).toBe(false);
+    expect(
+      nonResearchBodyShape(
+        'Researchers can contact the facility manager to arrange training on the confocal microscopes.',
+        'CORE_FACILITY',
+      ),
+    ).toBeNull();
+    expect(
+      isEventNarrationText(
+        'Our group works on how new social norms become accepted in communities.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText(
+        'Our work examines why some practices are accepted in rural clinics.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText(
+        'The center was named in honor of its founder and studies coastal flooding.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText('Two papers from the lab have been accepted at an example conference.'),
+    ).toBe(true);
+  });
+
   it('fails the quality bar for both the body and the card', () => {
     expect(fullDescriptionQuality(joiningInstructions, undefined, 'LAB').flags).toContain(
       'joining-instructions',
