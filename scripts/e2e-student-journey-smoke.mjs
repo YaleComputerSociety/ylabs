@@ -261,7 +261,7 @@ await step('signed-in student reaches the research browse home', async () => {
   await page.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
   await page
-    .getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' })
+    .getByRole('heading', { level: 1, name: 'Find Yale research that fits you.' })
     .waitFor({ timeout: 20000 });
   await page.getByRole('heading', { name: 'Research to explore' }).waitFor({ timeout: 20000 });
   await assertTextIncludes(SMOKE_ENTITY_NAME);
@@ -274,7 +274,10 @@ await step(
     const laptopPage = await context.newPage();
     try {
       const sidebar = laptopPage.locator('header', {
-        has: laptopPage.getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' }),
+        has: laptopPage.getByRole('heading', {
+          level: 1,
+          name: 'Find Yale research that fits you.',
+        }),
       });
       const assertSidebarFits = async (state) => {
         const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({

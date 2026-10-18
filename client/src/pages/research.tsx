@@ -1733,13 +1733,14 @@ const Research = () => {
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
             <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
-              Find a Yale lab that fits you.
+              Find Yale research that fits you.
             </h1>
             <p
               id="research-search-context"
               className="mt-2 hidden max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:block sm:text-base sm:leading-6 xl:hidden"
             >
-              Search by interest, professor, course topic, method, or question.
+              Labs, centers, and faculty research in every field. Search by interest, professor,
+              course topic, method, or question.
             </p>
 
             <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">

@@ -515,6 +515,45 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean =>
 const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
   sourcePathMatches(url, APPLY_OR_JOIN_PATH);
 
+/**
+ * The materializer admits a join route by what the page says, wherever it sits on the site,
+ * so a lab's invitation to undergraduates can be cited from its press or news page. The
+ * page is a fair citation; a label promising a join page over it is not.
+ */
+const JOIN_SHAPED_PATH =
+  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-/_.]|$)/i;
+
+export const isJoinShapedSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, JOIN_SHAPED_PATH);
+
+export const JOIN_PAGE_LINK_LABEL = 'See how to join';
+export const JOIN_NOTE_LINK_LABEL = 'Read what they say about joining';
+
+export const joinPageLinkLabel = (
+  url?: string | null,
+  joinShapedLabel: string = JOIN_PAGE_LINK_LABEL,
+): string => (isJoinShapedSourceUrl(url) ? joinShapedLabel : JOIN_NOTE_LINK_LABEL);
+
+const ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS: Record<string, string> = {
+  POSTED_OPENING: 'Posted opening',
+  CREDIT_FORMALIZATION_POSSIBLE: 'Course credit option',
+  PAST_UNDERGRADS: 'Past undergraduate members',
+  CURRENT_UNDERGRADS: 'Current undergraduate members',
+  FACULTY_SUPERVISES_STUDENT_PROJECTS: 'Supervises student projects',
+  APPLICATION_FORM_EXISTS: 'Mentions how to join',
+};
+
+const UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT = 'Undergraduate access';
+
+export const ACCESS_SIGNAL_SOURCE_CONTEXTS: ReadonlySet<string> = new Set([
+  ...Object.values(ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS),
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT,
+]);
+
+export const accessSignalSourceContext = (signalType?: string): string =>
+  ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS[(signalType || '').toUpperCase()] ||
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
+
 // Mirrors `PERSON_SCOPED_RESEARCH_ENTITY_TYPES` in
 // server/src/models/storedVocabularies.ts, including the retired types a stored
 // row may still carry; changing the arms there requires updating this copy.
@@ -1368,7 +1407,7 @@ export const buildResearchDetailSources = ({
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
-    addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
+    addSource(signal.sourceUrl, accessSignalSourceContext(signal.signalType));
   });
 
   /**

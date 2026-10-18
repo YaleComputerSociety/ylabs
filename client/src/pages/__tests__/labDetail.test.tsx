@@ -1347,6 +1347,41 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
+  it('explains a principal investigator lead and spells out grant funders', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'LAB',
+        recentGrants: [{ agency: 'NHLBI' }],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/fixture-lead/' },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.getByText(
+        'The faculty member who leads this research, also called the principal investigator (PI).',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/1 from National Heart, Lung, and Blood Institute \(NHLBI\)/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Funded: 1/)).toBeNull();
+  });
+
   it('drops a generic official page beside a lead card that already links the profile', async () => {
     renderLabDetail({
       ...basePayload,
@@ -1434,7 +1469,7 @@ describe('LabDetail page', () => {
       JOIN_PAGE_URL,
     );
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
-    expect(screen.queryByText('opened above')).toBeNull();
+    expect(screen.queryByText('also linked above')).toBeNull();
   });
 
   it('offers the research homepage over an own-button profile and links the join page beneath it', async () => {
@@ -1483,6 +1518,35 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
       vettedJoinPageUrl,
     );
+  });
+
+  it('labels a served join route by what its page is when the address is not a join page', async () => {
+    const pressPageUrl = 'https://join-lab.example.test/press';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+      accessSignals: [
+        {
+          signalType: 'APPLICATION_FORM_EXISTS',
+          confidence: 'MEDIUM',
+          excerpt: 'A join, opportunities, or application page was found.',
+          sourceUrl: pressPageUrl,
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'See how to join' })).toBeNull();
+    expect(
+      screen.getByRole('link', { name: 'Read what they say about joining' }).getAttribute('href'),
+    ).toBe(pressPageUrl);
+    expect(screen.getByText('Mentions how to join')).toBeTruthy();
+    expect(screen.queryByText(/Application Form Exists/)).toBeNull();
   });
 
   it('offers the served join page as the button when the row has no homepage', async () => {
@@ -1851,7 +1915,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('heading', { name: 'Principal Investigator' })).toBeTruthy();
-    expect(screen.getByText('Lead identity under review')).toBeTruthy();
+    expect(screen.getByText('Lead not confirmed yet')).toBeTruthy();
     expect(screen.queryByText('Unverified Investigator')).toBeNull();
   });
 
@@ -2071,7 +2135,7 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('What this lab studies');
-    expect(text).toContain('Best fit for');
+    expect(text).toContain('Topics');
     expect(screen.getByText('Fixture Evolution')).toBeTruthy();
     expect(screen.getByText('Population Models')).toBeTruthy();
     expect(screen.getByText('Synthetic DNA Examples')).toBeTruthy();
@@ -2464,7 +2528,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText('Example Health Systems Profile');
 
-    expect(screen.getByText('Best fit for')).toBeTruthy();
+    expect(screen.getByText('Topics')).toBeTruthy();
     expect(screen.queryByText('This lab appears to study')).toBeNull();
     expect(screen.queryByText('Good fit if you are interested in')).toBeNull();
     expect(screen.queryByText('Student fit')).toBeNull();
