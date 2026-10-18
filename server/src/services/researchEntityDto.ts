@@ -32,7 +32,7 @@ import {
   isPostingPageCitedAsResearchWebsite,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
-  withoutUncreditedLinkedPublicationOrDocumentCitations,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
@@ -737,10 +737,11 @@ function derivePublicResearchEntityDto(
     ...dto,
     shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
   };
-  dto.sourceUrls = withoutUncreditedLinkedPublicationOrDocumentCitations(
+  dto.sourceUrls = withoutUncreditedCreditOnlyCitations(
     dto.sourceUrls,
     group.fieldProvenance,
     servedPayload,
+    group,
   );
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(

@@ -307,7 +307,7 @@ import {
   recordSpecificApplicationPortalIdentity,
   isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
-  withoutUncreditedLinkedPublicationOrDocumentCitations,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { namesAPostingRatherThanResearch } from '../utils/postingName';
@@ -9247,7 +9247,7 @@ export async function projectFromLog(
           ? (entityDoc?.sourceUrls as unknown[])
           : [];
       const projected = documentAsProjected(set, unset, entityDoc);
-      const keptCitations = withoutUncreditedLinkedPublicationOrDocumentCitations(
+      const keptCitations = withoutUncreditedCreditOnlyCitations(
         citedThisPass,
         projected.fieldProvenance,
         projected,
@@ -9328,7 +9328,7 @@ export async function projectFromLog(
         const projected = documentAsProjected(set, unset, entityDoc);
         const citableProvenanceSourceUrl =
           provenanceSourceUrl &&
-          withoutUncreditedLinkedPublicationOrDocumentCitations(
+          withoutUncreditedCreditOnlyCitations(
             [provenanceSourceUrl],
             projected.fieldProvenance,
             projected,

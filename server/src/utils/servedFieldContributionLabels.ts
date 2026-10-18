@@ -75,13 +75,14 @@ export interface SourceFieldContribution {
 export function buildSourceFieldContributions(
   fieldProvenance: unknown,
   allowSourceUrl: (url: string) => boolean,
+  fieldHoldsValue: (field: string) => boolean = () => true,
 ): SourceFieldContribution[] {
   const entries = provenanceEntries(fieldProvenance);
   const byUrl = new Map<string, Set<string>>();
 
   for (const [field, provenance] of entries) {
     const label = servedFieldContributionLabel(field);
-    if (!label) continue;
+    if (!label || !fieldHoldsValue(field)) continue;
     const sourceUrl = typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl.trim() : '';
     if (!sourceUrl || !allowSourceUrl(sourceUrl)) continue;
     const bucket = byUrl.get(sourceUrl);

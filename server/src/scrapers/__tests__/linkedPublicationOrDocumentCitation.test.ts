@@ -12,7 +12,8 @@ import { publicResearchDetailGroup } from '../../services/researchGroupService';
 import { toPublicResearchEntityDto } from '../../services/researchEntityDto';
 import {
   isLinkedPublicationOrDocumentUrl,
-  withoutUncreditedLinkedPublicationOrDocumentCitations,
+  isNationalLaboratoryHomePageUrl,
+  withoutUncreditedCreditOnlyCitations,
 } from '../../utils/researchHomeWebsiteUrl';
 
 const OWN_PROFILE = 'https://earth.yale.edu/profile/synthetic-person-fixture';
@@ -28,6 +29,9 @@ const DEPARTMENT_PDF = 'https://history.yale.edu/sites/default/files/synthetic-f
 const PERSONAL_SITE = 'https://synthetic-fixture-research.example.org/';
 const PORTAL_PAPER_PAGE =
   'https://research-portal.example.ac.uk/en/publications/synthetic-degradation-of-fixture-lipids';
+
+const NATIONAL_LAB_HOME = 'https://www.anl.gov/';
+const NATIONAL_LAB_LANDING = 'https://www.anl.gov/world/';
 
 const resolvedField = (value: unknown): ResolvedField => ({
   value,
@@ -100,7 +104,7 @@ describe('the shape of a linked paper or file', () => {
 
   it('keeps a document a served field was read from', () => {
     expect(
-      withoutUncreditedLinkedPublicationOrDocumentCitations(
+      withoutUncreditedCreditOnlyCitations(
         [OWN_PROFILE, DEPARTMENT_PDF],
         { fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF } },
         { fullDescription: 'A synthetic research summary.' },
@@ -109,7 +113,7 @@ describe('the shape of a linked paper or file', () => {
   });
   it('does not keep a document credited only for a field that no longer holds a value', () => {
     expect(
-      withoutUncreditedLinkedPublicationOrDocumentCitations(
+      withoutUncreditedCreditOnlyCitations(
         [OWN_PROFILE, DEPARTMENT_PDF],
         { fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF } },
         { fullDescription: '' },
@@ -118,12 +122,96 @@ describe('the shape of a linked paper or file', () => {
   });
   it('does not keep a document only bookkeeping provenance credits', () => {
     expect(
-      withoutUncreditedLinkedPublicationOrDocumentCitations(
+      withoutUncreditedCreditOnlyCitations(
         [OWN_PROFILE, SHAREPOINT_CV],
         { leadVerification: { sourceName: 'synthetic-source', sourceUrl: SHAREPOINT_CV } },
         {},
       ),
     ).toEqual([OWN_PROFILE]);
+  });
+});
+
+describe('a national laboratory home page', () => {
+  it.each([
+    NATIONAL_LAB_HOME,
+    NATIONAL_LAB_LANDING,
+    'https://slac.stanford.edu',
+    'http://bnl.gov/index.php',
+  ])('reads %s as a national laboratory home page', (url) => {
+    expect(isNationalLaboratoryHomePageUrl(url)).toBe(true);
+  });
+
+  it.each([
+    'https://www.anl.gov/profile/synthetic-person-fixture',
+    'https://www.anl.gov/world/synthetic-fixture-facility',
+    'https://synthetic-fixture-group.anl.gov/',
+    'https://stanford.edu/',
+    PERSONAL_SITE,
+    OWN_PROFILE,
+  ])('does not read %s as a national laboratory home page', (url) => {
+    expect(isNationalLaboratoryHomePageUrl(url)).toBe(false);
+  });
+
+  it('drops a home page credited only for fields that are now empty', () => {
+    expect(
+      withoutUncreditedCreditOnlyCitations(
+        [NATIONAL_LAB_LANDING, OWN_PROFILE],
+        {
+          contactInstructionsQuote: {
+            sourceName: 'synthetic-source',
+            sourceUrl: NATIONAL_LAB_LANDING,
+          },
+          undergradEvidenceQuote: {
+            sourceName: 'synthetic-source',
+            sourceUrl: NATIONAL_LAB_LANDING,
+          },
+        },
+        { contactInstructionsQuote: null, undergradEvidenceQuote: '' },
+      ),
+    ).toEqual([OWN_PROFILE]);
+  });
+
+  it('keeps a home page a served summary was read from', () => {
+    expect(
+      withoutUncreditedCreditOnlyCitations(
+        [NATIONAL_LAB_HOME, OWN_PROFILE],
+        { fullDescription: { sourceName: 'synthetic-source', sourceUrl: NATIONAL_LAB_HOME } },
+        { fullDescription: 'A synthetic research summary.' },
+      ),
+    ).toEqual([NATIONAL_LAB_HOME, OWN_PROFILE]);
+  });
+});
+
+describe('a credit on a field that holds no value', () => {
+  it('does not keep a document credited by a lead field that is empty', () => {
+    expect(
+      withoutUncreditedCreditOnlyCitations(
+        [OWN_PROFILE, DOI_PAPER],
+        { inferredPiUserId: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER } },
+        { inferredPiUserId: null },
+      ),
+    ).toEqual([OWN_PROFILE]);
+  });
+
+  it('does not keep a document credited by an empty field whose label another field serves', () => {
+    expect(
+      withoutUncreditedCreditOnlyCitations(
+        [OWN_PROFILE, DEPARTMENT_PDF],
+        { shortDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF } },
+        { fullDescription: 'A synthetic research summary.', shortDescription: '' },
+      ),
+    ).toEqual([OWN_PROFILE]);
+  });
+
+  it('reads the credited field from the row when the served payload omits it', () => {
+    expect(
+      withoutUncreditedCreditOnlyCitations(
+        [OWN_PROFILE, DOI_PAPER],
+        { inferredPiUserKey: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER } },
+        {},
+        { inferredPiUserKey: 'synthetic-person-fixture' },
+      ),
+    ).toEqual([OWN_PROFILE, DOI_PAPER]);
   });
 });
 
@@ -250,6 +338,65 @@ describe('a linked paper or file is not cited as a source', () => {
           sourceUrls: [OWN_PROFILE, DEPARTMENT_PDF],
           fieldProvenance: {
             fullDescription: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
+          },
+        }),
+      ),
+    ) as Record<string, any>;
+    expect(served.sourceUrls).toEqual([OWN_PROFILE]);
+  });
+
+  it('drops a stored national laboratory home page credited only by empty fields', async () => {
+    const result = await projectFromLog(
+      'researchEntity',
+      researchEntityInput({
+        resolved: { name: resolvedField('Synthetic Person Fixture Faculty Research') },
+        entityDoc: facultyResearchRow({
+          sourceUrls: [NATIONAL_LAB_LANDING, OWN_PROFILE, PERSONAL_SITE],
+          contactInstructionsQuote: null,
+          undergradEvidenceQuote: '',
+          fieldProvenance: {
+            contactInstructionsQuote: {
+              sourceName: 'synthetic-source',
+              sourceUrl: NATIONAL_LAB_LANDING,
+            },
+            undergradEvidenceQuote: {
+              sourceName: 'synthetic-source',
+              sourceUrl: NATIONAL_LAB_LANDING,
+            },
+          },
+        }),
+      }),
+    );
+    expect(result.set.sourceUrls).toEqual([OWN_PROFILE, PERSONAL_SITE]);
+  });
+
+  it('withholds a national laboratory home page from the served detail payload', () => {
+    const served = toPublicResearchEntityDto(
+      publicResearchDetailGroup(
+        facultyResearchRow({
+          studentVisibilityTier: 'student_ready',
+          sourceUrls: [NATIONAL_LAB_LANDING, OWN_PROFILE, PERSONAL_SITE],
+          fieldProvenance: {
+            undergradEvidenceQuote: {
+              sourceName: 'synthetic-source',
+              sourceUrl: NATIONAL_LAB_LANDING,
+            },
+          },
+        }),
+      ),
+    ) as Record<string, any>;
+    expect(served.sourceUrls).toEqual([OWN_PROFILE, PERSONAL_SITE]);
+  });
+
+  it('withholds a document credited only by an empty lead field from the served payload', () => {
+    const served = toPublicResearchEntityDto(
+      publicResearchDetailGroup(
+        facultyResearchRow({
+          studentVisibilityTier: 'student_ready',
+          sourceUrls: [OWN_PROFILE, DOI_PAPER],
+          inferredPiUserId: null,
+          fieldProvenance: {
+            inferredPiUserId: { sourceName: 'synthetic-source', sourceUrl: DOI_PAPER },
           },
         }),
       ),
