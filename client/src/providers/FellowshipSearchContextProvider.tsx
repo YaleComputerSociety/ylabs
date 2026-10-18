@@ -27,6 +27,7 @@ import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
   FellowshipQuickFilter,
+  isFellowshipSearchPending,
 } from '../reducers/fellowshipSearchReducer';
 
 interface FellowshipSearchContextProviderProps {
@@ -82,6 +83,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     filterBarHeight,
     filterOptionsLoaded,
   } = state;
+  const isSearchPending = isFellowshipSearchPending(state);
 
   const setQueryString = useCallback((value: string) => {
     dispatch({ type: 'SET_QUERY_STRING', payload: value });
@@ -315,7 +317,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
 
-    dispatch({ type: 'SEARCH_REQUEST' });
+    dispatch({
+      type: 'SEARCH_REQUEST',
+      payload: { queryString: filtersRef.current.queryString.trim() },
+    });
 
     const accumulate = async () => {
       const collected: Fellowship[] = [];
@@ -489,6 +494,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         onToggleSortDirection,
         fellowships,
         isLoading,
+        isSearchPending,
         loadError,
         searchExhausted,
         page,

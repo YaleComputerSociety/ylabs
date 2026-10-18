@@ -355,8 +355,10 @@ const Fellowships = () => {
     searchTypedSpelling,
     fellowships,
     isLoading,
+    isSearchPending,
     loadError,
     setQueryString,
+    page,
     filterOptions,
     selectedProgramCategory,
     setSelectedProgramCategory,
@@ -869,7 +871,7 @@ const Fellowships = () => {
               activeQuickFilter={quickFilter}
               onQuickFilterChange={(value) => chooseQuickFilter(value as FellowshipQuickFilter)}
               totalCount={loadError || isFirstLoadPending ? undefined : resultCounterCount}
-              isLoading={isLoading}
+              isLoading={isSearchPending}
               chips={fellowshipChips}
               onClearAll={() => {
                 resetProgramFilters();
@@ -955,7 +957,10 @@ const Fellowships = () => {
                 onClearFilter={() => chooseQuickFilter(null)}
               />
             ) : (
-              <>
+              <div
+                aria-busy={isSearchPending}
+                className={`transition-opacity ${isSearchPending ? 'opacity-50' : ''}`}
+              >
                 {showNoLiveWindowsNotice && (
                   <div className="mb-6 rounded-card border border-line-brand bg-brand-soft px-5 py-4">
                     <h2 className="text-base font-semibold text-brand-navy">
@@ -984,7 +989,7 @@ const Fellowships = () => {
                         onToggleFavorite={handleToggleFavorite}
                         onOpenModal={handleOpenModal}
                         onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                        isLoading={isLoading}
+                        isLoading={isLoading && page > 1}
                         emptyMessage={`No ${section.title.toLowerCase()} records`}
                         onLoadMore={handleLoadMore}
                         disableVirtualization
@@ -994,7 +999,7 @@ const Fellowships = () => {
                 )}
 
                 {!searchExhausted && <div ref={sentinelRef} className="h-10 w-full mt-4" />}
-              </>
+              </div>
             )}
           </div>
         </div>
