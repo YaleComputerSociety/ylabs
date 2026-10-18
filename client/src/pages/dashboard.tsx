@@ -1,10 +1,10 @@
 /**
  * Dashboard page. Every signed-in account sees the same read view organized into
- * two surfaces:
- *   - Dashboard: the saved research an account is tracking (canonical
+ * two tabs:
+ *   - Saved research: the saved research an account is tracking (canonical
  *     ResearchPlan RESEARCH_ENTITY targets), with notes and the always-available
  *     next step of opening a home to find its official profile and reach out.
- *   - Program Watch: the programs and fellowships an account is watching
+ *   - Watched programs: the programs and fellowships an account is watching
  *     (canonical ResearchPlan PROGRAM targets), with deadline, accepting status,
  *     and eligibility.
  * There is no faculty self-edit surface and no faculty/student branching; public
