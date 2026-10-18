@@ -19,7 +19,10 @@ import {
 } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { leadGuardedServingInput, optionalPublicLeadMemberNames } from './researchGroupService';
-import { servedResearchEntityCardForRow } from './researchEntityDto';
+import {
+  decideServedResearchEntityCreativePractice,
+  servedResearchEntityCardForRow,
+} from './researchEntityDto';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
@@ -66,6 +69,7 @@ export interface SavedResearchEntitySummary {
   shortDescription?: string;
   description?: string;
   hasUndergradHostingEvidence?: boolean;
+  creativePractice?: true;
 }
 
 /**
@@ -397,6 +401,9 @@ export const savedResearchEntitySummary = (
     ...(entity.school ? { school: String(entity.school) } : {}),
     ...(shortDescription ? { shortDescription } : {}),
     ...servedUndergraduateAccessFields(entity),
+    ...(decideServedResearchEntityCreativePractice(entity, leadMemberNames).creativePractice
+      ? { creativePractice: true as const }
+      : {}),
   };
 };
 

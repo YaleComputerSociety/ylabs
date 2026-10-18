@@ -22,6 +22,7 @@ import {
   type UndergraduateAccessStatus,
 } from '../../utils/undergraduateAccessStatus';
 import ResearchHomeComparison from './ResearchHomeComparison';
+import { entityKindLabel, researchEntityTitle } from '../../utils/researchEntityCopy';
 import ResearchPlanStageControl from './ResearchPlanStageControl';
 import {
   createResearchAnalyticsInteractionId,
@@ -47,6 +48,8 @@ interface SavedResearchEntity {
   name: string;
   displayName?: string;
   kind?: string;
+  entityType?: string;
+  creativePractice?: boolean;
   departments?: string[];
   school?: string;
   shortDescription?: string;
@@ -84,17 +87,7 @@ const MAX_PLAN_NOTES_LENGTH = 2000;
 const MIN_COMPARE_ENTITIES = 2;
 const MAX_COMPARE_ENTITIES = 4;
 
-const kindLabel = (kind?: string): string => {
-  if (!kind) return 'Research';
-  return kind
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
-
-const entityDisplayName = (entity: SavedResearchEntity): string =>
-  entity.displayName?.trim() || entity.name;
+const entityDisplayName = (entity: SavedResearchEntity): string => researchEntityTitle(entity);
 
 const entitySubtitle = (entity: SavedResearchEntity): string => {
   const departments = (entity.departments || []).filter(Boolean);
@@ -481,17 +474,21 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
-                        <input
-                          type="checkbox"
-                          checked={selectedForCompare.includes(entity._id)}
-                          disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
-                          onChange={() => toggleCompareSelection(entity._id)}
-                          aria-label={`Select ${entityDisplayName(entity)} to compare`}
-                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-control border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        />
+                        <label className="-mx-3 -mb-3.5 -mt-3 inline-flex h-11 w-10 flex-shrink-0 cursor-pointer items-center justify-center has-[:disabled]:cursor-not-allowed">
+                          <input
+                            type="checkbox"
+                            checked={selectedForCompare.includes(entity._id)}
+                            disabled={atCompareLimit && !selectedForCompare.includes(entity._id)}
+                            onChange={() => toggleCompareSelection(entity._id)}
+                            aria-label={`Select ${entityDisplayName(entity)} to compare`}
+                            className="h-4 w-4 rounded-control border-line-strong accent-brand yr-focus-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                        </label>
                       )}
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-brand">{kindLabel(entity.kind)}</p>
+                        <p className="text-xs font-semibold text-brand">
+                          {entityKindLabel(entity)}
+                        </p>
                         <h3 className="truncate text-sm font-semibold text-ink">
                           <Link
                             to={`/research/${safeRouteSegment(entity.slug)}`}

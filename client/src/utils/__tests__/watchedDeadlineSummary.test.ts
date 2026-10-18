@@ -68,6 +68,19 @@ describe('summarizeWatchedDeadlines', () => {
     ).toEqual(['confirmed', 'projected']);
   });
 
+  it('leaves out a program already applied to or closed, whose deadline no longer asks anything', () => {
+    const watched: WatchedProgramWithStage[] = [
+      { program: program('applied', daysFromNow(3)), stage: 'APPLIED' },
+      { program: program('closed', daysFromNow(4)), stage: 'CLOSED' },
+      { program: program('preparing', daysFromNow(5)), stage: 'PREPARING' },
+    ];
+
+    const summary = summarizeWatchedDeadlines(watched, NOW);
+
+    expect(summary.approaching.map((item) => item.programId)).toEqual(['preparing']);
+    expect(summary.notStartedCount).toBe(0);
+  });
+
   it('distinguishes not-started from in-progress approaching programs', () => {
     const watched: WatchedProgramWithStage[] = [
       { program: program('untouched', daysFromNow(5)), stage: 'SAVED' },
@@ -136,12 +149,12 @@ describe('deadline label helpers', () => {
 
   it('emits not-started emphasis only when relevant', () => {
     expect(notStartedEmphasis(0)).toBeNull();
-    expect(notStartedEmphasis(2)).toBe('2 not started');
+    expect(notStartedEmphasis(2)).toBe('2 still marked Saved');
   });
 
   it('folds the not-started emphasis into the accessible label', () => {
     expect(approachingDeadlineAriaLabel(3, 2)).toBe(
-      '3 watched programs close within 2 weeks, 2 not started',
+      '3 watched programs close within 2 weeks, 2 still marked Saved',
     );
     expect(approachingDeadlineAriaLabel(3, 0)).toBe('3 watched programs close within 2 weeks');
   });

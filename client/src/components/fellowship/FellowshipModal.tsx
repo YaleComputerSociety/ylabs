@@ -23,6 +23,7 @@ import {
   isDepartmentResearchGuidance,
   programKindLabel,
 } from '../../utils/programJourney';
+import { programCitizenshipSummary } from '../../utils/programBoard';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
@@ -128,7 +129,6 @@ const MODAL_FILTER_KEYS = {
   termOfAward: 'selectedTermOfAward',
   purpose: 'selectedPurpose',
   globalRegions: 'selectedRegions',
-  citizenshipStatus: 'selectedCitizenship',
 } as const satisfies Record<string, keyof StudentProgramFilters>;
 
 type ModalFilterType = keyof typeof MODAL_FILTER_KEYS;
@@ -628,22 +628,12 @@ const FellowshipModal = ({
                           </div>
                         </div>
                       )}
-                      {fellowship.citizenshipStatus.length > 0 && (
-                        <div>
-                          <span className="text-xs text-muted">Citizenship status</span>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {fellowship.citizenshipStatus.map((status) => (
-                              <button
-                                key={status}
-                                onClick={() => handleFilterClick('citizenshipStatus', status)}
-                                className={`${filterChipClass} bg-orange-100 text-orange-800`}
-                              >
-                                {status}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <div>
+                        <span className="text-xs text-muted">Citizenship</span>
+                        <p className="mt-1 text-sm text-ink-soft">
+                          {programCitizenshipSummary(fellowship)}
+                        </p>
+                      </div>
                     </div>
                   </section>
                 )}

@@ -194,10 +194,10 @@ const LabMemberCard = ({
       <div className={baseClassName}>{identityBody}</div>
     );
   const sideLinkClassName =
-    'yr-focus-ring self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
+    'yr-focus-ring inline-flex min-h-11 items-center self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
   if (!orcidUrl && !resolvedEmailHref) return identityCard;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col">
       {identityCard}
       {orcidUrl && (
         <a
@@ -227,16 +227,7 @@ const LabMembersList = ({
   resolveLeadRoleLabel,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
-  if (!members || members.length === 0) {
-    return (
-      <div className="rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
-        <p className="text-sm font-semibold text-ink">No principal investigator is attached yet</p>
-        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
-          Check the official profile for current leadership.
-        </p>
-      </div>
-    );
-  }
+  if (!members || members.length === 0) return null;
 
   // Don't mutate the prop.
   const sorted = [...members]

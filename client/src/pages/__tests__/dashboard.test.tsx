@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UserContext from '../../contexts/UserContext';
@@ -179,7 +179,7 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     const cta = screen.getByRole('button', {
-      name: '2 watched programs close within 2 weeks, 1 not started',
+      name: '2 watched programs close within 2 weeks, 1 still marked Saved',
     });
     const programTab = screen.getByRole('tab', { name: 'Program Watch (3)' });
     expect(programTab.getAttribute('aria-selected')).toBe('false');
@@ -194,6 +194,57 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     expect(screen.queryByText(/close within/)).toBeNull();
+  });
+
+  it('keeps the selected tab in the URL so a reload returns to it', () => {
+    const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Dashboard />
+          <LocationProbe />
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Program Watch (1)' }));
+    expect(screen.getByTestId('location').textContent).toBe('?tab=programs');
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Program Watch (1)' }), { key: 'Home' });
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('location').textContent).toBe('');
+  });
+
+  it('follows an in-app link that changes the tab param while mounted', () => {
+    const ProgramsLink = () => <Link to="/dashboard?tab=programs">Go to programs</Link>;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Dashboard />
+          <ProgramsLink />
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Go to programs' }));
+    expect(
+      screen.getByRole('tab', { name: 'Program Watch (1)' }).getAttribute('aria-selected'),
+    ).toBe('true');
   });
 
   it('deep-links to the Program Watch tab via a tab query param', () => {

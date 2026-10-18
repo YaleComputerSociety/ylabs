@@ -71,7 +71,7 @@ const OPERATOR_FELLOWSHIP_SORT_FIELDS = new Set([
 ]);
 const DEFAULT_PUBLIC_FELLOWSHIP_SORT_FIELD = 'deadline';
 const MAX_SEARCH_PAGE = 1000;
-const MAX_SEARCH_PAGE_SIZE = 100;
+const MAX_SEARCH_PAGE_SIZE = 250;
 const MAX_SEARCH_QUERY_LENGTH = 512;
 const MAX_SEARCH_FILTER_VALUES = 50;
 const MAX_SEARCH_FILTER_VALUE_LENGTH = 120;
@@ -885,6 +885,10 @@ export const programQueryWordPrefixClauses = (query: string): Record<string, unk
       })),
     }));
 
+// A program that states no citizenship is unknown rather than ineligible, so a citizenship
+// filter keeps it and the card says the official page decides (#5130).
+const CITIZENSHIP_NOT_STATED = { citizenshipStatus: { $in: [null, []] } };
+
 export const searchFellowships = async (params: {
   query?: string;
   page?: number;
@@ -1017,7 +1021,10 @@ export const searchFellowships = async (params: {
     filter.globalRegions = { $in: safeGlobalRegions };
   }
   if (safeCitizenshipStatus.length > 0) {
-    filter.citizenshipStatus = { $in: safeCitizenshipStatus };
+    filter.$and = [
+      ...(filter.$and ?? []),
+      { $or: [{ citizenshipStatus: { $in: safeCitizenshipStatus } }, CITIZENSHIP_NOT_STATED] },
+    ];
   }
   if (safeProgramCategory.length > 0) {
     filter.programCategory = { $in: safeProgramCategory };

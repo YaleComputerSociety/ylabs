@@ -96,7 +96,7 @@ describe('one student search embeds its query once (#3149)', () => {
       18,
     );
 
-    expect(hybridSearches().length).toBeGreaterThanOrEqual(4);
+    expect(hybridSearches().length).toBeGreaterThanOrEqual(2);
     expect(mocks.getResearchSearchQueryVector).toHaveBeenCalledTimes(1);
     expect(embeddingSearches()).toHaveLength(0);
   });

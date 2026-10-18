@@ -983,6 +983,36 @@ describe('LabDetail page', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('labels a fellowship mentee count by its program beside a roster that lists undergraduates', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        pastUndergradAdvisees: [
+          { programName: 'Lab roster alumni', count: 2 },
+          { programName: 'Fixture Scholars II (Fixture Expansion)', year: 2025, count: 1 },
+        ],
+      },
+      roster: {
+        status: 'current',
+        returned: 0,
+        truncated: false,
+        withheldCount: 0,
+        sourceUrl: 'https://example.yale.edu/people',
+        undergraduates: [
+          { name: 'Listed Undergrad', status: 'current', startYear: 2024 },
+          { name: 'Earlier Undergrad', status: 'past', endYear: 2023 },
+        ],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
+    expect(text).not.toMatch(/Advised \d+ undergrad/);
+  });
+
   it.each([
     ['no quote', { undergradEvidenceQuote: undefined }],
     ['a blank quote', { undergradEvidenceQuote: '   ' }],
@@ -2487,6 +2517,21 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('No indexed planning routes are attached yet.')).toBeNull();
   });
 
+  it('renders no lead section, and no pointer to a profile link, when no lead is attached', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      members: [],
+      group: { ...basePayload.group, entityType: 'CORE_FACILITY' },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).not.toContain('Principal Investigator');
+    expect(text).not.toContain('No principal investigator');
+    expect(text).not.toContain('Check the official profile');
+  });
+
   it('does not render legacy active listings as a public detail section', async () => {
     const { container } = renderLabDetail();
 
@@ -2496,14 +2541,9 @@ describe('LabDetail page', () => {
     });
 
     const text = container.textContent || '';
-    const principalInvestigatorIndex = text.indexOf('Principal Investigator');
-    const sourcesIndex = text.indexOf('Sources');
 
     expect(text).not.toContain('Active Opportunities');
-    expect(text).toContain('No principal investigator is attached yet');
-    expect(text).toContain('Check the official profile for current leadership.');
-    expect(principalInvestigatorIndex).toBeGreaterThan(-1);
-    expect(sourcesIndex).toBeGreaterThan(principalInvestigatorIndex);
+    expect(text).toContain('Sources');
     expect(text).not.toContain('Research Activity');
     expect(text).not.toContain('Ways In');
     expect(text).not.toContain('Access evidence has not been attached yet.Evidence');

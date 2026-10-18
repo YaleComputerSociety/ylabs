@@ -26,6 +26,11 @@ export const researchPlanStageOrder = (stage: ResearchPlanStage): number =>
 export const isActiveResearchPlanStage = (stage: ResearchPlanStage): boolean =>
   stage !== CLOSED_RESEARCH_PLAN_STAGE;
 
+const PROGRAM_DEADLINE_SETTLED_STAGES = new Set<ResearchPlanStage>(['APPLIED', 'CLOSED']);
+
+export const programDeadlineIsSettled = (stage: unknown): boolean =>
+  PROGRAM_DEADLINE_SETTLED_STAGES.has(normalizeResearchPlanStage(stage));
+
 interface ResearchPlanStageMeta {
   label: string;
   badgeClassName: string;

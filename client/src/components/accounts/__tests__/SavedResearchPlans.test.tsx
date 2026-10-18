@@ -382,6 +382,39 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
   });
 
+  it('labels kind and title through the shared owners the profile page uses', async () => {
+    withAccessPlans([
+      {
+        _id: 'fra-id',
+        slug: 'fra-row',
+        name: 'Fixture Person Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        departments: [],
+      },
+      {
+        _id: 'practice-id',
+        slug: 'practice-row',
+        name: 'Fixture Artist Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        creativePractice: true,
+        departments: [],
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('link', { name: 'Fixture Person' })).toBeTruthy();
+    expect(screen.getByText('Faculty Research')).toBeTruthy();
+    expect(screen.getByText('Creative practice')).toBeTruthy();
+    expect(screen.queryByText('Individual')).toBeNull();
+  });
+
   it('caps comparison selection at four saved research profiles', async () => {
     withManySavedPlans(5);
 
