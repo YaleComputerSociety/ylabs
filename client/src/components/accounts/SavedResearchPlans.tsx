@@ -10,7 +10,9 @@ import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
-import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import usePlanNoteAutosave, { type PersistNoteOptions } from '../../hooks/usePlanNoteAutosave';
+import { keepalivePut } from '../../utils/keepalivePut';
+import PlanNoteSaveStatusText from './PlanNoteSaveStatusText';
 import useUndoableRemoval from '../../hooks/useUndoableRemoval';
 import UndoRemovalBanner from '../shared/UndoRemovalBanner';
 import LoadingSpinner from '../shared/LoadingSpinner';
@@ -108,11 +110,16 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const persistResearchPlanNote = async (entityId: string, note: string) => {
+const persistResearchPlanNote = async (
+  entityId: string,
+  note: string,
+  options?: PersistNoteOptions,
+) => {
   try {
-    await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-      data: { plan: { privateNotes: note } },
-    });
+    const body = { data: { plan: { privateNotes: note } } };
+    await (options?.keepalive
+      ? keepalivePut(`/users/savedResearchEntityPlans/${entityId}`, body)
+      : axios.put(`/users/savedResearchEntityPlans/${entityId}`, body));
   } catch (error) {
     console.error('Error saving research plan note.');
     throw error;
@@ -582,21 +589,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         rows={2}
                         className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                       />
-                      <p
-                        className={`mt-1 text-xs ${
-                          status === 'error' ? 'text-red-700' : 'text-muted'
-                        }`}
-                        role={status === 'error' ? 'alert' : 'status'}
-                        aria-live="polite"
-                      >
-                        {status === 'saving'
-                          ? 'Saving…'
-                          : status === 'saved'
-                            ? 'Saved'
-                            : status === 'error'
-                              ? 'Not saved. Check your connection or sign in again, then retry.'
-                              : ''}
-                      </p>
+                      <PlanNoteSaveStatusText status={status} />
                     </div>
                   )}
                 </div>
