@@ -24,7 +24,7 @@ import {
   isDepartmentResearchGuidance,
   programKindLabel,
 } from '../../utils/programJourney';
-import { programCitizenshipSummary } from '../../utils/programBoard';
+import { programCitizenshipSummary, YEAR_NOT_STATED_LABEL } from '../../utils/programBoard';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
@@ -574,6 +574,12 @@ const FellowshipModal = ({
                     <h3 className={sectionHeadingClass}>Eligibility filters</h3>
                     <p className="text-xs text-muted mb-3">Click to find similar fellowships</p>
                     <div className="space-y-3">
+                      {fellowship.yearOfStudy.length === 0 && (
+                        <div>
+                          <span className="text-xs text-muted">Year of study</span>
+                          <p className="mt-1 text-sm text-ink-soft">{YEAR_NOT_STATED_LABEL}</p>
+                        </div>
+                      )}
                       {fellowship.yearOfStudy.length > 0 && (
                         <div>
                           <span className="text-xs text-muted">Year of study</span>
@@ -643,6 +649,11 @@ const FellowshipModal = ({
                         <p className="mt-1 text-sm text-ink-soft">
                           {programCitizenshipSummary(fellowship)}
                         </p>
+                        {fellowship.citizenshipCondition && (
+                          <p className="mt-1 text-xs text-amber-800">
+                            {fellowship.citizenshipCondition}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </section>

@@ -18,6 +18,7 @@ export interface FilterTabConfig {
   setSelected: React.Dispatch<React.SetStateAction<string[]>>;
   searchable?: boolean;
   labelFn?: (item: string) => string;
+  note?: string;
   colorFn?: (item: string) => { bg: string; text: string };
   maxDisplay?: number;
   filterMode?: FilterMode;
@@ -249,6 +250,8 @@ const CombinedFilterDropdown = ({
                 Clear selected ({activeTab.selected.length})
               </button>
             )}
+
+            {activeTab.note && <p className="mb-2 text-xs text-muted">{activeTab.note}</p>}
 
             <fieldset className="space-y-1 pt-1 max-h-[220px] overflow-y-auto">
               <legend className="sr-only">{activeTab.label} filters</legend>

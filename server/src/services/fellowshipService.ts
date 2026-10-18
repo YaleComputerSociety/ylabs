@@ -858,9 +858,9 @@ export const deleteFellowship = async (id: any) => {
   }
 };
 
-// A program that states no citizenship is unknown rather than ineligible, so a citizenship
-// filter keeps it and the card says the official page decides (#5130).
-const CITIZENSHIP_NOT_STATED = { citizenshipStatus: { $in: [null, []] } };
+// A program that states no value for a facet is unknown rather than excluded, so a facet
+// filter keeps it and the page says the official page decides (#5130, #5235).
+const facetNotStated = (field: string) => ({ [field]: { $in: [null, []] } });
 
 export const searchFellowships = async (params: {
   query?: string;
@@ -971,22 +971,17 @@ export const searchFellowships = async (params: {
     ].map((field) => ({ [field]: { $regex: subjectPattern, $options: 'i' } }));
   }
 
-  if (safeYearOfStudy.length > 0) {
-    filter.yearOfStudy = { $in: safeYearOfStudy };
-  }
-  if (safeTermOfAward.length > 0) {
-    filter.termOfAward = { $in: safeTermOfAward };
-  }
-  if (safePurpose.length > 0) {
-    filter.purpose = { $in: safePurpose };
-  }
-  if (safeGlobalRegions.length > 0) {
-    filter.globalRegions = { $in: safeGlobalRegions };
-  }
-  if (safeCitizenshipStatus.length > 0) {
+  for (const [field, values] of [
+    ['yearOfStudy', safeYearOfStudy],
+    ['termOfAward', safeTermOfAward],
+    ['purpose', safePurpose],
+    ['globalRegions', safeGlobalRegions],
+    ['citizenshipStatus', safeCitizenshipStatus],
+  ] as const) {
+    if (values.length === 0) continue;
     filter.$and = [
       ...(filter.$and ?? []),
-      { $or: [{ citizenshipStatus: { $in: safeCitizenshipStatus } }, CITIZENSHIP_NOT_STATED] },
+      { $or: [{ [field]: { $in: values } }, facetNotStated(field)] },
     ];
   }
   if (safeProgramCategory.length > 0) {

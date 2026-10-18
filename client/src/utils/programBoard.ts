@@ -75,6 +75,21 @@ export const US_PERMANENT_RESIDENTS_ELIGIBLE = 'U.S. permanent residents are eli
 
 export const CITIZENSHIP_NOT_STATED_LABEL = 'Not stated. Check the official page.';
 
+export const YEAR_NOT_STATED_LABEL = 'Not stated. Check the official page.';
+
+export const PROGRAM_FACET_NOT_STATED_NOTE =
+  'Programs that do not state this are included. Check the official page.';
+
+const CITIZENSHIP_FILTER_OPTION_LABELS: Record<string, string> = {
+  [US_CITIZENS_ELIGIBLE]: 'Open to U.S. citizens, or not stated',
+  [NON_US_CITIZENS_ELIGIBLE]: 'Open to non-U.S. citizens, or not stated',
+  [US_PERMANENT_RESIDENTS_ELIGIBLE]: 'Open to U.S. permanent residents, or not stated',
+};
+
+export function citizenshipFilterOptionLabel(value: string): string {
+  return CITIZENSHIP_FILTER_OPTION_LABELS[value] ?? `${value}, or not stated`;
+}
+
 export function programCitizenshipRestriction(
   fellowship: Pick<Fellowship, 'citizenshipStatus'>,
 ): string | null {

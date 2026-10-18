@@ -347,6 +347,26 @@ describe('FellowshipModal', () => {
     expect(stop.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it("shows the program text's home-country condition under the citizenship answer (#5235)", () => {
+    renderModal({
+      citizenshipStatus: ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+      citizenshipCondition:
+        'In general, applications from international students proposing research in their country of origin are ineligible.',
+    });
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(/in their country of origin are ineligible/),
+    ).toBeTruthy();
+  });
+
+  it('says a missing year of study is not stated (#5235)', () => {
+    renderModal({ yearOfStudy: [] });
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getAllByText('Year of study').length).toBeGreaterThan(0);
+    expect(dialog.getAllByText('Not stated. Check the official page.').length).toBeGreaterThan(0);
+  });
+
   it('does not render an application action for unsafe application links', () => {
     const { container } = renderModal({ applicationLink: 'javascript:alert(1)' });
 
