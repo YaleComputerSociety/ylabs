@@ -336,6 +336,55 @@ const OPENED_IN_PAGE_HISTORY_STATE: ProgramModalHistoryState = { programModalOpe
 const wasProgramModalOpenedInPage = (historyState: unknown) =>
   (historyState as Partial<ProgramModalHistoryState> | null)?.programModalOpenedInPage === true;
 
+type ProgramLinkProblem = 'notFound' | 'unavailable';
+
+const PROGRAM_LINK_NOT_FOUND_STATUSES = new Set([400, 404]);
+
+const programLinkProblemOf = (error: unknown): ProgramLinkProblem =>
+  PROGRAM_LINK_NOT_FOUND_STATUSES.has(
+    (error as { response?: { status?: number } } | null)?.response?.status ?? 0,
+  )
+    ? 'notFound'
+    : 'unavailable';
+
+const PROGRAM_LINK_NOTICE_COPY: Record<ProgramLinkProblem, { title: string; detail: string }> = {
+  notFound: {
+    title: 'That program link does not match a program',
+    detail:
+      'It may have been removed, or the link may be incomplete. Search below to find the program.',
+  },
+  unavailable: {
+    title: 'We could not open that program',
+    detail:
+      'This is a loading problem, not a sign the program is gone. Check your connection and open the link again.',
+  },
+};
+
+const ProgramLinkNotice = ({
+  problem,
+  onDismiss,
+}: {
+  problem: ProgramLinkProblem;
+  onDismiss: () => void;
+}) => (
+  <div
+    role="alert"
+    className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3"
+  >
+    <div className="min-w-0 text-sm text-amber-900">
+      <p className="font-semibold">{PROGRAM_LINK_NOTICE_COPY[problem].title}</p>
+      <p className="mt-1">{PROGRAM_LINK_NOTICE_COPY[problem].detail}</p>
+    </div>
+    <button
+      type="button"
+      onClick={onDismiss}
+      className="yr-focus-ring inline-flex min-h-[44px] flex-shrink-0 items-center rounded-control border border-amber-300 bg-panel px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+    >
+      Dismiss
+    </button>
+  </div>
+);
+
 const withoutProgramParams = (params: URLSearchParams) => {
   params.delete(PROGRAM_PARAM);
   params.delete(LEGACY_PROGRAM_PARAM);
@@ -403,6 +452,7 @@ const Fellowships = () => {
     () => createInitialBrowsePageState<Fellowship>(),
   );
   const [showFirstSaveCallout, setShowFirstSaveCallout] = useState(false);
+  const [programLinkProblem, setProgramLinkProblem] = useState<ProgramLinkProblem | null>(null);
   const {
     favIds: favFellowshipIds,
     loadError: watchedProgramsLoadFailed,
@@ -451,27 +501,30 @@ const Fellowships = () => {
     if (isModalOpen && requestedProgramId === selectedProgramId) return;
 
     const openedInPage = wasProgramModalOpenedInPage(location.state);
-    let isLatestRequest = true;
+    const controller = new AbortController();
     axios
-      .get(`/programs/${encodeURIComponent(requestedProgramId)}`)
+      .get(`/programs/${encodeURIComponent(requestedProgramId)}`, { signal: controller.signal })
       .then((response) => {
-        if (!isLatestRequest) return;
         const rawProgram = response.data?.program || response.data?.fellowship;
-        if (rawProgram) {
-          const program = createFellowship(rawProgram);
-          dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
-          if (!openedInPage) {
-            axios.put(`fellowships/${program.id}/addView`).catch(() => {});
-          }
+        if (!rawProgram) {
+          setProgramLinkProblem('notFound');
+          setSearchParams(withoutProgramParams, { replace: true });
+          return;
+        }
+        const program = createFellowship(rawProgram);
+        setProgramLinkProblem(null);
+        dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
+        if (!openedInPage) {
+          axios.put(`fellowships/${program.id}/addView`).catch(() => {});
         }
       })
-      .catch(() => {
-        if (!isLatestRequest) return;
-        console.error('Error fetching direct fellowship link.');
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setProgramLinkProblem(programLinkProblemOf(error));
         setSearchParams(withoutProgramParams, { replace: true });
       });
     return () => {
-      isLatestRequest = false;
+      controller.abort();
     };
   }, [requestedProgramId, selectedProgramId, isModalOpen, setSearchParams, location.state]);
 
@@ -707,6 +760,7 @@ const Fellowships = () => {
 
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'fellowship') {
+      setProgramLinkProblem(null);
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
       setSearchParams(
         (params) => {
@@ -911,6 +965,13 @@ const Fellowships = () => {
           <div className="min-w-0">
             {showFirstSaveCallout && (
               <FirstSaveCallout kind="program" onDismiss={() => setShowFirstSaveCallout(false)} />
+            )}
+
+            {programLinkProblem && (
+              <ProgramLinkNotice
+                problem={programLinkProblem}
+                onDismiss={() => setProgramLinkProblem(null)}
+              />
             )}
 
             {watchedProgramsLoadFailed && (
