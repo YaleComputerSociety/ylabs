@@ -286,23 +286,11 @@ export interface RemotePhaseOptions {
 export const searchReindexResultFile = (target: PromotionTarget): string =>
   `/tmp/ylabs-${target}-search-reindex.json`;
 
-function searchReindexStep(target: PromotionTarget, options: RemotePhaseOptions): RemotePhaseStep {
-  return {
-    label: 'search reindex',
-    cwd: 'repo',
-    command: 'node',
-    args: [
-      'scripts/reindex-search-index.mjs',
-      target,
-      '--apply',
-      ...(options.fullSearchRebuild ? ['--full'] : []),
-      '--output',
-      searchReindexResultFile(target),
-    ],
-    ...(target === 'production' ? { env: { CONFIRM_PROD_SCRAPE: 'true' } } : {}),
-    resultFile: searchReindexResultFile(target),
-  };
-}
+const searchReindexModeArgs = (target: PromotionTarget, options: RemotePhaseOptions): string[] => [
+  ...(options.fullSearchRebuild ? ['--full'] : []),
+  '--output',
+  searchReindexResultFile(target),
+];
 
 const VISIBILITY_GATE_ARGS = [
   'student-visibility:gate',
@@ -354,7 +342,18 @@ export function remotePhaseSteps(
           '--fail-on-public-visibility-violation',
         ],
       },
-      searchReindexStep('beta', options),
+      {
+        label: 'search reindex',
+        cwd: 'repo',
+        command: 'node',
+        args: [
+          'scripts/reindex-search-index.mjs',
+          'beta',
+          '--apply',
+          ...searchReindexModeArgs('beta', options),
+        ],
+        resultFile: searchReindexResultFile('beta'),
+      },
       {
         label: 'beta readiness',
         cwd: 'server',
@@ -376,7 +375,19 @@ export function remotePhaseSteps(
       args: ['database:verify-names', '--serving', 'production'],
     },
     { label: 'visibility gate', cwd: 'server', command: 'yarn', args: VISIBILITY_GATE_ARGS },
-    searchReindexStep('production', options),
+    {
+      label: 'search reindex',
+      cwd: 'repo',
+      command: 'node',
+      args: [
+        'scripts/reindex-search-index.mjs',
+        'production',
+        '--apply',
+        ...searchReindexModeArgs('production', options),
+      ],
+      env: { CONFIRM_PROD_SCRAPE: 'true' },
+      resultFile: searchReindexResultFile('production'),
+    },
     {
       label: 'production smoke',
       cwd: 'repo',
