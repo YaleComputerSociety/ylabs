@@ -633,7 +633,7 @@ describe('getAnalytics research coverage and range scoping', () => {
     expect(projectStage.$project.displayName).toBe('$netidResearcher.displayName');
   });
 
-  it('counts active users only among app-user accounts, so active never exceeds total users', async () => {
+  it('counts active users only among app-user accounts while averaging events over every netid', async () => {
     primeAnalyticsMocks();
 
     await getAnalytics();
@@ -679,7 +679,7 @@ describe('getAnalytics research coverage and range scoping', () => {
         .toArray();
 
       expect(result.userActivityStats).toEqual([
-        { _id: null, activeUsers: 2, avgEventsPerUser: 1.5 },
+        { _id: null, activeUsers: 2, avgEventsPerUser: 1.2 },
       ]);
     } finally {
       await client.close();

@@ -1813,11 +1813,10 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
             },
           },
           ...appUserAccountByNetidLookupStages('_id'),
-          { $match: { appUserAccount: { $exists: true } } },
           {
             $group: {
               _id: null,
-              activeUsers: { $sum: 1 },
+              activeUsers: { $sum: { $cond: [{ $ifNull: ['$appUserAccount', false] }, 1, 0] } },
               avgEventsPerUser: { $avg: '$totalEvents' },
             },
           },
