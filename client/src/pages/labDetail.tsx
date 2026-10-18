@@ -1097,7 +1097,7 @@ const LabDetail = () => {
     singleLeadIsGenuinePrincipalInvestigator,
   );
   const showDedicatedPrincipalInvestigatorSection =
-    leadIdentityUnderReview || principalInvestigators.length !== 1;
+    leadIdentityUnderReview || principalInvestigators.length > 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
   const leadProfilesLinkedInline =

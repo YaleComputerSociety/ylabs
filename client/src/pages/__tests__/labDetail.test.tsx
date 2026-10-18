@@ -2487,6 +2487,21 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('No indexed planning routes are attached yet.')).toBeNull();
   });
 
+  it('renders no lead section, and no pointer to a profile link, when no lead is attached', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      members: [],
+      group: { ...basePayload.group, entityType: 'CORE_FACILITY', kind: 'core_facility' },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).not.toContain('Principal Investigator');
+    expect(text).not.toContain('No principal investigator');
+    expect(text).not.toContain('Check the official profile');
+  });
+
   it('does not render legacy active listings as a public detail section', async () => {
     const { container } = renderLabDetail();
 
@@ -2496,14 +2511,9 @@ describe('LabDetail page', () => {
     });
 
     const text = container.textContent || '';
-    const principalInvestigatorIndex = text.indexOf('Principal Investigator');
-    const sourcesIndex = text.indexOf('Sources');
 
     expect(text).not.toContain('Active Opportunities');
-    expect(text).toContain('No principal investigator is attached yet');
-    expect(text).toContain('Check the official profile for current leadership.');
-    expect(principalInvestigatorIndex).toBeGreaterThan(-1);
-    expect(sourcesIndex).toBeGreaterThan(principalInvestigatorIndex);
+    expect(text).toContain('Sources');
     expect(text).not.toContain('Research Activity');
     expect(text).not.toContain('Ways In');
     expect(text).not.toContain('Access evidence has not been attached yet.Evidence');
