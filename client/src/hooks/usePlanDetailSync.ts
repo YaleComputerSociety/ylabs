@@ -9,6 +9,13 @@ export interface ServedPlanDetail {
   updatedAt?: string;
 }
 
+export type ServedPlans = Record<string, ServedPlanDetail>;
+
+interface PlanRefreshOptions {
+  adoptVersionOf?: string;
+  takeStageOf?: string;
+}
+
 interface PlanSnapshot {
   note: string;
   stage: ResearchPlanStage;
@@ -51,6 +58,7 @@ const usePlanDetailSync = ({
   markNotePersisted,
 }: PlanDetailSyncOptions) => {
   const snapshotsRef = useRef<Record<string, PlanSnapshot>>({});
+  const writesRef = useRef<Record<string, Promise<void>>>({});
   const notesRef = useRef(notes);
   const stagesRef = useRef(stages);
 
@@ -63,18 +71,13 @@ const usePlanDetailSync = ({
     snapshotsRef.current[id] = snapshotOf(plan);
   }, []);
 
-  const versionFor = useCallback((id: string) => snapshotsRef.current[id]?.updatedAt, []);
-
-  const fetchPlans = useCallback(async (): Promise<Record<string, ServedPlanDetail>> => {
+  const fetchPlans = useCallback(async (): Promise<ServedPlans> => {
     const response = await axios.get(plansPath, { withCredentials: true });
-    return (response.data?.[responseKey] || {}) as Record<string, ServedPlanDetail>;
+    return (response.data?.[responseKey] || {}) as ServedPlans;
   }, [plansPath, responseKey]);
 
   const applyFreshPlans = useCallback(
-    (
-      plans: Record<string, ServedPlanDetail>,
-      { adoptVersionOf }: { adoptVersionOf?: string } = {},
-    ) => {
+    (plans: ServedPlans, { adoptVersionOf, takeStageOf }: PlanRefreshOptions = {}) => {
       const nextNotes: Record<string, string> = {};
       const nextStages: Record<string, ResearchPlanStage> = {};
       Object.entries(snapshotsRef.current).forEach(([id, snapshot]) => {
@@ -82,12 +85,13 @@ const usePlanDetailSync = ({
         if (!plan) return;
         const fresh = snapshotOf(plan);
         const noteIsClean = (notesRef.current[id] ?? '') === snapshot.note;
-        const stageIsClean = (stagesRef.current[id] ?? snapshot.stage) === snapshot.stage;
+        const shownStage = stagesRef.current[id] ?? snapshot.stage;
+        const stageIsClean = takeStageOf === id || shownStage === snapshot.stage;
         if (noteIsClean && fresh.note !== snapshot.note) {
           nextNotes[id] = fresh.note;
           markNotePersisted(id, fresh.note);
         }
-        if (stageIsClean && fresh.stage !== snapshot.stage) nextStages[id] = fresh.stage;
+        if (stageIsClean && fresh.stage !== shownStage) nextStages[id] = fresh.stage;
         snapshotsRef.current[id] = {
           note: noteIsClean ? fresh.note : snapshot.note,
           stage: stageIsClean ? fresh.stage : snapshot.stage,
@@ -104,7 +108,7 @@ const usePlanDetailSync = ({
   );
 
   const refreshPlanDetails = useCallback(
-    async (options?: { adoptVersionOf?: string }) => {
+    async (options?: PlanRefreshOptions) => {
       try {
         applyFreshPlans(await fetchPlans(), options);
       } catch {
@@ -114,31 +118,30 @@ const usePlanDetailSync = ({
     [applyFreshPlans, fetchPlans],
   );
 
-  const acceptWriteResponse = useCallback(
-    (id: string, plans: Record<string, ServedPlanDetail> | undefined) => {
-      const plan = plans?.[id];
-      if (plan) snapshotsRef.current[id] = snapshotOf(plan);
+  const writePlan = useCallback(
+    (
+      id: string,
+      send: (expectedUpdatedAt: string | undefined) => Promise<ServedPlans | undefined>,
+    ) => {
+      const run = async () => {
+        const plan = (await send(snapshotsRef.current[id]?.updatedAt))?.[id];
+        if (plan) snapshotsRef.current[id] = snapshotOf(plan);
+      };
+      const previous = writesRef.current[id];
+      const write = previous ? previous.then(run) : run();
+      const settled = write.catch(() => undefined);
+      writesRef.current[id] = settled;
+      void settled.then(() => {
+        if (writesRef.current[id] === settled) delete writesRef.current[id];
+      });
+      return write;
     },
     [],
   );
 
   const takeServerStage = useCallback(
-    async (id: string) => {
-      try {
-        const plans = await fetchPlans();
-        const fresh = snapshotOf(plans[id]);
-        const snapshot = snapshotsRef.current[id];
-        snapshotsRef.current[id] = {
-          note: snapshot?.note ?? fresh.note,
-          stage: fresh.stage,
-          updatedAt: fresh.updatedAt,
-        };
-        setStages((current) => ({ ...current, [id]: fresh.stage }));
-      } catch {
-        console.error('Error refreshing plan details.');
-      }
-    },
-    [fetchPlans, setStages],
+    (id: string) => refreshPlanDetails({ takeStageOf: id }),
+    [refreshPlanDetails],
   );
 
   useEffect(() => {
@@ -151,8 +154,7 @@ const usePlanDetailSync = ({
 
   return {
     recordServedPlan,
-    versionFor,
-    acceptWriteResponse,
+    writePlan,
     refreshPlanDetails,
     takeServerStage,
   };

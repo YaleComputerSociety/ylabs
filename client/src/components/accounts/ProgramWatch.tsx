@@ -58,6 +58,7 @@ import useLoadEffect from '../../hooks/useLoadEffect';
 import usePlanDetailSync, {
   isPlanVersionConflict,
   type ServedPlanDetail,
+  type ServedPlans,
 } from '../../hooks/usePlanDetailSync';
 
 interface ProgramWatchProps {
@@ -127,19 +128,19 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const persistProgramNote = useCallback(
     async (programId: string, note: string, options?: PersistNoteOptions) => {
       const sync = planSyncRef.current;
-      const version = sync?.versionFor(programId);
-      const body = {
-        data: { plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) } },
-      };
-      try {
+      const send = async (version: string | undefined) => {
+        const body = {
+          data: {
+            plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) },
+          },
+        };
         const served = options?.keepalive
           ? await keepalivePut(`/users/watchedProgramPlans/${programId}`, body)
           : (await axios.put(`/users/watchedProgramPlans/${programId}`, body)).data;
-        sync?.acceptWriteResponse(
-          programId,
-          (served as { watchedProgramPlans?: Record<string, ServedPlanDetail> } | undefined)
-            ?.watchedProgramPlans,
-        );
+        return (served as { watchedProgramPlans?: ServedPlans } | undefined)?.watchedProgramPlans;
+      };
+      try {
+        await (sync ? sync.writePlan(programId, send) : send(undefined));
       } catch (error) {
         console.error('Error saving watched program plan.');
         if (isPlanVersionConflict(error))
@@ -174,8 +175,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     setStages,
     markNotePersisted,
   });
-  const { recordServedPlan, versionFor, acceptWriteResponse, refreshPlanDetails, takeServerStage } =
-    planSync;
+  const { recordServedPlan, writePlan, refreshPlanDetails, takeServerStage } = planSync;
   useEffect(() => {
     planSyncRef.current = planSync;
   });
@@ -357,11 +357,14 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       setStages((current) => ({ ...current, [programId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
       try {
-        const version = versionFor(programId);
-        const response = await axios.put(`/users/watchedProgramPlans/${programId}`, {
-          data: { plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) } },
+        await writePlan(programId, async (version) => {
+          const response = await axios.put(`/users/watchedProgramPlans/${programId}`, {
+            data: {
+              plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) },
+            },
+          });
+          return response.data?.watchedProgramPlans;
         });
-        acceptWriteResponse(programId, response.data?.watchedProgramPlans);
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
         void trackResearchEvent({
           eventType: 'research_plan_update',
@@ -381,7 +384,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
       }
     },
-    [stages, versionFor, acceptWriteResponse, takeServerStage],
+    [stages, writePlan, takeServerStage],
   );
 
   const openModal = (program: Fellowship) => {

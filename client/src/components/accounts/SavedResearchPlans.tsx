@@ -42,6 +42,7 @@ import useLoadEffect from '../../hooks/useLoadEffect';
 import usePlanDetailSync, {
   isPlanVersionConflict,
   type ServedPlanDetail,
+  type ServedPlans,
 } from '../../hooks/usePlanDetailSync';
 
 interface SavedResearchPlansProps {
@@ -136,19 +137,20 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const persistResearchPlanNote = useCallback(
     async (entityId: string, note: string, options?: PersistNoteOptions) => {
       const sync = planSyncRef.current;
-      const version = sync?.versionFor(entityId);
-      const body = {
-        data: { plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) } },
-      };
-      try {
+      const send = async (version: string | undefined) => {
+        const body = {
+          data: {
+            plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) },
+          },
+        };
         const served = options?.keepalive
           ? await keepalivePut(`/users/savedResearchEntityPlans/${entityId}`, body)
           : (await axios.put(`/users/savedResearchEntityPlans/${entityId}`, body)).data;
-        sync?.acceptWriteResponse(
-          entityId,
-          (served as { savedResearchEntityPlans?: Record<string, ServedPlanDetail> } | undefined)
-            ?.savedResearchEntityPlans,
-        );
+        return (served as { savedResearchEntityPlans?: ServedPlans } | undefined)
+          ?.savedResearchEntityPlans;
+      };
+      try {
+        await (sync ? sync.writePlan(entityId, send) : send(undefined));
       } catch (error) {
         console.error('Error saving research plan note.');
         if (isPlanVersionConflict(error))
@@ -183,8 +185,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     setStages,
     markNotePersisted,
   });
-  const { recordServedPlan, versionFor, acceptWriteResponse, refreshPlanDetails, takeServerStage } =
-    planSync;
+  const { recordServedPlan, writePlan, refreshPlanDetails, takeServerStage } = planSync;
   useEffect(() => {
     planSyncRef.current = planSync;
   });
@@ -296,11 +297,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       setStages((current) => ({ ...current, [entityId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
       try {
-        const version = versionFor(entityId);
-        const response = await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-          data: { plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) } },
+        await writePlan(entityId, async (version) => {
+          const response = await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
+            data: {
+              plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) },
+            },
+          });
+          return response.data?.savedResearchEntityPlans;
         });
-        acceptWriteResponse(entityId, response.data?.savedResearchEntityPlans);
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
         void trackResearchEvent({
           eventType: 'research_plan_update',
@@ -320,7 +324,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
       }
     },
-    [stages, versionFor, acceptWriteResponse, takeServerStage],
+    [stages, writePlan, takeServerStage],
   );
 
   /**
