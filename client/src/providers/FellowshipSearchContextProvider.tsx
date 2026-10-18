@@ -29,6 +29,7 @@ import {
   FellowshipQuickFilter,
   isFellowshipSearchPending,
 } from '../reducers/fellowshipSearchReducer';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 interface FellowshipSearchContextProviderProps {
   children: ReactNode;
@@ -165,6 +166,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const resetProgramFilters = useCallback(() => {
     dispatch({ type: 'RESET_PROGRAM_FILTERS' });
+  }, []);
+
+  const applyUrlState = useCallback((value: ProgramSearchUrlState) => {
+    dispatch({ type: 'APPLY_URL_STATE', payload: value });
   }, []);
 
   const setFilterBarHeight = useCallback((value: number) => {
@@ -507,6 +512,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         quickFilter,
         setQuickFilter,
         resetProgramFilters,
+        applyUrlState,
         filterBarHeight,
         setFilterBarHeight,
       }}
