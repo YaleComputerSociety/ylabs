@@ -239,9 +239,7 @@ describe('a body that says how to join or narrates events (#5109)', () => {
       ),
     ).toBe(false);
     expect(
-      isEventNarrationText(
-        'Our work examines why some practices are accepted in rural clinics.',
-      ),
+      isEventNarrationText('Our work examines why some practices are accepted in rural clinics.'),
     ).toBe(false);
     expect(
       isEventNarrationText(
