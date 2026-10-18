@@ -1039,7 +1039,7 @@ describe('Research page', () => {
       expect(screen.getByRole('button', { name: 'Close filters' })).not.toBeDisabled(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all active filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
         'aria-expanded',
@@ -3029,6 +3029,16 @@ describe('Research landing watched-deadline urgency signal', () => {
       name: '1 watched program closes within 2 weeks, 1 not started',
     });
     expect(cta).toHaveAttribute('href', '/dashboard?tab=programs');
+  });
+
+  it('comes after the search box in focus order so it never stands between a student and search', async () => {
+    mockWatchedPrograms([{ _id: 'p1', title: 'STARS', deadline: inWindow }]);
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    const cta = await screen.findByRole('link', { name: /watched program closes within 2 weeks/ });
+    const searchBox = screen.getByRole('searchbox', { name: 'Search y/labs' });
+    expect(searchBox.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('stays silent when no watched deadline is approaching', async () => {

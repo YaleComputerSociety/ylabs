@@ -33,7 +33,16 @@ interface ResearchFilterDisclosureProps {
   onOpenChange?: (open: boolean) => void;
   operatorControls?: ReactNode;
   operatorActiveCount?: number;
+  resultCount?: number;
+  resultCountPending?: boolean;
 }
+
+const resultCountFormatter = new Intl.NumberFormat('en-US');
+
+const showResultsLabel = (count: number | undefined): string =>
+  count === undefined
+    ? 'Show results'
+    : `Show ${resultCountFormatter.format(count)} ${count === 1 ? 'result' : 'results'}`;
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
   Object.entries(values || {})
@@ -63,6 +72,8 @@ const ResearchFilterDisclosure = ({
   onOpenChange,
   operatorControls,
   operatorActiveCount = 0,
+  resultCount,
+  resultCountPending = false,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -285,41 +296,44 @@ const ResearchFilterDisclosure = ({
     </button>
   );
 
-  const activeChips = activeCount > 0 && (
-    <div
-      className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
-      aria-label="Active research filters"
-    >
-      {selectedEntityType && (
-        <ActiveFilterChip
-          axis="Type"
-          value={researchEntityTypeFilterLabel(selectedEntityType)}
-          onRemove={() => onEntityTypeChange('')}
-        />
-      )}
-      {selectedSchool && (
-        <ActiveFilterChip
-          axis="School"
-          value={selectedSchool}
-          onRemove={() => onSchoolChange('')}
-        />
-      )}
-      {selectedDepartment && (
-        <ActiveFilterChip
-          axis="Department"
-          value={departmentLabel(selectedDepartment)}
-          onRemove={() => onDepartmentChange('')}
-        />
-      )}
-      <button
-        type="button"
-        onClick={onClearAll}
-        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+  const activeChips = (offersClearAll: boolean) =>
+    activeCount > 0 && (
+      <div
+        className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
+        aria-label="Active research filters"
       >
-        Clear all active filters
-      </button>
-    </div>
-  );
+        {selectedEntityType && (
+          <ActiveFilterChip
+            axis="Type"
+            value={researchEntityTypeFilterLabel(selectedEntityType)}
+            onRemove={() => onEntityTypeChange('')}
+          />
+        )}
+        {selectedSchool && (
+          <ActiveFilterChip
+            axis="School"
+            value={selectedSchool}
+            onRemove={() => onSchoolChange('')}
+          />
+        )}
+        {selectedDepartment && (
+          <ActiveFilterChip
+            axis="Department"
+            value={departmentLabel(selectedDepartment)}
+            onRemove={() => onDepartmentChange('')}
+          />
+        )}
+        {offersClearAll && (
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+          >
+            Clear all filters
+          </button>
+        )}
+      </div>
+    );
 
   if (isSidebar) {
     return (
@@ -342,7 +356,7 @@ const ResearchFilterDisclosure = ({
           {filterFields}
           {clearAllButton}
         </div>
-        {activeChips}
+        {activeChips(false)}
       </section>
     );
   }
@@ -442,12 +456,32 @@ const ResearchFilterDisclosure = ({
                   </section>
                 )}
               </div>
+              <div className="sticky bottom-0 border-t border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => closeFilters()}
+                  className="yr-focus-ring yr-pressable grid min-h-11 w-full place-items-center rounded-control bg-[var(--yr-blue)] px-4 text-sm font-semibold text-white hover:bg-brand-navy"
+                >
+                  <span
+                    aria-hidden={resultCountPending || undefined}
+                    className={`yr-num col-start-1 row-start-1 ${resultCountPending ? 'invisible' : ''}`}
+                  >
+                    {showResultsLabel(resultCount)}
+                  </span>
+                  <span
+                    aria-hidden={resultCountPending ? undefined : true}
+                    className={`col-start-1 row-start-1 ${resultCountPending ? '' : 'invisible'}`}
+                  >
+                    Updating results…
+                  </span>
+                </button>
+              </div>
             </div>
           </>
         )}
       </div>
 
-      {activeChips}
+      {activeChips(true)}
     </div>
   );
 };

@@ -64,6 +64,9 @@ The student-journey smoke asserts the document never outgrows the window.
 Instead, `ScrollToTop` moves focus to `#main-content` at the moment a page-scroll key (PageDown, PageUp, Space, the vertical arrows, Home, End) is pressed while nothing holds focus, so the browser's own scroll for that key lands in `[data-scroll-container]`.
 It stops at the first pointer press, because a click gives the browser its own scroll origin and the keys then belong to whichever inner panel was clicked.
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
+- A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet and returns focus to its trigger, because the student cannot see the results change behind the scrim.
+`ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.
+- Session-dependent banners such as the watched-deadline notice sit after the `/research` search form, so the search box is the first stop in the page's own focus order.
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
 - A control that switches between panels is a tablist, not a row of plain buttons.
