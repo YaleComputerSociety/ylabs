@@ -51,6 +51,7 @@ import {
   quoteStatesAnUndergraduateAccessFact,
   rosterSnippetNamesAnUndergraduate,
 } from '../undergradQuoteRelevance';
+import { isRosterLineRatherThanAStatement } from '../undergradEvidenceQuoteValidation';
 import {
   contactQuoteStatesAnInstruction,
   quoteListsPeopleWithTheirContactDetails,
@@ -1238,6 +1239,7 @@ export function extractionToObservations(
   if (
     evidenceQuote &&
     quoteStatesAnUndergraduateAccessFact(evidenceQuote.text) &&
+    !isRosterLineRatherThanAStatement(evidenceQuote.text) &&
     isCurrentYaleUndergradEvidence(evidenceQuote.text) &&
     !quoteListsPeopleWithTheirContactDetails(evidenceQuoteValue)
   ) {

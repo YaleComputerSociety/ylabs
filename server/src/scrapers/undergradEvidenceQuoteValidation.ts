@@ -128,6 +128,31 @@ export function isModelSearchNote(quote: string | undefined | null): boolean {
   return Boolean(text) && MODEL_SEARCH_NOTE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const LOWERCASE_RUNNING_WORD = /(?<![A-Za-z\u2019'-])[a-z][a-z\u2019'-]+/g;
+
+const MIN_RUNNING_WORDS_IN_A_STATEMENT = 4;
+
+const MIN_RUNNING_WORDS_IN_A_PUNCTUATED_SENTENCE = 3;
+
+const ENDS_A_SENTENCE = /[.!?]["\u201d\u2019']?$/;
+
+/**
+ * A roster card or heading ("<name> Undergraduate Student Hometown: <city>", "Undergrad
+ * and RAs") rather than a sentence about the lab taking undergraduates. Membership is the
+ * roster's and the member count's evidence; served as a quote it reads as the lab saying
+ * something it did not. A roster line is names and labels, so it carries almost no
+ * lowercase running words, while every measured access statement carries four or more, or
+ * three in a sentence that ends like one ("We welcome undergraduate researchers.").
+ */
+export function isRosterLineRatherThanAStatement(quote: string | undefined | null): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  const minimum = ENDS_A_SENTENCE.test(text)
+    ? MIN_RUNNING_WORDS_IN_A_PUNCTUATED_SENTENCE
+    : MIN_RUNNING_WORDS_IN_A_STATEMENT;
+  return (text.match(LOWERCASE_RUNNING_WORD)?.length ?? 0) < minimum;
+}
+
 export function isPlausibleUndergradEvidenceQuote(quote: string | undefined | null): boolean {
   const text = (quote || '').trim();
   if (!text) return false;

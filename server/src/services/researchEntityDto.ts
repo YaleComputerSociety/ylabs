@@ -47,6 +47,7 @@ import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import {
   isModelSearchNote,
+  isRosterLineRatherThanAStatement,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
   UNDERGRAD_MICROSITE_LANE,
 } from '../scrapers/undergradEvidenceQuoteValidation';
@@ -691,6 +692,7 @@ function derivePublicResearchEntityDto(
         const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
         const withheld =
           isModelSearchNote(group[field]) ||
+          isRosterLineRatherThanAStatement(group[field]) ||
           quoteListsPeopleWithTheirContactDetails(group[field]) ||
           provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
           (fromMicrositeLane &&
