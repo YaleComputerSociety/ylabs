@@ -37,7 +37,9 @@ describe('formatPastAdvisees', () => {
         { programName: 'Fixture Scholars', year: 2025, count: 1 },
       ],
     };
-    expect(formatPastAdvisees(group, true)).toEqual(['Mentored 1 Fixture Scholars recipient (2025)']);
+    expect(formatPastAdvisees(group, true)).toEqual([
+      'Mentored 1 Fixture Scholars recipient (2025)',
+    ]);
     expect(formatPastAdvisees(group, false)).toEqual([
       'Advised 4 undergrads',
       'Mentored 1 Fixture Scholars recipient (2025)',

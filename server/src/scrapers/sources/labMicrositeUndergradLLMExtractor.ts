@@ -1097,6 +1097,7 @@ export function splitRosterUndergraduates(
   return { current: rosterEvidenceFromLines(current), past: rosterEvidenceFromLines(past) };
 }
 
+// Mirrored in client/src/utils/pastUndergradAdvisees.ts; change both together.
 export const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
 
 /**
