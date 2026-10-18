@@ -1282,7 +1282,7 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Changed in another tab. Showing the latest stage.')).toBeNull();
   });
 
-  it('sends a page-hide note flush at once while an earlier save is still in flight', async () => {
+  it('sends a page-hide note flush at once without a version while this tab has a save in flight', async () => {
     withVersionedPlanServer({
       stage: 'CONTACTED',
       privateNotes: 'Old note',
@@ -1310,6 +1310,43 @@ describe('SavedResearchPlans', () => {
 
       window.dispatchEvent(new Event('pagehide'));
 
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(JSON.parse(request.body as string)).toEqual({
+        data: {
+          plan: { privateNotes: 'Last edit' },
+        },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('sends a page-hide note flush at once with the known version when no save is in flight', async () => {
+    withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: 'Old note',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+      await screen.findByText('Owner Lab');
+      fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+      const note = (await screen.findByRole('textbox', {
+        name: 'Note for Owner Lab',
+      })) as HTMLTextAreaElement;
+      await waitFor(() => expect(note.value).toBe('Old note'));
+      fireEvent.change(note, { target: { value: 'Last edit' } });
+
+      window.dispatchEvent(new Event('pagehide'));
+
+      expect(mockedAxios.put).not.toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
       expect(JSON.parse(request.body as string)).toEqual({

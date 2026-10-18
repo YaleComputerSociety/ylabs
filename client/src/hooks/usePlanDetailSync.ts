@@ -132,14 +132,19 @@ const usePlanDetailSync = ({
       send: (expectedUpdatedAt: string | undefined) => Promise<ServedPlans | undefined>,
       { immediate = false }: { immediate?: boolean } = {},
     ) => {
-      const run = async () => {
-        const plan = (await send(snapshotsRef.current[id]?.updatedAt))?.[id];
+      const accept = (plans: ServedPlans | undefined) => {
+        const plan = plans?.[id];
         if (!plan) return;
         const served = snapshotOf(plan);
         if (!isOlderThan(served, snapshotsRef.current[id])) snapshotsRef.current[id] = served;
       };
+      const run = async () => accept(await send(snapshotsRef.current[id]?.updatedAt));
       const previous = writesRef.current[id];
-      const write = previous && !immediate ? previous.then(run) : run();
+      const write = !previous
+        ? run()
+        : immediate
+          ? send(undefined).then(accept)
+          : previous.then(run);
       const settled = write.catch(() => undefined);
       const tail = previous ? previous.then(() => settled) : settled;
       writesRef.current[id] = tail;
