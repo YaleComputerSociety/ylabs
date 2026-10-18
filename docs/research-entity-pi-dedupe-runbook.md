@@ -317,6 +317,15 @@ The command is report-only by default; applying requires `--apply --confirm-arch
 In the sweep, the `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and, on the two exhaustive Development modes, switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) by default so the Dev pipeline deletes inert residue every run.
 Disable the delete by setting `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`); the post-run stages never run on Beta or Prod sweeps, so those paths only ever report merge residue.
 
+## Asking whether deleting a retired row would bring it back
+
+`research-entity:measure-retired-remint` answers it for every archived row with no `canonicalGroupId` (#5189).
+It runs `materializeEntity` as a dry run with `treatArchivedResearchEntitiesAsAbsent` naming every such row, so each key is planned exactly as it would be after deletion, and reports per archive reason how many would be minted again.
+It is read-only, refuses `--apply`, and passes a card synthesizer that calls no model.
+The option is refused outside a dry run, because a projection planned against a row that still exists must never be written.
+On Development on 2026-10-18 it found 1,325 of 1,644 retired rows would be minted again from their own stored observations: the subordinate-rank and staff-title gates run in the lanes before an observation is written, so stored evidence reaches the materializer ungated, and only the `PROGRAM` refusal, which sits in the materializer, plans no mint.
+A retired row is not deletable until its key plans no mint here.
+
 ## Asking whether an archive lost a lab
 
 `research-entity:audit-archived-lab-restore-candidates` is the read-only instrument for that question, and it exists because the answer has been re-derived wrong four times: 48 rows, then 39, then 77, then "about 5" (#2558).

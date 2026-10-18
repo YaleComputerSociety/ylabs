@@ -453,6 +453,13 @@ import {
 
 interface MaterializeOptions {
   dryRun?: boolean;
+  /**
+   * Plan as if these archived research rows were already deleted, so a dry run answers
+   * whether deleting a retired row would let the next resolve mint it again (#5189).
+   * `dryRun` is required: the option asks a question, and a projection planned against a
+   * row that still exists must never reach a write.
+   */
+  treatArchivedResearchEntitiesAsAbsent?: ReadonlySet<string>;
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: CardSynthesizer;
@@ -9725,6 +9732,9 @@ export async function materializeEntity(
   // Structural, not a convention: a projection derived with locks ignored reaching
   // the write below is exactly the silent unfreeze that re-opening a lock is a
   // separate reviewed operation to prevent (#2612).
+  if (options.treatArchivedResearchEntitiesAsAbsent && !options.dryRun) {
+    throw new Error('materializeEntity treatArchivedResearchEntitiesAsAbsent requires dryRun');
+  }
   if (options.reviseRevisitableFieldLocks && !options.dryRun) {
     throw new Error('materializeEntity reviseRevisitableFieldLocks requires dryRun');
   }
@@ -9853,6 +9863,13 @@ export async function materializeEntity(
     obs,
     options.chunkPrefetch,
   );
+  if (
+    entityDoc?.archived === true &&
+    options.treatArchivedResearchEntitiesAsAbsent?.has(String(entityDoc._id))
+  ) {
+    entityDoc = null;
+    entityIdString = undefined;
+  }
   if (entityDoc) entityIdString = String(entityDoc._id);
 
   // A merged shell's canonicalGroupId tombstone is the durable record that this

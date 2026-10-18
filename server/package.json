@@ -38,6 +38,7 @@
     "research-entity:disambiguate-surname-labs": "tsx src/scripts/disambiguateSurnameLabNames.ts",
     "research-entity:repair-archived-artifacts": "tsx src/scripts/repairArchivedEntityArtifacts.ts",
     "research-entity:cleanup-archived": "tsx src/scripts/cleanupArchivedResearchEntities.ts",
+    "research-entity:measure-retired-remint": "tsx src/scripts/measureRetiredResearchEntityRemint.ts",
     "research-entity:derive-survivor-aliases": "tsx src/scripts/deriveResearchEntitySurvivorAliases.ts",
     "research-entity:restore-merge-tombstones": "tsx src/scripts/restoreMergeTombstoneRows.ts",
     "research-entity:repair-dead-end-tombstones": "tsx src/scripts/repairDeadEndTombstoneChains.ts",
