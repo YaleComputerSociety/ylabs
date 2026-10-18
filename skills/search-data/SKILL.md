@@ -131,7 +131,8 @@ Documents sync via `meiliSyncService.ts` after upserts.
 `researchEntity` is the only syncable type; the `listings`, `papers`, `pathways`, and `researchers` indexes are retired and listed in `RETIRED_INDEX_BASE_NAMES` in `reindexMeiliForEnvironment.ts`.
 A retired index base name must be added there when its surface is removed, or `reindex:meili` reports the prefixed copy as `unknown` and keeps it, as `researchers` survived the removal of person search (#3946).
 Development has no index prefix, so `reindex:meili` does not reconcile it, and a retired unprefixed index there is deleted by hand.
-After copying Mongo data into Beta or Prod, run `reindex:meili` inside that Render service to rebuild the prefixed `researchentities` index and delete any retired prefixed indexes.
+After copying Mongo data into Beta or Prod, run `reindex:meili` inside that Render service to update the prefixed `researchentities` index and delete any retired prefixed indexes.
+It reconciles only the changed documents when the live index's settings and embedder match the code (`compareResearchEntitySearchIndexToCode`), and rebuilds otherwise or with `--full` (#5107).
 Rebuild scripts do full repopulation.
 A replacing rebuild (`--clear`, and every `reindex:meili --confirm`) never deletes documents from the serving index: it builds into a fresh `<index>_next` with the same settings and embedder, confirms its document count, swaps it in with one `swapIndexes` task, and deletes the old copy, so search is never empty or partial during a rebuild (#4151).
 A failure before the swap deletes the partial `_next` and leaves the serving index untouched, the next rebuild deletes a `_next` a lost shell left behind, and `planIndexReconcile` reports it under `staging` so it is never retired or reported as unknown.
