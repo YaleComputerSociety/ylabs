@@ -870,3 +870,25 @@ describe('classifyProgram senior research funding reads its mentor requirement o
     }
   });
 });
+
+describe('classifyProgram reads a program that excludes Yale students as out of scope (#5242)', () => {
+  it('sends a summer program that says Yale students are not eligible to archive review', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Graduating seniors, graduate students, and Yale students are not eligible.',
+      }),
+    ).toMatchObject({ studentFacingCategory: 'Archive / review', programKind: 'OTHER' });
+  });
+
+  it('keeps a program that only limits one Yale benefit', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Yale students are not eligible for program housing but may apply.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+});
