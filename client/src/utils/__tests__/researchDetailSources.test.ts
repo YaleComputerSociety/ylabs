@@ -9,6 +9,8 @@ import {
   isIdentifierOrGrantDbSourceUrl,
   isLikelyOfficialPersonProfileUrl,
   isLikelyUnavailableSourceLink,
+  labelizeResearchDetailValue,
+  sourceLabelForUrl,
   isOrgEngagementSourceUrl,
   isRosterNestedPersonPageUrl,
   findSourceLinkHealthEntry,
@@ -2118,5 +2120,17 @@ describe('servedResearchWebsiteUrl https landing (#4649)', () => {
         },
       ]),
     ).toBe(HTTP);
+  });
+});
+
+describe('slug-derived labels keep acronym casing', () => {
+  it('upper-cases a known acronym in a URL leaf', () => {
+    expect(sourceLabelForUrl('https://medicine.yale.edu/lab/clinical-nlp/')).toBe(
+      'Clinical NLP page',
+    );
+  });
+
+  it('keeps ordinary words title-cased', () => {
+    expect(labelizeResearchDetailValue('CURRENT_UNDERGRADS')).toBe('Current Undergrads');
   });
 });

@@ -6,6 +6,7 @@ import {
   rankPersonProfileUrls,
   type PersonProfileRankingContext,
 } from './personProfileRanking';
+import { acronymCasing } from './displayText';
 import { safeHttpUrl } from './url';
 import { isCorroboratedPersonPageUrl } from './yalePersonPagePrefix';
 
@@ -183,7 +184,7 @@ export const labelizeResearchDetailValue = (value?: string): string =>
     .toLowerCase()
     .split(/[_\s.-]+/)
     .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => acronymCasing(part) ?? part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
 const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
