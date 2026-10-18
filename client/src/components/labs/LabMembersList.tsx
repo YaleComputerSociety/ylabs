@@ -18,6 +18,7 @@ import { DepartmentNameRecord } from '../../utils/departmentNames';
 import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
 import { ExternalLinkIcon } from '../shared/icons';
+import { personInitials } from '../../utils/personInitials';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -93,7 +94,7 @@ const LabMemberCard = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
-  const initials = `${user.fname?.charAt(0) || ''}${user.lname?.charAt(0) || ''}`.toUpperCase();
+  const initials = personInitials(fullName);
   const profileImageHref = safeHttpUrl(user.image_url);
   const departmentLabel = canonicalizeResearcherDepartmentLabel(
     user.primary_department || user.primaryDepartment,
@@ -112,71 +113,96 @@ const LabMemberCard = ({
 
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition-colors ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  const baseClassName = `group rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition-colors ${singleColumn ? 'flex flex-col gap-2' : 'flex items-center gap-3'}`;
   const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
-  const identityBody = (
-    <>
-      <div className="flex-shrink-0">
-        {profileImageHref && !imageFailed ? (
-          <img
-            src={profileImageHref}
-            alt={fullName}
-            referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
-            onError={() => setImageFailed(true)}
-            loading="lazy"
-            decoding="async"
-            className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
-          />
-        ) : (
-          <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
-          >
-            {initials || fullName.charAt(0).toUpperCase() || '?'}
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p
-          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-ink ${isInteractive ? 'group-hover:text-brand' : ''}`}
-        >
-          {fullName}
-        </p>
-        {user.title && (
-          <p className={`${singleColumn ? 'leading-snug' : 'truncate'} text-xs text-muted`}>
-            {user.title}
-          </p>
-        )}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span
-            className={`${singleColumn ? 'rounded-control leading-snug' : 'rounded-full'} px-1.5 py-0.5 text-xs font-medium ${rolePillClassName}`}
-          >
-            {roleLabel}
-          </span>
-          {user.emeritus && LEAD_ROLES.has(role) && (
-            <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
-              Emeritus
-            </span>
-          )}
-          {departmentLabel && (
-            <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-xs text-ink-soft`}
-            >
-              {departmentLabel}
-            </span>
-          )}
-        </div>
-        {isExternalLink && (
-          <p className="mt-1.5 text-xs font-medium text-brand group-hover:underline">
-            View official profile
-          </p>
-        )}
-      </div>
-      {isExternalLink && (
-        <ExternalLinkIcon
-          className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
-          size={14}
+  const avatar = (
+    <div className="flex-shrink-0">
+      {profileImageHref && !imageFailed ? (
+        <img
+          src={profileImageHref}
+          alt={fullName}
+          referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
+          onError={() => setImageFailed(true)}
+          loading="lazy"
+          decoding="async"
+          className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
         />
+      ) : (
+        <div
+          className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
+        >
+          {initials || '?'}
+        </div>
       )}
+    </div>
+  );
+  const name = (
+    <p
+      className={`${singleColumn ? 'text-sm leading-snug' : 'truncate text-sm'} font-semibold text-ink ${isInteractive ? 'group-hover:text-brand' : ''}`}
+    >
+      {fullName}
+    </p>
+  );
+  const title = user.title && (
+    <p className={`${singleColumn ? 'leading-snug' : 'truncate'} text-xs text-muted`}>
+      {user.title}
+    </p>
+  );
+  const chips = (
+    <div className={`${singleColumn ? '' : 'mt-1.5'} flex flex-wrap items-center gap-1.5`}>
+      <span
+        className={`rounded-full px-2 py-0.5 text-xs font-medium ${singleColumn ? 'whitespace-nowrap' : ''} ${rolePillClassName}`}
+      >
+        {roleLabel}
+      </span>
+      {user.emeritus && LEAD_ROLES.has(role) && (
+        <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
+          Emeritus
+        </span>
+      )}
+      {departmentLabel && (
+        <span
+          className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft`}
+        >
+          {departmentLabel}
+        </span>
+      )}
+    </div>
+  );
+  const profileLinkLabel = isExternalLink && (
+    <p
+      className={`${singleColumn ? '' : 'mt-1.5'} text-xs font-medium text-brand group-hover:underline`}
+    >
+      View official profile
+    </p>
+  );
+  const externalLinkIcon = isExternalLink && (
+    <ExternalLinkIcon
+      className={`flex-shrink-0 text-muted transition-colors group-hover:text-brand ${singleColumn ? 'mt-0.5 self-start' : ''}`}
+      size={14}
+    />
+  );
+  const identityBody = singleColumn ? (
+    <>
+      <div className="flex items-center gap-3">
+        {avatar}
+        <div className="min-w-0 flex-1">{name}</div>
+        {externalLinkIcon}
+      </div>
+      {title}
+      {chips}
+      {profileLinkLabel}
+    </>
+  ) : (
+    <>
+      {avatar}
+      <div className="min-w-0 flex-1">
+        {name}
+        {title}
+        {chips}
+        {profileLinkLabel}
+      </div>
+      {externalLinkIcon}
     </>
   );
   const identityCard =
@@ -194,7 +220,7 @@ const LabMemberCard = ({
       <div className={baseClassName}>{identityBody}</div>
     );
   const sideLinkClassName =
-    'yr-focus-ring inline-flex min-h-11 items-center self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
+    'yr-focus-ring yr-pressable inline-flex min-h-11 items-center self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
   if (!orcidUrl && !resolvedEmailHref) return identityCard;
   return (
     <div className="flex flex-col">
