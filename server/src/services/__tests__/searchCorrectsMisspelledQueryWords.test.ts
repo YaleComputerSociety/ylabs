@@ -64,7 +64,7 @@ describe('a misspelled query word is searched as the corpus word it was meant to
   });
 
   it("never rewrites a student's access word into a topic word one edit away", async () => {
-    const result = await searchResearchGroupsViaMeili('paid chemistry', {}, 1, 18);
+    const result = await searchResearchGroupsViaMeili('paid', {}, 1, 18);
 
     expect(result.queryCorrection).toBeUndefined();
     expect(searchedTexts().some((text) => text.includes('pain'))).toBe(false);

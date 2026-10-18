@@ -441,6 +441,7 @@ describe('searchResearchGroupsViaMeili', () => {
       ['robotics for freshmen', 'robotics'],
       ['can a history major join a lab', 'history'],
       ['cs majors interested in robotics', 'cs robotics'],
+      ['biology majors working on cancer', 'biology cancer'],
     ]) {
       expect(normalizeResearchSearchQuery(typed)).toMatchObject({ query: topic });
     }

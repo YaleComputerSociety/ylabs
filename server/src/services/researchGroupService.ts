@@ -728,7 +728,7 @@ const isPlainStudentQueryFiller = (tokens: string[], index: number): boolean =>
 const namesTheStudentsMajor = (tokens: string[], index: number): boolean => {
   if (!ACADEMIC_MAJOR_WORDS.has(tokens[index]) || index === 0) return false;
   if (isPlainStudentQueryFiller(tokens, index - 1)) return false;
-  return index === tokens.length - 1 || isPlainStudentQueryFiller(tokens, index + 1);
+  return index === tokens.length - 1 || isStudentQueryFiller(tokens, index + 1);
 };
 
 const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
