@@ -10,10 +10,11 @@
  *
  * So each read of such a profile records a `centerRosterHealth` snapshot on the centres
  * contract, extended by one witness: `subjectKeys` names the profiles whose subject the read
- * confirmed and parsed. A profile that is about its subject and no longer states the
- * directorship is then `read-subject-stated-nothing`, which only this module weighs. A failed
- * fetch, a cache-permitted run, a refused page, or a page whose subject did not parse records
- * no subject and retires nothing, and a read of a different profile is never weighed against
+ * confirmed, parsed, and found to name a director the row holds. A profile that is about its
+ * subject and no longer states the directorship is then `read-subject-stated-nothing`, which
+ * only this module weighs. A failed fetch, a cache-permitted run, a refused page, or a page
+ * whose subject did not parse or names nobody the row holds records no subject and retires
+ * nothing, and a read of a different profile is never weighed against
  * an edge another profile asserted.
  *
  * Every other guard is the centres module's unchanged: two admitted absent reads in distinct

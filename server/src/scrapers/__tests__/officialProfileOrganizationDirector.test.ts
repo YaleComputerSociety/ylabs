@@ -254,7 +254,7 @@ describe('the organization-director arm of the lane run (#5085)', () => {
 });
 
 describe('the read snapshot the organization-director arm records for retirement (#5091)', () => {
-  const heldOrganization = { ...organization, holdsProfileDirectorEdge: true };
+  const heldOrganization = { ...organization, heldDirectorNames: ['Rowan Fixturedirector'] };
   const statesNothing = profileHtml(
     `<p>Professor of Psychiatry.</p><a href="${programUrl}">Visit Website</a>`,
   );
@@ -330,8 +330,10 @@ describe('the read snapshot the organization-director arm records for retirement
       '<link rel="canonical" href="https://medicine.yale.edu/profile/someone-else/" />',
     );
     const unparsed = '<html><head></head><body></body></html>';
+    const placeholder = `<html><head><title>Page Not Found | Yale School of Medicine</title></head>
+      <body><main><h1>Page Not Found</h1><p>The page you requested could not be found.</p></main></body></html>`;
 
-    for (const html of [otherPerson, unparsed]) {
+    for (const html of [otherPerson, unparsed, placeholder]) {
       const snapshot = await snapshotFrom(html);
       expect(snapshot && centerRosterReadAdmissibility(snapshot)).toBe('read-listed-nobody');
     }

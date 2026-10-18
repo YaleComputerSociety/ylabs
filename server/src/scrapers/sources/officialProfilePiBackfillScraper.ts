@@ -1375,8 +1375,9 @@ const NO_ORGANIZATION_DIRECTOR_READ: OrganizationDirectorProfileRead = {
  * What one read of a person's own profile says about directing this organization (#5085,
  * #5091).
  *
- * `subjectKey` is set only when the page is about its own subject and parsed, which is what
- * lets a later read that states nothing count as an absence rather than a broken page.
+ * `subjectKey` is set only when the page is about its own subject, parsed, and names a director
+ * this mode already recorded on the row (`heldDirectorNames`), which is what lets a later read
+ * that states nothing count as an absence rather than a broken or placeholder page.
  * `statedMember` is the stated directorship whether or not the page also links the row's site,
  * so a profile that still names the role keeps its edge. `claim` needs both halves: a profile
  * names every unit its subject directs, so the name alone would attach a director to a
@@ -1401,16 +1402,17 @@ export function readOrganizationDirectorProfile(
   const profiles = jsonLdProfiles($);
   const name = officialProfileDisplayName($, profiles);
   const evidenceText = blockSeparatedProfileEvidenceText(html, profiles);
-  const subjectKey = officialProfileIdentityKey(canonicalUrl);
-  if (!name || !subjectKey || !evidenceText.replace(/[\s|]+/g, '')) {
+  const profileKey = officialProfileIdentityKey(canonicalUrl);
+  if (!name || !profileKey || !evidenceText.replace(/[\s|]+/g, '')) {
     return NO_ORGANIZATION_DIRECTOR_READ;
   }
+  const subjectKey = profileNamesHeldDirector(name, organization) ? profileKey : null;
   const role = profileTextStatesDirectorshipOf(evidenceText, organizationName);
   if (!role) return { subjectKey, statedMember: null, claim: null };
   const statedMember: CenterRosterReadMember = {
     memberKey: `${organizationKey}:${slugify(normalizeName(name))}`,
     role,
-    membershipKey: rosterMembershipKey(subjectKey, role),
+    membershipKey: rosterMembershipKey(profileKey, role),
   };
   if (!profileLinksWebsite($, profileUrl, websiteUrl)) {
     return { subjectKey, statedMember, claim: null };
@@ -1420,6 +1422,20 @@ export function readOrganizationDirectorProfile(
       (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
     ) || '';
   return { subjectKey, statedMember, claim: { name, role, profileUrl: canonicalUrl, title } };
+}
+
+function profileNamesHeldDirector(displayName: string, organization: Record<string, any>): boolean {
+  const heldNames = Array.isArray(organization.heldDirectorNames)
+    ? organization.heldDirectorNames.map(textValue).filter(Boolean)
+    : [];
+  return (
+    heldNames.length > 0 &&
+    officialProfileIdentityMatchesExpectedPerson(
+      displayName,
+      '',
+      heldNames.map((heldName: string) => ({ fname: heldName, lname: heldName })),
+    )
+  );
 }
 
 export function organizationDirectorClaimFromProfile(
@@ -3816,8 +3832,8 @@ async function selectResearchHomeProfileTargets(
  * through the row's existing lead roster and so skips a lead-less row before fetching.
  *
  * A row whose lead is a director this mode recorded is selected again and marked
- * `holdsProfileDirectorEdge`, because a claim that is never re-read can never be withdrawn
- * (#5091).
+ * with the names of the directors it holds (`heldDirectorNames`), because a claim that is never
+ * re-read can never be withdrawn and a read only counts against the person it names (#5091).
  */
 export async function selectOrganizationDirectorProfileTargets(
   limit: number,
@@ -3841,37 +3857,53 @@ export async function selectOrganizationDirectorProfileTargets(
   );
   if (candidates.length === 0) return [];
   const candidateIds = candidates.map((entity) => entity._id);
-  const [ledEntityIds, profileDirectedEntityIds] = await Promise.all([
+  const [ledEntityIds, heldDirectorNamesByEntity] = await Promise.all([
     currentLeadRosterEntriesByEntity(candidateIds, LEAD_MEMBER_ROLES),
-    entityIdsHoldingProfileDirectorEdges(candidateIds),
+    profileDirectorNamesByEntity(candidateIds),
   ]);
   return candidates
     .filter((entity) => {
       const id = idValue(entity._id);
-      return !ledEntityIds.has(id) || profileDirectedEntityIds.has(id);
+      return !ledEntityIds.has(id) || heldDirectorNamesByEntity.has(id);
     })
     .slice(0, limit)
-    .map((entity) =>
-      profileDirectedEntityIds.has(idValue(entity._id))
-        ? { ...entity, holdsProfileDirectorEdge: true }
-        : entity,
-    );
+    .map((entity) => {
+      const heldDirectorNames = heldDirectorNamesByEntity.get(idValue(entity._id));
+      return heldDirectorNames ? { ...entity, heldDirectorNames } : entity;
+    });
 }
 
-async function entityIdsHoldingProfileDirectorEdges(entityIds: unknown[]): Promise<Set<string>> {
+async function profileDirectorNamesByEntity(entityIds: unknown[]): Promise<Map<string, string[]>> {
   const ids = entityIds.filter((id): id is mongoose.Types.ObjectId | string =>
     mongoose.isValidObjectId(id),
   );
-  if (ids.length === 0) return new Set();
-  const targetIds = (await RoleAssignment.distinct('target.id', {
+  if (ids.length === 0) return new Map();
+  const edges = (await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: ids },
     'rosterProvenance.sourceName': OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME,
     role: { $in: [...OFFICIAL_PROFILE_DIRECTOR_ROLES] },
     archived: { $ne: true },
     state: { $ne: 'HISTORICAL' },
-  })) as unknown[];
-  return new Set(targetIds.map((id) => idValue(id)));
+  })
+    .select('target.id personId')
+    .lean()) as Array<{ target?: { id?: unknown }; personId?: unknown }>;
+  if (edges.length === 0) return new Map();
+  const people = (await Researcher.find({ _id: { $in: edges.map((edge) => edge.personId) } })
+    .select('_id displayName')
+    .lean()) as Array<{ _id: unknown; displayName?: unknown }>;
+  const nameByPersonId = new Map(
+    people.map((person) => [idValue(person._id), textValue(person.displayName)]),
+  );
+  const namesByEntity = new Map<string, string[]>();
+  for (const edge of edges) {
+    const entityId = idValue(edge.target?.id);
+    const names = namesByEntity.get(entityId) ?? [];
+    const name = nameByPersonId.get(idValue(edge.personId));
+    if (name && !names.includes(name)) names.push(name);
+    namesByEntity.set(entityId, names);
+  }
+  return namesByEntity;
 }
 
 async function selectLeadDirectWebsiteTargets(
@@ -4620,7 +4652,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         break;
       }
       if (
-        organization.holdsProfileDirectorEdge !== true &&
+        !Array.isArray(organization.heldDirectorNames) &&
         !profileReads.some((profileRead) => profileRead.statedMember)
       ) {
         continue;

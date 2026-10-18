@@ -57,13 +57,16 @@ const NO_LONGER_STATES = profileHtml(
   'Rowan Fixturedirector',
   '<p>Professor of Psychiatry; former Director, Fixture Mood Research Program</p>',
 );
+const PLACEHOLDER = `<html><head><title>Page Not Found | Yale School of Medicine</title></head>
+  <body><main><h1>Page Not Found</h1><p>The page you requested could not be found.</p></main></body></html>`;
 const OTHER_PROFILE = profileHtml(
   OTHER_PROFILE_URL,
   'Quill Fixturecolleague',
   '<p>Professor of Psychiatry</p>',
 );
 
-type ReadKind = 'states' | 'absent' | 'failed' | 'cached' | 'other-profile' | 'refused';
+type ReadKind =
+  'states' | 'absent' | 'failed' | 'cached' | 'other-profile' | 'refused' | 'placeholder';
 
 describe('a profile-stated organization director retires when its profile stops stating it (#5091)', () => {
   let replSet: MongoMemoryReplSet;
@@ -138,6 +141,8 @@ describe('a profile-stated organization director retires when its profile stops 
 
   async function recordRun(organization: Record<string, any>, kind: ReadKind) {
     const runId = new mongoose.Types.ObjectId();
+    const [target] = await selectOrganizationDirectorProfileTargets(10);
+    expect(String(target?._id)).toBe(String(organization._id));
     const html =
       kind === 'states'
         ? STATES
@@ -145,7 +150,9 @@ describe('a profile-stated organization director retires when its profile stops 
           ? OTHER_PROFILE
           : kind === 'refused'
             ? NO_LONGER_STATES.replace(PROFILE_URL, OTHER_PROFILE_URL)
-            : NO_LONGER_STATES;
+            : kind === 'placeholder'
+              ? PLACEHOLDER
+              : NO_LONGER_STATES;
     const reads =
       kind === 'failed'
         ? []
@@ -153,11 +160,11 @@ describe('a profile-stated organization director retires when its profile stops 
             readOrganizationDirectorProfile(
               html,
               kind === 'other-profile' ? OTHER_PROFILE_URL : PROFILE_URL,
-              organization,
+              target,
             ),
           ];
     const snapshot = organizationDirectorReadSnapshot({
-      organization,
+      organization: target,
       reads,
       pagesRead: reads.length,
       cacheAllowed: kind === 'cached',
@@ -191,7 +198,7 @@ describe('a profile-stated organization director retires when its profile stops 
     const [target] = await selectOrganizationDirectorProfileTargets(10);
 
     expect(String(target?._id)).toBe(String(organization._id));
-    expect(target?.holdsProfileDirectorEdge).toBe(true);
+    expect(target?.heldDirectorNames).toEqual(['Rowan Fixturedirector']);
   });
 
   it('ends the edge after two complete reads in distinct runs no longer state it', async () => {
@@ -273,7 +280,7 @@ describe('a profile-stated organization director retires when its profile stops 
     expect(await liveDirectorEdges()).toHaveLength(1);
   });
 
-  it.each<ReadKind>(['failed', 'cached', 'other-profile', 'refused'])(
+  it.each<ReadKind>(['failed', 'cached', 'other-profile', 'refused', 'placeholder'])(
     'never counts a %s read as an absence',
     async (kind) => {
       const organization = await seedDirectedOrganization();
@@ -291,9 +298,10 @@ describe('a profile-stated organization director retires when its profile stops 
     await recordRun(organization, 'absent');
 
     const runId = new mongoose.Types.ObjectId();
+    const [target] = await selectOrganizationDirectorProfileTargets(10);
     const snapshot = organizationDirectorReadSnapshot({
-      organization,
-      reads: [readOrganizationDirectorProfile(NO_LONGER_STATES, PROFILE_URL, organization)],
+      organization: target,
+      reads: [readOrganizationDirectorProfile(NO_LONGER_STATES, PROFILE_URL, target)],
       pagesRead: 1,
       cacheAllowed: false,
       readAt: new Date(clock),
