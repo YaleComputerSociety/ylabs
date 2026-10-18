@@ -4,11 +4,18 @@ import {
   formatProgramDate,
   formatShortProgramDate,
   parseProgramDate,
+  newYorkCalendarDaysUntil,
   programDeadlineClosingInstant,
 } from './programDates';
 import { programCitizenshipSummary } from './programBoard';
 
 export const CLOSING_SOON_DAYS = 30;
+
+const closingDetail = (daysUntilDeadline: number): string => {
+  if (daysUntilDeadline <= 0) return 'Due today';
+  if (daysUntilDeadline === 1) return 'Due tomorrow';
+  return `${daysUntilDeadline}\u00a0days left`;
+};
 
 export const STALE_DEADLINE_MESSAGE = 'Check the official page for the current deadline';
 export const STALE_DEADLINE_SHORT_LABEL = 'Deadline: check official page';
@@ -104,9 +111,7 @@ export const getFellowshipApplicationStatus = (
   const rollingApplications = hasRollingApplicationWindow(fellowship);
   const isApplicationWindowOpen =
     !deadlinePassed && !notOpenYet && (Boolean(deadline) || rollingApplications);
-  const daysUntilDeadline = deadline
-    ? Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    : null;
+  const daysUntilDeadline = deadline ? newYorkCalendarDaysUntil(deadline, now) : null;
   const hasStructuredEligibility =
     (fellowship.yearOfStudy?.length || 0) > 0 ||
     (fellowship.termOfAward?.length || 0) > 0 ||
@@ -208,8 +213,7 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'closingSoon',
       label: daysUntilDeadline <= 1 ? 'Due soon' : 'Closing soon',
-      detail:
-        daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline}\u00a0days left`,
+      detail: closingDetail(daysUntilDeadline),
       isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };

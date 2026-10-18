@@ -57,8 +57,7 @@ const BrowseCard = React.memo(
     const trackView = useViewTracking(item.type, getItemId(item));
 
     const daysUntil = getDaysUntilDeadline(item);
-    const showUrgentBanner =
-      item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
+    const showUrgentBanner = item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = getItemSubtitleColor(item);

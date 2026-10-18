@@ -60,6 +60,7 @@ export type Fellowship = {
   deadline: string | null;
   deadlineProjectedNextCycle?: boolean;
   deadlineStale?: boolean;
+  deadlineTextConflict?: string | null;
   contactName: string;
   contactEmail: string;
   contactPhone: string;

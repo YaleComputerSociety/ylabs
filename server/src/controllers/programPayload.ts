@@ -13,6 +13,7 @@ import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
 import { programAudience } from '../services/programAudience';
 import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
+import { programTextDeadlineConflict } from '../utils/programDeadlineText';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -227,6 +228,14 @@ export const publicProgramForReader = (program: any) => {
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
+    deadlineTextConflict:
+      programTextDeadlineConflict(program.deadline, [
+        program.summary,
+        program.description,
+        program.applicationInformation,
+        program.eligibility,
+        program.additionalInformation,
+      ]) ?? null,
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],

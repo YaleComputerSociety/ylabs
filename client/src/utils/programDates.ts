@@ -167,3 +167,29 @@ export const newYorkClockParts = (date: Date): { hour: number; minute: number } 
   const { hour, minute } = newYorkWallClock(date);
   return { hour, minute };
 };
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const newYorkDayNumber = (instant: Date): number => {
+  const { year, month, day } = newYorkWallClock(instant);
+  return Date.UTC(year, month - 1, day) / MS_PER_DAY;
+};
+
+/**
+ * Calendar days from today to the deadline's day in New York: 0 when it is due today.
+ * Rounding up a millisecond difference counted a deadline later in the day as one more
+ * day than the calendar shows (#5158).
+ */
+export const newYorkCalendarDaysUntil = (deadline: Date, now: Date = new Date()): number =>
+  newYorkDayNumber(deadline) - newYorkDayNumber(now);
+
+const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export const programTextDateLabel = (value: string | null | undefined): string | null => {
+  const match = CALENDAR_DATE.exec(value ?? '');
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return formatProgramCalendarDate(
+    newYorkInstant({ year: Number(year), month: Number(month), day: Number(day), hour: 12 }),
+  );
+};
