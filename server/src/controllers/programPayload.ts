@@ -190,6 +190,11 @@ export const withProgramAudience = (program: any) =>
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   const departmentResearchGuidance = program.departmentResearchGuidance === true;
+  const summary = publicProgramDescription(program.summary);
+  const description = publicProgramDescription(program.description);
+  const applicationInformation = publicProgramDescription(program.applicationInformation);
+  const eligibility = servedProgramEligibility(program).value;
+  const additionalInformation = publicProgramDescription(program.additionalInformation);
   return {
     _id: id,
     id,
@@ -213,13 +218,13 @@ export const publicProgramForReader = (program: any) => {
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
-    summary: publicProgramDescription(program.summary),
+    summary,
     cardSummary: publicProgramDescription(program.cardSummary),
-    description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramDescription(program.applicationInformation),
-    eligibility: servedProgramEligibility(program).value,
+    description,
+    applicationInformation,
+    eligibility,
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
-    additionalInformation: publicProgramDescription(program.additionalInformation),
+    additionalInformation,
     links: publicProgramLinks(program.links, program.sourceUrl),
     applicationLink: servedProgramApplicationLink(program).value,
     awardAmount: program.awardAmount,
@@ -231,13 +236,7 @@ export const publicProgramForReader = (program: any) => {
     deadlineTextConflict:
       programTextDeadlineConflict(
         program.deadline,
-        [
-          publicProgramDescription(program.summary),
-          publicProgramDescription(program.description),
-          publicProgramDescription(program.applicationInformation),
-          servedProgramEligibility(program).value,
-          publicProgramDescription(program.additionalInformation),
-        ],
+        [summary, description, applicationInformation, eligibility, additionalInformation],
         {
           projected: program.deadlineProjectedNextCycle === true,
           stale: program.deadlineStale === true,

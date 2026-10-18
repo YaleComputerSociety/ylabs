@@ -98,3 +98,58 @@ it('does not read a program date range in a run-on sentence as a deadline (#5158
     ]),
   ).toBeUndefined();
 });
+
+describe('programTextDeadlineConflict never flags on a date it misses (#5158)', () => {
+  const servedFeb12 = '2027-02-12T17:00:00.000Z';
+
+  it('reads a deadline written after a.m. or p.m. in the same sentence', () => {
+    expect(
+      programTextDeadlineConflict(servedFeb12, [
+        'Applications are due at 5 p.m. on February 19, 2027.',
+      ]),
+    ).toBe('2027-02-19');
+    expect(
+      programTextDeadlineConflict(servedFeb12, [
+        'The early deadline is January 5, 2027. Final applications are due at 5 p.m. on February 12, 2027.',
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('reads a deadline written with an abbreviated month', () => {
+    expect(programTextDeadlineConflict(servedFeb12, ['Deadline: Feb. 19, 2027.'])).toBe(
+      '2027-02-19',
+    );
+    expect(
+      programTextDeadlineConflict(servedFeb12, [
+        'Early deadline: November 1, 2026. Regular deadline: Feb. 12, 2027.',
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('does not split a sentence after a common abbreviation', () => {
+    expect(
+      programTextDeadlineConflict(servedFeb12, [
+        'Open to U.S. citizens. Applications are due on March 1, 2027.',
+      ]),
+    ).toBe('2027-03-01');
+    expect(
+      programTextDeadlineConflict(servedFeb12, ['The deadline (i.e. March 1, 2027) is firm.']),
+    ).toBe('2027-03-01');
+  });
+
+  it.each([
+    'Submissions open January 4, 2027.',
+    'The deadline has passed and the program begins June 1, 2027.',
+  ])('does not read a deadline cue followed by another event as the deadline: %s', (text) => {
+    expect(programTextDeadlineConflict(servedFeb12, [text])).toBeUndefined();
+  });
+
+  it('does not flag text that states two or more deadline dates', () => {
+    expect(
+      programTextDeadlineConflict(servedFeb12, [
+        'The priority deadline is March 1, 2027.',
+        'Late applications are due March 15, 2027.',
+      ]),
+    ).toBeUndefined();
+  });
+});

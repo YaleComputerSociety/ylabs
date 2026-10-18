@@ -11,7 +11,7 @@ import { programCitizenshipSummary } from './programBoard';
 
 export const CLOSING_SOON_DAYS = 30;
 
-const closingDetail = (daysUntilDeadline: number): string => {
+export const closingDetail = (daysUntilDeadline: number): string => {
   if (daysUntilDeadline <= 0) return 'Due today';
   if (daysUntilDeadline === 1) return 'Due tomorrow';
   return `${daysUntilDeadline}\u00a0days left`;

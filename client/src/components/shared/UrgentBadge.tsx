@@ -2,6 +2,7 @@
  * Urgency indicator for fellowships with deadlines <= 14 days away.
  */
 import React from 'react';
+import { closingDetail } from '../../utils/fellowshipStatus';
 
 interface UrgentBadgeProps {
   daysUntil: number;
@@ -9,8 +10,7 @@ interface UrgentBadgeProps {
 }
 
 const UrgentBadge = ({ daysUntil, variant }: UrgentBadgeProps) => {
-  const text =
-    daysUntil <= 0 ? 'Due today' : daysUntil === 1 ? 'Due tomorrow' : `${daysUntil}\u00a0days left`;
+  const text = closingDetail(daysUntil);
 
   if (variant === 'banner') {
     return (
