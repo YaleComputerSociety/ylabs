@@ -4,7 +4,11 @@ import {
   shouldIgnoreObservationForEntityMaterialization,
   withoutUnpairedProfileHomeIdentity,
 } from '../entityMaterializer';
-import { isNonIdentifyingLinkLabelName } from '../../utils/researchHomeNameIdentityAuthority';
+import {
+  isInadmissibleProfileLinkedHomeName,
+  isNonIdentifyingLinkLabelName,
+} from '../../utils/researchHomeNameIdentityAuthority';
+import { computeResearchEntityStudentVisibility } from '../../services/studentVisibilityTier';
 
 const profileUrl = 'https://medicine.yale.edu/profile/jane-quillfixture/';
 
@@ -130,11 +134,16 @@ describe('the name a profile-linked research home is adopted under', () => {
   });
 });
 
-describe('isNonIdentifyingLinkLabelName', () => {
-  it('reads an author-website and a learn-more label as labels', () => {
-    expect(isNonIdentifyingLinkLabelName('Author Website')).toBe(true);
-    expect(isNonIdentifyingLinkLabelName('Learn More')).toBe(true);
-    expect(isNonIdentifyingLinkLabelName('Learning Lab')).toBe(false);
+describe('isInadmissibleProfileLinkedHomeName', () => {
+  it('refuses an author-website and a learn-more label', () => {
+    expect(isInadmissibleProfileLinkedHomeName('Author Website')).toBe(true);
+    expect(isInadmissibleProfileLinkedHomeName('Learn More')).toBe(true);
+    expect(isInadmissibleProfileLinkedHomeName('Learning Lab')).toBe(false);
+  });
+
+  it('leaves the all-lane link-label vocabulary unwidened for a lab named with those words', () => {
+    expect(isNonIdentifyingLinkLabelName('Learn Lab')).toBe(false);
+    expect(isNonIdentifyingLinkLabelName('Author Lab')).toBe(false);
   });
 });
 
@@ -166,5 +175,34 @@ describe('a profile-linked home name the lane stored before it refused the shape
         !shouldIgnoreObservationForEntityMaterialization('researchEntity', observation),
     );
     expect(withoutUnpairedProfileHomeIdentity(observations, undefined)).toEqual([]);
+  });
+});
+
+describe('a row still headed by a refused profile-linked home name', () => {
+  const lane = 'official-profile-pi-backfill';
+  const glued = 'Fictional Decisions Studio We build rigorous methods for fictional decisions';
+  const reasonsFor = (sourceName: string) =>
+    computeResearchEntityStudentVisibility({
+      leadMembers: [{ userId: 'user-fixture-lead', role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      entity: {
+        slug: 'fixture-decisions-studio',
+        name: glued,
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://example.yale.edu/labs/decisions/',
+        sourceUrls: ['https://example.yale.edu/labs/decisions/'],
+        fieldProvenance: { name: { sourceName, sourceUrl: profileUrl } },
+        activeAtYaleCache: true,
+      },
+    }).reasons;
+
+  it('is held as an unusable name when the lane is what named it', () => {
+    expect(reasonsFor(lane)).toContain('unusable_name');
+  });
+
+  it('is not held on that ground when another lane named it', () => {
+    expect(reasonsFor('dept-faculty-roster')).not.toContain('unusable_name');
   });
 });
