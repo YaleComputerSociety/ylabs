@@ -116,6 +116,10 @@ export interface FacetAgreementObservation {
 
 export function checkFacetAgreement(
   observations: readonly FacetAgreementObservation[],
+  invariant: { id: string; title: string } = {
+    id: 'facet-count-agrees-with-filtered-total',
+    title: 'A facet value count equals the total of a search filtered to that value',
+  },
 ): InvariantResult {
   const disagreements = observations
     .filter((observation) => observation.facetCount !== observation.filteredTotal)
@@ -125,12 +129,10 @@ export function checkFacetAgreement(
       filteredTotal: observation.filteredTotal,
     }));
 
-  return buildInvariant(
-    'facet-count-agrees-with-filtered-total',
-    'A facet value count equals the total of a search filtered to that value',
-    disagreements.length === 0,
-    { checked: observations.length, disagreements },
-  );
+  return buildInvariant(invariant.id, invariant.title, disagreements.length === 0, {
+    checked: observations.length,
+    disagreements,
+  });
 }
 
 export interface CorpusFingerprint {
@@ -943,4 +945,49 @@ export function checkPersonNameWordsAreNotRespelled(
     );
   }
   return buildInvariant(id, title, respelled.length === 0, detail);
+}
+
+export interface SimilarRailObservation {
+  viewedSharesNames: boolean;
+  cardsShareAName: readonly boolean[];
+}
+
+const sharedNameCardPrecedesTopicalCard = (cardsShareAName: readonly boolean[]): boolean =>
+  cardsShareAName.some(
+    (sharesAName, position) =>
+      sharesAName && cardsShareAName.slice(position + 1).some((later) => !later),
+  );
+
+export function checkSimilarRailRanksSharedNamesLast(
+  rails: readonly SimilarRailObservation[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'similar-rail-ranks-shared-names-last';
+  const title =
+    'A "More like this" card sharing a person name with the viewed row never ranks above a card that does not';
+  const comparable = rails.filter(
+    (rail) => rail.viewedSharesNames && rail.cardsShareAName.length > 0,
+  );
+  const misordered = comparable.filter((rail) =>
+    sharedNameCardPrecedesTopicalCard(rail.cardsShareAName),
+  ).length;
+  const detail = { railsRead: rails.length, railsWithNames: comparable.length, misordered };
+  if (comparable.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No rail belonged to a row with person names, so a zero misordered count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  if (misordered > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the rails were read, so a card may carry names from a different version',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, misordered === 0, detail);
 }

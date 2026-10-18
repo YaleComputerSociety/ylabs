@@ -47,7 +47,6 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
-  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
@@ -68,7 +67,14 @@ import {
   normalizeOfficialProfileDestination,
   resolveLeadOfficialProfileUrl,
 } from './leadProfileIdentity';
-import { buildResearchGroupFilterString, ResearchGroupFilterInput } from './researchGroupFilters';
+import {
+  buildResearchGroupFilterString,
+  candidateMatchesStudentFilters,
+  HOSTS_UNDERGRADS_INDEX_FIELD,
+  ResearchGroupFilterInput,
+  tallyCandidateFacetDistribution,
+  visibilityScopeOnly,
+} from './researchGroupFilters';
 import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
@@ -108,7 +114,7 @@ import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
-import { sanitizePersonName } from '../utils/personNameHygiene';
+import { isPersonNameParticleOrSuffixToken, sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
@@ -560,13 +566,20 @@ export const HYBRID_CANDIDATE_POOL_SIZE = 200;
 // read, so adding a helper that reads another indexed field means adding it here
 // or that helper silently sees `undefined`: `promoteExactAliasFieldMatches` reads
 // `departments` and `researchAreas`, and everything else keys on the id.
+// The student filters and facets of a locally paginated search are applied to
+// these hits too, so every field `candidateMatchesStudentFilters` and
+// `tallyCandidateFacetDistribution` read must be listed (#5101).
 // `_rankingScoreDetails` is response metadata rather than a document attribute,
 // so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
 // (verified against the running index, not assumed). See #3185.
 const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'id',
+  'kind',
+  'entityType',
+  'schools',
   'departments',
   'researchAreas',
+  HOSTS_UNDERGRADS_INDEX_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
@@ -659,6 +672,33 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'takes',
 ]);
 
+// A student's access words say who is asking or on what terms, not what the
+// research is about, and almost no row carries them: under the all-words keyword
+// strategy "neuroscience undergraduate" admitted only rows whose text happened to
+// say "undergraduate" and served an unrelated theorist first, and the spelling
+// correction rewrote "paid" to "pain". `internship` (the MeSH "Internship and
+// Residency") and `students` ("Students, Medical") name indexed topics, so they
+// are absent.
+const STUDENT_ACCESS_INTENT_WORDS = new Set([
+  'undergraduate',
+  'undergraduates',
+  'undergrad',
+  'undergrads',
+  'paid',
+  'unpaid',
+  'freshman',
+  'freshmen',
+  'sophomore',
+  'sophomores',
+  'internships',
+  'opportunities',
+]);
+
+// "history major" names the student, while "major depression" and "Major
+// Histocompatibility Complex" name a topic, so `major` is filler only after a
+// meaningful word and before the end of the query or a filler word.
+const ACADEMIC_MAJOR_WORDS = new Set(['major', 'majors']);
+
 // `work` and `working` name real fields on their own ("Sex Work", "Working
 // Memory"), so they are filler only where they govern a preposition, which no
 // indexed field name does.
@@ -693,11 +733,22 @@ const isInstitutionContext = (tokens: string[], index: number): boolean =>
   (INSTITUTION_CONTEXT_SUFFIXES.has(tokens[index]) &&
     tokens[index - 1] === INSTITUTION_CONTEXT_TOKEN);
 
+const isPlainStudentQueryFiller = (tokens: string[], index: number): boolean =>
+  STUDENT_QUERY_STOP_WORDS.has(tokens[index]) ||
+  STUDENT_ACCESS_INTENT_WORDS.has(tokens[index]) ||
+  isInstitutionContext(tokens, index);
+
+const namesTheStudentsMajor = (tokens: string[], index: number): boolean => {
+  if (!ACADEMIC_MAJOR_WORDS.has(tokens[index]) || index === 0) return false;
+  if (isPlainStudentQueryFiller(tokens, index - 1)) return false;
+  return index === tokens.length - 1 || isStudentQueryFiller(tokens, index + 1);
+};
+
 const isStudentQueryFiller = (tokens: string[], index: number): boolean => {
   const token = tokens[index];
   if (completesWorkingStylePhrase(tokens, index)) return false;
-  if (STUDENT_QUERY_STOP_WORDS.has(token)) return true;
-  if (isInstitutionContext(tokens, index)) return true;
+  if (isPlainStudentQueryFiller(tokens, index)) return true;
+  if (namesTheStudentsMajor(tokens, index)) return true;
   return (
     QUESTION_FRAME_VERBS_BEFORE_PREPOSITION.has(token) &&
     QUESTION_FRAME_VERB_PREPOSITIONS.has(tokens[index + 1] ?? '')
@@ -780,7 +831,18 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   const raw = boundedResearchSearchQuery(value);
   const tokens = tokenizeStudentResearchQuery(raw);
   const meaningfulTokens = tokens.filter((_token, index) => !isStudentQueryFiller(tokens, index));
-  const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
+  const accessQueryTokens = tokens.filter(
+    (token, index) =>
+      !isStudentQueryFiller(tokens, index) ||
+      STUDENT_ACCESS_INTENT_WORDS.has(token) ||
+      ACADEMIC_MAJOR_WORDS.has(token),
+  );
+  const queryTokens =
+    meaningfulTokens.length > 0
+      ? meaningfulTokens
+      : accessQueryTokens.length > 0
+        ? accessQueryTokens
+        : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
   const workingStyle = expandWorkingStylePhrases(queryTokens);
   // A topic alias expands only when it is the whole query. Inside a phrase every
@@ -1420,6 +1482,8 @@ export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'e
 const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [
     ...STUDENT_QUERY_STOP_WORDS,
+    ...STUDENT_ACCESS_INTENT_WORDS,
+    ...ACADEMIC_MAJOR_WORDS,
     ...QUESTION_FRAME_VERBS_BEFORE_PREPOSITION,
     ...QUESTION_FRAME_VERB_PREPOSITIONS,
     INSTITUTION_CONTEXT_TOKEN,
@@ -1682,7 +1746,18 @@ async function searchResearchGroupsForQuery(
   // large enough to force an exhaustive scan (see the companion count query
   // below, which forces that scan on every request). See #885.
   const paginateHybridPoolLocally = searchParams.rankingScoreThreshold !== undefined;
+  // A locally paginated search serves a fused pool whose legs are top-K windows,
+  // so membership under a filter is not the unfiltered membership narrowed: the
+  // semantic leg drawn from one department admits that whole department. The pool
+  // is therefore built under the visibility scope alone and the student's filters
+  // narrow it here, which makes every facet count, tallied over the same pool,
+  // the number of results applying it returns (#5101).
+  const candidatePoolFilterString = paginateHybridPoolLocally
+    ? buildResearchGroupFilterString(visibilityScopeOnly(visibilityScopedFilters))
+    : filterString;
   if (paginateHybridPoolLocally) {
+    searchParams.filter = candidatePoolFilterString;
+    delete searchParams.facets;
     searchParams.page = 1;
     searchParams.hitsPerPage = HYBRID_CANDIDATE_POOL_SIZE;
     delete searchParams.limit;
@@ -1788,40 +1863,15 @@ async function searchResearchGroupsForQuery(
     }
   };
 
-  // The per-page totalHits and facetDistribution above only become exhaustive
-  // once Meilisearch has scanned deep enough to have examined every candidate
-  // that could pass rankingScoreThreshold, so a shallow first page can still
-  // report the pre-threshold estimate/distribution over the whole k-NN
-  // candidate pool. Run one companion query deep enough to force the
-  // exhaustive, threshold-aware count and facet distribution regardless of
-  // which page was actually requested. See #885, #941.
-  const exhaustiveCountSearch =
-    finalSearchParams.rankingScoreThreshold !== undefined
-      ? settleSearch<Record<string, any>>(() =>
-          index.search(meiliQueryText, {
-            filter: filterString,
-            hybrid: finalSearchParams.hybrid,
-            ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
-            rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
-            ...(finalSearchParams.matchingStrategy
-              ? { matchingStrategy: finalSearchParams.matchingStrategy }
-              : {}),
-            page: 1,
-            hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-            attributesToRetrieve: ['id'],
-            ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
-          }),
-        )
-      : null;
-
   // For any facet the request is actively filtering on, recompute its
   // distribution disjunctively (excluding only its own filter clause) so the
   // dropdown keeps every sibling option and its comparative counts under the
   // other active filters. Without this, a conjunctive distribution collapses
   // the facet to just the chosen value, turning the filter into a dead end.
-  // Each supplementary query mirrors the primary query's mode (hybrid +
-  // threshold, topic-alias attribute scoping, or plain browse) so counts stay
-  // consistent; a failure degrades to the conjunctive counts for that facet.
+  // Each supplementary query mirrors the primary query's mode (topic-alias
+  // attribute scoping or plain browse) so counts stay consistent; a failure
+  // degrades to the conjunctive counts for that facet. A locally paginated
+  // search tallies its facets over its own pool instead.
   const searchFacetDistributionForFilter = async (
     overrideFilterString: string,
     facetFields: string[],
@@ -1833,16 +1883,7 @@ async function searchResearchGroupsForQuery(
     if (finalSearchParams.matchingStrategy) {
       params.matchingStrategy = finalSearchParams.matchingStrategy;
     }
-    if (finalSearchParams.rankingScoreThreshold !== undefined) {
-      params.hybrid = finalSearchParams.hybrid;
-      if (finalSearchParams.vector) params.vector = finalSearchParams.vector;
-      params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
-      params.page = 1;
-      params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
-      params.attributesToRetrieve = ['id'];
-    } else {
-      params.limit = 0;
-    }
+    params.limit = 0;
     const result = (await index.search(meiliQueryText, params)) as {
       facetDistribution?: Record<string, Record<string, number>>;
     };
@@ -1855,7 +1896,7 @@ async function searchResearchGroupsForQuery(
       )
     : [];
   const disjunctiveFacetSearches = Promise.all(
-    activeDisjunctiveFacets.map(({ filterKey, meiliField }) =>
+    (paginateHybridPoolLocally ? [] : activeDisjunctiveFacets).map(({ filterKey, meiliField }) =>
       settleSearch(() =>
         searchFacetDistributionForFilter(
           buildResearchGroupFilterString(
@@ -1895,7 +1936,7 @@ async function searchResearchGroupsForQuery(
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
   const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
   const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
-    filter: filterString,
+    filter: candidatePoolFilterString,
     ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
     ...(matchingStrategy ? { matchingStrategy } : {}),
   });
@@ -1978,7 +2019,7 @@ async function searchResearchGroupsForQuery(
     runsSemanticLeg && dropCoincidentalTypoOnlyHits(rawHits).hits.length > 0
       ? settleSearch<Record<string, any>>(() =>
           index.search(meiliQueryText, {
-            filter: filterString,
+            filter: candidatePoolFilterString,
             hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
             ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
             attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -2023,7 +2064,6 @@ async function searchResearchGroupsForQuery(
   );
 
   const [
-    exhaustiveCountOutcome,
     disjunctiveFacetOutcomes,
     keywordLeg,
     semanticLegOutcome,
@@ -2031,7 +2071,6 @@ async function searchResearchGroupsForQuery(
     deepPoolOutcome,
     deepKeywordLegRawHits,
   ] = await Promise.all([
-    exhaustiveCountSearch,
     disjunctiveFacetSearches,
     keywordLegSearch,
     semanticLegSearch,
@@ -2039,25 +2078,6 @@ async function searchResearchGroupsForQuery(
     deepPoolSearch,
     deepKeywordLegSearch,
   ]);
-
-  if (exhaustiveCountOutcome?.error !== undefined) {
-    console.error(
-      'Optional exhaustive hybrid total-hits count failed:',
-      sanitizeLogValue(exhaustiveCountOutcome.error),
-    );
-    degraded = true;
-  } else if (exhaustiveCountOutcome) {
-    const exhaustiveCountResult = exhaustiveCountOutcome.value;
-    if (typeof exhaustiveCountResult?.totalHits === 'number') {
-      searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
-    }
-    if (exhaustiveCountResult?.facetDistribution) {
-      searchResult = {
-        ...searchResult,
-        facetDistribution: exhaustiveCountResult.facetDistribution,
-      };
-    }
-  }
 
   const { estimatedTotalHits, totalHits, facetDistribution: rawFacetDistribution } = searchResult;
   const resolvedTotalHits = totalHits ?? estimatedTotalHits;
@@ -2085,16 +2105,18 @@ async function searchResearchGroupsForQuery(
 
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
-  const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
-    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
+  const toClientFacetDistribution = (
+    rawDistribution: Record<string, Record<string, number>> | undefined,
+  ): Record<string, Record<string, number>> | undefined => {
+    if (!rawDistribution) return rawDistribution;
+    const { schools, researchAreas, ...rest } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
     };
-  })();
+  };
 
   const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLeg.rawHits).hits;
 
@@ -2186,13 +2208,29 @@ async function searchResearchGroupsForQuery(
     ? appendUnlistedHits(candidatePoolHead.hits, deepCandidatePoolOrder.hits)
     : candidatePoolHead.hits;
   const droppedCoincidentalHits = (deepCandidatePoolOrder ?? candidatePoolHead).dropped;
+  const servedPool = paginateHybridPoolLocally
+    ? reorderedPool.filter((hit: Record<string, unknown>) =>
+        candidateMatchesStudentFilters(hit, safeFilters),
+      )
+    : reorderedPool;
   // The reorder helpers run across the whole fixed candidate pool so the ordering
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const orderedHits = paginateHybridPoolLocally
-    ? reorderedPool.slice(offset, offset + safePageSize)
+    ? servedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
+  const facetsTalliedOverPool = DISJUNCTIVE_RESEARCH_FACETS.filter(
+    (facet) =>
+      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(facet.meiliField) ||
+      activeDisjunctiveFacets.includes(facet),
+  ).map(({ filterKey, meiliField }) => ({ filterKey, indexField: meiliField }));
+  const rawServedFacetDistribution = paginateHybridPoolLocally
+    ? safeOptions.includeFacets
+      ? tallyCandidateFacetDistribution(reorderedPool, safeFilters, facetsTalliedOverPool)
+      : undefined
+    : disjunctiveRawFacetDistribution;
+  const facetDistribution = toClientFacetDistribution(rawServedFacetDistribution);
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
@@ -2229,22 +2267,15 @@ async function searchResearchGroupsForQuery(
     };
   });
 
-  // The companion count above counts what cleared the blended cutoff, so it omits
-  // the keyword-leg rows merged into the pool. Those rows are reachable by paging
-  // through the pool, and the client stops its pagination walk once a short page
-  // reaches the reported total, so the locally reachable pool is a floor on the
-  // count rather than something the count may fall below. See #2732.
-  // Withheld semantic-only rows still count in the companion total, so a withheld
-  // result reports only the rows it can serve.
-  const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
-  const companionTotalHits =
-    typeof resolvedTotalHits === 'number' && !withholdSemanticOnlyRows
-      ? resolvedTotalHits - droppedCoincidentalHits
-      : 0;
+  // A locally paginated search reports exactly the pool it pages through and
+  // tallies its facets over, so the total, the facet counts and the rows a
+  // student can reach are one population (#2732, #5101). Every other search
+  // reports Meilisearch's own count for the filtered query.
+  const meiliTotalHits =
+    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0;
   const adjustedTotalHits = Math.max(
     normalizedHits.length,
-    locallyReachableHits,
-    companionTotalHits,
+    paginateHybridPoolLocally ? servedPool.length : meiliTotalHits,
   );
 
   return addResearchEntitySearchAliases(
@@ -2790,6 +2821,32 @@ const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;
 // neighbors so the section stays absent unless a genuinely similar home exists.
 const SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD = 0.35;
 
+export const personNameWordKeys = (document: unknown): Set<string> => {
+  const record = (document ?? {}) as Record<string, unknown>;
+  return new Set(
+    PERSON_FIELD_ATTRIBUTES.flatMap((attribute) => {
+      const value = record[attribute];
+      return Array.isArray(value) ? value : [value];
+    })
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap((value) => foldLatinDiacritics(value.toLowerCase()).split(/[^a-z0-9]+/))
+      .filter((word) => word.length >= 2 && !isPersonNameParticleOrSuffixToken(word)),
+  );
+};
+
+// The embedded document text opens with the row's name and its professors' names,
+// so a thinly described row's nearest vectors were other people sharing a first or
+// last name: a history-of-medicine page recommended same-surname English and Law
+// faculty above its own field's historians. A neighbour sharing a person-name word
+// with the viewed row is ranked after every neighbour that does not, keeping the
+// embedding order within each group, so names never decide what is similar.
+const rankSharedPersonNamesLast = <T>(hits: readonly T[], viewedNameWords: Set<string>): T[] => {
+  if (viewedNameWords.size === 0) return [...hits];
+  const sharesAName = (hit: T) =>
+    [...personNameWordKeys(hit)].some((word) => viewedNameWords.has(word));
+  return [...hits.filter((hit) => !sharesAName(hit)), ...hits.filter(sharesAName)];
+};
+
 const firstServableDistinctCandidates = <T extends Record<string, any>>(
   orderedCandidateIds: readonly string[],
   candidateEntities: readonly T[],
@@ -3033,6 +3090,14 @@ export async function listSimilarResearchEntities(
     `studentVisibilityTier IN [${publicStudentVisibilityTiers.map((tier) => `"${tier}"`).join(', ')}]`,
   ].join(' AND ');
 
+  const viewedPersonNameWords = (async () =>
+    personNameWordKeys(
+      await (index as any).getDocument(entityId, { fields: PERSON_FIELD_ATTRIBUTES }),
+    ))().catch((error: unknown) => {
+    console.error('Similar research name read failed:', sanitizeLogValue(error));
+    return new Set<string>();
+  });
+
   let hits: any[];
   try {
     const result = await (index as any).searchSimilarDocuments({
@@ -3040,7 +3105,7 @@ export async function listSimilarResearchEntities(
       embedder: RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
       limit: SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL,
       filter: visibilityFilter,
-      attributesToRetrieve: ['id', 'slug'],
+      attributesToRetrieve: ['id', 'slug', ...PERSON_FIELD_ATTRIBUTES],
       showRankingScore: true,
     });
     hits = Array.isArray(result?.hits) ? result.hits : [];
@@ -3062,7 +3127,7 @@ export async function listSimilarResearchEntities(
 
   const orderedCandidateIds: string[] = [];
   const seenCandidateIds = new Set<string>();
-  for (const hit of hits) {
+  for (const hit of rankSharedPersonNamesLast(hits, await viewedPersonNameWords)) {
     if (!hit || typeof hit !== 'object') continue;
     if (
       typeof hit._rankingScore === 'number' &&

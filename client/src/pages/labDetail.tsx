@@ -28,6 +28,7 @@ import ResearchProfileSkeleton, {
   researchProfileGridClassName,
   researchProfilePageClassName,
 } from '../components/labs/ResearchProfileSkeleton';
+import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
@@ -389,27 +390,6 @@ const formatGrantSummary = (group: any): string | null => {
   return `Funded: ${parts.join(', ')}`;
 };
 
-const formatPastAdvisees = (group: any): string | null => {
-  const total = (group.pastUndergradAdvisees || []).reduce(
-    (sum: number, p: any) => sum + (p?.count ?? 1),
-    0,
-  );
-  if (total <= 0) return null;
-  const years = (group.pastUndergradAdvisees || [])
-    .map((p: any) => p?.year)
-    .filter((y: unknown): y is number => typeof y === 'number' && y > 0)
-    .sort((a: number, b: number) => a - b);
-  const range =
-    years.length > 0
-      ? years[0] === years[years.length - 1]
-        ? `${years[0]}`
-        : `${years[0]}–${years[years.length - 1]}`
-      : null;
-  return `Advised ${total} ${total === 1 ? 'undergrad' : 'undergrads'}${
-    range ? ` (${range})` : ''
-  }`;
-};
-
 const emeritusResearchLabel = (group: any): string => {
   if (isCreativePracticeEntity(group)) return 'Emeritus faculty';
   if (group.entityType === 'LAB') return 'Emeritus lab';
@@ -487,7 +467,7 @@ const DecisionSummary = ({
     void captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group);
-  const pastAdvisees = formatPastAdvisees(group);
+  const pastAdvisees = formatPastAdvisees(group, rosterListsUndergraduates);
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
@@ -519,7 +499,7 @@ const DecisionSummary = ({
       ? undefined
       : undergradQuoteEvidenceFromEntity(group);
   const hasEvidenceList =
-    Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
+    Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const actionLinks = resolveResearchDetailActionLinks({
@@ -666,7 +646,9 @@ const DecisionSummary = ({
                 {grantSummary && <li>• {grantSummary}</li>}
                 {honors.recent && <li>• {honors.recent}</li>}
                 {honors.other && <li>• {honors.other}</li>}
-                {pastAdvisees && <li>• {pastAdvisees}</li>}
+                {pastAdvisees.map((line) => (
+                  <li key={line}>• {line}</li>
+                ))}
               </ul>
             </div>
           )}

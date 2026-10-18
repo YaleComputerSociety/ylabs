@@ -1604,6 +1604,8 @@ const Research = () => {
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onClearAll: () => applyStudentFilters({ school: '', department: '', entityType: '' }),
+    resultCount: Math.max(searchTotal, activeClusters.length),
+    resultCountPending: searchLoading,
   };
 
   const browseFilterProps = {
@@ -1611,6 +1613,8 @@ const Research = () => {
     facetDistribution: browseFacetDistribution,
     isApplying: false,
     hasFacetError: false,
+    resultCount: defaultSearchTotal,
+    resultCountPending: defaultSearchLoading,
   };
 
   const retryRelaxedQuery = () => {
@@ -1738,27 +1742,6 @@ const Research = () => {
               Search by interest, professor, course topic, method, or question.
             </p>
 
-            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
-              <div
-                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
-                role="status"
-              >
-                <Link
-                  to="/dashboard?tab=programs"
-                  aria-label={approachingDeadlineAriaLabel(
-                    watchedDeadlineApproachingCount,
-                    watchedDeadlineNotStartedCount,
-                  )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
-                >
-                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
-                </Link>
-                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
-                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
-                )}
-              </div>
-            )}
-
             <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
               <label
                 htmlFor="research-search"
@@ -1813,6 +1796,27 @@ const Research = () => {
                 {searchHelpText}
               </p>
             </form>
+
+            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
+              <div
+                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                role="status"
+              >
+                <Link
+                  to="/dashboard?tab=programs"
+                  aria-label={approachingDeadlineAriaLabel(
+                    watchedDeadlineApproachingCount,
+                    watchedDeadlineNotStartedCount,
+                  )}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
+                >
+                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+                </Link>
+                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
+                )}
+              </div>
+            )}
 
             {hasSubmittedSearch && isWideFilterLayout && (
               <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">

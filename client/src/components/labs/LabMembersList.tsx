@@ -194,10 +194,10 @@ const LabMemberCard = ({
       <div className={baseClassName}>{identityBody}</div>
     );
   const sideLinkClassName =
-    'yr-focus-ring self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
+    'yr-focus-ring inline-flex min-h-11 items-center self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
   if (!orcidUrl && !resolvedEmailHref) return identityCard;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col">
       {identityCard}
       {orcidUrl && (
         <a

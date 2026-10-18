@@ -76,7 +76,10 @@ const ActiveFilters = ({
           {showsCount && (
             <div className="ml-auto flex items-center gap-2">
               {isLoading && (
-                <div className="w-3 h-3 border-2 border-line-brand border-t-brand rounded-full animate-spin" />
+                <div
+                  aria-hidden="true"
+                  className="w-3 h-3 border-2 border-line-brand border-t-brand rounded-full animate-spin"
+                />
               )}
               <span
                 className="yr-num text-xs text-muted whitespace-nowrap"
@@ -84,7 +87,9 @@ const ActiveFilters = ({
                 aria-live="polite"
                 aria-atomic="true"
               >
-                {totalCount} {totalCount === 1 ? 'result' : 'results'}
+                {isLoading
+                  ? 'Searching…'
+                  : `${totalCount} ${totalCount === 1 ? 'result' : 'results'}`}
               </span>
             </div>
           )}

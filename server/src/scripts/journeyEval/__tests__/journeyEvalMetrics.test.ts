@@ -8,6 +8,7 @@ import {
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkPersonNameWordsAreNotRespelled,
   checkQueryVariantServesTheBaseline,
+  checkSimilarRailRanksSharedNamesLast,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkSortOrdering,
@@ -635,5 +636,36 @@ describe('checkPersonNameWordsAreNotRespelled', () => {
 
   it('is inconclusive when no person name was queried', () => {
     expect(checkPersonNameWordsAreNotRespelled([]).status).toBe('inconclusive');
+  });
+});
+
+describe('checkSimilarRailRanksSharedNamesLast', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-10-01T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-10-01T00:00:01.000Z' };
+  const rail = (cardsShareAName: boolean[]) => ({ viewedSharesNames: true, cardsShareAName });
+
+  it('passes when every shared-name card follows the topical cards', () => {
+    expect(
+      checkSimilarRailRanksSharedNamesLast([rail([false, false, true])], still, still).status,
+    ).toBe('pass');
+  });
+
+  it('fails when a shared-name card ranks above a topical card, unless the corpus moved', () => {
+    expect(checkSimilarRailRanksSharedNamesLast([rail([true, false])], still, still).status).toBe(
+      'fail',
+    );
+    expect(checkSimilarRailRanksSharedNamesLast([rail([true, false])], still, moved).status).toBe(
+      'inconclusive',
+    );
+  });
+
+  it('is inconclusive when no rail belongs to a row with person names', () => {
+    expect(
+      checkSimilarRailRanksSharedNamesLast(
+        [{ viewedSharesNames: false, cardsShareAName: [false] }],
+        still,
+        still,
+      ).status,
+    ).toBe('inconclusive');
   });
 });

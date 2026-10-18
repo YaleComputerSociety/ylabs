@@ -23,6 +23,7 @@ import {
   isDepartmentResearchGuidance,
   programKindLabel,
 } from '../../utils/programJourney';
+import { programCitizenshipSummary } from '../../utils/programBoard';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
@@ -134,7 +135,6 @@ const FellowshipModal = ({
     setSelectedTermOfAward,
     setSelectedPurpose,
     setSelectedRegions,
-    setSelectedCitizenship,
     setQueryString,
     resetProgramFilters,
   } = useContext(FellowshipSearchContext);
@@ -167,7 +167,7 @@ const FellowshipModal = ({
       : 'Not usually';
 
   const handleFilterClick = (
-    filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
+    filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions',
     value: string,
   ) => {
     setQueryString('');
@@ -185,9 +185,6 @@ const FellowshipModal = ({
         break;
       case 'globalRegions':
         setSelectedRegions([value]);
-        break;
-      case 'citizenshipStatus':
-        setSelectedCitizenship([value]);
         break;
     }
 
@@ -636,22 +633,12 @@ const FellowshipModal = ({
                           </div>
                         </div>
                       )}
-                      {fellowship.citizenshipStatus.length > 0 && (
-                        <div>
-                          <span className="text-xs text-muted">Citizenship status</span>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {fellowship.citizenshipStatus.map((status) => (
-                              <button
-                                key={status}
-                                onClick={() => handleFilterClick('citizenshipStatus', status)}
-                                className={`${filterChipClass} bg-orange-100 text-orange-800`}
-                              >
-                                {status}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      <div>
+                        <span className="text-xs text-muted">Citizenship</span>
+                        <p className="mt-1 text-sm text-ink-soft">
+                          {programCitizenshipSummary(fellowship)}
+                        </p>
+                      </div>
                     </div>
                   </section>
                 )}

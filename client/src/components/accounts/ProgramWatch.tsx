@@ -43,6 +43,9 @@ import {
 import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   normalizeResearchPlanStage,
+  programDeadlineIsSettled,
+  researchPlanStageLabel,
+  researchPlanStageMeta,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import {
@@ -196,8 +199,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   );
 
   const nextDeadline = useMemo(
-    () => watchedProgramDeadlineSummary(visiblePrograms),
-    [visiblePrograms],
+    () =>
+      watchedProgramDeadlineSummary(
+        visiblePrograms.filter((program) => !programDeadlineIsSettled(stages[program.id])),
+      ),
+    [visiblePrograms, stages],
   );
 
   const deadlineUrgency = useMemo(() => {
@@ -356,6 +362,14 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                     toggleWatch(program);
                   }}
                   onOpenModal={() => openModal(program)}
+                  statusBadgeOverride={
+                    programDeadlineIsSettled(stage)
+                      ? {
+                          label: researchPlanStageLabel(stage),
+                          className: researchPlanStageMeta[stage].badgeClassName,
+                        }
+                      : undefined
+                  }
                   footer={
                     <>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

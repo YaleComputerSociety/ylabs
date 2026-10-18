@@ -118,11 +118,13 @@ function UndergraduateResearchers({
 
   return (
     <div>
-      <h3 className="mb-1 text-sm font-semibold text-ink">Undergraduate researchers</h3>
       {current.length > 0 && (
-        <p className="mb-2 text-xs leading-relaxed text-muted">
-          Current undergraduates can tell you what research in this lab is like.
-        </p>
+        <>
+          <h3 className="mb-1 text-sm font-semibold text-ink">Undergraduate researchers</h3>
+          <p className="mb-2 text-xs leading-relaxed text-muted">
+            Current undergraduates can tell you what research in this lab is like.
+          </p>
+        </>
       )}
       {withProfile.length > 0 && (
         <ul className="mb-2 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
@@ -140,9 +142,15 @@ function UndergraduateResearchers({
       )}
       {past.length > 0 && (
         <div className={current.length > 0 ? 'mt-4' : ''}>
-          <h4 className="mb-1 text-xs font-semibold text-muted">
-            Past undergraduate researchers ({past.length})
-          </h4>
+          {current.length > 0 ? (
+            <h4 className="mb-1 text-xs font-semibold text-muted">
+              Past undergraduate researchers ({past.length})
+            </h4>
+          ) : (
+            <h3 className="mb-1 text-sm font-semibold text-ink">
+              Past undergraduate researchers ({past.length})
+            </h3>
+          )}
           <ul
             id="past-undergraduate-researchers"
             className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2"

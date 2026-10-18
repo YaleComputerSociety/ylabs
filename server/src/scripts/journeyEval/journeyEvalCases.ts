@@ -32,6 +32,7 @@ import {
   checkNotDegraded,
   checkPersonNameWordsAreNotRespelled,
   checkQueryRelevance,
+  checkSimilarRailRanksSharedNamesLast,
   checkSortOrdering,
   checkSurvivorWebsiteAttribution,
   checkTitleSortOrdering,
@@ -106,8 +107,14 @@ export interface UndergradEvidenceSampleRequest {
   write: (sample: UndergradEvidenceJudgementSet) => Promise<string>;
 }
 
+export interface SimilarRailRead {
+  viewedNameWords: readonly string[];
+  cards: ReadonlyArray<{ nameWords: readonly string[] }>;
+}
+
 export interface JourneyEvalContext {
   browse: BrowseFn;
+  readSimilarResearchRail?: (rowKey: string) => Promise<SimilarRailRead | null>;
   topicQueryJudgements: TopicQueryJudgement[] | null;
   undergradEvidenceJudgements?: UndergradEvidenceJudgementSet | null;
   undergradEvidenceSampleRequest?: UndergradEvidenceSampleRequest;
@@ -381,6 +388,65 @@ const facetCountAgreement: JourneyCase = {
           'A browse filtered to one facet value does not fall back to a degraded search path',
           degradedFilteredBrowses === 0,
           { checked: observations.length, degradedFilteredBrowses },
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+// A text query serves a fused candidate pool, so its facets drifted from its results
+// while a filters-only browse stayed consistent: these two queries read Computer
+// Science (26) against 59 results and Type counts summing to 71 under 255 (#5101).
+export const TEXT_QUERY_FACET_AGREEMENT_QUERIES = ['machine learning', 'cognitive psychology'];
+const TEXT_QUERY_FACET_FIELDS = ['departments', 'entityType'] as const;
+
+const textQueryFacetCountAgreement: JourneyCase = {
+  id: 'text-query-facet-count-agreement',
+  title: 'Under a text query, a facet count matches the total that query returns filtered to it',
+  run: async (context) => {
+    const observations: FacetAgreementObservation[] = [];
+    const typeTotalsThatDisagree: Array<{ query: string; typeCountSum: number; total: number }> =
+      [];
+    for (const query of TEXT_QUERY_FACET_AGREEMENT_QUERIES) {
+      const result = await context.browse({ query, page: 1, pageSize: 1 });
+      const total = result.estimatedTotalHits ?? -1;
+      const typeCountSum = Object.values(result.facetDistribution?.entityType ?? {}).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      if (typeCountSum !== total) typeTotalsThatDisagree.push({ query, typeCountSum, total });
+      for (const field of TEXT_QUERY_FACET_FIELDS) {
+        const topValues = Object.entries(result.facetDistribution?.[field] ?? {})
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, context.facetValuesChecked);
+        for (const [value, facetCount] of topValues) {
+          const filtered = await context.browse({
+            query,
+            filters: { [field]: [value] },
+            page: 1,
+            pageSize: 1,
+          });
+          observations.push({
+            value: `${query} | ${field}=${value}`,
+            facetCount,
+            filteredTotal: filtered.estimatedTotalHits ?? -1,
+          });
+        }
+      }
+    }
+
+    return {
+      invariants: [
+        checkFacetAgreement(observations, {
+          id: 'text-query-facet-count-agrees-with-filtered-total',
+          title: 'Under a text query, a facet value count equals that query filtered to the value',
+        }),
+        buildInvariant(
+          'text-query-type-counts-sum-to-total',
+          'Under a text query, the Type facet counts sum to the reported total',
+          typeTotalsThatDisagree.length === 0,
+          { checked: TEXT_QUERY_FACET_AGREEMENT_QUERIES.length, typeTotalsThatDisagree },
         ),
       ],
       rates: [],
@@ -966,6 +1032,46 @@ const institutionWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
+const ACCESS_WORD_QUERY_PAIRS = [
+  { baselineQuery: 'neuroscience', variantQuery: 'neuroscience undergraduate' },
+  { baselineQuery: 'chemistry', variantQuery: 'paid undergraduate research chemistry' },
+  { baselineQuery: 'history', variantQuery: 'can a history major join a lab' },
+  { baselineQuery: 'machine learning', variantQuery: 'machine learning for undergrads' },
+];
+
+const accessWordKeepsTopicRanking: JourneyCase = {
+  id: 'access-word-keeps-topic-ranking',
+  title: "Adding a student's access words to a topic query serves the same top rows as the topic",
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of ACCESS_WORD_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'access-word-serves-the-topic-ranking',
+          'A topic query with "undergraduate", "paid", or "major" added serves the same ordered top rows as the topic alone',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 const MESH_DESCRIPTOR_PROBE_QUERIES = [
   'robotics',
   'machine learning',
@@ -1136,11 +1242,71 @@ const personNameLookupReachesThePerson: JourneyCase = {
   },
 };
 
+const SIMILAR_RAIL_SAMPLE = 40;
+
+const similarRailRanksTopicsAboveNames: JourneyCase = {
+  id: 'similar-rail-ranks-topics-above-names',
+  title: '"More like this" ranks on topics and meaning, not on a shared person name',
+  run: async (context) => {
+    const readRail = context.readSimilarResearchRail;
+    if (!readRail) {
+      return {
+        invariants: [
+          buildInconclusiveInvariant(
+            'similar-rail-ranks-shared-names-last',
+            'A "More like this" card sharing a person name with the viewed row never ranks above a card that does not',
+            'This run cannot read similar-research rails',
+            {},
+          ),
+        ],
+        rates: [],
+      };
+    }
+    const corpusBefore = await context.readCorpusFingerprint();
+    const keys = servedRows(await context.browse({ pageSize: SIMILAR_RAIL_SAMPLE }))
+      .map(rowKey)
+      .filter(Boolean);
+    const rails = [];
+    for (const key of keys) {
+      const rail = await readRail(key);
+      if (!rail) continue;
+      const viewedNames = new Set(rail.viewedNameWords);
+      rails.push({
+        viewedSharesNames: viewedNames.size > 0,
+        cardsShareAName: rail.cards.map((card) =>
+          card.nameWords.some((word) => viewedNames.has(word)),
+        ),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const cards = rails.flatMap((rail) => rail.cardsShareAName);
+    const leadingCards = rails.filter((rail) => rail.cardsShareAName.length > 0);
+    return {
+      invariants: [checkSimilarRailRanksSharedNamesLast(rails, corpusBefore, corpusAfter)],
+      rates: [
+        buildRate(
+          'similar-rail-cards-sharing-a-name',
+          'Share of "More like this" cards that share a person name with the viewed row',
+          cards.filter(Boolean).length,
+          cards.length,
+        ),
+        buildRate(
+          'similar-rail-led-by-a-shared-name',
+          'Share of non-empty rails whose first card shares a person name with the viewed row',
+          leadingCards.filter((rail) => rail.cardsShareAName[0]).length,
+          leadingCards.length,
+        ),
+      ],
+    };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   creativePracticeLabelAttribution,
   facetCountAgreement,
+  textQueryFacetCountAgreement,
   paginationServesDistinctRows,
   textQueryTotalIsStable,
   sortedBrowseKeepsOrder,
@@ -1150,6 +1316,8 @@ export const journeyCases: readonly JourneyCase[] = [
   undergradEvidenceQuotePrecision,
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
+  accessWordKeepsTopicRanking,
   meshDescriptorRanksBelowOwnEvidence,
   personNameLookupReachesThePerson,
+  similarRailRanksTopicsAboveNames,
 ];

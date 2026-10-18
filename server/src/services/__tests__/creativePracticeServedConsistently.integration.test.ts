@@ -29,6 +29,7 @@ import {
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 import { decideServedResearchEntityCreativePractice } from '../researchEntityDto';
+import { savedResearchEntitySummary } from '../researchPlanService';
 
 const PRACTICE_SLUG = 'fixture-practice-violin';
 const RESEARCH_SLUG = 'fixture-research-music-theory';
@@ -110,6 +111,16 @@ describe('a creative practice row is labelled from its own body on every surface
     await seedRow(PRACTICE_SLUG, 'Fixture Violinist Faculty Research', PRACTICE_BODY);
     await seedRow(RESEARCH_SLUG, 'Fixture Theorist Faculty Research', RESEARCH_BODY);
   });
+
+  it('serves the label on the saved-list card too, so the dashboard kind agrees', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const practice = await db.collection('research_entities').findOne({ slug: PRACTICE_SLUG });
+    const research = await db.collection('research_entities').findOne({ slug: RESEARCH_SLUG });
+
+    expect(savedResearchEntitySummary(practice as any, []).creativePractice).toBe(true);
+    expect(savedResearchEntitySummary(research as any, [])).not.toHaveProperty('creativePractice');
+  }, 60000);
 
   it('serves the label on the detail page and the browse card of a performance biography', async () => {
     const detail = await getResearchGroupDetail(PRACTICE_SLUG);

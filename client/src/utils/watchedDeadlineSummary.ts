@@ -5,6 +5,8 @@
  * once for the /research landing) into a near-term urgency signal: how many
  * watched programs close within a short window, how many of those the student
  * has not started yet, and the approaching deadlines ordered soonest-first.
+ * Programs the student already marked Applied or Closed are left out, because
+ * their deadline is no longer something to act on.
  *
  * It is a
  * pure surfacing layer over `fellowshipFutureDeadlineDate` (the same future-
@@ -14,7 +16,12 @@
  */
 import { Fellowship } from '../types/types';
 import { fellowshipFutureDeadlineDate } from './calendarExport';
-import { DEFAULT_RESEARCH_PLAN_STAGE, normalizeResearchPlanStage } from './researchPlanStages';
+import {
+  DEFAULT_RESEARCH_PLAN_STAGE,
+  normalizeResearchPlanStage,
+  programDeadlineIsSettled,
+  researchPlanStageLabel,
+} from './researchPlanStages';
 
 export const DEFAULT_DEADLINE_WINDOW_DAYS = 14;
 
@@ -34,7 +41,7 @@ export interface ApproachingWatchedDeadline {
 }
 
 export interface WatchedDeadlineSummary {
-  /** Approaching deadlines within the window, ordered soonest-first. */
+  /** Approaching deadlines within the window, ordered soonest-first, leaving out programs already applied to or closed. */
   approaching: ApproachingWatchedDeadline[];
   approachingCount: number;
   /** Of the approaching deadlines, how many the student has not started yet. */
@@ -80,6 +87,7 @@ export const summarizeWatchedDeadlines = (
   const windowEnd = now.getTime() + windowDays * MS_PER_DAY;
   const approaching = watched
     .map(({ program, stage }) => {
+      if (programDeadlineIsSettled(stage)) return null;
       const date = fellowshipFutureDeadlineDate(program, now);
       if (!date || date.getTime() > windowEnd) return null;
       return {
@@ -119,7 +127,9 @@ export const approachingDeadlineLabel = (
 
 /** Emphasis appended when some approaching programs have not been started yet. */
 export const notStartedEmphasis = (notStartedCount: number): string | null =>
-  notStartedCount > 0 ? `${notStartedCount} not started` : null;
+  notStartedCount > 0
+    ? `${notStartedCount} still marked ${researchPlanStageLabel(DEFAULT_RESEARCH_PLAN_STAGE)}`
+    : null;
 
 /**
  * Accessible label conveying both the count/window and, when relevant, the

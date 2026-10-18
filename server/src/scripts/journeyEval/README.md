@@ -13,7 +13,7 @@ Flags:
 
 - `--window=<N>` sets the browse page size each case requests, so it is also the sample size for the rates.
 - `--pages=<N>` sets how many pages the pagination case walks, and how many the program surfaces' text-query and sort cases walk.
-- `--facet-values=<N>` sets how many of the highest-count department facet values the agreement case checks, and how many options of each field the program surfaces' filter-agreement case checks.
+- `--facet-values=<N>` sets how many of the highest-count department facet values the agreement case checks, how many department and Type values the text-query agreement case checks per query, and how many options of each field the program surfaces' filter-agreement case checks.
 - `--case=<id>[,<id>]` runs a subset, which is how you re-run one case while fixing the lane behind it.
 - `--output=<path>` writes the JSON report under `$TMPDIR` or `./tmp`, enforced by `resolveSafeJsonReportOutputPath`.
 

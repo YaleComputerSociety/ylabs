@@ -233,6 +233,7 @@ const renderPage = (
     onToggleSortDirection: vi.fn(),
     fellowships,
     isLoading: false,
+    isSearchPending: false,
     loadError: false,
     searchExhausted: true,
     page: 1,
@@ -342,6 +343,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                   setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc')),
                 fellowships,
                 isLoading: false,
+                isSearchPending: false,
                 loadError: false,
                 searchExhausted: true,
                 page: 1,
@@ -428,6 +430,33 @@ describe('Programs page', () => {
     expect(screen.queryByText('Get started')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
+  });
+
+  it('marks the previous results as stale while a new search is in flight', async () => {
+    renderPage(
+      [
+        baseFellowship({
+          id: 'open',
+          title: 'Open Fellowship',
+          isAcceptingApplications: true,
+          deadline: isoDaysFromNow(60),
+        }),
+      ],
+      { isLoading: true, isSearchPending: true, total: 1 },
+    );
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+        withCredentials: true,
+      });
+    });
+
+    const results = screen.getByText('Open Fellowship').closest('[aria-busy]');
+    expect(results).toHaveAttribute('aria-busy', 'true');
+    expect(results).toHaveClass('opacity-50');
+    expect(screen.getByText('Searching…')).toBeTruthy();
+    expect(screen.queryByText(/^1 result$/)).toBeNull();
+    expect(screen.queryByText('Loading more results')).toBeNull();
   });
 
   it('does not claim zero results while the first load is still in flight', async () => {
@@ -1044,6 +1073,52 @@ describe('Programs page', () => {
     await waitFor(() =>
       expect(mockedAxios.put.mock.calls.map((call) => call[0])).toEqual(['fellowships/f1/addView']),
     );
+  });
+
+  describe('a direct link that opens no program', () => {
+    const failDetail = (status?: number) =>
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/missing') {
+          return Promise.reject(status ? { response: { status } } : new Error('Network Error'));
+        }
+        return Promise.resolve({ data: { watchedProgramIds: [] } });
+      });
+
+    it.each([404, 400])(
+      'says a %s link matches no program and drops it from the URL',
+      async (status) => {
+        failDetail(status);
+
+        renderPage([], {}, ['/programs?program=missing']);
+
+        const notice = await screen.findByRole('alert');
+        expect(within(notice).getByText('That program link does not match a program')).toBeTruthy();
+        await waitFor(() =>
+          expect(screen.getByTestId('current-location').textContent).toBe('/programs'),
+        );
+        expect(screen.queryByRole('dialog')).toBeNull();
+      },
+    );
+
+    it('calls a failed load a loading problem rather than a missing program', async () => {
+      failDetail();
+
+      renderPage([], {}, ['/programs?program=missing']);
+
+      const notice = await screen.findByRole('alert');
+      expect(within(notice).getByText('We could not open that program')).toBeTruthy();
+    });
+
+    it('hides the notice when the student dismisses it', async () => {
+      failDetail(404);
+
+      renderPage([], {}, ['/programs?program=missing']);
+
+      const notice = await screen.findByRole('alert');
+      await userEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }));
+
+      expect(screen.queryByText('That program link does not match a program')).toBeNull();
+    });
   });
 
   describe('watching programs', () => {
