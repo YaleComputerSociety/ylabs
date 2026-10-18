@@ -229,13 +229,20 @@ export const publicProgramForReader = (program: any) => {
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
     deadlineTextConflict:
-      programTextDeadlineConflict(program.deadline, [
-        program.summary,
-        program.description,
-        program.applicationInformation,
-        program.eligibility,
-        program.additionalInformation,
-      ]) ?? null,
+      programTextDeadlineConflict(
+        program.deadline,
+        [
+          publicProgramDescription(program.summary),
+          publicProgramDescription(program.description),
+          publicProgramDescription(program.applicationInformation),
+          servedProgramEligibility(program).value,
+          publicProgramDescription(program.additionalInformation),
+        ],
+        {
+          projected: program.deadlineProjectedNextCycle === true,
+          stale: program.deadlineStale === true,
+        },
+      ) ?? null,
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],

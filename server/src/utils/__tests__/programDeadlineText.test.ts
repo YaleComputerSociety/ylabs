@@ -45,3 +45,34 @@ describe('programTextDeadlineConflict (#5158)', () => {
     ).toBeUndefined();
   });
 });
+
+describe('programTextDeadlineConflict reads only the application deadline (#5158)', () => {
+  it.each([
+    'Final reports are due May 1, 2027.',
+    'Recommendation letters must be received by March 1, 2027.',
+  ])('does not read a date owed after or beside the application as its deadline: %s', (text) => {
+    expect(programTextDeadlineConflict(deadline, [text])).toBeUndefined();
+  });
+
+  it('reads the deadline that follows an opening date in the same sentence', () => {
+    expect(
+      programTextDeadlineConflict(deadline, [
+        'The application will open on Friday, June 5, 2026 and the deadline for the year is Friday, July 10, 2026.',
+      ]),
+    ).toBe('2026-07-10');
+  });
+
+  it('says nothing for a projected or stale deadline, which the page already labels', () => {
+    const text = ['Applications are due by 11:00pm on Thursday, February 19, 2026.'];
+    expect(programTextDeadlineConflict(deadline, text, { projected: true })).toBeUndefined();
+    expect(programTextDeadlineConflict(deadline, text, { stale: true })).toBeUndefined();
+  });
+});
+
+it('does not read a program date range in a run-on sentence as a deadline (#5158)', () => {
+  expect(
+    programTextDeadlineConflict(deadline, [
+      'Applications submitted late forfeit a spot in the program.All fellows must live on campus for the nine-week program; May 25 - July 24, 2027.',
+    ]),
+  ).toBeUndefined();
+});
