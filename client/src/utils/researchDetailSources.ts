@@ -1396,14 +1396,18 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const contextsFor = (normalizedUrl: string, context: string): string[] => {
-    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '') ?? [];
-    if (context === RESEARCH_WEBSITE_SOURCE_CONTEXT) {
-      return [
-        context,
-        ...contributed.filter((label) => label !== RESEARCH_WEBSITE_CONTRIBUTION_LABEL),
-      ];
-    }
+  const contextsFor = (
+    normalizedUrl: string,
+    context: string,
+    existingContexts: string[] = [],
+  ): string[] => {
+    const isResearchWebsiteRow =
+      context === RESEARCH_WEBSITE_SOURCE_CONTEXT ||
+      existingContexts.includes(RESEARCH_WEBSITE_SOURCE_CONTEXT);
+    const contributed = (
+      contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '') ?? []
+    ).filter((label) => !isResearchWebsiteRow || label !== RESEARCH_WEBSITE_CONTRIBUTION_LABEL);
+    if (context === RESEARCH_WEBSITE_SOURCE_CONTEXT) return [context, ...contributed];
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
     return contributed.length ? contributed : [context];
   };
@@ -1429,7 +1433,7 @@ export const buildResearchDetailSources = ({
      */
     if (existing && attributionOnly) return;
 
-    const contexts = contextsFor(normalized, context);
+    const contexts = contextsFor(normalized, context, existing?.contexts);
     if (existing) {
       contexts.forEach((entry) => {
         if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
