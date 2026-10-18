@@ -827,6 +827,20 @@ describe('classifyProgram senior research funding reads its mentor requirement o
   );
 
   it.each([
+    'A letter of recommendation from your Yale faculty advisor outlining support of the research project and commitment to mentoring the student.',
+    'The letter should demonstrate the commitment of the faculty advisor to support the student efforts as described in the abstract of proposed activities.',
+    'Ask for a faculty advisor reference stipulating the importance for your study, research, language programs, or travel.',
+  ])(
+    'reads an adviser letter tied to the project as a requirement (#5229): %s',
+    (applicationInformation) => {
+      expect(
+        classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
+          .requiresMentorBeforeApply,
+      ).toBe(true);
+    },
+  );
+
+  it.each([
     'It is the applicant’s responsibility to see that the complete application, including letter of recommendation and transcripts, reaches us by the deadline.',
     'Students will also need to provide a letter of recommendation written by a Yale faculty member.',
     'A letter of recommendation from a faculty member who knows you well.',

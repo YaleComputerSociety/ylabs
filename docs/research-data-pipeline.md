@@ -1997,7 +1997,7 @@ The derivation skips a field named in `manuallyLockedFields`.
 `programRole` is always recomputed from the `programKind` the row keeps, so a locked kind still yields a matching role.
 Run it twice and the second pass plans nothing, which is what makes it a derivation rather than a repair, and a classifier fix reaches every row on its next materialize without a re-scrape.
 
-`requiresMentorBeforeApply`, the "Do you need a mentor first?" answer, is asserted only from a sentence on the record's own page (`mentorRequirementSentence`, #4131, #4218, #5100).
+`requiresMentorBeforeApply`, the "Do you need a mentor first?" answer, is asserted only from a sentence on the record's own page (`mentorRequirementSentence`, #4131, #4218, #5100, #5229).
 A faculty member tied to the project counts: required supervision by faculty, approval or endorsement from the applicant's adviser, a letter from the applicant's own project adviser ("your senior essay advisor", "their dissertation supervisor", "their dissertation director"), or a letter from a faculty member who knows, supports, or is related to the project.
 A recommendation letter with no tie to the project, from any writer or from "a faculty advisor", is not a requirement.
 A graduate record asserts an adviser only when its page states one or its prose mentions a dissertation and its title names no conference, so a conference-travel grant no longer inherits the requirement.
