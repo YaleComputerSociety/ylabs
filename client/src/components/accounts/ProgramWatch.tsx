@@ -9,7 +9,7 @@
  * unwatch control. Watching is a personal bookmark; program content stays
  * read-only.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import { BrowsableItem } from '../../types/browsable';
@@ -69,6 +69,8 @@ interface ProgramWatchProps {
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+type ListLoadMode = 'replace' | 'merge';
 
 const MAX_PROGRAM_NOTE_LENGTH = 2000;
 
@@ -159,47 +161,77 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
 
   const programRequest = useLatestRequest();
 
-  const loadPrograms = useCallback(async () => {
-    const ticket = programRequest.begin();
-    setIsLoading(true);
-    setProgramsLoadFailed(false);
-    try {
-      const [programResponse, planResponse] = await Promise.all([
-        axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
-        axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
-      ]);
-      if (!ticket.isCurrent()) return;
-      const rawPrograms = programResponse.data.watchedPrograms || [];
-      const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
-        createFellowship(program),
-      );
-      const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
-        string,
-        { privateNotes?: string; stage?: string }
-      >;
-      const loadedNotes: Record<string, string> = {};
-      const loadedStages: Record<string, ResearchPlanStage> = {};
-      for (const program of loadedPrograms) {
-        loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
-        loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
-        markNotePersisted(program.id, loadedNotes[program.id]);
+  const loadedProgramIdsRef = useRef(new Set<string>());
+
+  const loadPrograms = useCallback(
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
+      const ticket = programRequest.begin();
+      const merging = mode === 'merge';
+      if (!merging) {
+        setIsLoading(true);
+        setProgramsLoadFailed(false);
       }
-      setPrograms(loadedPrograms);
-      setNotes(loadedNotes);
-      setStages(loadedStages);
-    } catch {
-      if (!ticket.isCurrent()) return;
-      console.error('Error fetching watched programs.');
-      setPrograms([]);
-      setNotes({});
-      setStages({});
-      setProgramsLoadFailed(true);
-    } finally {
-      if (ticket.isCurrent()) setIsLoading(false);
-    }
-  }, [programRequest, markNotePersisted]);
+      try {
+        const [programResponse, planResponse] = await Promise.all([
+          axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
+          axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
+        ]);
+        if (!ticket.isCurrent()) return false;
+        const rawPrograms = programResponse.data.watchedPrograms || [];
+        const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
+          createFellowship(program),
+        );
+        const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
+          string,
+          { privateNotes?: string; stage?: string }
+        >;
+        const loadedNotes: Record<string, string> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
+        for (const program of loadedPrograms) {
+          if (merging && loadedProgramIdsRef.current.has(program.id)) continue;
+          loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
+          loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
+          markNotePersisted(program.id, loadedNotes[program.id]);
+        }
+        loadedProgramIdsRef.current = new Set([
+          ...(merging ? loadedProgramIdsRef.current : []),
+          ...loadedPrograms.map((program) => program.id),
+        ]);
+        setPrograms(loadedPrograms);
+        setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
+        setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        return true;
+      } catch {
+        if (!ticket.isCurrent() || merging) return false;
+        console.error('Error fetching watched programs.');
+        setPrograms([]);
+        setNotes({});
+        setStages({});
+        setProgramsLoadFailed(true);
+        return false;
+      } finally {
+        if (ticket.isCurrent()) setIsLoading(false);
+      }
+    },
+    [programRequest, markNotePersisted],
+  );
 
   useLoadEffect(loadPrograms);
+
+  const requestedWatchIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isLoading || programsLoadFailed || !watchedIdsLoaded) return;
+    const known = new Set([
+      ...programs.map((program) => program.id),
+      ...requestedWatchIdsRef.current,
+    ]);
+    const unseen = watchedIds.filter((id) => !known.has(id));
+    if (unseen.length === 0) return;
+    unseen.forEach((id) => requestedWatchIdsRef.current.add(id));
+    void loadPrograms('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedWatchIdsRef.current.delete(id));
+    });
+  }, [isLoading, programsLoadFailed, watchedIdsLoaded, programs, watchedIds, loadPrograms]);
 
   const retryLoad = () => {
     void reloadFavorites();

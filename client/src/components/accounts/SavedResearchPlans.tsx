@@ -5,7 +5,7 @@
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
@@ -85,6 +85,8 @@ const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], 
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+type ListLoadMode = 'replace' | 'merge';
+
 const MAX_PLAN_NOTES_LENGTH = 2000;
 const MIN_COMPARE_ENTITIES = 2;
 const MAX_COMPARE_ENTITIES = 4;
@@ -162,54 +164,86 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
   const planRequest = useLatestRequest();
 
-  const loadPlans = useCallback(async () => {
-    const ticket = planRequest.begin();
-    setIsLoading(true);
-    setPlansLoadFailed(false);
-    try {
-      const [entityResponse, planResponse] = await Promise.all([
-        axios.get('/users/savedResearchEntities', {
-          withCredentials: true,
-          signal: ticket.signal,
-        }),
-        axios.get('/users/savedResearchEntityPlans', {
-          withCredentials: true,
-          signal: ticket.signal,
-        }),
-      ]);
-      if (!ticket.isCurrent()) return;
-      const loadedEntities: SavedResearchEntity[] = entityResponse.data.savedResearchEntities || [];
-      const loadedUnavailable: UnavailableSavedResearchEntity[] =
-        entityResponse.data.unavailableSavedResearchEntities || [];
-      const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
-        string,
-        { privateNotes?: string; stage?: string }
-      >;
-      const loadedNotes: Record<string, string> = {};
-      const loadedStages: Record<string, ResearchPlanStage> = {};
-      for (const entity of loadedEntities) {
-        loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
-        loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
-        markNotePersisted(entity._id, loadedNotes[entity._id]);
+  const loadedIdsRef = useRef(new Set<string>());
+
+  const loadPlans = useCallback(
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
+      const ticket = planRequest.begin();
+      const merging = mode === 'merge';
+      if (!merging) {
+        setIsLoading(true);
+        setPlansLoadFailed(false);
       }
-      setEntities(loadedEntities);
-      setUnavailable(loadedUnavailable);
-      setNotes(loadedNotes);
-      setStages(loadedStages);
-    } catch {
-      if (!ticket.isCurrent()) return;
-      console.error('Error fetching saved research plans.');
-      setEntities([]);
-      setUnavailable([]);
-      setNotes({});
-      setStages({});
-      setPlansLoadFailed(true);
-    } finally {
-      if (ticket.isCurrent()) setIsLoading(false);
-    }
-  }, [planRequest, markNotePersisted]);
+      try {
+        const [entityResponse, planResponse] = await Promise.all([
+          axios.get('/users/savedResearchEntities', {
+            withCredentials: true,
+            signal: ticket.signal,
+          }),
+          axios.get('/users/savedResearchEntityPlans', {
+            withCredentials: true,
+            signal: ticket.signal,
+          }),
+        ]);
+        if (!ticket.isCurrent()) return false;
+        const loadedEntities: SavedResearchEntity[] =
+          entityResponse.data.savedResearchEntities || [];
+        const loadedUnavailable: UnavailableSavedResearchEntity[] =
+          entityResponse.data.unavailableSavedResearchEntities || [];
+        const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
+          string,
+          { privateNotes?: string; stage?: string }
+        >;
+        const loadedNotes: Record<string, string> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
+        for (const entity of loadedEntities) {
+          if (merging && loadedIdsRef.current.has(entity._id)) continue;
+          loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
+          loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
+          markNotePersisted(entity._id, loadedNotes[entity._id]);
+        }
+        loadedIdsRef.current = new Set([
+          ...(merging ? loadedIdsRef.current : []),
+          ...loadedEntities.map((entity) => entity._id),
+        ]);
+        setEntities(loadedEntities);
+        setUnavailable(loadedUnavailable);
+        setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
+        setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        return true;
+      } catch {
+        if (!ticket.isCurrent() || merging) return false;
+        console.error('Error fetching saved research plans.');
+        setEntities([]);
+        setUnavailable([]);
+        setNotes({});
+        setStages({});
+        setPlansLoadFailed(true);
+        return false;
+      } finally {
+        if (ticket.isCurrent()) setIsLoading(false);
+      }
+    },
+    [planRequest, markNotePersisted],
+  );
 
   useLoadEffect(loadPlans);
+
+  const requestedSaveIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isLoading || plansLoadFailed || !savedSlugsLoaded) return;
+    const known = new Set([
+      ...entities.flatMap((entity) => [entity.slug, entity._id]),
+      ...unavailable.map((entry) => entry._id),
+      ...requestedSaveIdsRef.current,
+    ]);
+    const unseen = savedSlugs.filter((id) => !known.has(id));
+    if (unseen.length === 0) return;
+    unseen.forEach((id) => requestedSaveIdsRef.current.add(id));
+    void loadPlans('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedSaveIdsRef.current.delete(id));
+    });
+  }, [isLoading, plansLoadFailed, savedSlugsLoaded, entities, unavailable, savedSlugs, loadPlans]);
 
   const retryLoad = () => {
     void reloadFavorites();
