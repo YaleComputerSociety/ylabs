@@ -97,6 +97,19 @@ describe('Navbar', () => {
     expect(screen.queryByRole('link', { name: /sign in/i })).toBeNull();
   });
 
+  it('opens the signed-in mobile menu without logout for a returning visitor while the session check is pending', () => {
+    mockIsMobile = true;
+    window.localStorage.setItem('ylabs:last-known-signed-in', '1');
+    renderGuestNavbar('/research', true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+
+    const drawer = screen.getByRole('dialog', { name: 'Main menu' });
+    expect(within(drawer).getByRole('link', { name: 'Programs & Fellowships' })).toBeTruthy();
+    expect(within(drawer).queryByRole('link', { name: /sign in/i })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Logout' })).toBeNull();
+  });
+
   it('remembers whether the last session check found a signed-in visitor', () => {
     rememberSignedIn(true);
     expect(wasSignedInLastVisit()).toBe(true);

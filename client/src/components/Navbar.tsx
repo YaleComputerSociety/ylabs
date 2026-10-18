@@ -100,7 +100,7 @@ export default function Navbar() {
           </IconButton>
         </Box>
         <List>
-          {isAuthenticated ? (
+          {showsSignedInNav ? (
             <>
               {primaryNavLinks.map((link) => {
                 const active = isPrimaryNavLinkActive(location.pathname, link);
@@ -136,9 +136,11 @@ export default function Navbar() {
               <ListItem sx={listItemStyle}>
                 <FeedbackButton />
               </ListItem>
-              <ListItem sx={listItemStyle}>
-                <SignOutButton />
-              </ListItem>
+              {!isAuthLoading && (
+                <ListItem sx={listItemStyle}>
+                  <SignOutButton />
+                </ListItem>
+              )}
             </>
           ) : (
             <>
