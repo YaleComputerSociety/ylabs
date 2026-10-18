@@ -212,6 +212,8 @@
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",
     "scrape:sweep:weekly-development": "tsx src/scripts/weeklyDevelopmentSweep.ts",
     "scrape:sweep:weekly-runs": "tsx src/scripts/weeklySweepRunsReport.ts",
+    "scrape:sweep:rerun-source": "tsx src/scripts/sweepSourceRerun.ts",
+    "ops:sweep": "tsx src/scripts/opsSweep.ts",
     "auth:login-signal-tally": "tsx src/scripts/loginSignalTallyReport.ts",
     "scrape:probe-hosts": "tsx src/scripts/hostThrottleProbe.ts",
     "scrape:canary": "tsx src/scripts/scrapeCanary.ts",

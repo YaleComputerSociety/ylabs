@@ -207,7 +207,9 @@ Read its first confirmed run's `renderLimit` headroom with `yarn --cwd server sc
 The Docker Command replaces the image's entrypoint and default arguments, so it must carry the confirmation flag; with no `--mode` the job runs `development-full` and then `fellowship-development-full`.
 For a first manual trigger use `--dry-run` in place of the confirmation, which runs the preflight and writes nothing, then set the confirmed command.
 The job refuses to start while any sweep source holds a live scrape job lock, so a laptop sweep still writing Development on Sunday morning makes the weekly run refuse, recorded as `refused`, rather than run both at once.
-The service builds from `beta` and redeploys on every commit, but each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even when the image is stale; only a new system dependency, or a file outside the paths `.dockerignore` admits, needs a change under `deploy/sweep-runner/`.
+The service builds from `beta`, but since 2026-10-17 its build filter is only `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, because rebuilding on every `server/**` commit exhausted the workspace's build minutes while buying the weekly sweep nothing.
+Each run clones `beta` HEAD itself, so a merged scraper change reaches the next weekly run even though the image is stale; only a new system dependency, a change to the entrypoint, or a file outside the paths `.dockerignore` admits needs a change under `deploy/sweep-runner/`.
+The image's own copy of the code under `/app` is therefore routinely older than `beta`, so a one-off job must never run `yarn --cwd /app/server ...` directly: start it with `yarn ops:sweep rerun`, below, which runs current `beta` through the entrypoint.
 Read the service with `render services --output json` and its builds with `render deploys list <service id> --output json`.
 
 Shared settings:
@@ -230,6 +232,52 @@ Those ranges are shared by every Render service in the region, so scope the data
 Read the job's first duration with `yarn --cwd server scrape:sweep:weekly-runs --limit 1` against the 12-hour limit.
 
 The refusal rates measured against `medicine.yale.edu` came from a residential address, so read the first run's per-source `throttleRetry` counts in `summary.json` before trusting a hosted run's coverage.
+
+### Operating The Hosted Sweep: `yarn ops:sweep` (#5097)
+
+One operator command reads the last weekly run, re-runs sources on Render at current `beta`, and checks the sweep's database role.
+It runs from a laptop checkout whose `server/.env` points at Development, through the `development` data profile, and refuses unless `MONGODBURL` names `Development` and `SCRAPER_ENV` resolves to development.
+It reads the Render API key from `RENDER_API_KEY`, or from the render CLI's login in `~/.render/cli.yaml` when that is unset.
+The logic is in `server/src/scripts/opsSweepCore.ts`; the command is `server/src/scripts/opsSweep.ts`.
+
+```bash
+yarn ops:sweep status
+yarn ops:sweep rerun <source>... [--override-hold] [--dry-run]
+yarn ops:sweep probe-permissions [--dry-run]
+```
+
+`status` prints the newest `weekly_sweep_runs` row: its status, start and duration (or elapsed time for a `running` row, and whether it outlived Render's 12-hour limit), its `codeSha` against the current `beta` HEAD, the search index state and remedy, any refusal or error, and each failed source and stage with its error and, for a stage, its `failureKind`.
+`yarn --cwd server scrape:sweep:weekly-runs` remains the fuller history.
+
+`rerun` re-runs one or more sweep sources on the `ylabs-scraper` service as a Render one-off job:
+
+1. It refuses a name that is not in the research or fellowship sweep manifest, including every manual-only source, because there are no sweep flags to run it with.
+2. It refuses a source under the owner hold on description, writer, card and lab-microsite runs (#5020) unless `--override-hold` is passed; pass it only with the owner's say-so.
+The held list is `OWNER_HELD_SOURCES`; of the sweep sources only `lab-microsite-description-llm` is on it.
+3. It refuses unless the live image's entrypoint has the `--rerun-source` mode, read from the entrypoint at the commit of the service's newest `live` deploy, so a job never falls back to the image's stale code.
+4. It refuses while the newest `weekly_sweep_runs` row is `running` and younger than the 12-hour limit, while any sweep source holds a live scrape job lock, while a run of a named source is `running` with a live heartbeat (`server/src/scrapers/scrapeRunLiveness.ts`), or while another one-off job on the service is not finished.
+5. It records each source's last comparable successful `scrape_runs` row: exhaustive, not a dry run, not `--force-llm`, and not scoped by `--only`, `--limit` or a benchmark.
+6. It starts `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --rerun-source <source>...` and polls the job every minute.
+The entrypoint resolves `beta` HEAD, clones and installs it exactly as for the weekly sweep, and runs `yarn --cwd server scrape:sweep:rerun-source` (`server/src/scripts/sweepSourceRerun.ts`) from that checkout with `SEARCH_INDEX_WRITES=deferred`.
+That script repeats the environment, source, and activity refusals inside the job, applies the weekly sweep's code freshness refusal (`server/src/scripts/sweepCodeFreshness.ts`), and runs each source in turn with `SCRAPER_ENV=development` and `ALLOW_NON_PROD_SCRAPER_WRITES=true` and exactly the `development-full` flags, `--ignore-work-planner --exhaustive --auto-materialize`, stopping at the first source that fails.
+It never passes `--force-llm`.
+7. When the job ends it reads each source's new `scrape_runs` row and compares it with the recorded one.
+A source is flagged when its run is missing or failed, when it wrote no observations (`producedNothing`), or when its observation count or its entities updated fell by more than 25% and by at least 10.
+Comparable exhaustive runs from 2026-09-20 to 2026-10-17 fell by at most 12.7% on every lane outside the hold (an LLM lane), and once by 20.6% in one lane's updates, so 25% clears the measured noise while a broken selector or a lost page list falls far further; the floor of 10 keeps a lane with a handful of rows from flagging a change of two.
+8. After a job that succeeded it runs `yarn development:search:sync` from the checkout, because the job deferred every index write.
+It exits nonzero when the job failed, the sync failed, or any source was flagged; read a flagged run before trusting it.
+
+Render's logs are not always available, so the outcome comes from the job status and the `scrape_runs` rows, never from the log.
+`--dry-run` runs every refusal and prints the start command without starting a job.
+The rerun mode exists only once an image built with it is live; until then `rerun` refuses at step 3.
+
+`probe-permissions` reads the `ylabs-sweep-dev` custom role with `atlas customDbRoles describe ylabs-sweep-dev --projectId 685b36661a9a1101c14a007b -o json`, so it needs a current `atlas auth login`.
+It builds a probe of every granted find, insert, update and remove per collection, plus `listCollections`, `listIndexes`, `dbStats` and `listDatabases` where granted, and the expected denials: an update on Development `accounts`, a `createIndex` and a `drop`, and a find and an update on Beta and Prod `research_entities`.
+It refuses to build a probe for a role that grants one of those denials or inherits another role.
+The probe runs as a Render one-off job on `ylabs-scraper` with the cron's own `MONGODBURL`, from `server/src/scripts/sweepPermissionProbeRuntime.cjs` sent as the job's start command, so it runs on any live image.
+It never writes: every read, update and remove matches a fresh `_id` that no row holds, and the insert and the `createIndex` run inside a transaction that is always aborted.
+An error matching `/not allowed|not authorized|unauthorized/i`, or code 13, is a denial, because Atlas refuses with "user is not allowed to do action".
+The job exits 4 when the authenticated user is not `ylabs-sweep-dev`, 3 on any unexpected result, and 0 when every check came out as expected, and the command reports pass or fail from the job status.
 
 ### Probing Yale Hosts From The Runner
 
