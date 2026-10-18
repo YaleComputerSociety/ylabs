@@ -6265,3 +6265,80 @@ describe('publicRosterUndergraduates', () => {
     ).toHaveLength(3);
   });
 });
+
+describe('a query word no row carries does not empty the search', () => {
+  const entityId = '67d8928150621bcef434a3a1';
+  const keywordHit = {
+    id: entityId,
+    slug: 'medieval-history-row',
+    name: 'Medieval History Row',
+    kind: 'lab',
+    _rankingScoreDetails: { words: { matchingWords: 2, maxMatchingWords: 2 } },
+  };
+  const unmatchedWord = 'zqxvk';
+
+  const searchWithKeywordRowsFor = async (query: string, matchingTexts: string[]) => {
+    mocks.search.mockImplementation(async (text: string, params: Record<string, any>) => {
+      if (params.hybrid) return { hits: [], estimatedTotalHits: 0, totalHits: 0 };
+      return { hits: matchingTexts.includes(text) ? [keywordHit] : [] };
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'medieval-history-row',
+          name: 'Medieval History Row',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+    return searchResearchGroupsViaMeili(query, {}, 1, 24);
+  };
+
+  const keywordLegTexts = () =>
+    mocks.search.mock.calls.filter(([, params]) => !params.hybrid).map(([text]) => text);
+
+  it('searches the remaining words when the first word matches no row', async () => {
+    const result = await searchWithKeywordRowsFor(`${unmatchedWord} medieval plague`, [
+      'medieval',
+      'plague',
+      'medieval plague',
+    ]);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'medieval-history-row',
+    ]);
+    expect(keywordLegTexts()).toContain('medieval plague');
+  });
+
+  it('keeps the typed order of the words it keeps', async () => {
+    await searchWithKeywordRowsFor(`plague ${unmatchedWord} medieval`, [
+      'plague',
+      'medieval',
+      'plague medieval',
+    ]);
+
+    expect(keywordLegTexts()).toContain('plague medieval');
+    expect(keywordLegTexts()).not.toContain('medieval plague');
+  });
+
+  it('probes no single word when the typed words already have keyword matches', async () => {
+    await searchWithKeywordRowsFor('medieval plague', ['medieval plague']);
+
+    expect(keywordLegTexts()).not.toContain('medieval');
+    expect(keywordLegTexts()).not.toContain('plague');
+  });
+
+  it('serves nothing from the keyword leg when no typed word matches a row', async () => {
+    const result = await searchWithKeywordRowsFor(`${unmatchedWord} qwfpgjz`, []);
+
+    expect(result.researchEntities).toEqual([]);
+    expect(
+      mocks.search.mock.calls.filter(([, params]) => params.hybrid?.semanticRatio === 1),
+    ).toHaveLength(0);
+  });
+});

@@ -802,12 +802,16 @@ export interface ServedQueryPair {
   variantKeys: readonly string[];
 }
 
-export type QueryVariantAgreement = 'sameOrderedRows' | 'coversBaselineRows';
+export type QueryVariantAgreement = 'sameOrderedRows' | 'coversBaselineRows' | 'sharesABaselineRow';
 
 const variantAgrees = (pair: ServedQueryPair, agreement: QueryVariantAgreement): boolean => {
   if (agreement === 'coversBaselineRows') {
     const variantKeys = new Set(pair.variantKeys);
     return pair.baselineKeys.every((key) => variantKeys.has(key));
+  }
+  if (agreement === 'sharesABaselineRow') {
+    const variantKeys = new Set(pair.variantKeys);
+    return pair.baselineKeys.some((key) => variantKeys.has(key));
   }
   return (
     pair.baselineKeys.length === pair.variantKeys.length &&
