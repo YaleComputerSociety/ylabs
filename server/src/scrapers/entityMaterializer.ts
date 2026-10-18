@@ -305,6 +305,7 @@ import {
   isMapOrDirectionsUrl,
   isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
+  isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
   withoutUncreditedLinkedPublicationOrDocumentCitations,
   type ResearchEntityHostOwnerIdentity,
@@ -2356,7 +2357,12 @@ export function bestMaterializationProvenanceSourceUrl(
         )
       : ranked,
   );
-  return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
+  if (!Array.isArray(sanitized)) return undefined;
+  // A paper or file a lane read only to verify the lead is not the page to cite when a
+  // profile or roster page also produced the row; it stays the fallback when nothing
+  // else did (#5114).
+  return (sanitized.find((url) => !isLinkedPublicationOrDocumentUrl(url)) ?? sanitized[0]) as
+    string | undefined;
 }
 
 /**

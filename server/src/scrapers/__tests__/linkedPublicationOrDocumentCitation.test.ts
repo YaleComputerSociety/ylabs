@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  bestMaterializationProvenanceSourceUrl,
   NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
   projectFromLog,
   type ProjectFromLogInput,
@@ -25,6 +26,8 @@ const PUBMED_RECORD = 'https://pubmed.ncbi.nlm.nih.gov/10000001/';
 const PMC_RECORD = 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC0000001/';
 const DEPARTMENT_PDF = 'https://history.yale.edu/sites/default/files/synthetic-fixture-essay.pdf';
 const PERSONAL_SITE = 'https://synthetic-fixture-research.example.org/';
+const PORTAL_PAPER_PAGE =
+  'https://research-portal.example.ac.uk/en/publications/synthetic-degradation-of-fixture-lipids';
 
 const resolvedField = (value: unknown): ResolvedField => ({
   value,
@@ -76,6 +79,7 @@ describe('the shape of a linked paper or file', () => {
     PUBMED_RECORD,
     PMC_RECORD,
     DEPARTMENT_PDF,
+    PORTAL_PAPER_PAGE,
   ])('reads %s as a paper or file', (url) => {
     expect(isLinkedPublicationOrDocumentUrl(url)).toBe(true);
   });
@@ -87,6 +91,9 @@ describe('the shape of a linked paper or file', () => {
     'https://www.ncbi.nlm.nih.gov/myncbi/synthetic.fixture.1/bibliography/public/',
     'https://synthetic-fixture-lab.example.org/doing-research/',
     'https://jackson.yale.edu/synthetic-initiative/courses',
+    'https://synthetic-fixture-lab.example.org/publications/',
+    'https://synthetic-fixture-lab.example.org/publications/2023',
+    'https://synthetic-fixture-lab.example.org/publications/selected',
   ])('does not read %s as a paper or file', (url) => {
     expect(isLinkedPublicationOrDocumentUrl(url)).toBe(false);
   });
@@ -203,5 +210,20 @@ describe('a linked paper or file is not cited as a source', () => {
       ),
     ) as Record<string, any>;
     expect(served.sourceUrls).toEqual([OWN_PROFILE, DEPARTMENT_PDF]);
+  });
+
+  it('projects a profile rather than a document the lead was verified from', () => {
+    const observations = [
+      { field: 'leadVerification', sourceUrl: SHAREPOINT_CV, confidence: 0.95 },
+      { field: 'inferredPiUserId', sourceUrl: OWN_PROFILE, confidence: 0.8 },
+    ];
+    expect(bestMaterializationProvenanceSourceUrl(observations as never)).toBe(OWN_PROFILE);
+  });
+
+  it('still projects a document when nothing else produced the row', () => {
+    const observations = [
+      { field: 'leadVerification', sourceUrl: SHAREPOINT_CV, confidence: 0.95 },
+    ];
+    expect(bestMaterializationProvenanceSourceUrl(observations as never)).toBe(SHAREPOINT_CV);
   });
 });

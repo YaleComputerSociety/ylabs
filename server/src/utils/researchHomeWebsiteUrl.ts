@@ -238,8 +238,29 @@ const PUBLICATION_RECORD_HOSTS = new Set(['pubmed.ncbi.nlm.nih.gov', 'pmc.ncbi.n
 
 const NCBI_PUBLICATION_RECORD_PATH = /^\/(?:pubmed|pmc\/articles)\//i;
 
+const PUBLICATION_SECTION_SEGMENT = /^(?:publications?|papers?)$/i;
+
+const TITLE_SLUG_MIN_WORDS = 3;
+
 /**
- * A DOI, or a PubMed or PubMed Central record: the address of one paper.
+ * A `publications` or `papers` segment followed by a slug of three or more words is one
+ * paper's page, the shape a research portal gives each output (#5050). A year, a number
+ * or a one-word section after it is a listing and is not matched.
+ */
+function hasPublicationTitleSlugPath(url: URL): boolean {
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.some((segment, index) => {
+    if (!PUBLICATION_SECTION_SEGMENT.test(segment)) return false;
+    const next = segments[index + 1];
+    if (!next) return false;
+    const words = next.split(/[-_]+/).filter((word) => /[a-z]/i.test(word));
+    return words.length >= TITLE_SLUG_MIN_WORDS;
+  });
+}
+
+/**
+ * A DOI, a PubMed or PubMed Central record, or a paper's own page: the address of one
+ * paper.
  *
  * The DOI arm reads the same shape the roster lane's website signal refuses (#5052), a
  * `doi.org` host or a `/doi/` path segment, so the citation and the website refusals
@@ -251,7 +272,8 @@ export function isPublicationRecordUrl(value: unknown): boolean {
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
   if (/(?:^|\.)doi\.org$/.test(host) || /\/doi\//i.test(url.pathname)) return true;
   if (PUBLICATION_RECORD_HOSTS.has(host)) return true;
-  return host === 'ncbi.nlm.nih.gov' && NCBI_PUBLICATION_RECORD_PATH.test(url.pathname);
+  if (host === 'ncbi.nlm.nih.gov' && NCBI_PUBLICATION_RECORD_PATH.test(url.pathname)) return true;
+  return hasPublicationTitleSlugPath(url);
 }
 
 /**
