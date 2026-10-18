@@ -983,6 +983,36 @@ describe('LabDetail page', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('labels a fellowship mentee count by its program beside a roster that lists undergraduates', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        pastUndergradAdvisees: [
+          { programName: 'Lab roster alumni', count: 2 },
+          { programName: 'Fixture Scholars II (Fixture Expansion)', year: 2025, count: 1 },
+        ],
+      },
+      roster: {
+        status: 'current',
+        returned: 0,
+        truncated: false,
+        withheldCount: 0,
+        sourceUrl: 'https://example.yale.edu/people',
+        undergraduates: [
+          { name: 'Listed Undergrad', status: 'current', startYear: 2024 },
+          { name: 'Earlier Undergrad', status: 'past', endYear: 2023 },
+        ],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
+    expect(text).not.toMatch(/Advised \d+ undergrad/);
+  });
+
   it.each([
     ['no quote', { undergradEvidenceQuote: undefined }],
     ['a blank quote', { undergradEvidenceQuote: '   ' }],
