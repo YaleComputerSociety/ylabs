@@ -46,7 +46,6 @@ import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   normalizeResearchPlanStage,
   programDeadlineIsSettled,
-  programSettledStageBadge,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import {
@@ -410,7 +409,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                     toggleWatch(program);
                   }}
                   onOpenModal={() => openModal(program)}
-                  statusBadgeOverride={programSettledStageBadge(stage)}
+                  hideDeadlineUrgency={programDeadlineIsSettled(stage)}
                   footer={
                     <>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

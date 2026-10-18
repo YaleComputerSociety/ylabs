@@ -131,7 +131,14 @@ describe('ProgramWatch', () => {
     const appliedCard = (await screen.findByText('Applied Grant')).closest('li') as HTMLElement;
     const openCard = screen.getByText('Open Grant').closest('li') as HTMLElement;
     expect(appliedCard.textContent).not.toMatch(/Closing soon|days left/);
-    expect(within(appliedCard).getByText('Applied', { selector: 'span' })).toBeTruthy();
+    expect(within(appliedCard).queryByText('Applied', { selector: 'span' })).toBeNull();
+    expect(
+      (
+        within(appliedCard).getByRole('combobox', {
+          name: /^Outreach stage for /,
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe('APPLIED');
     expect(openCard.textContent).toMatch(/Closing soon|days left/);
     expect(appliedCard.querySelector('.text-amber-700')).toBeNull();
     expect(openCard.querySelector('.text-amber-700')).not.toBeNull();

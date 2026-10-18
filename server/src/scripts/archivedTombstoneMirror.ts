@@ -1,40 +1,81 @@
-import type { AnyBulkWriteOperation, Db, Document, ObjectId } from 'mongodb';
+import { ObjectId, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
+import { planMergedFromDerivation } from '../services/researchEntityMergedFrom';
 
 /**
  * Beta and Production serve pages; they never mint, resolve evidence, or re-scrape, so
- * an archived research entity there only has to answer "where did this go": an old slug
- * redirect, a saved plan's status, and the integrity gate's dead-end walk. Development
- * keeps the full row, because its engine routes re-scraped evidence and refuses re-mints
- * through it (#5208).
+ * they hold live research entities only. What a merge leaves a student, an old slug that
+ * redirects and a saved plan that follows its lab, is answered by the survivor's
+ * `mergedFrom`. Development keeps the full archived rows, because its engine routes
+ * re-scraped evidence and refuses re-mints through them (#5148, superseding the slim
+ * tombstones of #5208).
  */
-export const SLIM_TOMBSTONE_FIELDS = [
-  '_id',
-  'slug',
-  'name',
-  'archived',
-  'archivedReason',
-  'archivedAt',
-  'canonicalGroupId',
-  'schemaVersion',
-  'createdAt',
-  'updatedAt',
-] as const;
+export const LIVE_RESEARCH_ENTITY_FILTER: Document = { archived: { $ne: true } };
 
-export function slimArchivedResearchEntity(document: Document): Document {
-  if (document.archived !== true) return document;
-  const slim: Document = {};
-  for (const field of SLIM_TOMBSTONE_FIELDS) {
-    if (document[field] !== undefined) slim[field] = document[field];
-  }
-  return slim;
+export interface MergedFromEntryDocument {
+  slug: string;
+  entityId: ObjectId;
+  mergedAt?: Date;
+  archivedReason?: string;
 }
 
-export function isSlimArchivedResearchEntity(document: Document): boolean {
-  return (
-    document.archived === true &&
-    Object.keys(document).every((field) =>
-      (SLIM_TOMBSTONE_FIELDS as readonly string[]).includes(field),
+/**
+ * Sets each copied survivor's `mergedFrom` from the tombstones as they stand at copy time,
+ * so Beta never receives a list older than the merges it no longer carries the rows for.
+ */
+export function withMergedFromAtCopyTime(
+  mergedFromBySurvivor: ReadonlyMap<string, readonly MergedFromEntryDocument[]>,
+): (document: Document) => Document {
+  return (document) => {
+    const entries = mergedFromBySurvivor.get(String(document._id));
+    const copied: Document = { ...document };
+    delete copied.mergedFrom;
+    return entries && entries.length > 0 ? { ...copied, mergedFrom: [...entries] } : copied;
+  };
+}
+
+// Derived with no stored lists as input, so every survivor with a live chain is returned
+// in full rather than only the ones whose stored list drifted.
+export async function mergedFromBySurvivorAtCopyTime(
+  db: Db,
+): Promise<Map<string, MergedFromEntryDocument[]>> {
+  const rows = await db
+    .collection('research_entities')
+    .find(
+      {},
+      {
+        projection: {
+          _id: 1,
+          slug: 1,
+          archived: 1,
+          canonicalGroupId: 1,
+          archivedAt: 1,
+          archivedReason: 1,
+        },
+      },
     )
+    .toArray();
+  const plan = planMergedFromDerivation(
+    rows.map((row) => ({
+      id: String(row._id),
+      slug: typeof row.slug === 'string' ? row.slug : '',
+      archived: row.archived === true,
+      ...(row.canonicalGroupId ? { canonicalGroupId: String(row.canonicalGroupId) } : {}),
+      ...(row.archivedAt instanceof Date ? { archivedAt: row.archivedAt } : {}),
+      ...(typeof row.archivedReason === 'string' && row.archivedReason.trim()
+        ? { archivedReason: row.archivedReason.trim() }
+        : {}),
+    })),
+  );
+  return new Map(
+    plan.writes.map((write) => [
+      write.survivorId,
+      write.mergedFrom.map((entry) => ({
+        slug: entry.slug,
+        entityId: new ObjectId(entry.entityId),
+        ...(entry.mergedAt ? { mergedAt: entry.mergedAt } : {}),
+        ...(entry.archivedReason ? { archivedReason: entry.archivedReason } : {}),
+      })),
+    ]),
   );
 }
 
@@ -68,31 +109,35 @@ export function rowsOnArchivedEntitiesFilter(
   return null;
 }
 
-export interface SlimmableCollection {
+export interface MirroredCollection {
   name: string;
   filter?: Document;
   transform?: (document: Document) => Document;
 }
 
+const withFilter = (collection: MirroredCollection, filter: Document): Document =>
+  collection.filter ? { $and: [collection.filter, filter] } : filter;
+
 /**
- * The Development-to-Beta copy list: archived entities become slim tombstones and the rows
- * that hang off them stay in Development.
+ * The Development-to-Beta copy list: archived entities and the rows that hang off them
+ * stay in Development, and each survivor carries its `mergedFrom`.
  */
-export function withSlimArchivedTombstones<T extends SlimmableCollection>(
+export function withLiveResearchRowsOnly<T extends MirroredCollection>(
   collections: readonly T[],
   archivedIds: readonly ObjectId[],
+  mergedFromBySurvivor: ReadonlyMap<string, readonly MergedFromEntryDocument[]>,
 ): T[] {
   return collections.map((collection) => {
     if (collection.name === 'research_entities') {
-      return { ...collection, transform: slimArchivedResearchEntity };
+      return {
+        ...collection,
+        filter: withFilter(collection, LIVE_RESEARCH_ENTITY_FILTER),
+        transform: withMergedFromAtCopyTime(mergedFromBySurvivor),
+      };
     }
     const onArchived = rowsOnArchivedEntitiesFilter(collection.name, archivedIds);
     if (!onArchived) return collection;
-    const keep = { $nor: [onArchived] };
-    return {
-      ...collection,
-      filter: collection.filter ? { $and: [collection.filter, keep] } : keep,
-    };
+    return { ...collection, filter: withFilter(collection, { $nor: [onArchived] }) };
   });
 }
 
@@ -112,7 +157,7 @@ async function flush(db: Db, collectionName: string, ops: AnyBulkWriteOperation<
 }
 
 /**
- * Beta holds slim tombstones and none of the rows on archived entities, so a Beta-to-
+ * Beta holds no archived entities and none of the rows on them, so a Beta-to-
  * Development refresh that simply replaced the collections would erase Development's
  * archive and let every merged duplicate be minted again (#3029). This carries
  * Development's own archived rows back in full from the swap backup, and the rows that
