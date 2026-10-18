@@ -147,7 +147,7 @@ const ANY_LEVEL = new RegExp(
 );
 
 const QUANTIFIED_LEVEL_AFTER =
-  /^\s*(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)\b(?=\s*(?:[,.;:)]|$)|\s+(?:to|are|is|may|can|who|will)\b)/;
+  /^\s*(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)(?:\s+of\s+(?:their\s+|his\s+or\s+her\s+)?(?:stud(?:y|ies)|programs?))?\b(?=\s*(?:[,.;:)]|$)|\s+(?:to|are|is|may|can|who|will|and|or)\b)/;
 
 const DIRECTLY_AFTER_FOR = /\bfor\s+$/;
 

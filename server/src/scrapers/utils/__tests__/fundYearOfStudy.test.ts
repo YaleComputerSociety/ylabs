@@ -135,6 +135,25 @@ describe('resolveFundYearOfStudy reads a level quantified by "at any level" as t
     );
   });
 
+  it.each([
+    'Travel fellowships for undergraduates at any level of study.',
+    'Travel fellowships are available for undergraduates at any stage of their studies.',
+    'Open to undergraduates at any level and graduate students.',
+    'Open to undergraduates at any level or graduate students.',
+  ])('admits every undergraduate year when the quantifier continues into "%s"', (text) => {
+    expect(nonEligibility(text, listedFilter).values).toEqual(
+      expect.arrayContaining(['First-Year Student', 'Sophomore', 'Junior', 'Senior']),
+    );
+  });
+
+  it('refines the level by the listing filter when the quantifier continues into a phrase it does not read', () => {
+    expect(
+      nonEligibility('Open to graduate students at any stage of their degree.', [
+        'PhD Post-Candidacy',
+      ]).values,
+    ).toEqual(['PhD Post-Candidacy']);
+  });
+
   it('does not read a past-recipient mention of a quantified level as admission evidence', () => {
     expect(
       nonEligibility('Recipients have included undergraduates at all levels.', ['Junior']),
