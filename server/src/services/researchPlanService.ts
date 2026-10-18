@@ -759,7 +759,12 @@ export const updateSavedResearchEntityPlan = async (
     }
     return getSavedResearchEntityPlans(netid);
   }
-  await updatePlanAtVersion(filter, update, expectedPlanVersion(plan), 'Saved research entity not found');
+  await updatePlanAtVersion(
+    filter,
+    update,
+    expectedPlanVersion(plan),
+    'Saved research entity not found',
+  );
   return getSavedResearchEntityPlans(netid);
 };
 
