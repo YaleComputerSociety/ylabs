@@ -1046,6 +1046,52 @@ describe('Programs page', () => {
     );
   });
 
+  describe('a direct link that opens no program', () => {
+    const failDetail = (status?: number) =>
+      mockedAxios.get.mockImplementation((url: string) => {
+        if (url === '/programs/missing') {
+          return Promise.reject(status ? { response: { status } } : new Error('Network Error'));
+        }
+        return Promise.resolve({ data: { watchedProgramIds: [] } });
+      });
+
+    it.each([404, 400])(
+      'says a %s link matches no program and drops it from the URL',
+      async (status) => {
+        failDetail(status);
+
+        renderPage([], {}, ['/programs?program=missing']);
+
+        const notice = await screen.findByRole('alert');
+        expect(within(notice).getByText('That program link does not match a program')).toBeTruthy();
+        await waitFor(() =>
+          expect(screen.getByTestId('current-location').textContent).toBe('/programs'),
+        );
+        expect(screen.queryByRole('dialog')).toBeNull();
+      },
+    );
+
+    it('calls a failed load a loading problem rather than a missing program', async () => {
+      failDetail();
+
+      renderPage([], {}, ['/programs?program=missing']);
+
+      const notice = await screen.findByRole('alert');
+      expect(within(notice).getByText('We could not open that program')).toBeTruthy();
+    });
+
+    it('hides the notice when the student dismisses it', async () => {
+      failDetail(404);
+
+      renderPage([], {}, ['/programs?program=missing']);
+
+      const notice = await screen.findByRole('alert');
+      await userEvent.click(within(notice).getByRole('button', { name: 'Dismiss' }));
+
+      expect(screen.queryByText('That program link does not match a program')).toBeNull();
+    });
+  });
+
   describe('watching programs', () => {
     const twoPrograms = () => [
       baseFellowship({ id: 'program-a', title: 'Synthetic Program A' }),
