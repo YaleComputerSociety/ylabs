@@ -50,10 +50,16 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
   },
 };
 
+/**
+ * One id's desired state and the request chain carrying it to the server. A toggle made while
+ * a request is in flight only moves `favorite`; the chain sends again when it settles, so the
+ * server never applies two requests for one id out of order (#5115).
+ */
 interface FavoriteIntent {
   favorite: boolean;
   sequence: number;
   inFlight: boolean;
+  settled?: Promise<boolean>;
 }
 
 const withFavorite = (ids: string[], id: string, favorite: boolean): string[] =>
@@ -111,45 +117,72 @@ export const useFavorites = (
 
   useLoadEffect(reload);
 
-  const setFavorite = useCallback(
-    async (id: string, favorite: boolean, surface: ResearchSaveSurface = defaultSurface) => {
-      intentSequenceRef.current += 1;
-      const intent: FavoriteIntent = {
-        favorite,
-        sequence: intentSequenceRef.current,
-        inFlight: true,
-      };
-      intentsRef.current.set(id, intent);
-      const isLatestIntent = () => intentsRef.current.get(id) === intent;
-      setFavIds((current) => withFavorite(current, id, favorite));
+  const sendFavorite = useCallback(
+    async (id: string, favorite: boolean, surface: ResearchSaveSurface) => {
+      const request = { withCredentials: true, data: { [config.payloadKey]: [id] } };
+      if (favorite) {
+        await axios.put(config.collectionPath, request);
+      } else {
+        await axios.delete(config.collectionPath, request);
+      }
+      void trackResearchEvent({
+        eventType: 'research_save',
+        entityType: config.analyticsEntityType,
+        entityId: id,
+        payload: { operation: favorite ? 'save' : 'remove', surface },
+        dedupeKey: createResearchAnalyticsInteractionId('save'),
+      });
+    },
+    [config],
+  );
+
+  const drainIntent = useCallback(
+    async (id: string, intent: FavoriteIntent, surface: ResearchSaveSurface) => {
+      let confirmed: boolean | undefined;
+      let attempted = intent.favorite;
       try {
-        const request = { withCredentials: true, data: { [config.payloadKey]: [id] } };
-        if (favorite) {
-          await axios.put(config.collectionPath, request);
-        } else {
-          await axios.delete(config.collectionPath, request);
+        while (confirmed !== intent.favorite) {
+          attempted = intent.favorite;
+          await sendFavorite(id, attempted, surface);
+          confirmed = attempted;
         }
-        intent.inFlight = false;
-        void trackResearchEvent({
-          eventType: 'research_save',
-          entityType: config.analyticsEntityType,
-          entityId: id,
-          payload: { operation: favorite ? 'save' : 'remove', surface },
-          dedupeKey: createResearchAnalyticsInteractionId('save'),
-        });
         return true;
       } catch {
-        console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
-        if (isLatestIntent()) {
+        intent.inFlight = false;
+        intent.settled = undefined;
+        console.error(`Error ${attempted ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
+        if (intentsRef.current.get(id) === intent) {
           intentsRef.current.delete(id);
-          setFavIds((current) => withFavorite(current, id, !favorite));
+          setFavIds((current) => withFavorite(current, id, confirmed ?? !attempted));
         }
-        void showWarningDialog(config.mutationFailureText(favorite));
+        void showWarningDialog(config.mutationFailureText(attempted));
         await reload();
         return false;
+      } finally {
+        intent.inFlight = false;
+        intent.settled = undefined;
       }
     },
-    [defaultSurface, kind, config, reload],
+    [config, kind, reload, sendFavorite],
+  );
+
+  const setFavorite = useCallback(
+    (id: string, favorite: boolean, surface: ResearchSaveSurface = defaultSurface) => {
+      intentSequenceRef.current += 1;
+      const pending = intentsRef.current.get(id);
+      const intent: FavoriteIntent = pending?.inFlight
+        ? pending
+        : { favorite, sequence: intentSequenceRef.current, inFlight: false };
+      intent.favorite = favorite;
+      intent.sequence = intentSequenceRef.current;
+      intentsRef.current.set(id, intent);
+      setFavIds((current) => withFavorite(current, id, favorite));
+      if (intent.settled) return intent.settled;
+      intent.inFlight = true;
+      intent.settled = drainIntent(id, intent, surface);
+      return intent.settled;
+    },
+    [defaultSurface, drainIntent],
   );
 
   const toggleFavorite = useCallback(
