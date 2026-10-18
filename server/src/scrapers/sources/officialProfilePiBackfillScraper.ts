@@ -5,6 +5,7 @@ import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import {
   getResearchEntityRosterByEntityId,
   type ResearchEntityRosterEntry,
@@ -82,6 +83,17 @@ import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
 import { memberObservationsForEntityKey, type MemberRole } from './centersInstitutesScraper';
+import {
+  buildCenterRosterHealthSnapshot,
+  CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+  CENTER_ROSTER_HEALTH_FIELD,
+  type CenterRosterReadMember,
+} from '../centerRosterRetirement';
+import {
+  OFFICIAL_PROFILE_DIRECTOR_ROLES,
+  OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME,
+} from '../officialProfileDirectorRetirement';
+import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -1347,41 +1359,125 @@ export interface OrganizationDirectorClaim {
   title: string;
 }
 
+export interface OrganizationDirectorProfileRead {
+  subjectKey: string | null;
+  statedMember: CenterRosterReadMember | null;
+  claim: OrganizationDirectorClaim | null;
+}
+
+const NO_ORGANIZATION_DIRECTOR_READ: OrganizationDirectorProfileRead = {
+  subjectKey: null,
+  statedMember: null,
+  claim: null,
+};
+
 /**
- * The person whose own official profile states they direct this organization by name and
- * links the organization's own site, or `null` (#5085).
+ * What one read of a person's own profile says about directing this organization (#5085,
+ * #5091).
  *
- * Both halves are required. A profile names every unit its subject directs, so the name
- * alone would attach a director to a same-named row for another site, and a profile links
- * many sites its subject does not run, so the link alone proves nothing about the role.
+ * `subjectKey` is set only when the page is about its own subject, parsed, and names a director
+ * this mode already recorded on the row (`heldDirectorNames`), which is what lets a later read
+ * that states nothing count as an absence rather than a broken or placeholder page.
+ * `statedMember` is the stated directorship whether or not the page also links the row's site,
+ * so a profile that still names the role keeps its edge. `claim` needs both halves: a profile
+ * names every unit its subject directs, so the name alone would attach a director to a
+ * same-named row for another site, and a profile links many sites its subject does not run,
+ * so the link alone proves nothing about the role.
  */
+export function readOrganizationDirectorProfile(
+  html: string,
+  profileUrl: string,
+  organization: Record<string, any>,
+): OrganizationDirectorProfileRead {
+  const organizationName = textValue(organization.name);
+  const organizationKey = textValue(organization.slug);
+  const websiteUrl = textValue(organization.websiteUrl) || textValue(organization.website);
+  if (!organizationName || !organizationKey || !websiteUrl) return NO_ORGANIZATION_DIRECTOR_READ;
+  const $ = cheerio.load(html);
+  const canonicalUrl = canonicalUrlFromHtml($, profileUrl);
+  const fetchedUrl = normalizeOfficialProfileUrl(profileUrl);
+  if (canonicalUrl !== fetchedUrl && !sameOfficialProfilePerson(canonicalUrl, fetchedUrl)) {
+    return NO_ORGANIZATION_DIRECTOR_READ;
+  }
+  const profiles = jsonLdProfiles($);
+  const name = officialProfileDisplayName($, profiles);
+  const evidenceText = blockSeparatedProfileEvidenceText(html, profiles);
+  const profileKey = officialProfileIdentityKey(canonicalUrl);
+  if (!name || !profileKey || !evidenceText.replace(/[\s|]+/g, '')) {
+    return NO_ORGANIZATION_DIRECTOR_READ;
+  }
+  const subjectKey = profileNamesHeldDirector(name, organization) ? profileKey : null;
+  const role = profileTextStatesDirectorshipOf(evidenceText, organizationName);
+  if (!role) return { subjectKey, statedMember: null, claim: null };
+  const statedMember: CenterRosterReadMember = {
+    memberKey: `${organizationKey}:${slugify(normalizeName(name))}`,
+    role,
+    membershipKey: rosterMembershipKey(profileKey, role),
+  };
+  if (!profileLinksWebsite($, profileUrl, websiteUrl)) {
+    return { subjectKey, statedMember, claim: null };
+  }
+  const title =
+    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
+      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+    ) || '';
+  return { subjectKey, statedMember, claim: { name, role, profileUrl: canonicalUrl, title } };
+}
+
+function profileNamesHeldDirector(displayName: string, organization: Record<string, any>): boolean {
+  const heldNames = Array.isArray(organization.heldDirectorNames)
+    ? organization.heldDirectorNames.map(textValue).filter(Boolean)
+    : [];
+  return (
+    heldNames.length > 0 &&
+    officialProfileIdentityMatchesExpectedPerson(
+      displayName,
+      '',
+      heldNames.map((heldName: string) => ({ fname: heldName, lname: heldName })),
+    )
+  );
+}
+
 export function organizationDirectorClaimFromProfile(
   html: string,
   profileUrl: string,
   organization: Record<string, any>,
 ): OrganizationDirectorClaim | null {
-  const organizationName = textValue(organization.name);
-  const websiteUrl = textValue(organization.websiteUrl) || textValue(organization.website);
-  if (!organizationName || !websiteUrl) return null;
-  const $ = cheerio.load(html);
-  const canonicalUrl = canonicalUrlFromHtml($, profileUrl);
-  const fetchedUrl = normalizeOfficialProfileUrl(profileUrl);
-  if (canonicalUrl !== fetchedUrl && !sameOfficialProfilePerson(canonicalUrl, fetchedUrl)) {
-    return null;
-  }
-  const profiles = jsonLdProfiles($);
-  const name = officialProfileDisplayName($, profiles);
-  if (!name) return null;
-  const role = profileTextStatesDirectorshipOf(
-    blockSeparatedProfileEvidenceText(html, profiles),
-    organizationName,
-  );
-  if (!role || !profileLinksWebsite($, profileUrl, websiteUrl)) return null;
-  const title =
-    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
-    ) || '';
-  return { name, role, profileUrl: canonicalUrl, title };
+  return readOrganizationDirectorProfile(html, profileUrl, organization).claim;
+}
+
+/**
+ * One snapshot per organization per run, on the centres roster-health contract, naming every
+ * profile whose subject this run read and every directorship those profiles stated. A row
+ * whose every profile fetch failed records a failed read, which retires nothing.
+ */
+export function organizationDirectorReadSnapshot(input: {
+  organization: Record<string, any>;
+  reads: readonly OrganizationDirectorProfileRead[];
+  pagesRead: number;
+  cacheAllowed: boolean;
+  readAt: Date;
+  sourceUrl: string;
+}): ObservationInput | null {
+  const organizationKey = textValue(input.organization.slug);
+  if (!organizationKey) return null;
+  return {
+    entityType: CENTER_ROSTER_HEALTH_ENTITY_TYPE,
+    entityKey: organizationKey,
+    field: CENTER_ROSTER_HEALTH_FIELD,
+    sourceUrl: input.sourceUrl,
+    value: buildCenterRosterHealthSnapshot({
+      centerKey: organizationKey,
+      entityKey: organizationKey,
+      members: input.reads.flatMap((read) => (read.statedMember ? [read.statedMember] : [])),
+      subjectKeys: input.reads.flatMap((read) => (read.subjectKey ? [read.subjectKey] : [])),
+      pagesRead: input.pagesRead,
+      readMode: 'html',
+      stopReason: input.pagesRead > 0 ? 'not-paginated' : 'fetch-failed',
+      cacheAllowed: input.cacheAllowed,
+      readAt: input.readAt,
+    }),
+  };
 }
 
 export function organizationDirectorObservations(
@@ -3734,6 +3830,10 @@ async function selectResearchHomeProfileTargets(
  * site and citing an official person profile: the rows whose director only that profile can
  * name (#5085). The research-home selector cannot reach them, because it reads a profile
  * through the row's existing lead roster and so skips a lead-less row before fetching.
+ *
+ * A row whose lead is a director this mode recorded is selected again and marked
+ * with the names of the directors it holds (`heldDirectorNames`), because a claim that is never
+ * re-read can never be withdrawn and a read only counts against the person it names (#5091).
  */
 export async function selectOrganizationDirectorProfileTargets(
   limit: number,
@@ -3756,11 +3856,54 @@ export async function selectOrganizationDirectorProfileTargets(
       officialProfileUrlsForEntity(entity).length > 0,
   );
   if (candidates.length === 0) return [];
-  const ledEntityIds = await currentLeadRosterEntriesByEntity(
-    candidates.map((entity) => entity._id),
-    LEAD_MEMBER_ROLES,
+  const candidateIds = candidates.map((entity) => entity._id);
+  const [ledEntityIds, heldDirectorNamesByEntity] = await Promise.all([
+    currentLeadRosterEntriesByEntity(candidateIds, LEAD_MEMBER_ROLES),
+    profileDirectorNamesByEntity(candidateIds),
+  ]);
+  return candidates
+    .filter((entity) => {
+      const id = idValue(entity._id);
+      return !ledEntityIds.has(id) || heldDirectorNamesByEntity.has(id);
+    })
+    .slice(0, limit)
+    .map((entity) => {
+      const heldDirectorNames = heldDirectorNamesByEntity.get(idValue(entity._id));
+      return heldDirectorNames ? { ...entity, heldDirectorNames } : entity;
+    });
+}
+
+async function profileDirectorNamesByEntity(entityIds: unknown[]): Promise<Map<string, string[]>> {
+  const ids = entityIds.filter((id): id is mongoose.Types.ObjectId | string =>
+    mongoose.isValidObjectId(id),
   );
-  return candidates.filter((entity) => !ledEntityIds.has(idValue(entity._id))).slice(0, limit);
+  if (ids.length === 0) return new Map();
+  const edges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: ids },
+    'rosterProvenance.sourceName': OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME,
+    role: { $in: [...OFFICIAL_PROFILE_DIRECTOR_ROLES] },
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  })
+    .select('target.id personId')
+    .lean()) as Array<{ target?: { id?: unknown }; personId?: unknown }>;
+  if (edges.length === 0) return new Map();
+  const people = (await Researcher.find({ _id: { $in: edges.map((edge) => edge.personId) } })
+    .select('_id displayName')
+    .lean()) as Array<{ _id: unknown; displayName?: unknown }>;
+  const nameByPersonId = new Map(
+    people.map((person) => [idValue(person._id), textValue(person.displayName)]),
+  );
+  const namesByEntity = new Map<string, string[]>();
+  for (const edge of edges) {
+    const entityId = idValue(edge.target?.id);
+    const names = namesByEntity.get(entityId) ?? [];
+    const name = nameByPersonId.get(idValue(edge.personId));
+    if (name && !names.includes(name)) names.push(name);
+    namesByEntity.set(entityId, names);
+  }
+  return namesByEntity;
 }
 
 async function selectLeadDirectWebsiteTargets(
@@ -4476,10 +4619,14 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       : [];
     let organizationDirectorsClaimed = 0;
     for (const organization of organizationDirectorTargets) {
+      const profileReads: OrganizationDirectorProfileRead[] = [];
+      let pagesRead = 0;
+      let firstProfileUrl = '';
       for (const profileUrl of rankedOfficialProfileFetchCandidates(
         officialProfileUrlsForEntity(organization),
         organization,
       )) {
+        firstProfileUrl ||= profileUrl;
         let html: string;
         try {
           await awaitFetchTurn();
@@ -4492,9 +4639,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           });
           continue;
         }
-        const claim = organizationDirectorClaimFromProfile(html, profileUrl, organization);
-        if (!claim) continue;
-        const observations = organizationDirectorObservations(organization, claim);
+        pagesRead += 1;
+        const profileRead = readOrganizationDirectorProfile(html, profileUrl, organization);
+        profileReads.push(profileRead);
+        if (!profileRead.claim) continue;
+        const observations = organizationDirectorObservations(organization, profileRead.claim);
         if (observations.length === 0) continue;
         await ctx.emit(observations);
         emitted += observations.length;
@@ -4502,6 +4651,23 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         organizationDirectorsClaimed += 1;
         break;
       }
+      if (
+        !Array.isArray(organization.heldDirectorNames) &&
+        !profileReads.some((profileRead) => profileRead.statedMember)
+      ) {
+        continue;
+      }
+      const snapshot = organizationDirectorReadSnapshot({
+        organization,
+        reads: profileReads,
+        pagesRead,
+        cacheAllowed: ctx.options.useCache,
+        readAt: new Date(),
+        sourceUrl: firstProfileUrl,
+      });
+      if (!snapshot) continue;
+      await ctx.emit([snapshot]);
+      emitted += 1;
     }
 
     const refusalSummary = Object.entries(homesRefusedByReason)

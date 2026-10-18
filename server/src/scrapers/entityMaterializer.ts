@@ -364,6 +364,10 @@ import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
 import {
+  OFFICIAL_PROFILE_DIRECTOR_LANE,
+  reconcileOfficialProfileDirectorRetirementsFromRun,
+} from './officialProfileDirectorRetirement';
+import {
   CENTER_AFFILIATION_ROSTER_LANE,
   CENTERS_INSTITUTES_ROSTER_LANE,
   CENTERS_INSTITUTES_SOURCE_NAME,
@@ -11057,6 +11061,17 @@ export async function materializeFromRun(
   if (centerDirectorRetirement) {
     console.info(
       `[center-director-retirement] ${centerDirectorRetirement.dryRun ? 'planned' : 'reconciled'} ${centerDirectorRetirement.centersRead} center read(s): ${centerDirectorRetirement.retiredEdges} lead edge(s) ended, ${centerDirectorRetirement.edgesAwaitingSecondRead} awaiting a second read, ${centerDirectorRetirement.unjudgedEdges} not judged, ${centerDirectorRetirement.indexSyncFailures} center index sync failure(s)`,
+    );
+  }
+  const officialProfileDirectorRetirement =
+    await reconcileOfficialProfileDirectorRetirementsFromRun(
+      scrapeRunId,
+      centerRosterRetirementDeps(options, OFFICIAL_PROFILE_DIRECTOR_LANE),
+      { dryRun: options.dryRun },
+    );
+  if (officialProfileDirectorRetirement) {
+    console.info(
+      `[official-profile-director-retirement] ${JSON.stringify(officialProfileDirectorRetirement)}`,
     );
   }
   // Runs beside the centres retirement because it is the same contract over another lane's claims.
