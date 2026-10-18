@@ -292,7 +292,7 @@ describe('researchPlanService saved plans', () => {
       ]);
     });
 
-    it('reports an archived target as UNAVAILABLE rather than removed', async () => {
+    it('reports an archived target with no live survivor as RETIRED rather than returning (#5208)', async () => {
       await saveWhilePublished();
       await mongoose.connection
         .db!.collection('research_entities')
@@ -300,9 +300,22 @@ describe('researchPlanService saved plans', () => {
 
       const list = await getSavedResearchEntityList(NETID);
 
-      expect(list.unavailableSavedResearchEntities).toEqual([
-        { _id: entityId, reason: 'UNAVAILABLE' },
-      ]);
+      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'RETIRED' }]);
+    });
+
+    it('reports an archived target whose tombstone reaches a live survivor as MERGED (#5208)', async () => {
+      await saveWhilePublished();
+      const survivorId = new mongoose.Types.ObjectId('64a00000000000000000beef');
+      const entities = mongoose.connection.db!.collection('research_entities');
+      await entities.insertOne({ _id: survivorId, slug: 'merge-survivor', name: 'Merge Survivor' });
+      await entities.updateOne(
+        { _id: ENTITY_ID },
+        { $set: { archived: true, canonicalGroupId: survivorId } },
+      );
+
+      const list = await getSavedResearchEntityList(NETID);
+
+      expect(list.unavailableSavedResearchEntities).toEqual([{ _id: entityId, reason: 'MERGED' }]);
     });
 
     it('reports a target whose record no longer exists as REMOVED', async () => {
@@ -468,7 +481,7 @@ describe('researchPlanService saved plans', () => {
       expect(
         [...list.unavailableSavedResearchEntities].sort((a, b) => a._id.localeCompare(b._id)),
       ).toEqual([
-        { _id: '64a0000000000000000001a2', reason: 'UNAVAILABLE' },
+        { _id: '64a0000000000000000001a2', reason: 'RETIRED' },
         { _id: '64a0000000000000000001a3', reason: 'UNAVAILABLE' },
         { _id: '64a0000000000000000001a4', reason: 'UNAVAILABLE' },
         { _id: '64a0000000000000000001a5', reason: 'REMOVED' },

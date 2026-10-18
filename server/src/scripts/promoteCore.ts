@@ -303,6 +303,12 @@ const searchReindexModeArgs = (target: PromotionTarget, options: RemotePhaseOpti
   searchReindexResultFile(target),
 ];
 
+const RETARGET_SAVED_PLANS_ARGS = [
+  'research-plans:retarget-merged',
+  '--apply',
+  '--confirm-research-plan-retarget',
+];
+
 const VISIBILITY_GATE_ARGS = [
   'student-visibility:gate',
   '--collection=all',
@@ -322,6 +328,12 @@ export function remotePhaseSteps(
         cwd: 'server',
         command: 'yarn',
         args: ['database:verify-names', '--serving', 'beta'],
+      },
+      {
+        label: 'retarget saved plans',
+        cwd: 'server',
+        command: 'yarn',
+        args: RETARGET_SAVED_PLANS_ARGS,
       },
       { label: 'visibility gate', cwd: 'server', command: 'yarn', args: VISIBILITY_GATE_ARGS },
       {
@@ -384,6 +396,13 @@ export function remotePhaseSteps(
       cwd: 'server',
       command: 'yarn',
       args: ['database:verify-names', '--serving', 'production'],
+    },
+    {
+      label: 'retarget saved plans',
+      cwd: 'server',
+      command: 'yarn',
+      args: RETARGET_SAVED_PLANS_ARGS,
+      env: { CONFIRM_PROD_SCRAPE: 'true' },
     },
     { label: 'visibility gate', cwd: 'server', command: 'yarn', args: VISIBILITY_GATE_ARGS },
     {

@@ -66,7 +66,7 @@ interface SavedResearchEntity {
  */
 interface UnavailableSavedResearchEntity {
   _id: string;
-  reason: 'REMOVED' | 'UNAVAILABLE';
+  reason: 'REMOVED' | 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 }
 
 /**
@@ -79,6 +79,9 @@ interface UnavailableSavedResearchEntity {
  */
 const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
   REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
+  MERGED:
+    'Combined with another listing for the same research. Your note moves to that listing at the next directory update.',
+  RETIRED: 'No longer listed in the student directory. Remove it to clear this item.',
   UNAVAILABLE:
     'Held back from the student directory right now. Your note is kept, and this item will reappear here once the directory lists it again.',
 };

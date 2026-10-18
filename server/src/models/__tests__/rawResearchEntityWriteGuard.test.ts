@@ -59,6 +59,11 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
     reason:
       'archives duplicates and relinks references across every collection in its reference specs by name, so one writer serves many collections; it relinks ids and archives, and authors no provenance entry',
   },
+  'scripts/archivedTombstoneMirror.ts': {
+    sites: 1,
+    reason:
+      "the Beta-to-Development refresh restores Development's own archived rows verbatim from the swap backup inside the staged swap; it copies stored documents back and authors no provenance entry (#5208)",
+  },
   'scripts/migrateMongoNaming.ts': {
     sites: 2,
     reason:

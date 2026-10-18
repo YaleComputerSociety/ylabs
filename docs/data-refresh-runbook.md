@@ -514,6 +514,11 @@ Accounts and research plans never cross (#5088, #5092): `accounts` and `research
 Because accounts are environment-local, an account `_id` stored on a copied corpus row would name nobody in the target, so the copy refuses a source whose `researchers.accountId` or `studentVisibilityReviewedByAccountId` is set.
 The plan artifact's `accountReferences` lists any such row by collection and field, and an apply refuses until it is empty.
 Both mirror directions share this rule, as does `production:promote-beta-copy`.
+Beta holds only slim archived tombstones and none of the rows that hang off an archived entity (see Phase 2), so this refresh carries Development's own archive back across the swap (#5208).
+After the cutover and before verification, `carryDevelopmentArchive` in `server/src/scripts/archivedTombstoneMirror.ts` restores every archived `research_entities` row from Development's backup in full, and the `signals`, `role_assignments` and `research_entity_relationships` rows on those entities that Beta does not hold.
+A row Beta holds live is Beta's accepted state and keeps Beta's version.
+Verification expects each collection to hold Beta's copy plus exactly the rows the carry inserted, and the apply report's `developmentArchiveCarry` gives the counts.
+Without the carry one refresh would erase Development's tombstones, and the engine would mint every merged duplicate again (#3029).
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
@@ -804,6 +809,10 @@ It is the only way data enters Beta.
 The command replaces only the approved research-discovery, identity-spine, source-audit, and base-support collections, with account state sanitized.
 It preserves Beta operational collections such as sessions, analytics, admin grants, student workflows, locks, caches, and release queues.
 It leaves `observations` in Development unless `--include-observations` is passed, so review the plan's `observationPolicy` line before applying.
+Archived research entities cross as slim tombstones (#5208): `withSlimArchivedTombstones` keeps `_id`, `slug`, `name`, `archived`, `archivedReason`, `archivedAt`, `canonicalGroupId` and bookkeeping timestamps, which is all a serving environment reads from an archived row, for the old-slug redirect, a saved plan's status, and the dead-end tombstone check.
+The `signals`, `role_assignments` and `research_entity_relationships` rows on archived entities stay in Development, so the plan's `excludedCount` for those collections is expected to be non-zero.
+Development keeps every full row, because its engine routes re-scraped evidence and refuses re-mints through it.
+Beta-to-Production copies Beta as is, so Production carries the same slim tombstones.
 It never writes to Meilisearch.
 The mirror replaces whole documents rather than merging fields, so a mirrored row can serve a worse individual field than the row it replaced even when the mirror is newer; [research-data-pipeline.md](research-data-pipeline.md) owns the known `websiteUrl` case and the repair command for it.
 
