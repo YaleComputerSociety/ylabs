@@ -53,3 +53,14 @@ export const researchPlanStageMeta: Record<ResearchPlanStage, ResearchPlanStageM
 
 export const researchPlanStageLabel = (stage: ResearchPlanStage): string =>
   researchPlanStageMeta[stage].label;
+
+export const programSettledStageBadge = (
+  stage: unknown,
+): { label: string; className: string } | undefined => {
+  if (!programDeadlineIsSettled(stage)) return undefined;
+  const settled = normalizeResearchPlanStage(stage);
+  return {
+    label: researchPlanStageLabel(settled),
+    className: researchPlanStageMeta[settled].badgeClassName,
+  };
+};

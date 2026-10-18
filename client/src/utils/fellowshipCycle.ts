@@ -1,3 +1,4 @@
+import { PROGRAM_CLOSING_SOON_DAYS } from './programClosingSoonWindow';
 import { Fellowship } from '../types/types';
 import {
   STALE_DEADLINE_SHORT_LABEL,
@@ -10,7 +11,7 @@ import {
   programDeadlineClosingInstant,
 } from './programDates';
 
-export const CLOSING_SOON_DAYS = 30;
+export const CLOSING_SOON_DAYS = PROGRAM_CLOSING_SOON_DAYS;
 
 const NEUTRAL_CYCLE_BADGE_CLASS = 'bg-gray-100 text-gray-600 border border-gray-200';
 

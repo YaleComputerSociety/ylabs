@@ -65,11 +65,14 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
 
 describe('fellowshipStatus', () => {
   it('marks open opportunities with upcoming deadlines as currently relevant', () => {
-    const status = getFellowshipApplicationStatus(makeFellowship(), NOW);
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-04-20T12:00:00.000Z' }),
+      new Date('2026-04-07T12:00:00.000Z'),
+    );
 
     expect(status.kind).toBe('closingSoon');
     expect(status.label).toBe('Closing soon');
-    expect(status.detail).toBe('19\u00a0days left');
+    expect(status.detail).toBe('13\u00a0days left');
     expect(status.isCurrentlyRelevant).toBe(true);
     expect(status.isApplicationWindowOpen).toBe(true);
   });
@@ -129,7 +132,7 @@ describe('fellowshipStatus', () => {
       makeFellowship({
         isAcceptingApplications: false,
         applicationOpenDate: '2026-03-01T12:00:00.000Z',
-        deadline: '2026-05-01T12:00:00.000Z',
+        deadline: '2026-04-10T12:00:00.000Z',
       }),
       NOW,
     );
@@ -316,13 +319,23 @@ describe('getStructuredEligibilityDetails', () => {
 describe('the closing-soon countdown matches the calendar (#5158)', () => {
   const morning = new Date('2026-10-18T13:30:00.000Z');
 
-  it('says 17 days left for a deadline 17 calendar days away at 1 PM', () => {
+  it('says 12 days left for a deadline 12 calendar days away at 1 PM', () => {
     expect(
       getFellowshipApplicationStatus(
-        makeFellowship({ deadline: '2026-11-04T18:00:00.000Z', isAcceptingApplications: true }),
+        makeFellowship({ deadline: '2026-10-30T12:00:00.000Z', isAcceptingApplications: true }),
         morning,
       ).detail,
-    ).toBe('17 days left');
+    ).toBe('12 days left');
+  });
+
+  it('calls a deadline more than two weeks away open rather than closing soon', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({ deadline: '2026-11-10T17:00:00.000Z', isAcceptingApplications: true }),
+      morning,
+    );
+
+    expect(status.kind).not.toBe('closingSoon');
+    expect(status.label).not.toBe('Closing soon');
   });
 
   it('says due today for a deadline later the same day', () => {

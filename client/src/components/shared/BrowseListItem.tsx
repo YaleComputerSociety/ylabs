@@ -1,6 +1,7 @@
 /**
  * List view row component for browsable listings and fellowships.
  */
+import { PROGRAM_CLOSING_SOON_DAYS } from '../../utils/programClosingSoonWindow';
 import React, { useContext, useMemo, type ReactNode } from 'react';
 import {
   BrowsableItem,
@@ -58,7 +59,10 @@ const BrowseListItem = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
-      !statusBadgeOverride && item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
+      !statusBadgeOverride &&
+      item.type === 'fellowship' &&
+      daysUntil !== null &&
+      daysUntil <= PROGRAM_CLOSING_SOON_DAYS;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = statusBadgeOverride ? 'text-muted' : getItemSubtitleColor(item);
