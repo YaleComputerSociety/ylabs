@@ -21,6 +21,7 @@ import AnalyticsButton from './AnalyticsButton';
 import UserContext from '../contexts/UserContext';
 import FeedbackButton from './FeedbackButton';
 import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
+import { wasSignedInLastVisit } from '../utils/lastKnownSession';
 import { navFocusRingSx } from '../utils/focusRing';
 import { CloseIcon, MenuIcon } from './shared/icons';
 
@@ -38,6 +39,8 @@ export default function Navbar() {
   const location = useLocation();
 
   const isAdmin = user?.isAdmin ?? false;
+  const [signedInLastVisit] = useState(wasSignedInLastVisit);
+  const showsSignedInNav = isAuthenticated || (isAuthLoading && signedInLastVisit);
 
   const guestNavLinks = [
     {
@@ -210,9 +213,9 @@ export default function Navbar() {
           }}
         >
           <Toolbar sx={{ height: '68px', width: '100%', justifyContent: 'flex-start' }}>
-            <Box sx={{ flexShrink: 0 }}>{isAuthenticated ? <HomeButton /> : <YURAButton />}</Box>
+            <Box sx={{ flexShrink: 0 }}>{showsSignedInNav ? <HomeButton /> : <YURAButton />}</Box>
 
-            {isAuthenticated && (
+            {showsSignedInNav && (
               <Box
                 sx={{
                   display: 'flex',
@@ -254,7 +257,12 @@ export default function Navbar() {
                       })}
                     </Box>
                     {isAdmin && <AnalyticsButton />}
-                    <UserButton />
+                    <Box
+                      aria-hidden={isAuthLoading || undefined}
+                      sx={{ visibility: isAuthLoading ? 'hidden' : 'visible' }}
+                    >
+                      <UserButton />
+                    </Box>
                   </>
                 )}
                 {isMobile && (
@@ -281,7 +289,7 @@ export default function Navbar() {
               </Box>
             )}
 
-            {!isAuthenticated && (
+            {!showsSignedInNav && (
               <Box
                 aria-hidden={isAuthLoading || undefined}
                 sx={{

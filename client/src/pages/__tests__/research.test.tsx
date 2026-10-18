@@ -3182,6 +3182,7 @@ describe('Research landing watched-deadline urgency signal', () => {
 
     await waitFor(() =>
       expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedPrograms', {
+        params: { view: 'deadlines' },
         withCredentials: true,
       }),
     );

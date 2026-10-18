@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { rememberSignedIn, wasSignedInLastVisit } from '../../utils/lastKnownSession';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -73,6 +74,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockIsMobile = false;
+  window.localStorage.clear();
 });
 
 describe('Navbar', () => {
@@ -83,6 +85,23 @@ describe('Navbar', () => {
 
     renderGuestNavbar('/research', false);
     expect(screen.getAllByRole('link', { name: /sign in/i }).length).toBeGreaterThan(0);
+  });
+
+  it('shows a returning signed-in visitor their navigation while the session check is pending', () => {
+    window.localStorage.setItem('ylabs:last-known-signed-in', '1');
+    renderGuestNavbar('/research', true);
+
+    const primaryNav = screen.getByRole('navigation', { name: 'Primary navigation' });
+    expect(within(primaryNav).getByRole('link', { name: 'Research' })).toBeTruthy();
+    expect(within(primaryNav).getByRole('link', { name: 'Programs & Fellowships' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /sign in/i })).toBeNull();
+  });
+
+  it('remembers whether the last session check found a signed-in visitor', () => {
+    rememberSignedIn(true);
+    expect(wasSignedInLastVisit()).toBe(true);
+    rememberSignedIn(false);
+    expect(wasSignedInLastVisit()).toBe(false);
   });
 
   it('keeps desktop primary navigation in the toolbar flow without fellowship browse controls', () => {

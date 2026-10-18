@@ -8,6 +8,7 @@ import UserContext from '../contexts/UserContext';
 import { User } from '../types/types';
 import { createInitialUserState, userReducer } from '../reducers/userReducer';
 import { setResearchAnalyticsEnabled } from '../utils/researchAnalytics';
+import { rememberSignedIn } from '../utils/lastKnownSession';
 
 const UserContextProvider = ({ children }: PropsWithChildren) => {
   const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
@@ -19,6 +20,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
       .get<{ auth: boolean; user?: User }>('/check', { withCredentials: true })
       .then(({ data }) => {
         setResearchAnalyticsEnabled(data.auth === true);
+        rememberSignedIn(data.auth === true);
         if (data.auth) {
           dispatch({
             type: 'FETCH_SUCCESS',
