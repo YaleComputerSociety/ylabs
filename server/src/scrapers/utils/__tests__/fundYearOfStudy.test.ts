@@ -76,3 +76,41 @@ describe('resolveFundYearOfStudy phrasing shapes', () => {
     });
   });
 });
+
+describe('resolveFundYearOfStudy reads a level quantified by "at any level" as the whole level (#5121)', () => {
+  const nonEligibility = (text: string, filter: string[]) =>
+    resolveFundYearOfStudy([{ text, isEligibilitySection: false }], filter);
+  const listedFilter = ['First-Year Student', 'Sophomore', 'Junior', 'Master’s Student'];
+
+  it('admits every undergraduate year when the prose funds undergraduates at any level', () => {
+    expect(
+      nonEligibility(
+        'The program invites applications from graduate and undergraduate students. Funds are available for senior essay support for undergraduates, and for travel fellowships for undergraduates at any level.',
+        listedFilter,
+      ),
+    ).toEqual({
+      kind: 'prose',
+      values: ['First-Year Student', 'Sophomore', 'Junior', 'Senior', 'Master’s Student'],
+    });
+  });
+
+  it('does not read a senior essay as an unread year that keeps a level incomplete', () => {
+    expect(
+      nonEligibility(
+        'Applications from any undergraduate students are welcome, including those writing a senior essay.',
+        ['Junior'],
+      ),
+    ).toEqual(
+      nonEligibility('Applications from any undergraduate students are welcome.', ['Junior']),
+    );
+  });
+
+  it('keeps refining an unquantified level by the listing filter', () => {
+    expect(
+      nonEligibility('The program invites applications from undergraduate students.', [
+        'Sophomore',
+        'Junior',
+      ]),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+  });
+});
