@@ -14,6 +14,7 @@ import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificat
 import { programAudience } from '../services/programAudience';
 import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
 import { programTextDeadlineConflict } from '../utils/programDeadlineText';
+import { formatServedAwardAmount } from '../utils/awardAmountFormat';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -227,7 +228,7 @@ export const publicProgramForReader = (program: any) => {
     additionalInformation,
     links: publicProgramLinks(program.links, program.sourceUrl),
     applicationLink: servedProgramApplicationLink(program).value,
-    awardAmount: program.awardAmount,
+    awardAmount: formatServedAwardAmount(program.awardAmount),
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
     deadline: program.deadline,

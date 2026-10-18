@@ -208,6 +208,7 @@ Historical `paper` observations and source rows are retained as read-only archiv
 `/programs` is an application board, so it groups by application status rather than by role: due in the next 30 days, accepting applications, opening soon, the next cycle, department research guidance, and no dates posted (`client/src/utils/programBoard.ts`).
 A program whose served deadline is stale sits under no dates posted and in no timing quick filter, because its window is unknown rather than open or closed (#4363).
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
+An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
 The citizenship filter keeps a not-stated program, because unknown is not ineligible.
 Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
