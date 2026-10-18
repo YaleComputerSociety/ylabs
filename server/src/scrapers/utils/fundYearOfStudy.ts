@@ -142,10 +142,12 @@ const ENDS_IN_PROGRAM_HEAD = /\sprograms?$/;
 
 const ENROLLED_IN = /\benrolled in\s+(?:an?\s+|the\s+)?$/;
 
-const ANY_LEVEL = /\bstudents?\s+(?:at|of)\s+(?:any|all)\s+(?:levels?|stages?)\b/;
+const ANY_LEVEL = new RegExp(
+  `(?<!\\b(?:${TERM_SOURCE})\\s+)\\bstudents?\\s+(?:at|of)\\s+(?:any|all)\\s+(?:levels?|stages?)\\b`,
+);
 
 const QUANTIFIED_LEVEL_AFTER =
-  /^\s*(?:students?\s+)?(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)\b/;
+  /^\s*(?:at|of|in)\s+(?:any|all|every)\s+(?:levels?|stages?|(?:class\s+)?years?)\b/;
 
 const ELIGIBILITY_CUE =
   /\b(?:eligib\w*|open(?: only)? to|available(?: only)? to|intended(?: only)? for|designed for|limited to|restricted to|reserved for|awarded(?: only)? to|awards? to|enrolled in|welcomed? from|applications? (?:are )?(?:accepted |invited |welcomed? )?from|must be(?: an?)?)\b/;

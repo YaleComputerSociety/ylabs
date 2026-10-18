@@ -94,6 +94,36 @@ describe('resolveFundYearOfStudy reads a level quantified by "at any level" as t
     });
   });
 
+  it('admits only the undergraduate years when the prose funds undergraduate students at any level', () => {
+    expect(
+      nonEligibility('Travel fellowships are open to undergraduate students at any level.', [
+        'Junior',
+      ]),
+    ).toEqual({
+      kind: 'prose',
+      values: ['First-Year Student', 'Sophomore', 'Junior', 'Senior'],
+    });
+  });
+
+  it('still admits every level when the prose funds students at any level with no level named', () => {
+    expect(
+      nonEligibility('Travel fellowships are open to students at any level.', ['Junior']),
+    ).toEqual({
+      kind: 'prose',
+      values: [
+        'First-Year Student',
+        'Sophomore',
+        'Junior',
+        'Senior',
+        'Master’s Student',
+        'PhD Pre-Candidacy',
+        'PhD Post-Candidacy',
+        'JD',
+        'MD',
+      ],
+    });
+  });
+
   it('does not read a senior essay as an unread year that keeps a level incomplete', () => {
     expect(
       nonEligibility(
