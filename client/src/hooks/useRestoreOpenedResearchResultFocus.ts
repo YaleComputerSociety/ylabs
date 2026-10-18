@@ -13,13 +13,23 @@ const findResultLink = (slug: string): HTMLElement | undefined =>
     (link) => link.getAttribute(RESEARCH_RESULT_LINK_ATTRIBUTE) === slug,
   );
 
-const isLaidOutOutsideViewport = (element: HTMLElement): boolean => {
+const scrollContainer = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('[data-scroll-container]');
+
+const scrollPaddingTop = (container: HTMLElement): number =>
+  Number.parseFloat(getComputedStyle(container).scrollPaddingTop) || 0;
+
+const bringFullyIntoView = (element: HTMLElement): void => {
+  const container = scrollContainer();
   const rect = element.getBoundingClientRect();
-  if (rect.height === 0) return false;
-  const viewport =
-    document.querySelector<HTMLElement>('[data-scroll-container]')?.getBoundingClientRect() ??
-    new DOMRect(0, 0, window.innerWidth, window.innerHeight);
-  return rect.bottom <= viewport.top || rect.top >= viewport.bottom;
+  if (!container || rect.height === 0) return;
+  const bounds = container.getBoundingClientRect();
+  const visibleTop = bounds.top + scrollPaddingTop(container);
+  const visibleHeight = bounds.bottom - visibleTop;
+  if (rect.top >= visibleTop && rect.bottom <= bounds.bottom) return;
+  const centredTop =
+    rect.height >= visibleHeight ? visibleTop : visibleTop + (visibleHeight - rect.height) / 2;
+  container.scrollTop += rect.top - centredTop;
 };
 
 export const useRestoreOpenedResearchResultFocus = (): void => {
@@ -42,7 +52,8 @@ export const useRestoreOpenedResearchResultFocus = (): void => {
       const link = findResultLink(slug);
       if (link) {
         stop();
-        link.focus({ preventScroll: !isLaidOutOutsideViewport(link) });
+        link.focus({ preventScroll: true });
+        bringFullyIntoView(link.closest('article') ?? link);
         return;
       }
       if (performance.now() > deadline) {

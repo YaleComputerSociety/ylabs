@@ -164,9 +164,11 @@ describe('ResearchFilterDisclosure', () => {
     rerender(<ResearchFilterDisclosure {...props} resultCount={1234} resultCountPending />);
     expect(within(dialog).getByRole('button', { name: 'Updating results…' })).toBeTruthy();
 
-    rerender(<ResearchFilterDisclosure {...props} resultCount={1} />);
+    const onShowResults = vi.fn();
+    rerender(<ResearchFilterDisclosure {...props} resultCount={1} onShowResults={onShowResults} />);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Show 1 result' }));
     expect(screen.queryByRole('dialog', { name: 'Research filters' })).toBeNull();
+    expect(onShowResults).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 

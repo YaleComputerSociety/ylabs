@@ -637,7 +637,7 @@ const DecisionSummary = ({
                   aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
-                  className="yr-link yr-focus-ring break-words rounded-control"
+                  className="yr-link yr-focus-ring -my-1.5 inline-block break-words rounded-control py-1.5"
                 >
                   {undergradQuote.sourceHost}
                 </a>
