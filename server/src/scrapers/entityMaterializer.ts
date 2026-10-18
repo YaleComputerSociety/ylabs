@@ -299,6 +299,7 @@ import { splitName } from './utils/scraperHelpers';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import {
   isBoilerplatePlatformHostUrl,
+  isCoursePageUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
@@ -1832,6 +1833,12 @@ export function shouldIgnoreObservationForEntityMaterialization(
   ) {
     return true;
   }
+  // A course page describes a class, so nothing read off it is evidence about a research
+  // entity: dropping it here keeps an already-stored course name, type or description
+  // inert on every resolve without a lock (#5213).
+  if (isResearchEntityObservationType(entityType) && isCoursePageUrl(observation.sourceUrl)) {
+    return true;
+  }
   if (
     isResearchEntityObservationType(entityType) &&
     !!observation.field &&
@@ -2164,7 +2171,8 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       // serve-time predicate misses the search-list DTO, so refusing it here is what
       // actually empties the stored field (#3184).
       !isMapOrDirectionsUrl(url) &&
-      !isBoilerplatePlatformHostUrl(url),
+      !isBoilerplatePlatformHostUrl(url) &&
+      !isCoursePageUrl(url),
   );
   if (!entityIdentity) return kept;
   const entityForMatch: ResearchEntityIdentity = {
@@ -7473,6 +7481,7 @@ function enforceResearchEntityNameAuthority(input: {
     isPlaceholderEntityName(candidateName) ||
     namesAPostingRatherThanResearch(candidateName) ||
     isPostingPageUrl(websiteUrl) ||
+    isCoursePageUrl(websiteUrl) ||
     // An external platform's brand names no research home, and it is refused here
     // as well as at ingest for the same reason filler is: an already-stored
     // "Google Scholar" is re-projected from its own active observation on every

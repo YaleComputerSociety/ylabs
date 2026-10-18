@@ -21,6 +21,8 @@ export const NON_RESEARCH_HOME_KINDS = [
   // A department program listing whose program record was judged not a program and
   // whose cited page no longer lists it: neither /research nor /programs (#5077).
   'unlisted-program',
+  // A row whose only content is a course a student takes, read off its course page (#5213).
+  'course',
 ] as const;
 
 export type NonResearchHomeKind = (typeof NON_RESEARCH_HOME_KINDS)[number];

@@ -2,6 +2,7 @@ import { isExternalScholarlyPlatformHost } from '../utils/externalScholarlyPlatf
 import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import {
   isBoilerplatePlatformHostUrl,
+  isCoursePageUrl,
   isDepartmentRosterProvenanceUrl,
   isFileShareOrDocumentUrl,
   isInstitutionalAdvancementUrl,
@@ -173,6 +174,7 @@ export function isPromotableWebsiteUrl(
     !isProgrammePageCitedByPerson(value, entity) &&
     !isSchoolSectionPageUrl(value) &&
     !isPostingPageCitedAsResearchWebsite(value, entity) &&
+    !isCoursePageUrl(value) &&
     // A research group's host root or a department's audience-recruitment page names a
     // collective. The serve-time gate hides one, but promotion is where the value comes
     // from: without this arm the resolver re-fills a cleared slot from `sourceUrls` on
@@ -203,7 +205,8 @@ export function isUnservableWebsiteUrl(
     isMultiTenantHostRootWebsiteUrl(value, entity) ||
     isUmbrellaPageCitedByPerson(value, entity) ||
     isSchoolSectionPageUrl(value) ||
-    isPostingPageCitedAsResearchWebsite(value, entity)
+    isPostingPageCitedAsResearchWebsite(value, entity) ||
+    isCoursePageUrl(value)
   );
 }
 

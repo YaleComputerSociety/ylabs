@@ -1090,6 +1090,25 @@ export function isPostingPageUrl(value: unknown): boolean {
     .some((segment) => POSTING_PAGE_SEGMENT.test(segment));
 }
 
+const COURSE_PAGE_PARENT_SEGMENT = /^courses?$/i;
+
+const COURSE_CATALOG_HOSTS: ReadonlySet<string> = new Set(['courses.yale.edu', 'coursetable.com']);
+
+/**
+ * A course's own page describes a class, so it is never a research home, never names a
+ * row and is never evidence about one (#5213). A bare `/courses` listing on a research
+ * home's own site is left an ordinary citation, so a course slug must follow the segment.
+ */
+export function isCoursePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (COURSE_CATALOG_HOSTS.has(hostnameWithoutWwwAlias(url))) return true;
+  const segments = url.pathname.split('/').filter(Boolean);
+  return segments.some(
+    (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
+  );
+}
+
 /**
  * A page about a collective offered as one person's research website: a research
  * group's own root, a department's audience-recruitment page, a department's hiring
@@ -1118,8 +1137,8 @@ export function isUmbrellaPageCitedByPerson(
 }
 
 /**
- * A department's audience-recruitment, hiring or programme page, which describes what
- * the department offers rather than one lab or person, so it is never the source of a
+ * A department's audience-recruitment, hiring, programme or course page, which describes
+ * what the department offers rather than one lab or person, so it is never the source of a
  * row's description. A research group's own host, its `/lab/` path on a shared school
  * host, or a personal-site path is exempt: its openings page is the group writing about
  * itself.
@@ -1134,7 +1153,8 @@ export function isDepartmentCollectivePageUrl(value: unknown): boolean {
   return (
     isDepartmentAudiencePageUrl(value) ||
     isDepartmentHiringPageUrl(value) ||
-    isDepartmentProgrammePageUrl(value)
+    isDepartmentProgrammePageUrl(value) ||
+    isCoursePageUrl(value)
   );
 }
 
@@ -1727,6 +1747,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'department-opportunities-path'
   | 'school-section-page'
   | 'posting-page'
+  | 'course-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1779,6 +1800,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'department-opportunities-path',
   'school-section-page',
   'posting-page',
+  'course-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1852,6 +1874,7 @@ export function researchHomeWebsiteUrlDecision(
   // the donor whose fund it commemorates rather than the row's subject (#2460).
   if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
   if (isPostingPageCitedAsResearchWebsite(raw, entity)) return refuse('posting-page');
+  if (isCoursePageUrl(raw)) return refuse('course-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {
