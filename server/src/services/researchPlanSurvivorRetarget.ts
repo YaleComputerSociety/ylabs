@@ -51,6 +51,46 @@ export async function retargetResearchPlansToMergeSurvivors(input: {
   report.archivedTargets = archivedTargets.length;
 
   const duplicatesBySurvivor = new Map<string, mongoose.Types.ObjectId[]>();
+  const addDuplicate = (survivorId: string, duplicateId: mongoose.Types.ObjectId) =>
+    duplicatesBySurvivor.set(survivorId, [
+      ...(duplicatesBySurvivor.get(survivorId) ?? []),
+      duplicateId,
+    ]);
+
+  // Beta and Production hold no archived rows (#5148), so a plan there points at an id
+  // that no row carries, and its survivor is the live row naming it in `mergedFrom`.
+  const presentIds = new Set(
+    (
+      await ResearchEntity.find({ _id: { $in: targetIds } })
+        .select('_id')
+        .lean()
+    ).map((row: any) => String(row._id)),
+  );
+  const absentIds = targetIds.filter((id) => !presentIds.has(String(id)));
+  if (absentIds.length > 0) {
+    const survivors = (await ResearchEntity.find({
+      archived: { $ne: true },
+      'mergedFrom.entityId': { $in: absentIds },
+    })
+      .select('_id mergedFrom.entityId')
+      .lean()) as Array<{
+      _id: mongoose.Types.ObjectId;
+      mergedFrom?: Array<{ entityId?: unknown }>;
+    }>;
+    const survivorByMergedId = new Map<string, string>();
+    for (const survivor of survivors) {
+      for (const entry of survivor.mergedFrom ?? []) {
+        survivorByMergedId.set(String(entry.entityId), String(survivor._id));
+      }
+    }
+    for (const absentId of absentIds) {
+      const survivorId = survivorByMergedId.get(String(absentId));
+      if (!survivorId) continue;
+      report.mergedTargets += 1;
+      addDuplicate(survivorId, new mongoose.Types.ObjectId(String(absentId)));
+    }
+  }
+
   for (const archived of archivedTargets) {
     const { canonical } = await walkResearchEntityTombstoneChainWithCause(archived, {
       findById: findEntityById,
@@ -60,8 +100,7 @@ export async function retargetResearchPlansToMergeSurvivors(input: {
       continue;
     }
     report.mergedTargets += 1;
-    const key = String(canonical._id);
-    duplicatesBySurvivor.set(key, [...(duplicatesBySurvivor.get(key) ?? []), archived._id]);
+    addDuplicate(String(canonical._id), archived._id);
   }
   report.survivors = duplicatesBySurvivor.size;
 

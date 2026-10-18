@@ -113,7 +113,8 @@ Classify a research home by observing `entityType`: a source that observes only 
 A live row also carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, one entry per archived row whose `canonicalGroupId` chain ends on it (#5148).
 It is derived rather than written by a lane: `research-entity:derive-survivor-aliases` (`server/src/services/researchEntityMergedFrom.ts`) reads every tombstone, flattens chains onto the final live survivor, credits nobody for a chain that cycles, points at a missing row, or ends on an archived row, and sets each survivor's list exactly, clearing it from a row left with none.
 It runs as the `survivor-alias-derivation` Development sweep stage, writes with `timestamps: false` because the field is neither served nor indexed, and a second run plans no write.
-It exists so Beta and Production can resolve an old slug or id from the live survivor once promotion stops copying archived rows; until a reader uses it, the tombstones stay the source of truth and `mergedFrom` changes no served output.
+Beta and Production hold no archived rows, so they resolve a merge from it: the old-slug redirect behind the API 302 and the page-shell 301 falls back to the one live, publicly servable row whose `mergedFrom.slug` matches, `research-plans:retarget-merged` moves a plan on an id no row carries to the survivor whose `mergedFrom.entityId` names it, and saved-plan status reports such a plan as merged.
+The Development-to-Beta copy re-derives the list at copy time rather than trusting the stored one, so a merge made after the last sweep still reaches Beta with its survivor's entry.
 On Development on 2026-10-18 it planned 3,640 entries on 1,850 survivors from 3,715 tombstones, 75 of which name no live survivor.
 
 ### `RoleAssignment` (`role_assignments`)

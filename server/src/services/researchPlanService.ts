@@ -428,6 +428,25 @@ interface PartitionedSavedResearchEntities {
  * rules themselves are unchanged: not archived, at a public tier, and clearing
  * `researchEntityServesPublicDetail`.
  */
+// Beta and Production hold no archived rows (#5148), so a saved id that no row carries is
+// a merge when a live survivor names it in `mergedFrom`, and removed otherwise.
+const idsNamedInMergedFrom = async (ids: readonly string[]): Promise<Set<string>> => {
+  if (ids.length === 0) return new Set();
+  const survivors = (await ResearchEntity.find({
+    archived: { $ne: true },
+    'mergedFrom.entityId': { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select('mergedFrom.entityId')
+    .lean()) as Array<{ mergedFrom?: Array<{ entityId?: unknown }> }>;
+  const wanted = new Set(ids);
+  return new Set(
+    survivors
+      .flatMap((survivor) => survivor.mergedFrom ?? [])
+      .map((entry) => (serializedDocumentId(entry.entityId) || '').toLowerCase())
+      .filter((id) => wanted.has(id)),
+  );
+};
+
 const partitionSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
 ): Promise<PartitionedSavedResearchEntities> => {
@@ -445,12 +464,19 @@ const partitionSavedResearchEntities = async (
     ]),
   );
 
+  const mergedIntoSurvivor = await idsNamedInMergedFrom(
+    normalizedIds.filter((id) => !verdictById.has(id)),
+  );
+
   const servableEntities: Array<Record<string, any>> = [];
   const unavailableSavedResearchEntities: UnavailableSavedResearchEntity[] = [];
   for (const id of normalizedIds) {
     const verdict = verdictById.get(id);
     if (!verdict) {
-      unavailableSavedResearchEntities.push({ _id: id, reason: 'REMOVED' });
+      unavailableSavedResearchEntities.push({
+        _id: id,
+        reason: mergedIntoSurvivor.has(id) ? 'MERGED' : 'REMOVED',
+      });
     } else if (verdict.entity.archived === true) {
       unavailableSavedResearchEntities.push({
         _id: id,
