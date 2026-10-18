@@ -20,6 +20,7 @@ import {
 import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
+  waitForMeiliTask,
   MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
   MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   type MeiliTaskWaitingIndex,
@@ -893,7 +894,7 @@ async function readSwapTaskIfVisible(
 ): Promise<{ status?: string; error?: unknown } | null> {
   if (typeof client.tasks?.waitForTask !== 'function') return null;
   try {
-    return await client.tasks.waitForTask(taskUid, { timeout: timeoutMs });
+    return await waitForMeiliTask(client.tasks, taskUid, timeoutMs);
   } catch (error) {
     if (isMeiliTaskNotFoundError(error)) return null;
     throw error;
