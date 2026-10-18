@@ -149,6 +149,12 @@ describe('resolveFundYearOfStudy reads a level quantified by "at any level" as t
     ).toEqual({ kind: 'filter', values: ['PhD Post-Candidacy'] });
   });
 
+  it('does not read a quantified level followed by an exception as the whole level', () => {
+    expect(
+      nonEligibility('Open to undergraduates in all years but the first.', ['Sophomore', 'Junior']),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+  });
+
   it('still reads a year-named research grant as an unread year', () => {
     expect(
       nonEligibility('Any undergraduate students may apply for the first-year research grant.', [
