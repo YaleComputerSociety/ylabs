@@ -1074,6 +1074,32 @@ describe('LabDetail page', () => {
     expect(container.querySelector('blockquote')).toBeNull();
   });
 
+  it('shows the undergraduate count its Sources chip cites when no named roster is served', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, currentUndergradCount: 3 },
+      accessSignals: [
+        {
+          _id: 'signal-current-undergrads',
+          signalType: 'CURRENT_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: 'https://fixture-lab.example.org/our-team',
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('Current undergraduate members');
+    expect(text).toContain('lists 3 current undergraduates');
+    expect(screen.getByRole('link', { name: /See the lab.s page/ }).getAttribute('href')).toBe(
+      'https://fixture-lab.example.org/our-team',
+    );
+    await expectNoAxeViolations(container);
+  });
+
   it('lists the roster undergraduates instead of the quote when the lab page names them', async () => {
     const { container } = renderLabDetail({
       ...basePayload,

@@ -28,6 +28,7 @@ import ResearchProfileSkeleton, {
   researchProfileGridClassName,
   researchProfilePageClassName,
 } from '../components/labs/ResearchProfileSkeleton';
+import { undergraduateMemberEvidence } from '../utils/undergraduateMemberEvidence';
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
 import ResearchResultsBackLink from '../components/research/ResearchResultsBackLink';
 import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
@@ -67,6 +68,7 @@ import {
   resolveOutreachOfficialSource,
   vettedJoinPageUrls,
   ACCESS_SIGNAL_SOURCE_CONTEXTS,
+  isCitableAccessSignal,
   joinPageLinkLabel,
 } from '../utils/researchDetailSources';
 import { formatGrantSummary } from '../utils/grantAgencyNames';
@@ -457,6 +459,7 @@ const DecisionSummary = ({
   principalInvestigator,
   leadProfilesLinkedInline = false,
   rosterListsUndergraduates = false,
+  teamSectionCountsPastUndergraduates = false,
 }: {
   group: any;
   profileUrl?: string;
@@ -467,6 +470,7 @@ const DecisionSummary = ({
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
   rosterListsUndergraduates?: boolean;
+  teamSectionCountsPastUndergraduates?: boolean;
 }) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   const topics = detailTopics(group, 5);
@@ -477,7 +481,10 @@ const DecisionSummary = ({
     void captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group.recentGrants);
-  const pastAdvisees = formatPastAdvisees(group, rosterListsUndergraduates);
+  const pastAdvisees = formatPastAdvisees(
+    group,
+    rosterListsUndergraduates || teamSectionCountsPastUndergraduates,
+  );
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
@@ -1040,11 +1047,19 @@ const LabDetail = () => {
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
+  const undergraduateMembers = undergraduateMemberEvidence({
+    roster,
+    accessSignals: accessSignals.filter(isCitableAccessSignal),
+    currentUndergradCount: group.currentUndergradCount,
+    pastUndergradAdvisees: group.pastUndergradAdvisees,
+    fellowshipRecipients: group.fellowshipRecipients,
+  });
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
     sourceLinkHealth: group.sourceLinkHealth,
     sourceFieldContributions: group.sourceFieldContributions,
+    undergraduateMembers,
   });
   const primaryWebsiteUrl =
     group.websiteUrl &&
@@ -1237,6 +1252,9 @@ const LabDetail = () => {
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
             rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
+            teamSectionCountsPastUndergraduates={undergraduateMembers.countLines.some(
+              (line) => line.status === 'past',
+            )}
           />
 
           {showDedicatedPrincipalInvestigatorSection && (
@@ -1269,7 +1287,11 @@ const LabDetail = () => {
             </section>
           )}
 
-          <ResearchTeamSection members={members} roster={roster} />
+          <ResearchTeamSection
+            members={members}
+            roster={roster}
+            undergraduateCounts={undergraduateMembers.countLines}
+          />
 
           <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
 
