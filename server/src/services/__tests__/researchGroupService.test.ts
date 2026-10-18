@@ -6333,6 +6333,28 @@ describe('a query word no row carries does not empty the search', () => {
     expect(keywordLegTexts()).not.toContain('plague');
   });
 
+  it('probes no single word when only one word was typed', async () => {
+    await searchWithKeywordRowsFor(unmatchedWord, []);
+
+    expect(
+      mocks.search.mock.calls.filter(([, params]) => !params.hybrid && params.hitsPerPage === 1),
+    ).toEqual([]);
+  });
+
+  it('probes each distinct word once and none past the tenth', async () => {
+    const searchedWords = Array.from({ length: 10 }, (_word, position) => `word${position}`);
+    const ignoredWords = Array.from({ length: 30 }, (_word, position) => `extra${position}`);
+    await searchWithKeywordRowsFor(
+      [unmatchedWord, unmatchedWord, ...searchedWords.slice(1), ...ignoredWords].join(' '),
+      [],
+    );
+
+    const probedWords = keywordLegTexts().filter((text) => !text.includes(' '));
+    expect(probedWords.filter((text) => text === unmatchedWord)).toHaveLength(1);
+    expect(probedWords).toEqual(expect.arrayContaining(searchedWords.slice(1)));
+    expect(probedWords.filter((text) => text.startsWith('extra'))).toEqual([]);
+  });
+
   it('serves nothing from the keyword leg when no typed word matches a row', async () => {
     const result = await searchWithKeywordRowsFor(`${unmatchedWord} qwfpgjz`, []);
 

@@ -555,6 +555,8 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// Meilisearch ignores every query word past the tenth.
+const MEILISEARCH_QUERY_WORD_LIMIT = 10;
 // A candidate-pool hit is never served. It is reduced to its id, and the served
 // row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
 // 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
@@ -2028,12 +2030,15 @@ async function searchResearchGroupsForQuery(
   // the whole search, while the same word typed last was dropped harmlessly. Such a
   // word is searched for alone, and when no row matches it the rest of the query is
   // searched as if it had not been typed.
-  const keywordWordsSomeRowMatches = async (keywordText: string): Promise<string[]> => {
-    const words = keywordText.split(/\s+/).filter(Boolean);
+  const wordsSomeRowMatches = async (words: string[]): Promise<string[]> => {
+    const distinctWords = [...new Set(words)];
     const matched = await Promise.all(
-      words.map(async (word) => !servesNoKeywordRow(await searchKeywordLeg(word, 'all', 1))),
+      distinctWords.map(
+        async (word) => !servesNoKeywordRow(await searchKeywordLeg(word, 'all', 1)),
+      ),
     );
-    return words.filter((_word, position) => matched[position]);
+    const matchedWords = new Set(distinctWords.filter((_word, position) => matched[position]));
+    return words.filter((word) => matchedWords.has(word));
   };
   const keywordLegSearch = (async (): Promise<KeywordLegOutcome> => {
     if (!runsHybridLegs) {
@@ -2046,9 +2051,13 @@ async function searchResearchGroupsForQuery(
     ) {
       return typedWordsOutcome;
     }
-    const matchedWords = await keywordWordsSomeRowMatches(meiliQueryText);
-    const typedWordCount = meiliQueryText.split(/\s+/).filter(Boolean).length;
-    if (matchedWords.length === 0 || matchedWords.length === typedWordCount) {
+    const searchedWords = meiliQueryText
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, MEILISEARCH_QUERY_WORD_LIMIT);
+    if (searchedWords.length <= 1) return typedWordsOutcome;
+    const matchedWords = await wordsSomeRowMatches(searchedWords);
+    if (matchedWords.length === 0 || matchedWords.length === searchedWords.length) {
       return typedWordsOutcome;
     }
     return searchKeywordLegWords(matchedWords.join(' '));
