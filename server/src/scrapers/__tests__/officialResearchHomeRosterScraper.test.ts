@@ -507,6 +507,22 @@ describe('heading-list document-order walker', () => {
     ]);
   });
 
+  it('opens a section at a role heading after a name heading rather than titling that card', () => {
+    const html = `<html><body><main>
+      <h2>Team</h2>
+      <h3>Rowan Thistle</h3>
+      <h4>Undergraduate Researcher</h4>
+      <h5>Avery Quill</h5>
+    </main></body></html>`;
+    const roster = extractOfficialResearchHomeRoster(
+      html,
+      { ...config, currentSectionLabels: ['Team', 'Undergraduate Researcher'] },
+      observedAt,
+    );
+
+    expect(roster.undergraduates).toEqual([{ name: 'Avery Quill', status: 'current' }]);
+  });
+
   it('shows a name written in capitals in normal case', () => {
     const html = `<html><body><main><h3>Undergraduate Students</h3>
       <ul><li>AVERY QUILL</li><li>HARPER O'WREN-LARK</li></ul></main></body></html>`;
