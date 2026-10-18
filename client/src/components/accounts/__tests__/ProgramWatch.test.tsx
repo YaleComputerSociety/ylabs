@@ -132,6 +132,8 @@ describe('ProgramWatch', () => {
     expect(appliedCard.textContent).not.toMatch(/Closing soon|days left/);
     expect(within(appliedCard).getByText('Applied', { selector: 'span' })).toBeTruthy();
     expect(openCard.textContent).toMatch(/Closing soon|days left/);
+    expect(appliedCard.querySelector('.text-amber-700')).toBeNull();
+    expect(openCard.querySelector('.text-amber-700')).not.toBeNull();
     await waitFor(() =>
       expect(onSummaryChange).toHaveBeenLastCalledWith(
         expect.objectContaining({

@@ -65,7 +65,7 @@ const BrowseListItem = React.memo(
       daysUntil <= 14;
 
     const subtitle = getItemSubtitle(item);
-    const subtitleColor = getItemSubtitleColor(item);
+    const subtitleColor = statusBadgeOverride ? 'text-muted' : getItemSubtitleColor(item);
     const statusBadge = statusBadgeOverride ?? getItemStatusBadge(item);
     const guidanceHref = isDepartmentResearchGuidance(item.data)
       ? departmentResearchGuidanceHref(item.data)
