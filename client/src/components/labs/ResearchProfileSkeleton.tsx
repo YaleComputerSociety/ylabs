@@ -11,11 +11,11 @@ const SkeletonBar = ({ className }: { className: string }) => (
 );
 
 const ResearchProfileSkeleton = ({ leading }: { leading?: ReactNode }) => (
-  <div className={researchProfilePageClassName}>
+  <div role="status" aria-label="Loading research profile" className={researchProfilePageClassName}>
     <div className={researchProfileGridClassName}>
       <div className={researchProfileColumnClassName}>
         {leading}
-        <div role="status" aria-label="Loading research profile" className="space-y-6 sm:space-y-8">
+        <div className="space-y-6 sm:space-y-8">
           <div className="yr-panel flex flex-col gap-4 rounded-card p-4 sm:p-6">
             <div className="flex gap-2">
               <SkeletonBar className="h-6 w-16" />
