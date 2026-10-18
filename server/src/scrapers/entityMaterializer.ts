@@ -7660,6 +7660,15 @@ function enforceResearchEntityNameAuthority(input: {
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
     siteStatedLabName,
   });
+  fieldsWritten += reclassifyUnstatedOrganizationTypeOnFacultyResearchName({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    materializationObs: input.materializationObs,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
+  });
   fieldsWritten += reclassifyEvidencedFacultyResearchAsLab({
     set,
     unset,
@@ -7963,6 +7972,67 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
   set.name = derivedName;
   if (textValue(projected.displayName) && !input.manuallyLockedFields.includes('displayName')) {
     set.displayName = derivedName;
+  }
+  return 1;
+}
+
+const FACULTY_RESEARCH_NAME_SUFFIX = /\sFaculty Research$/;
+
+const ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED = new Set(['CENTER', 'INITIATIVE', 'INSTITUTE']);
+
+/**
+ * A row titled "<person> Faculty Research" whose organizational type no live
+ * observation states is that person's faculty research, so it is re-derived as
+ * `FACULTY_RESEARCH_AREA` on every resolve, with no lock.
+ *
+ * The type is what #3886 left behind: `official-profile-pi-backfill` asserted a linked
+ * home's name, kind and type as one claim, the name half was retired, and
+ * `withoutUnpairedProfileHomeIdentity` now withdraws the type half on every resolve.
+ * A withdrawn type resolves to nothing rather than to a rival, and a merged row's
+ * losers may not state a survivor-owned field, so the stored graft persisted with no
+ * evidence behind it while the name, which only a person-scoped roster composes,
+ * said faculty research. A live observation of the type, an operator edit included,
+ * keeps the row as it is, unless the operator has refused that type on the row.
+ *
+ * The suffix alone does not make a row person-scoped, so every word before it has to
+ * be a word of the lead's own name, as for `reclassifyUnbackedLabAsFacultyResearch`;
+ * an organization whose name ends the same way, or a leadless row, keeps its type.
+ */
+function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  materializationObs: MaterializerObservationLike[];
+  leadPersonName: unknown;
+}): number {
+  const { set, unset, confidenceByField, entityDoc } = input;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return 0;
+  }
+  const projected = documentAsProjected(set, unset, entityDoc);
+  const type = textValue(projected.entityType).toUpperCase();
+  if (!ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED.has(type)) return 0;
+  const names = [projected.name, projected.displayName].map(textValue).filter(Boolean);
+  const namesTheLeadsFacultyResearch = (name: string) =>
+    FACULTY_RESEARCH_NAME_SUFFIX.test(name) &&
+    eponymNamesOnlyTheLead(name.replace(FACULTY_RESEARCH_NAME_SUFFIX, ''), input.leadPersonName);
+  if (names.length === 0 || !names.every(namesTheLeadsFacultyResearch)) return 0;
+  const typeIsStated = input.materializationObs.some(
+    (observation) =>
+      observation.field === 'entityType' &&
+      textValue(observation.value).toUpperCase() === type &&
+      !valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', observation.value),
+  );
+  if (typeIsStated) return 0;
+
+  set.entityType = 'FACULTY_RESEARCH_AREA';
+  set.kind = mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA');
+  for (const field of ['entityType', 'kind']) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
   }
   return 1;
 }
