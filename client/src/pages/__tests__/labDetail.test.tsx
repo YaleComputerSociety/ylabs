@@ -1056,7 +1056,7 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
-    expect(text).not.toMatch(/Advised \d+ undergrad/);
+    expect(text).not.toMatch(/advised (\d+ )?undergrad/i);
   });
 
   it.each([
