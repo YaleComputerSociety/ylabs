@@ -1,3 +1,4 @@
+import { echoedQuery } from '../utils/echoedQuery';
 import {
   FormEvent,
   useCallback,
@@ -310,12 +311,12 @@ const resultSummary = (
   if (loading) {
     return query === FILTERED_RESULT_QUERY_LABEL
       ? 'Searching your filters'
-      : `Searching for '${query}'`;
+      : `Searching for '${echoedQuery(query)}'`;
   }
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
   if (degraded && matchingHomeCount === 0 && results.people.length === 0) {
-    return `No results could be confirmed for '${query}'.`;
+    return `No results could be confirmed for '${echoedQuery(query)}'.`;
   }
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research yet for ${departmentGapLabel}.`;
@@ -324,7 +325,7 @@ const resultSummary = (
   const homeSummary =
     query === FILTERED_RESULT_QUERY_LABEL
       ? `${homeCountLabel} match your filters`
-      : `${homeCountLabel} for '${query}'`;
+      : `${homeCountLabel} for '${echoedQuery(query)}'`;
   const parts = [homeSummary];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));

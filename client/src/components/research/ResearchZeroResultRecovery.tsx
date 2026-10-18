@@ -1,3 +1,4 @@
+import { echoedQuery } from '../../utils/echoedQuery';
 import ActiveFilterChip from './ActiveFilterChip';
 import ResearchProgramsHandoff from './ResearchProgramsHandoff';
 import {
@@ -104,7 +105,7 @@ const ResearchZeroResultRecovery = ({
     {relaxedQuery && (
       <div className="mt-4">
         <button type="button" onClick={onRelaxQuery} className={actionClassName}>
-          Search &lsquo;{relaxedQuery}&rsquo; instead
+          Search &lsquo;{echoedQuery(relaxedQuery)}&rsquo; instead
         </button>
       </div>
     )}
