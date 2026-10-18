@@ -58,11 +58,7 @@ const BrowseListItem = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
-      !statusBadgeOverride &&
-      item.type === 'fellowship' &&
-      daysUntil !== null &&
-      daysUntil > 0 &&
-      daysUntil <= 14;
+      !statusBadgeOverride && item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
 
     const subtitle = getItemSubtitle(item);
     const subtitleColor = statusBadgeOverride ? 'text-muted' : getItemSubtitleColor(item);

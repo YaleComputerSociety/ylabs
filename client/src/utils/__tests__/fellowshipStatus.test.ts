@@ -312,3 +312,25 @@ describe('getStructuredEligibilityDetails', () => {
     expect(stored('2026-04-20T17:00:00.000Z')).toBe('deadlinePassed');
   });
 });
+
+describe('the closing-soon countdown matches the calendar (#5158)', () => {
+  const morning = new Date('2026-10-18T13:30:00.000Z');
+
+  it('says 17 days left for a deadline 17 calendar days away at 1 PM', () => {
+    expect(
+      getFellowshipApplicationStatus(
+        makeFellowship({ deadline: '2026-11-04T18:00:00.000Z', isAcceptingApplications: true }),
+        morning,
+      ).detail,
+    ).toBe('17 days left');
+  });
+
+  it('says due today for a deadline later the same day', () => {
+    expect(
+      getFellowshipApplicationStatus(
+        makeFellowship({ deadline: '2026-10-18T22:00:00.000Z', isAcceptingApplications: true }),
+        morning,
+      ).detail,
+    ).toBe('Due today');
+  });
+});

@@ -4,7 +4,11 @@ import {
   STALE_DEADLINE_STATUS_LABEL,
   getFellowshipApplicationStatus,
 } from './fellowshipStatus';
-import { formatShortProgramDate, programDeadlineClosingInstant } from './programDates';
+import {
+  formatShortProgramDate,
+  newYorkCalendarDaysUntil,
+  programDeadlineClosingInstant,
+} from './programDates';
 
 export const CLOSING_SOON_DAYS = 30;
 
@@ -105,8 +109,8 @@ export function getFellowshipCycleStatus(
   }
 
   if (isOpen && deadline) {
-    const daysUntil = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) {
+    const daysUntil = newYorkCalendarDaysUntil(deadline, now);
+    if (daysUntil <= CLOSING_SOON_DAYS && daysUntil >= 0) {
       return {
         category: 'closingSoon',
         label: 'Closing soon',

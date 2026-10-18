@@ -4,6 +4,7 @@ import {
   formatProgramDate,
   formatShortProgramDate,
   isDateOnlyProgramDeadline,
+  newYorkCalendarDaysUntil,
   programDeadlineClosingInstant,
 } from '../programDates';
 
@@ -65,5 +66,34 @@ describe('programDeadlineClosingInstant', () => {
       '2027-03-24T17:00:00.000Z',
     );
     expect(isDateOnlyProgramDeadline(new Date('2027-03-25T03:59:00.000Z'))).toBe(false);
+  });
+});
+
+describe('newYorkCalendarDaysUntil counts calendar days in New York (#5158)', () => {
+  it('counts a deadline later in the day by the calendar rather than rounding the hours up', () => {
+    expect(
+      newYorkCalendarDaysUntil(
+        new Date('2026-11-04T18:00:00.000Z'),
+        new Date('2026-10-18T13:30:00.000Z'),
+      ),
+    ).toBe(17);
+  });
+
+  it('reads a deadline due later today as zero days away', () => {
+    expect(
+      newYorkCalendarDaysUntil(
+        new Date('2026-10-18T22:00:00.000Z'),
+        new Date('2026-10-18T13:30:00.000Z'),
+      ),
+    ).toBe(0);
+  });
+
+  it('uses the New York day, not the UTC day, on both ends', () => {
+    expect(
+      newYorkCalendarDaysUntil(
+        new Date('2026-10-19T03:30:00.000Z'),
+        new Date('2026-10-18T23:30:00.000Z'),
+      ),
+    ).toBe(0);
   });
 });

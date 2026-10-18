@@ -210,6 +210,10 @@ A program whose served deadline is stale sits under no dates posted and in no ti
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
 The citizenship filter keeps a not-stated program, because unknown is not ineligible.
+Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
+When a program's own text ties exactly one date to the deadline and the served deadline's month and day appear nowhere in the text, the detail view says so and points to the official page, because the reader cannot tell which cycle each was written in (`programTextDeadlineConflict`, #5158).
+A projected or stale deadline is never flagged, because the page already labels it.
+The flag is conservative and can miss a conflict: text that ties two or more dates to the deadline is not flagged.
 The "program" split-brain is resolved: programs and fellowships live only on the `/programs` surface.
 The Fellowship to `ResearchEntity` projection that mirrored each `Fellowship` into `/research` as an `RA_PROGRAM`/`FELLOWSHIP_PROGRAM` entity was removed, along with those two `entityType` values, the `/research` "Related programs & fellowships" cross-surface module, and the now-dead funding-program topic derivation that only enriched projected programs.
 The `PROGRAM` `entityType` was then removed entirely (see `docs/decisions.md` 2026-08-26), so no program is a `/research` citizen: every program lives only on `/programs` (backed by `Fellowship`), and department "undergraduate research" pages materialize as `Fellowship` records rather than research homes.

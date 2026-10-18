@@ -307,6 +307,22 @@ describe('FellowshipModal', () => {
     expect(within(screen.getByRole('dialog')).getAllByText(answer).length).toBeGreaterThan(0);
   });
 
+  it('flags a deadline the program text gives on another day (#5158)', () => {
+    renderModal({ deadlineTextConflict: '2026-02-19' });
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        /own text gives Feb 19, 2026\. Confirm the deadline on the official page\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says nothing about the text when it agrees with the deadline', () => {
+    renderModal({ deadlineTextConflict: null });
+
+    expect(within(screen.getByRole('dialog')).queryByText(/own text gives/)).toBeNull();
+  });
+
   it('does not render an application action for unsafe application links', () => {
     const { container } = renderModal({ applicationLink: 'javascript:alert(1)' });
 

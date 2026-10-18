@@ -13,6 +13,7 @@ import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
 import { programAudience } from '../services/programAudience';
 import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
+import { programTextDeadlineConflict } from '../utils/programDeadlineText';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -189,6 +190,11 @@ export const withProgramAudience = (program: any) =>
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   const departmentResearchGuidance = program.departmentResearchGuidance === true;
+  const summary = publicProgramDescription(program.summary);
+  const description = publicProgramDescription(program.description);
+  const applicationInformation = publicProgramDescription(program.applicationInformation);
+  const eligibility = servedProgramEligibility(program).value;
+  const additionalInformation = publicProgramDescription(program.additionalInformation);
   return {
     _id: id,
     id,
@@ -212,13 +218,13 @@ export const publicProgramForReader = (program: any) => {
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
-    summary: publicProgramDescription(program.summary),
+    summary,
     cardSummary: publicProgramDescription(program.cardSummary),
-    description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramDescription(program.applicationInformation),
-    eligibility: servedProgramEligibility(program).value,
+    description,
+    applicationInformation,
+    eligibility,
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
-    additionalInformation: publicProgramDescription(program.additionalInformation),
+    additionalInformation,
     links: publicProgramLinks(program.links, program.sourceUrl),
     applicationLink: servedProgramApplicationLink(program).value,
     awardAmount: program.awardAmount,
@@ -227,6 +233,15 @@ export const publicProgramForReader = (program: any) => {
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
+    deadlineTextConflict:
+      programTextDeadlineConflict(
+        program.deadline,
+        [summary, description, applicationInformation, eligibility, additionalInformation],
+        {
+          projected: program.deadlineProjectedNextCycle === true,
+          stale: program.deadlineStale === true,
+        },
+      ) ?? null,
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],
