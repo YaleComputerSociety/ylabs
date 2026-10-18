@@ -84,6 +84,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
+    expect(screen.getByRole('heading', { level: 2, name: 'Watched programs' })).toBeTruthy();
     expect(screen.getByText('Travel Fellowship')).toBeTruthy();
     expect(screen.getByText('Note: Ask about housing')).toBeTruthy();
     await waitFor(() =>

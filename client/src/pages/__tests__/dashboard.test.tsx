@@ -41,7 +41,7 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
     useEffect(() => {
       onSummaryChange?.(programSummary);
     }, [onSummaryChange]);
-    return <section>Program watch list</section>;
+    return <section>Watched programs list</section>;
   };
 
   return { default: MockProgramWatch };
@@ -84,7 +84,7 @@ describe('Dashboard page', () => {
     expect(screen.queryByRole('tab', { name: /Saved Searches/ })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Interests' })).toBeNull();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 watched program/)).toBeTruthy();
   });
@@ -260,7 +260,7 @@ describe('Dashboard page', () => {
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.queryByText('Profile editor')).toBeNull();
     expect(screen.queryByText('Faculty profile center')).toBeNull();
     expect(

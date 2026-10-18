@@ -364,7 +364,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     <section>
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="yr-display text-2xl font-semibold text-ink">Program watch</h2>
+          <h2 className="yr-display text-2xl font-semibold text-ink">Watched programs</h2>
           <p className="mt-1 text-sm text-muted">
             Programs and fellowships you are watching, with their deadlines, accepting status, and
             eligibility. Open one to see its details, or unwatch it.
