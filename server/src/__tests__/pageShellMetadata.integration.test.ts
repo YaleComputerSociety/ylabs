@@ -207,6 +207,36 @@ describe('the page shell carries per-page share metadata (#4240)', () => {
     expect(html).toContain('<div id="root"></div>');
   });
 
+  it.each(['/research/%E0%A4%A', '/research/abc%zz'])(
+    'answers an undecodable research path %s with the 404 shell rather than a 400',
+    async (requestPath) => {
+      const response = await fetch(`${baseUrl}${requestPath}`);
+      const html = await response.text();
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('content-type')).toMatch(/^text\/html/);
+      expect(html).toContain('<div id="root"></div>');
+    },
+  );
+
+  it('answers an undecodable non-research path with the app shell, like any unknown path', async () => {
+    const malformed = await fetch(`${baseUrl}/abc%zz/more`);
+    const unknown = await fetch(`${baseUrl}/synthetic-unknown/more`);
+    const html = await malformed.text();
+    await unknown.text();
+
+    expect(malformed.status).toBe(unknown.status);
+    expect(html).toContain('<div id="root"></div>');
+  });
+
+  it('still answers a non-page method on a client path without the shell', async () => {
+    const response = await fetch(`${baseUrl}/research/abc%zz`, { method: 'POST' });
+    const body = await response.text();
+
+    expect(response.status).toBe(404);
+    expect(body).not.toContain('<div id="root"></div>');
+  });
+
   it('redirects a merged shell permanently to its canonical page', async () => {
     const response = await fetch(`${baseUrl}/research/${MERGED_SHELL_SLUG}`, {
       redirect: 'manual',
