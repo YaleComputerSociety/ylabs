@@ -19,7 +19,7 @@ import {
 } from '../fellowshipService';
 
 describe('fellowship public serializer', () => {
-  it('sanitizes service-level public URL, contact, and prep-step fields', () => {
+  it('sanitizes public URLs and serves published contact details in prose (#5046)', () => {
     const payload = publicFellowshipForStudent({
       _id: '67d8928150621bcef434a1d5',
       title: 'Visible program',
@@ -46,15 +46,15 @@ describe('fellowship public serializer', () => {
     });
 
     expect(payload).toMatchObject({
-      summary: 'Email [email redacted] or call [phone redacted].',
-      prepSteps: ['Email [email redacted] or call [phone redacted].'],
+      summary: 'Email prose-contact@yale.edu or call 203-555-1212.',
+      prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
       links: [
         {
-          label: 'Questions: [email redacted] or [phone redacted].',
+          label: 'Questions: hidden@example.edu or 203-555-0000.',
           url: 'https://example.yale.edu/program',
         },
       ],
-      sourceName: 'Questions: [email redacted] or [phone redacted].',
+      sourceName: 'Questions: source-contact@yale.edu or 203-555-2222.',
     });
     expect(payload.applicationLink).toBeUndefined();
     expect(payload.sourceUrl).toBeUndefined();
@@ -63,13 +63,10 @@ describe('fellowship public serializer', () => {
     expect(payload.createdAt).toBeUndefined();
     expect(payload.updatedAt).toBeUndefined();
     expect(payload.score).toBeUndefined();
-    expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('source-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('hidden@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('attacker@example.test');
     expect(JSON.stringify(payload)).not.toContain('user:pass');
     expect(JSON.stringify(payload)).not.toContain('javascript:');
-    expect(JSON.stringify(payload)).not.toContain('203-555');
+    expect(JSON.stringify(payload)).not.toContain('203-555-9999');
   });
 
   it('strips curation-rationale description prose the visibility gate rejects', () => {

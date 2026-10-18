@@ -18,7 +18,6 @@ import {
   type ProgramClassification,
   type ProgramClassificationInput,
 } from '../services/programClassifier';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
 import { FELLOWSHIP_DESCRIPTION_FIELDS } from './fellowshipProse';
 
@@ -141,15 +140,15 @@ const CLASSIFIER_PROSE_FIELDS = [
 /**
  * The stored description is the display copy, capped by the sanitizer, so a requirement
  * stated past the cap was invisible to the classifier (#4232). The classifier reads the
- * observed text through the same sanitizer without the cap. Every prose field is
- * contact-redacted first, so no raw address reaches anything derived from it and stored.
+ * observed text through the same sanitizer without the cap. Contact details the program
+ * page publishes are kept, like the rest of its public prose (#5046).
  */
 export function fellowshipClassifierProse(field: string, value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   return textOrUndefined(
     FELLOWSHIP_DESCRIPTION_FIELDS.has(field)
       ? sanitizeStoredCatalogDescription(value, Number.POSITIVE_INFINITY)
-      : redactDirectContactInfo(value),
+      : value,
   );
 }
 

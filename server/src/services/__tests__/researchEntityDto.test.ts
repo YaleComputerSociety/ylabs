@@ -842,7 +842,7 @@ describe('researchEntityDto', () => {
     ]);
   });
 
-  it('redacts direct contact details recursively from public text fields', () => {
+  it('redacts names, labels and descriptions but serves the contact a way in publishes (#5046)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-recursive-redaction',
       slug: 'recursive-redaction-lab',
@@ -864,9 +864,7 @@ describe('researchEntityDto', () => {
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
     expect(dto).not.toHaveProperty('planningContext');
-    expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
-    expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
-    expect(JSON.stringify(dto)).not.toContain('203-555-1212');
+    expect(dto.waysIn).toEqual([{ label: 'Email hidden@example.edu to ask about openings.' }]);
   });
 
   it('strips glued "YSM Researcher" role-label boilerplate from researchAreas chips (#742)', () => {

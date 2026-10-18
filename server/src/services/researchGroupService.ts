@@ -104,7 +104,6 @@ import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
 } from '../utils/researchEntityDeceasedLead';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -3416,9 +3415,7 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 const MAX_PUBLIC_DETAIL_TEXT_LENGTH = 5000;
 
 const publicString = (value: unknown): string | undefined =>
-  typeof value === 'string'
-    ? redactDirectContactInfo(value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH))
-    : undefined;
+  typeof value === 'string' ? value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH) : undefined;
 
 const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | undefined => {
   const url = publicHttpUrl(value);

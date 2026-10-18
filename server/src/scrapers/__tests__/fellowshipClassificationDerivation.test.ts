@@ -136,7 +136,7 @@ describe('planFellowshipClassification reads the whole observed prose (#4232)', 
     expect(plan.classification.requiresMentorBeforeApply).toBe(false);
   });
 
-  it('never hands the classifier a raw contact address from any prose field', () => {
+  it('hands the classifier the contact addresses the program page publishes (#5046)', () => {
     const address = 'fixture.office@example.edu';
     const input = fellowshipClassifierInput({
       stored: { title: 'Fixture Research Grant', additionalInformation: `Write to ${address}.` },
@@ -146,9 +146,9 @@ describe('planFellowshipClassification reads the whole observed prose (#4232)', 
         eligibility: `Open to juniors. Email ${address} to confirm.`,
       },
     });
-    expect(JSON.stringify(input)).not.toContain(address);
+    expect(JSON.stringify(input)).not.toMatch(/redacted/i);
     expect(input.description?.length).toBeGreaterThan(2000);
-    expect(input.eligibility).toContain('[email redacted]');
-    expect(input.additionalInformation).toContain('[email redacted]');
+    expect(input.eligibility).toContain(address);
+    expect(input.additionalInformation).toContain(address);
   });
 });

@@ -717,23 +717,31 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
   });
 });
 
-describe('sanitizeEvidenceExcerpt redaction-marker drop (#1076)', () => {
-  it('redacts raw contact details and drops a marker-only directive entirely', () => {
-    expect(sanitizeEvidenceExcerpt('Email us at intake@example.edu')).toBe('');
-    expect(sanitizeEvidenceExcerpt('Phone: 203-432-1234 Email: intake@example.edu')).toBe('');
-    expect(sanitizeEvidenceExcerpt('Contact: <intake@example.edu>')).toBe('');
+describe('sanitizeEvidenceExcerpt contact details and legacy markers (#1076, #5046)', () => {
+  it('keeps the contact details a public page publishes', () => {
+    expect(sanitizeEvidenceExcerpt('Email us at intake@example.edu')).toBe(
+      'Email us at intake@example.edu',
+    );
+    expect(sanitizeEvidenceExcerpt('Phone: 555-010-0000 Email: intake@example.edu')).toBe(
+      'Phone: 555-010-0000 Email: intake@example.edu',
+    );
   });
 
-  it('keeps substantive sentences and drops the marker-bearing sentence', () => {
+  it('drops a marker-only directive left by an earlier redaction', () => {
+    expect(sanitizeEvidenceExcerpt('Email us at [email redacted]')).toBe('');
+    expect(sanitizeEvidenceExcerpt('Phone: [phone redacted] Email: [email redacted]')).toBe('');
+  });
+
+  it('keeps substantive sentences and drops the legacy marker-bearing sentence', () => {
     expect(
       sanitizeEvidenceExcerpt(
-        'We welcome undergraduate researchers year-round. Email us at intake@example.edu.',
+        'We welcome undergraduate researchers year-round. Email us at [email redacted].',
       ),
     ).toBe('We welcome undergraduate researchers year-round.');
   });
 
-  it('never salvages a marker-bearing sentence into a mangled label fragment', () => {
-    const cleaned = sanitizeEvidenceExcerpt('Questions: intake@example.edu or 203-432-1234.');
+  it('never salvages a legacy marker-bearing sentence into a mangled label fragment', () => {
+    const cleaned = sanitizeEvidenceExcerpt('Questions: [email redacted] or [phone redacted].');
     expect(cleaned).not.toMatch(/redacted/i);
     expect(cleaned).toBe('');
   });
@@ -1037,12 +1045,17 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
     expect(sanitizeStoredCatalogDescription(clean)).toBe(clean);
   });
 
-  it('redacts a raw email and removes the resulting token so stored prose stays clean', () => {
+  it('keeps a contact address the program page publishes (#5046)', () => {
     const withEmail =
       'The grant supports undergraduate research each summer. Questions can be directed to grants@example.edu.';
-    const cleaned = sanitizeStoredCatalogDescription(withEmail);
+    expect(sanitizeStoredCatalogDescription(withEmail)).toBe(withEmail);
+  });
+
+  it('removes a legacy redaction token so stored prose stays clean', () => {
+    const cleaned = sanitizeStoredCatalogDescription(
+      'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].',
+    );
     expect(cleaned).not.toMatch(/redacted/i);
-    expect(cleaned).not.toMatch(/@example\.edu/);
     expect(cleaned).toBe(
       'The grant supports undergraduate research each summer. Questions can be directed.',
     );
@@ -3373,7 +3386,7 @@ describe('short description whole-sentence cap (#2184)', () => {
       'The Jordan Q. Fixture Fellowship is named for the first graduate of the program to earn a Ph.D.';
     expect(
       sanitizeStoredCatalogDescription(
-        `${lead} The fellowship funds summer research. For questions, please contact fixture.office@example.edu about eligibility.`,
+        `${lead} The fellowship funds summer research. For questions, please contact [email redacted] about eligibility.`,
       ),
     ).toBe(`${lead} The fellowship funds summer research.`);
   });
@@ -3390,9 +3403,7 @@ describe('short description whole-sentence cap (#2184)', () => {
       ),
     ).toBe('The lab studies Hepatitis B.');
     expect(
-      sanitizeEvidenceExcerpt(
-        'The lab studies Vitamin D. Contact fixture.office@example.edu for details.',
-      ),
+      sanitizeEvidenceExcerpt('The lab studies Vitamin D. Contact [email redacted] for details.'),
     ).toBe('The lab studies Vitamin D.');
   });
 

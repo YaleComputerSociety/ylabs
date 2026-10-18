@@ -549,19 +549,29 @@ const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrant
 
 const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradEvidenceQuote']);
 
-function publicTextValue(value: unknown): unknown {
+const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set([
+  'waysIn',
+  'recentGrants',
+  'leadHonors',
+  'fundingAgencies',
+]);
+
+function publicTextValue(value: unknown, keepContacts = false): unknown {
   if (typeof value === 'string') {
-    return redactDirectContactInfo(value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH));
+    const bounded = value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+    return keepContacts ? bounded : redactDirectContactInfo(bounded);
   }
   if (Array.isArray(value)) {
-    return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS).map(publicTextValue);
+    return value
+      .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS)
+      .map((item) => publicTextValue(item, keepContacts));
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const source = value as Record<string, unknown>;
     return Object.fromEntries(
       Object.keys(source)
         .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS)
-        .map((key) => [key, publicTextValue(source[key])]),
+        .map((key) => [key, publicTextValue(source[key], keepContacts)]),
     );
   }
   return value;
@@ -626,7 +636,9 @@ function derivePublicResearchEntityDto(
     if (options.forList && LIST_TRIMMED_DETAIL_ONLY_FIELDS.has(field)) continue;
     if (wayInWithheld && WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD.has(field)) continue;
     if (isCurrentFundingField(field)) {
-      if (currentFunding[field] !== undefined) dto[field] = publicTextValue(currentFunding[field]);
+      if (currentFunding[field] !== undefined) {
+        dto[field] = publicTextValue(currentFunding[field], CONTACT_SHOWN_PUBLIC_FIELDS.has(field));
+      }
       continue;
     }
     if (field === 'shortDescription') {
@@ -699,7 +711,7 @@ function derivePublicResearchEntityDto(
         dto[field] = publicResearchAreaArray(served[field]);
         continue;
       }
-      dto[field] = publicTextValue(group[field]);
+      dto[field] = publicTextValue(group[field], CONTACT_SHOWN_PUBLIC_FIELDS.has(field));
     }
   }
 

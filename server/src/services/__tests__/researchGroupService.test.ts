@@ -4285,7 +4285,7 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.accessSignals[0]).toEqual(
       expect.objectContaining({
         signalType: 'CONTACT_INSTRUCTIONS_EXIST',
-        excerpt: 'Questions can go to [email redacted] or [phone redacted].',
+        excerpt: 'Questions can go to private-signal@yale.edu or 203-432-1234.',
       }),
     );
     expect(detail?.accessSignals[0].sourceUrl).toBeUndefined();
