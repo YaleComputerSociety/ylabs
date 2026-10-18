@@ -3,11 +3,9 @@ import { sourceLedgerKey } from './researchDetailSources';
 
 export type UndergraduateMemberStatus = 'current' | 'past';
 
-export interface UndergraduateMemberCount {
-  status: UndergraduateMemberStatus;
-  count: number;
-  sourceUrl: string;
-}
+export type UndergraduateMemberLine =
+  | { status: 'current'; count: number; sourceUrl: string }
+  | { status: 'past'; sourceUrl: string };
 
 interface MemberSignal {
   signalType?: string;
@@ -23,7 +21,7 @@ export interface UndergraduateMemberEvidenceInput {
 }
 
 export interface UndergraduateMemberEvidence {
-  countLines: UndergraduateMemberCount[];
+  memberLines: UndergraduateMemberLine[];
   shownStatuses: ReadonlySet<UndergraduateMemberStatus>;
   citesFellowshipRecipients: (sourceUrl?: string) => boolean;
 }
@@ -46,9 +44,10 @@ const positive = (value: unknown): number => {
  * the research team section and the Sources chips that cite it cannot disagree.
  *
  * A named roster shows its statuses. Where it does not, a member signal still backs a
- * count read off the lab's own page (the count behind "Has hosted undergraduate
- * researchers"), so the section states the count and links that page. A past-member
- * signal citing a fellowship booklet is the fellowship section's evidence, not a roster.
+ * line read off the lab's own page, so the section states it and links that page. Only
+ * the current line carries a number: the roster-alumni count undercounts long alumni
+ * lists (see `formatPastAdvisees`). A past-member signal citing a fellowship booklet is
+ * the fellowship section's evidence, not a roster.
  */
 export function undergraduateMemberEvidence(
   input: UndergraduateMemberEvidenceInput,
@@ -73,29 +72,33 @@ export function undergraduateMemberEvidence(
   const pastAdviseesAreRosterAlumni = pastAdvisees.every(
     (entry) => entry?.programName === ROSTER_ALUMNI_PROGRAM_NAME,
   );
-  const rosterAlumniCount = pastAdviseesAreRosterAlumni
-    ? pastAdvisees.reduce((sum, entry) => sum + (entry.count ?? 1), 0)
-    : 0;
-  const countFor: Record<UndergraduateMemberStatus, number> = {
-    current: positive(input.currentUndergradCount),
-    past: positive(rosterAlumniCount),
+  const listsRosterAlumni =
+    pastAdviseesAreRosterAlumni &&
+    positive(pastAdvisees.reduce((sum, entry) => sum + (entry.count ?? 1), 0)) > 0;
+  const currentCount = positive(input.currentUndergradCount);
+  const lineFor = (
+    status: UndergraduateMemberStatus,
+    sourceUrl: string,
+  ): UndergraduateMemberLine | null => {
+    if (status === 'past') return listsRosterAlumni ? { status, sourceUrl } : null;
+    return currentCount > 0 ? { status, count: currentCount, sourceUrl } : null;
   };
 
-  const countLines: UndergraduateMemberCount[] = [];
+  const memberLines: UndergraduateMemberLine[] = [];
   for (const signal of input.accessSignals ?? []) {
     const status = memberSignalStatus(signal.signalType);
     const sourceUrl = (signal.sourceUrl || '').trim();
     if (!status || !sourceUrl || rosterStatuses.has(status)) continue;
     if (citesFellowshipRecipients(sourceUrl)) continue;
-    if (countLines.some((line) => line.status === status)) continue;
-    if (countFor[status] === 0) continue;
-    countLines.push({ status, count: countFor[status], sourceUrl });
+    if (memberLines.some((line) => line.status === status)) continue;
+    const line = lineFor(status, sourceUrl);
+    if (line) memberLines.push(line);
   }
-  countLines.sort((left, right) =>
+  memberLines.sort((left, right) =>
     left.status === right.status ? 0 : left.status === 'current' ? -1 : 1,
   );
 
   const shownStatuses = new Set<UndergraduateMemberStatus>(rosterStatuses);
-  countLines.forEach((line) => shownStatuses.add(line.status));
-  return { countLines, shownStatuses, citesFellowshipRecipients };
+  memberLines.forEach((line) => shownStatuses.add(line.status));
+  return { memberLines, shownStatuses, citesFellowshipRecipients };
 }

@@ -6,7 +6,7 @@ import type {
   LabRosterUndergraduate,
 } from '../../types/labDetail';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
-import type { UndergraduateMemberCount } from '../../utils/undergraduateMemberEvidence';
+import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvidence';
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
 
@@ -177,16 +177,21 @@ function UndergraduateResearchers({
   );
 }
 
-function UndergraduateCountLine({ line }: { line: UndergraduateMemberCount }) {
+const memberLineHeading = (line: UndergraduateMemberLine): string =>
+  line.status === 'current' ? 'Undergraduate researchers' : 'Past undergraduate researchers';
+
+const memberLineText = (line: UndergraduateMemberLine): string =>
+  line.status === 'current'
+    ? `${line.count} current ${line.count === 1 ? 'undergraduate' : 'undergraduates'}`
+    : 'past undergraduate researchers';
+
+function UndergraduateMemberLineRow({ line }: { line: UndergraduateMemberLine }) {
   const sourceUrl = safeHttpUrl(line.sourceUrl);
-  const noun = line.count === 1 ? 'undergraduate' : 'undergraduates';
-  const heading =
-    line.status === 'current' ? 'Undergraduate researchers' : 'Past undergraduate researchers';
   return (
     <div>
-      <h3 className="mb-1 text-sm font-semibold text-ink">{heading}</h3>
+      <h3 className="mb-1 text-sm font-semibold text-ink">{memberLineHeading(line)}</h3>
       <p className="text-sm leading-relaxed text-ink-soft">
-        The lab&rsquo;s own page lists {line.count} {line.status} {noun}.{' '}
+        The lab&rsquo;s own page lists {memberLineText(line)}.{' '}
         {sourceUrl && (
           <a
             href={sourceUrl}
@@ -205,11 +210,11 @@ function UndergraduateCountLine({ line }: { line: UndergraduateMemberCount }) {
 export default function ResearchTeamSection({
   members,
   roster,
-  undergraduateCounts = [],
+  undergraduateLines = [],
 }: {
   members: LabMember[];
   roster: LabRosterDisclosure;
-  undergraduateCounts?: UndergraduateMemberCount[];
+  undergraduateLines?: UndergraduateMemberLine[];
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
@@ -217,13 +222,13 @@ export default function ResearchTeamSection({
     .filter((member) => Boolean(member.rosterEvidence))
     .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad'))
     .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
-  if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateCounts.length === 0) {
+  if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateLines.length === 0) {
     return null;
   }
   const hasCurrentTeam =
     teamMembers.length > 0 ||
     listsCurrentUndergraduates ||
-    undergraduateCounts.some((line) => line.status === 'current');
+    undergraduateLines.some((line) => line.status === 'current');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
   const dateLabel = observedLabel(roster.observedAt);
@@ -255,8 +260,8 @@ export default function ResearchTeamSection({
           </p>
         )}
         {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
-        {undergraduateCounts.map((line) => (
-          <UndergraduateCountLine key={line.status} line={line} />
+        {undergraduateLines.map((line) => (
+          <UndergraduateMemberLineRow key={line.status} line={line} />
         ))}
         {GROUPS.map(({ role, label }) => {
           const groupedMembers = teamMembers.filter((member) => member.role === role);

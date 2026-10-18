@@ -26,7 +26,7 @@ describe('undergraduateMemberEvidence', () => {
       accessSignals: [currentSignal],
       currentUndergradCount: 3,
     });
-    expect(evidence.countLines).toEqual([{ status: 'current', count: 3, sourceUrl: TEAM_PAGE }]);
+    expect(evidence.memberLines).toEqual([{ status: 'current', count: 3, sourceUrl: TEAM_PAGE }]);
     expect(chipFor(TEAM_PAGE, evidence, [currentSignal])).toContain(
       'Current undergraduate members',
     );
@@ -38,7 +38,7 @@ describe('undergraduateMemberEvidence', () => {
       accessSignals: [currentSignal],
       currentUndergradCount: 3,
     });
-    expect(evidence.countLines).toEqual([]);
+    expect(evidence.memberLines).toEqual([]);
     expect(chipFor(TEAM_PAGE, evidence, [currentSignal])).toContain(
       'Current undergraduate members',
     );
@@ -46,17 +46,18 @@ describe('undergraduateMemberEvidence', () => {
 
   it('does not claim members the page cannot show', () => {
     const evidence = undergraduateMemberEvidence({ accessSignals: [currentSignal, pastSignal] });
-    expect(evidence.countLines).toEqual([]);
+    expect(evidence.memberLines).toEqual([]);
     const contexts = chipFor(TEAM_PAGE, evidence, [currentSignal, pastSignal]);
     expect(contexts).toEqual(['Undergraduate access']);
   });
 
-  it('counts past members from the roster-alumni count', () => {
+  it('shows past members from roster alumni without stating their count', () => {
     const evidence = undergraduateMemberEvidence({
       accessSignals: [pastSignal],
       pastUndergradAdvisees: [{ programName: 'Lab roster alumni', count: 4 }],
     });
-    expect(evidence.countLines).toEqual([{ status: 'past', count: 4, sourceUrl: TEAM_PAGE }]);
+    expect(evidence.memberLines).toEqual([{ status: 'past', sourceUrl: TEAM_PAGE }]);
+    expect(chipFor(TEAM_PAGE, evidence, [pastSignal])).toContain('Past undergraduate members');
   });
 
   it('does not credit a lab page with past members when the signal may cite another source', () => {
@@ -68,7 +69,7 @@ describe('undergraduateMemberEvidence', () => {
         { programName: 'Fixture Scholars', count: 2 },
       ],
     });
-    expect(evidence.countLines).toEqual([]);
+    expect(evidence.memberLines).toEqual([]);
     expect(chipFor(BOOKLET, evidence, [mixedSignal])).toEqual(['Undergraduate access']);
   });
 
@@ -90,7 +91,7 @@ describe('undergraduateMemberEvidence', () => {
       pastUndergradAdvisees: [{ programName: 'Lab roster alumni', count: 4 }],
       fellowshipRecipients: [{ sourceUrl: BOOKLET }],
     });
-    expect(evidence.countLines).toEqual([]);
+    expect(evidence.memberLines).toEqual([]);
     expect(chipFor(BOOKLET, evidence, [fellowshipSignal])).toEqual(['Fellowship recipients']);
   });
 });

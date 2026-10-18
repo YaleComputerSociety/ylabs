@@ -459,7 +459,6 @@ const DecisionSummary = ({
   principalInvestigator,
   leadProfilesLinkedInline = false,
   rosterListsUndergraduates = false,
-  teamSectionCountsPastUndergraduates = false,
 }: {
   group: any;
   profileUrl?: string;
@@ -470,7 +469,6 @@ const DecisionSummary = ({
   principalInvestigator?: LabMember;
   leadProfilesLinkedInline?: boolean;
   rosterListsUndergraduates?: boolean;
-  teamSectionCountsPastUndergraduates?: boolean;
 }) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
   const topics = detailTopics(group, 5);
@@ -481,10 +479,7 @@ const DecisionSummary = ({
     void captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group.recentGrants);
-  const pastAdvisees = formatPastAdvisees(
-    group,
-    rosterListsUndergraduates || teamSectionCountsPastUndergraduates,
-  );
+  const pastAdvisees = formatPastAdvisees(group, rosterListsUndergraduates);
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
@@ -1252,9 +1247,6 @@ const LabDetail = () => {
             principalInvestigator={singlePrincipalInvestigator}
             leadProfilesLinkedInline={leadProfilesLinkedInline}
             rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
-            teamSectionCountsPastUndergraduates={undergraduateMembers.countLines.some(
-              (line) => line.status === 'past',
-            )}
           />
 
           {showDedicatedPrincipalInvestigatorSection && (
@@ -1290,7 +1282,7 @@ const LabDetail = () => {
           <ResearchTeamSection
             members={members}
             roster={roster}
-            undergraduateCounts={undergraduateMembers.countLines}
+            undergraduateLines={undergraduateMembers.memberLines}
           />
 
           <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />

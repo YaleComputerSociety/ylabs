@@ -1100,6 +1100,37 @@ describe('LabDetail page', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('shows past undergraduate members its Sources chip cites without stating an alumni count', async () => {
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        pastUndergradAdvisees: [{ programName: 'Lab roster alumni', year: 2022, count: 5 }],
+      },
+      accessSignals: [
+        {
+          _id: 'signal-past-undergrads',
+          signalType: 'PAST_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: 'https://fixture-lab.example.org/alumni',
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('Past undergraduate members');
+    expect(text).toContain('lists past undergraduate researchers');
+    expect(text).toContain('Has advised undergrads (2022)');
+    expect(text).not.toMatch(/\b5 past undergrad/i);
+    expect(screen.getByRole('link', { name: /See the lab.s page/ }).getAttribute('href')).toBe(
+      'https://fixture-lab.example.org/alumni',
+    );
+    await expectNoAxeViolations(container);
+  });
+
   it('lists the roster undergraduates instead of the quote when the lab page names them', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
