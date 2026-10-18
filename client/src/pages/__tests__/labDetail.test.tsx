@@ -2491,7 +2491,7 @@ describe('LabDetail page', () => {
     const { container } = renderLabDetail({
       ...basePayload,
       members: [],
-      group: { ...basePayload.group, entityType: 'CORE_FACILITY', kind: 'core_facility' },
+      group: { ...basePayload.group, entityType: 'CORE_FACILITY' },
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
