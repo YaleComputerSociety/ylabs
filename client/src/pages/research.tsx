@@ -147,6 +147,7 @@ interface ResearchEntitySearchPage {
   depthLimited?: boolean;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
 }
 
 interface ActiveResearchSearchRequest {
@@ -255,6 +256,7 @@ const searchResearchEntities = async (
     depthLimited: normalized.depthLimited === true,
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
+    appliedFilters: normalized.appliedFilters,
   };
 };
 
@@ -829,6 +831,53 @@ const Research = () => {
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
+      const appliedFilters = researchEntitiesPage.appliedFilters;
+      if (appliedFilters && !options.departmentSearch) {
+        const school = appliedFilters.school
+          ? (appliedFilters.school[0] ?? '')
+          : (filters.school?.[0] ?? '');
+        const department = appliedFilters.departments
+          ? (appliedFilters.departments[0] ?? '')
+          : (filters.departments?.[0] ?? '');
+        const entityType = filters.entityType?.[0] ?? '';
+        const hostsUndergrads = filters.hostsUndergrads === true;
+        const appliedStudentFilters: ResearchSearchFilters = {
+          ...(entityType ? { entityType: [entityType] } : {}),
+          ...(school ? { school: [school] } : {}),
+          ...(department ? { departments: [department] } : {}),
+          ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
+        };
+        setSelectedSchool(school);
+        setSelectedDepartment(department);
+        if (!trimmed && !hasStructuredFilters(appliedStudentFilters)) {
+          writeResearchSearchParams(
+            {
+              showWeakest: showWeakestProfilesFirst,
+              quality: qualityFilters,
+              trustTiers: trustTierFilters,
+            },
+            { replace: true, markPending: true },
+          );
+          return;
+        }
+        setActiveSearchRequest((current) =>
+          current ? { ...current, filters: appliedStudentFilters } : current,
+        );
+        writeResearchSearchParams(
+          {
+            query: trimmed,
+            entityType,
+            school,
+            department,
+            hostsUndergrads,
+            showWeakest: showWeakestProfilesFirst,
+            quality: qualityFilters,
+            trustTiers: trustTierFilters,
+          },
+          { replace: true, markPending: true },
+        );
+      }
+
       const researchEntities = researchEntitiesPage.researchEntities;
       setHasFacetError(false);
       setSearchDegraded(researchEntitiesPage.degraded === true);
@@ -1075,6 +1124,18 @@ const Research = () => {
       pendingSearchParamsRef.current !== null &&
       pendingSearchParamsRef.current !== observedSearchParams
     ) {
+      return;
+    }
+    const unreadableFilterParams = [
+      searchParams.has('type') && !readEntityTypeParam(searchParams) ? 'type' : null,
+      searchParams.has(HOSTS_UNDERGRADS_PARAM) && !readHostsUndergradsParam(searchParams)
+        ? HOSTS_UNDERGRADS_PARAM
+        : null,
+    ].filter((key): key is string => key !== null);
+    if (unreadableFilterParams.length > 0) {
+      const readableParams = new URLSearchParams(searchParams);
+      unreadableFilterParams.forEach((key) => readableParams.delete(key));
+      setSearchParams(readableParams, { replace: true });
       return;
     }
     const urlQuery = searchParams.get('q') || '';
@@ -1659,6 +1720,7 @@ const Research = () => {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
     isApplying: false,
+    isLoadingOptions: defaultSearchLoading,
     hasFacetError: false,
     resultCount: defaultSearchTotal,
     resultCountPending: defaultSearchLoading,

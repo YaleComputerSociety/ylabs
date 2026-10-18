@@ -172,6 +172,13 @@ Because absence carries that meaning, every search path that was asked for facet
 The distribution carries `school`, `departments`, `entityType`, and `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), the facets the filter rail reads.
 `hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
 
+### A filter value nothing holds is dropped, not answered empty (#5146)
+
+Before any search runs, `resolveStudentFilterValuesInScope` (`server/src/services/researchFilterVocabulary.ts`) maps each school and department filter value case-insensitively to the spelling the visibility-scoped corpus holds and drops a value no row holds, so a hand-edited or stale link cannot answer 0 results with coverage-gap copy for a filter that does not exist.
+The vocabulary is a `distinct` read on `schools` and `departments`, cached for five minutes per scope and re-read before anything is dropped, so a value a re-canonicalization added inside the window is searched rather than dropped; if it cannot be read the filters apply unchanged.
+When a value changed, the response carries `appliedFilters` with the values actually searched, and `/research` rewrites its URL, selects and chips to match without a second search; it also drops a `type` or `undergrad` value it cannot read from the URL.
+An admin low-quality-first browse skips the resolution.
+
 ### A facet count is the number of results applying it returns (#5101)
 
 A browse and a keyword-only search take their facets from the same filtered Meilisearch query that answers them, plus one disjunctive query per active facet, so they were always consistent.

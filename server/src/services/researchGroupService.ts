@@ -76,6 +76,10 @@ import {
   visibilityScopeOnly,
 } from './researchGroupFilters';
 import {
+  type AppliedStudentFilters,
+  resolveStudentFilterValuesInScope,
+} from './researchFilterVocabulary';
+import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
 } from './researchEntityQuality';
@@ -547,6 +551,7 @@ export interface ResearchGroupSearchResult {
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  appliedFilters?: AppliedStudentFilters;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -1560,14 +1565,18 @@ export async function searchResearchGroupsViaMeili(
     options.correctSpelling === false
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
-  const result = await searchResearchGroupsForQuery(
+  const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
+  const searched = await searchResearchGroupsForQuery(
     spelling.query,
-    filters,
+    studentFilters.filters,
     page,
     pageSize,
     sort,
     options,
   );
+  const result = studentFilters.applied
+    ? { ...searched, appliedFilters: studentFilters.applied }
+    : searched;
   if (spelling.corrections.length === 0) return result;
   return {
     ...result,
@@ -1577,6 +1586,19 @@ export async function searchResearchGroupsViaMeili(
     },
   };
 }
+
+const resolveStudentFiltersAgainstCorpus = async (
+  filters: ResearchGroupFilterInput,
+  options: ResearchGroupSearchOptions,
+): ReturnType<typeof resolveStudentFilterValuesInScope> => {
+  const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const filtersNamedValues = Boolean(safeFilters.school?.length || safeFilters.departments?.length);
+  if (!filtersNamedValues || options.lowQualityFirst === true) return { filters };
+  return resolveStudentFilterValuesInScope(safeFilters, {
+    archived: { $ne: true },
+    ...mongoVisibilityFilter(safeFilters, options.includeNonPublic === true),
+  });
+};
 
 async function searchResearchGroupsForQuery(
   query: string,

@@ -39,6 +39,7 @@ interface ResearchFilterDisclosureProps {
   operatorActiveCount?: number;
   resultCount?: number;
   resultCountPending?: boolean;
+  isLoadingOptions?: boolean;
 }
 
 const resultCountFormatter = new Intl.NumberFormat('en-US');
@@ -83,6 +84,7 @@ const ResearchFilterDisclosure = ({
   operatorActiveCount = 0,
   resultCount,
   resultCountPending = false,
+  isLoadingOptions = false,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -225,7 +227,7 @@ const ResearchFilterDisclosure = ({
 
   const emptyMessage = hasFacetError
     ? 'Filter options could not load with this search. Active filters can still be cleared.'
-    : isApplying
+    : isApplying || isLoadingOptions
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 

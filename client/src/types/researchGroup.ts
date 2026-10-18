@@ -178,6 +178,9 @@ export interface ResearchGroupSearchResponse {
   // and an empty one is not evidence that nothing matches.
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  // Set when the server changed a school or department filter value: it maps a value
+  // to the spelling the corpus holds and drops one no row holds.
+  appliedFilters?: { school?: string[]; departments?: string[] };
 }
 
 export interface ResearchSearchQueryCorrection {
