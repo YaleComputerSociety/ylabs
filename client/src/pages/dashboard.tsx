@@ -29,23 +29,40 @@ type ProgramSummary = {
 };
 
 const SURFACES: DashboardSurface[] = ['dashboard', 'programs'];
+const DEFAULT_SURFACE: DashboardSurface = 'dashboard';
+
+const surfaceFromParam = (value: string | null): DashboardSurface =>
+  SURFACES.find((candidate) => candidate === value) ?? DEFAULT_SURFACE;
 
 const withCount = (label: string, count: number | null): string =>
   count === null ? label : `${label} (${count})`;
 
 const Dashboard = () => {
   useDocumentTitle('Dashboard');
-  const [searchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab') as DashboardSurface | null;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSurface = surfaceFromParam(searchParams.get('tab'));
+  const writeSurfaceToUrl = (next: DashboardSurface) =>
+    setSearchParams(
+      (current) => {
+        const params = new URLSearchParams(current);
+        if (next === DEFAULT_SURFACE) params.delete('tab');
+        else params.set('tab', next);
+        return params;
+      },
+      { replace: true },
+    );
   const {
     activeTab: surface,
     activateTab: activateSurface,
+    followTab: followSurface,
     handleTabKeyDown,
     registerTab,
-  } = useRovingTabs<DashboardSurface>(
-    SURFACES,
-    tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
-  );
+  } = useRovingTabs<DashboardSurface>(SURFACES, requestedSurface, writeSurfaceToUrl);
+  const [followedSurface, setFollowedSurface] = useState(requestedSurface);
+  if (followedSurface !== requestedSurface) {
+    setFollowedSurface(requestedSurface);
+    followSurface(requestedSurface);
+  }
   const [savedResearchCount, setSavedResearchCount] = useState<number | null>(null);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: null });
 
