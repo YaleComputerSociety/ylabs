@@ -373,6 +373,7 @@ describe('yaleResearchOfficialScraper', () => {
 
   describe('school evidenced by the directory record', () => {
     const recordUrl = 'https://research.yale.edu/cores/fixture-core';
+    const directoryUrl = 'https://research.yale.edu/cores';
     const recordWithButton = (href: string, label = 'Core website') =>
       `<main><h1>Fixture Core</h1><a href="https://maps.example.com/x" class="external">Building 1</a><a href="${href}" class="btn external">${label}</a></main>`;
 
@@ -380,6 +381,7 @@ describe('yaleResearchOfficialScraper', () => {
       expect(
         officialRecordSchool(
           { name: 'Fixture Imaging Core', url: recordUrl },
+          directoryUrl,
           recordWithButton('https://medicine.yale.edu/fixture-core/'),
         ),
       ).toEqual({ school: 'School of Medicine', sourceUrl: recordUrl });
@@ -389,12 +391,14 @@ describe('yaleResearchOfficialScraper', () => {
       expect(
         officialRecordSchool(
           { name: 'Fixture Imaging Core', url: recordUrl },
+          directoryUrl,
           recordWithButton('https://fixture-core.yale.edu/'),
         ),
       ).toBeUndefined();
       expect(
         officialRecordSchool(
           { name: 'Fixture Imaging Core', url: recordUrl },
+          directoryUrl,
           '<main><a href="https://medicine.yale.edu/news/item" class="external">A news story</a></main>',
         ),
       ).toBeUndefined();
@@ -408,8 +412,14 @@ describe('yaleResearchOfficialScraper', () => {
         ),
       ).toBe('');
       expect(
-        recordOwnWebsiteUrl(recordWithButton('/cores/elsewhere', 'Main website'), recordUrl),
-      ).toBe('https://research.yale.edu/cores/elsewhere');
+        recordOwnWebsiteUrl(
+          recordWithButton('https://medicine.yale.edu/x/', 'Main website'),
+          recordUrl,
+        ),
+      ).toBe('');
+      expect(recordOwnWebsiteUrl(recordWithButton('/cores/elsewhere'), recordUrl)).toBe(
+        'https://research.yale.edu/cores/elsewhere',
+      );
     });
 
     it('reads a school acronym only when no other Yale unit shares it', () => {
@@ -419,10 +429,20 @@ describe('yaleResearchOfficialScraper', () => {
       expect(schoolNamedByOfficialName('Fixture Cleanroom Facilities')).toBe('');
     });
 
+    it('cites a school read from the official name to the directory page it was read from', () => {
+      expect(
+        officialRecordSchool(
+          { name: 'YSM Fixture Center', url: 'https://fixture-center.example.org/' },
+          directoryUrl,
+        ),
+      ).toEqual({ school: 'School of Medicine', sourceUrl: directoryUrl });
+    });
+
     it('does not read a school from a page other than the research.yale.edu record', () => {
       expect(
         officialRecordSchool(
           { name: 'Fixture Center', url: 'https://fixture-center.yale.edu/' },
+          directoryUrl,
           recordWithButton('https://medicine.yale.edu/fixture-center/'),
         ),
       ).toBeUndefined();

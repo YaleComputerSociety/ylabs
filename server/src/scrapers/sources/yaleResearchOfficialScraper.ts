@@ -400,7 +400,7 @@ export function schoolNamedByOfficialName(name: string): string {
   return match ? match[1] : '';
 }
 
-const RECORD_OWN_WEBSITE_LABEL = /^(?:core|facility|main)\s+website$/i;
+const RECORD_OWN_WEBSITE_LABEL = /^core\s+website$/i;
 
 /** The record page's own "Core website" button, which is where the unit itself lives. */
 export function recordOwnWebsiteUrl(html: string, recordUrl: string): string {
@@ -421,10 +421,11 @@ export function recordOwnWebsiteUrl(html: string, recordUrl: string): string {
  */
 export function officialRecordSchool(
   entity: Pick<YaleResearchOfficialEntity, 'name' | 'url'>,
+  directoryPageUrl: string,
   recordHtml?: string,
 ): YaleResearchRecordSchool | undefined {
   const fromName = schoolNamedByOfficialName(entity.name);
-  if (fromName) return { school: fromName, sourceUrl: entity.url };
+  if (fromName) return { school: fromName, sourceUrl: directoryPageUrl };
   if (!recordHtml || !isResearchYaleRecordUrl(entity.url)) return undefined;
   const ownWebsite = recordOwnWebsiteUrl(recordHtml, entity.url);
   const fromHost = ownWebsite ? schoolNameFromProfileHosts([ownWebsite]) : null;
@@ -451,7 +452,7 @@ async function readRecordEvidence(
   fetchHtml: YaleResearchHtmlFetcher,
   ctx: ScraperContext,
 ): Promise<RecordEvidence> {
-  const nameSchool = officialRecordSchool(entity);
+  const nameSchool = officialRecordSchool(entity, directoryPageUrl);
   const fromDirectory = {
     description: entity.description,
     sourceUrl: directoryPageUrl,
@@ -461,7 +462,7 @@ async function readRecordEvidence(
   if (!isRecordPage && !entity.description) return fromDirectory;
   try {
     const recordHtml = await fetchHtml(entity.url, ctx.options.useCache, SOURCE_NAME);
-    const school = officialRecordSchool(entity, recordHtml);
+    const school = officialRecordSchool(entity, directoryPageUrl, recordHtml);
     const withSchool = school ? { school } : {};
     const about = isRecordPage ? recordAboutProse(recordHtml) : '';
     if (about) return { description: about, sourceUrl: entity.url, ...withSchool };
