@@ -34,21 +34,27 @@ const STEM_SUFFIXES: ReadonlyArray<{ suffix: string; replacement: string }> = [
   { suffix: 'ied', replacement: 'y' },
   { suffix: 'ics', replacement: '' },
   { suffix: 'ic', replacement: '' },
-  { suffix: 'es', replacement: '' },
   { suffix: 'ed', replacement: '' },
 ];
+const SIBILANT_PLURAL = /(?:s|x|z|ch|sh)es$/;
 
 export const programSearchWords = (text: string): string[] =>
   foldLatinDiacritics(text.toLowerCase()).match(/[a-z0-9]+/g) ?? [];
 
-export const programSearchWordStem = (word: string): string => {
+const stripWordSuffix = (word: string): string => {
   for (const { suffix, replacement } of STEM_SUFFIXES) {
     if (word.endsWith(suffix) && word.length - suffix.length >= MIN_STEM_LENGTH) {
       return word.slice(0, word.length - suffix.length) + replacement;
     }
   }
+  if (SIBILANT_PLURAL.test(word) && word.length - 2 >= MIN_STEM_LENGTH) return word.slice(0, -2);
   if (/[^su]s$/.test(word) && word.length > MIN_STEM_LENGTH) return word.slice(0, -1);
   return word;
+};
+
+export const programSearchWordStem = (word: string): string => {
+  const stem = stripWordSuffix(word);
+  return stem.endsWith('e') && stem.length > MIN_STEM_LENGTH ? stem.slice(0, -1) : stem;
 };
 
 const isContentWord = (word: string): boolean =>

@@ -174,6 +174,12 @@ describe('programSearchWordStem', () => {
     expect(programSearchWordStem('economics')).toBe(programSearchWordStem('economic'));
     expect(programSearchWordStem('studies')).toBe(programSearchWordStem('study'));
     expect(programSearchWordStem('centers')).toBe(programSearchWordStem('center'));
+    expect(programSearchWordStem('sciences')).toBe(programSearchWordStem('science'));
+    expect(programSearchWordStem('courses')).toBe(programSearchWordStem('course'));
+    expect(programSearchWordStem('required')).toBe(programSearchWordStem('require'));
+    expect(programSearchWordStem('employees')).toBe(programSearchWordStem('employee'));
+    expect(programSearchWordStem('classes')).toBe(programSearchWordStem('class'));
+    expect(programSearchWordStem('churches')).toBe(programSearchWordStem('church'));
     expect(programSearchWordStem('humanities')).not.toBe(programSearchWordStem('human'));
     expect(programSearchWordStem('campus')).toBe('campus');
   });

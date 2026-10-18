@@ -696,7 +696,7 @@ The text index weighted a title word like a description word, and the page then 
 
 `searchFellowships` now reads the filtered catalog (172 visible programs, about 290KB of searchable text on Development) and hands it to `rankProgramSearchMatches` in `server/src/services/programSearchRelevance.ts`:
 
-- A program matches when every content word of the query (stop words and single letters dropped) starts a word in a searchable field or shares its light stem (`economics` and `economic`, `studies` and `study`), so adding a second word can only narrow the list; the one exception is the fallback for three or more words below, which can serve a program the shorter query did not.
+- A program matches when every content word of the query (stop words and single letters dropped) starts a word in a searchable field or shares its light stem (`economics` and `economic`, `studies` and `study`, `sciences` and `science`), so adding a word narrows the list except in three cases below that can serve a program the shorter query did not: a query that is a subject's own name or abbreviation, a query that is one of a subject's aliases, and the fallback for three or more words.
   An abbreviation alias (`ai`, `ml`, `nlp`) matches whole words only, because `ai` starts `aid`.
   A student's year word (`freshman`) is satisfied by the words of the year the source files (`first year`).
 - A topic word is not widened to its sibling fields: `economics` no longer serves `psychology`.
