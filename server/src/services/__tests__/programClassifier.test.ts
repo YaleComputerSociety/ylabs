@@ -870,3 +870,65 @@ describe('classifyProgram senior research funding reads its mentor requirement o
     }
   });
 });
+
+describe('classifyProgram reads a program that excludes Yale students as out of scope (#5242)', () => {
+  it('sends a summer program that says Yale students are not eligible to archive review', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Graduating seniors, graduate students, and Yale students are not eligible.',
+      }),
+    ).toMatchObject({ studentFacingCategory: 'Archive / review', programKind: 'OTHER' });
+  });
+
+  it('keeps a program that only limits one Yale benefit', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Yale students are not eligible for program housing but may apply.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
+  it('keeps a program that only closes one benefit to Yale students', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Open to all undergraduates. Program housing is not open to Yale students.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
+  it('does not read an exclusion of one Yale school as excluding every Yale student', () => {
+    for (const eligibility of [
+      'Open to GSAS doctoral students. Yale College students are not eligible.',
+      'Open to GSAS doctoral students. Yale undergraduate students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Graduate Research Fellowship',
+          description: 'A research fellowship in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
+    }
+  });
+
+  it('keeps a Yale-only program that says non-Yale students are not eligible', () => {
+    for (const eligibility of [
+      'Open to Yale College juniors; non-Yale students are not eligible.',
+      'Open to Yale College juniors; non Yale students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Summer Undergraduate Research Program',
+          description: 'A summer research program in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
+    }
+  });
+});
