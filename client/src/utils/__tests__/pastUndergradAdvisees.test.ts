@@ -12,7 +12,7 @@ describe('formatPastAdvisees', () => {
           { programName: 'Fixture Scholars II (Fixture Expansion)', year: 2025, count: 1 },
         ],
       }),
-    ).toEqual(['Mentored 1 Fixture Scholars II fellow (2025)']);
+    ).toEqual(['Mentored 1 Fixture Scholars II recipient (2025)']);
   });
 
   it('keeps one line per program with its own year range', () => {
@@ -25,8 +25,8 @@ describe('formatPastAdvisees', () => {
         ],
       }),
     ).toEqual([
-      'Mentored 3 Fixture Scholars fellows (2022–2024)',
-      'Mentored 1 Fixture Travel Fellowship fellow (2023)',
+      'Mentored 3 Fixture Scholars recipients (2022–2024)',
+      'Mentored 1 Fixture Travel Fellowship recipient (2023)',
     ]);
   });
 
@@ -37,11 +37,23 @@ describe('formatPastAdvisees', () => {
         { programName: 'Fixture Scholars', year: 2025, count: 1 },
       ],
     };
-    expect(formatPastAdvisees(group, true)).toEqual(['Mentored 1 Fixture Scholars fellow (2025)']);
+    expect(formatPastAdvisees(group, true)).toEqual(['Mentored 1 Fixture Scholars recipient (2025)']);
     expect(formatPastAdvisees(group, false)).toEqual([
       'Advised 4 undergrads',
-      'Mentored 1 Fixture Scholars fellow (2025)',
+      'Mentored 1 Fixture Scholars recipient (2025)',
     ]);
+  });
+
+  it('counts an entry naming no program as advised, beside roster alumni, without claiming a program', () => {
+    const group = {
+      pastUndergradAdvisees: [
+        { count: 1 },
+        { programName: '', year: 2021, count: 1 },
+        { programName: ROSTER_ALUMNI, count: 2 },
+      ],
+    };
+    expect(formatPastAdvisees(group, false)).toEqual(['Advised 4 undergrads (2021)']);
+    expect(formatPastAdvisees(group, true)).toEqual(['Advised 2 undergrads (2021)']);
   });
 
   it('says nothing when there is nothing to count', () => {

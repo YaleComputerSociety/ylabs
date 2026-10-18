@@ -1009,7 +1009,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     const text = container.textContent || '';
-    expect(text).toContain('Mentored 1 Fixture Scholars II fellow (2025)');
+    expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
     expect(text).not.toMatch(/Advised \d+ undergrad/);
   });
 

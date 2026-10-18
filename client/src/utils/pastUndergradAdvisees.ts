@@ -35,30 +35,39 @@ export const formatPastAdvisees = (
   rosterListsUndergraduates = false,
 ): string[] => {
   const entries = (group.pastUndergradAdvisees || []).filter(Boolean);
-  const rosterAlumni = entries.filter((entry) => entry.programName === ROSTER_ALUMNI_PROGRAM_NAME);
+  const advised: PastAdviseeEntry[] = [];
   const byProgram = new Map<string, PastAdviseeEntry[]>();
   for (const entry of entries) {
-    if (entry.programName === ROSTER_ALUMNI_PROGRAM_NAME) continue;
+    if (entry.programName === ROSTER_ALUMNI_PROGRAM_NAME) {
+      if (!rosterListsUndergraduates) advised.push(entry);
+      continue;
+    }
     const program = shortAdviseeProgramName(entry.programName || '');
+    if (!program) {
+      advised.push(entry);
+      continue;
+    }
     byProgram.set(program, [...(byProgram.get(program) || []), entry]);
   }
   const lines: string[] = [];
-  const rosterAlumniTotal = adviseeTotal(rosterAlumni);
-  if (!rosterListsUndergraduates && rosterAlumniTotal > 0) {
+  const advisedTotal = adviseeTotal(advised);
+  if (advisedTotal > 0) {
     lines.push(
       withYearRange(
-        `Advised ${rosterAlumniTotal} ${rosterAlumniTotal === 1 ? 'undergrad' : 'undergrads'}`,
-        rosterAlumni,
+        `Advised ${advisedTotal} ${advisedTotal === 1 ? 'undergrad' : 'undergrads'}`,
+        advised,
       ),
     );
   }
   for (const [program, programEntries] of byProgram) {
     const total = adviseeTotal(programEntries);
     if (total <= 0) continue;
-    const mentees = program
-      ? `${program} ${total === 1 ? 'fellow' : 'fellows'}`
-      : `undergrad ${total === 1 ? 'fellow' : 'fellows'}`;
-    lines.push(withYearRange(`Mentored ${total} ${mentees}`, programEntries));
+    lines.push(
+      withYearRange(
+        `Mentored ${total} ${program} ${total === 1 ? 'recipient' : 'recipients'}`,
+        programEntries,
+      ),
+    );
   }
   return lines;
 };
