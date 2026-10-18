@@ -15,6 +15,7 @@ The old-slug redirect falls back to `mergedFrom.slug`, `research-plans:retarget-
 This is not the retired redirect ledger: that was a second collection written beside the rows and it drifted, whereas `mergedFrom` is derived from the tombstones on every sweep and every copy.
 Development keeps its full archive, and the Beta-to-Development refresh still carries it back from the swap backup; deleting it is #5189.
 
+## 2026-10-18: Beta And Production Carry Slim Archived Tombstones (#5208)
 
 Development's engine needs every full archived row: re-scraped evidence for a merged duplicate routes to its survivor through the tombstone, and an archived slug is what stops the same duplicate being minted again (#3029).
 Beta and Production never mint or resolve evidence, and every serving path that reads an archived row reads only its id, slug, name, archive reason and `canonicalGroupId`, so copying 5,359 full archived rows and the signals, role assignments and relationships hanging off them shipped data no serving surface reads.
