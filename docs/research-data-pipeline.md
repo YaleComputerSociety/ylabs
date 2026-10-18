@@ -2002,6 +2002,7 @@ A graduate record asserts an adviser only when its page states one or its prose 
 
 The same pass derives `citizenshipStatus` from the prose (`utils/programCitizenship.ts`, #5129).
 A sentence restricting the program to U.S. citizens states that, plus "U.S. permanent residents are eligible" when the same sentence admits them; a sentence opening it to every nationality states both U.S. and non-U.S.; a sentence excluding U.S. citizens states non-U.S. only.
+The reader fails closed: a sentence that also names another group (international students, non-U.S. citizens, others) is never a U.S.-only restriction, and a negation ahead of the U.S.-citizen term states nothing, except that "applicants who are not U.S. citizens are not eligible" and "Non-U.S. citizens are ineligible" read as U.S.-only.
 A preference, a condition on one group, or a page whose sentences disagree states nothing, so the Student Grants Database facet the lanes observed stands, and a locked `citizenshipStatus` is never derived.
 
 It replaced `programs:backfill-classification`, a post-sweep repair that re-ran the classifier over stored rows but refused any apply that would demote a served row or replace a served `studentFacingCategory`.
