@@ -27,6 +27,8 @@ The retired `research_entity_impression` wrote one row per card, which put 56% o
 The batch route refuses it, and on 2026-10-11 its stored rows were deleted from Development and Production, because the three-year TTL would have kept them inflating every all-event total on the dashboard (#4985).
 The enum value is gone, so no read can count it again.
 Every all-event total (Avg Events Per User, Most Active Users, the per-user event counts, and the drilldown) matches only the current enum's types, so a stored row of a removed type adds nothing and is never relabelled as another event (#4985).
+Active Users counts accounts, not raw event netids: a netid with events in the range counts only when it has a non-archived account that has logged in, the same population as Total Users, so Active Users can never exceed Total Users.
+A netid whose account row was deleted keeps its events but is no longer an active user.
 
 The only access-conversion event was `research_qualified_action`, and it is retired.
 It was qualified against a planning context that no source ever produced (#377), so none could be recorded, and the 2026-08-25 "Simple Directory First" decision retired the planning-context framing; #4581 removed the producer, the planning-context service and the qualification check.
