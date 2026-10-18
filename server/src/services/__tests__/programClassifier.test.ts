@@ -902,6 +902,21 @@ describe('classifyProgram reads a program that excludes Yale students as out of 
     ).not.toBe('Archive / review');
   });
 
+  it('does not read an exclusion of one Yale school as excluding every Yale student', () => {
+    for (const eligibility of [
+      'Open to GSAS doctoral students. Yale College students are not eligible.',
+      'Open to GSAS doctoral students. Yale undergraduate students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Graduate Research Fellowship',
+          description: 'A research fellowship in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
+    }
+  });
+
   it('keeps a Yale-only program that says non-Yale students are not eligible', () => {
     for (const eligibility of [
       'Open to Yale College juniors; non-Yale students are not eligible.',
