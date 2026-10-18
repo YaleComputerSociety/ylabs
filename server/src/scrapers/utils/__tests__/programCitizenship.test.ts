@@ -133,3 +133,17 @@ it('does not read a second clause about another eligibility route as an exclusio
     ]),
   ).toBeUndefined();
 });
+
+it.each([
+  'The fellowship is open to U.S. citizens and international students.',
+  'Funding is available to U.S. citizens, permanent residents, and international students.',
+  'Eligible applicants include U.S. citizens and non-U.S. citizens enrolled at Yale.',
+  'Applicants must be a U.S. citizen or an international student enrolled at Yale.',
+  'Awards are open to U.S. citizens and foreign nationals.',
+  'Applicants must be U.S. citizens or non-citizens with work authorization.',
+])(
+  'never reads a sentence that also names another group as a U.S.-only restriction (#5129): %s',
+  (text) => {
+    expect(programCitizenshipStatement([text])).toBeUndefined();
+  },
+);

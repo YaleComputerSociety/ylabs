@@ -35,7 +35,10 @@ const US_CITIZEN_GROUP = new RegExp(String.raw`\bwho are ${US} citizens\b`, 'i')
 
 const ELIGIBILITY_CUE = /\b(?:eligible|open to|must|only|limited)\b/i;
 
-const ANOTHER_GROUP = /\b(?:others|international (?:students|applicants))\b/i;
+const ANOTHER_GROUP = new RegExp(
+  String.raw`\b(?:others|all students|foreign nationals?|international (?:students?|applicants?)|students of any nationality|non-?\s?(?:${US} )?citizens?)\b`,
+  'i',
+);
 
 const NEGATION =
   /\b(?:not need|(?:do|does)(?: not|n't) (?:need|have) to|not required|need not|regardless)\b/i;
@@ -90,12 +93,11 @@ function sentencesOf(text: string): string[] {
 }
 
 function restrictsToUsCitizens(sentence: string): boolean {
+  if (ANOTHER_GROUP.test(sentence)) return false;
   const match =
     US_ONLY_SENTENCE.exec(sentence) ??
-    (ANOTHER_GROUP.test(sentence)
-      ? null
-      : (PROOF_OF_US_CITIZENSHIP.exec(sentence) ??
-        (ELIGIBILITY_CUE.test(sentence) ? US_CITIZEN_GROUP.exec(sentence) : null)));
+    PROOF_OF_US_CITIZENSHIP.exec(sentence) ??
+    (ELIGIBILITY_CUE.test(sentence) ? US_CITIZEN_GROUP.exec(sentence) : null);
   return match !== null && !NEGATION.test(sentence.slice(0, match.index + match[0].length));
 }
 
