@@ -92,6 +92,8 @@ The student-journey smoke holds the first programs search until the loading tile
 `/programs` used to wait for the filter options before its search and then page the 172-row catalog 100 rows at a time, so the first card sat behind four requests in series; with every API call delayed by 1 second it painted at about 4.9s (#5135).
 The search now starts as soon as the student is signed in, beside the filter options request, and asks for 250 rows a page (`PROGRAM_SEARCH_PAGE_SIZE`, the route cap in `programController.ts` and `fellowshipService.ts`), which brought the first card to about 3.0s to 3.4s and the settled page from 5.3s to 3.6s.
 Production and Beta already compress API responses at the Cloudflare edge in front of Render (`content-encoding: br`, measured on `/api/ready`), so Express compression middleware would not shrink what a student downloads.
+The programs search and filter requests also start while the sign-in check (`/api/check`) is still in flight, carrying a deep link's URL state from the first render, and they set `skipAuthRequiredEvent` so a visitor who turns out to be signed out is redirected to login without the "session needs a fresh login" notice; with every API call delayed 1 second the first card moved from about 3.2s to 1.9s (#5258).
+Program data stays sign-in only: the server still answers 401 to a signed-out request.
 - A block that appears above results only once they land reserves its slot while they load.
 The `/research` programs handoff renders `invisible` with the same copy while a programs-intent search loads, so the results section no longer moves down when it appears (#4524).
 - A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
