@@ -32,6 +32,10 @@ const REVIEWED_ARCHIVED_ENTITY_UPDATE_CALLERS: Record<string, { sites: number; r
 const REVIEWED_ATTRIBUTED_ARCHIVE_SET_CALLERS: Record<string, { sites: number; reason: string }> = {
   'models/entityArchival.ts': { sites: 1, reason: 'archivedEntityUpdate builds on it' },
   'scrapers/centerRosterRetirement.ts': { sites: 1, reason: 'archives relationships' },
+  'scrapers/centerAffiliationHandOff.ts': {
+    sites: 1,
+    reason: 'archives center relationships a code-lane read no longer lists',
+  },
   'scrapers/entityMaterializer.ts': { sites: 1, reason: 'archives superseded relationships' },
   'scrapers/accessMaterializer.ts': { sites: 1, reason: 'archives access signals' },
   'scripts/archiveLegacyAccessSignals.ts': { sites: 1, reason: 'archives access signals' },

@@ -194,6 +194,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Deterministic research-area recovery for empty-area research entities from their official lab/department/profile pages. Emits only approved TaxonomyTerm areas (fail-closed); never creates access, route, description, or identity evidence.',
   },
+  'center-affiliation-roster': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Reads an official center/institute page with code and emits umbrella relationship observations for the people and labs the page lists by structure. Relationship-only; the materializer resolves a person through the faculty-research-area arms or the listed profile site, and a lab card through the one live row serving its site, and skips anything that does not resolve.',
+  },
   'center-affiliation-llm': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',

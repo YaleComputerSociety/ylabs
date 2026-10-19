@@ -341,6 +341,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'center-affiliation-roster',
+    displayName: 'Center affiliation roster (deterministic)',
+    description:
+      "Reads an organizational research home's own page with code and emits the same umbrella relationship observations as center-affiliation-llm for the people and labs the page lists in people cards, profile directories, contact listings and lists under a membership heading. A name the page states only in prose is counted, not asserted, and an ambiguous listing is refused. It replaced center-affiliation-llm in the sweep on 2026-10-19 and hands off the relationships that lane wrote when its read does not list them (#5296).",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'weekly',
+  },
+  {
     name: 'center-director-llm',
     displayName: 'Center director LLM extractor',
     description:
