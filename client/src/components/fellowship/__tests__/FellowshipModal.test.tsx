@@ -8,6 +8,7 @@ import FellowshipSearchContext, {
 import type { Fellowship } from '../../../types/types';
 import FellowshipModal from '../FellowshipModal';
 import { trackResearchEvent } from '../../../utils/researchAnalytics';
+import { PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE } from '../../../utils/programBoard';
 
 vi.mock('../../../utils/researchAnalytics', async () => ({
   ...(await vi.importActual<typeof import('../../../utils/researchAnalytics')>(
@@ -556,10 +557,28 @@ describe('FellowshipModal', () => {
   it('still tells students to secure a mentor first when the program requires it (#970)', () => {
     renderModal({ requiresMentorBeforeApply: true, mentorMatching: true });
 
-    expect(screen.getByText('Yes, secure a mentor before applying')).toBeInTheDocument();
+    expect(screen.getByText('Yes, line up your own mentor before applying')).toBeInTheDocument();
     expect(
       screen.queryByText('This source suggests a mentor-matching or mentored program route.'),
     ).toBeNull();
+  });
+
+  it('separates the award contact the source names from the mentor a student brings', () => {
+    renderModal({
+      requiresMentorBeforeApply: true,
+      applicationInformation: 'Award Manager/Faculty Mentor: Program Office Contact',
+    });
+
+    expect(screen.getByText('Yes, line up your own mentor before applying')).toBeInTheDocument();
+    expect(screen.getByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeInTheDocument();
+  });
+
+  it('adds no contact note when the program needs no mentor first or names no contact', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      applicationInformation: 'Award Manager/Faculty Mentor: Program Office Contact',
+    });
+    expect(screen.queryByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeNull();
   });
 
   it('renders a single Description heading when summary duplicates description (#1021)', () => {

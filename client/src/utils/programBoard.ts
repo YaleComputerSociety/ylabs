@@ -53,6 +53,15 @@ export function programBoardSectionOf(
   return SECTION_FOR_CYCLE[cycle];
 }
 
+const NAMED_PROGRAM_CONTACT_RE =
+  /\b(?:award|program|grant|fellowship)\s+(?:manager|contact|coordinator|administrator)\b|\bfaculty\s+mentor\s*:/i;
+
+export const applicationTextNamesProgramContact = (text?: string | null): boolean =>
+  NAMED_PROGRAM_CONTACT_RE.test(text || '');
+
+export const PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE =
+  'The person named here is the contact the official source lists for this award. The mentor you need before applying is a faculty member you line up yourself; ask this contact if you are unsure who can be your mentor.';
+
 export const FIRST_YEAR_STUDENT = 'First-Year Student';
 
 export function isOpenToFirstYears(fellowship: Fellowship): boolean {
