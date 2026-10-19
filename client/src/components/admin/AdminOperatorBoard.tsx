@@ -21,6 +21,8 @@ interface QueueSample {
   slug?: string;
   tier: Tier;
   reasons: string[];
+  blockerReasons: string[];
+  signalReasons: string[];
   sourceUrl?: string;
   category?: string;
   summary?: string;
@@ -79,13 +81,12 @@ const EntitySampleLabel = ({
 interface ReasonCount {
   reason: string;
   count: number;
-  kind?: QueueKind;
 }
 
 interface QueueSummary {
   collection: 'research' | 'programs';
   reason: string;
-  kind?: QueueKind;
+  kind: QueueKind;
   count: number;
   nextAction: string;
   samples: QueueSample[];
@@ -510,48 +511,17 @@ const riskStyles: Record<Risk, string> = {
   error: 'border-red-200 bg-red-50 text-red-800',
 };
 
-const evidenceReasons = new Set([
-  'application_route',
-  'graduate_relevant',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
-
-const reviewDecisionReasons = new Set([
-  'application_source_only',
-  'archive_review',
-  'duplicate_risk',
-  'exact_url_duplicate_risk',
-  'formalization_only',
-  'not_undergraduate_relevant',
-]);
-
-const classifyReason = (reason: string): QueueKind => {
-  if (evidenceReasons.has(reason)) return 'evidence';
-  if (reviewDecisionReasons.has(reason)) return 'review';
-  if (
-    reason.startsWith('missing_') ||
-    ['inactive_at_yale', 'profile_fallback_only', 'thin_description'].includes(reason)
-  ) {
-    return 'blocking';
-  }
-  return 'review';
-};
-
-const uniqueReasons = (reasons: string[]) => [
-  ...new Set(reasons.map((reason) => reason.trim()).filter(Boolean)),
-];
-
-const splitReasons = (reasons: string[], primaryReason: string) => {
+const splitReasons = (
+  sample: Pick<QueueSample, 'blockerReasons' | 'signalReasons'>,
+  primaryReason: string,
+) => {
   const normalizedPrimaryReason = primaryReason.trim().toLowerCase();
-  const sampleReasons = uniqueReasons(reasons).filter(
-    (reason) => reason.toLowerCase() !== normalizedPrimaryReason,
-  );
+  const withoutPrimary = (reasons: string[] | undefined) =>
+    (reasons ?? []).filter((reason) => reason.toLowerCase() !== normalizedPrimaryReason);
 
   return {
-    blockers: sampleReasons.filter((reason) => classifyReason(reason) === 'blocking'),
-    signals: sampleReasons.filter((reason) => classifyReason(reason) === 'evidence'),
+    blockers: withoutPrimary(sample.blockerReasons),
+    signals: withoutPrimary(sample.signalReasons),
   };
 };
 
@@ -807,11 +777,7 @@ const queueKindStyles: Record<QueueKind, string> = {
   review: 'border-[var(--yr-line)] bg-[var(--yr-panel-muted)] text-ink-soft',
 };
 
-const queueKindRank: Record<QueueKind, number> = {
-  blocking: 0,
-  review: 1,
-  evidence: 2,
-};
+const QUEUES_PER_DECISION_LANE = 4;
 
 const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; description: string }> =
   {
@@ -828,7 +794,8 @@ const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; desc
     evidence: {
       title: 'Promotion Evidence',
       eyebrow: 'Evidence signal',
-      description: 'Positive signals operators can use when deciding whether a row is ready.',
+      description:
+        'Positive evidence and enrichment signals. None of them holds a row back on its own.',
     },
   };
 
@@ -1153,24 +1120,16 @@ const AdminOperatorBoard = () => {
 
   useLoadEffect(fetchBoard);
 
-  const topQueues = useMemo(
-    () =>
-      [...(board?.queues || [])]
-        .sort((a, b) => {
-          const aKind = a.kind || classifyReason(a.reason);
-          const bKind = b.kind || classifyReason(b.reason);
-          return queueKindRank[aKind] - queueKindRank[bKind] || b.count - a.count;
-        })
-        .slice(0, 10),
-    [board],
-  );
   const decisionLanes = useMemo(
     () =>
       (['blocking', 'review', 'evidence'] as QueueKind[]).map((kind) => ({
         kind,
-        queues: topQueues.filter((queue) => (queue.kind || classifyReason(queue.reason)) === kind),
+        queues: (board?.queues || [])
+          .filter((queue) => queue.kind === kind)
+          .sort((a, b) => b.count - a.count)
+          .slice(0, QUEUES_PER_DECISION_LANE),
       })),
-    [topQueues],
+    [board],
   );
   const sourceLanes = useMemo(() => (board ? sourceReviewLanes(board) : []), [board]);
 
@@ -1774,10 +1733,7 @@ const AdminOperatorBoard = () => {
                         {queue.samples.length === 0
                           ? 'No samples'
                           : queue.samples.slice(0, 3).map((sample) => {
-                              const { blockers, signals } = splitReasons(
-                                sample.reasons,
-                                queue.reason,
-                              );
+                              const { blockers, signals } = splitReasons(sample, queue.reason);
 
                               return (
                                 <div key={sample.id} className="mb-3 last:mb-0">
@@ -1785,16 +1741,8 @@ const AdminOperatorBoard = () => {
                                     sample={sample}
                                     collection={queue.collection}
                                   />
-                                  <ReasonList
-                                    label="Likely blockers"
-                                    reasons={blockers}
-                                    tone="blocker"
-                                  />
-                                  <ReasonList
-                                    label="Evidence signals"
-                                    reasons={signals}
-                                    tone="signal"
-                                  />
+                                  <ReasonList label="Blockers" reasons={blockers} tone="blocker" />
+                                  <ReasonList label="Signals" reasons={signals} tone="signal" />
                                 </div>
                               );
                             })}

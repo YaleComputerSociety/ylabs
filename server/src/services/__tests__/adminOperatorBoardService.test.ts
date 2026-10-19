@@ -26,7 +26,9 @@ import {
 
 describe('adminOperatorBoardService', () => {
   it('separates blocking repair reasons from positive evidence signals', () => {
-    expect(classifyOperatorQueueReason('missing_action_evidence')).toBe('blocking');
+    expect(classifyOperatorQueueReason('missing_card_description')).toBe('blocking');
+    expect(classifyOperatorQueueReason('public_description_invariant_failed')).toBe('blocking');
+    expect(classifyOperatorQueueReason('non_research_program')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
     expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
@@ -37,6 +39,18 @@ describe('adminOperatorBoardService', () => {
     expect(classifyOperatorQueueReason('concrete_next_step')).not.toBe('evidence');
     expect(classifyOperatorQueueReason('source_backed_description')).toBe('evidence');
     expect(classifyOperatorQueueReason('operator_override')).toBe('review');
+  });
+
+  it('classifies every soft student_ready signal as a signal, never a blocker', () => {
+    for (const soft of [
+      'missing_facet_signal',
+      'missing_alternate_access_path',
+      'missing_application_route',
+      'missing_source_url',
+      'biography_description_fallback',
+    ]) {
+      expect(classifyOperatorQueueReason(soft)).toBe('evidence');
+    }
   });
 
   it('summarizes latest dry and non-dry runs separately', () => {

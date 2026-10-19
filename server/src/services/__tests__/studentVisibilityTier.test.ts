@@ -11,6 +11,7 @@ import {
   isUnbackedLabNameShell,
   isStudentReadySoftSignalReason,
   isStudentVisibilitySignalReason,
+  partitionStudentVisibilityReasons,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
   researchEntityMeetsStudentReadyDefinition,
@@ -96,6 +97,22 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     for (const held of ['missing_lead', 'profile_identity_risk', 'operator_override']) {
       expect(isStudentVisibilitySignalReason(held)).toBe(false);
     }
+  });
+
+  it('partitions stored reasons into blocking reasons and signals, deduplicated', () => {
+    expect(
+      partitionStudentVisibilityReasons([
+        'source_backed_description',
+        ' missing_lead ',
+        'missing_facet_signal',
+        'missing_lead',
+        '',
+      ]),
+    ).toEqual({
+      blocking: ['missing_lead'],
+      signals: ['source_backed_description', 'missing_facet_signal'],
+    });
+    expect(partitionStudentVisibilityReasons(undefined)).toEqual({ blocking: [], signals: [] });
   });
 });
 

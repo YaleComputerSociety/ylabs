@@ -895,6 +895,23 @@ export const STUDENT_VISIBILITY_EVIDENCE_REASONS: ReadonlySet<string> = new Set(
 export const isStudentVisibilitySignalReason = (reason: string): boolean =>
   STUDENT_VISIBILITY_EVIDENCE_REASONS.has(reason) || isStudentReadySoftSignalReason(reason);
 
+export interface PartitionedStudentVisibilityReasons {
+  blocking: string[];
+  signals: string[];
+}
+
+export function partitionStudentVisibilityReasons(
+  reasons: unknown,
+): PartitionedStudentVisibilityReasons {
+  const stored = Array.isArray(reasons)
+    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
+    : [];
+  return {
+    blocking: stored.filter((reason) => !isStudentVisibilitySignalReason(reason)),
+    signals: stored.filter(isStudentVisibilitySignalReason),
+  };
+}
+
 // A person-scoped page whose body is a CV or biography that states no research
 // (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
 // real and the row returns once a source states the research.

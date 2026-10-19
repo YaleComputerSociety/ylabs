@@ -6,6 +6,11 @@ import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
+import { isBlockingVisibilityReason } from './studentVisibilityGateService';
+import {
+  isStudentVisibilitySignalReason,
+  partitionStudentVisibilityReasons,
+} from './studentVisibilityTier';
 import { buildSourceHealthReviewSummary } from '../scripts/sourceHealth';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
@@ -382,14 +387,6 @@ export type PromotionCopyDryRunArtifact =
       ageHours: number;
     };
 
-const evidenceReasons = new Set([
-  'application_route',
-  'graduate_relevant',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
-
 const reviewDecisionReasons = new Set([
   'application_source_only',
   'archive_review',
@@ -400,21 +397,16 @@ const reviewDecisionReasons = new Set([
 ]);
 
 export function classifyOperatorQueueReason(reason: string): QueueKind {
-  if (evidenceReasons.has(reason)) return 'evidence';
+  if (isStudentVisibilitySignalReason(reason)) return 'evidence';
   if (reviewDecisionReasons.has(reason)) return 'review';
-  if (
-    reason.startsWith('missing_') ||
-    [
-      'inactive_at_yale',
-      'missing_card_description',
-      'profile_fallback_only',
-      'thin_description',
-    ].includes(reason)
-  ) {
-    return 'blocking';
-  }
+  if (isBlockingVisibilityReason(reason)) return 'blocking';
   return 'review';
 }
+
+const sampleReasonSplit = (reasons: unknown) => {
+  const { blocking, signals } = partitionStudentVisibilityReasons(reasons);
+  return { blockerReasons: blocking, signalReasons: signals };
+};
 
 export function summarizeDryRunPosture(runs: any[]) {
   const sorted = [...runs].sort(
@@ -1947,6 +1939,7 @@ function compactResearchSample(row: any) {
     slug: row.slug || '',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
+    ...sampleReasonSplit(row.studentVisibilityReasons),
     sourceUrl: row.websiteUrl || row.sourceUrls?.[0] || '',
     summary: row.shortDescription || '',
   };
@@ -1959,6 +1952,7 @@ function compactProgramSample(row: any) {
     label: row.title || id || '[unknown program]',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
+    ...sampleReasonSplit(row.studentVisibilityReasons),
     sourceUrl: row.sourceUrl || '',
     category: row.studentFacingCategory || '',
     summary: row.summary || '',
