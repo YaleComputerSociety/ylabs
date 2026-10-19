@@ -3263,6 +3263,14 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     expect(readableLinkTarget(target)).toBe('the linked page');
   });
 
+  it('does not double the article when an unsafe link follows a determiner', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Applicants must review the javascript:void(0) before applying to the fellowship.',
+      ),
+    ).toBe('Applicants must review the linked page before applying to the fellowship.');
+  });
+
   it('removes an unsafe scheme token that is not the object of its sentence', () => {
     expect(
       stripBibliographicReferenceArtifacts(

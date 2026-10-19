@@ -352,6 +352,7 @@ const LINK_OBJECT_LEAD_IN =
   /\b(?:to|into|onto|the|a|an|this|our|your|their|of|visit|visiting|see|check|consult|download|access|browse|(?:available|found|located|posted|listed)\s+(?:online\s+)?(?:at|from|on))\s*$/i;
 const MAX_READABLE_LINK_CHARS = 80;
 const UNREADABLE_LINK_TEXT = 'the linked page';
+const DETERMINER_BEFORE_LINK = /\b(?:the|a|an|this|our|your|their)\s*$/i;
 
 interface MaskedArtifact {
   token: string;
@@ -417,7 +418,11 @@ function restoreLoadBearingLinks(sentence: string, artifacts: readonly MaskedArt
       previousRestoredLinkEnd !== null &&
       LINK_LIST_SEPARATOR.test(restored.slice(previousRestoredLinkEnd));
     if (artifact?.isLink && (continuesRestoredList || isLoadBearingLinkSlot(restored))) {
-      restored += readableLinkTarget(artifact.token);
+      const readable = readableLinkTarget(artifact.token);
+      restored +=
+        readable === UNREADABLE_LINK_TEXT && DETERMINER_BEFORE_LINK.test(restored)
+          ? readable.replace(/^the /, '')
+          : readable;
       previousRestoredLinkEnd = restored.length;
     } else {
       restored += ARTIFACT_TOKEN_MASK;
