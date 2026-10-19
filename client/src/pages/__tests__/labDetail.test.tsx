@@ -2596,10 +2596,34 @@ describe('LabDetail page', () => {
     expect(rail.textContent).not.toContain('How to get involved');
     expect(summaryCard.textContent).not.toContain('Jordan Researcher');
     expect(rail.textContent).toContain('Jordan Researcher');
-    expect(rail.className).toContain('md:row-start-1');
-    expect(rail.className).not.toContain('self-start');
     expect(body.textContent).toContain('Affiliated with');
-    expect(body.className).toContain('md:col-span-2');
+  });
+
+  it('omits the rail and puts the body right after the summary when there is no lead or evidence', async () => {
+    renderLabDetail({
+      ...basePayload,
+      affiliatedResearchEntities: [
+        {
+          id: 'entity-umbrella',
+          slug: 'center-example-institute',
+          name: 'Example Institute',
+          kind: 'institute',
+          entityType: 'INSTITUTE',
+          departments: ['Neuroscience'],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const summaryCard = screen
+      .getByRole('heading', { name: 'Research summary' })
+      .closest('section') as HTMLElement;
+    const body = summaryCard.nextElementSibling as HTMLElement;
+    expect(summaryCard.parentElement?.children).toHaveLength(2);
+    expect(body.tagName).not.toBe('SECTION');
+    expect(body.textContent).toContain('Affiliated with');
+    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
   });
 
   it('does not link an affiliation summary without a navigable slug', async () => {

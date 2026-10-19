@@ -49,7 +49,7 @@ const ResearchProfileSkeleton = ({ leading }: { leading?: ReactNode }) => (
               <SkeletonBar className="mt-3 h-3 w-2/3" />
               <p className="mt-5 text-xs text-muted">Loading research profile</p>
             </div>
-            <div className={`${researchProfileContactRailClassName} h-40`} />
+            <div className={`${researchProfileContactRailClassName} h-40 md:h-auto`} />
           </div>
         </div>
       </div>
