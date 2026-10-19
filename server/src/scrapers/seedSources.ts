@@ -217,6 +217,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'center-member-profile-research',
+    displayName: 'Center member profile research',
+    description:
+      "Reads the biography and research statement on a center member's own profile page (Yale FDS, the Cowles Foundation, the MacMillan Center councils) and attaches them, as writer evidence only, to the one personal research row that member leads. A page joins to a person only through a centers-roster membership edge whose identity was proven, never by name, and the lane mints no row.",
+    baseUrl: 'https://fds.yale.edu',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
     name: 'directory-alias-resolution',
     displayName: 'Directory alias resolution',
     description:
@@ -332,12 +341,30 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'center-affiliation-roster',
+    displayName: 'Center affiliation roster (deterministic)',
+    description:
+      "Reads an organizational research home's own page with code and emits the same umbrella relationship observations as center-affiliation-llm for the people and labs the page lists in people cards, profile directories, contact listings and lists under a membership heading. A name the page states only in prose is counted, not asserted, and an ambiguous listing is refused. It replaced center-affiliation-llm in the sweep on 2026-10-19 and hands off the relationships that lane wrote when its read does not list them (#5296).",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'weekly',
+  },
+  {
     name: 'center-director-llm',
     displayName: 'Center director LLM extractor',
     description:
       "Reads an organizational research home's official site + leadership pages and emits an entity-level inferred-director observation; the materializer resolves the name to a unique Yale User before promoting them to a director member.",
     baseUrl: '',
     defaultWeight: 0.6,
+    cadence: 'weekly',
+  },
+  {
+    name: 'center-director',
+    displayName: 'Center director (deterministic)',
+    description:
+      "Reads an organizational research home's own page and the leadership pages inside its own subtree with code, and emits the same entity-level inferred-director observations as center-director-llm when one director is stated by a title label or a strict sentence. Two directors at the same rank refuse the read, except that a Faculty Director outranks a Director. It replaced center-director-llm in the sweep on 2026-10-19 and ends the lead edges that lane wrote when its read does not support them (#5296).",
+    baseUrl: '',
+    defaultWeight: 0.7,
     cadence: 'weekly',
   },
   {
@@ -507,6 +534,15 @@ const SOURCES: SourceSeed[] = [
       "LLM extraction over each lab's site to determine current undergrad count, openness, and evidence quote.",
     baseUrl: '',
     defaultWeight: 0.5,
+    cadence: 'weekly',
+  },
+  {
+    name: 'lab-site-undergrad-invitation',
+    displayName: 'Lab site undergraduate invitations',
+    description:
+      "Deterministic read of each lab site's home and join pages for a sentence that invites undergraduates: an active opening (actively hiring) or a standing invitation to get in touch (welcomes undergrads). No model call; a quote repeated across three or more rows is a shared program page and is refused.",
+    baseUrl: '',
+    defaultWeight: 0.8,
     cadence: 'weekly',
   },
   {

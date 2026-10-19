@@ -200,7 +200,7 @@ function statesOnlyANonHostingTraineeRank(title: string | undefined | null): boo
 }
 
 const ADMINISTRATIVE_OBJECT =
-  /\b(?:career services?|(?:academic|student|faculty) affairs|financial (?:aid|strategy)|finance|administration|education technology|medical education|admissions|communications|alumni|human resources)\b/i;
+  /\b(?:career (?:services?|management)|(?:academic|student|faculty) affairs|student life|financial (?:aid|strategy|planning)|finance|administration|education technology|medical education|admissions|communications|alumni|human resources|foundation relations|gifts?)\b/i;
 
 /**
  * An office that runs a school rather than a research group: an administrative head noun

@@ -59,12 +59,16 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'beta:refresh-from-development': 'promotion tooling, run as part of the release process',
   'development:refresh-from-beta': 'promotion tooling, run as part of the release process',
   'production:promote-beta-copy': 'promotion tooling, run as part of the release process',
+  'research-plans:retarget-merged':
+    'promotion tooling, run by the remote phase in each serving environment after a copy (#5208)',
   'model-refactor:validators':
     'applies declared collection validators, a reviewed schema operation',
 };
 
 const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
   'research-entity:audit-departure-lane': 'throws on --apply and points at the materialize lane',
+  'research-entity:measure-retired-remint':
+    'throws on --apply; a materializer dry run that measures whether deleting a retired row would let it be minted again',
   'scripts:audit-plans-the-projection-declines': 'throws on --apply, it has no apply path',
   'role-assignments:lead-edge-retirement-review-queue':
     'throws on --apply, read-only by construction',

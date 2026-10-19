@@ -13,6 +13,7 @@ import {
   isSubordinateResearchRank,
   looksLikeNonResearchTitle,
   mintsNoResearchEntityAsTeachingAppointment,
+  ownsNoResearchEntityByTitle,
   personToObservations,
   statesOnlyATeachingAppointment,
   YaleDirectoryScraper,
@@ -628,6 +629,38 @@ describe('isResearchSupportStaffTitle (#3410)', () => {
 
   it('reads a support title through the invisible format characters a CMS emits', () => {
     expect(isResearchSupportStaffTitle('Labora\u00adtory Assis\u00adtant 3')).toBe(true);
+  });
+});
+
+describe('public-health staff job classes at mint', () => {
+  it('refuses statistician, analyst, finance-assistant and abbreviated assistant titles', () => {
+    for (const title of [
+      'Biostatistician',
+      'Statistician 3',
+      'Data Analyst',
+      'Business Data Analyst',
+      'Financial Analyst 2',
+      'Programmer Analyst',
+      'Portfolio & Grant Analyst',
+      'Geospatial Research Analyst',
+      'Financial Assistant 4',
+      'Sr Admin Asst School of Public Health',
+      'Senior Executive Assistant, Deans Office',
+    ]) {
+      expect(ownsNoResearchEntityByTitle(title)).toBe(true);
+    }
+  });
+
+  it('keeps a faculty appointment stated beside a statistician or analyst role', () => {
+    for (const title of [
+      'Associate Professor of Pediatrics and of Biostatistics; Biostatistician',
+      'Assistant Professor of Biostatistics',
+      'Research Scientist in Biostatistics',
+      'Professor of Psychiatry; Training and Supervising Psychoanalyst',
+    ]) {
+      expect(isResearchSupportStaffTitle(title)).toBe(false);
+      expect(isFacultyTitle(title)).toBe(true);
+    }
   });
 });
 

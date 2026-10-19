@@ -246,6 +246,9 @@ These are the bulk of the integrity gate's `officialLabUrlResearchEntities` grou
 Both URL stages need the two rows to share an address, so one lab listed by a school's lab index and by its own domain stayed two rows under one lead, the extra one held at `operator_review` with `duplicate_risk` (#4651).
 `shared-person-name-agreed-dedupe` (`research-entity:dedupe-by-pi --shared-person-id --require-name-agreement --apply --confirm-research-entity-pi-dedupe --limit=10000 --max-apply=<max>`) reaches them through the lead person.
 `--require-name-agreement` groups each lead's rows by `entityType` and by name after folding diacritics and punctuation and dropping `the` and the kind nouns (lab, laboratory, research, faculty, group), so only rows agreeing on all three merge and a lead's other rows neither join nor block the group, because a shared lead alone does not make two rows one entity (#3279): one person can lead a lab and an unrelated project under another name.
+A lab named for its lead takes an eponymous key instead: when the words before its first kind noun, or its whole strict name key, are the lead's surname, optionally preceded by the lead's given names or initials, it agrees with every other such name of that type under that lead whatever follows the kind noun, because a description lane copies a lab site's title and its tagline ("<SURNAME> LAB <tagline> @ Yale") left one lab serving twice beside "<Surname> Lab" (#5308).
+Every name whose strict key is the lead's name takes the eponymous key too, so a bare surname or a "<Surname> Research Group" row still agrees with "<Surname> Lab" as it did under the strict key.
+A topic word in the head keeps the strict key, and a row that more than one person record leads stays out of the lane.
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
 
@@ -269,6 +272,10 @@ Within one lane the newest read wins whichever key it was filed under, as it alr
 Identity, lead and visibility fields (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS` in `entityMaterializer.ts`, for example `name`, `slug`, `entityType`, `school`, `lead`, the `inferredPi*` and `inferredDirector*` fields, and `studentVisibility*`) stay the survivor's own, so a loser cannot re-open the merge decision on every resolve.
 The one exception is `entityType` on a survivor with no type observation of its own: a loser's observation asserting the type the survivor already holds backs that type, so the stored value resolves from evidence and records it in `fieldProvenance` (#3381).
 A loser's type that contradicts the survivor's never resolves, because an eponymous faculty research profile merged into a lab is evidence the lab exists, not a claim that the lab is a profile.
+The second exception is the PI attribution (`inferredPiUserKey`, `inferredPiUserId`) on a survivor that states none of its own and has no lead lock: the roster that lists the person keeps reading the loser's key after a merge, so the loser's attribution names the survivor's lead, and the person-mint gate counts a merged-in loser's attribution as its survivor's for the same survivors (#5339).
+A survivor that states a PI of its own never takes a loser's, so a merge cannot add a second person beside the lead the survivor's own lane read.
+Nor does a survivor whose losers name different people, or one already holding a live `PI` or `DIRECTOR` edge for someone other than the person the losers name.
+An attribution or held edge that resolves to an archived researcher names nobody who can lead, so it is ignored on both sides of that comparison.
 A low-trust shell loser (`isLowTrustAreaShellSlug`: `faculty-research-area-`, `nih-pi-`, `nsf-pi-`, `federal-pi-`, `doe-pi-`) contributes no `researchAreas` or description prose unless the survivor is itself such a shell, which mirrors the merge plan's `trustedAreaShellEntities` guard (#604, #3330).
 Merge-time unions onto the survivor are therefore durable only where the loser's evidence backs them through these filters; a carried topic from a low-trust shell is refused again on the next resolve by design.
 Access signals for a survivor with merged-in rows derive from the same filtered union, so a loser's access evidence reaches the survivor from either entry point.
@@ -316,6 +323,17 @@ The redirect row is preserved on delete, so a later re-scrape still resolves the
 The command is report-only by default; applying requires `--apply --confirm-archived-entity-cleanup`, an explicit `--limit`, and a `--max-apply` bound, and is env-gated Dev-first through the same `assertScriptApplyAllowed` guard.
 In the sweep, the `archived-cleanup` stage (`research-entity:cleanup-archived --merge-residue-only --limit=5000`) runs after the FRA merge stage and, on the two exhaustive Development modes, switches to apply mode (`--apply --confirm-archived-entity-cleanup --max-apply=5000`) by default so the Dev pipeline deletes inert residue every run.
 Disable the delete by setting `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE` to a falsey value (`0`, `false`, `no`, `n`, `off`, `disable`, or `disabled`); the post-run stages never run on Beta or Prod sweeps, so those paths only ever report merge residue.
+
+## Asking whether deleting a retired row would bring it back
+
+`research-entity:measure-retired-remint` answers it for every archived row with no `canonicalGroupId` (#5189).
+It runs `materializeEntity` as a dry run with `treatArchivedResearchEntitiesAsAbsent` naming every such row, so each key is planned exactly as it would be after deletion, and reports per archive reason how many would be minted again.
+It is read-only, refuses `--apply`, and passes a card synthesizer that calls no model.
+A planned create counts as a mint only when it resolves the fields a real create requires, because the dry run plans a create before the create path skips one with no `name`; such a row reports `skipped: missing-required-fields`, and a row with no slug reports `skipped: no-entity-key`.
+The option is refused outside a dry run, because a projection planned against a row that still exists must never be written.
+On Development on 2026-10-18 it found 893 of 1,644 retired rows would be minted again from their own stored observations (288 of 300 staff-minted, 283 of 496 subordinate-rank, 321 of 789 with no archive reason, and 1 of the 59 under other archive reasons), and 432 planned creates lacked the required fields.
+The subordinate-rank and staff-title gates run in the lanes before an observation is written, so stored evidence reaches the materializer ungated; only the `PROGRAM` refusal, which sits in the materializer, plans no mint.
+That measurement is why Development keeps its archive (see the 2026-10-18 entry for #5148, "Beta And Production Carry No Archived Research Rows", in `docs/decisions.md`): an archived row is what refuses those re-mints.
 
 ## Asking whether an archive lost a lab
 

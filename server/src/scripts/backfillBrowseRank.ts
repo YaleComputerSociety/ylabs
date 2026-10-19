@@ -92,6 +92,7 @@ export interface BrowseRankBackfillResult {
   updated: number;
   stamped: number;
   scoreDrifted: number;
+  hostingFlagDrifted: number;
   refusedNewerScorer: number;
   indexSyncFailures: number;
   indexSyncDeferred: number;
@@ -116,6 +117,7 @@ export async function runBrowseRankBackfill(options: {
     updated: 0,
     stamped: 0,
     scoreDrifted: 0,
+    hostingFlagDrifted: 0,
     refusedNewerScorer: 0,
     indexSyncFailures: 0,
     indexSyncDeferred: 0,
@@ -129,6 +131,7 @@ export async function runBrowseRankBackfill(options: {
     result.updated += batchResult.updated;
     result.stamped += batchResult.stamped;
     result.scoreDrifted += batchResult.scoreDrifted;
+    result.hostingFlagDrifted += batchResult.hostingFlagDrifted;
     result.refusedNewerScorer += batchResult.refusedNewerScorer;
     result.indexSyncFailures += batchResult.indexSyncFailures;
     result.indexSyncDeferred += batchResult.indexSyncDeferred ?? 0;

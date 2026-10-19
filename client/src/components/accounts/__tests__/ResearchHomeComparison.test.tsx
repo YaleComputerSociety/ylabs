@@ -83,6 +83,68 @@ describe('ResearchHomeComparison', () => {
     await waitFor(() => expect(screen.getAllByText('Unknown').length).toBeGreaterThan(0));
   });
 
+  it('labels official links by role rather than by URL slug', async () => {
+    mockDetailBySlug({
+      'lab-a': {
+        ...entityA,
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/lab/clinical-nlp/',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/person-a/',
+          'https://medicine.yale.edu/lab/clinical-nlp/',
+          'https://reporter.nih.gov/project-details/123',
+        ],
+      },
+      'lab-b': {
+        ...entityB,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: 'https://research-site.example.io/',
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    const website = await screen.findByRole('link', { name: 'Lab website' });
+    expect(website.getAttribute('href')).toBe('https://medicine.yale.edu/lab/clinical-nlp/');
+    expect(
+      screen.getByRole('link', { name: 'School directory profile' }).getAttribute('href'),
+    ).toBe('https://medicine.yale.edu/profile/person-a/');
+    expect(screen.getByRole('link', { name: 'reporter.nih.gov' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Research website' })).toBeTruthy();
+    expect(screen.queryByText(/ page$/)).toBeNull();
+    expect(screen.queryByText(/ source$/)).toBeNull();
+  });
+
+  it('gives every official link in a cell a distinct accessible name', async () => {
+    mockDetailBySlug({
+      'lab-a': {
+        ...entityA,
+        websiteUrl: '',
+        sourceUrls: [
+          'https://news.example.edu/story-one',
+          'https://news.example.edu/story-two',
+          'https://other.example.org/page',
+        ],
+      },
+      'lab-b': entityB,
+    });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    const sameHost = await screen.findAllByRole('link', { name: 'news.example.edu' });
+    expect(sameHost).toHaveLength(1);
+    expect(sameHost[0].getAttribute('href')).toBe('https://news.example.edu/story-one');
+    expect(screen.getByRole('link', { name: 'other.example.org' })).toBeTruthy();
+  });
+
   it('links each column header to the canonical research profile and dedupes repeated entities', async () => {
     mockDetailBySlug({ 'lab-a': entityA });
 

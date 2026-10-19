@@ -197,6 +197,7 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
     schools: [seed.school],
     websiteUrl: `https://example.invalid/${seed.slug}`,
     hasUndergradHostingEvidence: true,
+    pastUndergradAdvisees: [{ count: 2 }],
     browseRankScore: seed.browseRankScore,
     lastObservedAt: new Date(nowIso),
     archived: false,

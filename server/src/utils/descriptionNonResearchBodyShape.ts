@@ -5,7 +5,13 @@ import {
   type CreativePracticeEvidence,
 } from './creativePracticeDescription';
 
-export type NonResearchBodyShape = 'role-biography' | 'third-party-page' | 'instruction-offering';
+export type NonResearchBodyShape =
+  | 'role-biography'
+  | 'third-party-page'
+  | 'instruction-offering'
+  | 'joining-instructions'
+  | 'event-narration'
+  | 'source-narration';
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -181,6 +187,133 @@ export function isPracticeBiographyWithoutResearch(value: unknown): boolean {
   return settings + (text.match(PRACTICE_DETAIL) ?? []).length >= MIN_PRACTICE_MENTIONS;
 }
 
+const JOINING_AUDIENCE =
+  /\b(?:interested in (?:joining|working (?:in|with)|applying)|prospective (?:\w+ ){0,2}(?:students?|applicants?|members?|trainees?|postdocs?|researchers?)|(?:students?|applicants?|candidates?|postdocs?|researchers?) (?:who (?:are|wish|want) |wishing |seeking |looking )?to join)\b/i;
+
+const POSITION_POSTING =
+  /\b(?:(?:job|position|employment) (?:openings?|postings?|listings?|opportunities)|open positions|positions? (?:are |is )?(?:currently )?available|(?:we are|we['’]re) (?:currently )?(?:recruiting|hiring)|posts? (?:job )?openings|post (?:job )?openings)\b/i;
+
+const APPLICANT_ACTION =
+  /\b(?:students?|applicants?|candidates?|postdocs?)\b[^.]{0,200}\b(?:should|may|can|must|are (?:welcome|encouraged|invited) to|please)\s+(?:\w+\s+){0,2}(?:contact|e-?mail|write to|reach out|apply (?:to|for)|(?:send|submit)\s+(?:\w+\s+){0,2}(?:applications?|cv|curriculum vitae|resumes?|cover letters?|inquir(?:y|ies)|statements?|e-?mails?|messages?|letters?))\b/i;
+
+const APPLICATION_MATERIALS =
+  /\b(?:send|submit|include|attach|email)\b[^.]{0,60}\b(?:cv|curriculum vitae|resume|cover letter|transcripts?|letters? of (?:recommendation|reference))\b/i;
+
+const isJoiningInstructionSentence = (sentence: string): boolean =>
+  JOINING_AUDIENCE.test(sentence) ||
+  POSITION_POSTING.test(sentence) ||
+  APPLICANT_ACTION.test(sentence) ||
+  APPLICATION_MATERIALS.test(sentence);
+
+/**
+ * A page's "prospective students" or "join us" paragraph: who to contact, which program to
+ * apply to, where openings are posted. It says how to join rather than what the research is,
+ * so it is refused only when every sentence is of that kind; research prose that closes with
+ * a joining line keeps its body.
+ */
+export function isJoiningInstructionsText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const sentences = sentencesOf(text);
+  return sentences.length > 0 && sentences.every(isJoiningInstructionSentence);
+}
+
+const TALK_GIVEN =
+  /\b(?:gives?|gave|giving|deliver(?:s|ed|ing)?|present(?:s|ed|ing)?|spoke|speaks|will (?:give|deliver|present|speak))\b[^.]{0,60}\b(?:keynotes?|talks?|presentations?|lectures?|seminars?|tutorials?|webinars?)\b/i;
+
+const NAMED_TALK =
+  /\b(?:keynotes?|(?:invited|plenary|distinguished|lightning) (?:talks?|speakers?|presentations?|lectures?|addresses))\b/i;
+
+const HONOUR_RECEIVED =
+  /\b(?:receiv(?:es|ed|ing)|won|wins|was awarded|has been awarded|is awarded|was named|has been named|was elected|has been elected|honou?red with)\b(?:(?!\b(?:support|funding|funds|grants?)\b)[^.]){0,100}\b(?:awards?|prizes?|medals?|honou?rs?(?!\s+of\b))\b/i;
+
+const WORK_ACCEPTED =
+  /\b(?:papers?|articles?|work|preprints?)\b(?:(?:(?!\b(?:how|why|whether|what|which|that|when|where)\b)[^.]){0,40}\b(?:has|have|was|were|is|are|been|got))?\s+(?:accepted|to appear)\s+(?:at|in|to|by)\b/i;
+
+const ANNOUNCEMENT_FILLER =
+  /^(?:more (?:details|information|news) (?:to come|coming)(?: soon)?|stay tuned|congratulations|congrats)\b/i;
+
+const MAX_EVENT_PREDICATE_OFFSET = 60;
+
+const EVENT_PREDICATES = [TALK_GIVEN, NAMED_TALK, HONOUR_RECEIVED, WORK_ACCEPTED];
+
+// The event has to be what the sentence opens on. Later in a sentence the same words are
+// usually a research object ("who wins awards") or one clause among several kinds of work.
+const isEventNarrationSentence = (sentence: string): boolean =>
+  EVENT_PREDICATES.some((predicate) => {
+    const match = predicate.exec(sentence);
+    return match !== null && match.index <= MAX_EVENT_PREDICATE_OFFSET;
+  });
+
+/**
+ * News about the group rather than a description of its work: talks or keynotes given,
+ * awards received, papers accepted. Refused only when every sentence narrates such an event
+ * or is announcement filler ("More details to come soon!"), so a description that mentions
+ * a talk or an award beside its research keeps its body.
+ */
+export function isEventNarrationText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const sentences = sentencesOf(text);
+  return (
+    sentences.some(isEventNarrationSentence) &&
+    sentences.every(
+      (sentence) => isEventNarrationSentence(sentence) || ANNOUNCEMENT_FILLER.test(sentence),
+    )
+  );
+}
+
+const SOURCE_DOCUMENT =
+  /(?:pages?|profiles?|websites?|sites?|listings?|entr(?:y|ies)|bios?|biograph(?:y|ies)|descriptions?|materials?|sources?|catalog(?:ue)?s?|directory|directories)/
+    .source;
+
+const NARRATING_VERB =
+  /(?:describes?|states?|lists?|notes?|mentions?|indicates?|says|shows?|highlights?|reports?|suggests?|outlines?|presents?|emphasi[sz]es?|focus(?:es)? on|provides?|references?|cites?|covers?|identif(?:y|ies)|names?|features?)/
+    .source;
+
+// The document has to be the sentence's subject and has to be marked as a source: a
+// determiner, a possessive name of up to four words ("A Named Person's profile lists"), a
+// closed run of source qualifiers ("Course and department pages describe"), or a bare
+// "Pages" or "Profile" opening the sentence. An open slot reads research prose as
+// narration, because "Quantum materials feature exotic states" and "Enzyme active sites
+// show selectivity" also put a document noun before a narrating verb.
+const SOURCE_QUALIFIER =
+  /(?:course|department|departmental|faculty|program|lab|group|personal|official|university|school|yale|web|online|directory|people|and)/
+    .source;
+
+const POSSESSIVE_NAME = /(?:[\w.-]+\s+){0,3}[\w.-]+(?:['’]s|s['’])/.source;
+
+const SOURCE_DETERMINER = `(?:(?:the|this|that|these|those)\\s+${POSSESSIVE_NAME}|the|this|that|these|those|her|his|their|its|our|${POSSESSIVE_NAME})\\s+`;
+
+const MARKED_SOURCE_DOCUMENT = `(?:${SOURCE_DETERMINER}(?:${SOURCE_QUALIFIER}\\s+){0,6}|(?:${SOURCE_QUALIFIER}\\s+){1,6})${SOURCE_DOCUMENT}`;
+
+const BARE_SOURCE_DOCUMENT = /(?:pages|profiles?)/.source;
+
+const SOURCE_NARRATION_LEAD = new RegExp(
+  `^["“]?(?:${MARKED_SOURCE_DOCUMENT}|${BARE_SOURCE_DOCUMENT})\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
+  'i',
+);
+
+const ACCORDING_TO_SOURCE = /^["“]?according to\b/i;
+
+const isSourceNarrationSentence = (sentence: string): boolean =>
+  SOURCE_NARRATION_LEAD.test(sentence) || ACCORDING_TO_SOURCE.test(sentence);
+
+/**
+ * Text that reports what the row's sources say rather than stating the research: "Course
+ * and department pages describe study of ...", "The profile lists ...", "According to the
+ * page ...". It names the pages a writer read, not what the person or group studies, so
+ * it is not a research statement (owner decision, 2026-10-12, #5020). Refused only when
+ * every sentence narrates a source, so research prose that opens by citing its page and
+ * then states the work keeps its body.
+ */
+export function isSourceNarrationText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const sentences = sentencesOf(text);
+  return sentences.length > 0 && sentences.every(isSourceNarrationSentence);
+}
+
 const isLabEntityType = (entityType?: ResearchEntityType): boolean =>
   typeof entityType === 'string' && entityType.toUpperCase() === 'LAB';
 
@@ -193,5 +326,8 @@ export function nonResearchBodyShape(
     return 'instruction-offering';
   }
   if (isRoleBiographyWithoutResearchOrPractice(value)) return 'role-biography';
+  if (isJoiningInstructionsText(value)) return 'joining-instructions';
+  if (isEventNarrationText(value)) return 'event-narration';
+  if (isSourceNarrationText(value)) return 'source-narration';
   return null;
 }

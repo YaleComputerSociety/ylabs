@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   inferProgramSubjects,
+  programSubjectFilterOptions,
   resolveTopicSubjects,
   topicRegexForSubjects,
   yearOfStudyAliasesForQuery,
 } from '../programTopicService';
 
 describe('programTopicService', () => {
+  it('offers every subject filter in alphabetical order so no field leads the list', () => {
+    const options = programSubjectFilterOptions();
+    expect(options).toEqual([...options].sort((a, b) => a.localeCompare(b)));
+    expect(options).toContain('Social Sciences');
+    expect(options).toContain('Humanities and Arts');
+    expect(options[0]).toBe('Artificial Intelligence');
+    expect(options[1]).toBe('Biology');
+  });
+
   it('normalizes short and long AI topic aliases to canonical subjects', () => {
     expect(resolveTopicSubjects(['AI systems and NLP'])).toEqual([
       'Artificial Intelligence',

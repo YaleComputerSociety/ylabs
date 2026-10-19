@@ -33,3 +33,13 @@ describe('a stored job or fellowship posting is never served as a research websi
     expect(served.websiteUrl).toBe(LAB_ROOT);
   });
 });
+
+describe('a stored course page is never served as a research website', () => {
+  it('withholds the course page while the stored row waits for its resolve', () => {
+    const served = toPublicResearchEntityDto(
+      publicResearchDetailGroup(storedRow('https://fixturedept.yale.edu/courses/fixture-anatomy')),
+    ) as Record<string, unknown>;
+
+    expect(served.websiteUrl).toBeUndefined();
+  });
+});

@@ -3,7 +3,13 @@
  */
 import axios from 'axios';
 import { getApiBaseUrl } from './apiBaseUrl';
-import { dispatchAuthRequired, dispatchRateLimited } from './httpStatusEvents';
+import { dispatchHttpStatusEvent } from './httpStatusEvents';
+
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    skipAuthRequiredEvent?: boolean;
+  }
+}
 
 const client = axios.create({
   withCredentials: true,
@@ -14,19 +20,12 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error?.response?.status;
-    if (status === 401 && typeof window !== 'undefined') {
-      dispatchAuthRequired();
-    }
-    if (status === 429 && typeof window !== 'undefined') {
-      const retryHeader = error.response?.headers?.['retry-after'];
-      const retryAfterSeconds = Number.isFinite(Number(retryHeader))
-        ? Number(retryHeader)
-        : error.response?.data?.retryAfterSeconds;
-      dispatchRateLimited({
-        message: error.response?.data?.error || 'Too many requests.',
-        retryAfterSeconds,
-      });
-    }
+    if (status === 401 && error?.config?.skipAuthRequiredEvent) return Promise.reject(error);
+    dispatchHttpStatusEvent(
+      status,
+      error?.response?.headers?.['retry-after'],
+      error?.response?.data,
+    );
     return Promise.reject(error);
   },
 );

@@ -42,10 +42,23 @@ export const REQUIRED_REINDEX_ENV_VARS = Object.freeze([
 export function parseReindexArgs(argv) {
   const positional = [];
   let apply = false;
+  let full = false;
+  let output;
 
-  for (const arg of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--apply') {
       apply = true;
+      continue;
+    }
+    if (arg === '--full') {
+      full = true;
+      continue;
+    }
+    if (arg === '--output') {
+      output = argv[index + 1];
+      if (!output || output.startsWith('-')) throw new Error('--output requires a path');
+      index += 1;
       continue;
     }
     if (arg === '--dry-run') {
@@ -55,7 +68,7 @@ export function parseReindexArgs(argv) {
     }
     if (arg.startsWith('-')) {
       throw new Error(
-        `Unknown argument: ${arg}. Usage: reindex-search-index.mjs <beta|production> [--apply]`,
+        `Unknown argument: ${arg}. Usage: reindex-search-index.mjs <beta|production> [--apply] [--full] [--output <path>]`,
       );
     }
     positional.push(arg);
@@ -74,7 +87,7 @@ export function parseReindexArgs(argv) {
     );
   }
 
-  return { environment, apply };
+  return { environment, apply, full, ...(output ? { output } : {}) };
 }
 
 // Required only for a production apply. `assertScriptApplyAllowed` refuses a
@@ -142,7 +155,7 @@ function describeMeiliWriteKeyPresence(env) {
   return '(unset)';
 }
 
-export function summarizeReindexPlan({ environment, apply, env }) {
+export function summarizeReindexPlan({ environment, apply, full, env }) {
   const meiliHost = String(env.MEILISEARCH_HOST || '').trim();
   const indexPrefix = String(env.MEILISEARCH_INDEX_PREFIX || '').trim();
   const mongoUrl = String(env.MONGODBURL || '').trim();
@@ -161,7 +174,7 @@ export function summarizeReindexPlan({ environment, apply, env }) {
     'Meilisearch reindex plan',
     '',
     `  environment:    ${environment}`,
-    `  mode:           ${apply ? 'APPLY - will clear and rebuild the index' : 'DRY RUN - reports only, changes nothing'}`,
+    `  mode:           ${apply ? (full ? 'APPLY - will rebuild the index (forced with --full)' : 'APPLY - writes only the changed documents when the live index matches the code, rebuilds otherwise') : 'DRY RUN - reports only, changes nothing'}`,
     `  meili host:     ${meiliHost || '(unset)'}`,
     `  index prefix:   ${indexPrefix || '(unset)'}`,
     `  mongo target:   ${mongoTarget}`,
@@ -173,8 +186,10 @@ export function summarizeReindexPlan({ environment, apply, env }) {
   ].join('\n');
 }
 
-export function reindexCommand({ apply }) {
+export function reindexCommand({ apply, full, output }) {
   const args = ['--cwd', 'server', 'reindex:meili'];
   if (apply) args.push('--confirm');
+  if (full) args.push('--full');
+  if (output) args.push('--output', output);
   return { command: 'yarn', args };
 }

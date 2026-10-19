@@ -196,7 +196,7 @@ describe('LabHeader', () => {
       />,
     );
 
-    expect(container.textContent).toContain('Faculty Research');
+    expect(container.textContent).toContain('Faculty research');
     expect(container.textContent).toContain('Visit research website');
     expect(container.textContent).not.toContain('Visit lab website');
   });
@@ -236,5 +236,25 @@ describe('LabHeader signal-only header', () => {
     expect(container.textContent).not.toContain('Some evidence');
     expect(container.textContent).not.toContain('Not currently available');
     expect(container.textContent).not.toContain('Evidence unknown');
+  });
+
+  it("shows the lab page's own invitation as a pill, and no pill without one", () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          undergradInvitation: {
+            level: 'actively_hiring',
+            quote: 'We are actively recruiting undergraduate researchers.',
+            sourceUrl: 'https://example.edu/lovelace/join',
+          },
+        }}
+      />,
+    );
+    expect(container.textContent).toContain('Actively hiring');
+
+    const { container: without } = render(<LabHeader group={baseGroup} />);
+    expect(without.textContent).not.toContain('Actively hiring');
+    expect(without.textContent).not.toContain('Welcomes undergrads');
   });
 });

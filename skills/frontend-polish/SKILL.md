@@ -39,6 +39,7 @@ These are the tells that have actually been measured in this client, so check ea
 - **Pressed state, not just hover.** An interactive card or button needs an `:active` that moves, or it feels like a picture of a button.
 - **Sentence case in headings and labels**, not Title Case On Every Header.
 The `/programs` quick filters, board section titles, cycle badges, and program modal headings are held to it by `fellowships.test.tsx` and `FellowshipModal.test.tsx` (#4273).
+The research kind labels come from one source, `entityKindLabel` in `client/src/utils/researchEntityCopy.ts`, which returns sentence case ("Faculty research", "Core facility"), so the detail chip and the browse card never need their own case conversion (#5111).
 - **No em dash anywhere**, per `AGENTS.md`. Plain hyphens.
 - **Real copy and real data.** No Lorem Ipsum, no "Acme", no `99.99%`, no `Jane Doe`. No "Elevate", "Seamless", "Unleash", "Next-Gen". No `Oops!` and no exclamation mark in a success message: "Connection failed. Please try again."
 - **No three equal cards** as a feature row, and no equal-height cards forced by flex when the content length varies.
@@ -53,10 +54,15 @@ Take the tells, not the taste.
 ## Interactions
 
 - Every interactive element has a visible `focus-visible` state and a minimum 44px touch target.
+A link inside a sentence or a one-line notice is the exception: it takes 24px or more through `-my-1.5 inline-block py-1.5`, per `client/DESIGN.md` §4.
 - Full keyboard access: nothing is reachable only by mouse or hover.
 - Pages scroll inside `[data-scroll-container]`, not the document, so PageDown and Space only work while focus is inside it.
 `ScrollToTop` moves focus to `#main-content` (with `preventScroll`) on every client-side push or replace navigation, and on back navigation when nothing holds focus.
 A page that wants focus somewhere else after a route change sets it in its own mount effect, which runs after that and wins.
+`/research` is that case on back navigation: a result card records the profile it opened against its history entry, and `useRestoreOpenedResearchResultFocus` puts focus back on that card's link when the student returns, so a keyboard user resumes where they left off instead of at the top of the list.
+When the restored scroll leaves that card partly outside the viewport, the hook scrolls the whole card into view, centred below the sticky filter bar.
+A research profile opened from results carries the results' search string in its location state, and its back link returns through history (`navigate(-depth)`), so the restored scroll, focus, and loaded pages all come back.
+It reads "Back to results" when that search string holds a query or a filter, "Back to research" when it came from the unfiltered browse view, and "Browse all research", without the back arrow and linking to `/research`, when the profile was reached without that state, so a label that promises a return appears only where there is one to return to.
 - `[data-scroll-container]` is `relative` so it is the containing block for every absolutely positioned descendant, `sr-only` text included.
 Without it, such an element resolves against the viewport, escapes the scroller's clip, and grows the document past the window, so a wheel at the end of the page scrolls the whole shell out of view (#4136).
 The student-journey smoke asserts the document never outgrows the window.
@@ -64,6 +70,9 @@ The student-journey smoke asserts the document never outgrows the window.
 Instead, `ScrollToTop` moves focus to `#main-content` at the moment a page-scroll key (PageDown, PageUp, Space, the vertical arrows, Home, End) is pressed while nothing holds focus, so the browser's own scroll for that key lands in `[data-scroll-container]`.
 It stops at the first pointer press, because a click gives the browser its own scroll origin and the keys then belong to whichever inner panel was clicked.
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
+- A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet, returns focus to its trigger, and scrolls the results section into view, because the student cannot see the results change behind the scrim.
+`ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.
+- Session-dependent banners such as the watched-deadline notice sit after the `/research` search form, so the search box is the first stop in the page's own focus order.
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
 - A control that switches between panels is a tablist, not a row of plain buttons.
@@ -71,6 +80,9 @@ Use `client/src/hooks/useRovingTabs.ts` for the selected tab and arrow, Home, an
 `client/src/pages/dashboard.tsx` and `client/src/components/admin/AdminPanel.tsx` are the reference uses.
 A strip that can outgrow a 320px viewport scrolls in its own `overflow-x-auto` region so the page never scrolls sideways.
 A tab strip inside a fixed-width popover wraps instead, because a scrolled strip there cuts a tab at the edge: the `/programs` filter tabs were clipped at 340px until they wrapped, and the student-journey smoke fails when a tab runs past the popover.
+A facet's options are ordered so no field leads by accident: the `/programs` subjects are alphabetical (`programSubjectFilterOptions`), because the taxonomy order opened on AI, Data Science, and Computer Vision and a humanities or social-science student read the list as not for them.
+In the `/programs` sheet a facet of 12 or fewer options lays out in two columns from `sm` up, so the whole facet shows at 1280x800, and the option list grows with the window rather than sitting in a fixed 220px box; on a phone the sheet body scrolls in the space left under the tabs, with no inner scroll box.
+The `/programs` filter rail is sticky at `xl` and sits above the results (`relative z-10`), so the popover is never painted under a result card.
 
 ## Content, loading, and errors
 
@@ -79,10 +91,19 @@ A tab strip inside a fixed-width popover wraps instead, because a scrolled strip
 A summary row's shape is fixed before data arrives, never derived from it: the `/programs` status tiles once added a tile per non-empty optional section, so a loaded board grew a row at 375 and 768px and widened every column at 1440px (#4356).
 They are now the four timing tiles at every load state, and the other sections keep their counts in their own headers.
 The student-journey smoke holds the first programs search until the loading tiles paint, then fails when the page shifts by 0.01 or more once the data arrives at 375, 768, or 1440px.
+- Count round trips before bytes on a first load.
+`/programs` used to wait for the filter options before its search and then page the 172-row catalog 100 rows at a time, so the first card sat behind four requests in series; with every API call delayed by 1 second it painted at about 4.9s (#5135).
+The search now starts as soon as the student is signed in, beside the filter options request, and asks for 250 rows a page (`PROGRAM_SEARCH_PAGE_SIZE`, the route cap in `programController.ts` and `fellowshipService.ts`), which brought the first card to about 3.0s to 3.4s and the settled page from 5.3s to 3.6s.
+Production and Beta already compress API responses at the Cloudflare edge in front of Render (`content-encoding: br`, measured on `/api/ready`), so Express compression middleware would not shrink what a student downloads.
+The programs search and filter requests also start while the sign-in check (`/api/check`) is still in flight, carrying a deep link's URL state from the first render, and they set `skipAuthRequiredEvent` so a visitor who turns out to be signed out is redirected to login without the "session needs a fresh login" notice; with every API call delayed 1 second the first card moved from about 3.2s to 1.9s (#5258).
+Program data stays sign-in only: the server still answers 401 to a signed-out request.
 - A block that appears above results only once they land reserves its slot while they load.
 The `/research` programs handoff renders `invisible` with the same copy while a programs-intent search loads, so the results section no longer moves down when it appears (#4524).
 - A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
 `ResearchProfileSkeleton` exports the profile's page, grid and column classes, and `labDetail.tsx` uses the same constants, because a reused container that changes width scored 0.093 at 1440px (#4268).
+The profile body is a page-level grid from those constants: the summary card and then the team, affiliations, and sources in the left column, with the evidence, lead, and "How to get involved" rail beside them from `md` up.
+The rail used to sit inside the summary card, so a short summary left a large empty area in the card beside a tall rail.
+A lead email in that rail stays on one line, truncating with the full address in its accessible name and `title`, because a wrapped address read as broken.
 Loading copy takes the loaded copy's shape and a control whose label swaps while it loads stacks both labels in one grid cell, because at 375px a two-line loading summary and a narrower "Searching…" button moved the `/research` results when a search resolved (#4796).
 The student-journey smoke holds the research search and the profile request until their loading states paint, then fails at a content shift of 0.01 or more, a handoff link under 44px, or a profile loading state under half the viewport.
 - A fetch keyed on a selection, filter, or search must never let an older response overwrite a newer one.
@@ -94,7 +115,12 @@ Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`
 Key a search on its request identity instead: `FellowshipSearchContextProvider` compares the built URL with the last one it sent, so only a real change in query, filter, or sort searches again.
 - A failed load stays an error until the student acts or a retry succeeds, and a count or tile with no data behind it shows a placeholder rather than a zero.
 The student-journey smoke counts first-page program searches per visit and fails when the load error disappears for a frame with no input.
+- Every student-facing date renders in America/New_York through `client/src/utils/newYorkDate.ts` or the program date helpers built on it, because a UTC formatter showed a roster read on a New York evening as the next day (#5301).
+A `no-restricted-syntax` rule in `eslint.config.js` fails `yarn lint` on any other date formatter or local-zone date getter outside the admin and analytics surfaces.
+A projected next-cycle estimate always names its year (`formatProjectedProgramDate`), because the server only projects a deadline forward into a future cycle, and "~Oct 14" read on Oct 18 looked already passed when the projection was a year out.
 - Empty states say what the surface is for and offer the next action.
+- A program that requires a mentor first answers "Yes, line up your own mentor before applying", and when its source application text carries a labelled award contact with a value (an award, program, grant, or fellowship manager, contact, coordinator, or administrator label, optionally "/Faculty Mentor", followed by a colon and a value), the modal adds `PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE`, because a student read the award's named contact as an assigned mentor.
+- An outbound action names the place it opens and says it leaves y/labs: the research detail "How to get involved" actions carry the external-link icon and a visible note, linked by `aria-describedby`, naming the site they open, and a not-yet-open program's action reads "See the official program page" rather than promising to track a date (#5306).
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.
 
@@ -103,6 +129,8 @@ The student-journey smoke counts first-page program searches per visit and fails
 - Verify alignment on a consistent grid; watch content width and gutters.
 - Test the range from 1280 to 1536px where sticky rails can overflow, plus mobile.
 - Sticky sidebars must never hide content below the fold on short viewports.
+- The `/research` sticky filter bar is one row below the sidebar breakpoint: the Filters trigger, then the active chips and "Clear all filters" in their own horizontally scrolling strip, because wrapped chips made the bar 156px of a 664px phone screen (#5305).
+The student-journey smoke fails when the bar is taller than 72px at 390x664 with a filter active, or when the active chip runs past the strip's edge and hides its remove control.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
 The `/research` operator controls sit at the bottom of the wide-layout sidebar, and inside the closed "Filters" panel on narrower layouts, for this reason.
@@ -121,6 +149,8 @@ The footer shift this removed scored 0.094 on `/about` at 1440px and 0.159 at 37
 - Validate on submit and on blur, with errors tied to their field.
 - Support autofill and password managers; do not block paste.
 - Submitting is idempotent and keyboard accessible (Enter submits).
+- An autosaved field shows its state from the first keystroke, never a blank line while a debounce waits, and flushes a pending save on blur, `pagehide`, a hidden document, and unmount, and holds an unload while a save is pending or in flight (`client/src/hooks/usePlanNoteAutosave.ts`, #5126).
+The unload flush goes through `client/src/utils/keepalivePut.ts`, a direct `fetch` with `keepalive`, because axios reaches its adapter through a promise chain that an unloading document never runs, so an axios request made from `pagehide` is silently never sent.
 
 ## Animation
 

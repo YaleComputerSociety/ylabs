@@ -9,7 +9,7 @@
  * unwatch control. Watching is a personal bookmark; program content stays
  * read-only.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import { BrowsableItem } from '../../types/browsable';
@@ -28,7 +28,9 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import useFavorites from '../../hooks/useFavorites';
 import useLatestRequest from '../../hooks/useLatestRequest';
-import usePlanNoteAutosave from '../../hooks/usePlanNoteAutosave';
+import usePlanNoteAutosave, { type PersistNoteOptions } from '../../hooks/usePlanNoteAutosave';
+import { keepalivePut } from '../../utils/keepalivePut';
+import PlanNoteSaveStatusText from './PlanNoteSaveStatusText';
 import useUndoableProgramUnwatch, {
   undoRestoresSummary,
   watchedProgramPlanSnapshot,
@@ -43,6 +45,7 @@ import {
 import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   normalizeResearchPlanStage,
+  programDeadlineIsSettled,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import {
@@ -52,6 +55,11 @@ import {
 } from '../../utils/watchedDeadlineSummary';
 import { CalendarIcon, EditIcon } from '../shared/icons';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import usePlanDetailSync, {
+  isPlanVersionConflict,
+  type ServedPlanDetail,
+  type ServedPlans,
+} from '../../hooks/usePlanDetailSync';
 
 interface ProgramWatchProps {
   onSummaryChange?: (summary: {
@@ -63,7 +71,9 @@ interface ProgramWatchProps {
   }) => void;
 }
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
+
+type ListLoadMode = 'replace' | 'merge';
 
 const MAX_PROGRAM_NOTE_LENGTH = 2000;
 
@@ -97,24 +107,6 @@ export const watchedProgramDeadlineSummary = (
   };
 };
 
-const persistProgramNote = async (programId: string, note: string) => {
-  try {
-    await axios.put(`/users/watchedProgramPlans/${programId}`, {
-      data: { plan: { privateNotes: note } },
-    });
-  } catch (error) {
-    console.error('Error saving watched program plan.');
-    throw error;
-  }
-  void trackResearchEvent({
-    eventType: 'research_plan_update',
-    entityType: 'fellowship',
-    entityId: programId,
-    payload: { field: 'note_presence' },
-    dedupeKey: createResearchAnalyticsInteractionId('plan'),
-  });
-};
-
 const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const {
     favIds: watchedIds,
@@ -132,58 +124,152 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedProgram, setSelectedProgram] = useState<Fellowship | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { noteSaveStatuses, saveNote, scheduleNoteSave, cancelNoteSave, markNotePersisted } =
-    usePlanNoteAutosave(persistProgramNote);
+  const planSyncRef = useRef<ReturnType<typeof usePlanDetailSync> | null>(null);
+  const persistProgramNote = useCallback(
+    async (programId: string, note: string, options?: PersistNoteOptions) => {
+      const sync = planSyncRef.current;
+      const send = async (version: string | undefined) => {
+        const body = {
+          data: {
+            plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) },
+          },
+        };
+        const served = options?.keepalive
+          ? await keepalivePut(`/users/watchedProgramPlans/${programId}`, body)
+          : (await axios.put(`/users/watchedProgramPlans/${programId}`, body)).data;
+        return (served as { watchedProgramPlans?: ServedPlans } | undefined)?.watchedProgramPlans;
+      };
+      try {
+        await (sync
+          ? sync.writePlan(programId, send, { immediate: options?.keepalive })
+          : send(undefined));
+      } catch (error) {
+        console.error('Error saving watched program plan.');
+        if (isPlanVersionConflict(error))
+          void sync?.refreshPlanDetails({ adoptVersionOf: programId });
+        throw error;
+      }
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'fellowship',
+        entityId: programId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
+    },
+    [],
+  );
+  const {
+    noteSaveStatuses,
+    saveNote,
+    scheduleNoteSave,
+    cancelNoteSave,
+    retainNoteSaves,
+    markNotePersisted,
+  } = usePlanNoteAutosave(persistProgramNote);
+
+  const planSync = usePlanDetailSync({
+    plansPath: '/users/watchedProgramPlans',
+    responseKey: 'watchedProgramPlans',
+    notes,
+    stages,
+    setNotes,
+    setStages,
+    markNotePersisted,
+  });
+  const { recordServedPlan, writePlan, refreshPlanDetails, takeServerStage } = planSync;
+  useEffect(() => {
+    planSyncRef.current = planSync;
+  });
+
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
     useUndoableProgramUnwatch({
       setFavorite,
       surface: 'saved_plans',
-      onPlanRestored: (programId, plan) => markNotePersisted(programId, plan.privateNotes),
+      onPlanRestored: (programId, plan) => {
+        markNotePersisted(programId, plan.privateNotes);
+        void refreshPlanDetails({ adoptVersionOf: programId });
+      },
     });
 
   const programRequest = useLatestRequest();
 
-  const loadPrograms = useCallback(async () => {
-    const ticket = programRequest.begin();
-    setIsLoading(true);
-    setProgramsLoadFailed(false);
-    try {
-      const [programResponse, planResponse] = await Promise.all([
-        axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
-        axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
-      ]);
-      if (!ticket.isCurrent()) return;
-      const rawPrograms = programResponse.data.watchedPrograms || [];
-      const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
-        createFellowship(program),
-      );
-      const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
-        string,
-        { privateNotes?: string; stage?: string }
-      >;
-      const loadedNotes: Record<string, string> = {};
-      const loadedStages: Record<string, ResearchPlanStage> = {};
-      for (const program of loadedPrograms) {
-        loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
-        loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
-        markNotePersisted(program.id, loadedNotes[program.id]);
+  const loadedProgramIdsRef = useRef(new Set<string>());
+
+  const loadPrograms = useCallback(
+    async (mode: ListLoadMode = 'replace'): Promise<boolean> => {
+      const ticket = programRequest.begin();
+      const merging = mode === 'merge';
+      if (!merging) {
+        setIsLoading(true);
+        setProgramsLoadFailed(false);
       }
-      setPrograms(loadedPrograms);
-      setNotes(loadedNotes);
-      setStages(loadedStages);
-    } catch {
-      if (!ticket.isCurrent()) return;
-      console.error('Error fetching watched programs.');
-      setPrograms([]);
-      setNotes({});
-      setStages({});
-      setProgramsLoadFailed(true);
-    } finally {
-      if (ticket.isCurrent()) setIsLoading(false);
-    }
-  }, [programRequest, markNotePersisted]);
+      try {
+        const [programResponse, planResponse] = await Promise.all([
+          axios.get('/users/watchedPrograms', { withCredentials: true, signal: ticket.signal }),
+          axios.get('/users/watchedProgramPlans', { withCredentials: true, signal: ticket.signal }),
+        ]);
+        if (!ticket.isCurrent()) return false;
+        const rawPrograms = programResponse.data.watchedPrograms || [];
+        const loadedPrograms: Fellowship[] = rawPrograms.map((program: any) =>
+          createFellowship(program),
+        );
+        const plans = (planResponse.data.watchedProgramPlans || {}) as Record<
+          string,
+          ServedPlanDetail
+        >;
+        const loadedNotes: Record<string, string> = {};
+        const loadedStages: Record<string, ResearchPlanStage> = {};
+        for (const program of loadedPrograms) {
+          if (merging && loadedProgramIdsRef.current.has(program.id)) continue;
+          loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
+          loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
+          markNotePersisted(program.id, loadedNotes[program.id]);
+          recordServedPlan(program.id, plans[program.id]);
+        }
+        loadedProgramIdsRef.current = new Set([
+          ...(merging ? loadedProgramIdsRef.current : []),
+          ...loadedPrograms.map((program) => program.id),
+        ]);
+        setPrograms(loadedPrograms);
+        setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
+        setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        return true;
+      } catch {
+        if (!ticket.isCurrent() || merging) return false;
+        console.error('Error fetching watched programs.');
+        setPrograms([]);
+        setNotes({});
+        setStages({});
+        setProgramsLoadFailed(true);
+        return false;
+      } finally {
+        if (ticket.isCurrent()) setIsLoading(false);
+      }
+    },
+    [programRequest, markNotePersisted, recordServedPlan],
+  );
 
   useLoadEffect(loadPrograms);
+
+  useEffect(() => {
+    if (watchedIdsLoaded) void refreshPlanDetails();
+  }, [watchedIds, watchedIdsLoaded, refreshPlanDetails]);
+
+  const requestedWatchIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isLoading || programsLoadFailed || !watchedIdsLoaded) return;
+    const known = new Set([
+      ...programs.map((program) => program.id),
+      ...requestedWatchIdsRef.current,
+    ]);
+    const unseen = watchedIds.filter((id) => !known.has(id));
+    if (unseen.length === 0) return;
+    unseen.forEach((id) => requestedWatchIdsRef.current.add(id));
+    void loadPrograms('merge').then((merged) => {
+      if (!merged) unseen.forEach((id) => requestedWatchIdsRef.current.delete(id));
+    });
+  }, [isLoading, programsLoadFailed, watchedIdsLoaded, programs, watchedIds, loadPrograms]);
 
   const retryLoad = () => {
     void reloadFavorites();
@@ -195,9 +281,16 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     [programs, watchedIds],
   );
 
+  useEffect(() => {
+    retainNoteSaves(visiblePrograms.map((program) => program.id));
+  }, [visiblePrograms, retainNoteSaves]);
+
   const nextDeadline = useMemo(
-    () => watchedProgramDeadlineSummary(visiblePrograms),
-    [visiblePrograms],
+    () =>
+      watchedProgramDeadlineSummary(
+        visiblePrograms.filter((program) => !programDeadlineIsSettled(stages[program.id])),
+      ),
+    [visiblePrograms, stages],
   );
 
   const deadlineUrgency = useMemo(() => {
@@ -266,8 +359,13 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
       setStages((current) => ({ ...current, [programId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
       try {
-        await axios.put(`/users/watchedProgramPlans/${programId}`, {
-          data: { plan: { stage: nextStage } },
+        await writePlan(programId, async (version) => {
+          const response = await axios.put(`/users/watchedProgramPlans/${programId}`, {
+            data: {
+              plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) },
+            },
+          });
+          return response.data?.watchedProgramPlans;
         });
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saved' }));
         void trackResearchEvent({
@@ -277,13 +375,17 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           payload: { field: 'stage' },
           dedupeKey: createResearchAnalyticsInteractionId('plan'),
         });
-      } catch {
+      } catch (error) {
         console.error('Error saving watched program stage.');
+        if (isPlanVersionConflict(error) && (await takeServerStage(programId))) {
+          setStageStatuses((statuses) => ({ ...statuses, [programId]: 'conflict' }));
+          return;
+        }
         setStages((current) => ({ ...current, [programId]: previousStage }));
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
       }
     },
-    [stages],
+    [stages, writePlan, takeServerStage],
   );
 
   const openModal = (program: Fellowship) => {
@@ -309,7 +411,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     <section>
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="yr-display text-2xl font-semibold text-ink">Program watch</h2>
+          <h2 className="yr-display text-2xl font-semibold text-ink">Watched programs</h2>
           <p className="mt-1 text-sm text-muted">
             Programs and fellowships you are watching, with their deadlines, accepting status, and
             eligibility. Open one to see its details, or unwatch it.
@@ -356,6 +458,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                     toggleWatch(program);
                   }}
                   onOpenModal={() => openModal(program)}
+                  hideDeadlineUrgency={programDeadlineIsSettled(stage)}
                   footer={
                     <>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -380,9 +483,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                             aria-label={
                               isEditing
                                 ? `Hide note for ${program.title}`
-                                : `Add note for ${program.title}`
+                                : note
+                                  ? `Edit note for ${program.title}`
+                                  : `Add note for ${program.title}`
                             }
-                            title={isEditing ? 'Hide note' : 'Add note'}
+                            title={isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note'}
                             className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
                               note
                                 ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
@@ -420,19 +525,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                             rows={2}
                             className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
                           />
-                          <p
-                            className={`mt-1 text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
-                            role={status === 'error' ? 'alert' : 'status'}
-                            aria-live="polite"
-                          >
-                            {status === 'saving'
-                              ? 'Saving…'
-                              : status === 'saved'
-                                ? 'Saved'
-                                : status === 'error'
-                                  ? 'Not saved. Check your connection or sign in again, then retry.'
-                                  : ''}
-                          </p>
+                          <PlanNoteSaveStatusText status={status} />
                         </div>
                       )}
                       {!isEditing && note && (

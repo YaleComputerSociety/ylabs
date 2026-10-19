@@ -28,6 +28,24 @@ const orEqualsClause = (field: string, values: unknown[]): string | null => {
   return `(${inner})`;
 };
 
+type StudentMultiValueFilterKey =
+  'kind' | 'entityType' | 'school' | 'departments' | 'researchAreas';
+
+// The request field `school` filters on the multi-valued `schools` index field,
+// so a cross-school lab matches under every school it belongs to.
+const STUDENT_MULTI_VALUE_FILTER_FIELDS: ReadonlyArray<{
+  filterKey: StudentMultiValueFilterKey;
+  indexField: string;
+}> = [
+  { filterKey: 'kind', indexField: 'kind' },
+  { filterKey: 'entityType', indexField: 'entityType' },
+  { filterKey: 'school', indexField: 'schools' },
+  { filterKey: 'departments', indexField: 'departments' },
+  { filterKey: 'researchAreas', indexField: 'researchAreas' },
+];
+
+export const HOSTS_UNDERGRADS_INDEX_FIELD = 'hasUndergradHostingEvidence';
+
 export interface BuildResearchGroupFilterStringOptions {
   /** Omit this field's own clause, so its facet distribution can be computed disjunctively. */
   excludeField?: keyof ResearchGroupFilterInput;
@@ -48,33 +66,14 @@ export function buildResearchGroupFilterString(
     : filters;
   const parts: string[] = ['archived = false'];
 
-  const kindClause = effectiveFilters.kind ? orEqualsClause('kind', effectiveFilters.kind) : null;
-  if (kindClause) parts.push(kindClause);
-
-  const entityTypeClause = effectiveFilters.entityType
-    ? orEqualsClause('entityType', effectiveFilters.entityType)
-    : null;
-  if (entityTypeClause) parts.push(entityTypeClause);
-
-  // Filter on the multi-valued `schools` field so a cross-school lab matches
-  // under every school it belongs to. The request field stays `school`.
-  const schoolClause = effectiveFilters.school
-    ? orEqualsClause('schools', effectiveFilters.school)
-    : null;
-  if (schoolClause) parts.push(schoolClause);
-
-  const departmentsClause = effectiveFilters.departments
-    ? orEqualsClause('departments', effectiveFilters.departments)
-    : null;
-  if (departmentsClause) parts.push(departmentsClause);
-
-  const researchAreasClause = effectiveFilters.researchAreas
-    ? orEqualsClause('researchAreas', effectiveFilters.researchAreas)
-    : null;
-  if (researchAreasClause) parts.push(researchAreasClause);
+  for (const { filterKey, indexField } of STUDENT_MULTI_VALUE_FILTER_FIELDS) {
+    const values = effectiveFilters[filterKey];
+    const clause = values ? orEqualsClause(indexField, values) : null;
+    if (clause) parts.push(clause);
+  }
 
   if (effectiveFilters.hostsUndergrads === true) {
-    parts.push('hasUndergradHostingEvidence = true');
+    parts.push(`${HOSTS_UNDERGRADS_INDEX_FIELD} = true`);
   }
 
   const studentVisibilityClause = effectiveFilters.studentVisibilityTier
@@ -83,4 +82,88 @@ export function buildResearchGroupFilterString(
   if (studentVisibilityClause) parts.push(studentVisibilityClause);
 
   return parts.join(' AND ');
+}
+
+const normalizedFacetValue = (value: string): string => value.trim().toLowerCase();
+
+const candidateFieldValues = (candidate: Record<string, unknown>, indexField: string): string[] => {
+  const raw = candidate[indexField];
+  const values = Array.isArray(raw) ? raw : [raw];
+  return values
+    .filter((value): value is string | number | boolean =>
+      ['string', 'number', 'boolean'].includes(typeof value),
+    )
+    .map((value) => String(value))
+    .filter((value) => value.trim().length > 0);
+};
+
+const activeFilterValues = (values: unknown): Set<string> => {
+  if (!Array.isArray(values)) return new Set();
+  return new Set(
+    values
+      .filter((value): value is string => typeof value === 'string')
+      .map(normalizedFacetValue)
+      .filter((value) => value.length > 0),
+  );
+};
+
+/**
+ * The in-process twin of `buildResearchGroupFilterString` for the student-facing
+ * filters, read against an index document. It omits `archived` and
+ * `studentVisibilityTier`, which the candidate pool query already pins, and it
+ * compares case-insensitively as Meilisearch filters do.
+ */
+export function candidateMatchesStudentFilters(
+  candidate: Record<string, unknown>,
+  filters: ResearchGroupFilterInput,
+  options: BuildResearchGroupFilterStringOptions = {},
+): boolean {
+  for (const { filterKey, indexField } of STUDENT_MULTI_VALUE_FILTER_FIELDS) {
+    if (filterKey === options.excludeField) continue;
+    const wanted = activeFilterValues(filters[filterKey]);
+    if (wanted.size === 0) continue;
+    const held = candidateFieldValues(candidate, indexField).map(normalizedFacetValue);
+    if (!held.some((value) => wanted.has(value))) return false;
+  }
+  if (options.excludeField !== 'hostsUndergrads' && filters.hostsUndergrads === true) {
+    if (candidate[HOSTS_UNDERGRADS_INDEX_FIELD] !== true) return false;
+  }
+  return true;
+}
+
+export const visibilityScopeOnly = (filters: ResearchGroupFilterInput): ResearchGroupFilterInput =>
+  filters.studentVisibilityTier ? { studentVisibilityTier: filters.studentVisibilityTier } : {};
+
+/**
+ * A facet distribution tallied over the same candidate rows the results are
+ * drawn from, so an option's count is the number of results applying it returns.
+ * Each facet is disjunctive: its population drops only its own filter clause.
+ */
+export function tallyCandidateFacetDistribution(
+  candidates: ReadonlyArray<Record<string, unknown>>,
+  filters: ResearchGroupFilterInput,
+  facets: ReadonlyArray<{ filterKey: keyof ResearchGroupFilterInput; indexField: string }>,
+): Record<string, Record<string, number>> {
+  const distribution: Record<string, Record<string, number>> = {};
+  for (const { filterKey, indexField } of facets) {
+    const labelByKey = new Map<string, string>();
+    const counts = new Map<string, number>();
+    for (const candidate of candidates) {
+      if (!candidateMatchesStudentFilters(candidate, filters, { excludeField: filterKey })) {
+        continue;
+      }
+      const seen = new Set<string>();
+      for (const value of candidateFieldValues(candidate, indexField)) {
+        const key = normalizedFacetValue(value);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!labelByKey.has(key)) labelByKey.set(key, value);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    distribution[indexField] = Object.fromEntries(
+      [...counts.entries()].map(([key, count]) => [labelByKey.get(key) as string, count]),
+    );
+  }
+  return distribution;
 }

@@ -233,6 +233,28 @@ describe('userController', () => {
     expectPublicProgram(body.watchedPrograms[0]);
   });
 
+  it('serves only the deadline fields when the deadlines view is asked for', async () => {
+    mocks.getWatchedPrograms.mockResolvedValue([privateProgram]);
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      query: { view: 'deadlines' },
+    } as any;
+    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
+
+    await getWatchedPrograms(req, res, next);
+
+    const [program] = res.json.mock.calls[0][0].watchedPrograms;
+    expect(Object.keys(program).sort()).toEqual([
+      '_id',
+      'deadline',
+      'deadlineProjectedNextCycle',
+      'deadlineStale',
+      'id',
+      'title',
+    ]);
+    expect(program.title).toBe(privateProgram.title);
+  });
+
   it('returns canonical watched program ids when watching a program', async () => {
     mocks.addWatchedPrograms.mockResolvedValue(['64a000000000000000000010']);
 

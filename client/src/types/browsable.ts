@@ -1,6 +1,7 @@
 /**
  * Shared types and helpers for browsable research entities and fellowships.
  */
+import { yearOfStudyChipLabels } from '../utils/programYearOfStudyChips';
 import { Fellowship } from './types';
 import {
   DepartmentNameRecord,
@@ -8,7 +9,7 @@ import {
   getUniqueDepartmentLabels,
 } from '../utils/departmentNames';
 import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
-import { programDeadlineClosingInstant } from '../utils/programDates';
+import { newYorkCalendarDaysUntil, programDeadlineClosingInstant } from '../utils/programDates';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import {
   DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
@@ -150,7 +151,7 @@ export function getItemTags(item: BrowsableItem): TagInfo[] {
           },
         ]
       : []),
-    ...item.data.yearOfStudy.map((y) => ({
+    ...yearOfStudyChipLabels(item.data.yearOfStudy).map((y) => ({
       label: y,
       bg: 'bg-blue-50',
       text: 'text-blue-700',
@@ -177,8 +178,7 @@ export function getItemSubtitleColor(item: BrowsableItem): string {
   const d = programDeadlineClosingInstant(item.data.deadline);
   if (!d) return 'text-muted';
   if (d < new Date()) return 'text-red-700';
-  const daysUntil = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (daysUntil <= 14) return 'text-amber-700 font-medium';
+  if (newYorkCalendarDaysUntil(d) <= 14) return 'text-amber-700 font-medium';
   return 'text-muted';
 }
 
@@ -210,5 +210,5 @@ export function getDaysUntilDeadline(item: BrowsableItem): number | null {
   if (item.data.deadlineProjectedNextCycle || item.data.deadlineStale) return null;
   const d = programDeadlineClosingInstant(item.data.deadline);
   if (!d) return null;
-  return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return d.getTime() < Date.now() ? null : newYorkCalendarDaysUntil(d);
 }

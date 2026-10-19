@@ -156,6 +156,26 @@ describe('staffMintedEntityReasonFor', () => {
     );
   });
 
+  it('refuses the statistician, analyst and assistant job classes a school directory lists', () => {
+    for (const title of [
+      'Biostatistician',
+      'Statistician 2',
+      'Business Data Analyst',
+      'Financial Analyst 3',
+      'Programmer Analyst 2',
+      'Portfolio & Grant Analyst',
+      'Financial Assistant 4',
+    ]) {
+      expect(staffMintedEntityReasonFor(title)).toBe('research_support_staff_title');
+    }
+    expect(staffMintedEntityReasonFor('Sr Admin Asst School of Public Health')).toBe(
+      'non_research_staff_title',
+    );
+    expect(
+      staffMintedEntityReasonFor('Assistant Professor of Biostatistics; Biostatistician'),
+    ).toBeUndefined();
+  });
+
   it('refuses every spelling a degree programme gives its students and graduates', () => {
     for (const title of [
       'Ph.D. Student',
@@ -445,6 +465,11 @@ describe('administrative staff titles', () => {
       'Director of Financial Aid',
       'Assistant Director of Admissions',
       'Chief Communications and Marketing Officer',
+      'Executive Director, Career Management Center',
+      'Assistant Director of Student Life',
+      'Associate Director Financial Planning & Analysis',
+      'Deputy Director, Corporate and Foundation Relations',
+      'Assistant Director, Gifts Officer',
     ]) {
       expect(staffMintedEntityReasonFor(title)).toBe('administrative_staff_title');
     }

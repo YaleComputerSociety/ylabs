@@ -8,6 +8,11 @@ import {
   settleAccessSignalsOfArchivedResearchEntities,
   type AccessSignalSettlementOutcome,
 } from './archivedResearchEntityAccessSignals';
+import {
+  emptyRelationshipEdgeSettlementOutcome,
+  settleRelationshipEdgesOfArchivedResearchEntities,
+  type RelationshipEdgeSettlementOutcome,
+} from './archivedResearchEntityRelationships';
 
 // Changing this also requires updating `currentMembersOnArchivedEntitiesPipeline`, which
 // counts exactly the edges this predicate selects (#4752).
@@ -317,6 +322,7 @@ export async function archiveResearchEntities({
   archived: number;
   roleEdges: RoleEdgeSettlementOutcome;
   accessSignals: AccessSignalSettlementOutcome;
+  relationships: RelationshipEdgeSettlementOutcome;
 }> {
   const objectIds = objectIdsOf(ids);
   if (objectIds.length === 0) {
@@ -324,6 +330,7 @@ export async function archiveResearchEntities({
       archived: 0,
       roleEdges: emptyRoleEdgeSettlementOutcome(),
       accessSignals: emptyAccessSignalSettlementOutcome(),
+      relationships: emptyRelationshipEdgeSettlementOutcome(),
     };
   }
   const result = await ResearchEntity.updateMany(
@@ -341,5 +348,11 @@ export async function archiveResearchEntities({
     survivorId,
     now,
   });
-  return { archived: result.modifiedCount ?? 0, roleEdges, accessSignals };
+  const relationships = await settleRelationshipEdgesOfArchivedResearchEntities({
+    archivedEntityIds: objectIds,
+    archivedReason,
+    survivorId,
+    now,
+  });
+  return { archived: result.modifiedCount ?? 0, roleEdges, accessSignals, relationships };
 }

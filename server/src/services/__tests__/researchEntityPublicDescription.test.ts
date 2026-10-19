@@ -821,3 +821,84 @@ describe('serving the card in place of a researchless biography', () => {
     expect(representation.invariant.cardDescriptionUseful).toBe(true);
   });
 });
+
+describe('a body that only says how to join or narrates events serves the card (#5109)', () => {
+  const lab = (fullDescription: string, shortDescription: string) => ({
+    entityType: 'LAB',
+    name: 'Example Phage Lab',
+    fullDescription,
+    shortDescription,
+    websiteUrl: 'https://example.yale.edu/phage',
+    sourceUrls: ['https://example.yale.edu/phage'],
+  });
+  const card =
+    'Studies evolutionary genetics of bacteriophages and RNA viruses and phage therapy for resistant infections.';
+
+  it.each([
+    [
+      'joining instructions',
+      'Students and researchers interested in joining the Example Phage Lab should contact the lab director directly. Prospective doctoral students should apply to the PhD program in Example Biology.',
+    ],
+    [
+      'keynote narration',
+      'Gives keynote presentations on bacteriophage evolution, focusing on bacteriophage evolution.',
+    ],
+  ])('serves the research card as the body in place of %s', (_label, body) => {
+    const entity = lab(body, card);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.entity.fullDescription).toBe(card);
+    expect(representation.invariant.pass).toBe(true);
+    expect(researchEntityServesPublicDetail(entity)).toBe(true);
+  });
+
+  it('still withholds the row when the card states no research either', () => {
+    const entity = lab(
+      'Students interested in joining the Example Phage Lab should contact the lab director directly.',
+      'Students should contact the lab director.',
+    );
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+});
+
+describe('a row whose only text narrates its sources is held', () => {
+  const facultyRow = (fullDescription: string, shortDescription: string) => ({
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    name: 'Example Faculty Research',
+    fullDescription,
+    shortDescription,
+    sourceUrls: ['https://example.yale.edu/people/example'],
+  });
+  const narratedBody =
+    'Course and departmental pages describe study of example reef morphology, the diversity of marine life, and techniques for studying body plans.';
+  const narratedCard =
+    'Course and department pages describe study of example reef morphology, phylogenetics, and the ecology of marine organisms.';
+
+  it('withholds the row when the body and the card both narrate their sources', () => {
+    const entity = facultyRow(narratedBody, narratedCard);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.invariant.pass).toBe(false);
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+
+  it('serves a research card in place of a body that narrates its sources', () => {
+    const card =
+      'Studies example reef morphology and the evolution of body plans across marine invertebrates.';
+    const entity = facultyRow(narratedBody, card);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.entity.fullDescription).toBe(card);
+    expect(researchEntityServesPublicDetail(entity)).toBe(true);
+  });
+  it('withholds a narrating body rather than serve the topic line built from its chips', () => {
+    const entity = {
+      ...facultyRow(
+        "Example's profile describes work in example ecology. The profile also lists interests in example ecology.",
+        '',
+      ),
+      researchAreas: ['Ecology'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.invariant.pass).toBe(false);
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+});

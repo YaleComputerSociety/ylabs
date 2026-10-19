@@ -74,6 +74,10 @@ export const CENTER_AFFILIATION_LLM_SOURCE_NAME = 'center-affiliation-llm';
 export const CENTER_AFFILIATION_RETIREMENT_REASON =
   'center affiliation retirement: two complete reads of the center page no longer name this claim (#4022)';
 
+export const CENTER_AFFILIATION_ROSTER_SOURCE_NAME = 'center-affiliation-roster';
+export const CENTER_AFFILIATION_ROSTER_RETIREMENT_REASON =
+  'center affiliation roster retirement: two complete reads of the center page no longer list this affiliation (#5296)';
+
 export interface CenterRosterLane {
   sourceName: string;
   retirementReason: string;
@@ -87,6 +91,11 @@ export const CENTERS_INSTITUTES_ROSTER_LANE: CenterRosterLane = {
 export const CENTER_AFFILIATION_ROSTER_LANE: CenterRosterLane = {
   sourceName: CENTER_AFFILIATION_LLM_SOURCE_NAME,
   retirementReason: CENTER_AFFILIATION_RETIREMENT_REASON,
+};
+
+export const CENTER_AFFILIATION_CODE_ROSTER_LANE: CenterRosterLane = {
+  sourceName: CENTER_AFFILIATION_ROSTER_SOURCE_NAME,
+  retirementReason: CENTER_AFFILIATION_ROSTER_RETIREMENT_REASON,
 };
 
 export type CenterRosterStopReason =

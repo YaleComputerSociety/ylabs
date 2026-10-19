@@ -66,6 +66,13 @@ const SHOUTY_SURNAME_PARTICLES = new Set([
 const isSurnameParticleToken = (token: string): boolean =>
   SHOUTY_SURNAME_PARTICLES.has(token.replace(/[.,]+$/, '').toUpperCase());
 
+export const isPersonNameParticleOrSuffixToken = (token: string): boolean => {
+  const upperToken = token.replace(/[.,]+$/, '').toUpperCase();
+  return (
+    SHOUTY_SURNAME_PARTICLES.has(upperToken) || GENERATIONAL_NAME_SUFFIX_TOKENS.has(upperToken)
+  );
+};
+
 const hasLowercaseLetter = (value: string): boolean => /[a-z]/.test(value);
 
 const CAPTION_LEAD_IN =

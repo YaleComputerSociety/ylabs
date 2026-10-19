@@ -219,9 +219,10 @@ interface FundSectionProse {
 }
 
 function sectionTextWithoutContactDirections($: cheerio.CheerioAPI, id: string): FundSectionProse {
-  const text = sectionText($, id);
+  const blocks = sectionBlocks($, id);
+  const text = blocks.join(' ');
   if (!text) return { statesOnlyContactDirections: false };
-  const withoutContact = withoutContactDirections(sectionBlocks($, id));
+  const withoutContact = withoutContactDirections(blocks);
   if (withoutContact.droppedSentences === 0) return { text, statesOnlyContactDirections: false };
   return {
     text: withoutContact.text || undefined,

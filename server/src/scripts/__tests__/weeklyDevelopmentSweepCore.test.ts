@@ -22,6 +22,9 @@ import {
   findSweepSummaryPath,
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
+  planWeeklySweepResume,
+  weeklySweepCheckpointFieldPath,
+  WEEKLY_SWEEP_RESUME_FLAG,
   weeklySweepChildEnvironment,
   weeklySweepRunDeadline,
   weeklySweepEnvironmentProblems,
@@ -671,5 +674,103 @@ describe('buildCorpusSnapshotArgs', () => {
       '--environment',
       'development',
     ]);
+  });
+});
+
+describe('resuming an interrupted weekly run (#5209)', () => {
+  const RUN_ID = 'f'.repeat(24);
+  const SHA = 'a'.repeat(40);
+
+  it('parses --resume-run in either form and refuses a malformed id or an explicit mode', () => {
+    expect(
+      parseWeeklySweepArgs([WEEKLY_SWEEP_CONFIRM_FLAG, WEEKLY_SWEEP_RESUME_FLAG, RUN_ID]),
+    ).toMatchObject({
+      confirmed: true,
+      resumeRunId: RUN_ID,
+    });
+    expect(
+      parseWeeklySweepArgs(['--dry-run', `${WEEKLY_SWEEP_RESUME_FLAG}=${RUN_ID}`]).resumeRunId,
+    ).toBe(RUN_ID);
+    expect(() => parseWeeklySweepArgs(['--dry-run', WEEKLY_SWEEP_RESUME_FLAG, 'abc'])).toThrow(
+      '24 hex',
+    );
+    expect(() =>
+      parseWeeklySweepArgs([
+        '--dry-run',
+        WEEKLY_SWEEP_RESUME_FLAG,
+        RUN_ID,
+        '--mode',
+        'development-full',
+      ]),
+    ).toThrow('takes no --mode');
+  });
+
+  it('keeps the checkpoint on a resume and abandons it on a fresh run', () => {
+    expect(buildWeeklySweepArgs('development-full')).toContain('--restart');
+    expect(buildWeeklySweepArgs('development-full', { resume: true })).not.toContain('--restart');
+    expect(weeklySweepCheckpointFieldPath('development-full')).toBe('checkpoints.development-full');
+  });
+
+  const unfinished = {
+    _id: RUN_ID,
+    status: 'running',
+    codeSha: SHA,
+    requestedModes: ['development-full', 'fellowship-development-full'],
+  };
+
+  it('resumes only an unfinished run, and only at the commit it recorded', () => {
+    expect(planWeeklySweepResume(null, SHA)).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining('not found'),
+    });
+    expect(planWeeklySweepResume({ ...unfinished, status: 'degraded' }, SHA)).toMatchObject({
+      ok: false,
+    });
+    expect(planWeeklySweepResume({ ...unfinished, finishedAt: new Date() }, SHA)).toMatchObject({
+      ok: false,
+    });
+    expect(planWeeklySweepResume({ ...unfinished, codeSha: null }, SHA)).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining('no commit'),
+    });
+    expect(planWeeklySweepResume(unfinished, 'b'.repeat(40))).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining("interrupted run's commit"),
+    });
+  });
+
+  it('reuses a finished mode, continues a checkpointed one, and starts a mode that never ran', () => {
+    const summary = { sourceCount: 3, succeeded: 3, failed: 0, notRun: 0 };
+    const checkpoint = {
+      mode: 'fellowship-development-full',
+      outputDirectory: '/tmp/x',
+      steps: {},
+    };
+    const plan = planWeeklySweepResume(
+      {
+        ...unfinished,
+        checkpoints: {
+          'development-full': { completed: true, exitCode: 0, summaryFound: true, summary },
+          'fellowship-development-full': { checkpoint },
+        },
+      },
+      SHA,
+    );
+    expect(plan).toEqual({
+      ok: true,
+      modes: [
+        {
+          mode: 'development-full',
+          completedOutcome: { mode: 'development-full', exitCode: 0, summaryFound: true, summary },
+        },
+        { mode: 'fellowship-development-full', checkpoint },
+      ],
+    });
+    expect(
+      planWeeklySweepResume({ ...unfinished, requestedModes: ['development-full'] }, SHA),
+    ).toEqual({
+      ok: true,
+      modes: [{ mode: 'development-full' }],
+    });
   });
 });

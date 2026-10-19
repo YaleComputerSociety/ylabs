@@ -11,6 +11,8 @@ import {
   isIdentifierOrGrantDbSourceUrl,
   isLikelyOfficialPersonProfileUrl,
   isLikelyUnavailableSourceLink,
+  labelizeResearchDetailValue,
+  sourceLabelForUrl,
   isOrgEngagementSourceUrl,
   isRosterNestedPersonPageUrl,
   findSourceLinkHealthEntry,
@@ -312,6 +314,58 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([awardPage]);
   });
 
+  it.each([
+    'https://api.crossref.org/types/grant/works',
+    'https://www.osti.gov/api/v1/records',
+    'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx',
+    'https://awardsearch.neh.gov/',
+  ])('never renders the grant lane endpoint %s as a source (#5261)', (endpoint) => {
+    const grantPage = 'https://doi.org/10.99999/fixture-grant-1';
+
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: '', sourceUrls: [endpoint] },
+      sourceFieldContributions: [
+        { sourceUrl: endpoint, contributions: ['Who leads it'] },
+        { sourceUrl: grantPage, contributions: ['Who leads it'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([grantPage]);
+  });
+
+  it('names each NIH RePORTER project so distinct grants never share one label', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/10000001',
+          'https://reporter.nih.gov/project-details/10000002',
+          'https://reporter.nih.gov/project-details/10000003',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual([
+      'NIH RePORTER project 10000001',
+      'NIH RePORTER project 10000002',
+      'NIH RePORTER project 10000003',
+    ]);
+  });
+
+  it('keeps every distinct page under a shared label and tells the rows apart', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: ['https://example.org/grants/alpha', 'https://example.org/grants/beta'],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual([
+      'example.org source (alpha)',
+      'example.org source (beta)',
+    ]);
+  });
+
   it('drops a raw RePORTER API endpoint from the source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
@@ -323,7 +377,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(0);
   });
 
-  it('labels the kept NSF award page as NSF Award Search rather than a bare host', () => {
+  it('labels the kept NSF award page by its award rather than a bare host', () => {
     const awardPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
 
     const sources = buildResearchDetailSources({
@@ -333,7 +387,7 @@ describe('buildResearchDetailSources', () => {
       },
     });
 
-    expect(sources.map((source) => source.label)).toEqual(['NSF Award Search']);
+    expect(sources.map((source) => source.label)).toEqual(['NSF award 2535171']);
   });
 
   it('collapses www and bare-host variants of one page into a single source row', () => {
@@ -630,6 +684,17 @@ describe('joinPageLinkLabel', () => {
     expect(joinPageLinkLabel('https://lab.example.test/news/2025/award')).toBe(
       'Read what they say about joining',
     );
+  });
+
+  it('judges a page by its own address segment, not by a parent segment', () => {
+    for (const nestedUrl of [
+      'https://lab.example.test/sample-join-lab/press',
+      'https://lab.example.test/careers/news/2025',
+      'https://lab.example.test/apply/about/',
+    ]) {
+      expect(joinPageLinkLabel(nestedUrl)).toBe('Read what they say about joining');
+    }
+    expect(joinPageLinkLabel('https://lab.example.test/about/join-us/')).toBe('See how to join');
   });
 
   it('never promises a join page over a member roster', () => {
@@ -1870,14 +1935,38 @@ describe('buildResearchDetailSources source attribution', () => {
     expect(sources[0].contexts).toEqual(['Profile source']);
   });
 
-  it('leaves a website or evidence context alone, since those already say what they are', () => {
+  it('shows what the research website backs after its own role', () => {
     const sources = buildResearchDetailSources({
       group: { websiteUrl: LAB, sourceUrls: [] },
-      sourceFieldContributions: [{ sourceUrl: LAB, contributions: ['Research summary'] }],
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Research summary', 'Topics', 'Research website'] },
+      ],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile website', 'Research summary', 'Topics']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('does not repeat the research website label when the website is also a cited source', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [LAB] },
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Research summary', 'Topics', 'Research website'] },
+      ],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].contexts).toEqual(['Profile website', 'Research summary', 'Topics']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('keeps the research website row to its role when it backs nothing else', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [] },
+      sourceFieldContributions: [],
     });
 
     expect(sources[0].contexts).toEqual(['Profile website']);
-    expect(sources[0].label).toBe('Research website');
   });
 
   it('ignores an attribution entry with no usable label', () => {
@@ -2181,5 +2270,17 @@ describe('servedResearchWebsiteUrl https landing (#4649)', () => {
         },
       ]),
     ).toBe(HTTP);
+  });
+});
+
+describe('slug-derived labels keep acronym casing', () => {
+  it('upper-cases a known acronym in a URL leaf', () => {
+    expect(sourceLabelForUrl('https://medicine.yale.edu/lab/clinical-nlp/')).toBe(
+      'Clinical NLP page',
+    );
+  });
+
+  it('keeps ordinary words title-cased', () => {
+    expect(labelizeResearchDetailValue('CURRENT_UNDERGRADS')).toBe('Current Undergrads');
   });
 });

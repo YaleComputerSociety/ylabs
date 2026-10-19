@@ -31,7 +31,7 @@ describe('researchEntityCopy', () => {
     };
 
     expect(isFacultyResearchEntity(entity)).toBe(true);
-    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(entityKindLabel(entity)).toBe('Faculty research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
   });
 
@@ -71,7 +71,7 @@ describe('researchEntityCopy', () => {
     };
 
     expect(isFacultyResearchEntity(entity)).toBe(true);
-    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(entityKindLabel(entity)).toBe('Faculty research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
     expect(researchWebsiteCtaLabel(entity)).toBe('Visit research website');
   });
@@ -204,7 +204,7 @@ describe('researchEntityCopy', () => {
     };
 
     expect(isFacultyResearchEntity(staleFacultyResearch)).toBe(true);
-    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty Research');
+    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty research');
     expect(researchWebsiteLabel(staleFacultyResearch)).toBe('research website');
     expect(researchWebsiteCtaLabel(staleFacultyResearch)).toBe('Visit research website');
   });
@@ -235,7 +235,7 @@ describe('researchEntityCopy', () => {
       entityType: 'CORE_FACILITY',
     };
 
-    expect(entityKindLabel(coreFacility)).toBe('Core Facility');
+    expect(entityKindLabel(coreFacility)).toBe('Core facility');
     expect(researchWebsiteLabel(coreFacility)).toBe('core facility website');
     expect(researchWebsiteCtaLabel(coreFacility)).toBe('Visit core facility website');
   });
@@ -463,7 +463,7 @@ describe('sanitizeResearchEntityCopy', () => {
 
 describe('relationshipTypeLabel', () => {
   it('maps known relationship types', () => {
-    expect(relationshipTypeLabel('AFFILIATED_LAB')).toBe('Affiliated lab');
+    expect(relationshipTypeLabel('AFFILIATED_LAB')).toBe('Affiliated');
     expect(relationshipTypeLabel('MEMBER_RESEARCH_AREA')).toBe('Member');
   });
 

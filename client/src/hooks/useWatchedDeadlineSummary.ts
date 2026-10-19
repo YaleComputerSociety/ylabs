@@ -43,7 +43,10 @@ export const useWatchedDeadlineSummary = (enabled: boolean): WatchedDeadlineSumm
     if (!enabled) return;
     try {
       const [programResponse, planResponse] = await Promise.all([
-        axios.get('/users/watchedPrograms', { withCredentials: true }),
+        axios.get('/users/watchedPrograms', {
+          params: { view: 'deadlines' },
+          withCredentials: true,
+        }),
         axios.get('/users/watchedProgramPlans', { withCredentials: true }),
       ]);
       if (!ticket.isCurrent()) return;

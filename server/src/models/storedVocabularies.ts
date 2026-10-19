@@ -27,6 +27,9 @@ export const descriptionGroundingVerdicts = [
 ] as const;
 export type DescriptionGroundingVerdict = (typeof descriptionGroundingVerdicts)[number];
 
+export const undergradInvitationLevels = ['actively_hiring', 'welcomes_undergrads'] as const;
+export type UndergradInvitationLevel = (typeof undergradInvitationLevels)[number];
+
 export const labSiteLeadVerdicts = ['CONFIRMED', 'CONTRADICTED', 'UNSTATED'] as const;
 export type LabSiteLeadVerdict = (typeof labSiteLeadVerdicts)[number];
 
@@ -204,3 +207,6 @@ export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
 export const officialRosterUndergraduateStatuses = ['current', 'past'] as const;
 export type OfficialRosterUndergraduateStatus =
   (typeof officialRosterUndergraduateStatuses)[number];
+
+export const officialRosterConfigOrigins = ['static', 'derived'] as const;
+export type OfficialRosterConfigOrigin = (typeof officialRosterConfigOrigins)[number];

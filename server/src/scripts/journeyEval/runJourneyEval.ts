@@ -11,12 +11,7 @@ import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './jou
 import { programJourneyCases } from './journeyEvalProgramCases';
 import { fellowshipJourneyCases } from './journeyEvalFellowshipCases';
 import { buildProgramJourneyContext } from './programJourneyContext';
-import {
-  parseTopicQueryJudgements,
-  parseUndergradEvidenceJudgements,
-  type TopicQueryJudgement,
-  type UndergradEvidenceJudgementSet,
-} from './journeyEvalJudgements';
+import { parseTopicQueryJudgements, type TopicQueryJudgement } from './journeyEvalJudgements';
 import {
   summarizeInvariants,
   type InvariantResult,
@@ -56,37 +51,6 @@ function loadTopicQueryJudgements(explicitPath?: string): TopicQueryJudgement[] 
   return parseTopicQueryJudgements(JSON.parse(fs.readFileSync(judgementsPath, 'utf8'))).queries;
 }
 
-function loadUndergradEvidenceJudgements(
-  explicitPath?: string,
-): UndergradEvidenceJudgementSet | null {
-  if (!explicitPath) return null;
-  if (!fs.existsSync(explicitPath)) {
-    console.error(`No judgements file at ${explicitPath}, so the precision case is inconclusive`);
-    return null;
-  }
-  return parseUndergradEvidenceJudgements(JSON.parse(fs.readFileSync(explicitPath, 'utf8')));
-}
-
-export function resolveUndergradSampleOutPath(value: string): string {
-  const samplePath = resolveSafeJsonReportOutputPath(value, '--undergrad-sample-out');
-  if (fs.existsSync(samplePath))
-    throw new Error(
-      `--undergrad-sample-out already exists at ${samplePath}, and a sample file may carry hand-entered verdicts, so choose a new path`,
-    );
-  return samplePath;
-}
-
-export function writeUndergradSampleTemplate(
-  samplePath: string,
-  sample: UndergradEvidenceJudgementSet,
-): string {
-  fs.writeFileSync(samplePath, JSON.stringify(sample, null, 2), { flag: 'wx' });
-  return samplePath;
-}
-
-const DEFAULT_UNDERGRAD_SAMPLE_SEED = '3569';
-const DEFAULT_UNDERGRAD_SAMPLE_SIZE = 50;
-
 interface JourneyEvalArgs {
   window: number;
   facetValues: number;
@@ -94,10 +58,6 @@ interface JourneyEvalArgs {
   cases?: string[];
   failOnInconclusive?: boolean;
   judgements?: string;
-  undergradJudgements?: string;
-  undergradSampleOut?: string;
-  undergradSampleSeed: string;
-  undergradSampleSize: number;
   output?: string;
 }
 
@@ -106,8 +66,6 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     window: 100,
     facetValues: 3,
     pages: 3,
-    undergradSampleSeed: DEFAULT_UNDERGRAD_SAMPLE_SEED,
-    undergradSampleSize: DEFAULT_UNDERGRAD_SAMPLE_SIZE,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -124,14 +82,6 @@ function parseArgs(argv: string[]): JourneyEvalArgs {
     else if (token.startsWith('--judgements='))
       args.judgements = token.slice('--judgements='.length);
     else if (token.startsWith('--judgments=')) args.judgements = token.slice('--judgments='.length);
-    else if (token.startsWith('--undergrad-judgements='))
-      args.undergradJudgements = token.slice('--undergrad-judgements='.length);
-    else if (token.startsWith('--undergrad-sample-out='))
-      args.undergradSampleOut = token.slice('--undergrad-sample-out='.length);
-    else if (token.startsWith('--undergrad-sample-seed='))
-      args.undergradSampleSeed = token.slice('--undergrad-sample-seed='.length);
-    else if (token.startsWith('--undergrad-sample-size='))
-      args.undergradSampleSize = Number(token.slice('--undergrad-sample-size='.length));
     else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
     else if (token === '--output') args.output = argv[++index];
     else if (token === '--fail-on-inconclusive') args.failOnInconclusive = true;
@@ -168,34 +118,38 @@ async function readOwnedSlotSurvivorWebsite(
 }
 
 async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> {
-  const { getResearchGroupDetail, optionalPublicLeadMemberNames, searchResearchGroupsViaMeili } =
-    await import('../../services/researchGroupService');
+  const {
+    getResearchGroupDetail,
+    listSimilarResearchEntities,
+    optionalPublicLeadMemberNames,
+    personNameWordKeys,
+    searchResearchGroupsViaMeili,
+  } = await import('../../services/researchGroupService');
   const database = mongoose.connection.db;
   if (!database) throw new Error('MongoDB connection is not initialized');
   const collection = database.collection(RESEARCH_ENTITY_COLLECTION);
-
-  const undergradSamplePath =
-    args.undergradSampleOut !== undefined
-      ? resolveUndergradSampleOutPath(args.undergradSampleOut)
-      : undefined;
-  if (undergradSamplePath !== undefined) {
-    if (!Number.isInteger(args.undergradSampleSize) || args.undergradSampleSize <= 0)
-      throw new Error('--undergrad-sample-size must be a positive integer');
-  }
+  let indexedPersonNames: Promise<Map<string, Record<string, unknown>>> | null = null;
+  const readIndexedPersonNames = () => {
+    indexedPersonNames ??= Promise.all(
+      ['leadProfessorNames', 'professorNames'].map((field) =>
+        readIndexedFieldByDocumentId('researchEntity', field).then(
+          (byDocumentId) => [field, byDocumentId] as const,
+        ),
+      ),
+    ).then((fields) => {
+      const byDocumentId = new Map<string, Record<string, unknown>>();
+      for (const [field, values] of fields) {
+        for (const [documentId, value] of values) {
+          byDocumentId.set(documentId, { ...byDocumentId.get(documentId), [field]: value });
+        }
+      }
+      return byDocumentId;
+    });
+    return indexedPersonNames;
+  };
 
   return {
     topicQueryJudgements: loadTopicQueryJudgements(args.judgements),
-    undergradEvidenceJudgements: loadUndergradEvidenceJudgements(args.undergradJudgements),
-    ...(undergradSamplePath !== undefined
-      ? {
-          undergradEvidenceSampleRequest: {
-            seed: args.undergradSampleSeed,
-            sampleSize: args.undergradSampleSize,
-            write: async (sample: UndergradEvidenceJudgementSet) =>
-              writeUndergradSampleTemplate(undergradSamplePath, sample),
-          },
-        }
-      : {}),
     window: args.window,
     facetValuesChecked: args.facetValues,
     pagesChecked: args.pages,
@@ -227,6 +181,25 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
       );
     },
     readLeadMemberNames: (storedRows) => optionalPublicLeadMemberNames(storedRows),
+    readSimilarResearchRail: async (slug: string) => {
+      const viewed = await collection.findOne({ slug });
+      if (!viewed) return null;
+      const rail = await listSimilarResearchEntities(viewed as Record<string, unknown>);
+      const cardRows = await collection
+        .find(
+          { slug: { $in: rail.map((card) => card.slug).filter(Boolean) } },
+          { projection: { slug: 1 } },
+        )
+        .toArray();
+      const documentIdBySlug = new Map(cardRows.map((row) => [String(row.slug), String(row._id)]));
+      const indexedNames = await readIndexedPersonNames();
+      const nameWordsOf = (documentId: string | undefined) =>
+        documentId ? [...personNameWordKeys(indexedNames.get(documentId))] : [];
+      return {
+        viewedNameWords: nameWordsOf(String(viewed._id)),
+        cards: rail.map((card) => ({ nameWords: nameWordsOf(documentIdBySlug.get(card.slug)) })),
+      };
+    },
     readOwnedSlotSurvivorWebsites: async () => {
       const survivorIds = await collection.distinct('canonicalGroupId', {
         archived: true,

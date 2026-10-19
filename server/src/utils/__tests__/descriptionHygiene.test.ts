@@ -50,6 +50,7 @@ import {
   sanitizeResearchEntityDescription,
   clampShortDescriptionToWholeSentences,
   sanitizeResearchEntityShortDescription,
+  readableLinkTarget,
   sanitizeStoredCatalogDescription,
   stripBibliographicReferenceArtifacts,
   stripCatalogChrome,
@@ -717,23 +718,31 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
   });
 });
 
-describe('sanitizeEvidenceExcerpt redaction-marker drop (#1076)', () => {
-  it('redacts raw contact details and drops a marker-only directive entirely', () => {
-    expect(sanitizeEvidenceExcerpt('Email us at intake@example.edu')).toBe('');
-    expect(sanitizeEvidenceExcerpt('Phone: 203-432-1234 Email: intake@example.edu')).toBe('');
-    expect(sanitizeEvidenceExcerpt('Contact: <intake@example.edu>')).toBe('');
+describe('sanitizeEvidenceExcerpt contact details and legacy markers (#1076, #5046)', () => {
+  it('keeps the contact details a public page publishes', () => {
+    expect(sanitizeEvidenceExcerpt('Email us at intake@example.edu')).toBe(
+      'Email us at intake@example.edu',
+    );
+    expect(sanitizeEvidenceExcerpt('Phone: 555-010-0000 Email: intake@example.edu')).toBe(
+      'Phone: 555-010-0000 Email: intake@example.edu',
+    );
   });
 
-  it('keeps substantive sentences and drops the marker-bearing sentence', () => {
+  it('drops a marker-only directive left by an earlier redaction', () => {
+    expect(sanitizeEvidenceExcerpt('Email us at [email redacted]')).toBe('');
+    expect(sanitizeEvidenceExcerpt('Phone: [phone redacted] Email: [email redacted]')).toBe('');
+  });
+
+  it('keeps substantive sentences and drops the legacy marker-bearing sentence', () => {
     expect(
       sanitizeEvidenceExcerpt(
-        'We welcome undergraduate researchers year-round. Email us at intake@example.edu.',
+        'We welcome undergraduate researchers year-round. Email us at [email redacted].',
       ),
     ).toBe('We welcome undergraduate researchers year-round.');
   });
 
-  it('never salvages a marker-bearing sentence into a mangled label fragment', () => {
-    const cleaned = sanitizeEvidenceExcerpt('Questions: intake@example.edu or 203-432-1234.');
+  it('never salvages a legacy marker-bearing sentence into a mangled label fragment', () => {
+    const cleaned = sanitizeEvidenceExcerpt('Questions: [email redacted] or [phone redacted].');
     expect(cleaned).not.toMatch(/redacted/i);
     expect(cleaned).toBe('');
   });
@@ -1037,12 +1046,17 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
     expect(sanitizeStoredCatalogDescription(clean)).toBe(clean);
   });
 
-  it('redacts a raw email and removes the resulting token so stored prose stays clean', () => {
+  it('keeps a contact address the program page publishes (#5046)', () => {
     const withEmail =
       'The grant supports undergraduate research each summer. Questions can be directed to grants@example.edu.';
-    const cleaned = sanitizeStoredCatalogDescription(withEmail);
+    expect(sanitizeStoredCatalogDescription(withEmail)).toBe(withEmail);
+  });
+
+  it('removes a legacy redaction token so stored prose stays clean', () => {
+    const cleaned = sanitizeStoredCatalogDescription(
+      'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].',
+    );
     expect(cleaned).not.toMatch(/redacted/i);
-    expect(cleaned).not.toMatch(/@example\.edu/);
     expect(cleaned).toBe(
       'The grant supports undergraduate research each summer. Questions can be directed.',
     );
@@ -3130,6 +3144,183 @@ describe('descriptionHygiene bibliographic-reference artifact strip (#415)', () 
   });
 });
 
+describe('a link target that is the object of its sentence (#5365)', () => {
+  it('keeps a bare url after "go to" as its host and path instead of leaving a hole', () => {
+    expect(
+      sanitizeStoredCatalogDescription(
+        'In order to obtain one please go to https://records.example.edu/ and print it as a PDF file.',
+      ),
+    ).toBe('In order to obtain one please go to records.example.edu and print it as a PDF file.');
+  });
+
+  it('keeps the terminal period after a url so the next sentence is not glued on', () => {
+    expect(
+      sanitizeCatalogDescription(
+        'For details about the review process and requirements go to http://www.example.edu/review/projects.pdf. Students may only receive the award once.',
+      ),
+    ).toBe(
+      'For details about the review process and requirements go to www.example.edu/review/projects.pdf. Students may only receive the award once.',
+    );
+  });
+
+  it('keeps the object of "available at" when prose follows it', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Our analysis code is available at https://code.example.org/lab/tool and is used by many groups.',
+      ),
+    ).toBe(
+      'Our analysis code is available at code.example.org/lab/tool and is used by many groups.',
+    );
+  });
+
+  it('still drops a sentence-initial pointer and an adjunct url', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Studies memory circuits. See https://lab.example.edu for more details.',
+      ),
+    ).toBe('Studies memory circuits.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The lab studies gene regulation and shares protocols at protocols.io, with the wider community.',
+      ),
+    ).toBe('The lab studies gene regulation and shares protocols with the wider community.');
+  });
+
+  it('keeps a link that opens a parenthetical or semicolon clause the sentence goes on past', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Applications are due May 1; see https://portal.example.edu/apply for the application form.',
+      ),
+    ).toBe('Applications are due May 1; see portal.example.edu/apply for the application form.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Students must submit a budget (see https://portal.example.edu/budget for the template).',
+      ),
+    ).toBe('Students must submit a budget (see portal.example.edu/budget for the template).');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Send it (please) to https://portal.example.edu/apply and print it.',
+      ),
+    ).toBe('Send it (please) to portal.example.edu/apply and print it.');
+  });
+
+  it('keeps a link that follows a determiner as the object of its clause', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'All interested applicants must review the https://portal.example.edu/guidelines. Projects in every field are welcome to apply.',
+      ),
+    ).toBe(
+      'All interested applicants must review the portal.example.edu/guidelines. Projects in every field are welcome to apply.',
+    );
+  });
+
+  it('keeps every link in a list that is the object of its sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Apply to https://a.example.edu/x, https://b.example.edu/y and submit the form.',
+      ),
+    ).toBe('Apply to a.example.edu/x, b.example.edu/y and submit the form.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Apply to https://a.example.edu/x or https://b.example.edu/y before the deadline.',
+      ),
+    ).toBe('Apply to a.example.edu/x or b.example.edu/y before the deadline.');
+  });
+
+  it('closes a sentence cleanly when a trailing url and its parenthesis are removed', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'For research in mathematics, consider applying to the summer math program, https://math.example.edu/summer. For neuroscience, consider the Undergrad Fellowships (https://neuro.example.edu/fellows). Stipend support is granted for ten weeks.',
+      ),
+    ).toBe(
+      'For research in mathematics, consider applying to the summer math program. For neuroscience, consider the Undergrad Fellowships. Stipend support is granted for ten weeks.',
+    );
+  });
+
+  it('never keeps a query string, fragment, credential or port in the readable form', () => {
+    expect(
+      readableLinkTarget('https://user:secret@portal.example.edu:8443/apply/?session=abc#form'),
+    ).toBe('portal.example.edu/apply');
+    expect(readableLinkTarget('www.example.edu/path(1)')).toBe('www.example.edu/path(1)');
+    expect(readableLinkTarget('https://example.edu/apply;jsessionid=ABC')).toBe(
+      'example.edu/apply',
+    );
+  });
+
+  it('shortens an over-long link target to its host', () => {
+    const longPath = `/${'segment/'.repeat(12)}file.pdf`;
+    expect(readableLinkTarget(`https://files.example.edu${longPath}`)).toBe('files.example.edu');
+  });
+
+  it.each([
+    ['javascript:alert(1)', 'javascript:'],
+    ['data:text/html;base64,PGI+', 'data:'],
+    ['vbscript:msgbox(1)', 'vbscript:'],
+  ])('replaces an unsafe %s link target with a neutral phrase', (target, scheme) => {
+    const served = stripBibliographicReferenceArtifacts(
+      `To finish the application please go to ${target} and submit the completed budget form.`,
+    );
+    expect(served).toBe(
+      'To finish the application please go to the linked page and submit the completed budget form.',
+    );
+    expect(served).not.toContain(scheme);
+    expect(readableLinkTarget(target)).toBe('the linked page');
+  });
+
+  it('does not double the article when an unsafe link follows a determiner', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Applicants must review the javascript:void(0) before applying to the fellowship.',
+      ),
+    ).toBe('Applicants must review the linked page before applying to the fellowship.');
+  });
+
+  it('keeps a neutral phrase for unsafe link targets that are the objects of "open"', () => {
+    const served = stripBibliographicReferenceArtifacts(
+      'Applicants may also open vbscript:msgbox(1) and data:text/html;base64,PGI+ to read more about the award.',
+    );
+    expect(served).toBe(
+      'Applicants may also open the linked page and the linked page to read more about the award.',
+    );
+  });
+
+  it('keeps a readable host for a bare url that is the object of "use"', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'To submit the budget, applicants should use https://forms.example.edu/budget?id=1 and attach a short proposal.',
+      ),
+    ).toBe(
+      'To submit the budget, applicants should use forms.example.edu/budget and attach a short proposal.',
+    );
+  });
+
+  it('keeps a link that is the object of an inflected lead-in verb', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Applicants may apply using https://forms.example.edu/apply and attach a proposal.',
+      ),
+    ).toBe('Applicants may apply using forms.example.edu/apply and attach a proposal.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The portal opens javascript:alert(1) when a student is accepted.',
+      ),
+    ).toBe('The portal opens the linked page when a student is accepted.');
+  });
+
+  it('removes an unsafe scheme token that is not the object of its sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The fellowship funds summer research abroad javascript:void(0) for juniors and seniors.',
+      ),
+    ).toBe('The fellowship funds summer research abroad for juniors and seniors.');
+  });
+
+  it('leaves a "Data:" label followed by prose untouched', () => {
+    const prose = 'Data: we collect survey responses from many students across campus.';
+    expect(stripBibliographicReferenceArtifacts(prose)).toBe(prose);
+  });
+});
+
 describe('evergreenizeStaleCycleDatePhrase stale fellowship/grant cycle date normalization (#1557)', () => {
   it('drops a stale year from a "by <Month>, <year>" deadline clause', () => {
     const input = 'Awardees must present their research to the department by April, 2025.';
@@ -3373,7 +3564,7 @@ describe('short description whole-sentence cap (#2184)', () => {
       'The Jordan Q. Fixture Fellowship is named for the first graduate of the program to earn a Ph.D.';
     expect(
       sanitizeStoredCatalogDescription(
-        `${lead} The fellowship funds summer research. For questions, please contact fixture.office@example.edu about eligibility.`,
+        `${lead} The fellowship funds summer research. For questions, please contact [email redacted] about eligibility.`,
       ),
     ).toBe(`${lead} The fellowship funds summer research.`);
   });
@@ -3390,9 +3581,7 @@ describe('short description whole-sentence cap (#2184)', () => {
       ),
     ).toBe('The lab studies Hepatitis B.');
     expect(
-      sanitizeEvidenceExcerpt(
-        'The lab studies Vitamin D. Contact fixture.office@example.edu for details.',
-      ),
+      sanitizeEvidenceExcerpt('The lab studies Vitamin D. Contact [email redacted] for details.'),
     ).toBe('The lab studies Vitamin D.');
   });
 

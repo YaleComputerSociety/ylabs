@@ -16,6 +16,7 @@ import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 import {
   isMultiTenantAcademicHostRootUrl,
   isMultiTenantAcademicHostTenantPageUrl,
+  isPatientCarePageUrl,
   multiTenantAcademicHostLabelIsDistinctive,
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
@@ -176,6 +177,49 @@ export function isPersonPageLinkLabelName(value: unknown): boolean {
   const remainder = name.replace(LINK_CHROME_SUFFIX_RE, '').trim();
   if (!remainder) return true;
   return !RESEARCH_HOME_HEAD_NOUN_FOR_CHROME_RE.test(remainder);
+}
+
+const PROFILE_HOME_CALL_TO_ACTION_RE = /^learn\s+more$/i;
+const MIN_SENTENCE_NAME_WORDS = 6;
+const FIRST_PERSON_CLAUSE_IN_NAME_RE = /\S\s+(?:We|Our|My)\s+[a-z]/;
+
+function isSentenceShapedName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  if (FIRST_PERSON_CLAUSE_IN_NAME_RE.test(name)) return true;
+  return name.endsWith('.') && name.split(/\s+/).length >= MIN_SENTENCE_NAME_WORDS;
+}
+
+/**
+ * A value `official-profile-pi-backfill` would assert as a profile-linked home's name at
+ * 0.96 that names no organization: a link label ("Lab", "Author Website"), a placeholder
+ * ("n/a"), a person-page label, a site menu item ("About Us"), or prose. The lane refuses
+ * one in every arm, and the materializer ignores one the lane stored before it did (#5226).
+ */
+export function isInadmissibleProfileLinkedHomeName(value: unknown): boolean {
+  const name = textValue(value);
+  if (!name) return false;
+  return (
+    isNonIdentifyingLinkLabelName(name) ||
+    PROFILE_HOME_CALL_TO_ACTION_RE.test(name) ||
+    isPlaceholderEntityName(name) ||
+    isPersonPageLinkLabelName(name) ||
+    isNavigationMenuPhrase(name) ||
+    isSentenceShapedName(name)
+  );
+}
+
+const PROFILE_LINKED_HOME_SOURCE_NAME = 'official-profile-pi-backfill';
+
+/**
+ * A name `official-profile-pi-backfill` asserted that `isInadmissibleProfileLinkedHomeName`
+ * now refuses. The materializer ignores such an observation, refuses such a served name, and
+ * the gate withholds a row still headed by one when nothing can replace it (#5226).
+ */
+export function isRefusedProfileLinkedHomeName(value: unknown, sourceName: unknown): boolean {
+  return (
+    sourceName === PROFILE_LINKED_HOME_SOURCE_NAME && isInadmissibleProfileLinkedHomeName(value)
+  );
 }
 
 // The furniture a page hangs off a brand ("Google Scholar Profile", "ORCID
@@ -474,25 +518,6 @@ export function namesASupportServiceUnit(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
   return namesAServiceFacility(name) || SUPPORT_OR_CONSULTING_UNIT_RE.test(name);
-}
-
-const CLINICAL_CARE_PATH_SEGMENT_RE =
-  /^(?:care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
-
-/**
- * A page in a school's clinical-care or clinical-service section, which describes a service
- * patients use rather than a lab (#4916). A path that also carries a research segment is
- * a research page that happens to sit under a services section, so it never counts.
- */
-export function isClinicalCareServicePageUrl(value: unknown): boolean {
-  let segments: string[];
-  try {
-    segments = new URL(textValue(value)).pathname.split('/').filter(Boolean);
-  } catch {
-    return false;
-  }
-  if (segments.some((segment) => /research/i.test(segment))) return false;
-  return segments.some((segment) => CLINICAL_CARE_PATH_SEGMENT_RE.test(segment));
 }
 
 // A blurb is prose, so an organizational word inside it can merely MENTION an
@@ -1059,6 +1084,26 @@ export function isOffSitePageTitleForPersonScopedName(args: {
   return !namesAnOrganizationalResearchHome(args.candidateName);
 }
 
+const LAB_SHAPED_HOME_NAME_RE = /\b(?:groups?|teams?|units?|labs?|laborator(?:y|ies))\b/i;
+const GLUED_LAB_HOME_NAME_RE = /(?<=[a-z])(?<!\bCo|\bCol)Labs?\b/;
+const LAB_SHAPED_HOME_URL_RE = /(?<=\b|[a-z])(?<!col?)(?:labs?|laboratory)\b/i;
+
+/**
+ * Whether a home a person's profile links is shaped as that person's own lab: its name says
+ * lab, laboratory, group, team or unit, or its URL says lab, including a lab glued onto a
+ * name ("<Surname>Lab", `<surname>lab.org`) but never a collab or colab. Anything else a lab
+ * slot links is a program, project, collaborative or other organization, and a person who
+ * leads one keeps their own row beside the organization's (owner decision 2026-10-17,
+ * #5283), so only a lab-shaped home may name or type the person's row.
+ */
+export function isLabShapedResearchHome(name: unknown, url?: unknown): boolean {
+  return (
+    LAB_SHAPED_HOME_NAME_RE.test(textValue(name)) ||
+    GLUED_LAB_HOME_NAME_RE.test(textValue(name)) ||
+    LAB_SHAPED_HOME_URL_RE.test(textValue(url))
+  );
+}
+
 export function nameCarriesPersonIdentity(value: unknown, personName: unknown): boolean {
   return nameCarriesIdentityToken(value, personIdentityTokens(personName));
 }
@@ -1577,13 +1622,15 @@ export function classifyHarvestedResearchHomeName(args: {
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
+  // Ahead of the label and own-name checks, because a patient-care page is never anyone's
+  // research home whatever the slot calls it: read after them, a bare "lab website" label
+  // linking a clinic minted a "<person> Lab" (#5364).
+  if (isPatientCarePageUrl(args.websiteUrl)) return 'AFFILIATED_ORGANIZATION';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isHarvestedPageFurnitureName(name, args.personName)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
-  if (namesASupportServiceUnit(name) || isClinicalCareServicePageUrl(args.websiteUrl)) {
-    return 'AFFILIATED_ORGANIZATION';
-  }
+  if (namesASupportServiceUnit(name)) return 'AFFILIATED_ORGANIZATION';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {
     return 'AFFILIATED_ORGANIZATION';

@@ -41,6 +41,7 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   isExternalScholarlyPlatformLinkLabelName,
+  isRefusedProfileLinkedHomeName,
   personScopedResearchEntityNameNamesSomethingElse,
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
@@ -883,6 +884,34 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
   STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
 
+export const STUDENT_VISIBILITY_EVIDENCE_REASONS: ReadonlySet<string> = new Set([
+  'application_route',
+  'graduate_relevant',
+  'official_source',
+  'source_backed_description',
+  'undergraduate_relevant',
+]);
+
+export const isStudentVisibilitySignalReason = (reason: string): boolean =>
+  STUDENT_VISIBILITY_EVIDENCE_REASONS.has(reason) || isStudentReadySoftSignalReason(reason);
+
+export interface PartitionedStudentVisibilityReasons {
+  blocking: string[];
+  signals: string[];
+}
+
+export function partitionStudentVisibilityReasons(
+  reasons: unknown,
+): PartitionedStudentVisibilityReasons {
+  const stored = Array.isArray(reasons)
+    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
+    : [];
+  return {
+    blocking: stored.filter((reason) => !isStudentVisibilitySignalReason(reason)),
+    signals: stored.filter(isStudentVisibilitySignalReason),
+  };
+}
+
 // A person-scoped page whose body is a CV or biography that states no research
 // (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
 // real and the row returns once a source states the research.
@@ -1159,6 +1188,7 @@ export function computeResearchEntityStudentVisibility({
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
     !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
+    !isRefusedProfileLinkedHomeName(entity.name, entity.fieldProvenance?.name?.sourceName) &&
     !namesASharedHostOrganization &&
     !namesAnotherPersonsResearch &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));

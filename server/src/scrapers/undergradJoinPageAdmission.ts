@@ -430,7 +430,7 @@ export const recruitingSentences = (text: string | undefined): string[] =>
     .filter((sentence) => RECRUITING_SENTENCE.test(sentence))
     .flatMap((sentence) => sentenceWindows(sentence, RECRUITING_SENTENCE));
 
-const UNDERGRADUATE_AUDIENCE =
+export const UNDERGRADUATE_AUDIENCE =
   /\bundergrad|\byale\s+college\b|\bcollege\s+students?\b|\bbachelor(?:'?s)?\b(?!'?s?\s+degree)/i;
 
 const EVERY_LEVEL_AUDIENCE = /\b(?:all|every)\s+levels?\b/i;

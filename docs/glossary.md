@@ -213,6 +213,8 @@ These appear in older code and docs and must not be introduced in new copy, labe
 | Yale Research (the product name), retired by #3186 | y/labs |
 | home, homes, saved homes (a saved item) | research, or "saved research profiles" |
 | "ways in", "verified ways in" (student copy) | "how to get involved" |
+| Program Watch, favorites, "Add to favorites", saved programs (student copy for watching a program) | watch, "Watch <program>" / "Stop watching <program>", and the "Watched programs" tab (#5171) |
+| "Dashboard" as the name of the saved-research tab | "Saved research"; Dashboard is the page |
 | Journey, Program Kind, Entry Mode, Legacy Type (program filter tabs) | Opportunity, Program type, How you apply; the legacy category facet is operator-only |
 
 A client guard test enforces the copy half: `client/src/__tests__/deprecatedVocabularyGuard.test.ts`.

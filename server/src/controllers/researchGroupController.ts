@@ -157,6 +157,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     browseQuality?: unknown;
     qualityFilters?: unknown;
     correctSpelling?: boolean;
+    resolveFilterValues?: boolean;
   };
 
   if (isOversizedSearchRequest(body as Record<string, unknown>)) {
@@ -234,6 +235,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     // per-client ceiling.
     embeddingSpendKey: getPeerIpKey(request),
     correctSpelling: body.correctSpelling !== false,
+    resolveFilterValues: body.resolveFilterValues !== false,
   });
   if (includeFacets) return response.json(result);
   // Omitted rather than emptied: an empty object is indistinguishable from "this
@@ -252,6 +254,10 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
   const slug = normalizeResearchDetailSlug(rawSlug);
   if (!slug) {
     return response.status(400).json({ error: 'Invalid slug' });
+  }
+  const caseFoldedSlug = slug.toLowerCase();
+  if (caseFoldedSlug !== slug) {
+    return response.redirect(302, `${request.baseUrl}/${encodeURIComponent(caseFoldedSlug)}`);
   }
 
   const currentUser = request.user as

@@ -20,6 +20,7 @@ import {
 import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
+  waitForMeiliTask,
   MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
   MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   type MeiliTaskWaitingIndex,
@@ -28,8 +29,10 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -210,8 +213,6 @@ const SEARCH_INDEX_TEXT_FIELDS = [
   'shortDescription',
   'fullDescription',
   'description',
-  'undergradEvidenceQuote',
-  'undergradAccessEvidence',
 ] as const;
 
 const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
@@ -556,7 +557,9 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (Array.isArray(out.methods)) {
-    const methods = normalizeResearchAreaList(out.methods);
+    const methods = normalizeResearchAreaList(
+      out.methods.map((method: unknown) => sanitizeMethodChipLabel(method)).filter(Boolean),
+    );
     if (methods.length > 0) out.methods = methods;
     else delete out.methods;
   }
@@ -575,6 +578,10 @@ export function buildResearchEntitySearchIndexDocument(
   const out: Record<string, any> = {
     ...doc,
     id,
+    // Derived from the row rather than copied from the stored flag, so the
+    // `hostsUndergrads` filter and facet read the predicate the served badge reads
+    // even when a writer changed its inputs without recomputing the flag (#5123).
+    hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
@@ -893,7 +900,7 @@ async function readSwapTaskIfVisible(
 ): Promise<{ status?: string; error?: unknown } | null> {
   if (typeof client.tasks?.waitForTask !== 'function') return null;
   try {
-    return await client.tasks.waitForTask(taskUid, { timeout: timeoutMs });
+    return await waitForMeiliTask(client.tasks, taskUid, timeoutMs);
   } catch (error) {
     if (isMeiliTaskNotFoundError(error)) return null;
     throw error;
@@ -1236,6 +1243,8 @@ export interface ResearchEntitySearchIndexReconcileResult {
   indexedDocumentCountBefore: number;
   unchangedDocumentCount: number;
   upsertedDocumentCount: number;
+  addedDocumentCount: number;
+  updatedDocumentCount: number;
   deletedDocumentCount: number;
   startedAt: string;
   finishedAt: string;
@@ -1328,11 +1337,14 @@ export async function reconcileResearchEntitySearchIndex(
 
   const corpusIds = new Set<string>();
   const changed: Record<string, any>[] = [];
+  let addedCount = 0;
   for (const doc of corpus) {
     const id = String(doc[RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY]);
     corpusIds.add(id);
-    if (indexedFingerprints.get(id) !== researchEntitySearchDocumentFingerprint(doc)) {
+    const indexedFingerprint = indexedFingerprints.get(id);
+    if (indexedFingerprint !== researchEntitySearchDocumentFingerprint(doc)) {
       changed.push(doc);
+      if (indexedFingerprint === undefined) addedCount += 1;
     }
   }
   const orphanIds = [...indexedFingerprints.keys()].filter((id) => !corpusIds.has(id));
@@ -1343,22 +1355,36 @@ export async function reconcileResearchEntitySearchIndex(
   }
 
   if (options.apply) {
-    for (let start = 0; start < changed.length; start += pageSize) {
-      await assertMeiliTaskSucceeded(
-        index,
-        await index.addDocuments(changed.slice(start, start + pageSize), {
-          primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
-        }),
-        'reconcile addDocuments',
-        MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
-      );
-    }
-    if (orphanIds.length > 0) {
-      await assertMeiliTaskSucceeded(
-        index,
-        await index.deleteDocuments(orphanIds),
-        'reconcile deleteDocuments',
-        MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+    let upsertedSoFar = 0;
+    try {
+      for (let start = 0; start < changed.length; start += pageSize) {
+        const batch = changed.slice(start, start + pageSize);
+        await assertMeiliTaskSucceeded(
+          index,
+          await index.addDocuments(batch, {
+            primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+          }),
+          'reconcile addDocuments',
+          MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+        );
+        upsertedSoFar += batch.length;
+      }
+      if (orphanIds.length > 0) {
+        await assertMeiliTaskSucceeded(
+          index,
+          await index.deleteDocuments(orphanIds),
+          'reconcile deleteDocuments',
+          MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
+        );
+      }
+    } catch (error) {
+      const deletes =
+        upsertedSoFar === changed.length
+          ? `the delete of ${orphanIds.length} documents did not complete`
+          : `none of the ${orphanIds.length} deletes ran`;
+      throw new Error(
+        `Reconcile stopped part-way: the live index holds ${upsertedSoFar} of ${changed.length} upserts and ${deletes}, so it mixes old and new documents. Re-run the reconcile or the replacing rebuild. Cause: ${sanitizeLogValue(error)}`,
+        { cause: error },
       );
     }
   }
@@ -1371,9 +1397,144 @@ export async function reconcileResearchEntitySearchIndex(
     indexedDocumentCountBefore: indexedFingerprints.size,
     unchangedDocumentCount: corpus.length - changed.length,
     upsertedDocumentCount: changed.length,
+    addedDocumentCount: addedCount,
+    updatedDocumentCount: changed.length - addedCount,
     deletedDocumentCount: orphanIds.length,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
+  };
+}
+
+export type ResearchEntitySearchIndexDrift = string;
+
+const sortedStrings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map(String).sort() : [];
+
+const orderedStrings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map(String) : [];
+
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+/**
+ * The index settings that differ from what the code would apply. Meilisearch returns
+ * attribute sets sorted and fills in defaults, so set-valued fields compare as sorted
+ * lists, order-sensitive ones (searchable attributes, ranking rules) as given, and only
+ * the keys the code sets are read.
+ */
+export function researchEntitySearchIndexSettingsDrift(
+  liveSettings: Record<string, any> | null | undefined,
+  expected: ReturnType<
+    typeof getResearchEntitySearchIndexSettings
+  > = getResearchEntitySearchIndexSettings(),
+): ResearchEntitySearchIndexDrift[] {
+  const live = liveSettings || {};
+  const drift: ResearchEntitySearchIndexDrift[] = [];
+  const check = (name: string, matches: boolean) => {
+    if (!matches) drift.push(`settings:${name}`);
+  };
+  check(
+    'searchableAttributes',
+    sameJson(orderedStrings(live.searchableAttributes), expected.searchableAttributes),
+  );
+  check('rankingRules', sameJson(orderedStrings(live.rankingRules), expected.rankingRules));
+  for (const name of [
+    'filterableAttributes',
+    'sortableAttributes',
+    'displayedAttributes',
+  ] as const) {
+    check(name, sameJson(sortedStrings(live[name]), [...expected[name]].sort()));
+  }
+  check(
+    'typoTolerance.minWordSizeForTypos',
+    sameJson(
+      {
+        oneTypo: live.typoTolerance?.minWordSizeForTypos?.oneTypo,
+        twoTypos: live.typoTolerance?.minWordSizeForTypos?.twoTypos,
+      },
+      expected.typoTolerance.minWordSizeForTypos,
+    ),
+  );
+  check(
+    'typoTolerance.disableOnWords',
+    sameJson(
+      sortedStrings(live.typoTolerance?.disableOnWords),
+      [...expected.typoTolerance.disableOnWords].sort(),
+    ),
+  );
+  const synonymSets = (synonyms: Record<string, unknown> | undefined) =>
+    Object.fromEntries(
+      Object.keys(synonyms || {})
+        .sort()
+        .map((key) => [key, sortedStrings((synonyms as Record<string, unknown>)[key])]),
+    );
+  check('synonyms', sameJson(synonymSets(live.synonyms), synonymSets(expected.synonyms)));
+  check(
+    'pagination.maxTotalHits',
+    live.pagination?.maxTotalHits === expected.pagination.maxTotalHits,
+  );
+  check(
+    'faceting.maxValuesPerFacet',
+    live.faceting?.maxValuesPerFacet === expected.faceting.maxValuesPerFacet,
+  );
+  return drift;
+}
+
+/**
+ * The embedder fields that differ from what the code would apply. The stored API key
+ * is redacted by Meilisearch, so the comparison reads the source, model, and document
+ * template, which together decide every stored vector.
+ */
+export function researchEntitySearchEmbedderDrift(
+  liveEmbedders: Record<string, any> | null | undefined,
+): ResearchEntitySearchIndexDrift[] {
+  const live = liveEmbedders?.[RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME];
+  if (!live || typeof live !== 'object') return ['embedder:missing'];
+  const expected =
+    buildResearchEntitySearchEmbedderConfig('')[RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME];
+  const drift: ResearchEntitySearchIndexDrift[] = [];
+  for (const field of ['source', 'model', 'documentTemplate'] as const) {
+    if (live[field] !== expected[field]) drift.push(`embedder:${field}`);
+  }
+  return drift;
+}
+
+export interface ResearchEntitySearchIndexCodeComparison {
+  liveIndexUid: string;
+  indexExists: boolean;
+  drift: ResearchEntitySearchIndexDrift[];
+}
+
+/**
+ * Whether the live index already holds the settings and embedder the replacing rebuild
+ * would apply, which is the condition under which writing only the changed documents
+ * leaves the same index the rebuild would. Document shape needs no separate check:
+ * `addDocuments` replaces a whole document, so a changed shape reaches every document
+ * the diff finds different.
+ */
+export async function compareResearchEntitySearchIndexToCode(
+  options: {
+    getClient?: () => Promise<Pick<ResearchEntitySearchIndexAdminClient, 'getRawIndex'>>;
+    getIndex?: typeof getMeiliIndex;
+  } = {},
+): Promise<ResearchEntitySearchIndexCodeComparison> {
+  const liveIndexUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  const client = await (options.getClient || getMeiliClient)();
+  if (!(await meiliIndexExists(client as ResearchEntitySearchIndexAdminClient, liveIndexUid))) {
+    return { liveIndexUid, indexExists: false, drift: ['index:missing'] };
+  }
+  const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
+  const [settings, embedders] = await Promise.all([
+    index.getSettings(),
+    typeof index.getEmbedders === 'function' ? index.getEmbedders() : null,
+  ]);
+  return {
+    liveIndexUid,
+    indexExists: true,
+    drift: [
+      ...researchEntitySearchIndexSettingsDrift(settings),
+      ...researchEntitySearchEmbedderDrift(embedders),
+    ],
   };
 }

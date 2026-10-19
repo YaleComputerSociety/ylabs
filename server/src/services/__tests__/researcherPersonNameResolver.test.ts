@@ -94,12 +94,17 @@ describe('resolveResearcherIdForPersonName', () => {
     expect(result).toEqual({ status: 'matched', researcherId: robert._id });
   });
 
-  it('matches a genuine given-name prefix that is not a nickname', async () => {
-    const chris = candidate('Christopher Smith');
-    const result = await resolveResearcherIdForPersonName('Christo Smith', {
-      deps: depsFor([chris]),
-    });
-    expect(result).toEqual({ status: 'matched', researcherId: chris._id });
+  it('does not bind a given name to a longer one it merely prefixes (#5324)', async () => {
+    for (const [observed, stored] of [
+      ['Lo Quennard', 'Lorvan-Tei Quennard'],
+      ['Ali Quennard', 'Alice Quennard'],
+      ['Christo Quennard', 'Christopher Quennard'],
+    ]) {
+      const result = await resolveResearcherIdForPersonName(observed, {
+        deps: depsFor([candidate(stored)]),
+      });
+      expect(result).toEqual({ status: 'ambiguous' });
+    }
   });
 
   it('fails closed on a bare first-initial source name (never binds a namesake)', async () => {

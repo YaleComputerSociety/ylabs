@@ -88,6 +88,14 @@ export interface ResearchEntitySourceLinkHealth {
   httpsLandingUrl?: string;
 }
 
+export type UndergradInvitationLevel = 'actively_hiring' | 'welcomes_undergrads';
+
+export interface UndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
+}
+
 export interface ResearchGroup {
   _id: string;
   // Meilisearch hits return `id` rather than `_id`. The search endpoint also
@@ -114,10 +122,8 @@ export interface ResearchGroup {
   schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
-  /** Verbatim quote from the source page supporting undergraduate access. */
-  undergradEvidenceQuote?: string;
-  /** The page `undergradEvidenceQuote` is quoted from, served only beside a served quote. */
-  undergradEvidenceSourceUrl?: string;
+  /** A sentence on the lab's own page inviting undergraduates, with how strongly it invites. */
+  undergradInvitation?: UndergradInvitation;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
   fellowshipRecipients?: FellowshipRecipient[];
@@ -178,6 +184,9 @@ export interface ResearchGroupSearchResponse {
   // and an empty one is not evidence that nothing matches.
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  // Set when the server changed a school or department filter value: it maps a value
+  // to the spelling the corpus holds and drops one no row holds.
+  appliedFilters?: { school?: string[]; departments?: string[] };
 }
 
 export interface ResearchSearchQueryCorrection {

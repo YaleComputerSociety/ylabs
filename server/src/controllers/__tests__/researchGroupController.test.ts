@@ -80,7 +80,8 @@ describe('researchGroupController', () => {
       researchEntity: { slug: 'example-lab' },
       operatorPreview: {
         studentVisibilityTier: 'operator_review',
-        studentVisibilityReasons: [],
+        studentVisibilityBlockingReasons: [],
+        studentVisibilitySignalReasons: [],
         withheldBy: ['visibility_tier'],
       },
     };
@@ -99,6 +100,16 @@ describe('researchGroupController', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(detail);
+  });
+
+  it('redirects a mixed-case slug to its lower-case canonical form before service work', async () => {
+    const req = { params: { slug: 'Example-LAB' }, baseUrl: '/api/research' } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), redirect: vi.fn() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, '/api/research/example-lab');
   });
 
   it('rejects malformed public research detail slugs before service work', async () => {
@@ -449,6 +460,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        resolveFilterValues: true,
       },
     );
   });
@@ -490,6 +502,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        resolveFilterValues: true,
       },
     );
   });
@@ -553,6 +566,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        resolveFilterValues: true,
       },
     );
   });

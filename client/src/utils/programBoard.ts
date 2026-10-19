@@ -53,6 +53,15 @@ export function programBoardSectionOf(
   return SECTION_FOR_CYCLE[cycle];
 }
 
+const NAMED_PROGRAM_CONTACT_RE =
+  /\b(?:award|program|grant|fellowship)\s+(?:manager|contact|coordinator|administrator)(?:\s*\/\s*faculty\s+mentor)?\s*:\s*\S/i;
+
+export const applicationTextNamesProgramContact = (text?: string | null): boolean =>
+  NAMED_PROGRAM_CONTACT_RE.test(text || '');
+
+export const PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE =
+  'The person named here is the contact the official source lists for this award. The mentor you need before applying is a faculty member you line up yourself; ask this contact if you are unsure who can be your mentor.';
+
 export const FIRST_YEAR_STUDENT = 'First-Year Student';
 
 export function isOpenToFirstYears(fellowship: Fellowship): boolean {
@@ -69,7 +78,53 @@ export function mentorRequirementLabel(fellowship: Fellowship): string | null {
   return null;
 }
 
-const CARD_AWARD_MAX_LENGTH = 24;
+export const US_CITIZENS_ELIGIBLE = 'U.S. citizens are eligible';
+export const NON_US_CITIZENS_ELIGIBLE = 'Non-U.S. citizens are eligible';
+export const US_PERMANENT_RESIDENTS_ELIGIBLE = 'U.S. permanent residents are eligible';
+
+export const NOT_STATED_LABEL = 'Not stated. Check the official page.';
+
+export const PROGRAM_FACET_NOT_STATED_NOTE =
+  'Programs that do not state this are included. Check the official page.';
+
+const CITIZENSHIP_FILTER_OPTION_LABELS: Record<string, string> = {
+  [US_CITIZENS_ELIGIBLE]: 'Open to U.S. citizens, or not stated',
+  [NON_US_CITIZENS_ELIGIBLE]: 'Open to non-U.S. citizens, or not stated',
+  [US_PERMANENT_RESIDENTS_ELIGIBLE]: 'Open to U.S. permanent residents, or not stated',
+};
+
+export function citizenshipFilterOptionLabel(value: string): string {
+  return CITIZENSHIP_FILTER_OPTION_LABELS[value] ?? `${value}, or not stated`;
+}
+
+export function programCitizenshipRestriction(
+  fellowship: Pick<Fellowship, 'citizenshipStatus'>,
+): string | null {
+  const statuses = new Set(fellowship.citizenshipStatus || []);
+  const us = statuses.has(US_CITIZENS_ELIGIBLE);
+  const nonUs = statuses.has(NON_US_CITIZENS_ELIGIBLE);
+  if (us && !nonUs) {
+    return statuses.has(US_PERMANENT_RESIDENTS_ELIGIBLE)
+      ? 'U.S. citizens and permanent residents only'
+      : 'U.S. citizens only';
+  }
+  if (nonUs && !us) return 'Non-U.S. citizens only';
+  return null;
+}
+
+export function programCitizenshipSummary(
+  fellowship: Pick<Fellowship, 'citizenshipStatus'>,
+): string {
+  const restriction = programCitizenshipRestriction(fellowship);
+  if (restriction) return restriction;
+  const statuses = fellowship.citizenshipStatus || [];
+  if (statuses.includes(US_CITIZENS_ELIGIBLE) && statuses.includes(NON_US_CITIZENS_ELIGIBLE)) {
+    return 'Open to U.S. and non-U.S. citizens';
+  }
+  return statuses.length > 0 ? statuses.join(', ') : NOT_STATED_LABEL;
+}
+
+const CARD_AWARD_MAX_LENGTH = 28;
 
 export function cardAwardLabel(awardAmount: string | null | undefined): string | null {
   const amount = (awardAmount || '').trim();
@@ -79,7 +134,9 @@ export function cardAwardLabel(awardAmount: string | null | undefined): string |
 
 export function programCardFacts(fellowship: Fellowship): string[] {
   const award = cardAwardLabel(fellowship.awardAmount);
-  return [award ? `Award: ${award}` : null, mentorRequirementLabel(fellowship)].filter(
-    (fact): fact is string => Boolean(fact),
-  );
+  return [
+    award ? `Award: ${award}` : null,
+    mentorRequirementLabel(fellowship),
+    programCitizenshipRestriction(fellowship),
+  ].filter((fact): fact is string => Boolean(fact));
 }

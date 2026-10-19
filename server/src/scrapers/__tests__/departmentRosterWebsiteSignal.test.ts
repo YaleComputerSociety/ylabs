@@ -67,6 +67,22 @@ describe('profile website harvest', () => {
     expect(result.labSlotAttestation).toBe('refused');
   });
 
+  it('does not take a course whose title opens with a lab word', () => {
+    const result = enrich(
+      `<h2>Courses</h2><ul><li><a href="/courses/laboratory-fixture-anatomy">Laboratory for Fixture Anatomy</a></li></ul>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('takes the genuine lab website listed after a refused course', () => {
+    const result = enrich(
+      `<p><a href="/courses/fixture-biology-laboratory">Fixture Biology Laboratory</a></p>
+       <p><a href="https://medicine.yale.edu/lab/fixture/">Fixture Lab</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://medicine.yale.edu/lab/fixture/');
+  });
+
   it('takes the genuine lab website listed after a refused posting', () => {
     const result = enrich(
       `<p><a href="https://medicine.yale.edu/lab/fixture/jobs/">Fixture Lab Jobs</a></p>

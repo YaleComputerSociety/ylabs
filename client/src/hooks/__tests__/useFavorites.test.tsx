@@ -161,4 +161,106 @@ describe('useFavorites', () => {
 
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
+
+  it('serializes a double toggle so the server ends on the last state chosen', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { savedResearchEntityIds: ['entity-1'] } });
+    const order: string[] = [];
+    let releaseFirst: () => void = () => {};
+    mockedAxios.delete.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => {
+            order.push('delete');
+            resolve({});
+          };
+        }),
+    );
+    mockedAxios.put.mockImplementation(() => {
+      order.push('put');
+      return Promise.resolve({});
+    });
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+    await waitFor(() => expect(result.current.favIds).toEqual(['entity-1']));
+
+    let first: Promise<boolean> | undefined;
+    let second: Promise<boolean> | undefined;
+    act(() => {
+      first = result.current.setFavorite('entity-1', false);
+    });
+    act(() => {
+      second = result.current.setFavorite('entity-1', true);
+    });
+
+    expect(result.current.favIds).toEqual(['entity-1']);
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseFirst();
+      await Promise.all([first, second]);
+    });
+
+    expect(order).toEqual(['delete', 'put']);
+    expect(result.current.favIds).toEqual(['entity-1']);
+  });
+
+  it('sends nothing more when a toggle is undone before the request settles back', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    let releaseFirst: () => void = () => {};
+    mockedAxios.put.mockImplementationOnce(
+      () => new Promise((resolve) => (releaseFirst = () => resolve({}))),
+    );
+    mockedAxios.delete.mockResolvedValue({});
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+    await waitFor(() => expect(mockedAxios.get).toHaveBeenCalled());
+
+    let pending: Promise<boolean> | undefined;
+    act(() => {
+      pending = result.current.setFavorite('entity-1', true);
+    });
+    act(() => {
+      void result.current.setFavorite('entity-1', false);
+    });
+    act(() => {
+      void result.current.setFavorite('entity-1', true);
+    });
+
+    await act(async () => {
+      releaseFirst();
+      await pending;
+    });
+
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+    expect(mockedAxios.delete).not.toHaveBeenCalled();
+    expect(result.current.favIds).toEqual(['entity-1']);
+  });
+
+  it('reports an undo as applied when the removal it undid fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockedAxios.get.mockResolvedValue({ data: { savedResearchEntityIds: ['entity-1'] } });
+    let failFirst: () => void = () => {};
+    mockedAxios.delete.mockImplementationOnce(
+      () => new Promise((_, reject) => (failFirst = () => reject(new Error('offline')))),
+    );
+    const { result } = renderHook(() => useFavorites('researchPlans'));
+    await waitFor(() => expect(result.current.favIds).toEqual(['entity-1']));
+
+    let removal: Promise<boolean> | undefined;
+    let undo: Promise<boolean> | undefined;
+    act(() => {
+      removal = result.current.setFavorite('entity-1', false);
+    });
+    act(() => {
+      undo = result.current.setFavorite('entity-1', true);
+    });
+
+    let outcomes: boolean[] = [];
+    await act(async () => {
+      failFirst();
+      outcomes = await Promise.all([removal!, undo!]);
+    });
+
+    expect(outcomes).toEqual([false, true]);
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(result.current.favIds).toEqual(['entity-1']);
+  });
 });

@@ -17,16 +17,21 @@ import {
   entityKindLabel,
   researchEntityDisplayName,
   researchEntityTitle,
+  researchWebsiteLabel,
   sanitizeResearchEntityCopy,
 } from '../../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { formatTopicChipLabel } from '../../utils/displayText';
 import {
+  isPersonPageSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
-  sourceLabelForUrl,
 } from '../../utils/researchDetailSources';
+import {
+  isIdentifierRecordUrl,
+  personProfileSourceRoleLabel,
+} from '../../utils/personProfileRanking';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import {
   createResearchAnalyticsInteractionId,
@@ -34,6 +39,7 @@ import {
   researchProfileOpenState,
   trackResearchEvent,
 } from '../../utils/researchAnalytics';
+import { dedupeLeadMembers, memberPersonName } from '../../utils/leadMemberDedupe';
 import { CloseIcon } from '../shared/icons';
 
 export interface ComparableResearchHome {
@@ -52,7 +58,12 @@ interface ResearchHomeComparisonProps {
 type ComparisonColumn =
   | { status: 'loading'; base: ComparableResearchHome }
   | { status: 'error'; base: ComparableResearchHome }
-  | { status: 'ready'; base: ComparableResearchHome; entity: ResearchEntity };
+  | {
+      status: 'ready';
+      base: ComparableResearchHome;
+      entity: ResearchEntity;
+      leadPersonNames: string[];
+    };
 
 const MAX_RESEARCH_AREAS = 6;
 const MAX_OFFICIAL_LINKS = 3;
@@ -79,10 +90,32 @@ const boundedDescription = (entity: ResearchEntity): string => {
   return `${wordSafe.replace(/[\s,;:.-]+$/, '')}…`;
 };
 
-const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: string }> => {
+const hostLabel = (href: string): string => new URL(href).hostname.replace(/^www\./, '');
+
+const sentenceStart = (label: string): string => label.charAt(0).toUpperCase() + label.slice(1);
+
+const officialLinkRoleLabel = (
+  entity: ResearchEntity,
+  leadPersonNames: readonly string[],
+  href: string,
+  key: string,
+): string => {
+  const websiteKey = normalizeSourceUrl(entity.websiteUrl || '');
+  if (websiteKey && websiteKey === key) return sentenceStart(researchWebsiteLabel(entity));
+  if (isPersonPageSourceUrl(href, leadPersonNames) || isIdentifierRecordUrl(href)) {
+    return personProfileSourceRoleLabel(href) || hostLabel(href);
+  }
+  return hostLabel(href);
+};
+
+const officialLinks = (
+  entity: ResearchEntity,
+  leadPersonNames: readonly string[],
+): Array<{ href: string; label: string }> => {
   const candidates = [entity.websiteUrl, ...(entity.sourceUrls || [])];
   const links: Array<{ href: string; label: string }> = [];
   const seen = new Set<string>();
+  const usedLabels = new Set<string>();
   for (const candidate of candidates) {
     const href = safeHttpUrl(candidate);
     if (!href) continue;
@@ -95,7 +128,10 @@ const officialLinks = (entity: ResearchEntity): Array<{ href: string; label: str
     const key = normalizeSourceUrl(href) || href;
     if (seen.has(key)) continue;
     seen.add(key);
-    links.push({ href, label: sourceLabelForUrl(href) });
+    const label = officialLinkRoleLabel(entity, leadPersonNames, href, key);
+    if (usedLabels.has(label)) continue;
+    usedLabels.add(label);
+    links.push({ href, label });
     if (links.length >= MAX_OFFICIAL_LINKS) break;
   }
   return links;
@@ -157,11 +193,12 @@ const ResearchHomeComparison = ({
         .get(`/research/${safeRouteSegment(base.slug)}`, { signal: controller.signal })
         .then((response) => {
           if (!active) return;
-          const { researchEntity } = normalizeResearchEntityDetailPayload(response.data);
+          const { researchEntity, members } = normalizeResearchEntityDetailPayload(response.data);
+          const leadPersonNames = dedupeLeadMembers(members).map(memberPersonName).filter(Boolean);
           setColumns((current) =>
             current.map((column) =>
               column.base._id === base._id
-                ? { status: 'ready', base, entity: researchEntity }
+                ? { status: 'ready', base, entity: researchEntity, leadPersonNames }
                 : column,
             ),
           );
@@ -264,7 +301,11 @@ const ResearchHomeComparison = ({
     (entity) => includedNoteIds.has(entity._id) && (notesByEntityId[entity._id] || '').trim(),
   );
 
-  const renderReadyCell = (entity: ResearchEntity, field: string): ReactNode => {
+  const renderReadyCell = (
+    entity: ResearchEntity,
+    leadPersonNames: readonly string[],
+    field: string,
+  ): ReactNode => {
     if (field === 'type') {
       return <span className="text-sm text-ink">{entityKindLabel(entity)}</span>;
     }
@@ -309,7 +350,7 @@ const ResearchHomeComparison = ({
       );
     }
     if (field === 'links') {
-      const links = officialLinks(entity);
+      const links = officialLinks(entity, leadPersonNames);
       return links.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {links.map((link) => (
@@ -339,7 +380,7 @@ const ResearchHomeComparison = ({
     if (column.status === 'error') {
       return <span className="text-xs italic text-muted">Could not load</span>;
     }
-    return renderReadyCell(column.entity, field);
+    return renderReadyCell(column.entity, column.leadPersonNames, field);
   };
 
   const fieldRows: Array<{ key: string; label: string }> = [

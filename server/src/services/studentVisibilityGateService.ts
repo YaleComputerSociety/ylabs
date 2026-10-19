@@ -45,7 +45,7 @@ import {
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
-  isStudentReadySoftSignalReason,
+  isStudentVisibilitySignalReason,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 } from './studentVisibilityTier';
 import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
@@ -211,14 +211,6 @@ export interface StudentVisibilityGateReport {
 
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
 
-const evidenceReasons = new Set([
-  'application_route',
-  'graduate_relevant',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
-
 // The single definition of the source-description repair lane. The repair queue
 // classifies the same reasons (`classifyVisibilityRepairStage`) and clears them
 // against the same patch, so a second hand-maintained copy drifts: it was missing
@@ -381,8 +373,7 @@ export const repairStageForReasons = (reasons: string[]) => {
 // review-exception reasons (formalization_only, application_source_only,
 // profile_fallback_only) blocking without enumerating each here.
 export function isBlockingVisibilityReason(reason: string): boolean {
-  if (evidenceReasons.has(reason)) return false;
-  if (isStudentReadySoftSignalReason(reason)) return false;
+  if (isStudentVisibilitySignalReason(reason)) return false;
   if (isStudentReadyHardBlockerReason(reason)) return true;
   return reason.endsWith('_only');
 }

@@ -381,14 +381,14 @@ describe('attributeProgramServedFields', () => {
     expect(outcomeFor(outcomes, 'eligibility').status).toBe('unexplained');
   });
 
-  it('attributes withheld contact-only eligibility to the description sanitizer', () => {
+  it('attributes withheld contact-only eligibility to the contact-direction guard', () => {
     const stored = { ...recurringStoredRow, eligibility: 'office@example.edu' };
     const outcomes = attributeProgramServedFields(stored, { ...stored, eligibility: '' }, servedAt);
 
     expect(outcomeFor(outcomes, 'eligibility')).toEqual({
       field: 'eligibility',
       status: 'attributed',
-      guard: 'publicProgramDescription',
+      guard: 'contactDirection',
     });
   });
 

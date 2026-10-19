@@ -14,7 +14,7 @@ import {
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 
-export type PlanSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+export type PlanSaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
 interface ResearchPlanStageControlProps {
   stage: ResearchPlanStage;
@@ -31,6 +31,8 @@ const statusMessage = (status?: PlanSaveStatus): string => {
       return 'Saved';
     case 'error':
       return 'Not saved. Check your connection or sign in again, then retry.';
+    case 'conflict':
+      return 'Changed in another tab. Showing the latest stage.';
     default:
       return '';
   }
@@ -59,8 +61,8 @@ const ResearchPlanStageControl = ({
       </select>
       {message && (
         <p
-          className={`text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`}
-          role={status === 'error' ? 'alert' : 'status'}
+          className={`text-xs ${status === 'error' || status === 'conflict' ? 'text-red-700' : 'text-muted'}`}
+          role={status === 'error' || status === 'conflict' ? 'alert' : 'status'}
           aria-live="polite"
         >
           {message}

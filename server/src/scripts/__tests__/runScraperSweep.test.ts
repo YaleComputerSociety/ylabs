@@ -621,6 +621,7 @@ describe('runScraperSweep', () => {
       'data-quality',
       'integrity-gate',
       'trust-contract',
+      'survivor-alias-derivation',
       'archived-cleanup',
     ]);
     // The gate reads sourceLinkHealth to decide whether a cited link still counts
@@ -794,6 +795,7 @@ describe('runScraperSweep', () => {
       'data-quality',
       'integrity-gate',
       'trust-contract',
+      'survivor-alias-derivation',
       'archived-cleanup',
     ]);
     expect(stages.find((stage) => stage.name === 'eponymous-fra-merge')?.args).toEqual(
@@ -853,6 +855,7 @@ describe('runScraperSweep', () => {
       'data-quality',
       'integrity-gate',
       'trust-contract',
+      'survivor-alias-derivation',
       'archived-cleanup',
     ]);
     expect(names.indexOf('researcher-dedupe')).toBeLessThan(names.indexOf('eponymous-fra-merge'));

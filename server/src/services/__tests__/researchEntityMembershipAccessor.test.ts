@@ -75,6 +75,19 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.websiteUrl).toBe('https://user.example.test');
   });
 
+  it('never carries a course page as a member website', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(
+      entityId,
+      { websiteUrl: 'https://fixturedept.example.test/courses/laboratory-fixture-anatomy' },
+      'ef789',
+    );
+
+    const [entry] = await getResearchEntityRoster(entityId);
+
+    expect(entry.websiteUrl).toBeUndefined();
+  });
+
   it('reads the roster email from the researcher identifiers', async () => {
     const entityId = new mongoose.Types.ObjectId();
     const personId = await seedMember(entityId, undefined, 'cd456');

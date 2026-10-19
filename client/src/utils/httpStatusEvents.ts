@@ -1,5 +1,16 @@
 export const HTTP_AUTH_REQUIRED_EVENT = 'ylabs:http-auth-required';
 export const HTTP_RATE_LIMITED_EVENT = 'ylabs:http-rate-limited';
+export const PAGE_LOGIN_PROMPT_EVENT = 'ylabs:page-login-prompt';
+
+export interface PageLoginPromptDetail {
+  shown: boolean;
+}
+
+export const announcePageLoginPrompt = (shown: boolean) => {
+  window.dispatchEvent(
+    new CustomEvent<PageLoginPromptDetail>(PAGE_LOGIN_PROMPT_EVENT, { detail: { shown } }),
+  );
+};
 
 export interface HttpRateLimitDetail {
   message: string;
@@ -12,4 +23,20 @@ export const dispatchAuthRequired = () => {
 
 export const dispatchRateLimited = (detail: HttpRateLimitDetail) => {
   window.dispatchEvent(new CustomEvent(HTTP_RATE_LIMITED_EVENT, { detail }));
+};
+
+export const dispatchHttpStatusEvent = (
+  status: number | undefined,
+  retryAfterHeader: string | null | undefined,
+  data?: { error?: string; retryAfterSeconds?: number },
+) => {
+  if (typeof window === 'undefined') return;
+  if (status === 401) dispatchAuthRequired();
+  if (status === 429) {
+    const retryAfterSeconds =
+      retryAfterHeader != null && Number.isFinite(Number(retryAfterHeader))
+        ? Number(retryAfterHeader)
+        : data?.retryAfterSeconds;
+    dispatchRateLimited({ message: data?.error || 'Too many requests.', retryAfterSeconds });
+  }
 };

@@ -691,13 +691,14 @@ describe('facultyToResearchEntityObservations affiliated-organization guard (#22
     expect(byField.entityType).toBe('LAB');
   });
 
-  it('still adopts an organization name that carries the person’s own name', () => {
+  it('keeps the person row for an organization name that carries the person’s own name', () => {
     const byField = entityFields(RIVERS, {
       name: 'Rivers Center for Cardiac Outcomes',
       url: 'https://medicine.yale.edu/rivers-center/',
     });
-    expect(byField.name).toBe('Rivers Center for Cardiac Outcomes');
-    expect(byField.entityType).toBe('LAB');
+    expect(byField.name).toBe('Jordan Rivers Faculty Research');
+    expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(byField.websiteUrl).toBe('https://medicine.yale.edu/rivers-center/');
   });
 
   it('refuses a shared academic host organization the lab slot links (#2360)', () => {

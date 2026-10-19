@@ -27,7 +27,7 @@ import {
   type DirectoryIdentity,
 } from '../utils/aliasObservationKeyResolution';
 import { listYalies, type YaliesPerson } from '../../services/yaliesService';
-import { userLookupValueForInferredPiUserKey } from '../entityMaterializer';
+import { netidNamedByUserEntityKey } from '../entityMaterializer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 const SOURCE_KEY = 'directory-alias-resolution';
@@ -105,7 +105,7 @@ async function loadDirectoryIdentitiesCached(ctx: ScraperContext): Promise<Direc
 }
 
 /**
- * Reads the value through `userLookupValueForInferredPiUserKey` rather than off the raw key, and
+ * Reads the value through `netidNamedByUserEntityKey` rather than off the raw key, and
  * drops a self-match, so this agrees with `resolveNetidForRosterEmailAlias` instead of becoming a
  * second opinion about the same question.
  */
@@ -119,7 +119,7 @@ export async function corpusResolvableAliases(): Promise<Set<string>> {
   for (const row of emails) {
     const alias = emailLocalPart(row.value);
     if (!alias) continue;
-    const netid = String(userLookupValueForInferredPiUserKey(row.entityKey) ?? '').toLowerCase();
+    const netid = netidNamedByUserEntityKey(row.entityKey);
     if (!netid || netid === alias) continue;
     const bucket = netidsByAlias.get(alias);
     if (bucket) bucket.add(netid);

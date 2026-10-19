@@ -160,7 +160,20 @@ describe('fellowshipCycle', () => {
     expect(status.label).toBe('Next cycle (est.)');
     expect(status.deadlinePassed).toBe(false);
     expect(getFellowshipDeadlineSubtitle(fellowship, now)).toBe(
-      'Est. next cycle ~Feb 17 (unconfirmed)',
+      'Est. next cycle ~Feb 17, 2027 (unconfirmed)',
+    );
+  });
+
+  it('names the year of a projected cycle whose month and day already passed this year', () => {
+    const lateOctober = new Date('2026-10-18T16:00:00.000Z');
+    const projected = baseFellowship({
+      isAcceptingApplications: false,
+      deadline: '2027-10-15T03:59:59.999Z',
+      deadlineProjectedNextCycle: true,
+    });
+
+    expect(getFellowshipDeadlineSubtitle(projected, lateOctober)).toBe(
+      'Est. next cycle ~Oct 14, 2027 (unconfirmed)',
     );
   });
 

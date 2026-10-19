@@ -56,7 +56,7 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 // Constants
 // ---------------------------------------------------------------------------
 
-const NSF_API_URL = 'https://api.nsf.gov/services/v1/awards.json';
+export const NSF_API_URL = 'https://api.nsf.gov/services/v1/awards.json';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PAGE_SIZE = 25; // NSF API max

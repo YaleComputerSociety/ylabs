@@ -41,6 +41,32 @@ describe('Meilisearch availability breaker', () => {
     expect(isMeiliUnreachableError(new Error('unrelated'))).toBe(false);
   });
 
+  it('keeps the breaker closed when only an optional call fails, and still fails optional calls fast once it opens', async () => {
+    const optionalCall = vi.fn().mockRejectedValueOnce(timedOut()).mockResolvedValue('answered');
+    const requiredCall = vi.fn().mockRejectedValueOnce(timedOut()).mockResolvedValue('answered');
+
+    await expect(withMeiliAvailability(optionalCall, 'optional')).rejects.toThrow(/failed/);
+    await expect(withMeiliAvailability(requiredCall)).rejects.toThrow(/failed/);
+    await expect(withMeiliAvailability(optionalCall, 'optional')).rejects.toBeInstanceOf(
+      MeilisearchKnownUnavailableError,
+    );
+    expect(optionalCall).toHaveBeenCalledTimes(1);
+    expect(requiredCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers the next call after an optional failure instead of failing it fast', async () => {
+    const optional = withMeiliAvailabilityGuard(
+      { search: vi.fn().mockRejectedValue(timedOut()) },
+      'optional',
+    );
+    const required = withMeiliAvailabilityGuard({
+      search: vi.fn().mockResolvedValue({ hits: [] }),
+    });
+
+    await expect(optional.search()).rejects.toThrow(/failed/);
+    await expect(required.search()).resolves.toEqual({ hits: [] });
+  });
+
   it('fails later calls fast after a timeout, then lets a call through once the cooldown passes', async () => {
     const call = vi.fn().mockRejectedValueOnce(timedOut()).mockResolvedValue('answered');
 

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildResearchGroupFilterString } from '../researchGroupFilters';
+import {
+  buildResearchGroupFilterString,
+  candidateMatchesStudentFilters,
+  tallyCandidateFacetDistribution,
+} from '../researchGroupFilters';
 
 describe('buildResearchGroupFilterString', () => {
   it('always pins archived = false when no filters are supplied', () => {
@@ -151,6 +155,77 @@ describe('buildResearchGroupFilterString', () => {
       expect(filter).toBe(
         'archived = false AND (departments = "Genetics") AND hasUndergradHostingEvidence = true',
       );
+    });
+  });
+});
+
+describe('candidateMatchesStudentFilters', () => {
+  const candidate = {
+    kind: 'lab',
+    entityType: 'LAB',
+    schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+    departments: ['Genetics'],
+    researchAreas: ['Genomics'],
+    hasUndergradHostingEvidence: true,
+  };
+
+  it('ORs values within a field and ANDs fields, as the filter string does', () => {
+    expect(
+      candidateMatchesStudentFilters(candidate, {
+        school: ['Law School', 'Faculty of Arts and Sciences'],
+        departments: ['Genetics'],
+      }),
+    ).toBe(true);
+    expect(
+      candidateMatchesStudentFilters(candidate, {
+        school: ['Faculty of Arts and Sciences'],
+        departments: ['Neurology'],
+      }),
+    ).toBe(false);
+  });
+
+  it('compares case-insensitively and ignores the visibility scope the pool query pins', () => {
+    expect(
+      candidateMatchesStudentFilters(candidate, {
+        entityType: ['lab'],
+        studentVisibilityTier: ['operator_review'],
+      }),
+    ).toBe(true);
+  });
+
+  it('reads the hosted-undergraduates flag only when that filter is on', () => {
+    const withoutEvidence = { ...candidate, hasUndergradHostingEvidence: false };
+    expect(candidateMatchesStudentFilters(withoutEvidence, {})).toBe(true);
+    expect(candidateMatchesStudentFilters(withoutEvidence, { hostsUndergrads: true })).toBe(false);
+  });
+
+  it('drops only the excluded field, so a facet can be counted disjunctively', () => {
+    expect(
+      candidateMatchesStudentFilters(
+        candidate,
+        { departments: ['Neurology'], entityType: ['LAB'] },
+        { excludeField: 'departments' },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('tallyCandidateFacetDistribution', () => {
+  const candidates = [
+    { entityType: 'LAB', departments: ['Genetics', 'Genetics'], schools: ['School of Medicine'] },
+    { entityType: 'LAB', departments: ['Chemistry'], schools: ['Faculty of Arts and Sciences'] },
+    { entityType: 'CENTER', departments: ['Genetics'], schools: ['School of Medicine'] },
+  ];
+
+  it('counts each row once per value over the rows the other filters admit', () => {
+    expect(
+      tallyCandidateFacetDistribution(candidates, { entityType: ['LAB'] }, [
+        { filterKey: 'departments', indexField: 'departments' },
+        { filterKey: 'entityType', indexField: 'entityType' },
+      ]),
+    ).toEqual({
+      departments: { Genetics: 1, Chemistry: 1 },
+      entityType: { LAB: 2, CENTER: 1 },
     });
   });
 });

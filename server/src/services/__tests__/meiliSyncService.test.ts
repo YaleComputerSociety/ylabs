@@ -136,6 +136,7 @@ describe('syncEntity transform', () => {
       sortTitle: 'smith lab',
       sortTitleQualifier: 'bio)',
       browseTiebreakKey: researchEntityBrowseTiebreakKey('rg-id-42'),
+      hasUndergradHostingEvidence: false,
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -233,6 +234,7 @@ describe('syncEntities', () => {
         sortTitle: 'a',
         sortTitleQualifier: '',
         browseTiebreakKey: researchEntityBrowseTiebreakKey('a'),
+        hasUndergradHostingEvidence: false,
       },
       {
         id: 'b',
@@ -240,6 +242,7 @@ describe('syncEntities', () => {
         sortTitle: 'b',
         sortTitleQualifier: '',
         browseTiebreakKey: researchEntityBrowseTiebreakKey('b'),
+        hasUndergradHostingEvidence: false,
       },
     ]);
   });

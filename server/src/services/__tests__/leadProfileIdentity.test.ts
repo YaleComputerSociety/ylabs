@@ -593,3 +593,103 @@ describe('detectProfileIdentityRisk on accented and compound surnames', () => {
     ).toBe(false);
   });
 });
+
+describe('detectProfileIdentityRisk on nickname given names', () => {
+  const profileOf = (slug: string) => ({
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    sourceUrls: [`https://som.yale.edu/faculty-research/faculty-directory/${slug}`],
+  });
+
+  it.each([
+    ['judith-fixture', 'Judy', 'Fixture'],
+    ['william-fixture', 'Bill', 'Fixture'],
+    ['bob-fixture', 'Robert', 'Fixture'],
+  ])('corroborates a %s profile under a lead stored as %s %s', (slug, fname, lname) => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: profileOf(slug),
+        leadMembers: [{ user: { displayName: `${fname} ${lname}` } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a nickname-shaped given name the tables do not pair with the lead', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: profileOf('judith-fixture'),
+        leadMembers: [{ user: { displayName: 'Bill Fixture' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('still flags a paired given name on a different surname', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: profileOf('william-otherfixture'),
+        leadMembers: [{ user: { displayName: 'Bill Fixture' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores a faculty-directory category listing beside the nickname profile', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          ...profileOf('judith-fixture'),
+          sourceUrls: [
+            'https://som.yale.edu/faculty-research/faculty-directory/judith-fixture',
+            'https://som.yale.edu/faculty-research/faculty-directory/economics',
+          ],
+        },
+        leadMembers: [
+          {
+            user: {
+              displayName: 'Judy Fixture',
+              profileUrls: { official: 'https://economics.yale.edu/people/judy-fixture' },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('detectProfileIdentityRisk on apostrophe surnames', () => {
+  const entity = {
+    entityType: 'LAB',
+    sourceUrls: ['https://medicine.yale.edu/profile/jane-dfixture/'],
+  };
+
+  it('corroborates a lead whose apostrophe surname the slug spells as one token', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity,
+        leadMembers: [{ user: { displayName: "Jane Q. D'Fixture" } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a different given name that shares the apostrophe surname', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity,
+        leadMembers: [{ user: { displayName: "Mary Q. D'Fixture" } }],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('detectProfileIdentityRisk on a category segment after a person slug', () => {
+  it('reads the person slug rather than a trailing category listing segment', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          sourceUrls: ['https://dept.yale.edu/people/jane-fixture/faculty-directory/economics'],
+        },
+        leadMembers: [{ user: { displayName: 'Jane Fixture' } }],
+      }),
+    ).toBe(false);
+  });
+});

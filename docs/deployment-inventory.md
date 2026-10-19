@@ -16,10 +16,10 @@ Incident response, including how to rotate every secret named here, is owned by 
 | ------- | ---- | ------ | ------------ | ----- |
 | Beta web service | Staging API and client, `ylabs-gr4v.onrender.com` | `beta` | The server bundle, which also serves `client/dist` | Auto-deploys on every push to `beta`. |
 | Production web service | Production API and client, `yalelabs.onrender.com`, custom domain `yalelabs.io` | `main` | The same, built from `main` | Auto-deploys on every push to `main`, which is a promotion merge or a hotfix. |
-| Meilisearch private service | Search index, reachable only inside Render at `http://<meili-private-service>:7700` | none | The Meilisearch image | Holds `MEILI_MASTER_KEY`. Each environment's indexes are namespaced by prefix (`beta_*`, `prod_*`). |
-| Beta operator service | Render cron job that exists so a one-off job can run `promote:remote-phase` for Beta | `beta` | `true`, on a schedule that never matters, such as `0 0 1 1 *` | Same region as the private Meilisearch (Ohio). Owned by `docs/data-refresh-runbook.md` ("What to set up once"). |
-| Production operator service | The same for Production | `main` | The same | Holds the only stored copy of the Production write key. |
-| `ylabs-scraper` | Weekly Development sweep cron job | `beta`, but each run clones `beta` HEAD itself | `deploy/sweep-runner/Dockerfile` and its `entrypoint.sh` | Virginia (US East), Docker, `4c-8g`. Owned by `docs/data-refresh-runbook.md` ("Render Cron Job Settings"). |
+| Meilisearch private service | Search index, reachable only inside Render at `http://<meili-private-service>:7700` | none | `docker.io/getmeili/meilisearch:v1.54.3`, pinned, auto-deploy off | Holds `MEILI_MASTER_KEY`. Each environment's indexes are namespaced by prefix (`beta_*`, `prod_*`). Upgrading is a deliberate tag change (`docs/meilisearch-reindex-runbook.md`, "The pinned Meilisearch version"). |
+| Beta operator service (`ylabs-beta-operator`) | Render cron job that exists so a one-off job can run `promote:remote-phase` for Beta | `beta`, auto-deploy off; `promote:beta` deploys it at the head when it is behind | `true`, on the schedule `0 0 1 1 *` | Same region as the private Meilisearch (Ohio). Holds the only stored copy of the Beta reindex key. Owned by `docs/data-refresh-runbook.md` ("What to set up once"). |
+| Production operator service (`ylabs-prod-operator`) | The same for Production | `main`, auto-deploy off; `promote:production` deploys it at the head when it is behind | The same | Holds the only stored copy of the Production reindex key. |
+| `ylabs-scraper` | Weekly Development sweep cron job, and the one-off jobs `yarn ops:sweep` starts | `beta`, but each run clones `beta` HEAD itself | `deploy/sweep-runner/Dockerfile` and its `entrypoint.sh` | Virginia (US East), Docker, `4c-8g`. The build filter is `deploy/sweep-runner/**`, `server/package.json`, `server/yarn.lock`, `package.json` and `.yarnrc.yml`, so the image rebuilds only when its toolchain or the entrypoint changes and its own copy of the code is routinely older than `beta`. Owned by `docs/data-refresh-runbook.md` ("Render Cron Job Settings"). |
 
 The repository does not record whether Beta and Production share one Meilisearch private service or run one each.
 The reindex runbook's key table names a single private service, and the prefix-scoped keys from #4859 are what keep the two environments apart on a shared instance.
@@ -63,7 +63,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `MEILISEARCH_INDEX_PREFIX` | Yes | Boot fails in a deployed runtime. The value is `beta` or `prod`, with no trailing underscore. | No |
 | `MEILISEARCH_SEARCH_API_KEY` | Yes, once created | Without it and without the legacy key, search answers `503` and `/api/ready` reports `search: false`. | Yes |
 | `MEILISEARCH_API_KEY` | No; legacy | The fallback for either Meilisearch role, which logs one warning per role. Remove it from the web service once the scoped key is live. | Yes |
-| `MEILISEARCH_WRITE_API_KEY` | Beta only | Beta stores its `beta_*` write key here so a Render one-off job can reindex Beta. It must never be set on the Production web service. | Yes |
+| `MEILISEARCH_WRITE_API_KEY` | Yes | The environment's document-sync key (`ylabs-<prefix>-web-docsync`), which can only add and delete documents in its own index, for live sync after edits and gate changes. Never the reindex key, which lives on the operator service. | Yes |
 | `OPENAI_API_KEY` | No | Search query embedding is skipped and search serves its keyword leg only. | Yes |
 | `YALIES_API_KEY` | No | Login still works, but classification falls back to the `userType` a previous login stored, or `unknown`. | Yes |
 | `SENTRY_DSN` | No | No server error reports. | Treat as secret, because it lets anyone post events into the project |
@@ -85,6 +85,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `GATE_ARTIFACT_DIR` | No | Gate scorecard artifacts are read from and written to the operating system's temporary directory. | No |
 | `CORPUS_SNAPSHOT_DISABLED` | No | Unset means the in-process corpus quality snapshot runs; only `true` turns it off. | No |
 | `CORPUS_SNAPSHOT_MAX_AGE_HOURS` | No | The snapshot scheduler uses its default age before taking a new measurement. | No |
+| `DERIVED_UNDERGRAD_ROSTERS_SERVE` | No | Unset means a roster the lane derived for a badged row outside the reviewed allowlist is stored but not served; only `true` serves it, and it stays unset until an owner-graded sample clears derived rosters (#5278). | No |
 | `BETA_DATA_QUALITY_SCORECARD_PATH`, `BETA_REPAIR_QUEUE_REPORT_PATH`, `SCRAPER_INTEGRITY_SCORECARD_PATH`, `PROMOTION_COPY_DRY_RUN_REPORT_PATH`, `LAUNCH_TRUST_SCORECARD_PATH`, `LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH`, `LAUNCH_ACQUISITION_REPORT_PATH` | No | Each overrides one artifact path the admin operator board reads, which otherwise sits under `GATE_ARTIFACT_DIR`. | No |
 | `FEATURE_<FLAG>` | Per flag | One per entry in `RELEASE_FEATURE_FLAGS`, which is empty today. Only the exact string `true` turns a flag on (`docs/release-process.md`, "Holding one feature instead of the whole release"). | No |
 
@@ -125,9 +126,9 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `MONGODBURL` | Beta database | `Prod` database | Every phase refuses. | Yes |
 | `MEILISEARCH_HOST` | Yes | Yes | The reindex refuses. | No |
 | `MEILISEARCH_INDEX_PREFIX` | `beta` | `prod` | The reindex refuses an empty prefix. | No |
-| `MEILISEARCH_WRITE_API_KEY` | `beta_*` key | `prod_*` key | The rebuild fails before the swap, and the serving index is unchanged. | Yes |
+| `MEILISEARCH_WRITE_API_KEY` | `ylabs-beta-reindex` | `ylabs-prod-reindex` | The rebuild fails before the swap, and the serving index is unchanged. | Yes |
 | `OPENAI_API_KEY` | Yes | Yes | A rebuild of an index with a stored embedder is refused, rather than silently serving keyword-only search. | Yes |
-| `PFR3_MEILI_RESTORE_POINT` | No | Before each promotion | `promote:remote-phase` refuses for Production. | No |
+| `PFR3_MEILI_RESTORE_POINT` | No | Per promotion, passed on the job's start command by `promote:production --meili-restore-point` rather than stored | `promote:remote-phase` refuses for Production. | No |
 | `CONFIRM_PROD_SCRAPE` | No | Set by the job command | The Production reindex refuses at the write, after the preflight has printed. | No |
 
 ## Weekly Sweep Cron Variables (`ylabs-scraper`)
@@ -140,6 +141,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `SCRAPLING_RENDERER_ENABLED` | No | Defaults to `false`, so the rendered-fetch lanes fetch plainly. | No |
 | `SCRAPER_PER_HOST_CONCURRENCY` | No | Per-host pacing uses its defaults. | No |
 | `SWEEP_REPOSITORY_URL` | No | Leave it unset on Render; it overrides the repository the entrypoint clones. | No |
+| `SWEEP_RUNNER_APP_DIR` | No | Leave it unset on Render; it overrides the image directory, `/app`, so `scripts/sweep-runner-entrypoint.test.mjs` can run the entrypoint against stubs. | No |
 | `SCRAPER_SWEEP_AUTO_MERGE_FRA`, `SCRAPER_SWEEP_DEDUPE_RESEARCHERS`, `SCRAPER_SWEEP_PORT_GRANT_SHELLS`, `SCRAPER_SWEEP_PROMOTE_FACULTY_RESEARCH_LABS`, `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE`, `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES` | No | Each sweep stage runs by default; a value such as `0` or `false` turns that stage off (`server/src/scripts/sweepStageFlags.ts`). | No |
 
 The entrypoint sets `SWEEP_TARGET_SHA` to the `beta` HEAD it resolved and `SEARCH_INDEX_WRITES=deferred`, and unsets every `MEILISEARCH_*` variable, so none of those belong in the dashboard.
@@ -154,7 +156,7 @@ These live in the operator's own `server/.env` or shell, never in Render and nev
 | -------- | ------- | ------ |
 | `MONGODBURL` | Development work and `yarn promote:beta` | Yes |
 | `DEVELOPMENT_MONGODBURL`, `BETA_MONGODBURL`, `PRODUCTION_MONGODBURL`, `ATLAS_DEVELOPMENT_MONGODBURL` | The copy pairs: `database:verify-names --pair <pair>`, the two mirrors, and `production:promote-beta-copy` | Yes |
-| `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs | Yes |
+| `RENDER_API_KEY` | `yarn promote:beta` and `yarn promote:production`, which read the operator services and start their jobs, and `yarn ops:sweep`, which falls back to the render CLI's `~/.render/cli.yaml` login when it is unset | Yes |
 | `RENDER_BETA_OPERATOR_SERVICE_ID`, `RENDER_PRODUCTION_OPERATOR_SERVICE_ID` | The same | No |
 | `OPENAI_API_KEY`, `YALIES_API_KEY` | Laptop sweeps and `yarn development:search:sync` or `:rebuild` | Yes |
 | `MEILISEARCH_HOST`, `MEILISEARCH_INDEX_PREFIX`, `MEILISEARCH_WRITE_API_KEY`, `MEILISEARCH_API_KEY` | Local Development search, where the prefix is unset | Local keys only |
@@ -228,7 +230,7 @@ Everything here except the verification is a maintainer action in a dashboard.
 
 1. **Atlas.** Confirm the cluster is up and the target database exists. Create or confirm the service's database user, scoped to that service's one database.
 2. **Create the service** in the Render dashboard with the branch, runtime, and region from [Services](#services). For a web service use the build command above. For `ylabs-scraper` use Docker with `deploy/sweep-runner/Dockerfile` and the build context at the repository root.
-3. **Set every required variable** from the matching table above, and mark each secret as a secret. Do not copy a variable another service holds unless the table says this service needs it; in particular, never put a Production write key on the Production web service.
+3. **Set every required variable** from the matching table above, and mark each secret as a secret. Do not copy a variable another service holds unless the table says this service needs it; in particular, never put a reindex key on a web service; a web service holds only its document-sync key.
 4. **Allow its outbound ranges into Atlas.** On the new service open Connect, then the Outbound tab, and add each range to Atlas Network Access. Ranges are per region, so a service in a new region needs new entries. Remove any stale `/32`.
 5. **Deploy, then read the boot log.** A missing required variable fails boot with a message naming it, which is the point of the fail-fast checks.
 6. **Restore search.** For a rebuilt Meilisearch service, create the scoped keys from its shell, set them on the web and operator services, redeploy those, and reindex each environment per `docs/meilisearch-reindex-runbook.md`: Beta by one-off job, Production from its shell.

@@ -8,6 +8,7 @@ import FellowshipSearchContext, {
 import type { Fellowship } from '../../../types/types';
 import FellowshipModal from '../FellowshipModal';
 import { trackResearchEvent } from '../../../utils/researchAnalytics';
+import { PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE } from '../../../utils/programBoard';
 
 vi.mock('../../../utils/researchAnalytics', async () => ({
   ...(await vi.importActual<typeof import('../../../utils/researchAnalytics')>(
@@ -139,24 +140,28 @@ describe('FellowshipModal', () => {
     expect(within(dialog).queryByText('Program Route')).toBeNull();
   });
 
-  it('leaves the programs page URL to the host when a filter chip closes the modal', () => {
+  it('replaces the open program on the programs page with the chosen filter in one step', () => {
     const onClose = vi.fn();
-    renderModalAt('/programs?program=program-1', onClose);
+    renderModalAt('/programs?q=summer&quick=open&year=Senior&program=program-1', onClose);
 
     fireEvent.click(screen.getByRole('button', { name: 'Master’s Student' }));
 
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('current-location').textContent).toBe('/programs?program=program-1');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-location').textContent).toBe(
+      '/programs?year=Master%E2%80%99s+Student',
+    );
   });
 
-  it('opens the programs page when a filter chip is chosen from another page', () => {
+  it('opens the programs page filtered to the chosen chip from another page', () => {
     const onClose = vi.fn();
     renderModalAt('/dashboard', onClose);
 
     fireEvent.click(screen.getByRole('button', { name: 'Master’s Student' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('current-location').textContent).toBe('/programs');
+    expect(screen.getByTestId('current-location').textContent).toBe(
+      '/programs?year=Master%E2%80%99s+Student',
+    );
   });
 
   it('makes source-backed research application requirements scannable', () => {
@@ -278,13 +283,89 @@ describe('FellowshipModal', () => {
       screen.getByRole('button', { name: 'Summer' }),
       screen.getByRole('button', { name: 'Research' }),
       screen.getByRole('button', { name: 'Africa' }),
-      screen.getByRole('button', { name: 'U.S. citizens are eligible' }),
       screen.getByRole('link', { name: /Apply now/i }),
     ];
 
     for (const control of controls) {
       expect(control.className).toContain('min-h-[44px]');
     }
+  });
+
+  it.each([
+    [['U.S. citizens are eligible'], 'U.S. citizens only'],
+    [
+      ['U.S. citizens are eligible', 'U.S. permanent residents are eligible'],
+      'U.S. citizens and permanent residents only',
+    ],
+    [
+      ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+      'Open to U.S. and non-U.S. citizens',
+    ],
+    [[], 'Not stated. Check the official page.'],
+  ])('answers citizenship in one plain line (#5130): %j', (citizenshipStatus, answer) => {
+    renderModal({ citizenshipStatus });
+
+    expect(within(screen.getByRole('dialog')).getAllByText(answer).length).toBeGreaterThan(0);
+  });
+
+  it('flags a deadline the program text gives on another day (#5158)', () => {
+    renderModal({ deadlineTextConflict: '2026-02-19' });
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(
+        /own text gives Feb 19, 2026\. Confirm the deadline on the official page\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it('says nothing about the text when it agrees with the deadline', () => {
+    renderModal({ deadlineTextConflict: null });
+
+    expect(within(screen.getByRole('dialog')).queryByText(/own text gives/)).toBeNull();
+  });
+
+  it('names the program on its watch control and flips the verb once watched', () => {
+    const { rerender } = renderModal();
+
+    const watch = screen.getByRole('button', { name: `Watch ${fellowship.title}` });
+    expect(watch.getAttribute('aria-pressed')).toBe('false');
+
+    rerender(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={fellowship}
+            isOpen
+            isFavorite
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const stop = screen.getByRole('button', { name: `Stop watching ${fellowship.title}` });
+    expect(stop.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it("shows the program text's home-country condition under the citizenship answer (#5235)", () => {
+    renderModal({
+      citizenshipStatus: ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+      citizenshipCondition:
+        'In general, applications from international students proposing research in their country of origin are ineligible.',
+    });
+
+    expect(
+      within(screen.getByRole('dialog')).getByText(/in their country of origin are ineligible/),
+    ).toBeTruthy();
+  });
+
+  it('says a missing year of study is not stated (#5235)', () => {
+    renderModal({ yearOfStudy: [] });
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getAllByText('Year of study').length).toBeGreaterThan(0);
+    expect(dialog.getAllByText('Not stated. Check the official page.').length).toBeGreaterThan(0);
   });
 
   it('does not render an application action for unsafe application links', () => {
@@ -370,7 +451,7 @@ describe('FellowshipModal', () => {
 
     expect(screen.getByText('Opens soon', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText(/Applications are not open yet/i)).toBeInTheDocument();
-    const closedWindowAction = screen.getByText('Track the opening date').closest('a');
+    const closedWindowAction = screen.getByText('See the official program page').closest('a');
     expect(closedWindowAction).toHaveClass('bg-muted');
     expect(closedWindowAction).not.toHaveClass('bg-brand');
     expect(screen.queryByText('Apply now')).not.toBeInTheDocument();
@@ -435,13 +516,80 @@ describe('FellowshipModal', () => {
     expect(screen.queryByText('Not usually')).toBeNull();
   });
 
+  it('says a faculty letter is still needed when no mentor is needed first (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      applicationMaterials: ['Project statement', 'A letter from a Yale faculty member'],
+    });
+
+    expect(
+      screen.getByText('No mentor needed first, but you will need a faculty letter'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Not usually')).toBeNull();
+  });
+
+  it('names a required faculty letter in the mentor-matching answer too (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      applicationMaterials: ['Project statement', 'A letter from a Yale faculty member'],
+    });
+
+    expect(
+      screen.getByText(
+        'Not first, the program helps match you with a mentor, but you will need a faculty letter',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('answers not usually when the only letter mention says one is not required (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      applicationMaterials: [],
+      applicationInformation: 'A letter of recommendation is not required.',
+    });
+
+    expect(screen.getByText('Not usually')).toBeInTheDocument();
+  });
+
   it('still tells students to secure a mentor first when the program requires it (#970)', () => {
     renderModal({ requiresMentorBeforeApply: true, mentorMatching: true });
 
-    expect(screen.getByText('Yes, secure a mentor before applying')).toBeInTheDocument();
+    expect(screen.getByText('Yes, line up your own mentor before applying')).toBeInTheDocument();
     expect(
       screen.queryByText('This source suggests a mentor-matching or mentored program route.'),
     ).toBeNull();
+  });
+
+  it('separates the award contact the source names from the mentor a student brings', () => {
+    renderModal({
+      requiresMentorBeforeApply: true,
+      applicationInformation: 'Award Manager/Faculty Mentor: Program Office Contact',
+    });
+
+    expect(screen.getByText('Yes, line up your own mentor before applying')).toBeInTheDocument();
+    expect(screen.getByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeInTheDocument();
+  });
+
+  it('adds no contact note when the program needs no mentor first', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      applicationInformation: 'Award Manager/Faculty Mentor: Program Office Contact',
+    });
+    expect(screen.queryByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeNull();
+  });
+
+  it.each([
+    'Submit the online form and one recommendation letter.',
+    'Applications are reviewed by the program administrator.',
+    'Faculty mentor: must be a ladder faculty member who agrees to supervise.',
+  ])('adds no contact note when the application text names no contact: %s', (text) => {
+    renderModal({ requiresMentorBeforeApply: true, applicationInformation: text });
+
+    expect(screen.getByText('Yes, line up your own mentor before applying')).toBeInTheDocument();
+    expect(screen.queryByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeNull();
   });
 
   it('renders a single Description heading when summary duplicates description (#1021)', () => {

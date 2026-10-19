@@ -102,6 +102,9 @@ const aliasMatches = (text: string, alias: string): boolean =>
       .replace(/[^a-z0-9]+/g, ' ')} `,
   );
 
+export const programSubjectFilterOptions = (): string[] =>
+  PROGRAM_TOPIC_TAXONOMY.map((topic) => topic.subject).sort((a, b) => a.localeCompare(b));
+
 export const inferProgramSubjects = (program: any): string[] => {
   const text = topicText(program);
   return PROGRAM_TOPIC_TAXONOMY.filter((topic) =>
@@ -147,3 +150,8 @@ export const yearOfStudyAliasesForQuery = (query: unknown): string[] => {
     spoken.some((alias) => aliasMatches(text, alias)),
   ).map(({ sourced }) => sourced);
 };
+
+export const yearOfStudyWordAlternatives = (word: string): string[][] =>
+  STUDENT_YEAR_OF_STUDY_ALIASES.filter(({ spoken }) => spoken.includes(word)).map(({ sourced }) =>
+    normalizedText([sourced]).trim().split(' '),
+  );

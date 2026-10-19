@@ -7,11 +7,14 @@ import {
   FellowshipQuickFilter,
   ProgramSearchQueryCorrection,
 } from '../reducers/fellowshipSearchReducer';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export interface FellowshipSearchContextType {
   queryString: string;
   setQueryString: (query: string) => void;
   queryCorrection: ProgramSearchQueryCorrection | null;
+  resultsRankedByRelevance: boolean;
+  resultsMissOneWord: boolean;
   searchTypedSpelling: () => void;
 
   selectedYearOfStudy: string[];
@@ -46,6 +49,7 @@ export interface FellowshipSearchContextType {
 
   fellowships: Fellowship[];
   isLoading: boolean;
+  isSearchPending: boolean;
   loadError: boolean;
   searchExhausted: boolean;
 
@@ -63,6 +67,7 @@ export interface FellowshipSearchContextType {
   quickFilter: string | null;
   setQuickFilter: (filter: FellowshipQuickFilter) => void;
   resetProgramFilters: () => void;
+  applyUrlState: (state: ProgramSearchUrlState) => void;
 
   filterBarHeight: number;
   setFilterBarHeight: (height: number) => void;
@@ -72,6 +77,8 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryString: '',
   setQueryString: () => {},
   queryCorrection: null,
+  resultsRankedByRelevance: false,
+  resultsMissOneWord: false,
   searchTypedSpelling: () => {},
   selectedYearOfStudy: [],
   selectedProgramCategory: [],
@@ -103,6 +110,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   onToggleSortDirection: () => {},
   fellowships: [],
   isLoading: false,
+  isSearchPending: false,
   loadError: false,
   searchExhausted: false,
   page: 1,
@@ -126,6 +134,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   quickFilter: null,
   setQuickFilter: () => {},
   resetProgramFilters: () => {},
+  applyUrlState: () => {},
   filterBarHeight: 0,
   setFilterBarHeight: () => {},
 };

@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  isLikelyPersonSpecificYaleEmail,
   isPhotoSceneDescription,
+  isRoleOrUnitMailbox,
   normalizeInitialSpacing,
   normalizeName,
   slugify,
   splitName,
+  yaleUnitMailboxTokens,
 } from '../scraperHelpers';
 
 describe('normalizeInitialSpacing', () => {
@@ -116,4 +119,47 @@ describe('isPhotoSceneDescription', () => {
       expect(isPhotoSceneDescription(text)).toBe(false);
     },
   );
+});
+
+describe('isRoleOrUnitMailbox', () => {
+  const fixturePage = yaleUnitMailboxTokens(['https://fixture.yale.edu/profile/ann-fixture']);
+
+  it('refuses an address that is only the name of the unit whose page printed it', () => {
+    expect(isRoleOrUnitMailbox('fixture@yale.edu', fixturePage)).toBe(true);
+    expect(isRoleOrUnitMailbox('mailto:Fixture@yale.edu', fixturePage)).toBe(true);
+  });
+
+  it('refuses an address whose local part names an office role, with no unit context', () => {
+    expect(isRoleOrUnitMailbox('fixture.dus@yale.edu')).toBe(true);
+    expect(isRoleOrUnitMailbox('dgs-fixture@yale.edu')).toBe(true);
+    expect(isRoleOrUnitMailbox('registrar.fixture@yale.edu')).toBe(true);
+  });
+
+  it('reads unit names the caller holds as well as the page host', () => {
+    const tokens = yaleUnitMailboxTokens(['https://econ.example.org/people'], ['Economics']);
+    expect(isRoleOrUnitMailbox('economics@yale.edu', tokens)).toBe(true);
+  });
+
+  it('keeps a person-shaped address on a unit page', () => {
+    expect(isRoleOrUnitMailbox('ann.fixture@yale.edu', fixturePage)).toBe(false);
+    expect(isRoleOrUnitMailbox('aa123@yale.edu', fixturePage)).toBe(false);
+  });
+
+  it('says nothing about a unit name without unit evidence, or about a non-Yale address', () => {
+    expect(isRoleOrUnitMailbox('fixture@yale.edu')).toBe(false);
+    expect(isRoleOrUnitMailbox('fixture@example.org', fixturePage)).toBe(false);
+  });
+
+  it('takes no unit evidence from a non-Yale host', () => {
+    expect(yaleUnitMailboxTokens(['https://fixture.example.org/x']).size).toBe(0);
+  });
+});
+
+describe('isLikelyPersonSpecificYaleEmail refuses role mailboxes', () => {
+  it('refuses a unit role mailbox printed next to a faculty name', () => {
+    expect(isLikelyPersonSpecificYaleEmail('fixture.dus@yale.edu', 'Ann Fixture')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('registrar.fixture@yale.edu', 'Ann Fixture')).toBe(
+      false,
+    );
+  });
 });

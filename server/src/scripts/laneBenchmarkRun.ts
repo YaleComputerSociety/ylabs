@@ -32,6 +32,8 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'yale-college-fellowships-office',
   'center-affiliation-llm',
   'center-director-llm',
+  'center-director',
+  'center-affiliation-roster',
   'research-area-source-extractor',
   'nih-reporter',
   'nsf-award-search',

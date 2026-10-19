@@ -147,7 +147,8 @@ describe('startScrapeRunHeartbeat stall window (#5086)', () => {
 
   function startWithProgressClock(onStall = vi.fn()) {
     vi.useFakeTimers();
-    let lastProgressAtMs = Date.now();
+    const startedAt = Date.now();
+    let lastProgressAtMs = startedAt;
     const beat = vi.fn().mockResolvedValue({ matched: true });
     const heartbeat = startScrapeRunHeartbeat(
       {
@@ -162,7 +163,7 @@ describe('startScrapeRunHeartbeat stall window (#5086)', () => {
     const progress = () => {
       lastProgressAtMs = Date.now();
     };
-    return { beat, heartbeat, onStall, progress };
+    return { beat, heartbeat, onStall, progress, startedAt };
   }
 
   it('keeps heartbeating a run that keeps making progress, long past the window', async () => {
@@ -179,8 +180,7 @@ describe('startScrapeRunHeartbeat stall window (#5086)', () => {
   });
 
   it('stops heartbeating and reports the stall once the window passes with no progress', async () => {
-    const startedAt = Date.now();
-    const { beat, onStall } = startWithProgressClock();
+    const { beat, onStall, startedAt } = startWithProgressClock();
 
     await vi.advanceTimersByTimeAsync(WINDOW_MS);
     expect(beat).toHaveBeenCalledTimes(WINDOW_MS / INTERVAL_MS);

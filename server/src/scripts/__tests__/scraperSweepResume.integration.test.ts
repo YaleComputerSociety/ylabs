@@ -501,6 +501,29 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
     expect(summary.failed).toBe(0);
   }, 180_000);
 
+  it('resumes from the recorded rows when the checkpoint was restored from the run record into a fresh container (#5209)', async () => {
+    const { mode, options, lastSource } = await runSweepFailingLastSource();
+    const checkpoint = readSweepCheckpoint(checkpointFor(mode))!;
+    fs.rmSync(checkpoint.outputDirectory, { recursive: true, force: true });
+    fs.writeFileSync(
+      checkpointFor(mode),
+      JSON.stringify({ ...checkpoint, ownerPid: 0, restoredFromRunRecord: true }),
+    );
+
+    const resumed = makeChildRunner(new Set());
+    const summary = await runScraperSweep(options, {
+      childRunner: resumed.runner,
+      sweepSources: researchSweepSources,
+    });
+    trackRun(mode, summary.outputDirectory);
+
+    expect(resumedSourceNames(resumed.calls)).toEqual([lastSource]);
+    expect(summary.failed).toBe(0);
+    expect(summary.succeeded).toBe(researchSweepSources.length);
+    const firstSource = summary.rows.find((row) => row.sourceName === researchSweepSources[0].name);
+    expect(firstSource).toMatchObject({ status: 'succeeded', observationCount: 2 });
+  }, 180_000);
+
   it('stops a development-full sweep before any source runs when its preflight canary fails', async () => {
     const mode = 'development-full' as const;
     fs.rmSync(checkpointFor(mode), { force: true });

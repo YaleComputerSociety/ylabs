@@ -1,4 +1,5 @@
 import { spawnSync } from 'child_process';
+import { existsSync, readFileSync, rmSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -8,6 +9,7 @@ import {
   parseRemotePhaseArgs,
   remotePhaseEnvironmentProblems,
   remotePhaseSteps,
+  summarizeSearchReindexResult,
   type RemotePhaseStep,
 } from './promoteCore';
 
@@ -18,9 +20,20 @@ export interface RemotePhaseStepResult {
   label: string;
   exitCode: number | null;
   durationMs: number;
+  summary?: Record<string, unknown>;
 }
 
 export type StepRunner = (step: RemotePhaseStep) => number | null;
+
+export interface StepResultFiles {
+  clear: (file: string) => void;
+  read: (file: string) => string | undefined;
+}
+
+const stepResultFiles: StepResultFiles = {
+  clear: (file) => rmSync(file, { force: true }),
+  read: (file) => (existsSync(file) ? readFileSync(file, 'utf8') : undefined),
+};
 
 function runStep(step: RemotePhaseStep): number | null {
   const result = spawnSync(step.command, step.args, {
@@ -37,6 +50,7 @@ export function runRemotePhase(
   env: NodeJS.ProcessEnv = process.env,
   runner: StepRunner = runStep,
   now: () => number = Date.now,
+  files: StepResultFiles = stepResultFiles,
 ): number {
   const args = parseRemotePhaseArgs(argv);
   const problems = remotePhaseEnvironmentProblems(args.environment, env);
@@ -52,9 +66,17 @@ export function runRemotePhase(
   }
   for (const step of remotePhaseSteps(args.environment, args)) {
     console.log(`\n[promote:remote-phase] ${step.label}`);
+    if (step.resultFile) files.clear(step.resultFile);
     const startedAt = now();
     const exitCode = runner(step);
-    results.push({ label: step.label, exitCode, durationMs: now() - startedAt });
+    const raw = step.resultFile ? files.read(step.resultFile) : undefined;
+    const summary = raw === undefined ? undefined : summarizeSearchReindexResult(raw);
+    results.push({
+      label: step.label,
+      exitCode,
+      durationMs: now() - startedAt,
+      ...(summary ? { summary } : {}),
+    });
     if (exitCode !== 0) {
       console.error(`[promote:remote-phase] ${step.label} exited ${exitCode}; stopping`);
       report('failed', step.label);

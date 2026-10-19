@@ -6,6 +6,8 @@ import {
   deriveDataQualityGate,
   buildRecommendedNextActions,
   classifyOperatorQueueReason,
+  splitOperatorSampleReasons,
+  topQueueReasonsPerKind,
   derivePromotionStatus,
   readDataQualityGateArtifact,
   readScraperIntegrityGateArtifact,
@@ -26,7 +28,9 @@ import {
 
 describe('adminOperatorBoardService', () => {
   it('separates blocking repair reasons from positive evidence signals', () => {
-    expect(classifyOperatorQueueReason('missing_action_evidence')).toBe('blocking');
+    expect(classifyOperatorQueueReason('missing_card_description')).toBe('blocking');
+    expect(classifyOperatorQueueReason('public_description_invariant_failed')).toBe('blocking');
+    expect(classifyOperatorQueueReason('non_research_program')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
     expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
@@ -37,6 +41,88 @@ describe('adminOperatorBoardService', () => {
     expect(classifyOperatorQueueReason('concrete_next_step')).not.toBe('evidence');
     expect(classifyOperatorQueueReason('source_backed_description')).toBe('evidence');
     expect(classifyOperatorQueueReason('operator_override')).toBe('review');
+  });
+
+  it('sends canonical hard blockers that need no operator decision to the repair lane', () => {
+    for (const hard of [
+      'public_description_invariant_failed',
+      'citations_identify_no_person',
+      'external_award_cycle_stale',
+    ]) {
+      expect(classifyOperatorQueueReason(hard)).toBe('blocking');
+      expect(classifyOperatorQueueReason(hard, 'programs')).toBe('blocking');
+    }
+  });
+
+  it('keeps the reasons the program tier still gates on as program blockers', () => {
+    for (const gating of ['missing_official_source', 'missing_application_route']) {
+      expect(classifyOperatorQueueReason(gating, 'programs')).toBe('blocking');
+      expect(classifyOperatorQueueReason(gating, 'research')).toBe('evidence');
+    }
+  });
+
+  it('keeps the top queues of every kind so a small lane is never crowded out', () => {
+    const rows = [
+      { reason: 'b1', count: 900, kind: 'blocking' as const },
+      { reason: 'b2', count: 800, kind: 'blocking' as const },
+      { reason: 'e1', count: 700, kind: 'evidence' as const },
+      { reason: 'b3', count: 600, kind: 'blocking' as const },
+      { reason: 'b4', count: 500, kind: 'blocking' as const },
+      { reason: 'r1', count: 2, kind: 'review' as const },
+    ];
+    expect(topQueueReasonsPerKind(rows, 2).map((row) => row.reason)).toEqual([
+      'b1',
+      'b2',
+      'e1',
+      'r1',
+    ]);
+  });
+
+  it('lists every reason that is not a signal under the sample blockers', () => {
+    const reasons = [
+      'missing_lead',
+      'formalization_only',
+      'application_source_only',
+      'operator_override',
+      'missing_official_source',
+      'official_source',
+      'missing_lead',
+    ];
+    expect(splitOperatorSampleReasons(reasons, 'research')).toEqual({
+      blockerReasons: [
+        'missing_lead',
+        'formalization_only',
+        'application_source_only',
+        'operator_override',
+      ],
+      signalReasons: ['missing_official_source', 'official_source'],
+    });
+    expect(splitOperatorSampleReasons(reasons, 'programs')).toEqual({
+      blockerReasons: [
+        'missing_lead',
+        'formalization_only',
+        'application_source_only',
+        'operator_override',
+        'missing_official_source',
+      ],
+      signalReasons: ['official_source'],
+    });
+    expect(splitOperatorSampleReasons(undefined, 'research')).toEqual({
+      blockerReasons: [],
+      signalReasons: [],
+    });
+  });
+
+  it('classifies every soft student_ready signal as a signal, never a blocker', () => {
+    for (const soft of [
+      'missing_facet_signal',
+      'missing_alternate_access_path',
+      'missing_application_route',
+      'missing_source_url',
+      'biography_description_fallback',
+    ]) {
+      expect(classifyOperatorQueueReason(soft)).toBe('evidence');
+    }
   });
 
   it('summarizes latest dry and non-dry runs separately', () => {

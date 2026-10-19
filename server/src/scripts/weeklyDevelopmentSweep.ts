@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { connectScriptMongo } from '../db/connections';
@@ -28,6 +28,12 @@ import {
 } from './scraperSweepPreflight';
 import { WeeklySweepRun } from '../models/weeklySweepRun';
 import {
+  checkpointPathForMode,
+  parseSweepCheckpoint,
+  readSweepCheckpoint,
+  writeSweepCheckpointAtomic,
+} from './scraperSweepCheckpoint';
+import {
   buildCorpusSnapshotArgs,
   buildSnapshotCacheDropArgs,
   buildWeeklySweepArgs,
@@ -38,6 +44,9 @@ import {
   formatWeeklySweepRefusalLine,
   formatWeeklySweepSummaryLine,
   parseWeeklySweepArgs,
+  planWeeklySweepResume,
+  weeklySweepCheckpointFieldPath,
+  WEEKLY_SWEEP_CHECKPOINT_MIRROR_INTERVAL_MS,
   weeklySweepChildEnvironment,
   weeklySweepRunDeadline,
   weeklySweepEnvironmentProblems,
@@ -50,6 +59,9 @@ import {
   type WeeklySweepMode,
   type WeeklySweepModeOutcome,
   type WeeklySweepPreflightRecord,
+  type WeeklySweepResumeModePlan,
+  type WeeklySweepResumableRun,
+  type WeeklySweepRunResume,
 } from './weeklyDevelopmentSweepCore';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -128,30 +140,134 @@ async function preflight(
   }
 }
 
-function runSweeps(jobDir: string, modes: WeeklySweepMode[]): WeeklySweepModeOutcome[] {
-  return modes.map((mode) => {
-    const modeDir = path.join(jobDir, mode);
-    fs.mkdirSync(modeDir, { recursive: true });
-    console.log(`[weekly-sweep] starting ${mode}`);
-    const exitCode = runYarn(
-      buildWeeklySweepArgs(mode),
-      weeklySweepChildEnvironment(
-        process.env,
-        modeDir,
-        weeklySweepRunDeadline(performance.timeOrigin),
-      ),
-    );
-    const summaryPath = findSweepSummaryPath(modeDir, mode);
-    let summary: unknown;
-    if (summaryPath) {
-      summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-      console.log(formatWeeklySweepSummaryLine(mode, summary));
-    } else {
-      console.error(`[weekly-sweep] ${mode} wrote no summary.json`);
-    }
-    console.log(`[weekly-sweep] ${mode} exited ${exitCode}`);
-    return { mode, exitCode, summaryFound: Boolean(summaryPath), summary };
+function runYarnAsync(args: string[], env: NodeJS.ProcessEnv): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn('yarn', args, { cwd: REPO_ROOT, env, stdio: 'inherit' });
+    child.on('error', (error) => {
+      console.error(`[weekly-sweep] ${sanitizeLogValue(error)}`);
+      resolve(null);
+    });
+    child.on('close', (code) => resolve(code));
   });
+}
+
+async function setRunFields(runId: mongoose.Types.ObjectId, fields: Record<string, unknown>) {
+  try {
+    await WeeklySweepRun.updateOne({ _id: runId }, { $set: fields });
+  } catch (error) {
+    console.error(
+      `[weekly-sweep] could not save resume state on run ${String(runId)}: ${sanitizeLogValue(error)}`,
+    );
+  }
+}
+
+async function mirrorCheckpoint(
+  runId: mongoose.Types.ObjectId,
+  mode: WeeklySweepMode,
+  checkpointPath: string,
+): Promise<void> {
+  const checkpoint = readSweepCheckpoint(checkpointPath);
+  if (!checkpoint) return;
+  const field = weeklySweepCheckpointFieldPath(mode);
+  await setRunFields(runId, {
+    [`${field}.checkpoint`]: checkpoint,
+    [`${field}.mirroredAt`]: new Date(),
+  });
+}
+
+/**
+ * Runs each mode and keeps the run row resumable: while a mode runs, its checkpoint is copied
+ * onto the row, and once it ends its summary is, so a run stopped at the Render limit can be
+ * continued in a fresh container by `--resume-run` (#5209). Saving resume state is best-effort
+ * and never fails the sweep.
+ */
+async function runSweeps(
+  jobDir: string,
+  plans: WeeklySweepResumeModePlan[],
+  runId: mongoose.Types.ObjectId,
+  resume: boolean,
+): Promise<WeeklySweepModeOutcome[]> {
+  let mirroring = false;
+  try {
+    await connectScriptMongo(process.env.MONGODBURL!);
+    mirroring = true;
+  } catch (error) {
+    console.error(
+      `[weekly-sweep] could not connect to save resume state, so this run cannot be resumed: ${sanitizeLogValue(error)}`,
+    );
+  }
+  const outcomes: WeeklySweepModeOutcome[] = [];
+  try {
+    for (const plan of plans) {
+      const { mode } = plan;
+      if (plan.completedOutcome) {
+        console.log(`[weekly-sweep] ${mode} already finished in the interrupted run; reusing it`);
+        if (plan.completedOutcome.summary) {
+          console.log(formatWeeklySweepSummaryLine(mode, plan.completedOutcome.summary));
+        }
+        outcomes.push(plan.completedOutcome);
+        continue;
+      }
+      const modeDir = path.join(jobDir, mode);
+      fs.mkdirSync(modeDir, { recursive: true });
+      const checkpointPath = checkpointPathForMode(mode, modeDir, REPO_ROOT);
+      const restored = plan.checkpoint ? parseSweepCheckpoint(plan.checkpoint) : undefined;
+      if (restored) {
+        // The recorded pid belongs to the stopped container, and the same number can name an
+        // unrelated live process in this one, which would read as a sweep still holding it.
+        writeSweepCheckpointAtomic(checkpointPath, {
+          ...restored,
+          ownerPid: 0,
+          restoredFromRunRecord: true,
+        });
+        const done = Object.values(restored.steps).filter((step) => step.status === 'done').length;
+        console.log(`[weekly-sweep] restored ${mode} checkpoint with ${done} finished steps`);
+      }
+      console.log(`[weekly-sweep] starting ${mode}`);
+      const mirror = mirroring
+        ? setInterval(() => {
+            void mirrorCheckpoint(runId, mode, checkpointPath);
+          }, WEEKLY_SWEEP_CHECKPOINT_MIRROR_INTERVAL_MS)
+        : undefined;
+      let exitCode: number | null;
+      try {
+        exitCode = await runYarnAsync(
+          buildWeeklySweepArgs(mode, { resume: resume && Boolean(restored) }),
+          weeklySweepChildEnvironment(
+            process.env,
+            modeDir,
+            weeklySweepRunDeadline(performance.timeOrigin),
+          ),
+        );
+      } finally {
+        if (mirror) clearInterval(mirror);
+      }
+      const summaryPath = findSweepSummaryPath(modeDir, mode);
+      let summary: unknown;
+      if (summaryPath) {
+        summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+        console.log(formatWeeklySweepSummaryLine(mode, summary));
+      } else {
+        console.error(`[weekly-sweep] ${mode} wrote no summary.json`);
+      }
+      console.log(`[weekly-sweep] ${mode} exited ${exitCode}`);
+      const outcome = { mode, exitCode, summaryFound: Boolean(summaryPath), summary };
+      if (mirroring) {
+        await setRunFields(runId, {
+          [weeklySweepCheckpointFieldPath(mode)]: {
+            completed: outcome.summaryFound,
+            exitCode,
+            summaryFound: outcome.summaryFound,
+            summary,
+          },
+        });
+      }
+      outcomes.push(outcome);
+    }
+  } finally {
+    if (mirroring) await mongoose.disconnect();
+  }
+  return outcomes;
 }
 
 function takeCorpusSnapshot(): WeeklySweepCorpusSnapshotRecord {
@@ -194,6 +310,15 @@ function recordWeeklySweepRunStarted(
   });
 }
 
+async function loadResumableRun(runId: string): Promise<WeeklySweepResumableRun | null> {
+  return writeWeeklySweepRun(
+    async () =>
+      (await WeeklySweepRun.findById(runId)
+        .select('status finishedAt codeSha requestedModes checkpoints startedAt resumes preflight')
+        .lean()) as WeeklySweepResumableRun | null,
+  );
+}
+
 async function recordWeeklySweepRunFinished(
   runId: mongoose.Types.ObjectId,
   input: Omit<Parameters<typeof buildWeeklySweepRunRecord>[0], 'databaseName' | 'finishedAt'>,
@@ -228,27 +353,80 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
   });
   const codeSha = codeFreshness.codeSha ?? readSweepHeadSha(REPO_ROOT);
   console.log(`[weekly-sweep] code ${codeSha ?? 'unknown'}`);
-  reportCodeFreshness(codeFreshness);
-  console.log(`[weekly-sweep] modes: ${args.modes.join(', ')}`);
+
+  let resumed:
+    | {
+        run: WeeklySweepResumableRun & {
+          startedAt?: Date;
+          resumes?: WeeklySweepRunResume[];
+          preflight?: { codeFreshness?: SweepCodeFreshness };
+        };
+        plans: WeeklySweepResumeModePlan[];
+      }
+    | undefined;
+  if (args.resumeRunId) {
+    const run = await loadResumableRun(args.resumeRunId);
+    const plan = planWeeklySweepResume(run, codeSha);
+    if (!plan.ok) {
+      console.error(
+        `[weekly-sweep] REFUSING TO RESUME run ${args.resumeRunId}: ${plan.refusal}. The run row is left as it is.`,
+      );
+      return 1;
+    }
+    resumed = { run: run as NonNullable<typeof resumed>['run'], plans: plan.modes };
+    console.log(
+      `[weekly-sweep] resuming run ${args.resumeRunId} at ${codeSha}: ${plan.modes
+        .map(
+          (mode) =>
+            `${mode.mode} ${mode.completedOutcome ? 'finished' : mode.checkpoint ? 'from checkpoint' : 'from the start'}`,
+        )
+        .join(', ')}`,
+    );
+  } else {
+    reportCodeFreshness(codeFreshness);
+  }
+  const modes = resumed ? resumed.plans.map((plan) => plan.mode) : args.modes;
+  console.log(`[weekly-sweep] modes: ${modes.join(', ')}`);
   const jobDir = fs.mkdtempSync(
     path.join(fs.realpathSync(process.env.TMPDIR || '/tmp'), 'ylabs-weekly-sweep-'),
   );
+  // A resume deliberately runs an older commit than beta's head, which the lane-freshness
+  // check refuses; it is held to the interrupted run's own commit by planWeeklySweepResume.
+  const freshness: SweepCodeFreshness = resumed
+    ? (resumed.run.preflight?.codeFreshness ?? { ...codeFreshness, ok: true })
+    : codeFreshness;
   if (args.dryRun) {
-    if (!codeFreshness.ok) return 1;
-    if (!(await preflight(args, jobDir)).ok) return 1;
-    for (const mode of args.modes) {
-      console.log(`[weekly-sweep] would run: yarn ${buildWeeklySweepArgs(mode).join(' ')}`);
+    if (!freshness.ok) return 1;
+    if (!(await preflight({ ...args, modes }, jobDir)).ok) return 1;
+    const dryRunPlans: WeeklySweepResumeModePlan[] =
+      resumed?.plans ?? modes.map((mode) => ({ mode }));
+    for (const plan of dryRunPlans) {
+      console.log(
+        plan.completedOutcome
+          ? `[weekly-sweep] would reuse ${plan.mode}, which the interrupted run finished`
+          : `[weekly-sweep] would run: yarn ${buildWeeklySweepArgs(plan.mode, { resume: Boolean(plan.checkpoint) }).join(' ')}`,
+      );
     }
     return 0;
   }
 
-  const startedAt = new Date();
-  const runId = await recordWeeklySweepRunStarted({
-    startedAt,
-    codeSha,
-    requestedModes: args.modes,
-  });
+  const startedAt = resumed?.run.startedAt ? new Date(resumed.run.startedAt) : new Date();
+  const resumes: WeeklySweepRunResume[] = resumed
+    ? [...(resumed.run.resumes ?? []), { at: new Date(), codeSha }]
+    : [];
+  const runId = resumed
+    ? new mongoose.Types.ObjectId(args.resumeRunId)
+    : await recordWeeklySweepRunStarted({
+        startedAt,
+        codeSha,
+        requestedModes: modes,
+      });
   if (!runId) return 1;
+  if (resumed) {
+    await writeWeeklySweepRun(() =>
+      WeeklySweepRun.updateOne({ _id: runId }, { $set: { resumes } }),
+    );
+  }
   let preflightRecord: WeeklySweepPreflightRecord = {
     ok: false,
     heldLockSources: [],
@@ -259,11 +437,22 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
   let exitCode = 1;
   let error: string | undefined;
   try {
-    preflightRecord = codeFreshness.ok
-      ? { ...(await preflight(args, jobDir)), codeFreshness }
-      : codeFreshnessRefusalPreflight(codeFreshness);
+    preflightRecord = freshness.ok
+      ? { ...(await preflight({ ...args, modes }, jobDir)), codeFreshness: freshness }
+      : codeFreshnessRefusalPreflight(freshness);
+    if (resumed && !preflightRecord.ok) {
+      console.error(
+        `[weekly-sweep] the resume preflight refused (${preflightRecord.refusal ?? 'see above'}); run ${String(runId)} is left resumable`,
+      );
+      return 1;
+    }
     if (preflightRecord.ok) {
-      outcomes = runSweeps(jobDir, args.modes);
+      outcomes = await runSweeps(
+        jobDir,
+        resumed?.plans ?? modes.map((mode) => ({ mode })),
+        runId,
+        Boolean(resumed),
+      );
       exitCode = weeklySweepExitCode(outcomes);
       if (exitCode === 0 && weeklySweepVerdict(outcomes) === 'degraded') {
         console.error('[weekly-sweep] DEGRADED: the sweep completed, and these failed:');
@@ -283,12 +472,13 @@ export async function runWeeklyDevelopmentSweep(argv: string[]): Promise<number>
     startedAt,
     codeSha,
     exitCode,
-    requestedModes: args.modes,
+    requestedModes: modes,
     preflight: preflightRecord,
     outcomes,
     corpusSnapshot,
     ...(outcomes.length > 0 ? { searchIndex: sweepSearchIndexOutcome() } : {}),
     ...(error ? { error } : {}),
+    ...(resumes.length > 0 ? { resumes } : {}),
   });
   return recorded ? exitCode : 1;
 }

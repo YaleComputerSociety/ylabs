@@ -76,3 +76,122 @@ describe('resolveFundYearOfStudy phrasing shapes', () => {
     });
   });
 });
+
+describe('resolveFundYearOfStudy reads a level quantified by "at any level" as the whole level (#5121)', () => {
+  const nonEligibility = (text: string, filter: string[]) =>
+    resolveFundYearOfStudy([{ text, isEligibilitySection: false }], filter);
+  const valuesOf = (resolution: ReturnType<typeof resolveFundYearOfStudy>) =>
+    'values' in resolution ? resolution.values : undefined;
+  const listedFilter = ['First-Year Student', 'Sophomore', 'Junior', 'Master’s Student'];
+
+  it('admits every undergraduate year when the prose funds undergraduates at any level', () => {
+    expect(
+      nonEligibility(
+        'The program invites applications from graduate and undergraduate students. Funds are available for senior essay support for undergraduates, and for travel fellowships for undergraduates at any level.',
+        listedFilter,
+      ),
+    ).toEqual({
+      kind: 'prose',
+      values: ['First-Year Student', 'Sophomore', 'Junior', 'Senior', 'Master’s Student'],
+    });
+  });
+
+  it('admits only the undergraduate years when the prose funds undergraduate students at any level', () => {
+    expect(
+      nonEligibility('Travel fellowships are open to undergraduate students at any level.', [
+        'Junior',
+      ]),
+    ).toEqual({
+      kind: 'prose',
+      values: ['First-Year Student', 'Sophomore', 'Junior', 'Senior'],
+    });
+  });
+
+  it('still admits every level when the prose funds students at any level with no level named', () => {
+    expect(
+      nonEligibility('Travel fellowships are open to students at any level.', ['Junior']),
+    ).toEqual({
+      kind: 'prose',
+      values: [
+        'First-Year Student',
+        'Sophomore',
+        'Junior',
+        'Senior',
+        'Master’s Student',
+        'PhD Pre-Candidacy',
+        'PhD Post-Candidacy',
+        'JD',
+        'MD',
+      ],
+    });
+  });
+
+  it('does not read a senior essay as an unread year that keeps a level incomplete', () => {
+    expect(
+      nonEligibility(
+        'Applications from any undergraduate students are welcome, including those writing a senior essay.',
+        ['Junior'],
+      ),
+    ).toEqual(
+      nonEligibility('Applications from any undergraduate students are welcome.', ['Junior']),
+    );
+  });
+
+  it.each([
+    'Travel fellowships for undergraduates at any level of study.',
+    'Travel fellowships are available for undergraduates at any stage of their studies.',
+    'Open to undergraduates at any level and graduate students.',
+    'Open to undergraduates at any level or graduate students.',
+  ])('admits every undergraduate year when the quantifier continues into "%s"', (text) => {
+    expect(valuesOf(nonEligibility(text, listedFilter))).toEqual(
+      expect.arrayContaining(['First-Year Student', 'Sophomore', 'Junior', 'Senior']),
+    );
+  });
+
+  it('refines the level by the listing filter when the quantifier continues into a phrase it does not read', () => {
+    expect(
+      valuesOf(
+        nonEligibility('Open to graduate students at any stage of their degree.', [
+          'PhD Post-Candidacy',
+        ]),
+      ),
+    ).toEqual(['PhD Post-Candidacy']);
+  });
+
+  it('does not read a past-recipient mention of a quantified level as admission evidence', () => {
+    expect(
+      nonEligibility('Recipients have included undergraduates at all levels.', ['Junior']),
+    ).toEqual({ kind: 'filter', values: ['Junior'] });
+  });
+
+  it('does not read a quantified level followed by a qualifier as the whole level', () => {
+    expect(
+      nonEligibility('Graduate students in all years after the first are eligible.', [
+        'PhD Post-Candidacy',
+      ]),
+    ).toEqual({ kind: 'filter', values: ['PhD Post-Candidacy'] });
+  });
+
+  it('does not read a quantified level followed by an exception as the whole level', () => {
+    expect(
+      nonEligibility('Open to undergraduates in all years but the first.', ['Sophomore', 'Junior']),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+  });
+
+  it('still reads a year-named research grant as an unread year', () => {
+    expect(
+      nonEligibility('Any undergraduate students may apply for the first-year research grant.', [
+        'First-Year Student',
+      ]),
+    ).toEqual({ kind: 'prose', values: ['First-Year Student'] });
+  });
+
+  it('keeps refining an unquantified level by the listing filter', () => {
+    expect(
+      nonEligibility('The program invites applications from undergraduate students.', [
+        'Sophomore',
+        'Junior',
+      ]),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+  });
+});

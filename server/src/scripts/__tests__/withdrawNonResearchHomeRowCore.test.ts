@@ -97,3 +97,17 @@ describe('the unlisted-program kind', () => {
     );
   });
 });
+
+describe('the course kind', () => {
+  it('is accepted by the withdrawal command and records the page as a course', () => {
+    const options = parseWithdrawalArgs([
+      '--slug=x',
+      '--kind=course',
+      '--evidence-url=https://example.invalid/',
+    ]);
+    expect(options.kind).toBe('course');
+    expect(withdrawalRefusalNote('course')).toBe(
+      'the page is a course, not a research home a student can join',
+    );
+  });
+});

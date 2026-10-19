@@ -54,6 +54,7 @@ import {
   type FacultyEntry,
   type FacultyExtractor,
   withoutSharedGroupWebsites,
+  withoutSharedRosterEmails,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -1062,6 +1063,65 @@ describe('fieldCollectionPersonExtractor', () => {
         title: 'Lecturer',
       },
     ]);
+  });
+});
+
+describe('fieldCollectionPersonExtractor title continuation (#5109)', () => {
+  const row = (description: string) => `
+    <div class="field-collection-item-field-person-info">
+      <div class="field field-name-field-person-description"><div class="field-items"><div class="field-item even">
+        <h3><a href="https://example.yale.edu/" target="_blank">Robin Fixture</a></h3>
+        ${description}
+      </div></div></div>
+    </div>`;
+  const titleOf = (description: string) =>
+    fieldCollectionPersonExtractor(row(description), {
+      pageUrl: 'https://yibs.yale.edu/people/faculty-affiliates',
+    })[0]?.title;
+
+  it('completes a rank whose department is a sibling link', () => {
+    expect(
+      titleOf(
+        '<p><em><span>Example Chair Professor of</span></em><a href="https://example.yale.edu/"> Ecology &amp; Evolutionary Biology</a></p>',
+      ),
+    ).toBe('Example Chair Professor of Ecology & Evolutionary Biology');
+  });
+
+  it('keeps a linked department whole when its name carries commas', () => {
+    expect(
+      titleOf(
+        '<p><em>Assistant Professor of</em><a href="https://example.yale.edu/"> Molecular, Cellular, and Developmental Biology</a></p>',
+      ),
+    ).toBe('Assistant Professor of Molecular, Cellular, and Developmental Biology');
+  });
+
+  it('joins a title split across several emphasised spans and stops at the unit', () => {
+    expect(
+      titleOf(
+        '<p><em>Professor of Example </em><em>Plant </em><em>Ecology and Chair of Example Studies, </em><a href="https://example.yale.edu/">Example School</a></p>',
+      ),
+    ).toBe('Professor of Example Plant Ecology and Chair of Example Studies');
+    expect(titleOf('<p><em>Example</em> Professor of Biogeochemistry, Example School</p>')).toBe(
+      'Example Professor of Biogeochemistry',
+    );
+  });
+
+  it('leaves a complete title followed by its unit unchanged', () => {
+    expect(
+      titleOf(
+        '<p><em>Director,</em> <a href="https://example.yale.edu/">Example Institute</a></p>',
+      ),
+    ).toBe('Director');
+    expect(titleOf('<p><em>Example Dean</em>, Example School</p>')).toBe('Example Dean');
+  });
+
+  it('does not join a complete title to a following line or a link', () => {
+    expect(
+      titleOf('<p><em>Professor of Ecology</em><br>Example School of the Environment</p>'),
+    ).toBe('Professor of Ecology');
+    expect(
+      titleOf('<p><em>Lecturer</em> <a href="https://example.yale.edu/">Lab website</a></p>'),
+    ).toBe('Lecturer');
   });
 });
 
@@ -5702,5 +5762,73 @@ describe('collapseLaneOutcomesByDepartment', () => {
       lane('fetch-failed', 0),
     ]);
     expect(collapsed.status).toBe('partial-read');
+  });
+});
+
+describe('department roster refuses office mailboxes as a person email', () => {
+  const lane = (entries: FacultyEntry[]): DeptConfig => ({
+    deptKey: 'fixture',
+    deptName: 'Fixture Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://fixture.yale.edu/people',
+    paginated: false,
+    extractor: () => entries,
+  });
+  const run = async (entries: FacultyEntry[]) => {
+    const scraper = new DepartmentRosterScraper(
+      [lane(entries)],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return emitted.filter((o) => o.entityType === 'user');
+  };
+
+  it('never keys a person by the unit mailbox printed on their profile', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'fixture@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['dept:fixture:ann-alpha']));
+    expect(userObs.some((o) => o.field === 'email' || o.field === 'netid')).toBe(false);
+  });
+
+  it('keeps two people who share one netid-shaped address apart and gives it to neither', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'zz901@yale.edu', title: 'Professor of Physics' },
+      { name: 'Bob Beta', email: 'zz901@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(
+      new Set(['dept:fixture:ann-alpha', 'dept:fixture:bob-beta']),
+    );
+    expect(userObs.some((o) => o.field === 'email')).toBe(false);
+  });
+
+  it('still keys a person by their own address', async () => {
+    const userObs = await run([
+      { name: 'Ann Fixture', email: 'ann.fixture@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['netid:ann.fixture']));
+  });
+});
+
+describe('withoutSharedRosterEmails', () => {
+  const item = (name: string, email?: string) => ({ entry: { name, email } as FacultyEntry });
+
+  it('refuses an address listed for two different people, for both', () => {
+    const out = withoutSharedRosterEmails([
+      item('Ann Alpha', 'zz901@yale.edu'),
+      item('Bob Beta', 'ZZ901@yale.edu'),
+      item('Cal Gamma', 'cg12@yale.edu'),
+    ]);
+    expect(out.map((o) => o.entry.email)).toEqual([undefined, undefined, 'cg12@yale.edu']);
+  });
+
+  it('keeps an address one person is listed with twice', () => {
+    const out = withoutSharedRosterEmails([
+      item('Ann Alpha', 'aa1@yale.edu'),
+      item('Ann Alpha', 'aa1@yale.edu'),
+    ]);
+    expect(out.map((o) => o.entry.email)).toEqual(['aa1@yale.edu', 'aa1@yale.edu']);
   });
 });

@@ -45,6 +45,9 @@ const mockFindChain = () => {
   return chain;
 };
 
+const facetFilterValues = (filter: any, field: string): unknown[] | undefined =>
+  filter.$and?.find((clause: any) => clause.$or?.[0]?.[field])?.$or[0][field].$in;
+
 describe('program search service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -192,7 +195,7 @@ describe('program search service', () => {
     expect(programs).toHaveLength(1);
   });
 
-  it('redacts direct contact details in public program service results', async () => {
+  it('serves the contact details a program page publishes in service results (#5046)', async () => {
     const chain = mockFindChain();
     chain.lean.mockResolvedValue([
       {
@@ -211,16 +214,13 @@ describe('program search service', () => {
     const result = await searchPrograms({});
 
     expect(result.programs[0]).toMatchObject({
-      summary: 'Email [email redacted] or call [phone redacted].',
-      description: 'Questions: [email redacted].',
-      prepSteps: ['Email [email redacted] or call [phone redacted].'],
-      contactOffice: 'Office contact: [email redacted] or [phone redacted].',
+      summary: 'Email prose-contact@yale.edu or call 203-555-1212.',
+      description: 'Questions: office@example.edu.',
+      prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
+      contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
     });
     expect(result.programs[0].contactPhone).toBeUndefined();
-    expect(JSON.stringify(result.programs[0])).not.toContain('prose-contact@yale.edu');
-    expect(JSON.stringify(result.programs[0])).not.toContain('prep-contact@yale.edu');
-    expect(JSON.stringify(result.programs[0])).not.toContain('office@example.edu');
-    expect(JSON.stringify(result.programs[0])).not.toContain('203-555');
+    expect(JSON.stringify(result.programs[0])).not.toMatch(/redacted/i);
   });
 
   it('caps program search pagination before building Mongo skip and limit', async () => {
@@ -231,36 +231,29 @@ describe('program search service', () => {
       pageSize: 500,
     });
 
-    expect(chain.skip).toHaveBeenCalledWith(99_900);
-    expect(chain.limit).toHaveBeenCalledWith(100);
+    expect(chain.skip).toHaveBeenCalledWith(249_750);
+    expect(chain.limit).toHaveBeenCalledWith(250);
     expect(result).toMatchObject({
       page: 1000,
-      pageSize: 100,
+      pageSize: 250,
       totalPages: 0,
     });
   });
 
-  it('bounds direct program search query and filters before building Mongo filters', async () => {
+  it('bounds direct program search filters and keeps the query text out of the Mongo filter', async () => {
     await searchPrograms({
       query: ` ${'q'.repeat(700)} `,
       yearOfStudy: Array.from({ length: 60 }, (_, index) => `Year ${index}`),
       purpose: ['x'.repeat(200)],
     });
 
-    const filter = mocks.find.mock.calls
-      .map(([candidate]) => candidate)
-      .find((candidate) => candidate?.$text);
-    expect(filter.$text).toEqual({ $search: 'q'.repeat(512) });
-    expect(filter.yearOfStudy.$in).toHaveLength(50);
-    expect(filter.yearOfStudy.$in).toContain('Year 49');
-    expect(filter.yearOfStudy.$in).not.toContain('Year 50');
-    expect(filter.purpose.$in).toEqual(['x'.repeat(120)]);
-    const prefixFilter = mocks.find.mock.calls
-      .map(([candidate]) => candidate)
-      .find((candidate) => candidate?.$and);
-    expect(prefixFilter.$text).toBeUndefined();
-    expect(prefixFilter.purpose).toEqual({ $in: ['x'.repeat(120)] });
-    expect(prefixFilter.$and[0].$or[0].title.$regex).toBe(`(?:^|[^a-z0-9])${'q'.repeat(512)}`);
+    const filter = mocks.find.mock.calls[0][0];
+    expect(filter.$text).toBeUndefined();
+    expect(JSON.stringify(filter)).not.toContain('qqq');
+    expect(facetFilterValues(filter, 'yearOfStudy')).toHaveLength(50);
+    expect(facetFilterValues(filter, 'yearOfStudy')).toContain('Year 49');
+    expect(facetFilterValues(filter, 'yearOfStudy')).not.toContain('Year 50');
+    expect(facetFilterValues(filter, 'purpose')).toEqual(['x'.repeat(120)]);
   });
 
   it('drops non-string direct program filter values and avoids object pagination coercion', async () => {
@@ -278,7 +271,7 @@ describe('program search service', () => {
     expect(page.toString).not.toHaveBeenCalled();
     expect(pageSize.toString).not.toHaveBeenCalled();
     expect(badFilter.toString).not.toHaveBeenCalled();
-    expect(filter.yearOfStudy.$in).toEqual(['First-year']);
+    expect(facetFilterValues(filter, 'yearOfStudy')).toEqual(['First-year']);
     expect(result).toMatchObject({
       page: 1,
       pageSize: 20,

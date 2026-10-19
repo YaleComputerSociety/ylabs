@@ -70,6 +70,107 @@ function asciiTokens(input: string): string[] {
     .filter((token) => token && !/^\d+$/.test(token));
 }
 
+const ROLE_MAILBOX_TOKENS = new Set([
+  'admin',
+  'admissions',
+  'chair',
+  'communications',
+  'communication',
+  'contact',
+  'dept',
+  'department',
+  'dgs',
+  'dus',
+  'editor',
+  'events',
+  'frontdesk',
+  'info',
+  'mailbox',
+  'news',
+  'no-reply',
+  'noreply',
+  'office',
+  'reception',
+  'registrar',
+  'web',
+  'webmaster',
+  'website',
+]);
+
+function yaleEmailLocalPart(email: string | undefined | null): string | null {
+  const cleaned = String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
+  const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
+  return match ? match[1] : null;
+}
+
+function localPartTokens(localPart: string): string[] {
+  return localPart.split(/[._-]+/).filter(Boolean);
+}
+
+function localPartNamesARole(localPart: string): boolean {
+  if (ROLE_MAILBOX_TOKENS.has(localPart)) return true;
+  return localPartTokens(localPart).some((token) => ROLE_MAILBOX_TOKENS.has(token));
+}
+
+function yaleHostOf(pageUrl: string | undefined | null): string | null {
+  try {
+    const host = new URL(String(pageUrl || '')).hostname.toLowerCase();
+    return host.endsWith('.yale.edu') ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The tokens a Yale unit is known by on the page an address was read from: the
+ * leftmost label of a `*.yale.edu` host (`physics` for physics.yale.edu) and any
+ * unit name or key the caller already holds for that page.
+ */
+export function yaleUnitMailboxTokens(
+  pageUrls: ReadonlyArray<string | undefined | null>,
+  unitNames: ReadonlyArray<string | undefined | null> = [],
+): Set<string> {
+  const tokens = new Set<string>();
+  for (const pageUrl of pageUrls) {
+    const host = yaleHostOf(pageUrl);
+    if (!host) continue;
+    const label = host.replace(/^www\./, '').split('.')[0];
+    if (!label || label === 'yale') continue;
+    tokens.add(label.replace(/-/g, ''));
+    for (const part of label.split('-')) if (part) tokens.add(part);
+  }
+  for (const name of unitNames) {
+    const slug = slugify(String(name || ''));
+    if (!slug) continue;
+    tokens.add(slug.replace(/-/g, ''));
+    for (const part of slug.split('-')) if (part.length >= 3) tokens.add(part);
+  }
+  return tokens;
+}
+
+/**
+ * A Yale address that belongs to an office rather than a person: its local part
+ * names a role (`dus`, `registrar`, `office`), or consists only of the name of the
+ * unit whose page printed it (`physics@yale.edu` on physics.yale.edu). Such an
+ * address is printed on every member's profile page, so reading it as the person's
+ * email mints one shared person key for everyone in the unit.
+ */
+export function isRoleOrUnitMailbox(
+  email: string | undefined | null,
+  unitTokens: ReadonlySet<string> = new Set(),
+): boolean {
+  const localPart = yaleEmailLocalPart(email);
+  if (!localPart) return false;
+  if (localPartNamesARole(localPart)) return true;
+  if (unitTokens.size === 0) return false;
+  if (unitTokens.has(localPart.replace(/[._-]+/g, ''))) return true;
+  const tokens = localPartTokens(localPart);
+  return tokens.length > 0 && tokens.every((token) => unitTokens.has(token));
+}
+
 /**
  * Return true only when a Yale email is plausibly owned by the supplied person.
  *
@@ -89,9 +190,7 @@ export function isLikelyPersonSpecificYaleEmail(
   if (!match) return false;
 
   const localPart = match[1].toLowerCase();
-  if (/\b(?:editor|web|website|info|communications?|admin|noreply|no-reply)\b/i.test(localPart)) {
-    return false;
-  }
+  if (localPartNamesARole(localPart)) return false;
 
   if (/^[a-z]{2,6}\d{1,5}$/i.test(localPart)) return true;
 

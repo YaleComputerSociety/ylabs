@@ -73,6 +73,28 @@ describe('the user identity join reads researcher identifiers when no account ex
     expect(await Account.countDocuments({})).toBe(0);
   });
 
+  it('reaches nobody through a key minted from the mailbox of the unit whose pages it cites', async () => {
+    await Researcher.create({
+      displayName: 'Rowan Synthetic',
+      identifiers: { netid: 'fixtureunit', email: 'fixture.contact@yale.edu' },
+    });
+    const key = 'netid:fixtureunit';
+    const unitPage = (field: string, value: unknown) => ({
+      ...userObservation(key, field, value),
+      sourceUrl: 'https://fixtureunit.yale.edu/profile/rowan-synthetic',
+    });
+    const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [
+      unitPage('netid', 'fixtureunit'),
+      unitPage('email', 'fixture.contact@yale.edu'),
+      unitPage('fname', 'Rowan'),
+      unitPage('lname', 'Synthetic'),
+    ]);
+
+    expect(join.researcher).toBeNull();
+    expect(join.netid).toBeUndefined();
+    expect(join.displayName).toBe('');
+  });
+
   it('reaches the researcher holding the email when the key names no netid holder', async () => {
     const key = 'netid:quinn.synthetic';
     const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [

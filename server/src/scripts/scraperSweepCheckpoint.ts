@@ -15,6 +15,7 @@ export interface SweepCheckpointStep {
   artifactPath?: string;
   startedAt?: string;
   finishedAt?: string;
+  result?: unknown;
 }
 
 export interface SweepCheckpoint {
@@ -27,6 +28,7 @@ export interface SweepCheckpoint {
   createdAt: string;
   updatedAt: string;
   steps: Record<string, SweepCheckpointStep>;
+  restoredFromRunRecord?: boolean;
 }
 
 export interface SweepCheckpointFlagInput {
@@ -87,6 +89,20 @@ export function createSweepCheckpoint(input: {
   };
 }
 
+export function parseSweepCheckpoint(value: unknown): SweepCheckpoint | undefined {
+  const parsed = value as SweepCheckpoint | null | undefined;
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  if (typeof parsed.mode !== 'string' || typeof parsed.outputDirectory !== 'string') {
+    return undefined;
+  }
+  if (typeof parsed.flags !== 'string') parsed.flags = '';
+  if (typeof parsed.ownerPid !== 'number') parsed.ownerPid = 0;
+  if (typeof parsed.codeSha !== 'string') parsed.codeSha = null;
+  if (!Array.isArray(parsed.codeDrift)) parsed.codeDrift = [];
+  if (!parsed.steps || typeof parsed.steps !== 'object') parsed.steps = {};
+  return parsed;
+}
+
 export function readSweepCheckpoint(checkpointPath: string): SweepCheckpoint | undefined {
   let raw: string;
   try {
@@ -95,16 +111,7 @@ export function readSweepCheckpoint(checkpointPath: string): SweepCheckpoint | u
     return undefined;
   }
   try {
-    const parsed = JSON.parse(raw) as SweepCheckpoint;
-    if (!parsed || typeof parsed.mode !== 'string' || typeof parsed.outputDirectory !== 'string') {
-      return undefined;
-    }
-    if (typeof parsed.flags !== 'string') parsed.flags = '';
-    if (typeof parsed.ownerPid !== 'number') parsed.ownerPid = 0;
-    if (typeof parsed.codeSha !== 'string') parsed.codeSha = null;
-    if (!Array.isArray(parsed.codeDrift)) parsed.codeDrift = [];
-    if (!parsed.steps || typeof parsed.steps !== 'object') parsed.steps = {};
-    return parsed;
+    return parseSweepCheckpoint(JSON.parse(raw));
   } catch {
     return undefined;
   }
@@ -244,13 +251,26 @@ export class SweepCheckpointStore {
     exitCode: number,
     now: Date,
     artifactPath?: string,
+    result?: unknown,
   ): void {
-    this.upsert(stepId, kind, 'done', exitCode, now, artifactPath);
+    this.upsert(stepId, kind, 'done', exitCode, now, artifactPath, result);
   }
 
   recordedArtifactPath(stepId: string): string | undefined {
     const artifactPath = this.checkpoint.steps[stepId]?.artifactPath;
     return typeof artifactPath === 'string' && artifactPath ? artifactPath : undefined;
+  }
+
+  /**
+   * The outcome a finished step recorded alongside its artifact, offered only when the
+   * checkpoint was restored from the weekly run row into a fresh container, where every
+   * artifact is gone by construction. A missing artifact in the container that wrote it
+   * still means the step is re-run rather than trusted (#3570).
+   */
+  recordedResult(stepId: string): unknown {
+    if (!this.checkpoint.restoredFromRunRecord) return undefined;
+    const step = this.checkpoint.steps[stepId];
+    return step?.status === 'done' ? step.result : undefined;
   }
 
   markFailed(stepId: string, kind: SweepStepKind, exitCode: number, now: Date): void {
@@ -264,6 +284,7 @@ export class SweepCheckpointStore {
     exitCode: number,
     now: Date,
     artifactPath?: string,
+    result?: unknown,
   ): void {
     const existing = this.checkpoint.steps[stepId];
     this.checkpoint.steps[stepId] = {
@@ -272,6 +293,7 @@ export class SweepCheckpointStore {
       status,
       exitCode,
       ...(artifactPath ? { artifactPath } : {}),
+      ...(result !== undefined ? { result } : {}),
       ...(existing?.startedAt ? { startedAt: existing.startedAt } : {}),
       finishedAt: now.toISOString(),
     };

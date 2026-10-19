@@ -22,6 +22,13 @@ describe('formatTitleCaseLabel', () => {
     expect(formatTitleCaseLabel('crispr screening')).toBe('CRISPR Screening');
   });
 
+  it('keeps plural acronyms and COVID in their capitals', () => {
+    expect(formatTitleCaseLabel('Medical LLMs')).toBe('Medical LLMs');
+    expect(formatTitleCaseLabel('medical llms')).toBe('Medical LLMs');
+    expect(formatTitleCaseLabel('COVID-19')).toBe('COVID-19');
+    expect(formatTitleCaseLabel('long covid')).toBe('Long COVID');
+  });
+
   it('capitalizes after hyphen and slash boundaries', () => {
     expect(formatTitleCaseLabel('single-cell genomics')).toBe('Single-Cell Genomics');
     expect(formatTitleCaseLabel('in vivo/in vitro')).toBe('In Vivo/In Vitro');

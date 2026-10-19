@@ -20,6 +20,7 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  planNonOwnerPiEdgeRestoration,
   planNonOwnerPiEdgeRetirement,
   planTraineeRosterArchive,
   summarizeNonOwnerPiEdgeRefusals,
@@ -35,6 +36,8 @@ export const CONFIRM_FLAG = '--confirm-retire-non-owner-pi-edges';
 const LEAD_ROLES = ['PI', 'DIRECTOR'];
 const RETIREMENT_NOTE =
   'Retired as a lead claim on someone whose title cannot own a research home (#2880, #1897).';
+const RESTORATION_NOTE =
+  'Restored: the title this lane retired the lead claim on no longer refuses a research home (#5323).';
 
 export interface RetireNonOwnerPiEdgeOptions {
   dryRun: boolean;
@@ -109,6 +112,42 @@ async function main(): Promise<void> {
 
   const plan = planNonOwnerPiEdgeRetirement(edges, cannotOwnResearchHome, titleByPersonId);
 
+  const retiredDocs = (await RoleAssignment.find({
+    role: { $in: LEAD_ROLES },
+    archived: true,
+    state: { $ne: 'HISTORICAL' },
+    reviewNotes: RETIREMENT_NOTE,
+  })
+    .select('_id personId target role reviewStatus reviewNotes')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const liveEdgeKeys = new Set(
+    edgeDocs.map(
+      (doc) =>
+        `${serializedDocumentId(doc.personId)}|${serializedDocumentId(doc.target?.id)}|${doc.role}`,
+    ),
+  );
+  const restorable = planNonOwnerPiEdgeRestoration(
+    retiredDocs.flatMap((doc) => {
+      const id = serializedDocumentId(doc._id);
+      const personId = serializedDocumentId(doc.personId);
+      const entityId = serializedDocumentId(doc.target?.id) || '';
+      if (!id || !personId) return [];
+      if (liveEdgeKeys.has(`${personId}|${entityId}|${doc.role}`)) return [];
+      return [
+        {
+          id,
+          personId,
+          entityId,
+          reviewStatus: doc.reviewStatus ? String(doc.reviewStatus) : undefined,
+          reviewNotes: doc.reviewNotes ? String(doc.reviewNotes) : undefined,
+        },
+      ];
+    }),
+    RETIREMENT_NOTE,
+    cannotOwnResearchHome,
+    titleByPersonId,
+  );
+
   const directoryIdentityByPersonId = new Map<string, boolean>();
   const identityRows = (await Researcher.find({ archived: { $ne: true } })
     .select('_id identifiers.email')
@@ -137,8 +176,26 @@ async function main(): Promise<void> {
   );
 
   let retired = 0;
+  let restored = 0;
   let corpusWideRegate: StudentVisibilityGateReport['counts'] | null = null;
   let archivedRosterRows = 0;
+  if (!options.dryRun && restorable.length > 0) {
+    const result = await RoleAssignment.updateMany(
+      {
+        _id: {
+          $in: restorable
+            .map((row) => row.id)
+            .filter((id) => mongoose.isValidObjectId(id))
+            .map((id) => new mongoose.Types.ObjectId(id)),
+        },
+        archived: true,
+        reviewStatus: 'DISPUTED',
+        reviewNotes: RETIREMENT_NOTE,
+      },
+      { $set: { archived: false, reviewStatus: 'UNREVIEWED', reviewNotes: RESTORATION_NOTE } },
+    );
+    restored = result.modifiedCount || 0;
+  }
   if (!options.dryRun && plan.retire.length > 0) {
     const result = await RoleAssignment.updateMany(
       {
@@ -153,19 +210,21 @@ async function main(): Promise<void> {
       { $set: { archived: true, reviewStatus: 'DISPUTED', reviewNotes: RETIREMENT_NOTE } },
     );
     retired = result.modifiedCount || 0;
+  }
 
-    // Re-gate through the ordinary gate rather than writing tiers here, so every
-    // other blocker on those rows still applies and the queue stays consistent.
-    //
-    // Corpus-wide rather than scoped to the affected rows. Every row this lane touches
-    // has just lost its only lead, so a scoped apply hands the gate's zero-lead
-    // ceiling a denominator of exactly those rows, reads ~100% and refuses. That
-    // denominator is arithmetic, not a corpus signal.
-    const entityIds = [...new Set(plan.retire.map((row) => row.entityId).filter(Boolean))];
-    if (entityIds.length > 0) {
-      const gateReport = await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
-      corpusWideRegate = gateReport.counts;
-    }
+  // Re-gate through the ordinary gate rather than writing tiers here, so every
+  // other blocker on those rows still applies and the queue stays consistent.
+  //
+  // Corpus-wide rather than scoped to the affected rows. Every row this lane touches
+  // has just lost its only lead, so a scoped apply hands the gate's zero-lead
+  // ceiling a denominator of exactly those rows, reads ~100% and refuses. That
+  // denominator is arithmetic, not a corpus signal.
+  const regatedEntityIds = new Set(
+    [...plan.retire, ...restorable].map((row) => row.entityId).filter(Boolean),
+  );
+  if (!options.dryRun && regatedEntityIds.size > 0) {
+    const gateReport = await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
+    corpusWideRegate = gateReport.counts;
   }
 
   // Deliberately not nested inside the edge arm above. Keying one arm on another
@@ -194,6 +253,9 @@ async function main(): Promise<void> {
     distinctEntitiesAffected: new Set(plan.retire.map((row) => row.entityId).filter(Boolean)).size,
     refusedByReason: summarizeNonOwnerPiEdgeRefusals(plan.refused),
     retired,
+    plannedForRestoration: restorable.length,
+    distinctEntitiesRestored: new Set(restorable.map((row) => row.entityId).filter(Boolean)).size,
+    restored,
     corpusWideRegate,
     orphanTraineeRowsPlanned: rosterPlan.archive.length,
     orphanTraineeRowsArchived: archivedRosterRows,

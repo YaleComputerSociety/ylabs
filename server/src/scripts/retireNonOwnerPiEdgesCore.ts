@@ -52,6 +52,40 @@ export function planNonOwnerPiEdgeRetirement(
   return { retire, refused };
 }
 
+export interface RetiredNonOwnerPiEdgeRow {
+  id: string;
+  personId: string;
+  entityId: string;
+  reviewStatus?: string;
+  reviewNotes?: string;
+}
+
+/**
+ * The edges this lane retired whose ground no longer holds: the person's current title
+ * no longer refuses a research home, so the verdict it stamped is stale. Running the lane
+ * twice must re-derive the same answer from the title, and without this half a title
+ * corrected after the retirement (a page heading stored as the title, #5323) left the
+ * edge retired forever, because the `DISPUTED` stamp blocks every scrape from
+ * re-attaching it.
+ *
+ * Only this lane's own verdict is reversed: an edge another lane or an operator
+ * disputed, or one on a person no longer live, is left alone.
+ */
+export function planNonOwnerPiEdgeRestoration(
+  retired: readonly RetiredNonOwnerPiEdgeRow[],
+  retirementNote: string,
+  cannotOwnResearchHome: (title?: string) => boolean,
+  titleByLivePersonId: ReadonlyMap<string, string>,
+): RetiredNonOwnerPiEdgeRow[] {
+  return retired.filter(
+    (edge) =>
+      edge.reviewNotes === retirementNote &&
+      edge.reviewStatus === 'DISPUTED' &&
+      titleByLivePersonId.has(edge.personId) &&
+      !cannotOwnResearchHome(titleByLivePersonId.get(edge.personId)),
+  );
+}
+
 export function summarizeNonOwnerPiEdgeRefusals(
   refused: ReadonlyArray<{ reason: NonOwnerPiEdgeRefusal }>,
 ): Record<NonOwnerPiEdgeRefusal, number> {

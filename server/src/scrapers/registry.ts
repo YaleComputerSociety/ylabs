@@ -32,12 +32,17 @@ import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescr
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
+import { CenterDirectorScraper } from './sources/centerDirectorScraper';
+import { CenterAffiliationRosterScraper } from './sources/centerAffiliationRosterScraper';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
+import { LabSiteUndergradInvitationScraper } from './sources/labSiteUndergradInvitationScraper';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
+import { createUndergradRosterDeriver } from './undergradRosterDerivation';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
 import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificationScraper';
 import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
 import { RosterBioResearchEvidenceScraper } from './sources/rosterBioResearchEvidenceScraper';
+import { CenterMemberProfileResearchScraper } from './sources/centerMemberProfileResearchScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -73,13 +78,19 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new ProgramOfficialPageScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
+  o.register(new LabSiteUndergradInvitationScraper());
   o.register(new CenterAffiliationLLMExtractor());
   o.register(new CenterDirectorLLMExtractor());
+  o.register(new CenterDirectorScraper());
+  o.register(new CenterAffiliationRosterScraper());
   o.register(new OfficialProfilePiBackfillScraper());
-  o.register(new OfficialResearchHomeRosterScraper());
+  o.register(
+    new OfficialResearchHomeRosterScraper(undefined, undefined, createUndergradRosterDeriver()),
+  );
   o.register(new ResearchAreaSourceExtractor());
   o.register(new LabSiteLeadVerificationScraper());
   o.register(new DirectoryAliasResolutionScraper());
   o.register(new RosterBioResearchEvidenceScraper());
+  o.register(new CenterMemberProfileResearchScraper());
   return o;
 }

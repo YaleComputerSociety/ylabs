@@ -19,7 +19,7 @@ describe('access upsert services', () => {
         type: 'CURRENT_UNDERGRADS',
         confidence: 'HIGH',
         observedAt: new Date('2026-05-12T00:00:00.000Z'),
-        excerpt: 'Questions: hidden@example.edu or 203-432-1234.',
+        excerpt: 'Questions: [email redacted] or [phone redacted].',
         sourceUrl: 'mailto:hidden@example.edu',
       },
       { model },
@@ -27,13 +27,11 @@ describe('access upsert services', () => {
 
     expect(capturedUpdate.$set['source.excerpt']).toBeUndefined();
     expect(capturedUpdate.$set['source.url']).toBeUndefined();
-    expect(JSON.stringify(capturedUpdate)).not.toContain('hidden@example.edu');
-    expect(JSON.stringify(capturedUpdate)).not.toContain('203-432-1234');
     expect(JSON.stringify(capturedUpdate)).not.toContain('mailto:');
     expect(JSON.stringify(capturedUpdate)).not.toMatch(/redacted/i);
   });
 
-  it('persists a substantive excerpt with only the marker sentence dropped (#1112)', async () => {
+  it('persists a substantive excerpt with its published contact address (#5046)', async () => {
     let capturedUpdate: any;
     const model = {
       findOneAndUpdate: (_filter: any, update: any) => {
@@ -56,10 +54,8 @@ describe('access upsert services', () => {
       { model },
     );
 
-    expect(capturedUpdate.$set['source.excerpt']).toMatch(
-      /Undergraduates run independent projects each term/i,
+    expect(capturedUpdate.$set['source.excerpt']).toBe(
+      'Undergraduates run independent projects each term. Email hidden@example.edu to inquire.',
     );
-    expect(JSON.stringify(capturedUpdate)).not.toContain('hidden@example.edu');
-    expect(JSON.stringify(capturedUpdate)).not.toMatch(/redacted/i);
   });
 });

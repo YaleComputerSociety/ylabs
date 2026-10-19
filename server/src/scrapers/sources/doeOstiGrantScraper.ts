@@ -66,7 +66,7 @@ import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
-const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
+export const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const PAGE_SIZE = 100;

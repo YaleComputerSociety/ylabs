@@ -5,6 +5,7 @@ import {
   FellowshipSearchState,
   createInitialFellowshipSearchState,
   fellowshipSearchReducer,
+  isFellowshipSearchPending,
 } from '../fellowshipSearchReducer';
 
 const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
@@ -268,6 +269,37 @@ describe('fellowshipSearchReducer', () => {
       type: 'SEARCH_FAILURE',
     });
     expect(fellowshipSearchReducer(failed, { type: 'SEARCH_REQUEST' }).loadError).toBe(false);
+  });
+
+  it('reports a search as pending from the first keystroke until its results arrive', () => {
+    const loaded = fellowshipSearchReducer(
+      fellowshipSearchReducer(createInitialFellowshipSearchState(), {
+        type: 'MARK_FILTER_OPTIONS_LOADED',
+      }),
+      {
+        type: 'SEARCH_SUCCESS',
+        payload: { fellowships: [], total: 0, pageSize: 1, append: false },
+      },
+    );
+    expect(isFellowshipSearchPending(loaded)).toBe(false);
+
+    const typed = fellowshipSearchReducer(loaded, { type: 'SET_QUERY_STRING', payload: 'econ ' });
+    expect(isFellowshipSearchPending(typed)).toBe(true);
+
+    const requested = fellowshipSearchReducer(typed, {
+      type: 'SEARCH_REQUEST',
+      payload: { queryString: 'econ' },
+    });
+    expect(isFellowshipSearchPending(requested)).toBe(true);
+
+    const answered = fellowshipSearchReducer(requested, {
+      type: 'SEARCH_SUCCESS',
+      payload: { fellowships: [], total: 0, pageSize: 1, append: false },
+    });
+    expect(isFellowshipSearchPending(answered)).toBe(false);
+
+    const loadingMore = fellowshipSearchReducer(answered, { type: 'SEARCH_REQUEST' });
+    expect(loadingMore.searchedQueryString).toBe('econ');
   });
 
   it('LOAD_MORE_FAILURE keeps the pages already loaded', () => {

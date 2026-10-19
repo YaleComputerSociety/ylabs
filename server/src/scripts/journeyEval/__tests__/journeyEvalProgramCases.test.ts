@@ -52,22 +52,24 @@ const fakeContext = (
 
 describe('walkProgramBrowseLikeTheClient', () => {
   it('stops after the short last page the way the browse client does', async () => {
-    const walk = await walkProgramBrowseLikeTheClient(fakeContext(syntheticRows(250)), {});
+    const walk = await walkProgramBrowseLikeTheClient(fakeContext(syntheticRows(600)), {});
 
     expect(walk.pages.map((page) => page.length)).toEqual([
       CLIENT_PROGRAM_PAGE_SIZE,
       CLIENT_PROGRAM_PAGE_SIZE,
-      50,
+      100,
     ]);
-    expect(walk.rows).toHaveLength(250);
+    expect(walk.rows).toHaveLength(600);
   });
 });
 
 describe('full walk case', () => {
   it('fails when a page repeats a row so the walk misses one', async () => {
-    const rows = syntheticRows(150);
+    const rows = syntheticRows(CLIENT_PROGRAM_PAGE_SIZE + 50);
     const context = fakeContext(rows, (request) =>
-      request.page === 2 ? [rows[0], ...rows.slice(101, 150)] : undefined,
+      request.page === 2
+        ? [rows[0], ...rows.slice(CLIENT_PROGRAM_PAGE_SIZE + 1, CLIENT_PROGRAM_PAGE_SIZE + 50)]
+        : undefined,
     );
     const fullWalk = programSurfaceCases({
       id: 'programs',
@@ -161,11 +163,16 @@ describe('fellowship surface', () => {
   });
 
   it('fails every walk-based case when a later page serves a row outside the category', async () => {
-    const rows = syntheticRows(300);
+    const rows = syntheticRows(CLIENT_PROGRAM_PAGE_SIZE * 3);
     const fellowships = rows.filter((row) => row.programCategory === 'FELLOWSHIP');
     const outsideCategory = rows.find((row) => row.programCategory !== 'FELLOWSHIP')!;
     const context = fakeContext(rows, (request) =>
-      request.page === 2 ? [outsideCategory, ...fellowships.slice(101, 150)] : undefined,
+      request.page === 2
+        ? [
+            outsideCategory,
+            ...fellowships.slice(CLIENT_PROGRAM_PAGE_SIZE + 1, CLIENT_PROGRAM_PAGE_SIZE + 50),
+          ]
+        : undefined,
     );
 
     const walkingCases = fellowshipJourneyCases.filter(

@@ -259,19 +259,20 @@ describe('a contact direction served as eligibility (#4177)', () => {
   });
 });
 
-describe('publicProgramForReader read-time redaction ordering (#774)', () => {
-  it('does not leave a token when a raw email is redacted at read time in the summary', () => {
+describe('publicProgramForReader contact details (#774, #5046)', () => {
+  it('serves the contact address a program summary publishes', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58510',
       title: 'Example Richter Summer Fellowship',
       summary: 'Questions about the fellowship can be directed to grants@example.edu.',
     }) as { summary: string };
 
-    expect(payload.summary).not.toMatch(/redacted/i);
-    expect(payload.summary).not.toContain('grants@example.edu');
+    expect(payload.summary).toBe(
+      'Questions about the fellowship can be directed to grants@example.edu.',
+    );
   });
 
-  it('does not leave a token when a raw email is redacted at read time in the eligibility', () => {
+  it('keeps a contact direction out of eligibility without leaving a token', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58511',
       title: 'Example Mellon Senior Research Grant',
@@ -282,7 +283,7 @@ describe('publicProgramForReader read-time redaction ordering (#774)', () => {
     expect(payload.eligibility).not.toContain('taxoffice@example.edu');
   });
 
-  it('does not leave a token when a raw email is redacted at read time in applicationInformation', () => {
+  it('serves the contact address application information publishes', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58512',
       title: 'Example Travel Prize',
@@ -290,8 +291,9 @@ describe('publicProgramForReader read-time redaction ordering (#774)', () => {
         'Submit your materials and contact office@example.edu with questions.',
     }) as { applicationInformation: string };
 
-    expect(payload.applicationInformation).not.toMatch(/redacted/i);
-    expect(payload.applicationInformation).not.toContain('office@example.edu');
+    expect(payload.applicationInformation).toBe(
+      'Submit your materials and contact office@example.edu with questions.',
+    );
   });
 });
 

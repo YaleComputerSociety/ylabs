@@ -43,8 +43,14 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const SERVED_TIERS = new Set<unknown>(publicStudentVisibilityTiers);
 
+const RESEARCH_SEARCH_SPELLING_PERSON_NAME_FIELDS = [
+  'leadProfessorNames',
+  'professorNames',
+] as const;
+
 const toVocabularyDocument = (hit: Record<string, unknown>): SearchVocabularyDocument => ({
   nameText: RESEARCH_SEARCH_SPELLING_NAME_FIELDS.map((field) => hit[field]),
+  personNameText: RESEARCH_SEARCH_SPELLING_PERSON_NAME_FIELDS.map((field) => hit[field]),
   bodyText: RESEARCH_SEARCH_SPELLING_BODY_FIELDS.map((field) => hit[field]),
   served: SERVED_TIERS.has(hit.studentVisibilityTier),
 });

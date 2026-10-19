@@ -6,6 +6,11 @@ import { Source } from '../models/source';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { VisibilityReleaseQueueItem } from '../models/visibilityReleaseQueueItem';
 import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilityService';
+import { isBlockingVisibilityReason } from './studentVisibilityGateService';
+import {
+  isStudentVisibilitySignalReason,
+  STUDENT_VISIBILITY_EVIDENCE_REASONS,
+} from './studentVisibilityTier';
 import { buildSourceHealthReviewSummary } from '../scripts/sourceHealth';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
 import { buildSourceHealthRows, type SourceHealthRisk } from './sourceHealthService';
@@ -382,13 +387,7 @@ export type PromotionCopyDryRunArtifact =
       ageHours: number;
     };
 
-const evidenceReasons = new Set([
-  'application_route',
-  'graduate_relevant',
-  'official_source',
-  'source_backed_description',
-  'undergraduate_relevant',
-]);
+type OperatorQueueCollection = 'research' | 'programs';
 
 const reviewDecisionReasons = new Set([
   'application_source_only',
@@ -399,22 +398,38 @@ const reviewDecisionReasons = new Set([
   'not_undergraduate_relevant',
 ]);
 
-export function classifyOperatorQueueReason(reason: string): QueueKind {
-  if (evidenceReasons.has(reason)) return 'evidence';
+const programStudentReadyGatingReasons = new Set([
+  'missing_official_source',
+  'missing_application_route',
+]);
+
+export function classifyOperatorQueueReason(
+  reason: string,
+  collection: OperatorQueueCollection = 'research',
+): QueueKind {
+  if (collection === 'programs' && programStudentReadyGatingReasons.has(reason)) return 'blocking';
+  if (isStudentVisibilitySignalReason(reason)) return 'evidence';
   if (reviewDecisionReasons.has(reason)) return 'review';
-  if (
-    reason.startsWith('missing_') ||
-    [
-      'inactive_at_yale',
-      'missing_card_description',
-      'profile_fallback_only',
-      'thin_description',
-    ].includes(reason)
-  ) {
-    return 'blocking';
-  }
+  if (isBlockingVisibilityReason(reason)) return 'blocking';
   return 'review';
 }
+
+export const splitOperatorSampleReasons = (
+  reasons: unknown,
+  collection: OperatorQueueCollection,
+) => {
+  const stored: string[] = Array.isArray(reasons)
+    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
+    : [];
+  return {
+    blockerReasons: stored.filter(
+      (reason) => classifyOperatorQueueReason(reason, collection) !== 'evidence',
+    ),
+    signalReasons: stored.filter(
+      (reason) => classifyOperatorQueueReason(reason, collection) === 'evidence',
+    ),
+  };
+};
 
 export function summarizeDryRunPosture(runs: any[]) {
   const sorted = [...runs].sort(
@@ -1867,20 +1882,40 @@ async function countByTier(model: any, match: Record<string, unknown>) {
   return normalizeTierCounts(rows);
 }
 
-async function reasonCounts(model: any, match: Record<string, unknown>, limit = 12) {
+async function reasonCounts(
+  model: any,
+  collection: OperatorQueueCollection,
+  match: Record<string, unknown>,
+): Promise<Array<{ reason: string; count: number; kind: QueueKind }>> {
   const rows = await model.aggregate([
     { $match: match },
     { $unwind: '$studentVisibilityReasons' },
     { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
     { $sort: { count: -1, _id: 1 } },
-    { $limit: limit },
     { $project: { _id: 0, reason: '$_id', count: 1 } },
   ]);
 
   return rows.map((row: { reason: string; count: number }) => ({
     ...row,
-    kind: classifyOperatorQueueReason(row.reason),
+    kind: classifyOperatorQueueReason(row.reason, collection),
   }));
+}
+
+const DISPLAYED_REASON_COUNTS = 12;
+const QUEUES_PER_KIND_PER_COLLECTION = 3;
+
+export function topQueueReasonsPerKind<T extends { count: number; kind: QueueKind }>(
+  rows: T[],
+  perKind = QUEUES_PER_KIND_PER_COLLECTION,
+): T[] {
+  const taken: Record<QueueKind, number> = { blocking: 0, evidence: 0, review: 0 };
+  return [...rows]
+    .sort((a, b) => b.count - a.count)
+    .filter((row) => {
+      if (taken[row.kind] >= perKind) return false;
+      taken[row.kind] += 1;
+      return true;
+    });
 }
 
 const researchReasonActions: Record<string, string> = {
@@ -1947,6 +1982,7 @@ function compactResearchSample(row: any) {
     slug: row.slug || '',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
+    ...splitOperatorSampleReasons(row.studentVisibilityReasons, 'research'),
     sourceUrl: row.websiteUrl || row.sourceUrls?.[0] || '',
     summary: row.shortDescription || '',
   };
@@ -1959,6 +1995,7 @@ function compactProgramSample(row: any) {
     label: row.title || id || '[unknown program]',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
+    ...splitOperatorSampleReasons(row.studentVisibilityReasons, 'programs'),
     sourceUrl: row.sourceUrl || '',
     category: row.studentFacingCategory || '',
     summary: row.summary || '',
@@ -1967,15 +2004,15 @@ function compactProgramSample(row: any) {
 
 async function buildQueueSummaries() {
   const [researchReasons, programReasons] = await Promise.all([
-    reasonCounts(ResearchEntity, { archived: { $ne: true } }),
-    reasonCounts(Fellowship, { archived: false }),
+    reasonCounts(ResearchEntity, 'research', { archived: { $ne: true } }),
+    reasonCounts(Fellowship, 'programs', { archived: false }),
   ]);
 
   const researchQueues = await Promise.all(
-    researchReasons.slice(0, 8).map(async (row: { reason: string; count: number }) => ({
+    topQueueReasonsPerKind(researchReasons).map(async (row) => ({
       collection: 'research' as const,
       reason: row.reason,
-      kind: classifyOperatorQueueReason(row.reason),
+      kind: row.kind,
       count: row.count,
       nextAction: researchReasonActions[row.reason] || 'Review samples and decide repair action.',
       samples: (await sampleResearch({ studentVisibilityReasons: row.reason })).map(
@@ -1985,10 +2022,10 @@ async function buildQueueSummaries() {
   );
 
   const programQueues = await Promise.all(
-    programReasons.slice(0, 8).map(async (row: { reason: string; count: number }) => ({
+    topQueueReasonsPerKind(programReasons).map(async (row) => ({
       collection: 'programs' as const,
       reason: row.reason,
-      kind: classifyOperatorQueueReason(row.reason),
+      kind: row.kind,
       count: row.count,
       nextAction: programReasonActions[row.reason] || 'Review samples and decide repair action.',
       samples: (await samplePrograms({ studentVisibilityReasons: row.reason })).map(
@@ -1998,9 +2035,9 @@ async function buildQueueSummaries() {
   );
 
   const queues = [...researchQueues, ...programQueues];
-  const queueKindCounts = queues.reduce(
-    (acc, queue) => {
-      acc[queue.kind] += queue.count;
+  const queueKindCounts = [...researchReasons, ...programReasons].reduce(
+    (acc, row) => {
+      acc[row.kind] += row.count;
       return acc;
     },
     { blocking: 0, evidence: 0, review: 0 },
@@ -2008,12 +2045,16 @@ async function buildQueueSummaries() {
 
   return {
     reasonCounts: {
-      research: researchReasons,
-      programs: programReasons,
+      research: researchReasons.slice(0, DISPLAYED_REASON_COUNTS),
+      programs: programReasons.slice(0, DISPLAYED_REASON_COUNTS),
     },
     queueKindCounts,
     discoveryCandidates: queues
-      .filter((queue) => queue.kind === 'evidence' || queue.reason.includes('official_source'))
+      .filter(
+        (queue) =>
+          STUDENT_VISIBILITY_EVIDENCE_REASONS.has(queue.reason) ||
+          queue.reason.includes('official_source'),
+      )
       .slice(0, 6)
       .map((queue) => ({
         collection: queue.collection,

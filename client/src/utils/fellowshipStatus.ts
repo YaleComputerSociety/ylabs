@@ -1,13 +1,23 @@
+import { PROGRAM_CLOSING_SOON_DAYS } from './programClosingSoonWindow';
 import type { Fellowship, ProgramAudience } from '../types/types';
 import {
   type ProgramDateBoundary,
   formatProgramDate,
   formatShortProgramDate,
+  formatProjectedProgramDate,
   parseProgramDate,
+  newYorkCalendarDaysUntil,
   programDeadlineClosingInstant,
 } from './programDates';
+import { programCitizenshipSummary } from './programBoard';
 
-export const CLOSING_SOON_DAYS = 30;
+export const CLOSING_SOON_DAYS = PROGRAM_CLOSING_SOON_DAYS;
+
+export const closingDetail = (daysUntilDeadline: number): string => {
+  if (daysUntilDeadline <= 0) return 'Due today';
+  if (daysUntilDeadline === 1) return 'Due tomorrow';
+  return `${daysUntilDeadline}\u00a0days left`;
+};
 
 export const STALE_DEADLINE_MESSAGE = 'Check the official page for the current deadline';
 export const STALE_DEADLINE_SHORT_LABEL = 'Deadline: check official page';
@@ -103,9 +113,7 @@ export const getFellowshipApplicationStatus = (
   const rollingApplications = hasRollingApplicationWindow(fellowship);
   const isApplicationWindowOpen =
     !deadlinePassed && !notOpenYet && (Boolean(deadline) || rollingApplications);
-  const daysUntilDeadline = deadline
-    ? Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    : null;
+  const daysUntilDeadline = deadline ? newYorkCalendarDaysUntil(deadline, now) : null;
   const hasStructuredEligibility =
     (fellowship.yearOfStudy?.length || 0) > 0 ||
     (fellowship.termOfAward?.length || 0) > 0 ||
@@ -143,7 +151,7 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'projectedNextCycle',
       label: 'Projected next cycle',
-      detail: `Est. next deadline ~${formatShortFellowshipDate(fellowship.deadline)} - unconfirmed, verify at source`,
+      detail: `Est. next deadline ~${formatProjectedProgramDate(fellowship.deadline)} - unconfirmed, verify at source`,
       isCurrentlyRelevant: true,
       isApplicationWindowOpen: false,
     };
@@ -207,8 +215,7 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'closingSoon',
       label: daysUntilDeadline <= 1 ? 'Due soon' : 'Closing soon',
-      detail:
-        daysUntilDeadline <= 1 ? 'Due today or tomorrow' : `${daysUntilDeadline}\u00a0days left`,
+      detail: closingDetail(daysUntilDeadline),
       isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };
@@ -270,7 +277,7 @@ export const getStructuredEligibilityDetails = (
     details.push({ label: 'Term', value: fellowship.termOfAward.join(', ') });
   }
   if ((fellowship.citizenshipStatus?.length || 0) > 0) {
-    details.push({ label: 'Citizenship', value: fellowship.citizenshipStatus.join(', ') });
+    details.push({ label: 'Citizenship', value: programCitizenshipSummary(fellowship) });
   }
   if ((fellowship.globalRegions?.length || 0) > 0) {
     details.push({ label: 'Regions', value: fellowship.globalRegions.join(', ') });

@@ -8,6 +8,11 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
 import {
+  archivedResearchEntityIds,
+  mergedFromBySurvivorAtCopyTime,
+  withLiveResearchRowsOnly,
+} from './archivedTombstoneMirror';
+import {
   ACCOUNT_COPY_POLICY,
   applySync,
   buildPlan,
@@ -97,7 +102,11 @@ async function main(): Promise<void> {
     await Promise.all([sourceClient.connect(), targetClient.connect()]);
     const sourceDb = sourceClient.db();
     const targetDb = targetClient.db();
-    const collections = collectionsForOptions({ includeObservations: options.includeObservations });
+    const collections = withLiveResearchRowsOnly(
+      collectionsForOptions({ includeObservations: options.includeObservations }),
+      await archivedResearchEntityIds(sourceDb),
+      await mergedFromBySurvivorAtCopyTime(sourceDb),
+    );
     const before = await buildPlan(sourceDb, targetDb, collections);
     let after = before;
     const report = {
@@ -109,6 +118,8 @@ async function main(): Promise<void> {
       includesObservations: options.includeObservations,
       collections: before,
       preservedBetaOperationalCollections: true,
+      archivedTombstonePolicy:
+        'Archived research entities and the rows that hang off them stay in Development; each live survivor carries its merged identities as mergedFrom (#5148).',
       accountReferences: await syncAccountReferences(sourceDb, collections),
       userCopyPolicy: ACCOUNT_COPY_POLICY,
       observationPolicy: options.includeObservations

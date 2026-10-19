@@ -26,6 +26,11 @@ export const researchPlanStageOrder = (stage: ResearchPlanStage): number =>
 export const isActiveResearchPlanStage = (stage: ResearchPlanStage): boolean =>
   stage !== CLOSED_RESEARCH_PLAN_STAGE;
 
+const PROGRAM_DEADLINE_SETTLED_STAGES = new Set<ResearchPlanStage>(['APPLIED', 'CLOSED']);
+
+export const programDeadlineIsSettled = (stage: unknown): boolean =>
+  PROGRAM_DEADLINE_SETTLED_STAGES.has(normalizeResearchPlanStage(stage));
+
 interface ResearchPlanStageMeta {
   label: string;
   badgeClassName: string;
@@ -48,3 +53,14 @@ export const researchPlanStageMeta: Record<ResearchPlanStage, ResearchPlanStageM
 
 export const researchPlanStageLabel = (stage: ResearchPlanStage): string =>
   researchPlanStageMeta[stage].label;
+
+export const programSettledStageBadge = (
+  stage: unknown,
+): { label: string; className: string } | undefined => {
+  if (!programDeadlineIsSettled(stage)) return undefined;
+  const settled = normalizeResearchPlanStage(stage);
+  return {
+    label: researchPlanStageLabel(settled),
+    className: researchPlanStageMeta[settled].badgeClassName,
+  };
+};

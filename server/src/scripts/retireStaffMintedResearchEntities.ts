@@ -37,6 +37,7 @@ import {
   summarizeStaffMintedEntityRefusals,
   type StaffMintedEntityCandidate,
   type StaffMintedEntityReason,
+  type StaffMintedEntityRefused,
 } from './retireStaffMintedResearchEntitiesCore';
 
 dotenv.config({ quiet: true });
@@ -356,6 +357,33 @@ async function liveProfileUrlsByKey(keys: readonly string[]): Promise<Map<string
   return urlsByKey;
 }
 
+export type StaffMintedEntityIdentitySource = 'mint-citation' | 'sole-lead' | 'mint-key' | 'none';
+
+export interface StaffMintedEntityRecordRefusal extends StaffMintedEntityRefused {
+  identitySource: StaffMintedEntityIdentitySource;
+  storedTitles: string[];
+}
+
+export function recordRefusalsInScope(input: {
+  refused: readonly StaffMintedEntityRefused[];
+  recordIds: readonly string[] | undefined;
+  identitySourceById: ReadonlyMap<string, StaffMintedEntityIdentitySource>;
+  candidates: readonly StaffMintedEntityCandidate[];
+}): StaffMintedEntityRecordRefusal[] {
+  if (!input.recordIds || input.recordIds.length === 0) return [];
+  const scope = new Set(input.recordIds);
+  const titlesById = new Map(
+    input.candidates.map((candidate) => [candidate.id, [...(candidate.storedTitles || [])]]),
+  );
+  return input.refused
+    .filter((entry) => scope.has(entry.id))
+    .map((entry) => ({
+      ...entry,
+      identitySource: input.identitySourceById.get(entry.id) ?? 'none',
+      storedTitles: titlesById.get(entry.id) ?? [],
+    }));
+}
+
 async function main(): Promise<void> {
   const args = parseRetireStaffMintedEntitiesArgs(process.argv.slice(2));
   // Resolved before the database is opened, so an unwritable report path fails the
@@ -491,9 +519,11 @@ async function main(): Promise<void> {
   await addLiveTitlesByDestination(titlesByDestination, [...profileUrlsByKey.values()].flat());
   let identitiesReadFromSoleLead = 0;
   let identitiesReadFromMintKey = 0;
+  const identitySourceById = new Map<string, StaffMintedEntityIdentitySource>();
   const identityFor = (id: string): { url?: string; titles: string[]; personIds: string[] } => {
     const url = identityUrlById.get(id);
     if (url) {
+      identitySourceById.set(id, 'mint-citation');
       return {
         url,
         titles: [...(titlesByDestination.get(normalizeOfficialProfileDestination(url)) || [])],
@@ -508,6 +538,7 @@ async function main(): Promise<void> {
     });
     if (borrowed) {
       identitiesReadFromSoleLead += 1;
+      identitySourceById.set(id, 'sole-lead');
       return borrowed;
     }
     const fromKey = mintKeyIdentityFor({
@@ -519,6 +550,7 @@ async function main(): Promise<void> {
     });
     if (!fromKey) return { titles: [], personIds: [] };
     identitiesReadFromMintKey += 1;
+    identitySourceById.set(id, 'mint-key');
     return fromKey;
   };
 
@@ -597,6 +629,12 @@ async function main(): Promise<void> {
     recordIdsNotPlanned: (args.recordIds || []).filter(
       (id) => !plannedInReasonScope.some((entry) => entry.id === id),
     ),
+    recordRefusals: recordRefusalsInScope({
+      refused: plan.refused,
+      recordIds: args.recordIds,
+      identitySourceById,
+      candidates,
+    }),
     // The pre-apply state of exactly the rows this run touches. A peer session
     // writes Development concurrently, so a post-hoc tier delta over the corpus
     // cannot be attributed to this run without it.

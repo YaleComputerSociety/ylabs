@@ -8,6 +8,8 @@ export interface RenderJob {
   id: string;
   serviceId: string;
   status?: RenderJobStatus;
+  createdAt?: string;
+  startCommand?: string;
   startedAt?: string;
   finishedAt?: string;
 }
@@ -150,4 +152,145 @@ export async function waitForRenderJob(
     }
     await sleep(wait.intervalMs);
   }
+}
+
+export interface RenderDeploy {
+  id: string;
+  status?: string;
+  commitId?: string;
+  createdAt?: string;
+  finishedAt?: string;
+}
+
+const unwrapListItem = (item: unknown, key: string): Record<string, unknown> | null => {
+  if (!item || typeof item !== 'object') return null;
+  const record = item as Record<string, unknown>;
+  const inner = record[key];
+  return inner && typeof inner === 'object' ? (inner as Record<string, unknown>) : record;
+};
+
+function asDeploy(value: unknown): RenderDeploy {
+  const deploy = unwrapListItem(value, 'deploy');
+  if (!deploy || typeof deploy.id !== 'string') {
+    throw new Error('Render API returned a deploy without an id');
+  }
+  const commit = deploy.commit as { id?: unknown } | undefined;
+  return {
+    id: deploy.id,
+    status: typeof deploy.status === 'string' ? deploy.status : undefined,
+    commitId: typeof commit?.id === 'string' ? commit.id : undefined,
+    createdAt: typeof deploy.createdAt === 'string' ? deploy.createdAt : undefined,
+    finishedAt: typeof deploy.finishedAt === 'string' ? deploy.finishedAt : undefined,
+  };
+}
+
+export async function listRenderDeploys(
+  options: RenderClientOptions,
+  serviceId: string,
+  limit = 20,
+): Promise<RenderDeploy[]> {
+  const listed = await request(
+    options,
+    'GET',
+    `/services/${encodeURIComponent(serviceId)}/deploys?limit=${limit}`,
+  );
+  if (!Array.isArray(listed)) throw new Error('Render API returned no deploy list');
+  return listed.flatMap((item) => {
+    const deploy = unwrapListItem(item, 'deploy');
+    return deploy && typeof deploy.id === 'string' ? [asDeploy(deploy)] : [];
+  });
+}
+
+export const RENDER_DEPLOY_LIVE_STATUS = 'live';
+
+export const RENDER_DEPLOY_FAILED_STATUSES = [
+  'build_failed',
+  'update_failed',
+  'canceled',
+  'deactivated',
+  'pre_deploy_failed',
+] as const;
+
+export async function liveRenderDeploy(
+  options: RenderClientOptions,
+  serviceId: string,
+): Promise<RenderDeploy | undefined> {
+  const deploys = await listRenderDeploys(options, serviceId);
+  return deploys.find((deploy) => deploy.status === RENDER_DEPLOY_LIVE_STATUS);
+}
+
+export async function triggerRenderDeploy(
+  options: RenderClientOptions,
+  serviceId: string,
+  commitId: string,
+): Promise<RenderDeploy> {
+  return asDeploy(
+    await request(options, 'POST', `/services/${encodeURIComponent(serviceId)}/deploys`, {
+      commitId,
+    }),
+  );
+}
+
+export async function retrieveRenderDeploy(
+  options: RenderClientOptions,
+  serviceId: string,
+  deployId: string,
+): Promise<RenderDeploy> {
+  return asDeploy(
+    await request(
+      options,
+      'GET',
+      `/services/${encodeURIComponent(serviceId)}/deploys/${encodeURIComponent(deployId)}`,
+    ),
+  );
+}
+
+export async function waitForRenderDeploy(
+  options: RenderClientOptions,
+  serviceId: string,
+  deployId: string,
+  wait: WaitForRenderJobOptions & { onDeployStatus?: (deploy: RenderDeploy) => void },
+): Promise<RenderDeploy> {
+  const sleep = wait.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const now = wait.now ?? Date.now;
+  const deadline = now() + wait.timeoutMs;
+  let lastStatus: string | undefined;
+  for (;;) {
+    const deploy = await retrieveRenderDeploy(options, serviceId, deployId);
+    if (deploy.status !== lastStatus) {
+      lastStatus = deploy.status;
+      wait.onDeployStatus?.(deploy);
+    }
+    if (
+      deploy.status === RENDER_DEPLOY_LIVE_STATUS ||
+      (RENDER_DEPLOY_FAILED_STATUSES as readonly string[]).includes(deploy.status ?? '')
+    ) {
+      return deploy;
+    }
+    if (now() >= deadline) {
+      throw new Error(
+        `Render deploy ${deployId} was still ${deploy.status ?? 'unknown'} after ${Math.round(wait.timeoutMs / 60_000)} minutes`,
+      );
+    }
+    await sleep(wait.intervalMs);
+  }
+}
+
+export async function listRenderJobs(
+  options: RenderClientOptions,
+  serviceId: string,
+  limit = 20,
+): Promise<RenderJob[]> {
+  const listed = await request(
+    options,
+    'GET',
+    `/services/${encodeURIComponent(serviceId)}/jobs?limit=${limit}`,
+  );
+  if (!Array.isArray(listed)) throw new Error('Render API returned no job list');
+  return listed.flatMap((item) => {
+    const job = unwrapListItem(item, 'job');
+    return job && typeof job.id === 'string' && typeof job.serviceId === 'string'
+      ? [job as unknown as RenderJob]
+      : [];
+  });
 }

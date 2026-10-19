@@ -14,6 +14,7 @@ import {
   isOperatorArchivedReason,
   dispositionMatchesScope,
   accessSignalSettlementsFromRepairPlan,
+  relationshipSettlementsFromRepairPlan,
   resolveArchivedEntityDispositions,
   roleEdgeSettlementsFromRepairPlan,
   summarizeArchivedEntityArtifactRepairPlanByClass,
@@ -39,6 +40,12 @@ import {
   applyAccessSignalSettlements,
   LIVE_ACCESS_SIGNAL_FILTER,
 } from '../services/archivedResearchEntityAccessSignals';
+import {
+  applyRelationshipEdgeSettlements,
+  loadHeldRelationshipEdges,
+  loadLiveRelationshipEdgesTouching,
+  withLiveEndpoints,
+} from '../services/archivedResearchEntityRelationships';
 
 dotenv.config({ quiet: true });
 
@@ -75,6 +82,7 @@ const __filename = fileURLToPath(import.meta.url);
 const ARTIFACT_TYPE_FLAGS: Record<string, ArchivedEntityArtifactType> = {
   'role-assignment': 'RoleAssignment',
   'access-signal': 'AccessSignal',
+  relationship: 'ResearchEntityRelationship',
 };
 
 const ARTIFACT_SPECS: ArtifactSpec[] = [
@@ -529,6 +537,19 @@ export async function loadArchivedEntityArtifactPlan(
     canonicalArtifacts.push(...canonicalRows.map(spec.toArtifact));
   }
 
+  if (!artifactTypes || artifactTypes.includes('ResearchEntityRelationship')) {
+    const remainingLimit = Math.max(0, limit - artifacts.length);
+    if (remainingLimit > 0) {
+      const relationships = await loadRelationshipArtifacts({
+        scoped,
+        dispositions,
+        limit: remainingLimit,
+      });
+      artifacts.push(...relationships.artifacts);
+      canonicalArtifacts.push(...relationships.canonicalArtifacts);
+    }
+  }
+
   return {
     scopedArchivedEntities: scoped.size,
     artifacts,
@@ -538,6 +559,66 @@ export async function loadArchivedEntityArtifactPlan(
       canonicalArtifacts,
       roleEdgeDisposition,
     }),
+  };
+}
+
+// Every archived row has a disposition, so an endpoint without one is live or absent, and
+// only a row that exists is live.
+async function loadRelationshipArtifacts({
+  scoped,
+  dispositions,
+  limit,
+}: {
+  scoped: ReadonlyMap<string, ArchivedEntityDisposition>;
+  dispositions: ReadonlyMap<string, ArchivedEntityDisposition>;
+  limit: number;
+}): Promise<{
+  artifacts: ArchivedEntityArtifact[];
+  canonicalArtifacts: ArchivedEntityArtifact[];
+}> {
+  const edges = await loadLiveRelationshipEdgesTouching([...scoped.keys()], limit);
+  if (edges.length === 0) return { artifacts: [], canonicalArtifacts: [] };
+  const unarchivedEndpointIds = [
+    ...new Set(edges.flatMap((edge) => [edge.sourceId, edge.targetId])),
+  ].filter((id) => !dispositions.has(id));
+  const existing = await ResearchEntity.find({
+    _id: { $in: unarchivedEndpointIds.map(objectId).filter(Boolean) },
+  })
+    .select('_id')
+    .lean();
+  const liveIds = new Set(existing.map((row) => stringId((row as { _id?: unknown })._id)));
+  const liveIdFor = (id: string): string | undefined => {
+    const disposition = dispositions.get(id);
+    if (disposition) {
+      return disposition.repairClass === 'merge-survivor' ? disposition.survivorId : undefined;
+    }
+    return liveIds.has(id) ? id : undefined;
+  };
+  const withLive = withLiveEndpoints(edges, liveIdFor);
+  const held = await loadHeldRelationshipEdges(
+    withLive.map((edge) => edge.liveSourceId).filter(Boolean),
+    withLive.map((edge) => edge.liveTargetId).filter(Boolean),
+  );
+  const toArtifact = (
+    edge: { id: string; sourceId: string; targetId: string; relationshipType: string },
+    researchEntityId: string,
+    live?: { liveSourceId?: string; liveTargetId?: string },
+  ): ArchivedEntityArtifact => ({
+    artifactType: 'ResearchEntityRelationship',
+    id: edge.id,
+    researchEntityId,
+    relationship: {
+      sourceId: edge.sourceId,
+      targetId: edge.targetId,
+      relationshipType: edge.relationshipType,
+      ...live,
+    },
+  });
+  return {
+    artifacts: withLive.map((edge) =>
+      toArtifact(edge, scoped.has(edge.sourceId) ? edge.sourceId : edge.targetId, edge),
+    ),
+    canonicalArtifacts: held.map((edge) => toArtifact(edge, edge.sourceId)),
   };
 }
 
@@ -588,6 +669,14 @@ export async function applyArchivedEntityArtifactRepairPlan(
   counts.mergedCanonicalArtifacts += signals.mergedIntoSurvivor;
   counts.archivedMergedDuplicates += signals.archivedAsDuplicate;
   counts.archivedWithoutCanonical += signals.archivedWithoutSurvivor;
+
+  const relationships = await applyRelationshipEdgeSettlements(
+    relationshipSettlementsFromRepairPlan(plan),
+    { archivedReason: ARCHIVED_ENTITY_ARTIFACT_ARCHIVE_REASON, now },
+  );
+  counts.relinked += relationships.repointed;
+  counts.archivedMergedDuplicates += relationships.archivedRedundant;
+  counts.archivedWithoutCanonical += relationships.archivedSelfLoop;
 
   return counts;
 }

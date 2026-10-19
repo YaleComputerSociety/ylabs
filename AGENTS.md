@@ -232,4 +232,7 @@ They share Vite's `node_modules/.vite` cache and clobber each other.
 A real per-worktree install is the isolation boundary.
 - Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
 `compose.yaml` pins the Compose project name, so `yarn meili:up` from any worktree reuses the one local Meilisearch.
+- Stop only processes you started, by the PID you recorded or by your own reserved port (`lsof -ti tcp:<your port> -sTCP:LISTEN | xargs kill`).
+Never pattern-kill with `pkill -f`, `killall`, or `pgrep ... | xargs kill`: a pattern such as `tsx src/index.ts` matches every session's server on the machine.
+Never stop or restart anything on ports 3000 or 4000, which belong to the primary checkout (#5222).
 - Integrate an approved branch by merging or landing its pull request, then remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.

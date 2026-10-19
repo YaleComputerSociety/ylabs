@@ -40,7 +40,7 @@ describe('promote:remote-phase', () => {
       },
     );
     expect(code).toBe(0);
-    expect(ran).toHaveLength(7);
+    expect(ran).toHaveLength(8);
     expect(resultLine(lines)).toMatchObject({ environment: 'beta', status: 'succeeded' });
   });
 
@@ -52,7 +52,12 @@ describe('promote:remote-phase', () => {
       return step.label === 'data quality' ? 2 : 0;
     });
     expect(code).toBe(1);
-    expect(ran).toEqual(['verify database names', 'visibility gate', 'data quality']);
+    expect(ran).toEqual([
+      'verify database names',
+      'retarget saved plans',
+      'visibility gate',
+      'data quality',
+    ]);
     expect(resultLine(lines)).toMatchObject({ status: 'failed', failedStep: 'data quality' });
   });
 
@@ -66,5 +71,60 @@ describe('promote:remote-phase', () => {
     expect(code).toBe(1);
     expect(ran).toEqual([]);
     expect(resultLine(lines).status).toBe('refused');
+  });
+});
+
+describe('promote:remote-phase search reindex result', () => {
+  it('attaches the reindex mode and counts to the phase report and clears a stale result first', () => {
+    const lines = capture();
+    const cleared: string[] = [];
+    const files: Record<string, string> = {};
+    const code = runRemotePhase(
+      ['--environment', 'beta'],
+      BETA_ENV,
+      (step: RemotePhaseStep) => {
+        if (step.resultFile) {
+          files[step.resultFile] = JSON.stringify({
+            mode: 'incremental',
+            addedDocumentCount: 2,
+            updatedDocumentCount: 5,
+            deletedDocumentCount: 0,
+            unchangedDocumentCount: 100,
+          });
+        }
+        return 0;
+      },
+      Date.now,
+      {
+        clear: (file) => {
+          cleared.push(file);
+          delete files[file];
+        },
+        read: (file) => files[file],
+      },
+    );
+    expect(code).toBe(0);
+    expect(cleared).toEqual(['/tmp/ylabs-beta-search-reindex.json']);
+    const reindex = resultLine(lines).steps.find((s: any) => s.label === 'search reindex');
+    expect(reindex.summary).toEqual({
+      mode: 'incremental',
+      addedDocumentCount: 2,
+      updatedDocumentCount: 5,
+      deletedDocumentCount: 0,
+      unchangedDocumentCount: 100,
+    });
+  });
+
+  it('reports a failed reindex as the failed step', () => {
+    const lines = capture();
+    const code = runRemotePhase(
+      ['--environment', 'beta'],
+      BETA_ENV,
+      (step: RemotePhaseStep) => (step.label === 'search reindex' ? 1 : 0),
+      Date.now,
+      { clear: () => undefined, read: () => undefined },
+    );
+    expect(code).toBe(1);
+    expect(resultLine(lines)).toMatchObject({ status: 'failed', failedStep: 'search reindex' });
   });
 });

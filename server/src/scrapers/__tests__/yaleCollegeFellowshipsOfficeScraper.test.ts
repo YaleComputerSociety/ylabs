@@ -140,7 +140,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
-  it('redacts a real contact email out of a detail-page description instead of storing it raw (#773)', () => {
+  it('keeps the contact address a detail-page description publishes, with no token (#773, #5046)', () => {
     const candidates = parseFellowshipCatalogPage(
       `
         <main>
@@ -156,7 +156,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
 
     expect(candidates).toHaveLength(1);
     const [candidate] = candidates;
-    expect(candidate.description ?? '').not.toContain('jordan.taylor@yale.edu');
+    expect(candidate.description ?? '').toContain('jordan.taylor@yale.edu');
     expect(candidate.description ?? '').not.toMatch(/\[email redacted\]/i);
     expect(candidate.description).toMatch(/supports senior essays and independent study/);
   });
@@ -247,7 +247,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidate.summary).toMatch(/Applications reviewed on a rolling basis/);
   });
 
-  it('redacts a real contact email out of a catalog-row summary instead of storing it raw (#773)', () => {
+  it('keeps the contact address a catalog-row summary publishes, with no token (#773, #5046)', () => {
     const candidates = parseFellowshipCatalogPage(
       `
         <h3>Summer Fellowships for Yale College Students</h3>
@@ -265,7 +265,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
 
     expect(candidates).toHaveLength(1);
     const [candidate] = candidates;
-    expect(candidate.summary ?? '').not.toContain('jordan.taylor@yale.edu');
+    expect(candidate.summary ?? '').toContain('jordan.taylor@yale.edu');
     expect(candidate.summary ?? '').not.toMatch(/\[email redacted\]/i);
     expect(candidate.summary).toMatch(/Send your recommendation letter/);
   });

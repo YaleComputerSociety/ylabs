@@ -560,6 +560,21 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
   });
 
+  it('ignores a lead key minted from the mailbox of the unit whose roster named it', () => {
+    const rosterPage = 'https://fixtureunit.yale.edu/people/faculty';
+    const lead = (value: string) =>
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'inferredPiUserKey',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: rosterPage,
+        value,
+      });
+    expect(lead('netid:fixtureunit')).toBe(true);
+    expect(lead('fixture.dus@yale.edu')).toBe(true);
+    expect(lead('netid:rowan.synthetic')).toBe(false);
+    expect(lead('dept:fixtureunit:rowan-synthetic')).toBe(false);
+  });
+
   it('ignores sourceContentHash bookkeeping observations for entity materialization', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('researchEntity', {
@@ -585,6 +600,66 @@ describe('entityMaterializer post-materialization metrics', () => {
         value: ['teaching', 'flow cytometry'],
       }),
     ).toBe(false);
+  });
+
+  it('ignores a course page as a person website and as research-entity evidence (#5213)', () => {
+    const coursePage = 'https://fixturedept.example.test/courses/laboratory-fixture-anatomy';
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: coursePage,
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: 'https://fixturelab.example.test/',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'name',
+        sourceName: 'lab-microsite-description-llm',
+        sourceUrl: coursePage,
+        value: 'Laboratory for Fixture Anatomy',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores a person title cut off at a connective, so a complete title wins (#5109)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'title',
+        sourceName: 'dept-faculty-roster',
+        value: 'Example Chair Professor of',
+      }),
+    ).toBe(true);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'title',
+        sourceName: 'dept-faculty-roster',
+        value: 'Example Chair Professor of Ecology and Evolutionary Biology',
+      }),
+    ).toBe(false);
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['examines'],
+      }),
+    ).toBe(false);
+  });
+
+  it('ignores a methods observation whose every chip is a bare verb (#5109)', () => {
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'methods',
+        sourceName: 'lab-microsite-description-llm',
+        value: ['examines', 'investigates'],
+      }),
+    ).toBe(true);
   });
 
   it('keeps the sourceUrl the fellowship database lane asserts, because the database is official (#4284)', () => {

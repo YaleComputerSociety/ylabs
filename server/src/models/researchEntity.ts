@@ -27,6 +27,8 @@ import {
   labSiteLeadVerdicts,
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
+  undergradInvitationLevels,
+  officialRosterConfigOrigins,
   officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
 
@@ -208,6 +210,21 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       required: false,
       default: null,
     },
+    // Derived from the canonicalGroupId tombstones by research-entity:derive-survivor-aliases,
+    // never written by a lane: the rows merged into this one, so Beta and Production can
+    // resolve an old slug or id without carrying the archived rows (#5148).
+    mergedFrom: {
+      type: [
+        {
+          _id: false,
+          slug: { type: String, required: true },
+          entityId: { type: mongoose.Schema.Types.ObjectId, required: true },
+          mergedAt: { type: Date, required: false },
+          archivedReason: { type: String, required: false },
+        },
+      ],
+      default: undefined,
+    },
     kind: {
       type: String,
       enum: [...researchGroupKinds],
@@ -297,6 +314,17 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     undergradEvidenceQuote: {
       type: String,
       default: '',
+    },
+    undergradInvitation: {
+      type: new mongoose.Schema(
+        {
+          level: { type: String, enum: undergradInvitationLevels, required: true },
+          quote: { type: String, required: true },
+          sourceUrl: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: undefined,
     },
     pastUndergradAdvisees: {
       type: [
@@ -413,6 +441,8 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           default: undefined,
         },
         undergraduateWithheldCount: { type: Number, min: 0, max: 1000, default: 0 },
+        configOrigin: { type: String, enum: officialRosterConfigOrigins, required: false },
+        withheldReason: { type: String, required: false },
         alumniSourceUrl: { type: String, required: false },
         sourceUrl: { type: String, default: '' },
         sourcePublishedAt: { type: Date, required: false },
@@ -441,6 +471,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
               ],
               default: undefined,
             },
+            configOrigin: { type: String, enum: officialRosterConfigOrigins, required: false },
             sourceUrl: { type: String, required: true },
             alumniSourceUrl: { type: String, required: false },
             sourcePublishedAt: { type: Date, required: false },
@@ -591,6 +622,8 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
 researchEntitySchema.index({ kind: 1 });
 researchEntitySchema.index({ entityType: 1 });
 researchEntitySchema.index({ canonicalGroupId: 1 });
+researchEntitySchema.index({ 'mergedFrom.slug': 1 });
+researchEntitySchema.index({ 'mergedFrom.entityId': 1 });
 // Not unique on purpose: 130 live website-url identity groups already hold more than
 // one row, so a unique index would refuse to build until those are resolved. The
 // resolver's ambiguity guard is what keeps a shared URL from merging (#3036).

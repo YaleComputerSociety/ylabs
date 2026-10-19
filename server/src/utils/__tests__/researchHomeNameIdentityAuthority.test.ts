@@ -39,11 +39,11 @@ import {
   personScopedResearchEntityNameNamesSomethingElse,
   personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
-  isClinicalCareServicePageUrl,
   namesASupportServiceUnit,
   personScopedNameIsACampusBuilding,
   personScopedResearchEntityNameFromLeadPersonName,
 } from '../researchHomeNameIdentityAuthority';
+import { isPatientCarePageUrl } from '../researchHomeWebsiteUrl';
 
 describe('namesAServiceFacility', () => {
   it('flags a diagnostic, specimen or shared-instrumentation service', () => {
@@ -2251,12 +2251,10 @@ describe('a profile lab slot that links a service rather than a lab (#4916)', ()
     expect(namesASupportServiceUnit('Fixture Advisors LLC')).toBe(true);
     expect(namesASupportServiceUnit('Social Support and Health Lab')).toBe(false);
     expect(namesASupportServiceUnit('Computational Fixture Lab')).toBe(false);
-    expect(isClinicalCareServicePageUrl('https://med.example.edu/care/fixture/')).toBe(true);
-    expect(isClinicalCareServicePageUrl('https://med.example.edu/research/care/fixture/')).toBe(
-      false,
-    );
-    expect(isClinicalCareServicePageUrl('https://med.example.edu/lab/fixture/')).toBe(false);
-    expect(isClinicalCareServicePageUrl('not a url')).toBe(false);
+    expect(isPatientCarePageUrl('https://med.example.edu/care/fixture/')).toBe(true);
+    expect(isPatientCarePageUrl('https://med.example.edu/research/care/fixture/')).toBe(false);
+    expect(isPatientCarePageUrl('https://med.example.edu/lab/fixture/')).toBe(false);
+    expect(isPatientCarePageUrl('not a url')).toBe(false);
   });
 });
 

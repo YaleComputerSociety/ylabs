@@ -6,8 +6,22 @@ const SEGMENT_BOUNDARY = /([\s/()-]+)/;
  * plus a dot is not an acronym, so the repetition requires two units.
  */
 const SOURCE_ACRONYM = /^(?:[A-Z0-9]\.?){2,}$/;
-const KNOWN_LOWERCASE_ACRONYMS = /^(ai|cs|dna|rna|mri|fmri|pcr|nlp|crispr)$/i;
+const SOURCE_PLURAL_ACRONYM = /^[A-Z]{2,}s$/;
+const KNOWN_LOWERCASE_ACRONYMS = /^(ai|cs|dna|rna|mri|fmri|pcr|nlp|crispr|llm|covid)$/i;
+const KNOWN_LOWERCASE_PLURAL_ACRONYM = /^(ai|llm|mri|pcr)s$/i;
 const HAS_LOWERCASE = /[a-z]/;
+
+/**
+ * The cased form of a word that is an acronym, or undefined when it is not one. Shared by
+ * every label builder, because a builder that re-cases words without it turns "LLMs" into
+ * "Llms" and a URL slug's "nlp" into "Nlp".
+ */
+export const acronymCasing = (word: string): string | undefined => {
+  if (SOURCE_ACRONYM.test(word) || SOURCE_PLURAL_ACRONYM.test(word)) return word;
+  if (KNOWN_LOWERCASE_ACRONYMS.test(word)) return word.toUpperCase();
+  if (KNOWN_LOWERCASE_PLURAL_ACRONYM.test(word)) return `${word.slice(0, -1).toUpperCase()}s`;
+  return undefined;
+};
 
 /**
  * Short function words a title keeps lower-case away from the opening position.
@@ -26,12 +40,8 @@ const TITLE_CASE_MINOR_WORD =
 const PHRASE_RESETTING_BOUNDARY = /[/()]/;
 
 const titleCaseSegment = (segment: string, isOpeningWord: boolean): string => {
-  if (SOURCE_ACRONYM.test(segment)) {
-    return segment;
-  }
-  if (KNOWN_LOWERCASE_ACRONYMS.test(segment)) {
-    return segment.toUpperCase();
-  }
+  const acronym = acronymCasing(segment);
+  if (acronym) return acronym;
   const lower = segment.toLowerCase();
   if (!isOpeningWord && TITLE_CASE_MINOR_WORD.test(lower)) {
     return lower;

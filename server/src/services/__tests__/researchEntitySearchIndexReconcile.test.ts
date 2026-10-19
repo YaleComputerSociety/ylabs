@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
+  compareResearchEntitySearchIndexToCode,
+  getResearchEntitySearchIndexSettings,
   reconcileResearchEntitySearchIndex,
+  researchEntitySearchEmbedderDrift,
+  researchEntitySearchIndexSettingsDrift,
 } from '../researchEntitySearchIndexService';
 
 const row = (hexSuffix: string, name: string) => ({
@@ -76,6 +81,8 @@ describe('reconcileResearchEntitySearchIndex', () => {
       indexedDocumentCountBefore: 3,
       unchangedDocumentCount: 1,
       upsertedDocumentCount: 2,
+      addedDocumentCount: 1,
+      updatedDocumentCount: 1,
       deletedDocumentCount: 1,
     });
     expect(
@@ -141,5 +148,100 @@ describe('reconcileResearchEntitySearchIndex', () => {
     await expect(run(index, [added], true)).rejects.toThrow(/would delete 3 of 3/);
     expect(index.added).toEqual([]);
     expect(index.deleted).toEqual([]);
+  });
+});
+
+describe('reconcile failure part-way', () => {
+  it('reports how much of the write landed when a batch fails', async () => {
+    const rows = ['011', '012', '013'].map((suffix) => row(suffix, `Synthetic Lab ${suffix}`));
+    const index = fakeIndex([]);
+    let calls = 0;
+    const failing = {
+      ...index,
+      addDocuments: async (docs: Record<string, any>[]) => {
+        calls += 1;
+        if (calls === 2) throw new Error('synthetic task failure');
+        return index.addDocuments(docs);
+      },
+    };
+
+    await expect(
+      reconcileResearchEntitySearchIndex({
+        apply: true,
+        pageSize: 1,
+        maxDeleteFraction: 0.5,
+        getIndex: async () => failing as any,
+        fetchPage: async (page) => (page === 1 ? rows : []),
+        fetchMemberNames: async () => new Map(),
+        warmVocabulary: async () => undefined,
+      }),
+    ).rejects.toThrow(/stopped part-way: the live index holds 1 of 3 upserts/);
+  });
+});
+
+const liveSettingsAsMeiliReturnsThem = () => {
+  const expected = getResearchEntitySearchIndexSettings();
+  return {
+    ...expected,
+    filterableAttributes: [...expected.filterableAttributes].sort().reverse(),
+    sortableAttributes: [...expected.sortableAttributes].sort(),
+    stopWords: [],
+    distinctAttribute: null,
+    faceting: { ...expected.faceting, sortFacetValuesBy: { '*': 'alpha' } },
+  };
+};
+
+describe('research entity search index drift', () => {
+  it('finds no drift when Meilisearch returns the same settings in its own order', () => {
+    expect(researchEntitySearchIndexSettingsDrift(liveSettingsAsMeiliReturnsThem())).toEqual([]);
+  });
+
+  it('names each setting that differs', () => {
+    const live = liveSettingsAsMeiliReturnsThem();
+    live.filterableAttributes = live.filterableAttributes.slice(1);
+    live.rankingRules = [...live.rankingRules].reverse();
+    live.pagination = { maxTotalHits: 1000 };
+    expect(researchEntitySearchIndexSettingsDrift(live)).toEqual([
+      'settings:rankingRules',
+      'settings:filterableAttributes',
+      'settings:pagination.maxTotalHits',
+    ]);
+  });
+
+  it('compares the embedder by source, model and template, never by the redacted key', () => {
+    const configured = buildResearchEntitySearchEmbedderConfig('XXX-redacted');
+    expect(researchEntitySearchEmbedderDrift(configured)).toEqual([]);
+    expect(researchEntitySearchEmbedderDrift({})).toEqual(['embedder:missing']);
+    expect(
+      researchEntitySearchEmbedderDrift({
+        default: { ...configured.default, documentTemplate: 'Name: {{doc.name}}' },
+      }),
+    ).toEqual(['embedder:documentTemplate']);
+  });
+
+  it('reports a missing live index without reading its settings', async () => {
+    const comparison = await compareResearchEntitySearchIndexToCode({
+      getClient: async () => ({
+        getRawIndex: async () => {
+          throw Object.assign(new Error('missing'), { code: 'index_not_found' });
+        },
+      }),
+      getIndex: async () => {
+        throw new Error('should not read a missing index');
+      },
+    });
+    expect(comparison).toMatchObject({ indexExists: false, drift: ['index:missing'] });
+  });
+
+  it('combines settings and embedder drift for a live index', async () => {
+    const comparison = await compareResearchEntitySearchIndexToCode({
+      getClient: async () => ({ getRawIndex: async () => ({}) }),
+      getIndex: async () =>
+        ({
+          getSettings: async () => liveSettingsAsMeiliReturnsThem(),
+          getEmbedders: async () => ({}),
+        }) as any,
+    });
+    expect(comparison).toMatchObject({ indexExists: true, drift: ['embedder:missing'] });
   });
 });

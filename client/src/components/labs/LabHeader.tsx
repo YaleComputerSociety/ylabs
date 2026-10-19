@@ -5,6 +5,7 @@
  * Pure presentational — takes a ResearchGroup, no fetching or context.
  */
 import { ResearchGroup } from '../../types/researchGroup';
+import { undergradInvitationFromEntity } from '../../utils/undergradInvitation';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { formatTopicChipLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
@@ -66,6 +67,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
   const showProfileResearchAreas =
     visibleProfileResearchAreas.length > 0 && group.researchAreaSource !== 'PI_PROFILE_FALLBACK';
   const kindLabel = entityKindLabel(group);
+  const invitation = undergradInvitationFromEntity(group);
   const websiteLinkLabel = researchWebsiteCtaLabel(group);
 
   return (
@@ -73,6 +75,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
       <div className="flex flex-wrap items-center gap-2">
         <span className="yr-pill yr-pill-blue">{kindLabel}</span>
         {group.school && <span className="yr-pill">{group.school}</span>}
+        {invitation && <span className="yr-pill yr-pill-green">{invitation.label}</span>}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

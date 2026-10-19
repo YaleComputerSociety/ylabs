@@ -14,6 +14,7 @@ import type { ResearchEntityType } from '../../models/researchAccessTypes';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { schoolNameFromProfileHosts } from '../orgUnitCanonicalization';
 
 const SOURCE_NAME = 'yale-research-official';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -34,6 +35,11 @@ export interface YaleResearchOfficialEntity {
   description?: string;
   researchAreas?: string[];
   sourceCategory: YaleResearchSourceCategory;
+}
+
+export interface YaleResearchRecordSchool {
+  school: string;
+  sourceUrl: string;
 }
 
 export interface YaleResearchDirectoryConfig {
@@ -263,6 +269,7 @@ export function entityToObservations(
   entity: YaleResearchOfficialEntity,
   sourceUrl: string,
   descriptionSourceUrl: string = sourceUrl,
+  recordSchool?: YaleResearchRecordSchool,
 ): ObservationInput[] {
   const base = {
     entityType: 'researchEntity' as const,
@@ -291,6 +298,14 @@ export function entityToObservations(
   }
   if (entity.researchAreas && entity.researchAreas.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: entity.researchAreas });
+  }
+  if (recordSchool) {
+    observations.push({
+      ...base,
+      sourceUrl: recordSchool.sourceUrl,
+      field: 'school',
+      value: recordSchool.school,
+    });
   }
 
   return observations;
@@ -370,9 +385,57 @@ const isResearchYaleRecordUrl = (value: string): boolean => {
   }
 };
 
-interface CitedDescription {
+const SCHOOL_ACRONYM_IN_OFFICIAL_NAME: ReadonlyArray<[RegExp, string]> = [
+  [/\bYSM\b/, 'School of Medicine'],
+  [/\bYSPH\b/, 'School of Public Health'],
+];
+
+/**
+ * A school's own acronym in the directory's official name ("YSM Biobank") is the
+ * directory stating which school runs the unit. Only acronyms no other Yale unit
+ * shares are read: "SEAS" is also the Council on Southeast Asia Studies.
+ */
+export function schoolNamedByOfficialName(name: string): string {
+  const match = SCHOOL_ACRONYM_IN_OFFICIAL_NAME.find(([pattern]) => pattern.test(name));
+  return match ? match[1] : '';
+}
+
+const RECORD_OWN_WEBSITE_LABEL = /^core\s+website$/i;
+
+/** The record page's own "Core website" button, which is where the unit itself lives. */
+export function recordOwnWebsiteUrl(html: string, recordUrl: string): string {
+  const $ = cheerio.load(html);
+  const button = $('a.btn[href]')
+    .filter((_i, el) => RECORD_OWN_WEBSITE_LABEL.test(cleanText($(el).text())))
+    .first();
+  return button.length > 0 ? absoluteUrl(button.attr('href'), recordUrl) : '';
+}
+
+/**
+ * The school the directory itself evidences for a unit: its official name carrying a
+ * school's acronym, or its record page's own website living on a school's host (a
+ * core whose site is under medicine.yale.edu is a School of Medicine core). A
+ * research.yale.edu record page states no host unit of its own, and a building or
+ * campus is not a school, so a unit with neither signal yields nothing rather than a
+ * guess.
+ */
+export function officialRecordSchool(
+  entity: Pick<YaleResearchOfficialEntity, 'name' | 'url'>,
+  directoryPageUrl: string,
+  recordHtml?: string,
+): YaleResearchRecordSchool | undefined {
+  const fromName = schoolNamedByOfficialName(entity.name);
+  if (fromName) return { school: fromName, sourceUrl: directoryPageUrl };
+  if (!recordHtml || !isResearchYaleRecordUrl(entity.url)) return undefined;
+  const ownWebsite = recordOwnWebsiteUrl(recordHtml, entity.url);
+  const fromHost = ownWebsite ? schoolNameFromProfileHosts([ownWebsite]) : null;
+  return fromHost ? { school: fromHost, sourceUrl: entity.url } : undefined;
+}
+
+interface RecordEvidence {
   description?: string;
   sourceUrl: string;
+  school?: YaleResearchRecordSchool;
 }
 
 /**
@@ -381,24 +444,32 @@ interface CitedDescription {
  * (#3500). The record page the card links is that entity's own page: its about prose,
  * or the card paragraph when the page carries it, is cited to it. Otherwise the
  * directory page the card was read from stays the citation and the bar judges it
- * (#4031).
+ * (#4031). The same read supplies the school the record page evidences.
  */
-async function citedRecordDescription(
+async function readRecordEvidence(
   entity: YaleResearchOfficialEntity,
   directoryPageUrl: string,
   fetchHtml: YaleResearchHtmlFetcher,
   ctx: ScraperContext,
-): Promise<CitedDescription> {
-  const fromDirectory = { description: entity.description, sourceUrl: directoryPageUrl };
-  if (!isResearchYaleRecordUrl(entity.url) && !entity.description) return fromDirectory;
+): Promise<RecordEvidence> {
+  const nameSchool = officialRecordSchool(entity, directoryPageUrl);
+  const fromDirectory = {
+    description: entity.description,
+    sourceUrl: directoryPageUrl,
+    ...(nameSchool ? { school: nameSchool } : {}),
+  };
+  const isRecordPage = isResearchYaleRecordUrl(entity.url);
+  if (!isRecordPage && !entity.description) return fromDirectory;
   try {
     const recordHtml = await fetchHtml(entity.url, ctx.options.useCache, SOURCE_NAME);
-    const about = isResearchYaleRecordUrl(entity.url) ? recordAboutProse(recordHtml) : '';
-    if (about) return { description: about, sourceUrl: entity.url };
+    const school = officialRecordSchool(entity, directoryPageUrl, recordHtml);
+    const withSchool = school ? { school } : {};
+    const about = isRecordPage ? recordAboutProse(recordHtml) : '';
+    if (about) return { description: about, sourceUrl: entity.url, ...withSchool };
     if (entity.description && pageHoldsText(recordHtml, entity.description)) {
-      return { description: entity.description, sourceUrl: entity.url };
+      return { description: entity.description, sourceUrl: entity.url, ...withSchool };
     }
-    return fromDirectory;
+    return { ...fromDirectory, ...withSchool };
   } catch (error) {
     ctx.log(
       `[${entity.slug}] record page unavailable, citing the directory: ${sanitizeLogValue(error)}`,
@@ -467,11 +538,12 @@ export class YaleResearchOfficialScraper implements IScraper {
         const remaining = limit - totalEntities;
         const selected = remaining < entities.length ? entities.slice(0, remaining) : entities;
         for (const entity of selected) {
-          const cited = await citedRecordDescription(entity, pageUrl, this.htmlFetcher, ctx);
+          const record = await readRecordEvidence(entity, pageUrl, this.htmlFetcher, ctx);
           const observations = entityToObservations(
-            { ...entity, description: cited.description },
+            { ...entity, description: record.description },
             pageUrl,
-            cited.sourceUrl,
+            record.sourceUrl,
+            record.school,
           );
           await ctx.emit(observations);
           totalObservations += observations.length;

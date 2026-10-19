@@ -30,6 +30,22 @@ test('dry run is the default and --apply is the only way to change anything', ()
   ]);
 });
 
+test('--full and --output pass through to reindex:meili', () => {
+  const parsed = parseReindexArgs(['production', '--apply', '--full', '--output', '/tmp/r.json']);
+  assert.equal(parsed.full, true);
+  assert.equal(parsed.output, '/tmp/r.json');
+  assert.deepEqual(reindexCommand(parsed).args, [
+    '--cwd',
+    'server',
+    'reindex:meili',
+    '--confirm',
+    '--full',
+    '--output',
+    '/tmp/r.json',
+  ]);
+  assert.throws(() => parseReindexArgs(['beta', '--output']), /--output requires a path/);
+});
+
 test('only beta and production are accepted, and dev is redirected rather than rejected blankly', () => {
   assert.equal(parseReindexArgs(['beta']).environment, 'beta');
   assert.equal(parseReindexArgs(['production']).environment, 'production');

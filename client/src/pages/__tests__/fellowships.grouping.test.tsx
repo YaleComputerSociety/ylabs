@@ -115,9 +115,15 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
 const renderFellowships = ({
   fellowships,
   quickFilter = null,
+  resultsRankedByRelevance = false,
+  resultsMissOneWord = false,
+  sortBy = 'default',
 }: {
   fellowships: Fellowship[];
   quickFilter?: FellowshipQuickFilter;
+  resultsRankedByRelevance?: boolean;
+  resultsMissOneWord?: boolean;
+  sortBy?: string;
 }) =>
   render(
     <MemoryRouter>
@@ -134,6 +140,9 @@ const renderFellowships = ({
             ...defaultFellowshipSearchContext,
             fellowships,
             quickFilter,
+            resultsRankedByRelevance,
+            resultsMissOneWord,
+            sortBy,
             setQueryString: vi.fn(),
             refreshFellowships: vi.fn(),
           }}
@@ -147,6 +156,72 @@ const renderFellowships = ({
 describe('Fellowships grouping', () => {
   afterEach(() => {
     cleanup();
+  });
+
+  const searchMatches = () => [
+    makeFellowship({
+      id: 'best-match',
+      title: 'Best Match Award',
+      programKind: 'FELLOWSHIP_FUNDING',
+      deadline: futureDate(60),
+    }),
+    makeFellowship({
+      id: 'weaker-match',
+      title: 'Weaker Match Award',
+      programKind: 'FELLOWSHIP_FUNDING',
+      deadline: futureDate(5),
+    }),
+    makeFellowship({
+      id: 'retained-match',
+      title: 'Retained Match Record',
+      studentFacingCategory: 'Archive / review',
+    }),
+  ];
+
+  const titlesIn = (regionName: string) =>
+    within(screen.getByRole('region', { name: regionName }))
+      .getAllByRole('article')
+      .map((card) => card.textContent);
+
+  it('lists search results in ranked order, ahead of an earlier deadline', () => {
+    renderFellowships({ fellowships: searchMatches(), resultsRankedByRelevance: true });
+
+    expect(titlesIn('Best matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
+    expect(titlesIn('Archive / review')).toEqual(['Retained Match Record']);
+    expect(screen.queryByRole('region', { name: 'Due in the next 2 weeks' })).toBeNull();
+  });
+
+  it('says no program carries every word and labels the partial matches', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsMissOneWord: true,
+    });
+
+    expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
+    expect(titlesIn('Close matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
+    expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
+  });
+
+  it('still says no program carries every word when the results are sorted by deadline', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsMissOneWord: true,
+      sortBy: 'deadline',
+    });
+
+    expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
+    expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
+  });
+
+  it('groups the same programs by deadline when they answer no search', () => {
+    renderFellowships({ fellowships: searchMatches() });
+
+    expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
+    expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
+    expect(titlesIn('Accepting applications')).toEqual(['Best Match Award']);
   });
 
   it('groups by application status, soonest action first', () => {
@@ -189,7 +264,7 @@ describe('Fellowships grouping', () => {
     });
 
     const regions = [
-      'Due in the next 30 days',
+      'Due in the next 2 weeks',
       'Accepting applications',
       'Opening soon',
       'Plan for the next cycle',

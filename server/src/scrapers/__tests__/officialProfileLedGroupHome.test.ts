@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  acronymLabNameExpansion,
   extractLeadHomepageResearchHomes,
   leadPersonalHomepageUrl,
+  leadPersonalSiteCandidateUrl,
+  pageBodyText,
   ledGroupNameFromLinkSentence,
   OfficialProfilePiBackfillScraper,
+  PERSONAL_SITE_ONLY_TARGET_FIELD,
+  personalSiteNamesItsLead,
+  profileLinkedHomeRefusal,
 } from '../sources/officialProfilePiBackfillScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -185,6 +191,337 @@ describe('leadPersonalHomepageUrl', () => {
         'Jane Quillfixture',
       ),
     ).toBe('');
+  });
+});
+
+const personalSiteUrl = 'https://www.janequillfixture.example/';
+const acronymLabUrl = 'https://www.janequillfixture.example/qmsr/index.html';
+
+describe('leadPersonalSiteCandidateUrl', () => {
+  it("returns a faculty research row's own website on any host", () => {
+    expect(
+      leadPersonalSiteCandidateUrl({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: `${personalSiteUrl}#about`,
+      }),
+    ).toBe(personalSiteUrl);
+  });
+
+  it('refuses a row that already carries its own name', () => {
+    expect(leadPersonalSiteCandidateUrl({ entityType: 'LAB', websiteUrl: personalSiteUrl })).toBe(
+      '',
+    );
+  });
+
+  it('returns the personal site this lane adopted a led group from', () => {
+    expect(
+      leadPersonalSiteCandidateUrl({
+        entityType: 'LAB',
+        websiteUrl: 'https://www.orcafixture.example/',
+        fieldProvenance: {
+          websiteUrl: { sourceName: 'official-profile-pi-backfill', sourceUrl: personalSiteUrl },
+        },
+      }),
+    ).toBe(personalSiteUrl);
+  });
+
+  it('refuses a profile this lane adopted a home from', () => {
+    expect(
+      leadPersonalSiteCandidateUrl({
+        entityType: 'LAB',
+        websiteUrl: 'https://www.orcafixture.example/',
+        leadUserProfileUrls: [profileUrl],
+        fieldProvenance: {
+          websiteUrl: { sourceName: 'official-profile-pi-backfill', sourceUrl: profileUrl },
+        },
+      }),
+    ).toBe('');
+  });
+
+  it("refuses an institution's person page and a directory", () => {
+    for (const websiteUrl of [
+      'https://medicine.yale.edu/profile/jane-quillfixture/',
+      'https://www.fixture-university.example/faculty/jane-quillfixture/',
+      'https://www.fixturelab.example/people/',
+      homepageUrl,
+    ]) {
+      expect(
+        leadPersonalSiteCandidateUrl({ entityType: 'FACULTY_RESEARCH_AREA', websiteUrl }),
+      ).toBe('');
+    }
+  });
+});
+
+describe('personalSiteNamesItsLead', () => {
+  it("accepts a page whose title or heading is the lead's name", () => {
+    expect(
+      personalSiteNamesItsLead(
+        '<html><head><title>Jane M. Quillfixture</title></head><body></body></html>',
+        'Jane Quillfixture',
+      ),
+    ).toBe(true);
+    expect(
+      personalSiteNamesItsLead(
+        '<html><head><title>Home</title></head><body><h1>Jane Quillfixture | Systems Researcher</h1></body></html>',
+        'Jane Quillfixture',
+      ),
+    ).toBe(true);
+  });
+
+  it("refuses a lab's, a colleague's and a department's page", () => {
+    for (const title of [
+      'Quillfixture Lab',
+      'Mara Otherfixture',
+      'Department of Fixture Science',
+      'Jane Quillfixture and Mara Otherfixture',
+    ]) {
+      expect(
+        personalSiteNamesItsLead(
+          `<html><head><title>${title}</title></head><body><h1>${title}</h1></body></html>`,
+          'Jane Quillfixture',
+        ),
+      ).toBe(false);
+    }
+  });
+});
+
+describe('acronymLabNameExpansion', () => {
+  it('finds the phrase an acronym lab name abbreviates', () => {
+    expect(
+      acronymLabNameExpansion(
+        'QMSR Lab',
+        'QMSR Lab Quillfixture Model Systems Research Lab · Yale University. The QMSR Lab studies.',
+      ),
+    ).toBe('Quillfixture Model Systems Research Lab');
+    expect(
+      acronymLabNameExpansion('QMSR Lab', 'The Quillfixture Lab for Model Systems Research'),
+    ).toBe('');
+  });
+
+  it('skips connectors and requires the head noun', () => {
+    expect(acronymLabNameExpansion('QSF Group', 'the Quillfixture Systems of Fixtures Group')).toBe(
+      'Quillfixture Systems of Fixtures Group',
+    );
+    expect(acronymLabNameExpansion('QMSR Lab', 'Quillfixture Model Systems Research')).toBe('');
+  });
+
+  it('finds the phrase on minified markup where adjacent blocks carry no whitespace', () => {
+    expect(
+      acronymLabNameExpansion(
+        'QMSR Lab',
+        pageBodyText(
+          '<body><h1>QMSR Lab</h1><p>Quillfixture Model Systems Research Lab</p></body>',
+        ),
+      ),
+    ).toBe('Quillfixture Model Systems Research Lab');
+    expect(
+      acronymLabNameExpansion(
+        'QMSR Lab',
+        pageBodyText(
+          '<body><ul><li>QMSR Lab</li><li>Quillfixture Model Systems Research Lab</li></ul></body>',
+        ),
+      ),
+    ).toBe('Quillfixture Model Systems Research Lab');
+  });
+});
+
+describe('profileLinkedHomeRefusal on an acronym lab', () => {
+  const entity = { slug: 'faculty-research-area-quillfixture-fixture' };
+  const home = {
+    name: 'QMSR Lab',
+    rawName: 'QMSR Lab',
+    url: acronymLabUrl,
+    kind: 'lab' as const,
+    entityType: 'LAB' as const,
+    score: 20,
+    leadershipEvidenced: true,
+  };
+
+  it("keeps the lead's own acronym lab whose expansion carries the lead's surname", () => {
+    expect(profileLinkedHomeRefusal(entity, home, 'Jane Quillfixture')).toBe(
+      'names-another-persons-lab',
+    );
+    expect(
+      profileLinkedHomeRefusal(
+        entity,
+        { ...home, acronymExpansion: 'Quillfixture Model Systems Research Lab' },
+        'Jane Quillfixture',
+      ),
+    ).toBeNull();
+  });
+
+  it('still refuses an acronym lab whose expansion names someone else', () => {
+    expect(
+      profileLinkedHomeRefusal(
+        entity,
+        { ...home, acronymExpansion: 'Quintfixture Model Systems Research Lab' },
+        'Jane Quillfixture',
+      ),
+    ).toBe('names-another-persons-lab');
+  });
+
+  it('refuses an acronym lab whose expansion shares only a topic word with the entity key', () => {
+    expect(
+      profileLinkedHomeRefusal(
+        { slug: 'faculty-research-area-quillfixture-quantum' },
+        { ...home, acronymExpansion: 'Quantum Model Systems Research Lab' },
+        'Jane Quillfixture',
+      ),
+    ).toBe('names-another-persons-lab');
+  });
+});
+
+const fixtureProfileHtml = `
+  <html><head>
+    <script type="application/ld+json">
+      {"@type": "ProfilePage", "mainEntity": {"@type": "Person",
+        "name": "Jane Quillfixture", "email": "jane.example@yale.edu",
+        "jobTitle": "Professor of Computer Science"}}
+    </script>
+  </head><body><main><h1>Jane Quillfixture</h1>
+    <p>Jane Quillfixture is a professor of computer science.</p>
+  </main></body></html>`;
+
+async function runResearchHomeStep(
+  pages: Record<string, string>,
+  entity: Record<string, any>,
+): Promise<{ emitted: ObservationInput[]; fetched: string[] }> {
+  vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+    select: vi.fn().mockReturnThis(),
+    lean: vi.fn().mockResolvedValue(null),
+  } as any);
+  const fetched: string[] = [];
+  const fetchHtml = vi.fn(async (url: string) => {
+    fetched.push(url);
+    return pages[url] ?? fixtureProfileHtml;
+  });
+  const emitted: ObservationInput[] = [];
+  const scraper = new OfficialProfilePiBackfillScraper(
+    fetchHtml,
+    vi.fn(async () => []),
+    vi.fn(async () => null),
+    vi.fn(async () => []),
+    vi.fn(async () => [entity]),
+  );
+  await scraper.run({
+    scrapeRunId: 'run-1',
+    sourceId: 'source-1',
+    sourceName: 'official-profile-pi-backfill',
+    sourceWeight: 0.95,
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+      only: ['profile-research-home-backfill'],
+    },
+    emit: vi.fn(async (obs: ObservationInput | ObservationInput[]) => {
+      emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+    }),
+    log: vi.fn(),
+  });
+  return { emitted, fetched };
+}
+
+const personalSiteEntity = {
+  _id: 'entity-personal-site',
+  name: 'Jane Quillfixture Faculty Research',
+  slug: 'faculty-research-area-personal-site-fixture',
+  entityType: 'FACULTY_RESEARCH_AREA',
+  websiteUrl: personalSiteUrl,
+  sourceUrls: [profileUrl],
+  leadUserProfileUrls: [profileUrl],
+  leadUsers: [{ fname: 'Jane', lname: 'Quillfixture', email: 'jane.example@yale.edu' }],
+};
+
+const emittedByField = (emitted: ObservationInput[]) =>
+  Object.fromEntries(emitted.map((obs) => [obs.field, obs]));
+
+describe('profile-research-home-backfill on a lead personal site', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adopts the group the lead's own site on any host says the lead leads", async () => {
+    const { emitted } = await runResearchHomeStep(
+      {
+        [personalSiteUrl]: homepageHtml(
+          '<p>I lead the <a href="https://www.orcafixture.example/">ORCA Lab</a> at Yale.</p>',
+        ),
+      },
+      personalSiteEntity,
+    );
+    const byField = emittedByField(emitted);
+    expect(byField.name).toMatchObject({ value: 'ORCA Lab', sourceUrl: personalSiteUrl });
+    expect(byField.websiteUrl).toMatchObject({ value: 'https://www.orcafixture.example/' });
+    expect(byField.entityType).toMatchObject({ value: 'LAB' });
+  });
+
+  it('adopts nothing from a site whose title names someone other than the lead', async () => {
+    const { emitted } = await runResearchHomeStep(
+      {
+        [personalSiteUrl]: `<html><head><title>Mara Otherfixture</title></head><body><h1>Mara Otherfixture</h1>
+          <main><p>I lead the <a href="https://www.orcafixture.example/">ORCA Lab</a> at Yale.</p></main></body></html>`,
+      },
+      personalSiteEntity,
+    );
+    expect(emittedByField(emitted).name).toBeUndefined();
+  });
+
+  it("adopts the lead's acronym lab once its own page spells the acronym out", async () => {
+    const { emitted, fetched } = await runResearchHomeStep(
+      {
+        [personalSiteUrl]: homepageHtml(
+          '<p>I also direct the <a href="/qmsr/index.html">QMSR Lab</a>, which builds datasets.</p>',
+        ),
+        [acronymLabUrl]: `<html><head><title>QMSR Lab</title></head><body><h1>QMSR Lab</h1>
+          <p>Quillfixture Model Systems Research Lab · Yale University</p></body></html>`,
+      },
+      personalSiteEntity,
+    );
+    expect(fetched).toContain(acronymLabUrl);
+    const byField = emittedByField(emitted);
+    expect(byField.name).toMatchObject({ value: 'QMSR Lab', sourceUrl: personalSiteUrl });
+    expect(byField.websiteUrl).toMatchObject({ value: acronymLabUrl });
+  });
+
+  it('reads only the personal site on a row selected for it alone', async () => {
+    const { emitted, fetched } = await runResearchHomeStep(
+      {
+        [profileUrl]: fixtureProfileHtml.replace(
+          '</main>',
+          '<p><a href="https://www.quillfixturelab.example/">Quillfixture Lab</a></p></main>',
+        ),
+        [personalSiteUrl]: homepageHtml('<p>Welcome to my page.</p>'),
+      },
+      { ...personalSiteEntity, [PERSONAL_SITE_ONLY_TARGET_FIELD]: true },
+    );
+    expect(fetched).toContain(personalSiteUrl);
+    expect(emittedByField(emitted).name).toBeUndefined();
+    expect(emittedByField(emitted).websiteUrl).toBeUndefined();
+  });
+  it('re-derives the adopted group from the same personal site on a second run', async () => {
+    const pages = {
+      [personalSiteUrl]: homepageHtml(
+        '<p>I lead the <a href="https://www.orcafixture.example/">ORCA Lab</a> at Yale.</p>',
+      ),
+    };
+    const first = emittedByField((await runResearchHomeStep(pages, personalSiteEntity)).emitted);
+    const adoptedEntity = {
+      ...personalSiteEntity,
+      name: first.name.value,
+      entityType: first.entityType.value,
+      websiteUrl: first.websiteUrl.value,
+      sourceUrls: first.sourceUrls.value,
+      fieldProvenance: {
+        websiteUrl: {
+          sourceName: 'official-profile-pi-backfill',
+          sourceUrl: first.websiteUrl.sourceUrl,
+        },
+      },
+    };
+    const second = emittedByField((await runResearchHomeStep(pages, adoptedEntity)).emitted);
+    expect(second.name).toMatchObject({ value: 'ORCA Lab', sourceUrl: personalSiteUrl });
+    expect(second.websiteUrl).toMatchObject({ value: 'https://www.orcafixture.example/' });
   });
 });
 
