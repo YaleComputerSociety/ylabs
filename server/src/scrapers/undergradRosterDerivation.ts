@@ -1,7 +1,9 @@
+import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   detectOfficialRosterTemplate,
   extractOfficialResearchHomeRoster,
+  listedPersonNames,
   undergraduateSectionCandidates,
   type DerivedRosterOutcome,
   type DerivedRosterRequest,
@@ -31,15 +33,17 @@ export type UndergradRosterProposalOutcome =
       roster: ExtractedOfficialRoster;
     }
   | { kind: 'no-undergraduate-section' }
+  | { kind: 'page-of-another-lab' }
+  | { kind: 'page-of-another-institution' }
   | { kind: 'no-listed-undergraduate'; rosterState: string };
 
 const NOT_A_ROSTER_LABEL =
   /\b(?:opportunit\w*|join\w*|prospective|apply\w*|interested|openings?|positions?|how to)\b/i;
 const PLURAL_ROSTER_LABEL =
-  /\b(?:students|researchers|assistants|associates|undergrads|undergraduates|members|scholars|interns|team|alumni|alumnae)\b/i;
+  /\b(?:people|students|researchers|assistants|associates|undergrads|undergraduates|members|scholars|interns|team|alumni|alumnae)\b/i;
 
 export function isProposableSectionLabel(label: string, template: string): boolean {
-  if (label.length > 60 || NOT_A_ROSTER_LABEL.test(label)) return false;
+  if (label.length > 80 || NOT_A_ROSTER_LABEL.test(label)) return false;
   return template !== 'heading-list' || PLURAL_ROSTER_LABEL.test(label);
 }
 
@@ -51,6 +55,112 @@ const isUndergraduateProgramPage = (url: string): boolean => {
   }
 };
 
+const PERSON_KEY_PREFIX =
+  /^(?:ysm-faculty|yse-faculty|bbs|dept-[a-z]+(?:-[a-z]+)*?|faculty-research-area|nih-pi)-(?=[a-z])/;
+
+const lettersOnly = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+
+const keyNameTokens = (researchEntityKey: string): string[] =>
+  PERSON_KEY_PREFIX.test(researchEntityKey)
+    ? researchEntityKey
+        .replace(PERSON_KEY_PREFIX, '')
+        .split('-')
+        .map(lettersOnly)
+        .filter((token) => token.length >= 2)
+    : [];
+
+const ownerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
+  nameTokens.some((token) => (token.length <= 3 ? owner === token : owner.includes(token)));
+
+const pageText = ($: cheerio.CheerioAPI): string => {
+  $('script, style, noscript').remove();
+  return $('body').text().replace(/\s+/g, ' ');
+};
+
+/**
+ * The lab a page names itself after: a single capitalized word before "Lab" or "Group" in
+ * its title or first heading, or the name its host is built on (ishizukalab.org). It counts
+ * only when the page also lists a person by that name, so "The Uplift Lab" names no one.
+ */
+function namedLabOwners($: cheerio.CheerioAPI, url: string, listedNames: string[]): string[] {
+  const people = listedNames.map((name) => name.split(/\s+/));
+  const surnames = new Set(people.map((tokens) => lettersOnly(tokens[tokens.length - 1])));
+  const fullNames = new Set(people.map((tokens) => lettersOnly(tokens.join(''))));
+  const owners: string[] = [];
+  const titles = `${$('title').first().text()} | ${$('h1').first().text()}`;
+  for (const match of titles.matchAll(
+    /\b(\p{Lu}\p{Ll}[\p{L}'’-]*)\s+(?:Lab|Laboratory|Group)\b/gu,
+  )) {
+    const owner = lettersOnly(match[1]);
+    if (owner && surnames.has(owner)) owners.push(owner);
+  }
+  try {
+    const parsed = new URL(url);
+    const hostOwner = /^(?:www\.)?([a-z-]+?)-?(?:lab|labs|group)(?:-yale)?\./.exec(
+      parsed.hostname,
+    )?.[1];
+    const pathOwner = /\/lab\/([a-z-]+)\//.exec(parsed.pathname)?.[1];
+    for (const candidate of [hostOwner, pathOwner]) {
+      const owner = lettersOnly(candidate ?? '');
+      if (owner && (surnames.has(owner) || fullNames.has(owner))) owners.push(owner);
+    }
+  } catch {
+    return owners;
+  }
+  return owners;
+}
+
+const OTHER_UNIVERSITY =
+  /\b(?:University of (?:the )?\p{Lu}[\p{L}-]*|\p{Lu}[\p{L}-]*\s+University|UPenn)\b/gu;
+
+/**
+ * A page off Yale's hosts that never names Yale and keeps naming one other university is
+ * that university's lab page (the PI's lab before or besides Yale), so its students are
+ * that university's students.
+ */
+function isAnotherInstitutionsPage(url: string, text: string): boolean {
+  try {
+    if (/(?:^|\.)yale\.edu$/i.test(new URL(url).hostname)) return false;
+  } catch {
+    return false;
+  }
+  if (/\bYale\b/i.test(text)) return false;
+  const counts = new Map<string, number>();
+  for (const match of text.matchAll(OTHER_UNIVERSITY)) {
+    counts.set(match[0], (counts.get(match[0]) ?? 0) + 1);
+  }
+  return [...counts.values()].some((count) => count >= 3);
+}
+
+/**
+ * Whether the page is some other lab's page: the key names a person, and the page is named
+ * after someone listed on it who is not that person, or it belongs to another institution.
+ */
+export function pageOwnershipRefusal(
+  html: string,
+  researchEntityKey: string,
+  url: string,
+): 'page-of-another-lab' | 'page-of-another-institution' | undefined {
+  const $ = cheerio.load(html);
+  const text = pageText($);
+  if (isAnotherInstitutionsPage(url, text)) return 'page-of-another-institution';
+  const nameTokens = keyNameTokens(researchEntityKey);
+  if (nameTokens.length === 0) return undefined;
+  const owners = namedLabOwners(
+    $,
+    url,
+    listedPersonNames(html, detectOfficialRosterTemplate(html)),
+  );
+  return owners.length > 0 && !owners.some((owner) => ownerIsKeyPerson(owner, nameTokens))
+    ? 'page-of-another-lab'
+    : undefined;
+}
+
 export function proposeUndergradRosterConfig(
   html: string,
   researchEntityKey: string,
@@ -58,6 +168,8 @@ export function proposeUndergradRosterConfig(
   observedAt: Date,
 ): UndergradRosterProposalOutcome {
   if (isUndergraduateProgramPage(url)) return { kind: 'no-undergraduate-section' };
+  const ownershipRefusal = pageOwnershipRefusal(html, researchEntityKey, url);
+  if (ownershipRefusal) return { kind: ownershipRefusal };
   const template = detectOfficialRosterTemplate(html);
   const candidates = undergraduateSectionCandidates(html, template).filter((candidate) =>
     isProposableSectionLabel(candidate.label, template),

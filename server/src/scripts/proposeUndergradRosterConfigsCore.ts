@@ -7,6 +7,7 @@ import type { UndergradRosterProposal } from '../scrapers/undergradRosterDerivat
 export {
   isProposableSectionLabel,
   labSitePageLinks,
+  pageOwnershipRefusal,
   proposeUndergradRosterConfig,
   type LabSitePageLinks,
   type UndergradRosterProposal,
