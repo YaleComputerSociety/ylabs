@@ -454,10 +454,47 @@ export async function loadDerivedRosterCandidates(): Promise<DerivedRosterCandid
 
 export const DERIVED_ROSTER_FETCH_DELAY_MS = 1000;
 
+export const DERIVED_ROSTER_CANDIDATES_IN_PARALLEL = 8;
+
+const pageHost = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
+export function perHostSpacedReader(
+  fetchPage: (url: string) => Promise<string>,
+  delayMs: number,
+): (url: string) => Promise<string> {
+  const hostTurns = new Map<string, Promise<void>>();
+  return async (url) => {
+    const host = pageHost(url);
+    const previous = hostTurns.get(host) ?? Promise.resolve();
+    let release: () => void = () => {};
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    hostTurns.set(
+      host,
+      previous.then(() => turn),
+    );
+    await previous;
+    try {
+      return await fetchPage(url);
+    } finally {
+      if (delayMs > 0) setTimeout(release, delayMs);
+      else release();
+    }
+  };
+}
+
 export function createUndergradRosterDeriver(
   loadCandidates: () => Promise<DerivedRosterCandidate[]> = loadDerivedRosterCandidates,
   fetchDelayMs = DERIVED_ROSTER_FETCH_DELAY_MS,
   ownerDeniedKeys: readonly string[] = OWNER_DENIED_ROSTER_KEYS,
+  candidatesInParallel = DERIVED_ROSTER_CANDIDATES_IN_PARALLEL,
 ): (request: DerivedRosterRequest) => Promise<DerivedRosterRun> {
   return async (request) => {
     const denied = new Set(ownerDeniedKeys);
@@ -473,11 +510,7 @@ export function createUndergradRosterDeriver(
         (c) => !request.staticKeys.has(c.researchEntityKey) && !denied.has(c.researchEntityKey),
       )
       .slice(0, request.limit || undefined);
-    const readPage = async (url: string): Promise<string> => {
-      const html = await request.fetchPage(url);
-      if (fetchDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, fetchDelayMs));
-      return html;
-    };
+    const readPage = perHostSpacedReader(request.fetchPage, fetchDelayMs);
     const outcomes: DerivedRosterOutcome[] = deniedCandidates
       .filter((candidate) => candidate.hasDerivedRoster)
       .map((candidate) => ({
@@ -486,11 +519,20 @@ export function createUndergradRosterDeriver(
         sourceUrl: candidate.websiteUrl,
         reason: 'owner-denied',
       }));
-    for (const candidate of candidates) {
-      outcomes.push(
-        await deriveUndergradRosterForCandidate(candidate, readPage, request.observedAt),
-      );
-    }
+    const derived: DerivedRosterOutcome[] = new Array(candidates.length);
+    let nextIndex = 0;
+    const worker = async () => {
+      for (let index = nextIndex++; index < candidates.length; index = nextIndex++) {
+        derived[index] = await deriveUndergradRosterForCandidate(
+          candidates[index],
+          readPage,
+          request.observedAt,
+        );
+      }
+    };
+    const workers = Math.max(1, Math.min(candidatesInParallel, candidates.length));
+    await Promise.all(Array.from({ length: workers }, worker));
+    outcomes.push(...derived);
     return { outcomes, staticOverridden, ownerDenied: deniedCandidates.length };
   };
 }
