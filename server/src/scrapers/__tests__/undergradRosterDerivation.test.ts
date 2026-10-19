@@ -4,6 +4,7 @@ import {
   deriveUndergradRosterForCandidate,
   derivedRosterPageBelongsToRow,
   derivedRosterWithheldReason,
+  perHostSpacedReader,
   sectionLabelCombinesGraduateLevels,
   sectionLabelMixesOtherGroups,
   DERIVED_ROSTER_MAX_UNDERGRADUATES,
@@ -467,5 +468,70 @@ describe('derived roster observations and serving (#5278)', () => {
     });
     process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] = 'true';
     expect(servableRosterSnapshot(stored)).toBeNull();
+  });
+});
+
+describe('perHostSpacedReader', () => {
+  const timedFetch =
+    (log: { url: string; start: number; end: number }[]) => async (url: string) => {
+      const start = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      log.push({ url, start, end: Date.now() });
+      return '';
+    };
+
+  it('spaces fetches to one host and runs different hosts at once', async () => {
+    const log: { url: string; start: number; end: number }[] = [];
+    const read = perHostSpacedReader(timedFetch(log), 40);
+    await Promise.all([
+      read('https://one.example.org/a'),
+      read('https://www.one.example.org/b'),
+      read('https://two.example.org/a'),
+    ]);
+    const at = (url: string) => log.find((entry) => entry.url === url)!;
+    expect(at('https://www.one.example.org/b').start).toBeGreaterThanOrEqual(
+      at('https://one.example.org/a').end + 35,
+    );
+    expect(at('https://two.example.org/a').start).toBeLessThan(at('https://one.example.org/a').end);
+  });
+
+  it('releases the host after a failed fetch', async () => {
+    const read = perHostSpacedReader(async (url) => {
+      if (url.endsWith('/bad')) throw new Error('down');
+      return 'ok';
+    }, 0);
+    await expect(read('https://one.example.org/bad')).rejects.toThrow('down');
+    await expect(read('https://one.example.org/good')).resolves.toBe('ok');
+  });
+});
+
+describe('createUndergradRosterDeriver in parallel', () => {
+  it('returns outcomes in candidate order whatever order the hosts finish in', async () => {
+    const keys = ['slow-lab', 'fast-lab', 'middle-lab'];
+    const delays: Record<string, number> = { slow: 30, fast: 0, middle: 10 };
+    const derive = createUndergradRosterDeriver(
+      async () =>
+        keys.map((key) =>
+          candidate({
+            researchEntityKey: key,
+            websiteUrl: `https://${key}.example.org/`,
+            citedUrls: [],
+          }),
+        ),
+      0,
+      [],
+      3,
+    );
+    const run = await derive({
+      staticKeys: new Set(),
+      observedAt,
+      fetchPage: async (url: string) => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, delays[new URL(url).hostname.split('-')[0]]),
+        );
+        throw new Error('not found');
+      },
+    } as never);
+    expect(run.outcomes.map((outcome) => outcome.researchEntityKey)).toEqual(keys);
   });
 });

@@ -12,7 +12,9 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import {
   centerAffiliationPageObservations,
   extractCenterAffiliationsFromPage,
+  readListedLabLead,
   type CenterAffiliationReadOutcome,
+  type ListedLabLead,
 } from '../utils/centerAffiliationPageExtractor';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import {
@@ -26,6 +28,7 @@ export { CENTER_AFFILIATION_ROSTER_SOURCE_NAME };
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const LISTED_AFFILIATION_ROLE = 'affiliated';
+const MAX_LISTED_LAB_PAGES = 12;
 
 export interface CenterAffiliationRosterTarget {
   slug: string;
@@ -132,16 +135,48 @@ export function centerAffiliationRosterSnapshotObservation(input: {
   };
 }
 
+function sameHost(left: string, right: string): boolean {
+  try {
+    return new URL(left).host.toLowerCase() === new URL(right).host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The listed labs whose own pages sit on the center's site, the only pages the lane
+ * follows to learn who heads a lab that no row's website serves.
+ */
+export function listedLabPages(page: {
+  url: string;
+  html: string;
+}): Array<{ url: string; name: string }> {
+  const { labs } = extractCenterAffiliationsFromPage({ html: page.html, pageUrl: page.url });
+  const pages = new Map<string, string>();
+  for (const lab of labs) {
+    if (lab.url && sameHost(lab.url, page.url) && !pages.has(lab.url)) pages.set(lab.url, lab.name);
+  }
+  return Array.from(pages, ([url, name]) => ({ url, name })).slice(0, MAX_LISTED_LAB_PAGES);
+}
+
 export function centerAffiliationRosterObservations(input: {
   centerEntityKey: string;
   page: { url: string; html: string };
   readAt: Date;
+  labLeads?: ReadonlyMap<string, ListedLabLead>;
 }): { outcome: CenterAffiliationReadOutcome; observations: ObservationInput[] } {
-  const read = extractCenterAffiliationsFromPage({
+  const extracted = extractCenterAffiliationsFromPage({
     html: input.page.html,
     pageUrl: input.page.url,
   });
-  if (read.outcome !== 'listed') return { outcome: read.outcome, observations: [] };
+  if (extracted.outcome !== 'listed') return { outcome: extracted.outcome, observations: [] };
+  const read = {
+    ...extracted,
+    labs: extracted.labs.map((lab) => {
+      const lead = lab.url ? input.labLeads?.get(lab.url) : undefined;
+      return lead ? { ...lab, lead } : lab;
+    }),
+  };
   const relationships = centerAffiliationPageObservations(read, {
     centerEntityKey: input.centerEntityKey,
     sourceUrl: input.page.url,
@@ -176,6 +211,30 @@ export class CenterAffiliationRosterScraper implements IScraper {
     this.findTargets = deps.findTargets ?? defaultFindTargets;
   }
 
+  async readListedLabLeads(
+    page: { url: string; html: string },
+    log: (message: string) => void,
+    slug: string,
+  ): Promise<Map<string, ListedLabLead>> {
+    const leads = new Map<string, ListedLabLead>();
+    for (const { url, name } of listedLabPages(page)) {
+      let labPage: { url: string; html: string };
+      try {
+        labPage = await this.fetchPage(url);
+      } catch (error) {
+        log(`[${slug}] listed lab page fetch failed: ${sanitizeLogValue(error)}`);
+        continue;
+      }
+      const lead = readListedLabLead({
+        html: labPage.html,
+        pageUrl: labPage.url,
+        labName: name,
+      });
+      if (lead) leads.set(url, lead);
+    }
+    return leads;
+  }
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const only = Array.from(
       new Set((ctx.options.only || []).map((value) => String(value).trim()).filter(Boolean)),
@@ -208,6 +267,7 @@ export class CenterAffiliationRosterScraper implements IScraper {
         centerEntityKey: target.slug,
         page,
         readAt: ctx.options.referenceDate ?? new Date(),
+        labLeads: await this.readListedLabLeads(page, ctx.log, target.slug),
       });
       tally[outcome] += 1;
       if (observations.length === 0) {

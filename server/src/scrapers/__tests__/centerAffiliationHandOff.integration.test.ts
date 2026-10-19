@@ -283,6 +283,37 @@ describe(
       expect(await liveEdges()).toEqual([fraSlug(DROPPED), fraSlug(KEPT)].sort());
     });
 
+    it('links a listed lab no row serves through the head its own page names', async () => {
+      const unservedLabUrl = 'https://lattice-fixture.example.edu/fixture-landing-page';
+      await llmLaneNames(KEPT);
+      const pages: Record<string, string> = {
+        [CENTER_URL]: `<html><body><main>
+          <div class="custom-card-collection"><h2 class="custom-card-collection__heading">Our labs</h2>
+          <ul><li class="custom-card"><h3 class="custom-card__heading">
+            <a class="custom-card__heading-link" href="${unservedLabUrl}">Fixture Lab</a></h3></li></ul></div>
+          </main></body></html>`,
+        [unservedLabUrl]: `<html><body><main><h2>${KEPT} Lab</h2>
+          <a href="https://medicine.example.yale.edu/profile/ada-fixture/">Fixture biography</a>
+          </main></body></html>`,
+      };
+      await runLane(
+        new CenterAffiliationRosterScraper({
+          fetchPage: async (url) => {
+            if (pages[url] === undefined) throw new Error('404');
+            return { url, html: pages[url] };
+          },
+          findTargets: async () => [
+            { slug: CENTER_SLUG, name: CENTER_NAME, websiteUrl: CENTER_URL },
+          ],
+        }),
+        'center-affiliation-roster',
+      );
+
+      expect(await liveEdges()).toEqual([fraSlug(KEPT)]);
+      expect(await edgeSourceUrl(fraSlug(KEPT))).toBe(CENTER_URL);
+      expect(await liveLlmRelationshipObservations()).toBe(0);
+    });
+
     it('ends its own affiliation only after two reads no longer list it', async () => {
       const unlinked = ['Cleo Fixture', 'Dov Fixture'];
       await codeLaneReads(faculty(KEPT, DROPPED, ...unlinked));

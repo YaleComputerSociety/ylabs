@@ -142,7 +142,28 @@ describe('buildProgramDeadlinesIcsCalendar', () => {
     expect(ics).not.toMatch(/[^\r]\n/);
   });
 
-  it('dates a stated-time deadline on its New York day and names the time', () => {
+  it('reminds a week and a day ahead of a date-only deadline at 9 AM', () => {
+    const ics = buildProgramDeadlinesIcsCalendar(
+      [
+        {
+          programId: 'p1',
+          title: 'Fixture Grant',
+          link: '',
+          date: new Date('2026-07-01T03:59:59.999Z'),
+        },
+      ],
+      NOW,
+    );
+
+    const lines = ics.split('\r\n');
+    expect(lines.filter((line) => line === 'BEGIN:VALARM')).toHaveLength(2);
+    expect(lines).toContain('TRIGGER:-P6DT15H');
+    expect(lines).toContain('TRIGGER:-PT15H');
+    expect(lines).toContain('ACTION:DISPLAY');
+    expect(lines.indexOf('END:VALARM')).toBeLessThan(lines.indexOf('END:VEVENT'));
+  });
+
+  it('emits a timed event at the stated deadline and names the time', () => {
     const ics = buildProgramDeadlinesIcsCalendar(
       [
         {
@@ -156,8 +177,11 @@ describe('buildProgramDeadlinesIcsCalendar', () => {
     );
 
     const lines = ics.split('\r\n');
-    expect(lines).toContain('DTSTART;VALUE=DATE:20270324');
-    expect(lines).toContain('DTEND;VALUE=DATE:20270325');
+    expect(lines).toContain('DTSTART:20270325T023000Z');
+    expect(lines.some((line) => line.startsWith('DTSTART;VALUE=DATE'))).toBe(false);
+    expect(lines.some((line) => line.startsWith('DTEND'))).toBe(false);
+    expect(lines).toContain('TRIGGER:-P7D');
+    expect(lines).toContain('TRIGGER:-P1D');
     expect(lines).toContain(
       'DESCRIPTION:Application deadline for Fixture Grant\\, due 10:30 PM ET.',
     );

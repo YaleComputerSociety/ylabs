@@ -888,14 +888,15 @@ export function facultyResearchNameFromUnassertedLabSuffix(entity: {
  * substitute available for that reason (#2913, #3132).
  *
  * `currentName` is the value being replaced, and the substitution declines when that
- * value carries the record's OWN key token. The refusal upstream only ever compares a
- * name against PERSON identity, so it cannot tell a graft from a record whose name is
- * genuinely its own: `ysm-neuropet` is typed LAB, is named for a programme, and cites
- * `medicine.yale.edu/lab/neuropet/`, so the type arm opened and the name read as naming
- * something else. That refusal was wrong before this substitution existed and merely
- * inert; wiring the substitution into the serve path made it overwrite a source-backed
- * name with its director's (#3132). A name sharing a token with the key is the record's
- * own designation, and it is the one piece of self-evidence available with no lead.
+ * value carries the lead's own name or is the designation the record's own key spells
+ * (`nameIsTheRecordsOwnKeyDesignation`): `ysm-neuropet` is typed LAB, is named for a
+ * programme, and cites
+ * `medicine.yale.edu/lab/neuropet/`, and overwriting that source-backed name with its
+ * director's was the #3132 regression. The refusal upstream now honours the same
+ * self-evidence, so this check is the backstop for a caller that reaches here without it.
+ * Sharing any one token with the key is not enough, because a key minted from a
+ * person's roster listing carries the listing's programme words, and declining on those
+ * left a degree programme's name on that person's record.
  */
 export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   leadPersonName: unknown;
@@ -912,7 +913,12 @@ export function personScopedResearchEntityNameFromLeadPersonName(entity: {
   });
   if (
     !currentNameIsABuilding &&
-    nameCarriesIdentityToken(entity.currentName, entityKeyPersonTokens(entity.slug))
+    (nameCarriesIdentityToken(entity.currentName, personIdentityTokens(entity.leadPersonName)) ||
+      nameIsTheRecordsOwnKeyDesignation({
+        name: entity.currentName,
+        slug: entity.slug,
+        leadPersonName: entity.leadPersonName,
+      }))
   ) {
     return '';
   }
@@ -1339,6 +1345,31 @@ export function entityKeyPersonTokens(entityKey: unknown): string[] {
   );
 }
 
+/**
+ * Whether a name is the designation the record's own key spells, for a key minted for an
+ * organization rather than for the record's lead: every distinctive token of the key is a
+ * word of the name, and none of them is a word of the lead's name.
+ *
+ * This is the self-evidence #3132 found on `ysm-neuropet`, a lab whose own index entry and
+ * site call it a programme. It is narrower than sharing a token with the key, because a
+ * key minted from a person's roster listing carries that listing's department words too,
+ * so a programme name sharing those words is still a graft onto the person's record.
+ */
+export function nameIsTheRecordsOwnKeyDesignation(args: {
+  name: unknown;
+  slug: unknown;
+  leadPersonName: unknown;
+}): boolean {
+  const keyTokens = entityKeyPersonTokens(args.slug).filter(
+    (token) => !UMBRELLA_ORGANIZATION_HEAD_RE.test(token),
+  );
+  if (keyTokens.length === 0) return false;
+  const leadTokens = new Set(personIdentityTokens(args.leadPersonName));
+  if (keyTokens.some((token) => leadTokens.has(token))) return false;
+  const nameWordSet = new Set(nameWords(args.name));
+  return keyTokens.every((token) => nameWordSet.has(token));
+}
+
 // A slug can glue the research-home head noun straight onto the surname with no
 // separator (`ysm-leveylab`), which leaves `entityKeyPersonTokens` nothing to split
 // on and hides the surname from the eponym check.
@@ -1762,6 +1793,29 @@ const citedUrlList = (value: unknown): unknown[] =>
     Array.isArray(entry) ? entry : [entry],
   );
 
+const OWN_LAB_SITE_PATH_RE = /\/labs?\/([a-z0-9-]+)\/?$/i;
+
+/**
+ * Whether the record cites a lab site of its own whose address spells its key, as
+ * `/lab/<key>/`. A topical key word shared with a parent centre's name ("cancer" on a
+ * cancer lab named "Yale Cancer Center") has no such site behind it, so the key alone
+ * does not make an umbrella name the record's own.
+ */
+function citesOwnLabSiteSpellingTheKey(recordCitedUrls: unknown, slug: unknown): boolean {
+  const keyTokens = new Set(entityKeyPersonTokens(slug));
+  return citedUrlList(recordCitedUrls).some((value) => {
+    let pathname: string;
+    try {
+      pathname = new URL(textValue(value)).pathname;
+    } catch {
+      return false;
+    }
+    const segment = OWN_LAB_SITE_PATH_RE.exec(pathname)?.[1] || '';
+    const segmentTokens = nameWords(segment.replace(/-/g, ' '));
+    return segmentTokens.length > 0 && segmentTokens.every((token) => keyTokens.has(token));
+  });
+}
+
 /**
  * The two citation shapes that identify the shared host itself: its root, and a
  * `~user` tenant page under it. A deep page on the same host
@@ -1884,6 +1938,13 @@ function personScopedNameIdentityPrelude(
     !(
       isPrincipalInvestigatorLedUnitName(name) &&
       organizationNameIsAmong(name, args.siteDeclaredOwnNames)
+    ) &&
+    !(
+      nameIsTheRecordsOwnKeyDesignation({
+        name,
+        slug: args.slug,
+        leadPersonName: args.personName,
+      }) && citesOwnLabSiteSpellingTheKey(args.recordCitedUrls, args.slug)
     )
   ) {
     return { settled: !nameNamesThisRecordsOwnPerson(name, identityTokens) };

@@ -3,6 +3,7 @@ import {
   findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
+  isRefusedResearchWebsitePageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
@@ -173,6 +174,7 @@ export function resolveResearchDetailActionLinkContext({
   const primaryWebsiteUrl =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isRefusedResearchWebsitePageUrl(group.websiteUrl, group.entityType) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth as never)
       ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth as never)
       : undefined;

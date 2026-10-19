@@ -156,6 +156,43 @@ describe('CenterDirectorScraper', () => {
     expect(await runOnce()).toEqual(await runOnce());
   });
 
+  it('also reads a page a director edge cites when it sits on the home own site', async () => {
+    const pages: Record<string, string> = {
+      'https://school.yale.edu/centers/widget-institute': '<p>Welcome to the institute.</p>',
+      'https://wix.yale.edu/people/staff': `
+        <div class="card"><h3>Quill Fenwick</h3><span>Director</span></div>`,
+      'https://school.yale.edu/about/message-dean': `
+        <div class="card"><h3>Orla Brightwater</h3><span>Director</span></div>`,
+    };
+    const fetched: string[] = [];
+    const scraper = new CenterDirectorScraper({
+      fetchPage: async (url) => {
+        fetched.push(url);
+        if (pages[url] === undefined) throw new Error('404');
+        return { url, html: pages[url] };
+      },
+    });
+    const read = await scraper.readCenter({
+      slug: 'center-widget-institute',
+      name: 'Widget Institute (WIX)',
+      websiteUrl: 'https://school.yale.edu/centers/widget-institute',
+      citedUrls: [
+        'https://wix.yale.edu/people/staff',
+        'https://school.yale.edu/about/message-dean',
+      ],
+    });
+
+    expect(fetched).toEqual([
+      'https://school.yale.edu/centers/widget-institute',
+      'https://wix.yale.edu/people/staff',
+    ]);
+    expect(read?.decision).toMatchObject({
+      outcome: 'named',
+      director: { name: 'Quill Fenwick', pageUrl: 'https://wix.yale.edu/people/staff' },
+    });
+    expect(read?.pagesRead).toHaveLength(2);
+  });
+
   it('honours limit and offset over the target list', async () => {
     const scraper = new CenterDirectorScraper({
       fetchPage: frozenFetch,

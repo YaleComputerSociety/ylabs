@@ -27,12 +27,17 @@ import {
   isCurriculumVitaeShapedBody,
   isTeachingOrPastTraineeSentence,
   isTeachingOrPastTraineeWorkBody,
+  isWorkforceDevelopmentPracticeSentence,
   opensOnTeachingAppointment,
   opensOnResearchHomeSubject,
   researchStatementSentences,
   splitDescriptionSentences,
+  withoutOrganizationFocusAppositive,
 } from '../utils/careerBiographyDescription';
-import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
+import {
+  isBiographyRatherThanResearch,
+  statesScholarlySubject,
+} from '../utils/biographyRatherThanResearch';
 import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike';
 import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizational';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
@@ -561,6 +566,12 @@ const DEGREE_FRAGMENT_CARD =
 const SITE_TAGLINE_CARD =
   /^(?:Official\s+(?:site|website|homepage|page)|Welcome\s+to|Home\s*page)\b/i;
 
+// The focus test reads an organization's focus, or a workforce the person develops, as
+// research because both carry a focus verb; neither states work a student could join.
+const describesThePersonsResearchFocus = (text: string): boolean =>
+  describesResearchFocus(withoutOrganizationFocusAppositive(text)) &&
+  !isWorkforceDevelopmentPracticeSentence(text);
+
 // A card speaks for the research only when it states the research itself. A citation,
 // a degree line, a site tagline or a career record in the card slot reads as research
 // to the focus test because it names topics, but it tells a student nothing the
@@ -569,7 +580,7 @@ function cardStatesResearchItself(card: unknown): boolean {
   const text = textValue(card);
   return (
     Boolean(text) &&
-    describesResearchFocus(text) &&
+    describesThePersonsResearchFocus(text) &&
     !isCurriculumVitaeRecordSentence(text) &&
     !CITATION_LIKE_CARD.test(text) &&
     !DEGREE_FRAGMENT_CARD.test(text) &&
@@ -582,7 +593,7 @@ function cardStatesResearchItself(card: unknown): boolean {
 // A body sentence that names research topics counts as research unless it is itself a
 // career record or a citation, which name topics as titles rather than state work.
 const isResearchFocusSentenceOutsideTheRecord = (sentence: string): boolean =>
-  describesResearchFocus(sentence) &&
+  (describesThePersonsResearchFocus(sentence) || statesScholarlySubject(sentence)) &&
   !isCurriculumVitaeRecordSentence(sentence) &&
   !isTeachingOrPastTraineeSentence(sentence) &&
   !CITATION_LIKE_CARD.test(sentence);
@@ -693,14 +704,16 @@ export function servedBodyIsCareerBiographyWithoutResearch(
 }
 
 const statesResearchFocus = (sentence: string): boolean =>
-  describesResearchFocus(sentence) && !isTeachingOrPastTraineeSentence(sentence);
+  (describesThePersonsResearchFocus(sentence) || statesScholarlySubject(sentence)) &&
+  !isTeachingOrPastTraineeSentence(sentence);
 
 // The focus test reads a service or appointment sentence as research because it names
 // fields ("Associate Editor at the Review of ..."). Reading the sentence with the
 // biography detector itself drops those and keeps every research sentence measured on
 // the Development cohort (#4928).
 const statesResearchFocusRatherThanCareer = (sentence: string): boolean =>
-  statesResearchFocus(sentence) && !isBiographyRatherThanResearch(sentence);
+  statesResearchFocus(sentence) &&
+  (statesScholarlySubject(sentence) || !isBiographyRatherThanResearch(sentence));
 
 function servedBodyStatesNoResearch(
   representation: ResearchEntityPublicDescriptionRepresentation,

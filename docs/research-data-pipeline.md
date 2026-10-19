@@ -225,7 +225,7 @@ The two exhaustive Development modes (`development-full`, `development-increment
    The promotion's site-title name is also derivation evidence on every resolve: the materializer re-derives a faculty research or lab row as `LAB` under the name its own current website states (`lab-site-type-probe` name observations whose `sourceUrl` is the row's `websiteUrl`), with no lock, because two rosters asserting the default type and placeholder name otherwise outvote the one site observation, and that name is never treated as an unbacked composed full-name lab, either there or at the serve gate, which reads the name and type provenance the derivation keeps on the site observations (#5059). A refused site-title name, or a refused `LAB` type, is not evidence for it. The 2026-10-16 apply measured it: 3 of 14 promotions reverted on the next resolve without it.
 6. `url-identity-dedupe` (on by default in Dev sweeps; disable with `SCRAPER_SWEEP_MERGE_URL_IDENTITY_DUPLICATES=0`)
 7. `website-url-identity-dedupe` (the same lane family keyed on the whole normalized `websiteUrl` rather than a Yale `/lab/` or `/profile/` path; gated by the same flag)
-8. `shared-person-name-agreed-dedupe` (`research-entity:dedupe-by-pi --shared-person-id --require-name-agreement`; the same lane family keyed on the lead person, limited to rows that agree on `entityType` and on name, so a lab listed under two addresses merges; gated by the same flag, #4651)
+8. `shared-person-name-agreed-dedupe` (`research-entity:dedupe-by-pi --shared-person-id --require-name-agreement`; the same lane family keyed on the lead person, limited to rows that agree on `entityType` (a faculty research row named as a lab counts as a `LAB`) and on name, so a lab listed under two addresses merges; gated by the same flag, #4651)
 9. `source-link-health` (`research-homes:backfill-source-link-health --apply --reprobe-healthy-after-days=7`; ordered before the gate because the gate reads `sourceLinkHealth`; `--full-link-health-reprobe` on the sweep drops the window and probes every URL)
 10. `profile-link-health` (`researchers:verify-official-profile-links --apply --stale-after-days=<window>`; the sibling of `source-link-health` for a lead's `YALE_OFFICIAL` profile link, #3222)
 11. `dead-research-website-clear` (`research-entity:clear-dead-research-websites --apply`; ordered after both link-health probes because it consumes their verdicts, #3309; each clear records a `dead_link_health_verdict` value refusal in the same write so the next resolve cannot re-derive the dead value from the observation that still asserts it, the link-health lane keeps probing a refused page, and the stage withdraws the refusal once that page reads `HEALTHY`, #3722)
@@ -1139,6 +1139,11 @@ The refusal is `patient-care-page`, a write-blocking arm of `researchHomeWebsite
 The website backfill's promote and unservable arms and the detail payload consult the same predicate, and so do the harvest-side screens: the shared name authority, the roster lane's lab-link extractor and entry boundary, the official-profile lane's research-home screen, and the lab-site search's clinical-directory filter.
 An organization row keeps its own clinic page, the scope the umbrella-page rule uses.
 It is a stored-data fix: the data operation is `research-entity:rematerialize` scoped to the rows whose stored `websiteUrl` matches, a re-gate of any row whose tier changes, a re-read through the detail route, and a Development search sync.
+The legacy `website` field and a lead's member website follow it too (#5376).
+The materializer declines and clears a `website` in `isWithheldResearchWebsiteUrl`, the set the detail payload withholds, and leaves a profile page there, which the detail page reads as the lead's official profile link.
+The user materializer ignores and clears a member website that `isInadmissiblePersonWebsiteUrl` refuses (a course, posting or patient-care page), and the roster accessor and member serializers never serve one.
+The client refuses the same pages as the website button and the headline actions, pinned to the server by `contracts/inadmissibleWebsitePages.cases.json`.
+That data operation is `research-entity:rematerialize` over the rows storing a withheld `website`, then user materialization of every `user` key that joins a researcher storing a refused member website.
 
 ### Fellowship field absence: how a program lane withdraws a value (#4230)
 
@@ -1584,6 +1589,14 @@ A director counts only from a title label beside exactly one name, or from a str
 Two people at the best rank (a director or faculty director, then a co-director, then a functional head such as an executive, technical or managing director) refuse the read rather than pick one, with one exception the owner decided on 2026-10-19: where the people at the top rank are directors and exactly one of them is a faculty director, the faculty director is the director, and two faculty directors still refuse.
 It emits the same `inferredDirector*` observations, and `materializeInferredDirectorMembership` reads only this lane's director observations wherever it states one, because the fields supersede per field and mixing two lanes would pair one person's name with another's profile URL.
 A director stated only in prose is counted but not stored, because no observation field holds unsettled page text yet.
+A unit that is itself a council or committee is also headed by a chair its page names with no qualifier ("Chair", "Co-Chair", "Council Chair"); on any other unit a bare chair, a department chair or the chair of some other committee never counts.
+A heading that links a person's name to their lab's site opens that person's own card, not a related unit's teaser, when the card names nobody else, and a surname that is also a name particle ("De") is still a surname, so a title is never attached to the card beside it.
+
+The lane also reads the pages the home's director-lane lead edges cite, current or ended, when the page sits on the home's own site: inside the home's subtree on the same host, or on a Yale host whose name or acronym names the home ("yibs.yale.edu" for an institute that states the acronym).
+A model-lane edge's citation is often a people or staff page this lane's own discovery never reaches, behind a fifth link or under another path, and a hand-off that never read it ended an edge the cited page still states.
+Reading the citation keeps the decision on evidence, while keeping an unread edge would also keep every edge whose cited page is a dean's message, another program's page or a stale profile, which a frozen-page judgement found were correct to end.
+A cited page off the home's own site is not read, for the same reason discovery stays inside the subtree, and a cited page that does not fetch adds nothing.
+The materializer resolves the named director with the person-name resolver's anchored surname pattern and its candidate limit, and writes the edge to the researcher it resolved, so a formal or short first name the nickname table pairs (`Harold` and `Harry`) or a middle name joins that researcher rather than minting a namesake.
 
 Each read that fetched a page records a `centerRosterHealth` snapshot listing every person the pages state as a director at any rank, including the people a tie refused, and `settledDirector`, the one it named or null.
 A failed fetch records nothing, and a `--use-cache` read is never admitted.
@@ -1601,15 +1614,25 @@ Under the owner's faculty-director rule 40 of the LLM lane's 80 values named the
 The faculty-director rule settled 13 homes the code lane had refused, every one checked against its page.
 The LLM lane's 24 unsupported values were people named on a different unit's page reached through shared navigation, a name the cited page does not carry, a retired or functional director, a mailing "Attn:" line, a related core's contact card, and a page heading stored as a name.
 
+A read-only audit after the hand-off on 2026-10-19 judged the 17 lead edges it ended: 10 were correct to end and 7 were not.
+Re-reading the frozen pages with the fixes above recovers the lead on 4 of the 7, two councils whose chair sits on a cited people page, an institute whose cited staff page states its director, and a core whose director the page names by a formal first name; none of the 10 correct endings comes back.
+The other 3 are cores where the page states a staff or technical director beside the faculty director the lane keeps; the role vocabulary has no non-lead director role, and `CO_DIRECTOR` is a lead, so that second director is not written.
+Of the 53 homes where the lane named a director, 14 had no current lead edge: 6 now resolve (4 short surnames the unanchored pattern overflowed, 2 name variants), and 8 name a person no live researcher answers to.
+Over the 135 homes of the frozen director set, the only other change is a council where the lane had attached the chair's title to the next card's person; it now names the chair.
+
 ### Center affiliation, read with code (#5296)
 
 `center-affiliation-roster` replaced `center-affiliation-llm` in the research sweep by owner decision on 2026-10-19, and `center-affiliation-llm` is manual-only.
 It reads each organizational home's own `websiteUrl` once with `extractCenterAffiliationsFromPage` in `scrapers/utils/centerAffiliationPageExtractor.ts`, which lists people and labs only from page structure: people grids, directory, reference and lab cards, core contact listings, surname-first profile directories, profile links that open their own block, and lists, labelled lines or short "Name, Director" lines under a membership heading.
 A heading scopes only the container it opens, so a callout heading such as a gift appeal does not suppress the sidebar card beside it.
 News, publications, related offerings, donor, student, staff and advisory sections, dated cards and author bylines are left out, and an administrative title is refused.
+An advisory committee or scientific advisory board seat is not membership of the center (owner decision, 2026-10-19), so those sections stay out.
+Three further shapes are read as listings on a core's own page: a paragraph that lists one linked person per line ("<a>Name, PhD,</a> title"), a one-sentence contact line whose email names the person ("For scheduling, contact <a href="mailto:…">Name</a>"), and a history that says a person founded the unit and still directs it.
+A contact named inside a longer passage, such as the contact for a service that moved to another core, a related offering's card, a publication citation and a named collaborator are not.
 A name stated only in running prose is counted as a `prose-mention` rather than asserted, a name linked to two profiles or a profile shared by two names is refused, and a profile link whose path names somebody else is refused.
 It emits the same `researchEntityRelationship` observations as the LLM lane, keyed `<center>:faculty-research-area-<name>:MEMBER_RESEARCH_AREA`, with the listed profile as `targetWebsiteUrl`, so a person resolves through the existing name arms or the listed-site arm.
 A lab card is keyed `listed-lab-<slug>` and carries the card's link; `rowServingListedLabWebsite` resolves it only to the one live row serving that site that is not itself an organization, and two rows at the site, an organization row or a card with no link resolve to nothing.
+A card whose site no row serves resolves through its head instead: the lane follows the card's link when it sits on the center's own host, and `readListedLabLead` takes the person only when a heading names "<Full Name> Lab" with the card's surname and a Yale profile link on that page names the same person, then emits that name as `targetLeadName`, which `rowLedByListedLabLead` resolves through the same name arm a listed person takes.
 Wherever this lane observes a relationship, `preferredRelationshipObservations` lets its observations alone decide the stored target, site and citation.
 
 A read emits a `centerRosterHealth` snapshot only when it lists someone (`listed`); a failed fetch, a prose-only page and an empty page emit nothing, so none of them can retire a claim or hand one off.
@@ -1634,6 +1657,9 @@ Measured on 2026-10-19 over a uniform sample of 40 of the 150 centers with live 
 
 The LLM lane copied surname-first directory names into its keys (45 of the 100 sampled, and none of one directory center's 252 claims resolves), named paper authors, related-offering contacts, news subjects and donors (12), named people the current page does not state (10), and stored title text or credentials as names.
 The code lane found 61 of the 75 sampled LLM claims judged correct; its misses were membership stated only in prose or captions, advisory boards it leaves out by design, contact lists with no membership heading, and labs linked inside paragraphs.
+
+A read-only audit after the hand-off on 2026-10-19 judged the 49 affiliations it archived: 27 were advisory seats, 14 were people the page names only in a related offering, a citation or as a collaborator, and 8 were real unit people.
+Re-reading the frozen pages with the three listing shapes and the lab-head arm reaches all 8 again and none of the other 41; across the 58 frozen page reads no earlier listing is lost, and the 2 new listings that are not among the 8 resolve to no row.
 
 ### Center roster retirement: members a complete read no longer lists
 
@@ -2231,8 +2257,11 @@ A failed fetch, a cache-permitted run, a refused page, a page whose subject did 
 An edge whose person and role another source asserts is protected, and the ceiling moves to the lane: a pass that would end more than one edge and more than half of those it judged is frozen, which is how a parser that stopped matching shows, while a single retirement is never frozen.
 The retirement writes no field and no lock, and an ended edge leaves the row lead-less, so the next run re-reads it and re-claims the director if the profile states the role again.
 Measured on Development on 2026-10-18: 1 live edge this mode recorded, on the 1 row above.
-The same guard keeps the gate's same-lead dedupe from calling a person's own faculty research row a duplicate of an organization-named initiative or core facility the person directs, which is what would otherwise suppress that row once the director edge exists.
+The same guard keeps the gate's same-lead dedupe from calling a person's own faculty research row a duplicate of an organization-named initiative or a core facility the person directs, which is what would otherwise suppress that row once the director edge exists.
 Measured on Development on 2026-10-17 with a full gate dry run, widening it released 6 faculty research rows held only by that `duplicate_risk`, each led by someone who directs or co-directs a named core facility or initiative, and dropped `duplicate_risk` from 1 row that stays held for other reasons; a person-named row typed `INITIATIVE` still folds as before.
+A core facility is now an organization by type alone, like a centre or institute, because many cores are named for their service only ("Rapid Case Ascertainment") and the name test let the director's own research row read as the core's duplicate; an initiative keeps the name test (#5390).
+In the gate's name-only duplicate grouping, a row its PI leads always outranks a lead-less row of the same name for canonical, because the lead-less row (typically a lab member's profile row carrying the host lab's card) cannot serve, and picking it held the only servable card as its duplicate (#5390).
+The profile-area shell grouping applies the same rank and never marks a PI-led shell a duplicate of a home nobody leads (#5390).
 
 `dept-faculty-roster` adopts the first profile link whose label, host, or path carries a website word, and three shapes of that word say nothing about the destination (#5050).
 A lab word in the path counts only as a whole segment or as the last word of a segment slug, so a paper whose title slug opens with "Laboratory ..." or an umbrella center whose slug opens with `lab-` is not a website.

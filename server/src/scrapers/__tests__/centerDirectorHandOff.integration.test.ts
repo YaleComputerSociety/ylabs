@@ -234,6 +234,78 @@ describe('center-director takes over from center-director-llm (#5296)', { timeou
     expect(await currentLeads()).toEqual([]);
   });
 
+  it('resolves a director the page names by a formal first name to the short-form researcher', async () => {
+    await Researcher.create({
+      displayName: 'Harry Tindale',
+      profile: { title: 'Professor of Synthetic Studies' },
+    });
+    await codeLaneReads(directorCard('Harold Tindale'));
+    expect(await currentLeads()).toEqual(['Harry Tindale|center-director']);
+  });
+
+  it('resolves a short surname that many longer names contain', async () => {
+    await Researcher.create([
+      ...Array.from({ length: 45 }, (_, index) => ({
+        displayName: `Rowan Linfield${String.fromCharCode(97 + (index % 26))}${index}`,
+        profile: { title: 'Professor of Synthetic Studies' },
+      })),
+      { displayName: 'Juno Lin', profile: { title: 'Professor of Synthetic Studies' } },
+    ]);
+    await codeLaneReads(directorCard('Juno Lin'));
+    expect(await currentLeads()).toEqual(['Juno Lin|center-director']);
+  });
+
+  it('reads the own-site page an LLM edge cites, so the hand-off keeps the person it states', async () => {
+    const staffUrl = `${CENTER_URL}people/staff`;
+    await afterAMoment();
+    const llmRunId = new mongoose.Types.ObjectId();
+    await ScrapeRun.create({
+      _id: llmRunId,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'center-director-llm',
+      status: 'running',
+    });
+    const [fname, lname] = FIRST.split(' ');
+    await appendObservations(
+      [
+        ['inferredDirectorName', FIRST],
+        ['inferredDirectorUserName', { fname, lname }],
+        ['inferredDirectorRole', 'director'],
+      ].map(([field, value]) => ({
+        entityType: 'researchEntity' as const,
+        entityKey: CENTER_SLUG,
+        field: field as string,
+        value,
+        sourceUrl: staffUrl,
+      })),
+      {
+        scrapeRunId: String(llmRunId),
+        sourceId: String(new mongoose.Types.ObjectId()),
+        sourceName: 'center-director-llm',
+        sourceWeight: 0.6,
+        dryRun: false,
+      },
+    );
+    await materializeFromRun(String(llmRunId));
+    expect(await currentLeads()).toEqual([`${FIRST}|center-director-llm`]);
+
+    const pages: Record<string, string> = {
+      [CENTER_URL]: '<html><body><p>The fixture center studies widgets.</p></body></html>',
+      [staffUrl]: `<html><body>${directorCard(FIRST)}</body></html>`,
+    };
+    await runLane(
+      new CenterDirectorScraper({
+        fetchPage: async (url) => {
+          if (pages[url] === undefined) throw new Error('404');
+          return { url, html: pages[url] };
+        },
+      }),
+      'center-director',
+    );
+
+    expect(await currentLeads()).toEqual([`${FIRST}|center-director`]);
+  });
+
   it('prefers a faculty director over a director on the same page', async () => {
     await codeLaneReads(directorCard(FIRST) + directorCard(SECOND, 'Faculty Director'));
     expect(await currentLeads()).toEqual([`${SECOND}|center-director`]);

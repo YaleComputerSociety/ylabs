@@ -63,8 +63,10 @@ export type RosterBioDepartmentResolver = (
 ) => RosterBioDepartment | null;
 
 // The owner's hosting rule (2026-10-04/05) names ranks `ownsNoResearchEntityByTitle` does not read.
+// A lector is a language-teaching appointment; a stated research interest on the profile
+// does not make it a research home a student can join (owner decision, #5386).
 const NON_HOSTING_RANK =
-  /\bstaff affiliate\b|\bclinical fellow\b|\bhospital resident\b|\bresident\b|\bpostgraduate associate\b|\bpostdoc|\bpost-doctoral\b|\bresearch (?:associate|assistant)\b(?!\s+professor)|\bvisiting\b|\bstudent\b|\bcandidate\b/i;
+  /\blector\b|\bstaff affiliate\b|\bclinical fellow\b|\bhospital resident\b|\bresident\b|\bpostgraduate associate\b|\bpostdoc|\bpost-doctoral\b|\bresearch (?:associate|assistant)\b(?!\s+professor)|\bvisiting\b|\bstudent\b|\bcandidate\b/i;
 
 const RESEARCH_TRACK_RANK =
   /\bresearch\s+(?:scholar|scientist)\b|\bresearch\s+(?:(?:assistant|associate)\s+)?professor\b/i;

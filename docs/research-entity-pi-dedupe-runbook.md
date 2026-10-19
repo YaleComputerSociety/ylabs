@@ -249,6 +249,8 @@ Both URL stages need the two rows to share an address, so one lab listed by a sc
 A lab named for its lead takes an eponymous key instead: when the words before its first kind noun, or its whole strict name key, are the lead's surname, optionally preceded by the lead's given names or initials, it agrees with every other such name of that type under that lead whatever follows the kind noun, because a description lane copies a lab site's title and its tagline ("<SURNAME> LAB <tagline> @ Yale") left one lab serving twice beside "<Surname> Lab" (#5308).
 Every name whose strict key is the lead's name takes the eponymous key too, so a bare surname or a "<Surname> Research Group" row still agrees with "<Surname> Lab" as it did under the strict key.
 A topic word in the head keeps the strict key, and a row that more than one person record leads stays out of the lane.
+A faculty research row whose name is a lab name ("<Surname> Lab") counts as a `LAB` for the type half of the key, because one department roster mints the person a faculty research row and another school's lab index mints the lab under the same name; in such a mixed group the `LAB` row stays canonical regardless of which roster holds the lead's primary appointment (#5390).
+A faculty research row named any other way ("<Name> Research") keeps its own type and never joins a lab here.
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
 

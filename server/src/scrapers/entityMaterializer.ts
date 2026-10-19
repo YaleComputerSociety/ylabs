@@ -148,7 +148,10 @@ import {
   type MergedInResearchEntityRow,
   type ResearchEntityTombstoneNode,
 } from '../services/researchEntityCanonicalTombstone';
-import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
+import {
+  facultyResearchAreaSlugForPersonName,
+  isLowTrustAreaShellSlug,
+} from '../utils/researchEntityShellSlug';
 import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import {
   deriveCanonicalKeys,
@@ -163,6 +166,7 @@ import {
 } from '../scripts/researchEntityPiDedupeCore';
 import {
   isListedLabTargetKey,
+  RELATIONSHIP_TARGET_LEAD_NAME_FIELD,
   RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
   relationshipTargetIdentities,
   type RelationshipTargetIdentity,
@@ -218,7 +222,10 @@ import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
 } from './directoryGraftCitations';
-import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
+import {
+  planRefusedStoredWebsiteUrlClear,
+  planWithheldLegacyWebsiteClear,
+} from './refusedStoredWebsiteUrl';
 import {
   isDroppedLoserWebsite,
   planSurvivorOwnedWebsiteClear,
@@ -321,6 +328,7 @@ import { evidenceAssertsALab } from './utils/labClaimEvidence';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { sanitizePersonGivenName, sanitizePersonName } from '../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
+import { SURNAME_FETCH_LIMIT, surnameFetchRegex } from './utils/piNameMatch';
 import {
   parseRosterMemberIdentityEvidence,
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
@@ -333,12 +341,14 @@ import {
   isCoursePageUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
+  isInadmissiblePersonWebsiteUrl,
   isInstitutionalAdvancementUrl,
   isMapOrDirectionsUrl,
   isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
   isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
+  isWithheldResearchWebsiteUrl,
   withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -394,8 +404,13 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
+import {
+  embeddedNetidContradictsCandidate,
+  netidsEmbeddedInUserEvidence,
+} from './utils/embeddedNetidContradiction';
 import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
+import { reconcileRosterMintWithdrawalsFromRun } from './rosterMintWithdrawal';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterAffiliationHandOffFromRun } from './centerAffiliationHandOff';
 import {
@@ -1866,7 +1881,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     entityType === 'user' &&
     (observation.field === 'website' || observation.field === 'websiteUrl') &&
-    isCoursePageUrl(observation.value)
+    isInadmissiblePersonWebsiteUrl(observation.value)
   ) {
     return true;
   }
@@ -3079,29 +3094,33 @@ async function listingWouldMintANamesake(
   return identifiedResearcherHoldsDisplayName(plan.facts.displayName);
 }
 
-const DIRECTOR_NAME_CANDIDATE_LIMIT = 40;
-
 /**
  * A named director is only resolvable by name when exactly one live researcher
  * answers to that name. Two or more is a namesake collision, which is the defect
  * class that puts one person's work on another person's page, so an ambiguous
  * name resolves to nobody rather than to a guess.
  *
- * Candidates are narrowed on the surname and then judged by the same
- * `observedPersonNameAgreesWith` comparator every other lane uses, so the
- * diacritic and apostrophe handling stays in one place.
+ * Candidates are narrowed with the person-name resolver's anchored surname pattern
+ * and limit, because an unanchored surname matched a short surname inside longer
+ * names and overflowed the cap, so a common short surname never resolved (#5296).
+ * They are then judged by the same `observedPersonNameAgreesWith` comparator every
+ * other lane uses, so the diacritic and apostrophe handling stays in one place.
  */
-async function findUniqueResearcherByObservedDirectorName(name: string): Promise<any | null> {
+export async function findUniqueResearcherByObservedDirectorName(
+  name: string,
+): Promise<any | null> {
   const observed = splitName(textValue(name));
   if (!observed.last || !observed.first) return null;
+  const surnamePattern = surnameFetchRegex(observed.last);
+  if (!surnamePattern) return null;
   const candidates = await Researcher.find({
     archived: { $ne: true },
-    displayName: new RegExp(escapeRegex(observed.last), 'i'),
+    displayName: surnamePattern,
   })
     .select('_id displayName profile.title')
-    .limit(DIRECTOR_NAME_CANDIDATE_LIMIT + 1)
+    .limit(SURNAME_FETCH_LIMIT)
     .lean();
-  if (candidates.length > DIRECTOR_NAME_CANDIDATE_LIMIT) return null;
+  if (candidates.length >= SURNAME_FETCH_LIMIT) return null;
   const agreeing = candidates.filter((candidate: any) =>
     observedPersonNameAgreesWith(candidate.displayName, textValue(name)),
   );
@@ -4441,12 +4460,14 @@ export async function materializeInferredDirectorMembership(
     (entry) => SUPERSEDED_BY_DIRECTOR_ROLES.includes(entry.role) && matchesDirector(entry),
   ).length;
 
+  const directorPersonId = toMaterializerObjectId(directorResearcherId);
   const directorIdentity: CanonicalMemberIdentity = {
     netid: directorEnrichment.netid,
     email: directorEnrichment.email,
     orcid: directorEnrichment.orcid,
     displayName: name,
     hasCanonicalSourceReference: true,
+    ...(directorPersonId ? { resolvedPersonId: directorPersonId } : {}),
   };
   await materializeCanonicalMembership(
     researchEntityId,
@@ -4466,7 +4487,8 @@ export async function materializeInferredDirectorMembership(
     directorIdentity,
   );
 
-  const supersededPersonId = await resolveCanonicalResearcherId(directorIdentity);
+  const supersededPersonId =
+    directorPersonId ?? (await resolveCanonicalResearcherId(directorIdentity));
   if (supersededPersonId) {
     await archiveSupersededCanonicalRoleAssignments(researchEntityId, supersededPersonId);
   }
@@ -4954,7 +4976,8 @@ export async function resolveRelationshipTarget(
     resolvedTarget:
       namedTarget ||
       (isListedLabTargetKey(targetEntityKey)
-        ? await rowServingListedLabWebsite(researchEntityModel, identity)
+        ? ((await rowServingListedLabWebsite(researchEntityModel, identity)) ??
+          (await rowLedByListedLabLead(researchEntityModel, identity)))
         : await rowLedByListedPersonAtListedWebsite(researchEntityModel, identity)),
   };
 }
@@ -4979,6 +5002,22 @@ export async function rowServingListedLabWebsite(
     .limit(2)
     .lean()) as ResolvedRelationshipTargetRow[];
   return rowsAtWebsite.length === 1 ? rowsAtWebsite[0] : null;
+}
+
+/**
+ * A listed lab whose site no row serves resolves through the head its own page names,
+ * by the same name arm a listed person takes, so it reaches the row that person leads.
+ */
+export async function rowLedByListedLabLead(
+  researchEntityModel: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>,
+  identity: RelationshipTargetIdentity,
+): Promise<ResolvedRelationshipTargetRow | null> {
+  const leadKey = facultyResearchAreaSlugForPersonName(textValue(identity.targetLeadName));
+  if (!leadKey) return null;
+  const { resolvedTarget } = await resolveRelationshipTarget(researchEntityModel, {
+    targetEntityKey: leadKey,
+  });
+  return resolvedTarget;
 }
 
 export async function rowLedByListedPersonAtListedWebsite(
@@ -5081,6 +5120,7 @@ async function materializeResearchEntityRelationship(
     await resolveRelationshipTarget(researchEntityModel, {
       targetEntityKey,
       targetWebsiteUrl: textValue(resolved[RELATIONSHIP_TARGET_WEBSITE_URL_FIELD]?.value),
+      targetLeadName: textValue(resolved[RELATIONSHIP_TARGET_LEAD_NAME_FIELD]?.value),
     });
   if (!resolvedTarget?._id) return skip('target-not-resolved');
   if (relationshipEndpointsAreSameEntity(source._id, resolvedTarget._id)) {
@@ -7019,7 +7059,14 @@ export async function joinUserIdentityToExistingResearcher(
       (resolution.status === 'ambiguous' && resolution.everyCandidateNamesSomeoneElse === true);
     if (resolution.status === 'matched' && resolution.researcherId) {
       const nameMatch = await Researcher.findById(resolution.researcherId);
-      if (nameMatch && !officialPersonPagesContradictNameMatch(materializationObs, nameMatch)) {
+      if (
+        nameMatch &&
+        !officialPersonPagesContradictNameMatch(materializationObs, nameMatch) &&
+        !embeddedNetidContradictsCandidate(
+          netidsEmbeddedInUserEvidence(identifier.entityKey, materializationObs),
+          nameMatch.identifiers?.netid,
+        )
+      ) {
         researcher = nameMatch;
         identityJoin = 'person-name';
       }
@@ -7294,6 +7341,10 @@ async function materializeUserIdentityToResearcher(
   }
   if (!title && isPageHeadingTitle(researcher.profile.title)) {
     researcher.profile.title = undefined;
+    fieldsWritten += 1;
+  }
+  if (isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl)) {
+    researcher.profile.websiteUrl = undefined;
     fieldsWritten += 1;
   }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
@@ -8585,6 +8636,34 @@ function documentAsProjected(
   return view;
 }
 
+// The website arms run after the identity derivations, so a value staged here may still be
+// one they refuse, and a profile page they never store must not back a lab the gate, which
+// reads the stored row, holds as unbacked. Each field is screened as its own arm screens
+// it, and a locked field is one no arm touches.
+function withWebsitesThePassKeeps(
+  projected: Record<string, any>,
+  manuallyLockedFields: readonly string[],
+): Record<string, any> {
+  const identity: ResearchEntityHostOwnerIdentity = {
+    name: projected.name,
+    displayName: projected.displayName,
+    entityType: projected.entityType,
+    kind: projected.kind,
+  };
+  const kept = (field: 'websiteUrl' | 'website', refuses: (value: string) => boolean) => {
+    const value = projected[field];
+    if (manuallyLockedFields.includes(field)) return value;
+    return typeof value === 'string' && value.trim() && refuses(value) ? '' : value;
+  };
+  return {
+    ...projected,
+    websiteUrl: kept('websiteUrl', (value) =>
+      Boolean(researchHomeWebsiteUrlWriteRefusal(value, identity)),
+    ),
+    website: kept('website', (value) => isWithheldResearchWebsiteUrl(value, identity)),
+  };
+}
+
 /**
  * A `LAB` row whose lab name nothing backs is one person's faculty research, so it is
  * re-derived as `FACULTY_RESEARCH_AREA` under the person-scoped name on every resolve.
@@ -8626,7 +8705,13 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
   ) {
     return 0;
   }
-  if (!isUnbackedLabNameShell(projected, input.leadPersonName)) return 0;
+  if (
+    !isUnbackedLabNameShell(
+      withWebsitesThePassKeeps(projected, input.manuallyLockedFields),
+      input.leadPersonName,
+    )
+  )
+    return 0;
 
   const facultyResearchIdentity = {
     entityType: 'FACULTY_RESEARCH_AREA',
@@ -9760,6 +9845,31 @@ export async function projectFromLog(
     };
     clearLoserOnlySurvivorWebsite('website');
     clearLaneWithdrawnWebsite('website');
+    const withheldLegacyWebsite = planWithheldLegacyWebsiteClear({
+      stored: entityDoc,
+      staged: set,
+      identity: {
+        name: set.name ?? entityDoc?.name,
+        displayName: set.displayName ?? entityDoc?.displayName,
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+      },
+      lockedFields: manuallyLockedFields,
+    });
+    if (withheldLegacyWebsite.skipped) {
+      console.log(
+        `[withheld-legacy-website] kept a withheld website: ${withheldLegacyWebsite.skipped}`,
+      );
+    }
+    if (withheldLegacyWebsite.declineStaged) {
+      console.log('[withheld-legacy-website] declined a resolved website the payload withholds');
+      delete set.website;
+    }
+    if (withheldLegacyWebsite.clearStored) {
+      console.log('[withheld-legacy-website] cleared a stored website the payload withholds');
+      set.website = '';
+      fieldsWritten++;
+    }
     if (!manuallyLockedFields.includes('websiteUrl')) {
       // The vocabulary that already knows this URL is not a research home now stops
       // the write instead of only annotating an audit (#3167). It screens the
@@ -11688,7 +11798,13 @@ async function centerRelationshipTargetIdsAssertedByOtherSources(
     {
       entityType: 'researchEntityRelationship',
       entityKey: { $in: relationshipKeys },
-      field: { $in: ['targetEntityKey', RELATIONSHIP_TARGET_WEBSITE_URL_FIELD] },
+      field: {
+        $in: [
+          'targetEntityKey',
+          RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
+          RELATIONSHIP_TARGET_LEAD_NAME_FIELD,
+        ],
+      },
     },
     sourceName,
   );
@@ -12057,6 +12173,20 @@ export async function materializeFromRun(
     // row serving.
     console.info(
       `[faculty-departure] reconciled ${departureResult.governedDepartments.length} department(s): ${departureResult.suppressed} suppressed, ${departureResult.cleared} cleared, ${departureResult.held} held on Yale-profile evidence, ${departureResult.planned.record_first_absence} first absence(s) recorded, ${departureResult.regatedEntities} row(s) re-gated`,
+    );
+  }
+  const rosterMintWithdrawal = await reconcileRosterMintWithdrawalsFromRun(
+    scrapeRunId,
+    { dryRun: options.dryRun },
+    {
+      rematerializeResearchEntity: async (entityKey) => {
+        await materializeEntity('researchEntity', { entityKey }, options);
+      },
+    },
+  );
+  if (rosterMintWithdrawal.outcome !== 'no-roster-health-observations') {
+    console.info(
+      `[roster-mint-withdrawal] ${rosterMintWithdrawal.outcome}: ${JSON.stringify(rosterMintWithdrawal.counts)}`,
     );
   }
   const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);

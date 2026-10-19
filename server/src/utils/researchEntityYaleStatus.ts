@@ -6,7 +6,9 @@ const MAX_HUMAN_LIFESPAN_YEARS = 120;
 const NAME_LIFESPAN_ANYWHERE_RE = /((?:18|19|20)\d{2})\s*[-‒–—―−]\s*((?:19|20)\d{2})/;
 
 const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
-const IN_MEMORIAM_TEXT_RE = /\bin memoriam\b|\bpassed away\b/i;
+// A memorial page heading runs straight into the lifespan once markup is stripped
+// ("In Memoriam1945-2026"), so the marker ends at the last letter, not a word boundary.
+const IN_MEMORIAM_TEXT_RE = /\bin\s+memoriam(?!\p{L})|\bpassed\s+away\b/iu;
 
 export type ResearchEntityYaleStatusReason = 'deceased' | 'departed';
 

@@ -5,6 +5,7 @@ import { centerMemberRelationshipObservationsForEntityKey } from '../sources/cen
 import { normalizeName, SLUG_MAX_LENGTH, slugify, slugTokens } from './scraperHelpers';
 import {
   LISTED_LAB_TARGET_KEY_PREFIX,
+  RELATIONSHIP_TARGET_LEAD_NAME_FIELD,
   RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
 } from '../centerRelationshipTarget';
 import { extractElementTextWithBlockSeparators } from './htmlText';
@@ -22,7 +23,9 @@ export type CenterAffiliationStructure =
   | 'profile-link'
   | 'labelled-lines'
   | 'section-list'
-  | 'name-role-line';
+  | 'name-role-line'
+  | 'contact-line'
+  | 'founder-statement';
 
 export interface CenterAffiliationListedPerson {
   name: string;
@@ -38,6 +41,12 @@ export interface CenterAffiliationListedLab {
   url?: string;
   sectionLabel: string;
   structure: CenterAffiliationStructure;
+  lead?: ListedLabLead;
+}
+
+export interface ListedLabLead {
+  name: string;
+  profileUrl: string;
 }
 
 export type CenterAffiliationRefusalReason =
@@ -114,6 +123,8 @@ const LAB_NAME = /^\p{Lu}[\p{L}'’.\- &]*\s(?:lab|laboratory|group)$/iu;
 const ENTRY_NAME_BOUNDARY = /\s*(?:[(,:;|]|\s[–—-]\s)/u;
 const PROSE_RESIDUE_LIMIT = 80;
 const LIST_RESIDUE_LIMIT = 200;
+const DIRECTORY_LINE_RESIDUE_LIMIT = 400;
+const CONTACT_LINE_LIMIT = 240;
 const PROSE_ONLY_MIN_CHARACTERS = 200;
 const HEADING_WRAPPER_SLACK = 20;
 const NAME_ROLE_LINE_LIMIT = 120;
@@ -459,6 +470,82 @@ function isInside(node: AnyNode, claimed: ReadonlySet<AnyNode>): boolean {
   return false;
 }
 
+/**
+ * A paragraph that breaks one listing per line ("<a>Name, PhD,</a> title<br>...") is a
+ * directory, not prose, so a link that opens its own line is judged against that line.
+ * A line that does not start with the link, or whose link is not followed by a comma
+ * and a title with no verb, is still prose.
+ */
+function leadingLinkDirectoryLine(
+  $: cheerio.CheerioAPI,
+  block: cheerio.Cheerio<AnyNode>,
+  link: AnyNode,
+): string | null {
+  const html = block.html() || '';
+  if (!/<br\s*\/?>/i.test(html)) return null;
+  const linkText = textOf($(link).text());
+  if (!linkText) return null;
+  for (const lineHtml of html.split(/<br\s*\/?>/i)) {
+    const line = cheerio.load(`<div>${lineHtml}</div>`);
+    const lineText = textOf(line('div').text());
+    const firstLink = textOf(line('a[href]').first().text());
+    if (firstLink !== linkText || !lineText.startsWith(linkText)) continue;
+    const rest = lineText.slice(linkText.length);
+    const opensTitle = /,\s*$/.test(linkText) || /^\s*,/.test(rest);
+    return opensTitle && !SENTENCE_VERB.test(rest) ? lineText : null;
+  }
+  return null;
+}
+
+const SENTENCE_VERB =
+  /\b(?:is|was|are|were|has|have|had|said|says|will|would|joined|leads|led|received|won|became)\b/i;
+
+const CONTACT_WORD = /\bcontact\b/i;
+
+/**
+ * A block that is one sentence telling the reader whom to contact names a person who
+ * works the unit. A contact named inside a longer passage is often somebody else's,
+ * such as the contact for a service that moved to another core.
+ */
+function isOneContactSentence(text: string): boolean {
+  const sentences = text.split(/[.!?]\s+(?=\p{Lu})/u).filter((part) => textOf(part));
+  return sentences.length === 1 && CONTACT_WORD.test(text);
+}
+
+function emailAgreesWithName(href: string, name: string): boolean {
+  const localPart = href
+    .replace(/^mailto:/i, '')
+    .split('@')[0]
+    .toLowerCase();
+  const tokens = slugTokens(name);
+  const surname = tokens[tokens.length - 1];
+  return Boolean(surname) && localPart.replace(/[^a-z]/g, '').includes(surname.replace(/-/g, ''));
+}
+
+const STATED_NAME =
+  "((?:\\p{Lu}[\\p{L}'’-]+|\\p{Lu}\\.)(?:\\s+(?:\\p{Lu}[\\p{L}'’-]+|\\p{Lu}\\.)){1,4})";
+const HONORIFIC = '(?:(?:Dr|Prof|Professor)\\.?\\s+)?';
+const STILL_DIRECTS =
+  '(?:is|remains)\\s+still\\s+(?:the\\s+)?director|still\\s+(?:is|serves\\s+as)\\s+(?:the\\s+)?director|still\\s+directs';
+const FOUNDER_THEN_STILL_DIRECTS = new RegExp(
+  `(?:^|[.;!?]\\s+)${HONORIFIC}${STATED_NAME}\\s+(?:founded|established)\\b[^.;!?]*(?:[.;]\\s+(?:He|She|They)\\s+(?:${STILL_DIRECTS})|,?\\s+and\\s+(?:${STILL_DIRECTS}))\\b`,
+  'gu',
+);
+
+/**
+ * A core's own history that says a person founded it and still directs it states a
+ * current member, in a shape strict enough to read without judgement. A founder the page
+ * does not say still directs it is history, not membership.
+ */
+export function foundersWhoStillDirect(text: string): string[] {
+  const names: string[] = [];
+  for (const match of textOf(text).matchAll(FOUNDER_THEN_STILL_DIRECTS)) {
+    const name = listedPersonName(match[1]);
+    if (isListedPersonName(name) && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 function leadingEntryName(text: string): string {
   const boundary = ENTRY_NAME_BOUNDARY.exec(text);
   return textOf(boundary && boundary.index > 0 ? text.slice(0, boundary.index) : text);
@@ -482,8 +569,16 @@ function collectGenericCandidates(
     const name = listedPersonName(link.text());
     if (!isListedPersonName(name)) return;
     const block = link.closest('li, td, dd, dt, h1, h2, h3, h4, h5, h6, p, div');
-    const residue = Math.max(0, blockText(block).length - textOf(link.text()).length);
-    const residueLimit = block.is('p, div') ? PROSE_RESIDUE_LIMIT : LIST_RESIDUE_LIMIT;
+    const directoryLine = block.is('p') ? leadingLinkDirectoryLine($, block, element) : null;
+    const residue = Math.max(
+      0,
+      (directoryLine ?? blockText(block)).length - textOf(link.text()).length,
+    );
+    const residueLimit = directoryLine
+      ? DIRECTORY_LINE_RESIDUE_LIMIT
+      : block.is('p, div')
+        ? PROSE_RESIDUE_LIMIT
+        : LIST_RESIDUE_LIMIT;
     if (residue > residueLimit) {
       refusals['prose-mention'] += 1;
       return;
@@ -499,6 +594,44 @@ function collectGenericCandidates(
       requiresMemberHeading: false,
       checksProfileUrlAgreement: true,
     });
+  });
+
+  root.find('a[href^="mailto:" i]').each((_i, element) => {
+    if (isInside(element, claimed)) return;
+    const link = $(element);
+    const rawName = textOf(link.text()).replace(/^contact\s+/i, '');
+    const name = listedPersonName(rawName.replace(/[.,;:]+$/, ''));
+    if (!isListedPersonName(name) || !emailAgreesWithName(link.attr('href') || '', name)) return;
+    const block = link.closest('li, td, dd, p');
+    const text = blockText(block);
+    if (!block[0] || text.length > CONTACT_LINE_LIMIT || !isOneContactSentence(text)) return;
+    candidates.push({
+      node: link,
+      kind: 'person',
+      rawName: name,
+      href: '',
+      title: textOf(text.replace(textOf(link.text()), ' ')),
+      structure: 'contact-line',
+      requiresMemberHeading: false,
+      checksProfileUrlAgreement: false,
+    });
+  });
+
+  root.find('p').each((_i, element) => {
+    if (isInside(element, claimed)) return;
+    const paragraph = $(element);
+    for (const name of foundersWhoStillDirect(blockText(paragraph))) {
+      candidates.push({
+        node: paragraph,
+        kind: 'person',
+        rawName: name,
+        href: '',
+        title: 'Founder and director',
+        structure: 'founder-statement',
+        requiresMemberHeading: false,
+        checksProfileUrlAgreement: false,
+      });
+    }
   });
 
   root.find('p').each((_i, element) => {
@@ -796,6 +929,53 @@ export function extractCenterAffiliationsFromPage(input: {
   return { outcome, people: listedPeople, labs, refusals, proseCharacterCount };
 }
 
+const LAB_PAGE_HEADING_NAME = /^(.+?)\s+(?:lab|laboratory|research group|group)$/i;
+
+function labNameTokens(labName: string): Set<string> {
+  return new Set(slugTokens(textOf(labName).replace(/\s+(?:lab|laboratory|group)$/i, '')));
+}
+
+function isYaleHost(url: string): boolean {
+  try {
+    return /(?:^|\.)yale\.edu$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The person a listed lab's own page names as its head: a heading "<Full Name> Lab"
+ * whose surname the listing's lab name carries, and a Yale profile link on that page
+ * whose path names the same person. Both are required, because a lab card on a center
+ * page states only a surname, and a surname alone is never an identity.
+ */
+export function readListedLabLead(input: {
+  html: string;
+  pageUrl: string;
+  labName: string;
+}): ListedLabLead | undefined {
+  const $ = cheerio.load(input.html || '');
+  $(CHROME_SELECTOR).remove();
+  const cardTokens = labNameTokens(input.labName);
+  const names = new Set<string>();
+  $('h1, h2, h3').each((_i, element) => {
+    const match = LAB_PAGE_HEADING_NAME.exec(textOf($(element).text()));
+    const name = match ? listedPersonName(match[1]) : '';
+    if (!name || !isListedPersonName(name)) return;
+    const tokens = slugTokens(name);
+    if (cardTokens.has(tokens[tokens.length - 1])) names.add(name);
+  });
+  if (names.size !== 1) return undefined;
+  const [name] = Array.from(names);
+  const profileUrls = new Set<string>();
+  $('a[href]').each((_i, element) => {
+    const url = absoluteUrl($(element).attr('href') || '', input.pageUrl);
+    if (url && isYaleHost(url) && profileUrlAgreesWithName(url, name)) profileUrls.add(url);
+  });
+  if (profileUrls.size !== 1) return undefined;
+  return { name, profileUrl: Array.from(profileUrls)[0] };
+}
+
 const LISTED_LAB_RELATIONSHIP_TYPE = 'AFFILIATED_LAB';
 const LISTED_AFFILIATION_EVIDENCE_STRENGTH = 'MODERATE';
 const LISTED_AFFILIATION_CONFIDENCE = 0.72;
@@ -824,6 +1004,9 @@ function listedLabObservations(
     { ...base, field: 'evidenceStrength', value: LISTED_AFFILIATION_EVIDENCE_STRENGTH },
     { ...base, field: 'confidence', value: LISTED_AFFILIATION_CONFIDENCE },
     { ...base, field: RELATIONSHIP_TARGET_WEBSITE_URL_FIELD, value: lab.url },
+    ...(lab.lead
+      ? [{ ...base, field: RELATIONSHIP_TARGET_LEAD_NAME_FIELD, value: lab.lead.name }]
+      : []),
   ];
 }
 

@@ -4,8 +4,12 @@ import {
   extractCenterAffiliationsFromPage,
   listedPersonName,
   profileUrlAgreesWithName,
+  readListedLabLead,
 } from '../utils/centerAffiliationPageExtractor';
-import { RELATIONSHIP_TARGET_WEBSITE_URL_FIELD } from '../centerRelationshipTarget';
+import {
+  RELATIONSHIP_TARGET_LEAD_NAME_FIELD,
+  RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
+} from '../centerRelationshipTarget';
 
 const PAGE_URL = 'https://example.yale.edu/centers/quillfeather-center/';
 
@@ -207,6 +211,63 @@ describe('extractCenterAffiliationsFromPage', () => {
     ).toEqual(['Dorian Fairweather']);
   });
 
+  it('leaves an advisory committee or scientific advisory board out, by owner decision', () => {
+    expect(
+      names(`
+        <h2>Scientific Advisory Board</h2>
+        ${profileCard('Gwendolyn Ashcombe', '/center/profile/gwendolyn-ashcombe/', 'Professor of Example Studies')}
+        <h2>Advisory Committee</h2><ul><li>Horatio Penwarden, Professor of Example Studies</li></ul>
+        <h2>Faculty</h2>${profileCard('Imre Calloway', '/center/profile/imre-calloway/')}`),
+    ).toEqual(['Imre Calloway']);
+  });
+
+  it('reads a paragraph that lists one linked person per line as a directory', () => {
+    const result = read(`
+      <h2>Additional contacts</h2>
+      <h3>Imaging sciences</h3>
+      <p><a href="https://example.yale.edu/profile/juno-ashgrove/">Juno Ashgrove, PhD,</a> Professor of Invented Imaging and of Example Engineering; Department Chair, Example Engineering<br>
+      <a href="https://example.yale.edu/profile/kit-marchbank/">Kit Marchbank, PhD,</a> Professor of Example Informatics and Data Science, and Invented Imaging; Associate Director of Example Data Sciences, Example Imaging Institute; Director of the Example Software Certificate Program, Department of Example Informatics</p>`);
+
+    expect(result.people.map((person) => [person.name, person.structure])).toEqual([
+      ['Juno Ashgrove', 'profile-link'],
+      ['Kit Marchbank', 'profile-link'],
+    ]);
+  });
+
+  it('still counts a linked name that opens a prose sentence rather than a listing line', () => {
+    const result = read(`
+      <p><a href="/people/lark-penrose">Lark Penrose</a> joined the center in 2019 and has since built a program of invented research across many departments.<br>
+      <a href="/people/milan-ostrow">Milan Ostrow</a>, a professor of example studies, said the program will grow to include several new invented fields next year.</p>`);
+
+    expect(result.people).toEqual([]);
+    expect(result.refusals['prose-mention']).toBe(2);
+  });
+
+  it('reads a one-sentence contact line whose email names the person', () => {
+    const result = read(`
+      <h2>Scheduling</h2>
+      <p>For scheduling on the 7T system, contact <a href="mailto:milo.harrowgate1@yale.edu">Milo Harrowgate</a>.</p>
+      <p>The widget moved to another core last year. Please contact <a href="mailto:nadia.brisbane2@yale.edu">Nadia Brisbane</a> for details.</p>
+      <p>For billing questions, contact <a href="mailto:widget-billing3@yale.edu">Orrin Thackeray</a>.</p>
+      <ul><li><a href="mailto:pia.loxley4@yale.edu">Pia Loxley</a>, Financial Assistant; contact for invoices</li></ul>`);
+
+    expect(result.people.map((person) => [person.name, person.structure])).toEqual([
+      ['Milo Harrowgate', 'contact-line'],
+    ]);
+  });
+
+  it('reads a founder the core page says still directs it', () => {
+    const result = read(`
+      <h2>Our history</h2>
+      <p>The widget resource had its beginnings in 1980 in the Department of Example Studies.</p>
+      <p>Dr. Quentin R. Ashdown founded the Widget Lab, then called the Example Facility. He is still director of the resulting and evolving Widget Lab.</p>
+      <p>Rosalind Fenwright established the Gadget Annex in 1990, which closed in 2001.</p>`);
+
+    expect(result.people.map((person) => [person.name, person.structure])).toEqual([
+      ['Quentin R. Ashdown', 'founder-statement'],
+    ]);
+  });
+
   it('does not let a heading outside a sidebar widget suppress the widget', () => {
     expect(
       names(`
@@ -253,7 +314,76 @@ describe('profileUrlAgreesWithName', () => {
   });
 });
 
+describe('readListedLabLead', () => {
+  const LAB_URL = 'https://example.yale.edu/thornbury-landing-page';
+  const labPage = (heading: string, profileHref: string) => `
+    <html><body><main><h1>Lab Landing Page</h1><h2>${heading}</h2>
+      <p>We are an invented biology lab.</p>
+      <a href="${profileHref}">Thornbury Biography</a></main></body></html>`;
+
+  it('names the head a lab page heading and its profile link agree on', () => {
+    expect(
+      readListedLabLead({
+        html: labPage('Ilsa Thornbury Lab', 'https://medicine.yale.edu/profile/ilsa-thornbury/'),
+        pageUrl: LAB_URL,
+        labName: 'Thornbury Lab',
+      }),
+    ).toEqual({
+      name: 'Ilsa Thornbury',
+      profileUrl: 'https://medicine.yale.edu/profile/ilsa-thornbury/',
+    });
+  });
+
+  it('names nobody without a profile link, or when the heading names another surname', () => {
+    expect(
+      readListedLabLead({
+        html: labPage('Ilsa Thornbury Lab', 'https://thornburylab.example.org/'),
+        pageUrl: LAB_URL,
+        labName: 'Thornbury Lab',
+      }),
+    ).toBeUndefined();
+    expect(
+      readListedLabLead({
+        html: labPage('Jasper Wyndham Lab', 'https://medicine.yale.edu/profile/jasper-wyndham/'),
+        pageUrl: LAB_URL,
+        labName: 'Thornbury Lab',
+      }),
+    ).toBeUndefined();
+  });
+});
+
 describe('centerAffiliationPageObservations', () => {
+  it('carries the head a listed lab page names beside the lab card', () => {
+    const observations = centerAffiliationPageObservations(
+      {
+        outcome: 'listed',
+        people: [],
+        labs: [
+          {
+            name: 'Thornbury Lab',
+            url: 'https://example.yale.edu/thornbury-landing-page',
+            sectionLabel: 'Meet the labs',
+            structure: 'custom-card',
+            lead: {
+              name: 'Ilsa Thornbury',
+              profileUrl: 'https://medicine.yale.edu/profile/ilsa-thornbury/',
+            },
+          },
+        ],
+        refusals: read('').refusals,
+        proseCharacterCount: 0,
+      },
+      { centerEntityKey: 'center-quillfeather', sourceUrl: PAGE_URL },
+    );
+    expect(
+      Object.fromEntries(observations.map((observation) => [observation.field, observation.value])),
+    ).toMatchObject({
+      targetEntityKey: 'listed-lab-thornbury-lab',
+      [RELATIONSHIP_TARGET_WEBSITE_URL_FIELD]: 'https://example.yale.edu/thornbury-landing-page',
+      [RELATIONSHIP_TARGET_LEAD_NAME_FIELD]: 'Ilsa Thornbury',
+    });
+  });
+
   it('emits relationship observations keyed by the center with the listed profile as the target site', () => {
     const result = read(
       `<h2>Faculty</h2>${profileCard('Imogen Thistlewood', '/center/profile/imogen-thistlewood/')}`,

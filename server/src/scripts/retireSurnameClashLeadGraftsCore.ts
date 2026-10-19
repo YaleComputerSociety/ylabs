@@ -35,6 +35,11 @@ export interface SurnameClashLeadRow {
    * the same person is judged on its own evidence.
    */
   rosterVerified: boolean;
+  /**
+   * What the entity's own served website said about this lead: it confirmed them, or it
+   * names a same-surname person whose given name cannot be theirs.
+   */
+  servedSiteVerdict?: 'CONFIRMED' | 'NAMESAKE';
 }
 
 export interface SurnameClashEntityRow {
@@ -116,11 +121,31 @@ export function entityIdentityNamesPerson(
 }
 
 /**
+ * The one person of a clash the entity's own website names, when the identity names
+ * nobody: a `<Surname> Lab` carries only the surname both people share (#2768).
+ *
+ * The site decides only when it is unanimous: it confirmed exactly one person of the
+ * clash and read every other one as a namesake. Anything less, a second confirmation or
+ * a lead the site said nothing about, leaves the clash undecided.
+ */
+function siteNamedPersonIds(group: readonly SurnameClashLeadRow[]): Set<string> {
+  const confirmed = new Set(
+    group.filter((lead) => lead.servedSiteVerdict === 'CONFIRMED').map((lead) => lead.personId),
+  );
+  if (confirmed.size !== 1) return new Set();
+  const othersAreNamesakes = group.every(
+    (lead) => confirmed.has(lead.personId) || lead.servedSiteVerdict === 'NAMESAKE',
+  );
+  return othersAreNamesakes ? confirmed : new Set();
+}
+
+/**
  * Plans which lead assignments to detach from entities whose served lead list holds
  * two or more distinct people sharing a surname (#2768).
  *
  * The arbiter is the entity's own identity, never similarity between the two names
- * and never a stored score. Ranking by `confidence` picks the stranger: it is
+ * and never a stored score. When the identity names nobody, the entity's own website
+ * may arbitrate instead, but only unanimously (`siteNamedPersonIds`). Ranking by `confidence` picks the stranger: it is
  * anti-correlated on both rows with ground truth (0.9 wrong against 0.78 right).
  * Mere `rosterProvenance` presence is not a signal either, because 974 of 3,009
  * served sole PIs lack it and are correct.
@@ -155,11 +180,13 @@ export function planSurnameClashLeadDetachment(
     }
 
     for (const group of groups) {
-      const namedPersonIds = new Set(
+      const identityNamedPersonIds = new Set(
         group
           .filter((lead) => entityIdentityNamesPerson(entity.identityTokens, lead.displayName))
           .map((lead) => lead.personId),
       );
+      const namedPersonIds =
+        identityNamedPersonIds.size > 0 ? identityNamedPersonIds : siteNamedPersonIds(group);
       if (namedPersonIds.size === 0) {
         refused.push({
           entityId: entity.entityId,

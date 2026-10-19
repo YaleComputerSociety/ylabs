@@ -3,6 +3,7 @@ import {
   centerDirectorCandidateUrls,
   decideCenterDirector,
   directorTitleTier,
+  isOnCenterOwnSite,
   personNameFromText,
   readCenterDirectorSignals,
   textNamesThisUnit,
@@ -28,12 +29,18 @@ describe('personNameFromText', () => {
     expect(personNameFromText('Dr. Orla P. Brightwater')).toBe('Orla P. Brightwater');
   });
 
+  it('keeps a surname that is also a name particle', () => {
+    expect(personNameFromText('Mara De')).toBe('Mara De');
+    expect(personNameFromText('Ansel de la Brume')).toBe('Ansel de la Brume');
+  });
+
   it('refuses unit names, role words and contact lines', () => {
     expect(personNameFromText('Rapid Widget Ascertainment (RWA)')).toBeUndefined();
     expect(personNameFromText('Senior Lecturer')).toBeUndefined();
     expect(personNameFromText('Primary Contact')).toBeUndefined();
     expect(personNameFromText('center.director1@yale.edu')).toBeUndefined();
     expect(personNameFromText('Widget Imaging Core')).toBeUndefined();
+    expect(personNameFromText('Keck Widget Resource')).toBeUndefined();
   });
 });
 
@@ -67,13 +74,24 @@ describe('directorTitleTier', () => {
     ).toBeNull();
   });
 
-  it('reads the chair of a council as its head, and never a bare chair', () => {
+  it('reads the chair of a council as its head', () => {
     const council = 'Council on Northern Widget Studies';
     expect(
       directorTitleTier('Professor of History; Chair, Council on Northern Widget Studies', council),
     ).toBe('top');
-    expect(directorTitleTier('Chair', council)).toBeNull();
     expect(directorTitleTier('Vice Chair, Council on Northern Widget Studies', council)).toBeNull();
+  });
+
+  it('reads a bare chair only on a unit that is itself a council or committee', () => {
+    expect(directorTitleTier('Chair', 'Council on Northern Widget Studies')).toBe('top');
+    expect(directorTitleTier('Co-Chair', 'Widget Ethics Committee')).toBe('co');
+    expect(directorTitleTier('Council Chair', 'Northern Widget Studies Council')).toBe('top');
+    expect(directorTitleTier('Chair', CENTER)).toBeNull();
+    expect(directorTitleTier('Department Chair', 'Council on Northern Widget Studies')).toBeNull();
+    expect(
+      directorTitleTier('Chair, Steering Committee', 'Council on Northern Widget Studies'),
+    ).toBeNull();
+    expect(directorTitleTier('Chair, Steering Committee', CENTER)).toBeNull();
   });
 });
 
@@ -113,6 +131,49 @@ describe('readCenterDirectorSignals and decideCenterDirector', () => {
       <ol><li><div class="card"><h2><a href="/cores/gadget-core">Gadget Core</a></h2>
         <div class="contact"><h3>Orla Brightwater</h3><span>Director</span></div></div></li></ol>`);
     expect(decision).toMatchObject({ outcome: 'named', director: { name: 'Quill Fenwick' } });
+  });
+
+  it('names a card whose surname is a name particle instead of the card beside it', () => {
+    const council = 'Quillfeather Studies Council';
+    const decision = decideCenterDirector([
+      readCenterDirectorSignals(
+        `<div class="view">
+          ${[
+            'Mara De|Professor of History; Chair, Quillfeather Studies Council',
+            'Nils Brandvold|Program Manager',
+          ]
+            .map((entry) => entry.split('|'))
+            .map(
+              ([name, title]) => `<div class="view__row"><article class="node-teaser"><header>
+                <div class="node-teaser__heading"><a href="/person/x"><span>${name}</span></a></div>
+                <div class="node-teaser__title">${title}</div></header>
+                <div class="node-teaser__content"><p>${'Teaches and writes about widget history. '.repeat(3)}</p>
+                <p>Office hours by appointment.</p><p>Room 101</p><p>Phone 555-0100</p></div></article></div>`,
+            )
+            .join('')}
+        </div>`,
+        'https://council.yale.edu/people',
+        council,
+      ),
+    ]);
+    expect(decision).toMatchObject({ outcome: 'named', director: { name: 'Mara De' } });
+  });
+
+  it("reads a person's own card whose heading links the person's lab site", () => {
+    const director = namedDirector(
+      `<div class="field-item"><h3><a href="https://widgetlab.yale.edu/">Quill Fenwick</a></h3>
+        <p><em>Director,</em><span> </span><a href="https://wix.yale.edu/">Widget Institute (WIX)</a></p>
+        <p><em>Professor of Widget Studies</em></p></div>`,
+      'Widget Institute (WIX)',
+    );
+    expect(director).toMatchObject({ name: 'Quill Fenwick', title: 'Director' });
+  });
+
+  it('still ignores a related unit card whose heading names the unit, not a person', () => {
+    const decision = decide(`
+      <ol><li><div class="card"><h2><a href="/cores/precision-gadget">Precision Gadget Modeling</a></h2>
+        <div class="contact"><h3>Orla Brightwater</h3><span>Executive Director</span></div></div></li></ol>`);
+    expect(decision).toEqual({ outcome: 'none' });
   });
 
   it('refuses two different directors at the same rank', () => {
@@ -311,6 +372,26 @@ describe('centerDirectorCandidateUrls', () => {
       'https://school.yale.edu/centers/widget/about-us',
       'https://school.yale.edu/centers/widget/people',
     ]);
+  });
+
+  it('treats a page as the unit own site only inside its subtree or on a host it names', () => {
+    const landing = 'https://school.yale.edu/research/centers/widget-institute';
+    const unit = 'Yale Institute for Widget Studies (YIWS)';
+    expect(
+      isOnCenterOwnSite(
+        landing,
+        'https://school.yale.edu/research/centers/widget-institute/staff',
+        unit,
+      ),
+    ).toBe(true);
+    expect(isOnCenterOwnSite(landing, 'https://yiws.yale.edu/people/staff', unit)).toBe(true);
+    expect(isOnCenterOwnSite(landing, 'https://school.yale.edu/about/message-dean', unit)).toBe(
+      false,
+    );
+    expect(isOnCenterOwnSite(landing, 'https://engineering.yale.edu/faculty/someone', unit)).toBe(
+      false,
+    );
+    expect(isOnCenterOwnSite(landing, 'https://yiws.example.org/people', unit)).toBe(false);
   });
 
   it('caps the pages read', () => {
