@@ -3,6 +3,7 @@ import {
   cardAwardLabel,
   isOpenToFirstYears,
   programBoardSectionOf,
+  citizenshipFilterOptionLabel,
   programCardFacts,
 } from '../programBoard';
 import { getFellowshipCycleStatus } from '../fellowshipCycle';
@@ -122,5 +123,16 @@ describe('isOpenToFirstYears', () => {
       true,
     );
     expect(isOpenToFirstYears(served({ yearOfStudy: ['Junior'] }))).toBe(false);
+  });
+});
+
+describe('citizenshipFilterOptionLabel says the option keeps not-stated programs (#5235)', () => {
+  it('labels each stored citizenship value with what the filter returns', () => {
+    expect(citizenshipFilterOptionLabel('Non-U.S. citizens are eligible')).toBe(
+      'Open to non-U.S. citizens, or not stated',
+    );
+    expect(citizenshipFilterOptionLabel('U.S. citizens are eligible')).toBe(
+      'Open to U.S. citizens, or not stated',
+    );
   });
 });

@@ -82,6 +82,15 @@ describe('program search requires every typed word and ranks the titled program 
     expect(result.total).toBe(0);
   });
 
+  it('reports a three-word search that only programs missing one word answer', async () => {
+    const partial = await searchFellowships({ query: 'economics summer abroad' });
+    const full = await searchFellowships({ query: 'economics summer' });
+
+    expect(titles(partial)).toContain('Fixture Harbor Economics Grant');
+    expect(partial.queryMatch).toBe('allButOneWord');
+    expect(full.queryMatch).toBeUndefined();
+  });
+
   it('keeps the visibility gate on the ranked results', async () => {
     const result = await searchFellowships({ query: 'Blue Center' });
 

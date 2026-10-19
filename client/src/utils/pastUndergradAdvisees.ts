@@ -1,5 +1,5 @@
 // Mirrors ROSTER_ALUMNI_PROGRAM_NAME in server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts; change both together.
-const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
+export const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
 
 type PastAdviseeEntry = { programName?: string; year?: number; count?: number };
 

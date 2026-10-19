@@ -1,4 +1,8 @@
 import {
+  memberSignalStatus,
+  type UndergraduateMemberEvidence,
+} from './undergraduateMemberEvidence';
+import {
   comparePersonProfileUrls,
   isCrossSchoolDirectoryProfileUrl,
   isIdentifierRecordUrl,
@@ -66,6 +70,7 @@ export interface BuildResearchDetailSourcesInput {
   accessSignals?: DetailSourceSignal[];
   sourceLinkHealth?: DetailSourceLinkHealth[];
   sourceFieldContributions?: DetailSourceFieldContribution[];
+  undergraduateMembers?: UndergraduateMemberEvidence;
 }
 
 export interface ResearchDetailSource {
@@ -546,10 +551,32 @@ const ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS: Record<string, string> = {
 
 const UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT = 'Undergraduate access';
 
+const FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT = 'Fellowship recipients';
+
 export const ACCESS_SIGNAL_SOURCE_CONTEXTS: ReadonlySet<string> = new Set([
   ...Object.values(ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS),
   UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT,
+  FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT,
 ]);
+
+/**
+ * A member chip names the members the page shows, so it reads the same evidence as the
+ * research team section (`undergraduateMemberEvidence`). A member signal the section does
+ * not render is still a citation, under the generic access label rather than a roster's.
+ */
+export const memberSignalSourceContext = (
+  signal: DetailSourceSignal,
+  undergraduateMembers?: UndergraduateMemberEvidence,
+): string => {
+  const status = memberSignalStatus(signal.signalType);
+  if (!status || !undergraduateMembers) return accessSignalSourceContext(signal.signalType);
+  if (status === 'past' && undergraduateMembers.citesFellowshipRecipients(signal.sourceUrl)) {
+    return FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT;
+  }
+  return undergraduateMembers.shownStatuses.has(status)
+    ? accessSignalSourceContext(signal.signalType)
+    : UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
+};
 
 export const accessSignalSourceContext = (signalType?: string): string =>
   ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS[(signalType || '').toUpperCase()] ||
@@ -1367,6 +1394,7 @@ export const buildResearchDetailSources = ({
   accessSignals = [],
   sourceLinkHealth = [],
   sourceFieldContributions = [],
+  undergraduateMembers,
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
   /**
@@ -1447,7 +1475,7 @@ export const buildResearchDetailSources = ({
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
-    addSource(signal.sourceUrl, accessSignalSourceContext(signal.signalType));
+    addSource(signal.sourceUrl, memberSignalSourceContext(signal, undergraduateMembers));
   });
 
   /**

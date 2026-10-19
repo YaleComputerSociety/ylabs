@@ -16,6 +16,7 @@ const REFUSES_APPLY = 'a read-only instrument that names --apply only to throw o
 
 const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
   'auditFacultyDepartureLane.ts': REFUSES_APPLY,
+  'measureRetiredResearchEntityRemint.ts': REFUSES_APPLY,
   'auditPlansTheProjectionDeclines.ts': REFUSES_APPLY,
   'leadEdgeRetirementReviewQueue.ts': REFUSES_APPLY,
   'backfillNonLabBrowseRankDebias.ts': DEVELOPMENT_ONLY_DATABASE_CHECK,

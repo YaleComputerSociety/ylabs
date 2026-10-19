@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import useModalDialog from '../../hooks/useModalDialog';
 import axios from '../../utils/axios';
+import { isCancel } from 'axios';
+import useLatestRequest from '../../hooks/useLatestRequest';
 
 type ReportStatus = 'unreviewed' | 'accepted' | 'dismissed';
 
@@ -67,12 +69,18 @@ export default function EntityCorrectionReportPanel({
     setOpen(true);
   };
 
+  const historyRequest = useLatestRequest();
   const loadHistory = useCallback(() => {
+    const ticket = historyRequest.begin();
     axios
-      .get(`/research/${slug}/reports/mine?pageSize=100`)
-      .then(({ data }) => setReports(data.reports || []))
-      .catch(() => setReports([]));
-  }, [slug]);
+      .get(`/research/${slug}/reports/mine?pageSize=100`, { signal: ticket.signal })
+      .then(({ data }) => {
+        if (ticket.isCurrent()) setReports(data.reports || []);
+      })
+      .catch((error) => {
+        if (ticket.isCurrent() && !isCancel(error)) setReports([]);
+      });
+  }, [historyRequest, slug]);
 
   useEffect(() => {
     loadHistory();

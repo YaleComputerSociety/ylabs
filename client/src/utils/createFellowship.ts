@@ -57,6 +57,8 @@ export function createFellowship(data: any): Fellowship {
     purpose: data.purpose || [],
     globalRegions: data.globalRegions || [],
     citizenshipStatus: data.citizenshipStatus || [],
+    citizenshipCondition:
+      typeof data.citizenshipCondition === 'string' ? data.citizenshipCondition : null,
     sourceName: data.sourceName || '',
     sourceUrl: data.sourceUrl || '',
     sourceLinkHealth: data.sourceLinkHealth || undefined,

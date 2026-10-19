@@ -28,17 +28,21 @@ import ResearchProfileSkeleton, {
   researchProfileGridClassName,
   researchProfilePageClassName,
 } from '../components/labs/ResearchProfileSkeleton';
+import { undergraduateMemberEvidence } from '../utils/undergraduateMemberEvidence';
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
 import ResearchResultsBackLink from '../components/research/ResearchResultsBackLink';
 import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
+import SessionLoginPrompt from '../components/shared/SessionLoginPrompt';
 import { searchQueryFromResearchSlug } from '../utils/researchSlugSearchQuery';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
+import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
+import useUndoableRemoval from '../hooks/useUndoableRemoval';
 import OperatorPreviewNotice from '../components/labs/OperatorPreviewNotice';
 import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
@@ -65,6 +69,7 @@ import {
   resolveOutreachOfficialSource,
   vettedJoinPageUrls,
   ACCESS_SIGNAL_SOURCE_CONTEXTS,
+  isCitableAccessSignal,
   joinPageLinkLabel,
 } from '../utils/researchDetailSources';
 import { formatGrantSummary } from '../utils/grantAgencyNames';
@@ -110,6 +115,7 @@ const buildYaleDirectorySearchUrl = (name?: string): string => {
   return `${YALE_DIRECTORY_URL}?query=${encodeURIComponent(trimmed)}`;
 };
 const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
+const RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR = 'Research profile needs a fresh login.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="yr-kicker mb-3">{children}</h2>
@@ -358,7 +364,9 @@ const ResearchPlanSaveButton = ({
         {isSaved ? 'Saved to Dashboard' : 'Save research plan'}
       </span>
       <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-        Keep private notes and reach out later
+        {isSaved
+          ? 'Press again to remove it. You can undo.'
+          : 'Keep private notes and reach out later'}
       </span>
     </span>
     <span className="sr-only" role="status">
@@ -633,7 +641,7 @@ const DecisionSummary = ({
                   aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
-                  className="yr-link yr-focus-ring break-words rounded-control"
+                  className="yr-link yr-focus-ring -my-1.5 inline-block break-words rounded-control py-1.5"
                 >
                   {undergradQuote.sourceHost}
                 </a>
@@ -902,6 +910,16 @@ const LabDetail = () => {
   const payloadSlugRef = useRef<string | undefined>(undefined);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
+  const {
+    undoableItem: undoableUnsave,
+    offerUndo,
+    undoRemoval,
+    dismissUndo,
+  } = useUndoableRemoval<{ entityId: string }>();
+  useEffect(() => {
+    dismissUndo();
+  }, [slug, dismissUndo]);
+
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } = useFavorites(
     'researchPlans',
     { enabled: isAuthenticated },
@@ -942,7 +960,9 @@ const LabDetail = () => {
       })
       .catch((err) => {
         if (isCancel(err) || requestId !== requestIdRef.current) return;
-        if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
+        if (err?.response?.status === 401) {
+          dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR });
+        } else if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
           dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_NOT_FOUND_ERROR });
         } else {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
@@ -971,6 +991,9 @@ const LabDetail = () => {
   if (error && !payload) {
     if (error === RESEARCH_PROFILE_NOT_FOUND_ERROR) {
       return <NotFound suggestedQuery={searchQueryFromResearchSlug(slug)} />;
+    }
+    if (error === RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR) {
+      return <SessionLoginPrompt subject="this research profile" />;
     }
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
@@ -1026,11 +1049,19 @@ const LabDetail = () => {
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
+  const undergraduateMembers = undergraduateMemberEvidence({
+    roster,
+    accessSignals: accessSignals.filter(isCitableAccessSignal),
+    currentUndergradCount: group.currentUndergradCount,
+    pastUndergradAdvisees: group.pastUndergradAdvisees,
+    fellowshipRecipients: group.fellowshipRecipients,
+  });
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
     sourceLinkHealth: group.sourceLinkHealth,
     sourceFieldContributions: group.sourceFieldContributions,
+    undergraduateMembers,
   });
   const primaryWebsiteUrl =
     group.websiteUrl &&
@@ -1156,7 +1187,14 @@ const LabDetail = () => {
       return;
     }
 
-    const saved = await setSavedResearchPlanFavorite(entityId, shouldSave);
+    const change = setSavedResearchPlanFavorite(entityId, shouldSave);
+    if (shouldSave) {
+      dismissUndo();
+    } else {
+      setShowResearchPlanSavedCallout(false);
+      offerUndo({ entityId }, change);
+    }
+    const saved = await change;
     if (saved && shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
@@ -1174,6 +1212,16 @@ const LabDetail = () => {
               kind="researchPlan"
               onDismiss={() => setShowResearchPlanSavedCallout(false)}
             />
+          )}
+
+          {undoableUnsave?.entityId === group._id && (
+            <UndoRemovalBanner
+              onUndo={() =>
+                void undoRemoval(({ entityId }) => setSavedResearchPlanFavorite(entityId, true))
+              }
+            >
+              Removed from your Dashboard. Undo brings back its notes and stage.
+            </UndoRemovalBanner>
           )}
 
           <LabHeader
@@ -1238,7 +1286,11 @@ const LabDetail = () => {
             </section>
           )}
 
-          <ResearchTeamSection members={members} roster={roster} />
+          <ResearchTeamSection
+            members={members}
+            roster={roster}
+            undergraduateLines={undergraduateMembers.memberLines}
+          />
 
           <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
 

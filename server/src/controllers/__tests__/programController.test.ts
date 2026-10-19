@@ -369,6 +369,25 @@ describe('programController search visibility', () => {
     expectPublicProgram(res.json.mock.calls[0][0].results[0]);
   });
 
+  it('tells the reader when the results match all but one typed word', async () => {
+    const res = response();
+    mocks.searchPrograms.mockResolvedValue({
+      programs: [privateProgram],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      queryMatch: 'allButOneWord',
+    });
+
+    await searchProgramsController(
+      { query: { query: 'three typed words' }, user: { userType: 'student' } } as any,
+      res as any,
+    );
+
+    expect(res.json.mock.calls[0][0].queryMatch).toBe('allButOneWord');
+  });
+
   it('filters unsafe public program URLs for normal readers', async () => {
     const res = response();
     mocks.searchPrograms.mockResolvedValue({

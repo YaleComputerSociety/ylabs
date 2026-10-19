@@ -100,3 +100,25 @@ describe('createFellowship deadline text conflict (#5158)', () => {
     expect(served(undefined).deadlineTextConflict).toBeNull();
   });
 });
+
+describe('createFellowship citizenship condition (#5235)', () => {
+  const served = (citizenshipCondition: unknown) =>
+    createFellowship({
+      _id: 'p-citizenship-condition',
+      title: 'Synthetic Citizenship Condition Program',
+      citizenshipStatus: [],
+      citizenshipCondition,
+    });
+
+  it('carries the served home-country condition so the detail view can show it', () => {
+    expect(
+      served('International students proposing research in their home country are ineligible.')
+        .citizenshipCondition,
+    ).toBe('International students proposing research in their home country are ineligible.');
+  });
+
+  it('reads no condition when the server sends none', () => {
+    expect(served(null).citizenshipCondition).toBeNull();
+    expect(served(undefined).citizenshipCondition).toBeNull();
+  });
+});

@@ -60,6 +60,9 @@ Research filter behavior:
 - Active selections appear as individually removable chips, with a clear-all action and an active count on the Filters control.
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
 - Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
+  A facet with a single positive value still renders, so a filtered list says which type, school, and department it holds (#5238).
+- The hosted-undergraduates toggle shows its count even at (0), disabled and out of the initial focus order, with a note that missing evidence is not proof there is none.
+- When active filters emptied the results, the zero-result panel offers clearing them rather than a shorter query, and omits the coverage-gap sentence.
 - Missing, loading, or failed facet metadata must not disable base search, invent counts from total results, or expose hidden focusable controls.
 
 Current gap: filters and older labels still contain some "acceptance" and "accepting undergrads" language. Replace it with plain directory language and factual, sourced badges rather than a plausibility framing.

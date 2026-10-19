@@ -1,5 +1,16 @@
 export const HTTP_AUTH_REQUIRED_EVENT = 'ylabs:http-auth-required';
 export const HTTP_RATE_LIMITED_EVENT = 'ylabs:http-rate-limited';
+export const PAGE_LOGIN_PROMPT_EVENT = 'ylabs:page-login-prompt';
+
+export interface PageLoginPromptDetail {
+  shown: boolean;
+}
+
+export const announcePageLoginPrompt = (shown: boolean) => {
+  window.dispatchEvent(
+    new CustomEvent<PageLoginPromptDetail>(PAGE_LOGIN_PROMPT_EVENT, { detail: { shown } }),
+  );
+};
 
 export interface HttpRateLimitDetail {
   message: string;

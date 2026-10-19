@@ -427,10 +427,20 @@ function paragraphLines($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): s
     .filter(Boolean);
 }
 
+function cardHeadingEntry($: cheerio.CheerioAPI, heading: cheerio.Cheerio<any>): ListedPersonEntry {
+  const [, ...laterLines] = paragraphLines($, heading);
+  const entry = blockEntry($, heading);
+  return { ...entry, years: [entry.years, ...laterLines].join(' ').trim() };
+}
+
+const FACULTY_TITLE =
+  /\b(?:professor|director|chair|principal investigator|lecturer|instructor)\b/i;
+
 function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
   const sections: RosterSection[] = [];
   const trail: HeadingTrailEntry[] = [];
   const entryCells = new Map<ListedPersonEntry, unknown>();
+  const cardHeadingLevels = new Map<ListedPersonEntry, number>();
   let section: (RosterSection & { level: number }) | null = null;
   const root = $('main').length > 0 ? $('main').first() : $('body');
   root
@@ -443,8 +453,22 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
         const text = normalizedText(node.text());
         const level = headingLevel(tagName);
         const isCardName = level > (section?.level ?? 7) || node.closest('li').length > 0;
-        if (section && isCardName && looksLikeListedPersonName(listItemEntry(text).name)) {
-          section.listItems.push(blockEntry($, node));
+        const leadName = listItemEntry(leadingLineText($, node)).name;
+        if (section && isCardName && looksLikeListedPersonName(leadName)) {
+          const entry = cardHeadingEntry($, node);
+          section.listItems.push(entry);
+          cardHeadingLevels.set(entry, level);
+          return;
+        }
+        const previous = section?.listItems[section.listItems.length - 1];
+        const previousCardLevel = previous && cardHeadingLevels.get(previous);
+        if (
+          previous &&
+          previousCardLevel &&
+          level > previousCardLevel &&
+          FACULTY_TITLE.test(text)
+        ) {
+          previous.years = `${previous.years} ${text}`.trim();
           return;
         }
         section = { ...openSection(trail, text, level), level };

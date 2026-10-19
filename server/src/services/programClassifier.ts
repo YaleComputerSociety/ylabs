@@ -251,7 +251,7 @@ const GRADUATE_PROFESSIONAL_AUDIENCE =
 // An audience of researchers who are not Yale students at all is out of scope for a Yale
 // student research surface, so it stays archive review even when the record is research-shaped.
 const NON_YALE_STUDENT_AUDIENCE =
-  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale/;
+  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale|(?<!non-)(?<!non )\byale students are (?:not eligible|ineligible)(?: to apply)?(?=[.;,]|$)/;
 
 const GRADUATE_TRAVEL_RESEARCH =
   /\btravel\b|\babroad\b|\boverseas\b|\bfield research\b|\bfieldwork\b/;
