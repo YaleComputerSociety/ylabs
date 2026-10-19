@@ -3275,6 +3275,38 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     ).toBe('Applicants must review the linked page before applying to the fellowship.');
   });
 
+  it('keeps a neutral phrase for unsafe link targets that are the objects of "open"', () => {
+    const served = stripBibliographicReferenceArtifacts(
+      'Applicants may also open vbscript:msgbox(1) and data:text/html;base64,PGI+ to read more about the award.',
+    );
+    expect(served).toBe(
+      'Applicants may also open the linked page and the linked page to read more about the award.',
+    );
+  });
+
+  it('keeps a readable host for a bare url that is the object of "use"', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'To submit the budget, applicants should use https://forms.example.edu/budget?id=1 and attach a short proposal.',
+      ),
+    ).toBe(
+      'To submit the budget, applicants should use forms.example.edu/budget and attach a short proposal.',
+    );
+  });
+
+  it('keeps a link that is the object of an inflected lead-in verb', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Applicants may apply using https://forms.example.edu/apply and attach a proposal.',
+      ),
+    ).toBe('Applicants may apply using forms.example.edu/apply and attach a proposal.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The portal opens javascript:alert(1) when a student is accepted.',
+      ),
+    ).toBe('The portal opens the linked page when a student is accepted.');
+  });
+
   it('removes an unsafe scheme token that is not the object of its sentence', () => {
     expect(
       stripBibliographicReferenceArtifacts(
