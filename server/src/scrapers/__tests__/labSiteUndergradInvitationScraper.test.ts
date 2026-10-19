@@ -306,4 +306,14 @@ describe('scopedCrawlUrls', () => {
     expect(urls.length).toBeGreaterThan(0);
     expect(urls.every((url) => url.startsWith('https://alpha.example.edu/'))).toBe(true);
   });
+
+  it('treats a root landing page as the site root when guessing join paths', () => {
+    const rootGuesses = scopedCrawlUrls('', 'https://alpha.example.edu/').urls;
+    for (const homeUrl of [
+      'https://alpha.example.edu/home',
+      'https://alpha.example.edu/index.html',
+    ]) {
+      expect(scopedCrawlUrls('', homeUrl).urls).toEqual(rootGuesses);
+    }
+  });
 });
