@@ -104,6 +104,7 @@ import {
   isOffSitePageTitleForPersonScopedName,
   isLabShapedResearchHome,
   isRefusedProfileLinkedHomeName,
+  nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -7778,10 +7779,15 @@ function enforceResearchEntityNameAuthority(input: {
   // A person's row projected as faculty research serves its own name, on every resolve rather
   // than only the one that retypes it, so a display name left from the lab or organization it
   // was typed as, or re-resolved from a live observation, can neither keep that identity nor be
-  // suffixed into a hybrid of the two by the derivations below (#5283).
+  // suffixed into a hybrid of the two by the derivations below (#5283). A display name carrying
+  // the lead's own name (an eponymous lab, a spelling of the person) is the person's and stays.
   if (servesAsFacultyResearch && !input.manuallyLockedFields.includes('displayName')) {
     const displayName = textValue(set.displayName ?? entityDoc?.displayName);
-    if (displayName && displayName !== textValue(set.name ?? entityDoc?.name)) {
+    if (
+      displayName &&
+      displayName !== textValue(set.name ?? entityDoc?.name) &&
+      !nameCarriesPersonIdentity(displayName, input.nameIdentityAuthority.leadPersonName)
+    ) {
       delete set.displayName;
       delete set['fieldProvenance.displayName'];
       delete confidenceByField.displayName;
