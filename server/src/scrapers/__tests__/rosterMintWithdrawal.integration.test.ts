@@ -243,6 +243,18 @@ describe('roster mint withdrawal', () => {
       discovered: [...listedSlugs, bare.slug],
       withdrawn: [],
     });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: bare.slug,
+      field: 'name',
+      value: bare.name,
+      sourceId,
+      sourceName: 'dept-faculty-roster',
+      scrapeRunId: secondRun,
+      confidence: 0.7,
+      superseded: false,
+      observedAt: secondAt,
+    });
     const rematerialized: string[] = [];
     const result = await reconcileRosterMintWithdrawalsFromRun(
       String(secondRun),
@@ -252,6 +264,23 @@ describe('roster mint withdrawal', () => {
     expect(result.counts.restored).toBe(1);
     expect(rematerialized).toEqual([bare.slug]);
     expect(await ResearchEntity.countDocuments({ _id: bare._id, archived: false })).toBe(1);
+  });
+
+  it('keeps a withdrawn row archived when a later read lists it but refuses the mint', async () => {
+    for (const slug of listedSlugs) await seedLaneRow(slug);
+    const bare = await seedLaneRow('dept-synthetic-studies-bare', {
+      archived: true,
+      archivedReason: ROSTER_MINT_WITHDRAWAL_ARCHIVE_REASON,
+    });
+    await seedRead({
+      runId: secondRun,
+      observedAt: secondAt,
+      discovered: [...listedSlugs, bare.slug],
+      withdrawn: [],
+    });
+    const result = await reconcileRosterMintWithdrawalsFromRun(String(secondRun));
+    expect(result.counts.restored).toBe(0);
+    expect(await ResearchEntity.countDocuments({ _id: bare._id, archived: true })).toBe(1);
   });
 
   it('counts a withdrawn mint as still listed for the departure lane', async () => {

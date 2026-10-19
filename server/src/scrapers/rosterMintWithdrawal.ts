@@ -375,6 +375,23 @@ async function loadRowEvidence(
   });
 }
 
+/** The keys this run's admitted reads listed and the lane actually minted, not title-refused. */
+async function loadSlugsMintedInRun(
+  scrapeRunId: string,
+  currentReads: readonly RosterMintWithdrawalRead[],
+): Promise<Set<string>> {
+  const listed = new Set<string>();
+  for (const read of currentReads) for (const key of read.discovered) listed.add(key);
+  if (listed.size === 0) return new Set();
+  const minted = (await Observation.distinct('entityKey', {
+    scrapeRunId: new mongoose.Types.ObjectId(scrapeRunId),
+    sourceName: ROSTER_LANE_SOURCE_NAME,
+    entityType: 'researchEntity',
+    entityKey: { $in: [...listed] },
+  })) as unknown[];
+  return new Set(minted.filter((key): key is string => typeof key === 'string'));
+}
+
 export interface RosterMintWithdrawalDeps {
   rematerializeResearchEntity?: (entityKey: string) => Promise<void>;
 }
@@ -463,8 +480,7 @@ export async function reconcileRosterMintWithdrawalsFromRun(
   }
   result.counts.withdrawnRows = rowEvidence.length;
 
-  const remintedSlugs = new Set<string>();
-  for (const read of currentReads) for (const key of read.discovered) remintedSlugs.add(key);
+  const remintedSlugs = await loadSlugsMintedInRun(scrapeRunId, currentReads);
   const restorable = remintedSlugs.size
     ? ((await ResearchEntity.find(
         {

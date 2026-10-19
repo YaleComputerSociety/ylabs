@@ -1143,7 +1143,7 @@ The lane minted rows from reads that later proved wrong (#2460 read a shared giv
 Now each read records, per department snapshot, `withdrawnEntityKeys` (people whose own profile it fetched and found nothing to mint, title refusals excluded) and `profilesRead`, marked by `mintWithdrawalRecorded: true`.
 `rosterMintWithdrawal.ts` runs in every materialize pass after the departure lane: it archives a live lane-owned row with `archivedReason` starting `dept-faculty-roster:mint-withdrawn` only after two admitted reads both withdraw it, freezes a department whose discovery or profile reads fell below 0.75 of the previous read or which would withdraw more than half of the rows it reached, and keeps any row a served tier, a description, a website, a foreign lead edge, a foreign non-empty observation or a merged-in row holds up.
 It restores a row it archived when a later read mints it again.
-Plan it read-only with `yarn --cwd server research-entity:plan-roster-mint-withdrawal --run <scrapeRunId> [--output /tmp/plan.json]`; a materialize pass applies it, and `docs/decisions.md` records the owner decision.
+A materialize pass applies it, a dry-run materialize plans it without writing, and `docs/decisions.md` records the owner decision.
 A first run on new code only records the first read, so the rows are withdrawn on the second.
 
 #### The other roster gate: `research-homes:audit-rosters`
