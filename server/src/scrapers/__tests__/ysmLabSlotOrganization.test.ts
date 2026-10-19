@@ -52,6 +52,18 @@ describe('a YSM lab slot that links an organization the person leads (#5283)', (
     ],
     ['a project', 'Fixture Imaging Suite Project', 'https://fixtureimaging.example.org/'],
     ['an acronym initiative', 'Kids in Fixture Danger (KIFD)', 'https://medicine.yale.edu/kifd/'],
+    ['a collaborative', 'Fixture Health Collab', 'https://medicine.yale.edu/fixture-collab/'],
+    ['a colab', 'Fixture CoLab', 'https://fixturecolab.example.org/'],
+    [
+      'an organization carrying the person name',
+      'Quillfixture Center for Fixture Ecology',
+      'https://medicine.yale.edu/quillfixture-center/',
+    ],
+    [
+      'an unshaped name carrying the person name',
+      'Quillfixture Research',
+      'https://quillfixture.example.org/',
+    ],
   ])('keeps the person row and its website for %s', (_shape, name, url) => {
     const fields = fieldsFor({ name, url });
     expect(fields.name).toBe('Avery Quillfixture Faculty Research');
@@ -64,7 +76,12 @@ describe('a YSM lab slot that links an organization the person leads (#5283)', (
     ['a lab name', 'Fixture Ecology Lab', 'https://fixtureecology.example.org/'],
     ['a group name', 'Coastal Fixture Group', 'https://coastalfixture.example.org/'],
     ['a lab url', 'Coastal Fixture Ecology', 'https://medicine.yale.edu/lab/quillfixture/'],
-    ['the person name', 'Quillfixture Research', 'https://quillfixture.example.org/'],
+    ['a lab glued onto a name', 'QuillfixtureLab', 'https://quillfixture.example.org/'],
+    [
+      'a lab glued onto a domain',
+      'Coastal Fixture Ecology',
+      'https://quillfixturelab.example.org/',
+    ],
   ])('still names the row after its own lab for %s', (_shape, name, url) => {
     const fields = fieldsFor({ name, url });
     expect(fields.name).toBe(name);

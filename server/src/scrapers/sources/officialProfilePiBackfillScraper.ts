@@ -26,7 +26,6 @@ import {
   eponymMatchesIdentity,
   eponymousLabNameSurnameCandidates,
   isInadmissibleProfileLinkedHomeName,
-  isLabShapedResearchHome,
   isNonIdentifyingLinkLabelName,
   nameDenotesOrganization,
   stripResearchHomeNameLinkChrome,
@@ -1306,7 +1305,7 @@ function classifyResearchHome(
 function untypedResearchHome(
   name: string,
 ): Pick<OfficialProfileResearchHome, 'kind' | 'entityType'> {
-  if (isLabShapedResearchHome(name)) return { kind: 'lab', entityType: 'LAB' };
+  if (/\b(?:labs|group|team|unit)\b/i.test(name)) return { kind: 'lab', entityType: 'LAB' };
   return { kind: 'initiative', entityType: 'INITIATIVE' };
 }
 

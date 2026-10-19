@@ -1102,23 +1102,23 @@ export function isOffSitePageTitleForPersonScopedName(args: {
   return !namesAnOrganizationalResearchHome(args.candidateName);
 }
 
-const LAB_SHAPED_HOME_NAME_RE =
-  /\b(?:groups?|teams?|units?)\b|(?:\b|[a-z])(?:labs?|laborator(?:y|ies))\b/i;
-const LAB_SHAPED_HOME_URL_RE = /(?:\b|[a-z])(?:labs?|laboratory)\b/i;
+const LAB_SHAPED_HOME_NAME_RE = /\b(?:groups?|teams?|units?|labs?|laborator(?:y|ies))\b/i;
+const GLUED_LAB_HOME_NAME_RE = /(?<=[a-z])(?<!\bCo|\bCol)Labs?\b/;
+const LAB_SHAPED_HOME_URL_RE = /(?<=\b|[a-z])(?<!col?)(?:labs?|laboratory)\b/i;
 
 /**
  * Whether a home a person's profile links is shaped as that person's own lab: its name says
  * lab, laboratory, group, team or unit, or its URL says lab, including a lab glued onto a
- * name ("<Surname>Lab", `<surname>lab.org`). Anything else a lab slot links
- * is a program, project, collaborative or other organization, and a person who leads one
- * keeps their own row beside the organization's (owner decision 2026-10-17, #5283), so
- * only a lab-shaped home may name or type the person's row. `official-profile-pi-backfill`
- * types homes by the same words (`classifyResearchHome`, `untypedResearchHome`); changing
- * this also requires changing those.
+ * name ("<Surname>Lab", `<surname>lab.org`) but never a collab or colab. Anything else a lab
+ * slot links is a program, project, collaborative or other organization, and a person who
+ * leads one keeps their own row beside the organization's (owner decision 2026-10-17,
+ * #5283), so only a lab-shaped home may name or type the person's row.
  */
 export function isLabShapedResearchHome(name: unknown, url?: unknown): boolean {
   return (
-    LAB_SHAPED_HOME_NAME_RE.test(textValue(name)) || LAB_SHAPED_HOME_URL_RE.test(textValue(url))
+    LAB_SHAPED_HOME_NAME_RE.test(textValue(name)) ||
+    GLUED_LAB_HOME_NAME_RE.test(textValue(name)) ||
+    LAB_SHAPED_HOME_URL_RE.test(textValue(url))
   );
 }
 

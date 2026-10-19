@@ -45,7 +45,6 @@ import { normalizeOrcid } from '../../utils/orcid';
 import {
   classifyHarvestedResearchHomeName,
   isLabShapedResearchHome,
-  nameCarriesPersonIdentity,
   personSurnamesFromDisplayNames,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -505,7 +504,6 @@ export function facultyToResearchEntityObservations(
   // organization's name and type stay on the organization's own row (#5283).
   const linksAnOrganization =
     Boolean(linkedSite.adoptableName) &&
-    !nameCarriesPersonIdentity(linkedSite.adoptableName, profile.name) &&
     !isLabShapedResearchHome(linkedSite.adoptableName, profile.labUrl);
   const hasLab = linkIsOwnSite && !linksPersonalWebsite && !linksAnOrganization;
 
