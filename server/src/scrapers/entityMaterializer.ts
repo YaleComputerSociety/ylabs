@@ -405,6 +405,7 @@ import {
 } from './utils/embeddedNetidContradiction';
 import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
+import { reconcileRosterMintWithdrawalsFromRun } from './rosterMintWithdrawal';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterAffiliationHandOffFromRun } from './centerAffiliationHandOff';
 import {
@@ -12136,6 +12137,20 @@ export async function materializeFromRun(
     // row serving.
     console.info(
       `[faculty-departure] reconciled ${departureResult.governedDepartments.length} department(s): ${departureResult.suppressed} suppressed, ${departureResult.cleared} cleared, ${departureResult.held} held on Yale-profile evidence, ${departureResult.planned.record_first_absence} first absence(s) recorded, ${departureResult.regatedEntities} row(s) re-gated`,
+    );
+  }
+  const rosterMintWithdrawal = await reconcileRosterMintWithdrawalsFromRun(
+    scrapeRunId,
+    { dryRun: options.dryRun },
+    {
+      rematerializeResearchEntity: async (entityKey) => {
+        await materializeEntity('researchEntity', { entityKey }, options);
+      },
+    },
+  );
+  if (rosterMintWithdrawal.outcome !== 'no-roster-health-observations') {
+    console.info(
+      `[roster-mint-withdrawal] ${rosterMintWithdrawal.outcome}: ${JSON.stringify(rosterMintWithdrawal.counts)}`,
     );
   }
   const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);

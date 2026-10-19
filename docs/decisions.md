@@ -5,6 +5,28 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-19: The Roster Lane Withdraws A Row It No Longer Mints (#5380)
+
+The owner decided on 2026-10-19 that the department roster lane archives a row it minted earlier and no longer mints, when no other lane holds the row up.
+This narrows rule 3 of the 2026-09-24 #3359 entry, where an archive is operator judgement, to exclude this lane-owned case, on the #4110 precedent of the fellowships lane archiving its own mint.
+It is the lane's own claim being withdrawn, not a judgement about one row: the lane minted the row from a read that later proved wrong, and two complete reads now say it would not.
+Measured on Development on 2026-10-19: 299 of 1,177 live rows minted by `dept-faculty-roster` were not re-minted by the 2026-10-17 full run, and the person was re-read in 248 of them.
+Of those, 154 are `student_ready` on other lanes' evidence, and 44 school-wide public health rows held on `citations_identify_no_person` exist only because an August run read a shared giving page as every person's lab website (#2460); replaying the current lane on their profiles found nothing to mint for 43 and a 404 for 1.
+
+Decided:
+
+- **The lane says so; silence never does.**
+  A read records a row's key as `withdrawnEntityKeys` on the department's roster-health snapshot only when it fetched the person's own profile, the profile named the person, and the mint came back empty without a title refusal.
+  An unread or refused profile, a profile-only lane and a programme lane record nothing.
+- **Two admitted reads, a yield guard and a ceiling.**
+  A row is withdrawn only when the two newest complete, over-the-wire reads of its department both record it and neither minted it.
+  The department is frozen when its discovery or its count of profiles read fell below 0.75 of the previous admitted read, or when more than half of the live rows the read reached would be withdrawn at once.
+- **Any other evidence keeps the row.**
+  A served tier, a description, a website, a lead edge from another lane, a non-empty live observation from another lane, or a row merged into it each keep it; page-read bookkeeping, the lead-school inheritance derivation, and a website the roster lane itself still asserts do not.
+- **The lane reverses its own archive.**
+  A row archived for this reason is restored and rematerialized when an admitted read mints it again.
+- A withdrawn key counts as still listed for the faculty-departure lane, because the person is on the roster.
+
 ## 2026-10-19: An Official Roster Address Is Enough To Create A Researcher
 
 The owner decided on 2026-10-19 that an official Yale roster or profile page printing a person's own `first.last@yale.edu` address is enough to create that researcher.

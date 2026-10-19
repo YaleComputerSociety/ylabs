@@ -1142,6 +1142,15 @@ The four paginated lanes hid 320 unread rows but only 9 people absent by name, s
 Filter candidate rows through the same rank test the lanes use (`isFacultyTitle` minus `isSubordinateResearchRank`, `looksLikeNonResearchTitle` and `isResearchSupportStaffTitle`) before calling anything a faculty gap: a raw name diff over discovered people pages returned 1,713 absent names, of which 381 stated a faculty rank and the rest were students, research scientists and staff.
 A baselined department that is now covered reads as `staleUncoveredBaselineEntries` and alarms `departments:audit-catalog-drift`, which masks the real roster drift the audit exists to surface.
 
+#### A row the roster lane no longer mints is withdrawn (#5380)
+
+The lane minted rows from reads that later proved wrong (#2460 read a shared giving page as every public health profile's lab website), and nothing retracted the mint once the lane stopped asserting it, so the row lived on citing only the listing.
+Now each read records, per department snapshot, `withdrawnEntityKeys` (people whose own profile it fetched and found nothing to mint, title refusals excluded) and `profilesRead`, marked by `mintWithdrawalRecorded: true`.
+`rosterMintWithdrawal.ts` runs in every materialize pass after the departure lane: it archives a live lane-owned row with `archivedReason` starting `dept-faculty-roster:mint-withdrawn` only after two admitted reads both withdraw it, freezes a department whose discovery or profile reads fell below 0.75 of the previous read or which would withdraw more than half of the rows it reached, and keeps any row a served tier, a description, a website the roster lane does not itself still assert, a foreign lead edge, a foreign non-empty observation or a merged-in row holds up.
+It restores a row it archived when a later read mints it again.
+A materialize pass applies it, a dry-run materialize plans it without writing, and `docs/decisions.md` records the owner decision.
+A first run on new code only records the first read, so the rows are withdrawn on the second.
+
 #### The other roster gate: `research-homes:audit-rosters`
 
 `official-research-home-roster` has its own audit, because it is the only lane that claims a named non-lead person is a *current* member (#2412).
