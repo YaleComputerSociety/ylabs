@@ -3591,11 +3591,22 @@ export async function resolveNetidForRosterEmailAlias(
   ).lean()) as Array<{ entityKey?: unknown }>;
   const netids = uniqueStrings(
     matches
-      .map((match) => userLookupValueForInferredPiUserKey(match.entityKey).toLowerCase())
+      .map((match) => netidNamedByUserEntityKey(match.entityKey))
       .filter((netid) => Boolean(netid) && netid !== local),
   );
   if (netids.length === 1) return { status: 'resolved', netid: netids[0] };
   return { status: netids.length > 1 ? 'ambiguous' : 'absent' };
+}
+
+/**
+ * The netid a `user` entityKey names, or nothing when the key belongs to another namespace.
+ * A grant lane keys its people `nsf-pi:<name>` and carries their address as an `email`
+ * observation, so reading every key as a netid made that name a second netid for the alias
+ * and turned a resolvable alias `ambiguous`.
+ */
+export function netidNamedByUserEntityKey(entityKey: unknown): string {
+  const netid = userLookupValueForInferredPiUserKey(entityKey).toLowerCase();
+  return NAMESPACED_USER_KEY_PATTERN.test(netid) || /\s/.test(netid) ? '' : netid;
 }
 
 export async function netidForRosterEmailAlias(alias: string): Promise<string | undefined> {
@@ -6433,10 +6444,16 @@ function normalizedResearcherProfileText(
  * create a record no entity can ever use.
  */
 async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Promise<boolean> {
-  const attributions = (await Observation.find(
-    { field: 'inferredPiUserKey', value: userEntityKey, superseded: false },
-    { entityKey: 1, entityId: 1 },
-  ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown }>;
+  const attributions = (
+    (await Observation.find(
+      {
+        field: 'inferredPiUserKey',
+        value: { $in: inferredPiUserKeyValuesThatCouldName(userEntityKey) },
+        superseded: false,
+      },
+      { entityKey: 1, entityId: 1, value: 1 },
+    ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown; value?: unknown }>
+  ).filter((attribution) => userEntityKeyForInferredPiUserKey(attribution.value) === userEntityKey);
   const slugs = uniqueStrings(attributions.map((attribution) => attribution.entityKey));
   const entityIds = attributions
     .map((attribution) => normalizeMaterializerObjectId(attribution.entityId))
@@ -6462,6 +6479,20 @@ function officialPersonPagesContradictNameMatch(observations: any[], candidate: 
     officialUserProfileUrlsFromObservations(observations),
     storedOfficialUrls,
   );
+}
+
+/**
+ * A roster stores the lead it names as `netid:<alias>`, the bare alias or the Yale address
+ * (#4697), and `userEntityKeyForInferredPiUserKey` reads all three as one `user` key. Matching
+ * only the `netid:` spelling refused every lead whose roster stored one of the other two.
+ */
+function inferredPiUserKeyValuesThatCouldName(userEntityKey: string): Array<string | RegExp> {
+  const payload = userEntityKey.match(/^netid:(.+)$/)?.[1];
+  if (!payload || !BARE_ROSTER_ALIAS_PATTERN.test(payload)) return [userEntityKey];
+  return [
+    userEntityKey,
+    new RegExp(`^(?:netid:)?${escapeRegex(payload)}(?:@(?:[a-z0-9-]+\\.)*yale\\.edu)?$`, 'i'),
+  ];
 }
 
 export interface UserIdentityJoinResult {
