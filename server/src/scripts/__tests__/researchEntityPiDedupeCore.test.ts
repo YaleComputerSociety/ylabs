@@ -3559,7 +3559,9 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
     const lead = { piFirstName: 'Wren', piLastName: 'Ortolan' };
     const key = eponymousLabAgreementKey('Ortolan Lab', lead);
     expect(key).not.toBe('');
-    expect(eponymousLabAgreementKey('ORTOLAN LAB Coastal Sediment Genomics @ Yale', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('ORTOLAN LAB Coastal Sediment Genomics @ Yale', lead)).toBe(
+      key,
+    );
     expect(eponymousLabAgreementKey('The Wren Ortolan Laboratory', lead)).toBe(key);
     expect(eponymousLabAgreementKey('W. Ortolan Lab', lead)).toBe(key);
     expect(eponymousLabAgreementKey('Coastal Ortolan Lab', lead)).toBe('');
