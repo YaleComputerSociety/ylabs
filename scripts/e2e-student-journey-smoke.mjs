@@ -685,6 +685,33 @@ await step(
   },
 );
 
+await step(
+  'the sticky filter bar stays one compact row on a phone with a filter active',
+  async () => {
+    const phonePage = await context.newPage();
+    try {
+      await phonePage.setViewportSize({ width: 390, height: 664 });
+      await phonePage.goto(`${baseUrl}/research?department=Department+of+Fictional+Biology`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await settleResearchPage(phonePage);
+      await phonePage
+        .getByRole('button', { name: /^Remove Department:/ })
+        .waitFor({ timeout: 20000 });
+      const barHeight = await phonePage.evaluate(() => {
+        const bar = document.querySelector('[data-scroll-container] .sticky.top-0');
+        return bar ? Math.round(bar.getBoundingClientRect().height) : null;
+      });
+      assert(
+        barHeight !== null && barHeight <= 72,
+        `The sticky filter bar is ${barHeight}px tall at 390x664 with one filter active; it should stay one row (72px or less) so results keep the screen (#5305).`,
+      );
+    } finally {
+      await phonePage.close();
+    }
+  },
+);
+
 const LAYOUT_SHIFT_BUDGET = 0.1;
 const syntheticLayoutEntity = (index) => ({
   _id: `e2e-layout-${index}`,

@@ -354,10 +354,14 @@ const ResearchFilterDisclosure = ({
     </button>
   );
 
-  const activeChips = (offersClearAll: boolean) =>
+  const activeChips = (besideTrigger: boolean) =>
     activeCount > 0 && (
       <div
-        className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
+        className={
+          besideTrigger
+            ? 'flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto *:max-w-[16rem] *:shrink-0'
+            : 'mt-2 flex min-w-0 max-w-full flex-wrap gap-2'
+        }
         aria-label="Active research filters"
       >
         {selectedEntityType && (
@@ -388,7 +392,7 @@ const ResearchFilterDisclosure = ({
             onRemove={() => onHostsUndergradsChange?.(false)}
           />
         )}
-        {offersClearAll && (
+        {besideTrigger && (
           <button
             type="button"
             onClick={onClearAll}
@@ -427,8 +431,8 @@ const ResearchFilterDisclosure = ({
   }
 
   return (
-    <div className="mt-3 min-w-0 max-w-full">
-      <div className="relative min-w-0 max-w-full">
+    <div className="mt-3 flex min-w-0 max-w-full items-center gap-2">
+      <div className="relative min-w-0 max-w-full shrink-0">
         <button
           ref={triggerRef}
           type="button"
