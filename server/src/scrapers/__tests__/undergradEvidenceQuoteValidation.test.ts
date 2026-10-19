@@ -180,16 +180,29 @@ describe('laneQuoteStatesUndergraduates (#3764)', () => {
     }
   });
 
-  it('keeps quotes that name undergraduates, including roster text glued to a name', () => {
+  it('keeps quotes that name undergraduates in a sentence', () => {
     for (const quote of [
       'Undergraduate research positions are also available.',
-      'Jordan ExampleUndergraduate Student Researcher, Example Lab',
-      'Taylor Example, Yale College junior in the lab',
-      'Sam Example SURF student',
-      'A Harvard College Student Intern',
+      'Taylor Example is a Yale College junior working in the lab.',
+      'Sam Example joined the lab this summer as a SURF student.',
       'We welcome first-year students and juniors to join the lab.',
     ]) {
       expect(laneQuoteStatesUndergraduates(quote), quote).toBe(true);
+    }
+  });
+
+  it('refuses a roster card or heading that is not a passage (#5286)', () => {
+    for (const quote of [
+      'Jordan Example UNDERGRADUATE RESEARCHER About Me',
+      'Jordan ExampleUndergraduate Student Researcher, Example Lab',
+      'Taylor Example, Yale College junior in the lab',
+      'Sam Example SURF student',
+      'Alex Example (undergraduate visitor, Summer 2026)',
+      'Undergraduate researchers Jordan Example Taylor Example',
+      'Undergraduate Students and RAs Example Person Undergraduate RA',
+    ]) {
+      expect(laneQuoteStatesUndergraduates(quote), quote).toBe(false);
+      expect(quoteStatesAnUndergraduateAccessFact(quote), quote).toBe(false);
     }
   });
 

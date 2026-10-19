@@ -30,7 +30,6 @@ describe('quoteStatesAnUndergraduateAccessFact', () => {
       'He co-teaches an undergraduate course and mentors undergraduate students in the lab.',
       'A current member first joined the lab during his undergraduate studies.',
       'We welcome inquiries from prospective postdocs, graduate students, and undergraduate researchers.',
-      'Undergraduate Students and RAs Example Person Undergraduate RA',
       'She teaches and mentors undergraduate researchers in her lab.',
       'The professor teaches courses and welcomes undergraduates to join the lab.',
       'Undergraduate courses are taught by lab members, and undergraduates can join the lab.',

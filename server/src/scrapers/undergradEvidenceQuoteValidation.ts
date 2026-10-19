@@ -182,5 +182,20 @@ export function laneQuoteStatesUndergraduates(quote: string | undefined | null):
   const text = (quote || '').trim();
   if (!isPlausibleUndergradEvidenceQuote(text)) return false;
   if (BARE_POPULATION_HEADING.test(text)) return false;
+  if (!readsAsAPassage(text)) return false;
   return namesAnUndergraduateMarker(text);
+}
+
+const LOWERCASE_WORD = /(?<![\p{L}'’-])\p{Ll}[\p{L}'’-]*/gu;
+
+const ENDS_LIKE_A_SENTENCE = /[.!?]["'”’)]*$/;
+
+/**
+ * Measured on Development (#5286): every served quote with at most 4 distinct lowercase
+ * words was a roster card, name list or heading, bar one, and every one with 5 or more was
+ * a sentence. A short sentence ending in terminal punctuation still reads as a passage.
+ */
+export function readsAsAPassage(text: string): boolean {
+  const lowercaseWords = new Set(text.match(LOWERCASE_WORD) ?? []).size;
+  return lowercaseWords >= 5 || (lowercaseWords >= 3 && ENDS_LIKE_A_SENTENCE.test(text.trim()));
 }
