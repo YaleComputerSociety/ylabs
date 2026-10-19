@@ -95,6 +95,37 @@ describe('the user identity join reads researcher identifiers when no account ex
     expect(join.displayName).toBe('');
   });
 
+  it('refuses a name match when the evidence spells out a different netid than the candidate holds', async () => {
+    const key = 'netid:quinn.synthetic.qs584';
+    const pageObservation = (field: string, value: unknown) => ({
+      ...userObservation(key, field, value),
+      sourceUrl: 'https://medicine.yale.edu/profile/quinn-synthetic-qs584/',
+    });
+    const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [
+      pageObservation('netid', 'quinn.synthetic.qs584'),
+      pageObservation('fname', 'Quinn'),
+      pageObservation('lname', 'Synthetic'),
+      pageObservation('title', 'Staff Affiliate'),
+      pageObservation('profileUrls', {
+        departmental: 'https://medicine.yale.edu/profile/quinn-synthetic-qs584/',
+      }),
+    ]);
+
+    expect(join.researcher).toBeNull();
+    expect(join.identityJoin).toBeUndefined();
+  });
+
+  it('still name-matches when the evidence spells out the netid the candidate holds', async () => {
+    const key = `netid:quinn.synthetic.${NETID}`;
+    const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [
+      userObservation(key, 'fname', 'Quinn'),
+      userObservation(key, 'lname', 'Synthetic'),
+    ]);
+
+    expect(String(join.researcher?._id)).toBe(String(researcherId));
+    expect(join.identityJoin).toBe('person-name');
+  });
+
   it('reaches the researcher holding the email when the key names no netid holder', async () => {
     const key = 'netid:quinn.synthetic';
     const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [
