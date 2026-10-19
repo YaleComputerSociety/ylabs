@@ -479,6 +479,19 @@ describe('rosterResearchEntityMint refusedByTitle', () => {
     expect(refused.refusedByTitle).toBe(true);
   });
 
+  it('refuses the statistician, analyst and assistant job classes a school directory lists', () => {
+    for (const title of [
+      'Biostatistician',
+      'Statistician 3',
+      'Financial Analyst 2',
+      'Programmer Analyst',
+      'Sr Admin Asst School of Public Health',
+    ]) {
+      expect(mint({ title }).refusedByTitle).toBe(true);
+    }
+    expect(mint({ title: 'Assistant Professor of Biostatistics' }).refusedByTitle).toBe(false);
+  });
+
   it('does not report a title refusal for an entry with no research evidence at all', () => {
     const empty = mint({
       title: 'Laboratory Assistant 3',
