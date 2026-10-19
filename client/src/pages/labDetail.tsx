@@ -1290,6 +1290,7 @@ const LabDetail = () => {
             members={members}
             roster={roster}
             undergraduateLines={undergraduateMembers.memberLines}
+            leadPersonNames={leadPersonNames}
           />
 
           <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />

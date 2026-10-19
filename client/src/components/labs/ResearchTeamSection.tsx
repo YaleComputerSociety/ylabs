@@ -186,14 +186,20 @@ const memberLineText = (line: UndergraduateMemberLine): string =>
     ? `${line.count} current ${line.count === 1 ? 'undergraduate' : 'undergraduates'}`
     : 'past undergraduate researchers';
 
-const memberLinePage = (sourceUrl: string) =>
-  isCorroboratedPersonPageUrl(sourceUrl)
+const memberLinePage = (sourceUrl: string, leadPersonNames: readonly string[]) =>
+  isCorroboratedPersonPageUrl(sourceUrl, leadPersonNames)
     ? { lists: 'The official profile lists', link: 'See the profile' }
     : { lists: 'The lab’s own page lists', link: 'See the lab’s page' };
 
-function UndergraduateMemberLineRow({ line }: { line: UndergraduateMemberLine }) {
+function UndergraduateMemberLineRow({
+  line,
+  leadPersonNames,
+}: {
+  line: UndergraduateMemberLine;
+  leadPersonNames: readonly string[];
+}) {
   const sourceUrl = safeHttpUrl(line.sourceUrl);
-  const page = memberLinePage(sourceUrl);
+  const page = memberLinePage(sourceUrl, leadPersonNames);
   return (
     <div>
       <h3 className="mb-1 text-sm font-semibold text-ink">{memberLineHeading(line)}</h3>
@@ -218,10 +224,12 @@ export default function ResearchTeamSection({
   members,
   roster,
   undergraduateLines = [],
+  leadPersonNames = [],
 }: {
   members: LabMember[];
   roster: LabRosterDisclosure;
   undergraduateLines?: UndergraduateMemberLine[];
+  leadPersonNames?: readonly string[];
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
@@ -268,7 +276,11 @@ export default function ResearchTeamSection({
         )}
         {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
         {undergraduateLines.map((line) => (
-          <UndergraduateMemberLineRow key={line.status} line={line} />
+          <UndergraduateMemberLineRow
+            key={line.status}
+            line={line}
+            leadPersonNames={leadPersonNames}
+          />
         ))}
         {GROUPS.map(({ role, label }) => {
           const groupedMembers = teamMembers.filter((member) => member.role === role);
