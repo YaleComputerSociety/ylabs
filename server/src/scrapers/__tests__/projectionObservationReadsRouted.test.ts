@@ -34,6 +34,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read either: zero hits over the same 147 rows. Value-keyed as well, but the reachability is what decides it.',
   },
   {
+    fn: 'mergedSurvivorTakesLoserLeadAttribution',
+    reason:
+      "Called only from `liveResearchEntityNamesUserKeyAsLead`, the person-mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It loads the survivor a merged-in loser resolves to and that survivor's own observations, a different row from any being projected.",
+  },
+  {
     fn: 'researcherReachedByUserIdentity',
     reason:
       'On the inferred-PI lead path, reached only from `planInferredPiMembership`, which the projection calls inside `if (!options.dryRun)` and the reclaim stage calls directly, so THE BENCHMARK NEVER MAKES THIS READ: it replays rows with `dryRun: true`. It reads `user` observations under the key a PI attribution names, a different entity from the row being projected, so an entity-keyed source for that row cannot answer it (#4697).',
@@ -106,6 +111,11 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
     fn: 'liveResearchEntityNamesUserKeyAsLead',
     reason:
       'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so THE BENCHMARK NEVER MAKES THIS READ: it replays `researchEntity` rows only, measured at zero hits over 147 rows (#3863). A capture-time index was considered and dropped for that reason, not because it was hard.',
+  },
+  {
+    fn: 'mergedSurvivorTakesLoserLeadAttribution',
+    reason:
+      "Called only from `liveResearchEntityNamesUserKeyAsLead`, the person-mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It loads the survivor a merged-in loser resolves to and that survivor's own observations, a different row from any being projected.",
   },
   {
     fn: 'findEntityCandidatesByKey',

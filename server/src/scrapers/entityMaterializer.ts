@@ -5813,21 +5813,15 @@ async function liveResearcherIdsAmong(personIds: readonly unknown[]): Promise<Se
 // mailbox-shaped key would otherwise veto the person the same roster names today.
 async function loserLeadAttributionsTheSurvivorTakes(
   survivorId: mongoose.Types.ObjectId,
+  survivorName: string,
   attributions: any[],
 ): Promise<any[]> {
   if (attributions.length === 0) return [];
-  let entityName: string | undefined;
-  const loadEntityName = async (): Promise<string> => {
-    entityName ??= textValue(
-      ((await ResearchEntity.findById(survivorId).select('name').lean()) as any)?.name,
-    );
-    return entityName;
-  };
   const named = [];
   for (const attribution of attributions) {
     named.push({
       attribution,
-      person: await personNamedByPiAttribution(attribution, loadEntityName),
+      person: await personNamedByPiAttribution(attribution, async () => survivorName),
     });
   }
   const resolvedPeople = named
@@ -6018,9 +6012,13 @@ export async function mergedSurvivorEvidence(
             ),
         );
   const takenLoserLeadIds = new Set(
-    (await loserLeadAttributionsTheSurvivorTakes(survivorId, loserLeadAttributions)).map(
-      (observation: any) => String(observation._id),
-    ),
+    (
+      await loserLeadAttributionsTheSurvivorTakes(
+        survivorId,
+        textValue(survivor.name),
+        loserLeadAttributions,
+      )
+    ).map((observation: any) => String(observation._id)),
   );
   const loserNamesLeadOfLeadlessSurvivor = (observation: any): boolean =>
     takenLoserLeadIds.has(String(observation._id));
@@ -6292,7 +6290,7 @@ async function observationsMergedIntoLiveSurvivor(
     routedSurvivor?.hit
       ? routedSurvivor.value
       : await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-          .select('_id slug fieldValueRefusals manuallyLockedFields')
+          .select('_id slug name fieldValueRefusals manuallyLockedFields')
           .lean()
   ) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
@@ -6557,7 +6555,7 @@ async function mergedSurvivorTakesLoserLeadAttribution(
   const canonical = await resolveResearchEntityCanonicalByTombstone(loser);
   if (!canonical) return false;
   const survivor = (await ResearchEntity.findOne({ _id: canonical._id, archived: { $ne: true } })
-    .select('_id slug fieldValueRefusals manuallyLockedFields')
+    .select('_id slug name fieldValueRefusals manuallyLockedFields')
     .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return false;
   const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
