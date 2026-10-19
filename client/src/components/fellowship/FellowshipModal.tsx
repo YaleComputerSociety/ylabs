@@ -40,6 +40,10 @@ import useModalDialog from '../../hooks/useModalDialog';
 import FavoriteButton, { watchControlLabel, watchControlVerb } from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
 import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
+import {
+  noMentorFirstAnswer,
+  programLetterRequirement,
+} from '../../utils/programLetterRequirement';
 
 interface FellowshipModalProps {
   fellowship: Fellowship;
@@ -171,9 +175,7 @@ const FellowshipModal = ({
   const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
     ? 'Yes, secure a mentor before applying'
-    : fellowship.mentorMatching
-      ? 'Not first, the program helps match you with a mentor'
-      : 'Not usually';
+    : noMentorFirstAnswer(programLetterRequirement(fellowship), fellowship.mentorMatching);
 
   const handleFilterClick = (filterType: ModalFilterType, value: string) => {
     void trackResearchEvent({
@@ -837,7 +839,7 @@ const FellowshipModal = ({
                       {applicationStatus.isApplicationWindowOpen
                         ? 'Apply now'
                         : applicationStatus.kind === 'notOpenYet'
-                          ? 'Track the opening date'
+                          ? 'See the official program page'
                           : deadlineStale
                             ? 'Open the official page'
                             : 'Open the fellowship source'}

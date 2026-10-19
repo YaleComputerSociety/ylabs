@@ -450,7 +450,7 @@ describe('FellowshipModal', () => {
 
     expect(screen.getByText('Opens soon', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText(/Applications are not open yet/i)).toBeInTheDocument();
-    const closedWindowAction = screen.getByText('Track the opening date').closest('a');
+    const closedWindowAction = screen.getByText('See the official program page').closest('a');
     expect(closedWindowAction).toHaveClass('bg-muted');
     expect(closedWindowAction).not.toHaveClass('bg-brand');
     expect(screen.queryByText('Apply now')).not.toBeInTheDocument();
@@ -513,6 +513,44 @@ describe('FellowshipModal', () => {
       screen.queryByText('This source suggests a mentor-matching or mentored program route.'),
     ).toBeNull();
     expect(screen.queryByText('Not usually')).toBeNull();
+  });
+
+  it('says a faculty letter is still needed when no mentor is needed first (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      applicationMaterials: ['Project statement', 'A letter from a Yale faculty member'],
+    });
+
+    expect(
+      screen.getByText('No mentor needed first, but you will need a faculty letter'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Not usually')).toBeNull();
+  });
+
+  it('names a required faculty letter in the mentor-matching answer too (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      applicationMaterials: ['Project statement', 'A letter from a Yale faculty member'],
+    });
+
+    expect(
+      screen.getByText(
+        'Not first, the program helps match you with a mentor, but you will need a faculty letter',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('answers not usually when the only letter mention says one is not required (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      applicationMaterials: [],
+      applicationInformation: 'A letter of recommendation is not required.',
+    });
+
+    expect(screen.getByText('Not usually')).toBeInTheDocument();
   });
 
   it('still tells students to secure a mentor first when the program requires it (#970)', () => {

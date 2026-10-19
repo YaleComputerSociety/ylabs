@@ -33,15 +33,3 @@ export const undergradInvitationFromEntity = (
     sourceHost: new URL(sourceUrl).hostname.replace(/^www\./, ''),
   };
 };
-
-const comparableQuote = (quote: string) =>
-  quote
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-export const quotesOverlap = (left: string, right: string): boolean => {
-  const a = comparableQuote(left);
-  const b = comparableQuote(right);
-  return Boolean(a && b) && (a.includes(b) || b.includes(a));
-};

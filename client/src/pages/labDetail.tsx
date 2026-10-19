@@ -17,7 +17,7 @@ import {
  * props and render. This keeps the page consistent with the
  * `pages/profile.tsx` pattern.
  */
-import { useContext, useEffect, useReducer, useRef, useState } from 'react';
+import { useContext, useEffect, useId, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
@@ -40,6 +40,7 @@ import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
+import { ExternalLinkIcon } from '../components/shared/icons';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
 import useUndoableRemoval from '../hooks/useUndoableRemoval';
@@ -59,6 +60,7 @@ import {
   findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
+  isSameActionHost,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
@@ -85,6 +87,7 @@ import {
   relationshipTypeLabel,
   researchEntityTitle,
   researchWebsiteCtaLabel,
+  researchWebsiteLabel,
   sanitizeResearchEntityCopy,
   summarySectionLabel,
 } from '../utils/researchEntityCopy';
@@ -102,11 +105,7 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
-import {
-  UNDERGRAD_QUOTE_LABEL,
-  undergradQuoteEvidenceFromEntity,
-} from '../utils/undergradQuoteEvidence';
-import { quotesOverlap, undergradInvitationFromEntity } from '../utils/undergradInvitation';
+import { undergradInvitationFromEntity } from '../utils/undergradInvitation';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -510,14 +509,6 @@ const DecisionSummary = ({
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const invitation = wayInWithheld ? undefined : undergradInvitationFromEntity(group);
-  const hostingQuote =
-    wayInWithheld || rosterListsUndergraduates
-      ? undefined
-      : undergradQuoteEvidenceFromEntity(group);
-  const undergradQuote =
-    hostingQuote && invitation && quotesOverlap(hostingQuote.quote, invitation.quote)
-      ? undefined
-      : hostingQuote;
   const hasEvidenceList =
     Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
@@ -569,6 +560,18 @@ const DecisionSummary = ({
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
   const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
   const activityCheckUrl = actionLinks.activityCheckUrl;
+  const outboundNoteId = useId();
+  const joinLinkLeavesWebsite =
+    Boolean(joinPageLinkUrl) && !isSameActionHost(joinPageLinkUrl, websiteUrl);
+  const outboundNote = showsWebsiteCta
+    ? joinLinkLeavesWebsite
+      ? `Opens the ${researchWebsiteLabel(group)}, or a page about joining on another site, in a new tab, outside y/labs.`
+      : `Opens the ${researchWebsiteLabel(group)} in a new tab, outside y/labs.`
+    : showsProfileButton && !offersOrgEngagementPage && !applyPageUrl
+      ? 'Opens the official Yale profile in a new tab, outside y/labs.'
+      : getInvolvedHasOwnAction
+        ? 'Opens their own page in a new tab, outside y/labs.'
+        : 'Opens the Yale Directory in a new tab, outside y/labs.';
   return (
     <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -654,32 +657,6 @@ const DecisionSummary = ({
               </figcaption>
             </figure>
           )}
-
-          {undergradQuote && (
-            <figure className="mt-6 max-w-[68ch] border-t border-[var(--yr-line)] pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                {UNDERGRAD_QUOTE_LABEL}
-              </p>
-              <blockquote
-                cite={undergradQuote.sourceUrl}
-                className="mt-2 border-l-2 border-line-brand pl-4 text-base leading-relaxed text-ink-soft"
-              >
-                <p>&ldquo;{undergradQuote.quote}&rdquo;</p>
-              </blockquote>
-              <figcaption className="mt-2 pl-4.5 text-sm text-muted">
-                Quoted from{' '}
-                <a
-                  href={undergradQuote.sourceUrl}
-                  aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
-                  target="_blank"
-                  rel={EXTERNAL_LINK_REL}
-                  className="yr-link yr-focus-ring -my-1.5 inline-block break-words rounded-control py-1.5"
-                >
-                  {undergradQuote.sourceHost}
-                </a>
-              </figcaption>
-            </figure>
-          )}
         </div>
 
         <div className="divide-y divide-[var(--yr-line)] self-start rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
@@ -733,19 +710,23 @@ const DecisionSummary = ({
                     href={websiteUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
                     {researchWebsiteCtaLabel(group)}
+
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                   {joinPageLinkUrl && (
                     <a
                       href={joinPageLinkUrl}
                       target="_blank"
                       rel={EXTERNAL_LINK_REL}
+                      aria-describedby={outboundNoteId}
                       className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
                     >
                       {joinPageLinkLabel(joinPageLinkUrl)}
-                      <ArrowRightIcon />
+                      <ExternalLinkIcon className="shrink-0" size={14} />
                     </a>
                   )}
                 </div>
@@ -760,9 +741,11 @@ const DecisionSummary = ({
                       href={officialSource.url}
                       target="_blank"
                       rel={EXTERNAL_LINK_REL}
-                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                      className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                      aria-describedby={outboundNoteId}
                     >
                       See how to get involved
+                      <ExternalLinkIcon className="shrink-0" size={14} />
                     </a>
                   </div>
                 </>
@@ -772,9 +755,12 @@ const DecisionSummary = ({
                     href={applyPageUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
                     {joinPageLinkLabel(applyPageUrl, 'See how to get involved')}
+
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
               ) : showsProfileButton ? (
@@ -783,9 +769,11 @@ const DecisionSummary = ({
                     href={profileUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
                     Open official profile
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
               ) : offersOfficialPage && officialSource ? (
@@ -794,9 +782,11 @@ const DecisionSummary = ({
                     href={officialSource.url}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
                     Open the official page
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
               ) : (
@@ -817,12 +807,17 @@ const DecisionSummary = ({
                     href={directorySearchUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
                     Search the Yale Directory
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
               )}
+              <p id={outboundNoteId} className="mt-2 text-xs leading-relaxed text-muted">
+                {outboundNote}
+              </p>
             </div>
           )}
         </div>

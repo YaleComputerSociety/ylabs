@@ -16,6 +16,7 @@ import {
   buildWebsiteUrlResearchEntityDedupePlan,
   entityMintedByPrimaryAppointmentRoster,
   buildNameAgreedSharedPersonResearchEntityDedupePlan,
+  eponymousLabAgreementKey,
   nameAgreementKey,
   groupConflatesDistinctPersonProfiles,
   normalizeWebsiteUrlIdentityKey,
@@ -3546,6 +3547,72 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
       ]),
     ]);
     expect(members(plan)).toEqual([['lab-a', 'lab-b']]);
+  });
+
+  const leadRow = (entities: Array<{ id: string; name: string; entityType: string }>) => ({
+    ...row(entities),
+    piFirstName: 'Wren',
+    piLastName: 'Ortolan',
+  });
+
+  it('reads a lab named for its lead the same way whatever follows the kind noun', () => {
+    const lead = { piFirstName: 'Wren', piLastName: 'Ortolan' };
+    const key = eponymousLabAgreementKey('Ortolan Lab', lead);
+    expect(key).not.toBe('');
+    expect(eponymousLabAgreementKey('ORTOLAN LAB Coastal Sediment Genomics @ Yale', lead)).toBe(
+      key,
+    );
+    expect(eponymousLabAgreementKey('The Wren Ortolan Laboratory', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('W. Ortolan Lab', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Coastal Ortolan Lab', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Coastal Sediment Lab', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Ortolan Faculty Research', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Ortolan Research Group', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Ortolan', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Coastal Research Group', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Ortolan Lab', {})).toBe('');
+  });
+
+  it('groups a lead lab with a copy named by its site title', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'ORTOLAN LAB Coastal Sediment Genomics @ Yale', entityType: 'LAB' },
+        { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+        { id: 'fra', name: 'Wren Ortolan Faculty Research', entityType: 'FACULTY_RESEARCH_AREA' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b']]);
+  });
+
+  it('keeps every name the strict key agreed on in the eponymous cluster', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'Ortolan Research Group', entityType: 'LAB' },
+        { id: 'c', name: 'Ortolan', entityType: 'LAB' },
+        { id: 'd', name: 'The Ortolan Faculty Research Lab', entityType: 'LAB' },
+        { id: 'e', name: 'ORTOLAN LAB Coastal Sediment Genomics @ Yale', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b', 'c', 'd', 'e']]);
+  });
+
+  it('keeps an eponymous lab apart when another person also leads it', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Wren Ortolan Lab', entityType: 'LAB' },
+        { id: 'shared', name: 'Ortolan Lab', entityType: 'LAB' },
+      ]),
+      {
+        userId: 'person-2',
+        normalizedName: 'same-pi:person-2',
+        piFirstName: 'Juno',
+        piLastName: 'Ortolan Vega',
+        entities: [{ id: 'shared', slug: 'shared', name: 'Ortolan Lab', entityType: 'LAB' }],
+      },
+    ]);
+    expect(plan).toEqual([]);
   });
 
   it('plans nothing when no two rows agree on both name and type', () => {

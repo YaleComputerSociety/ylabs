@@ -564,6 +564,9 @@ describe('LabDetail page', () => {
     expect(directoryLink.getAttribute('href')).toBe(
       'https://directory.yale.edu/?query=Sample%20Research%20Profile',
     );
+    expect(directoryLink).toHaveAccessibleDescription(
+      'Opens the Yale Directory in a new tab, outside y/labs.',
+    );
   });
 
   it('records no qualified action even when a stale payload names the opened route (#4581)', async () => {
@@ -1032,39 +1035,15 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
-  it('shows the whole undergraduate quote with the page it is quoted from (#3569)', async () => {
-    const longQuote = `${'Undergraduate students contribute to field and lab work '.repeat(5)}end.`;
+  it('never shows an undergraduate quote, even from a payload that still carries one (#5309)', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
-        undergradEvidenceQuote: longQuote,
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.getByText('Mentions undergraduate research')).toBeTruthy();
-    expect(container.querySelector('blockquote')?.textContent).toBe(`\u201c${longQuote}\u201d`);
-    expect(
-      screen
-        .getByRole('link', { name: 'example.yale.edu (opens in a new tab)' })
-        .getAttribute('href'),
-    ).toBe('https://example.yale.edu/join');
-    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
-    await expectNoAxeViolations(container);
-  });
-
-  it('shows no undergraduate quote when the way in is withheld for an emeritus lead', async () => {
-    const { container } = renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-        emeritusLed: true,
-        wayInWithheld: true,
+        ...({
+          undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+          undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
+        } as object),
       },
     });
 
@@ -1072,6 +1051,7 @@ describe('LabDetail page', () => {
 
     expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
     expect(container.querySelector('blockquote')).toBeNull();
+    expect(screen.queryByText(/Quoted from/)).toBeNull();
   });
 
   it('shows the undergraduate count its Sources chip cites when no named roster is served', async () => {
@@ -1195,14 +1175,10 @@ describe('LabDetail page', () => {
     await expectNoAxeViolations(container);
   });
 
-  it('lists the roster undergraduates instead of the quote when the lab page names them', async () => {
+  it('lists the roster undergraduates when the lab page names them', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Listed Undergrad Undergraduate Email',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/people',
-      },
+      group: basePayload.group,
       roster: {
         status: 'current',
         returned: 0,
@@ -1215,8 +1191,6 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    expect(container.querySelector('blockquote')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Undergraduate researchers' })).toBeTruthy();
     expect(screen.getByText('Listed Undergrad')).toBeTruthy();
     await expectNoAxeViolations(container);
@@ -1252,30 +1226,6 @@ describe('LabDetail page', () => {
     expect(text).not.toMatch(/advised (\d+ )?undergrad/i);
   });
 
-  it.each([
-    ['no quote', { undergradEvidenceQuote: undefined }],
-    ['a blank quote', { undergradEvidenceQuote: '   ' }],
-    ['a quote with no cited page', { undergradEvidenceSourceUrl: undefined }],
-    ['a quote citing a non-http page', { undergradEvidenceSourceUrl: 'javascript:alert(1)' }],
-  ])('shows no undergraduate quote for %s', async (_label, overrides) => {
-    const { container } = renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-        ...overrides,
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    expect(container.querySelector('blockquote')).toBeNull();
-    expect(screen.queryByText(/Quoted from/)).toBeNull();
-    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
-  });
-
   it('points to the lab website instead of a dead end when there is no profile or email', async () => {
     renderLabDetail({
       ...basePayload,
@@ -1293,6 +1243,10 @@ describe('LabDetail page', () => {
     const websiteLinks = screen.getAllByRole('link', { name: 'Visit lab website' });
     expect(websiteLinks).toHaveLength(1);
     expect(websiteLinks[0].getAttribute('href')).toBe(RESEARCH_WEBSITE_URL);
+    expect(websiteLinks[0]).toHaveAccessibleDescription(
+      'Opens the lab website in a new tab, outside y/labs.',
+    );
+    expect(screen.getByText('Opens the lab website in a new tab, outside y/labs.')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
@@ -1690,6 +1644,47 @@ describe('LabDetail page', () => {
       ['See how to join', JOIN_PAGE_URL],
     ]);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+  });
+
+  it('says the join link beside the website opens another site when it sits on a different host', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, JOIN_PAGE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const note =
+      'Opens the research website, or a page about joining on another site, in a new tab, outside y/labs.';
+    expect(
+      screen.getByRole('link', { name: 'Visit research website' }),
+    ).toHaveAccessibleDescription(note);
+    expect(screen.getByRole('link', { name: 'See how to join' })).toHaveAccessibleDescription(note);
+  });
+
+  it('names only the website for a join link beside it on the same host', async () => {
+    const sameHostJoinPageUrl = new URL('join-us', RESEARCH_WEBSITE_URL).toString();
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, sameHostJoinPageUrl],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
+      sameHostJoinPageUrl,
+    );
+    expect(screen.getByRole('link', { name: 'See how to join' })).toHaveAccessibleDescription(
+      'Opens the research website in a new tab, outside y/labs.',
+    );
   });
 
   it('does not mark an official profile opened above when a join page takes the only action', async () => {

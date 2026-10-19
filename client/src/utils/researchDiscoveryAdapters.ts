@@ -391,9 +391,7 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   if (invitation) badges.push(invitation.label);
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
-  // which read the same server predicate (#3593). A quote never sets it: a quote
-  // is shown as its own cited evidence by `undergradQuoteEvidenceFromEntity`,
-  // because only half of served quotes show past hosting (#3569).
+  // which read the same server predicate (#3593).
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
 
   return badges;

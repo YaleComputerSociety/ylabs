@@ -60,7 +60,7 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
 - `lab-microsite-undergrad-llm` stays manual-only for runtime rather than precision, by owner decision on 2026-10-11 (#3569, #3636).
   #3569 first measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50), mostly because the model's own absence notes were stored as quotes, so the browse badge was withdrawn (#3607).
   After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with 25/50 showing that undergraduates were hosted.
-  The detail page shows the quote beside a "Mentions undergraduate research" label and the page it is quoted from, and the browse card shows none (`docs/decisions.md`, 2026-10-11 and 2026-10-12).
+  The quote is stored but no longer served or shown on any surface (`docs/decisions.md`, 2026-10-18, #5309); an explicit invitation quote returns beside the badge designed in #5288.
   It is the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 4 to 20 hours, against a weekly sweep of about 8 hours and Render's 12-hour job limit.
   So it is run scoped by hand when the quotes need refreshing, and a manual run also refreshes its description emits.
 
@@ -2025,6 +2025,7 @@ Run it twice and the second pass plans nothing, which is what makes it a derivat
 `requiresMentorBeforeApply`, the "Do you need a mentor first?" answer, is asserted only from a sentence on the record's own page (`mentorRequirementSentence`, #4131, #4218, #5100, #5229).
 A faculty member tied to the project counts: required supervision by faculty, approval or endorsement from the applicant's adviser, a stated commitment of the faculty adviser to the proposed activities, a letter from the applicant's own project adviser ("your senior essay advisor", "their dissertation supervisor", "their dissertation director"), or a letter from a faculty member who knows, supports, or is related to the project.
 A recommendation letter with no tie to the project, from any writer or from "a faculty advisor", is not a requirement.
+Such a letter still reaches the student: when the answer is no but the program's materials or application text ask for a faculty letter or a recommendation, the detail answer reads "No mentor needed first, but you will need a faculty letter" (or "a recommendation letter"), and a mentor-matching answer gains the same clause, derived at serve time in `client/src/utils/programLetterRequirement.ts` without changing the verdict (#5302).
 A graduate record asserts an adviser only when its page states one or its prose mentions a dissertation and its title names no conference, so a conference-travel grant no longer inherits the requirement.
 
 The same pass derives `citizenshipStatus` from the prose (`utils/programCitizenship.ts`, #5129).

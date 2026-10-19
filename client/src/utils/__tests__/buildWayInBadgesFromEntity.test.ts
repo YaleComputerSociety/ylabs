@@ -70,29 +70,6 @@ describe('buildWayInBadgesFromEntity', () => {
     expect(buildWayInBadgesFromEntity(entity({ currentUndergradCount: 3 }))).toEqual([]);
   });
 
-  /**
-   * The load-bearing assertion of this file. #3569 measured badge precision for
-   * the dominant source of `undergradEvidenceQuote` at 0.36, Wilson 95% upper
-   * bound 0.50, and found that 19 of 50 sampled quotes were the model's own
-   * absence commentary, which switched the badge on where the lane had found
-   * nothing. A quote alone must never assert undergraduate access.
-   */
-  it('never claims undergraduate access from a quote alone', () => {
-    const quoteOnly = entity({
-      undergradEvidenceQuote: 'No explicit mention of undergraduates on the provided pages.',
-    });
-
-    expect(buildWayInBadgesFromEntity(quoteOnly)).toEqual([]);
-  });
-
-  it('never claims undergraduate access from a plausible-looking quote either', () => {
-    const plausible = entity({
-      undergradEvidenceQuote: 'Undergraduates have contributed to this work every term.',
-    });
-
-    expect(buildWayInBadgesFromEntity(plausible)).toEqual([]);
-  });
-
   it.each([
     ['an independent-study flag', { offersIndependentStudy: true }],
     ['a listed course', { independentStudyCourses: [{ code: 'ABCD 4900' }] }],
@@ -112,7 +89,6 @@ describe('buildWayInBadgesFromEntity', () => {
     const everything = entity({
       hasUndergradHostingEvidence: true,
       currentUndergradCount: 3,
-      undergradEvidenceQuote: 'Undergraduates have contributed to this work every term.',
     });
 
     expect(buildWayInBadgesFromEntity(everything)).toEqual(['Undergrad evidence']);
