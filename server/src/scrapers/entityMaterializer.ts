@@ -398,6 +398,10 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
+import {
+  embeddedNetidContradictsCandidate,
+  netidsEmbeddedInUserEvidence,
+} from './utils/embeddedNetidContradiction';
 import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
@@ -7023,7 +7027,14 @@ export async function joinUserIdentityToExistingResearcher(
       (resolution.status === 'ambiguous' && resolution.everyCandidateNamesSomeoneElse === true);
     if (resolution.status === 'matched' && resolution.researcherId) {
       const nameMatch = await Researcher.findById(resolution.researcherId);
-      if (nameMatch && !officialPersonPagesContradictNameMatch(materializationObs, nameMatch)) {
+      if (
+        nameMatch &&
+        !officialPersonPagesContradictNameMatch(materializationObs, nameMatch) &&
+        !embeddedNetidContradictsCandidate(
+          netidsEmbeddedInUserEvidence(identifier.entityKey, materializationObs),
+          nameMatch.identifiers?.netid,
+        )
+      ) {
         researcher = nameMatch;
         identityJoin = 'person-name';
       }
