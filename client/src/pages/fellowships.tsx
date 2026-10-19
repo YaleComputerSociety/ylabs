@@ -929,7 +929,7 @@ const Fellowships = () => {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <aside className="space-y-3 xl:sticky xl:top-6">
+          <aside className="relative z-10 space-y-3 xl:sticky xl:top-6">
             <div className="yr-panel flex flex-col gap-3 rounded-card p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
               <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">
                 <label

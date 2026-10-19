@@ -7,8 +7,26 @@
 import { useState, useRef, useEffect } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
 import { CheckIcon, ChevronDownIcon, CloseIcon, TagIcon } from './icons';
+import { scrollBehavior } from '../../utils/scrollBehavior';
 
 export type FilterMode = 'intersection' | 'union';
+
+/**
+ * The 31rem keeps the list's end inside a 1280x800 window while the `/programs` filter
+ * rail is sticky, because a sticky rail cannot scroll an overflowing popover into view.
+ */
+const OPTION_LIST_CLASS_NAME =
+  'space-y-1 pt-1 max-h-[max(13.75rem,calc(100dvh-31rem))] overflow-y-auto';
+export const TWO_COLUMN_OPTION_LIST_MAX_OPTIONS = 12;
+
+const optionListClassName = (mobileSheet: boolean, twoColumn: boolean) =>
+  [
+    OPTION_LIST_CLASS_NAME,
+    mobileSheet && 'max-sm:max-h-none max-sm:overflow-visible',
+    twoColumn && 'sm:grid sm:grid-cols-2 sm:gap-1 sm:space-y-0',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
 export interface FilterTabConfig {
   key: string;
@@ -89,8 +107,17 @@ const CombinedFilterDropdown = ({
     }, 0);
   }, [isOpen, mobileSheet]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const desktop = window.matchMedia?.('(min-width: 640px)').matches ?? false;
+    if (mobileSheet && !desktop) return;
+    dialogRef.current?.scrollIntoView?.({ block: 'nearest', behavior: scrollBehavior() });
+  }, [isOpen, activeTabKey, mobileSheet]);
+
   const totalFilters = tabs.reduce((sum, tab) => sum + tab.selected.length, 0);
   const activeTab = tabs.find((t) => t.key === activeTabKey) || tabs[0];
+  const twoColumnOptions =
+    mobileSheet && activeTab.options.length <= TWO_COLUMN_OPTION_LIST_MAX_OPTIONS;
 
   const getSearch = (key: string) => searchTerms[key] || '';
   const setSearch = (key: string, val: string) =>
@@ -171,7 +198,7 @@ const CombinedFilterDropdown = ({
           }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[26rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
               : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
           }
         >
@@ -253,7 +280,7 @@ const CombinedFilterDropdown = ({
 
             {activeTab.note && <p className="mb-2 text-xs text-muted">{activeTab.note}</p>}
 
-            <fieldset className="space-y-1 pt-1 max-h-[220px] overflow-y-auto">
+            <fieldset className={optionListClassName(mobileSheet, twoColumnOptions)}>
               <legend className="sr-only">{activeTab.label} filters</legend>
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);
@@ -294,16 +321,18 @@ const CombinedFilterDropdown = ({
                         {optionLabel}
                       </span>
                     ) : (
-                      <span className="truncate">{optionLabel}</span>
+                      <span className={twoColumnOptions ? 'min-w-0 break-words' : 'truncate'}>
+                        {optionLabel}
+                      </span>
                     )}
                   </label>
                 );
               })}
               {getFilteredOptions(activeTab).length === 0 && (
-                <p className="px-3 py-2 text-sm text-muted">No options found</p>
+                <p className="px-3 py-2 text-sm text-muted sm:col-span-2">No options found</p>
               )}
               {activeTab.maxDisplay && activeTab.options.length > activeTab.maxDisplay && (
-                <p className="px-3 py-2 text-xs text-muted text-center">
+                <p className="px-3 py-2 text-xs text-muted text-center sm:col-span-2">
                   Showing first {activeTab.maxDisplay}. Type to search more...
                 </p>
               )}

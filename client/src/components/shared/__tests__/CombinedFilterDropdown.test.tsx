@@ -153,4 +153,55 @@ describe('CombinedFilterDropdown', () => {
 
     expect(screen.queryByTestId('filter-sheet-backdrop')).toBeNull();
   });
+
+  it('lays a short program facet out in two columns that grow with the window', async () => {
+    const subjects = Array.from({ length: 10 }, (_, index) => `Subject ${index + 1}`);
+    render(
+      <CombinedFilterDropdown
+        mobileSheet
+        dialogLabel="Program filters"
+        tabs={[
+          {
+            key: 'subjects',
+            label: 'Subject',
+            options: subjects,
+            selected: [],
+            setSelected: vi.fn(),
+          },
+        ]}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Filters' }));
+
+    const list = screen.getByRole('group', { name: 'Subject filters' });
+    expect(list).toHaveClass('sm:grid', 'sm:grid-cols-2', 'max-sm:max-h-none');
+    expect(list.className).not.toContain('max-h-[220px]');
+    expect(screen.getByText('Subject 10')).toHaveClass('break-words');
+  });
+
+  it('keeps a long program facet in one scrolling column', async () => {
+    const purposes = Array.from({ length: 21 }, (_, index) => `Purpose ${index + 1}`);
+    render(
+      <CombinedFilterDropdown
+        mobileSheet
+        dialogLabel="Program filters"
+        tabs={[
+          {
+            key: 'purpose',
+            label: 'Purpose',
+            options: purposes,
+            selected: [],
+            setSelected: vi.fn(),
+          },
+        ]}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Filters' }));
+
+    const list = screen.getByRole('group', { name: 'Purpose filters' });
+    expect(list).not.toHaveClass('sm:grid');
+    expect(list).toHaveClass('overflow-y-auto');
+  });
 });
