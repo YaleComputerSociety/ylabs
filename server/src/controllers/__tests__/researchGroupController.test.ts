@@ -80,7 +80,8 @@ describe('researchGroupController', () => {
       researchEntity: { slug: 'example-lab' },
       operatorPreview: {
         studentVisibilityTier: 'operator_review',
-        studentVisibilityReasons: [],
+        studentVisibilityBlockingReasons: [],
+        studentVisibilitySignalReasons: [],
         withheldBy: ['visibility_tier'],
       },
     };

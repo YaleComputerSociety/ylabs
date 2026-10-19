@@ -3678,7 +3678,12 @@ describe('getResearchGroupDetail', () => {
         departments: [],
         researchAreas: [],
         studentVisibilityTier: 'operator_review',
-        studentVisibilityReasons: ['missing_lead'],
+        studentVisibilityReasons: [
+          'source_backed_description',
+          'missing_lead',
+          'missing_facet_signal',
+          'missing_lead',
+        ],
       }),
     );
 
@@ -3693,7 +3698,8 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.researchEntity.slug).toBe('held-review-lab');
     expect(detail?.operatorPreview).toEqual({
       studentVisibilityTier: 'operator_review',
-      studentVisibilityReasons: ['missing_lead'],
+      studentVisibilityBlockingReasons: ['missing_lead'],
+      studentVisibilitySignalReasons: ['source_backed_description', 'missing_facet_signal'],
       studentVisibilitySuppressionReason: undefined,
       withheldBy: ['visibility_tier', 'description_invariant'],
     });

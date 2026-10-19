@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
+import { isStudentVisibilitySignalReason } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
@@ -3887,10 +3888,28 @@ export type ResearchDetailWithholdingCheck =
 
 export interface ResearchDetailOperatorPreview {
   studentVisibilityTier: string;
-  studentVisibilityReasons: string[];
+  studentVisibilityBlockingReasons: string[];
+  studentVisibilitySignalReasons: string[];
   studentVisibilitySuppressionReason?: string;
   withheldBy: ResearchDetailWithholdingCheck[];
 }
+
+const operatorPreviewReasons = (
+  reasons: unknown,
+): Pick<
+  ResearchDetailOperatorPreview,
+  'studentVisibilityBlockingReasons' | 'studentVisibilitySignalReasons'
+> => {
+  const stored = Array.isArray(reasons)
+    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
+    : [];
+  return {
+    studentVisibilityBlockingReasons: stored.filter(
+      (reason) => !isStudentVisibilitySignalReason(reason),
+    ),
+    studentVisibilitySignalReasons: stored.filter(isStudentVisibilitySignalReason),
+  };
+};
 
 export async function getResearchGroupDetail(
   slug: string,
@@ -4084,7 +4103,7 @@ export async function getResearchGroupDetail(
     ...detail,
     operatorPreview: {
       studentVisibilityTier: String((group as any).studentVisibilityTier ?? ''),
-      studentVisibilityReasons: ((group as any).studentVisibilityReasons ?? []) as string[],
+      ...operatorPreviewReasons((group as any).studentVisibilityReasons),
       studentVisibilitySuppressionReason:
         (group as any).studentVisibilitySuppressionReason || undefined,
       withheldBy,
