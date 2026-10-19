@@ -9,6 +9,7 @@ import {
   refusedPersonRowOrganizationObservations,
 } from '../sources/officialProfilePiBackfillScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 
 const SOURCE = 'official-profile-pi-backfill';
@@ -193,7 +194,10 @@ describe('the organization a lane adopted onto a person row before refusing it',
 describe('a research-home run over a faculty research row', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  const context = (emitted: ObservationInput[]): ScraperContext => ({
+  const context = (
+    emitted: ObservationInput[],
+    only: string[] = ['profile-research-home-backfill'],
+  ): ScraperContext => ({
     scrapeRunId: 'run-1',
     sourceId: 'source-1',
     sourceName: SOURCE,
@@ -202,7 +206,7 @@ describe('a research-home run over a faculty research row', () => {
       dryRun: true,
       useCache: false,
       release: false,
-      only: ['profile-research-home-backfill'],
+      only,
     },
     emit: vi.fn(async (obs: ObservationInput | ObservationInput[]) => {
       emitted.push(...(Array.isArray(obs) ? obs : [obs]));
@@ -236,6 +240,59 @@ describe('a research-home run over a faculty research row', () => {
 
     expect(emitted.map((obs) => obs.field)).toEqual(['refusedResearchHomeName']);
     expect(result.notes).toContain('adopted 0 profile-linked research homes');
+    expect(result.notes).toContain('organization-home-on-a-faculty-research-row=1');
+  });
+
+  it('refuses the organization in a default sweep that reaches the row through the PI queue first', async () => {
+    vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi
+        .fn()
+        .mockResolvedValue([
+          { entityId: facultyRow._id, entityKey: facultyRow.slug, value: 'FACULTY_RESEARCH_AREA' },
+        ]),
+    } as any);
+    const emitted: ObservationInput[] = [];
+    const retypedRow = {
+      ...facultyRow,
+      name: 'Fixture Measurement Care Collaborative',
+      entityType: 'INITIATIVE',
+      fieldProvenance: { entityType: { sourceName: SOURCE } },
+      sourceUrls: [profileUrl],
+      leadUserProfileUrls: [profileUrl],
+      leadUsers: [{ fname: 'Avery', lname: 'Quillfixture', email: 'avery.quillfixture@yale.edu' }],
+    };
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => collaborativeProfile),
+      vi.fn(async () => [retypedRow]),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => [retypedRow]),
+      vi.fn(async () => []),
+      0,
+      vi.fn(async () => undefined),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      undefined,
+      vi.fn(async () => new Set<string>()),
+      vi.fn(async () => []),
+    );
+
+    const result = await scraper.run(context(emitted, []));
+
+    const homeFields = ['name', 'displayName', 'entityType', 'kind'];
+    expect(
+      emitted.filter(
+        (obs) =>
+          homeFields.includes(obs.field) && obs.value === 'Fixture Measurement Care Collaborative',
+      ),
+    ).toEqual([]);
+    expect(emitted.filter((obs) => obs.field === 'entityType' || obs.field === 'kind')).toEqual([]);
+    expect(emitted.map((obs) => obs.field)).toContain('refusedResearchHomeName');
     expect(result.notes).toContain('organization-home-on-a-faculty-research-row=1');
   });
 });

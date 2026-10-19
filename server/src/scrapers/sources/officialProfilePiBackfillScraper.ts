@@ -2318,12 +2318,14 @@ const FACULTY_RESEARCH_ROW_TYPES: ReadonlySet<string> = new Set(
 );
 
 /**
- * The live `entityType` values other sources assert for a row this lane once retyped, set by
- * the research-home selector. The row's stored type is then this lane's own earlier claim,
- * and judging the row on it would let a past retype exempt the row from the guard that
- * should have refused it.
+ * The live `entityType` values other sources assert for a row this lane once retyped, set on
+ * every selected row before the research-home step reads it. The row's stored type is then
+ * this lane's own earlier claim, and judging the row on it would let a past retype exempt the
+ * row from the guard that should have refused it.
  */
 export const ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD = '__entityTypesFromOtherSources';
+
+const ROW_TYPE_FIELDS = 'entityType fieldProvenance.entityType';
 
 function rowTypesIndependentOfThisLane(entity: Record<string, any>): string[] {
   if (entity.fieldProvenance?.entityType?.sourceName !== SOURCE_NAME) {
@@ -3617,7 +3619,9 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
 
   const [entities, leadRosterByEntity] = await Promise.all([
     ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
+      .select(
+        `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
+      )
       .lean(),
     currentLeadRosterEntriesByEntity(entityIds, LEAD_MEMBER_ROLES),
   ]);
@@ -3681,7 +3685,7 @@ export async function selectVisibleProfileBioTargets(
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   })
-    .select('_id website websiteUrl sourceUrls')
+    .select(`_id website websiteUrl sourceUrls ${ROW_TYPE_FIELDS}`)
     .lean();
   const entitiesById = new Map((entities as any[]).map((entity) => [idValue(entity._id), entity]));
 
@@ -3783,7 +3787,7 @@ async function selectProfileDescriptionTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...identityFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
 
@@ -4093,8 +4097,7 @@ export async function annotateProfileDescriptionPreferredSourceEvidence(
  */
 export const PERSONAL_SITE_ONLY_TARGET_FIELD = '__personalSiteOnly';
 
-const RESEARCH_HOME_PROFILE_TARGET_FIELDS =
-  '_id slug name displayName entityType website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl fieldProvenance.entityType';
+const RESEARCH_HOME_PROFILE_TARGET_FIELDS = `_id slug name displayName website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl ${ROW_TYPE_FIELDS}`;
 
 function readsOnlyItsPersonalSite(entity: Record<string, any>, targeted: boolean): boolean {
   return (
@@ -4229,9 +4232,8 @@ async function researchHomeProfileTargetsWithLeads(
     leadOfficialProfileUrls: leadOfficialProfileUrlsByEntity.get(idValue(entity._id)) || [],
     leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
   }));
-  const entitiesWithObservationUrls = await annotateEntitiesWithEntityTypesFromOtherSources(
-    await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUrls),
-  );
+  const entitiesWithObservationUrls =
+    await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUrls);
 
   return entitiesWithObservationUrls
     .filter((entity) => officialProfileUrlsForEntity(entity).length > 0)
@@ -4345,7 +4347,7 @@ async function selectLeadDirectWebsiteTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
   if (entities.length === 0) return [];
@@ -4436,7 +4438,7 @@ async function selectSourceUrlWebsiteTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
   if (entities.length === 0) return [];
@@ -4766,7 +4768,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         : []),
     ];
     const seenEntities = new Set<string>();
-    const entities = selectedEntities
+    const uniqueEntities = selectedEntities
       .filter((entity) => {
         const key = idValue(entity._id) || textValue(entity.slug);
         if (!key || seenEntities.has(key)) return false;
@@ -4774,6 +4776,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         return true;
       })
       .slice(0, limit);
+    const entities = runProfileResearchHomeBackfill
+      ? await annotateEntitiesWithEntityTypesFromOtherSources(uniqueEntities)
+      : uniqueEntities;
     let emitted = 0;
     let observed = 0;
     let homesAdopted = 0;
