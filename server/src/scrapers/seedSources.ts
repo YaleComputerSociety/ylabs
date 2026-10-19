@@ -350,6 +350,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'center-director',
+    displayName: 'Center director (deterministic)',
+    description:
+      "Reads an organizational research home's own page and the leadership pages inside its own subtree with code, and emits the same entity-level inferred-director observations as center-director-llm when one director is stated by a title label or a strict sentence. Two directors at the same rank refuse the read, except that a Faculty Director outranks a Director. It replaced center-director-llm in the sweep on 2026-10-19 and ends the lead edges that lane wrote when its read does not support them (#5296).",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'weekly',
+  },
+  {
     name: 'grant-corpus-synthesis-llm',
     displayName: 'Grant-corpus research synthesis LLM',
     description:

@@ -389,7 +389,11 @@ import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUr
 import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
-import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
+import {
+  reconcileCenterDirectorRetirementsFromRun,
+  reconcileCodeLaneDirectorRetirementsFromRun,
+} from './centerDirectorRetirement';
+import { CENTER_DIRECTOR_SOURCE_NAME } from './centerDirectorReadSnapshot';
 import {
   OFFICIAL_PROFILE_DIRECTOR_LANE,
   reconcileOfficialProfileDirectorRetirementsFromRun,
@@ -4270,6 +4274,22 @@ export interface InferredDirectorMaterializationResult {
  * dedup keys on user+role). Idempotent: re-running converges on a single
  * `director` row.
  */
+/**
+ * Where the code lane (`center-director`) names a director, its observations alone decide
+ * the lead: the director fields supersede per field, so mixing a name from one lane with a
+ * profile URL from another would write one person's edge under another's name (#5296).
+ */
+function preferredDirectorObservations(
+  observations: MaterializerObservationLike[],
+): MaterializerObservationLike[] {
+  const codeLane = observations.filter(
+    (obs) =>
+      textValue(obs.sourceName) === CENTER_DIRECTOR_SOURCE_NAME &&
+      textValue(obs.field).startsWith('inferredDirector'),
+  );
+  return codeLane.some((obs) => obs.field === 'inferredDirectorUserName') ? codeLane : observations;
+}
+
 export async function materializeInferredDirectorMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
@@ -4281,7 +4301,8 @@ export async function materializeInferredDirectorMembership(
   };
   if (!normalizeMaterializerObjectId(researchEntityId)) return empty;
 
-  const fieldObs = (field: string) => observations.find((obs) => obs.field === field);
+  const directorObservations = preferredDirectorObservations(observations);
+  const fieldObs = (field: string) => directorObservations.find((obs) => obs.field === field);
   const nameObs = fieldObs('inferredDirectorUserName');
   if (!nameObs || !nameObs.value) return { ...empty, skipped: 'no-observation' };
 
@@ -11645,6 +11666,13 @@ export async function materializeFromRun(
     console.info(
       `[center-director-retirement] ${centerDirectorRetirement.dryRun ? 'planned' : 'reconciled'} ${centerDirectorRetirement.centersRead} center read(s): ${centerDirectorRetirement.retiredEdges} lead edge(s) ended, ${centerDirectorRetirement.edgesAwaitingSecondRead} awaiting a second read, ${centerDirectorRetirement.unjudgedEdges} not judged, ${centerDirectorRetirement.indexSyncFailures} center index sync failure(s)`,
     );
+  }
+  const codeLaneDirectorRetirement = await reconcileCodeLaneDirectorRetirementsFromRun(
+    scrapeRunId,
+    { dryRun: options.dryRun },
+  );
+  if (codeLaneDirectorRetirement) {
+    console.info(`[center-director-code-retirement] ${JSON.stringify(codeLaneDirectorRetirement)}`);
   }
   const officialProfileDirectorRetirement =
     await reconcileOfficialProfileDirectorRetirementsFromRun(
