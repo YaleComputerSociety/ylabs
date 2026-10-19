@@ -884,6 +884,17 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>
   STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
 
+export const STUDENT_VISIBILITY_EVIDENCE_REASONS: ReadonlySet<string> = new Set([
+  'application_route',
+  'graduate_relevant',
+  'official_source',
+  'source_backed_description',
+  'undergraduate_relevant',
+]);
+
+export const isStudentVisibilitySignalReason = (reason: string): boolean =>
+  STUDENT_VISIBILITY_EVIDENCE_REASONS.has(reason) || isStudentReadySoftSignalReason(reason);
+
 // A person-scoped page whose body is a CV or biography that states no research
 // (owner decision, 2026-10-04). Held for review rather than suppressed: the person is
 // real and the row returns once a source states the research.

@@ -10,6 +10,7 @@ import {
   isStudentReadyHardBlockerReason,
   isUnbackedLabNameShell,
   isStudentReadySoftSignalReason,
+  isStudentVisibilitySignalReason,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
   recordHasNoUsablePublicDescription,
   researchEntityMeetsStudentReadyDefinition,
@@ -83,6 +84,17 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
       'not_undergraduate_relevant',
     ]) {
       expect(isStudentReadySoftSignalReason(hard)).toBe(false);
+    }
+  });
+
+  it('treats every soft signal and positive evidence marker as a signal, and no blocker', () => {
+    for (const soft of STUDENT_READY_SOFT_SIGNAL_REASONS) {
+      expect(isStudentVisibilitySignalReason(soft)).toBe(true);
+    }
+    expect(isStudentVisibilitySignalReason('official_source')).toBe(true);
+    expect(isStudentVisibilitySignalReason('application_route')).toBe(true);
+    for (const held of ['missing_lead', 'profile_identity_risk', 'operator_override']) {
+      expect(isStudentVisibilitySignalReason(held)).toBe(false);
     }
   });
 });

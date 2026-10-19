@@ -113,7 +113,8 @@ export type ResearchDetailWithholdingCheck =
 
 export interface ResearchDetailOperatorPreview {
   studentVisibilityTier: string;
-  studentVisibilityReasons: string[];
+  studentVisibilityBlockingReasons: string[];
+  studentVisibilitySignalReasons: string[];
   studentVisibilitySuppressionReason?: string;
   withheldBy: ResearchDetailWithholdingCheck[];
 }
