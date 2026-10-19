@@ -3284,6 +3284,16 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     );
   });
 
+  it('keeps a readable host for a bare url that is the object of "use"', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'To submit the budget, applicants should use https://forms.example.edu/budget?id=1 and attach a short proposal.',
+      ),
+    ).toBe(
+      'To submit the budget, applicants should use forms.example.edu/budget and attach a short proposal.',
+    );
+  });
+
   it('removes an unsafe scheme token that is not the object of its sentence', () => {
     expect(
       stripBibliographicReferenceArtifacts(
