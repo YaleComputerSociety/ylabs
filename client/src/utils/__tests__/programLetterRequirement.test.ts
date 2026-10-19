@@ -13,6 +13,13 @@ describe('programLetterRequirement', () => {
     ],
     [['CV', 'Budget', 'Two letters of reference'], '', 'recommendation'],
     [[], 'A letter or email of recommendation, and a budget.', 'recommendation'],
+    [
+      ['Two letters of recommendation, from an employer or internship mentor'],
+      '',
+      'recommendation',
+    ],
+    [[], 'A letter of recommendation from someone other than a faculty member.', 'recommendation'],
+    [['A letter of recommendation from a non-faculty supervisor'], '', 'recommendation'],
   ])('reads %j / %j as %s', (materials, information, expected) => {
     expect(
       programLetterRequirement({
@@ -28,6 +35,11 @@ describe('programLetterRequirement', () => {
     'Upload your CV, cover letter, and transcripts.',
     'Include a bibliography, references, or illustrations, when appropriate.',
     'A letter of acceptance to the internship.',
+    'Please do not send letters of recommendation.',
+    'Letters of reference are not accepted.',
+    'We do not accept recommendation letters.',
+    'Recommendation letters are not requested.',
+    'Letters of recommendation will not be considered.',
   ])('does not read %j as a letter requirement', (information) => {
     expect(programLetterRequirement({ applicationInformation: information })).toBeNull();
   });
@@ -40,5 +52,14 @@ describe('programLetterRequirement', () => {
       'No mentor needed first, but you will need a recommendation letter',
     );
     expect(noMentorFirstAnswer(null)).toBe('Not usually');
+  });
+
+  it('names the letter in the mentor-matching answer too', () => {
+    expect(noMentorFirstAnswer('faculty', true)).toBe(
+      'Not first, the program helps match you with a mentor, but you will need a faculty letter',
+    );
+    expect(noMentorFirstAnswer(null, true)).toBe(
+      'Not first, the program helps match you with a mentor',
+    );
   });
 });
