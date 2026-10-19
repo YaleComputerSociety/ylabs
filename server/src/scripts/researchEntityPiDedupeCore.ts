@@ -949,6 +949,55 @@ export function nameAgreementKey(value: string | undefined): string {
     .join(' ');
 }
 
+const EPONYMOUS_LAB_KIND_WORDS: ReadonlySet<string> = new Set([
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'group',
+  'research',
+  'faculty',
+]);
+
+const foldedNameWords = (value: string | undefined): string[] =>
+  normalizedWords((value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+
+/**
+ * The agreement key of a lab named for its lead: the words before its first kind noun, or
+ * its whole strict name key, are the lead's surname, optionally preceded by the lead's given
+ * names or initials, so "Ortolan Lab", "Wren Ortolan Research Group", a bare "Ortolan" and a
+ * site title such as "ORTOLAN LAB Coastal Sediment @ Yale" all name one lab. A lab website's
+ * title carries a tagline after the kind noun, and the name lanes copy it, which left the
+ * same lead's lab served twice under two names (#5308). Every name whose strict key is the
+ * lead's name takes this key too, so no pair the strict key agreed on is split. Anything
+ * else in the head, such as a topic word, is not the eponymous form and keeps the strict key.
+ */
+export function eponymousLabAgreementKey(
+  value: string | undefined,
+  lead: { piFirstName?: string; piLastName?: string },
+): string {
+  const surname = foldedNameWords(lead.piLastName);
+  if (surname.length === 0) return '';
+  const givenNames = new Set(foldedNameWords(lead.piFirstName));
+  const namesLead = (head: string[]): boolean => {
+    if (head.length < surname.length) return false;
+    const prefixLength = head.length - surname.length;
+    return (
+      head.slice(prefixLength).every((word, index) => word === surname[index]) &&
+      head.slice(0, prefixLength).every((word) => word.length === 1 || givenNames.has(word))
+    );
+  };
+  const words = foldedNameWords(value);
+  const start = words[0] === 'the' ? 1 : 0;
+  const kindIndex = words.findIndex(
+    (word, index) => index >= start && EPONYMOUS_LAB_KIND_WORDS.has(word),
+  );
+  const head = kindIndex > start ? words.slice(start, kindIndex) : [];
+  const strictWords = nameAgreementKey(value).split(' ').filter(Boolean);
+  if (!namesLead(head) && !namesLead(strictWords)) return '';
+  return `eponymous-lab:${surname.join(' ')}`;
+}
+
 /**
  * The unattended form of the shared-person lane: one group per lead, entity type and
  * name. One person can lead a lab and run an unrelated project under another name, and
@@ -962,7 +1011,7 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
   return rows.flatMap((row) => {
     const clusters = new Map<string, ResearchEntityPiDedupeRow['entities']>();
     for (const entity of sharedPersonEligibleEntities(row, sharedEntityIds)) {
-      const name = nameAgreementKey(entity.name);
+      const name = eponymousLabAgreementKey(entity.name, row) || nameAgreementKey(entity.name);
       const entityType = (entity.entityType || '').toUpperCase();
       if (!name || !entityType) continue;
       const key = `${entityType}::${name}`;
