@@ -1269,6 +1269,8 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'yalesites-directory',
     currentSectionLabels: [],
     pastSectionLabels: ['Undergraduates:'],
+
+    withheldNames: ['Barret Zimmermann'],
   },
   {
     researchEntityKey: 'faculty-research-area-yu-he',
