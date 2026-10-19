@@ -3,16 +3,20 @@ import { ResearchEntity } from '../models/researchEntity';
 import {
   detectOfficialRosterTemplate,
   extractOfficialResearchHomeRoster,
+  listedPersonLines,
   listedPersonNames,
+  SCHOOL_KNOWN_BY_ONE_NAME,
   undergraduateSectionCandidates,
   type DerivedRosterOutcome,
   type DerivedRosterRequest,
   type DerivedRosterRun,
   type ExtractedOfficialRoster,
+  type ListedPersonLine,
   type OfficialRosterConfig,
   type OfficialRosterUndergraduate,
 } from './sources/officialResearchHomeRosterScraper';
-import { OWNER_DENIED_ROSTER_KEYS } from './officialRosterConfigs';
+import { OWNER_DENIED_ROSTER_KEY_DIGESTS } from './officialRosterConfigs';
+import { deniedRosterKeyDigest } from './rosterStrikeDigests';
 import { rosterSnippetNamesAnUndergraduate } from './undergradQuoteRelevance';
 
 export interface UndergradRosterProposal {
@@ -118,28 +122,65 @@ function namedLabOwners($: cheerio.CheerioAPI, url: string, listedNames: string[
 const OTHER_UNIVERSITY =
   /\b(?:University of (?:the )?\p{Lu}[\p{L}-]*|\p{Lu}[\p{L}-]*\s+University|UPenn)\b/gu;
 
-/**
- * A page off Yale's hosts that never names Yale and keeps naming one other university is
- * that university's lab page (the PI's lab before or besides Yale), so its students are
- * that university's students.
- */
-function isAnotherInstitutionsPage(url: string, text: string): boolean {
+const isOnYaleHost = (url: string): boolean => {
   try {
-    if (/(?:^|\.)yale\.edu$/i.test(new URL(url).hostname)) return false;
+    return /(?:^|\.)yale\.edu$/i.test(new URL(url).hostname);
   } catch {
-    return false;
+    return true;
   }
-  if (/\bYale\b/i.test(text)) return false;
+};
+
+/**
+ * A site builder repeats the site's name in its header, so "The Fixture Lab | Yale" there
+ * is the site naming itself, not the page placing its people at Yale.
+ */
+function withoutSiteTitle($: cheerio.CheerioAPI, text: string): string {
+  const title = $('title').first().text().replace(/\s+/g, ' ').trim();
+  const siteName = title.replace(/\s+[-\u2013\u2014|]\s+[^-\u2013\u2014|]*$/, '');
+  return [title, siteName]
+    .filter((name) => name.length >= 6)
+    .reduce((remaining, name) => remaining.split(name).join(' '), text);
+}
+
+const namesAnotherUniversity = (line: string): boolean =>
+  SCHOOL_KNOWN_BY_ONE_NAME.test(line) ||
+  [...line.matchAll(OTHER_UNIVERSITY)].some((match) => !/\bYale\b/.test(match[0]));
+
+/**
+ * A page off Yale's hosts that never names Yale is another university's lab page (the PI's
+ * lab before or besides Yale) when it keeps naming one other university, or when an
+ * undergraduate it lists is placed at one, so its students are that university's students.
+ */
+function isAnotherInstitutionsPage(url: string, text: string, lines: ListedPersonLine[]): boolean {
+  if (isOnYaleHost(url) || /\bYale\b/i.test(text)) return false;
   const counts = new Map<string, number>();
   for (const match of text.matchAll(OTHER_UNIVERSITY)) {
     counts.set(match[0], (counts.get(match[0]) ?? 0) + 1);
   }
-  return [...counts.values()].some((count) => count >= 3);
+  return (
+    [...counts.values()].some((count) => count >= 3) ||
+    lines.some((line) => line.role === 'undergrad' && namesAnotherUniversity(line.ownLine))
+  );
 }
+
+const NOT_THE_LEAD_BUT_THEIR_STAFF = String.raw`(?!['’]s\b|\s+(?:assistant|coordinator|manager|administrator)s?\b)`;
+const LEADS_THE_LAB = new RegExp(
+  String.raw`\b(?:principal investigators?|lab(?:oratory)? (?:directors?|heads?)|group (?:leaders?|heads?)|faculty directors?)\b${NOT_THE_LEAD_BUT_THEIR_STAFF}`,
+  'i',
+);
+const LEADS_THE_LAB_ABBREVIATED = new RegExp(
+  String.raw`\b(?:Co-?)?PIs?\b${NOT_THE_LEAD_BUT_THEIR_STAFF}`,
+);
+
+const leadsTheLab = (line: ListedPersonLine): boolean =>
+  [line.ownLine, line.sectionLabel].some(
+    (text) => LEADS_THE_LAB.test(text) || LEADS_THE_LAB_ABBREVIATED.test(text),
+  );
 
 /**
  * Whether the page is some other lab's page: the key names a person, and the page is named
- * after someone listed on it who is not that person, or it belongs to another institution.
+ * after someone listed on it who is not that person, or it names a lab head and never lists
+ * that person at all, or it belongs to another institution.
  */
 export function pageOwnershipRefusal(
   html: string,
@@ -147,15 +188,21 @@ export function pageOwnershipRefusal(
   url: string,
 ): 'page-of-another-lab' | 'page-of-another-institution' | undefined {
   const $ = cheerio.load(html);
-  const text = pageText($);
-  if (isAnotherInstitutionsPage(url, text)) return 'page-of-another-institution';
+  const text = withoutSiteTitle($, pageText($));
+  const template = detectOfficialRosterTemplate(html);
+  const lines = listedPersonLines(html, template);
+  if (isAnotherInstitutionsPage(url, text, lines)) return 'page-of-another-institution';
   const nameTokens = keyNameTokens(researchEntityKey);
   if (nameTokens.length === 0) return undefined;
-  const owners = namedLabOwners(
-    $,
-    url,
-    listedPersonNames(html, detectOfficialRosterTemplate(html)),
-  );
+  const isKeyPerson = (name: string): boolean =>
+    name
+      .split(/[\s-]+/)
+      .map(lettersOnly)
+      .some((word) => word.length >= 2 && ownerIsKeyPerson(word, nameTokens));
+  if (lines.some(leadsTheLab) && !lines.some((line) => isKeyPerson(line.name))) {
+    return 'page-of-another-lab';
+  }
+  const owners = namedLabOwners($, url, listedPersonNames(html, template));
   return owners.length > 0 && !owners.some((owner) => ownerIsKeyPerson(owner, nameTokens))
     ? 'page-of-another-lab'
     : undefined;
@@ -493,22 +540,21 @@ export function perHostSpacedReader(
 export function createUndergradRosterDeriver(
   loadCandidates: () => Promise<DerivedRosterCandidate[]> = loadDerivedRosterCandidates,
   fetchDelayMs = DERIVED_ROSTER_FETCH_DELAY_MS,
-  ownerDeniedKeys: readonly string[] = OWNER_DENIED_ROSTER_KEYS,
+  ownerDeniedKeyDigests: readonly string[] = OWNER_DENIED_ROSTER_KEY_DIGESTS,
   candidatesInParallel = DERIVED_ROSTER_CANDIDATES_IN_PARALLEL,
 ): (request: DerivedRosterRequest) => Promise<DerivedRosterRun> {
   return async (request) => {
-    const denied = new Set(ownerDeniedKeys);
+    const deniedDigests = new Set(ownerDeniedKeyDigests);
+    const denied = (key: string): boolean => deniedDigests.has(deniedRosterKeyDigest(key));
     const all = (await loadCandidates()).filter(
       (candidate) => !request.only || request.only.has(candidate.researchEntityKey.toLowerCase()),
     );
     const staticOverridden = all.filter((c) => request.staticKeys.has(c.researchEntityKey)).length;
     const deniedCandidates = all.filter(
-      (c) => !request.staticKeys.has(c.researchEntityKey) && denied.has(c.researchEntityKey),
+      (c) => !request.staticKeys.has(c.researchEntityKey) && denied(c.researchEntityKey),
     );
     const candidates = all
-      .filter(
-        (c) => !request.staticKeys.has(c.researchEntityKey) && !denied.has(c.researchEntityKey),
-      )
+      .filter((c) => !request.staticKeys.has(c.researchEntityKey) && !denied(c.researchEntityKey))
       .slice(0, request.limit || undefined);
     const readPage = perHostSpacedReader(request.fetchPage, fetchDelayMs);
     const outcomes: DerivedRosterOutcome[] = deniedCandidates

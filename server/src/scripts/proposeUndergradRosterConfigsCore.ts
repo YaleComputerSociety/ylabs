@@ -3,6 +3,7 @@ import type {
   OfficialRosterUndergraduate,
 } from '../scrapers/sources/officialResearchHomeRosterScraper';
 import type { UndergradRosterProposal } from '../scrapers/undergradRosterDerivation';
+import { withheldNameDigest } from '../scrapers/rosterStrikeDigests';
 
 export {
   isProposableSectionLabel,
@@ -65,9 +66,19 @@ export function renderUndergradRosterReviewSheet(proposals: UndergradRosterPropo
   return `${lines.join('\n')}\n`;
 }
 
-export function officialRosterConfigSource(configs: OfficialRosterConfig[]): string {
+export type ReviewedOfficialRosterConfig = OfficialRosterConfig & { withheldNames?: string[] };
+
+const emittedWithheldNameDigests = (config: ReviewedOfficialRosterConfig): string[] => [
+  ...new Set([
+    ...(config.withheldNameDigests ?? []),
+    ...(config.withheldNames ?? []).map(withheldNameDigest),
+  ]),
+];
+
+export function officialRosterConfigSource(configs: ReviewedOfficialRosterConfig[]): string {
   return configs
     .map((config) => {
+      const withheldNameDigests = emittedWithheldNameDigests(config);
       const fields = [
         `    researchEntityKey: ${JSON.stringify(config.researchEntityKey)},`,
         `    url: ${JSON.stringify(config.url)},`,
@@ -77,8 +88,8 @@ export function officialRosterConfigSource(configs: OfficialRosterConfig[]): str
         ...(config.pastSectionLabels && config.pastSectionLabels.length > 0
           ? [`    pastSectionLabels: ${JSON.stringify(config.pastSectionLabels)},`]
           : []),
-        ...(config.withheldNames && config.withheldNames.length > 0
-          ? [`    withheldNames: ${JSON.stringify(config.withheldNames)},`]
+        ...(withheldNameDigests.length > 0
+          ? [`    withheldNameDigests: ${JSON.stringify(withheldNameDigests)},`]
           : []),
         ...(config.pastNames && config.pastNames.length > 0
           ? [`    pastNames: ${JSON.stringify(config.pastNames)},`]
