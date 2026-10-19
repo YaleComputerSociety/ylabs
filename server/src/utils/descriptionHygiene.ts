@@ -393,27 +393,39 @@ export function readableLinkTarget(token: string): string {
     return UNREADABLE_LINK_TEXT;
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return UNREADABLE_LINK_TEXT;
-  const readable = `${url.hostname}${url.pathname.replace(/\/+$/, '')}`;
+  const readable = `${url.hostname}${url.pathname.split(';')[0].replace(/\/+$/, '')}`;
   return readable.length <= MAX_READABLE_LINK_CHARS ? readable : url.hostname;
 }
 
 const hasSubstantiveWord = (text: string): boolean =>
   (text.match(/[A-Za-z]{2,}/g) || []).some((word) => !REFERENCE_SCAFFOLD_WORDS.has(word.toLowerCase()));
 
+const LINK_LIST_SEPARATOR = /^\s*(?:,|,?\s*(?:and|or))\s*$/i;
+
 function isLoadBearingLinkSlot(textBeforeLink: string): boolean {
-  const leadIn = LINK_OBJECT_LEAD_IN.exec(textBeforeLink);
-  return Boolean(leadIn) && hasSubstantiveWord(textBeforeLink.slice(0, leadIn!.index));
+  const clause = textBeforeLink.slice(
+    Math.max(textBeforeLink.lastIndexOf('('), textBeforeLink.lastIndexOf(';')) + 1,
+  );
+  const leadIn = LINK_OBJECT_LEAD_IN.exec(clause);
+  return Boolean(leadIn) && hasSubstantiveWord(clause.slice(0, leadIn!.index));
 }
 
 function restoreLoadBearingLinks(sentence: string, artifacts: readonly MaskedArtifact[]): string {
   const [first, ...rest] = sentence.split(ARTIFACT_TOKEN_MASK);
   let restored = first;
+  let previousRestoredLinkEnd: number | null = null;
   rest.forEach((segment, index) => {
     const artifact = artifacts[index];
-    restored +=
-      artifact?.isLink && isLoadBearingLinkSlot(restored)
-        ? readableLinkTarget(artifact.token)
-        : ARTIFACT_TOKEN_MASK;
+    const continuesRestoredList =
+      previousRestoredLinkEnd !== null &&
+      LINK_LIST_SEPARATOR.test(restored.slice(previousRestoredLinkEnd));
+    if (artifact?.isLink && (continuesRestoredList || isLoadBearingLinkSlot(restored))) {
+      restored += readableLinkTarget(artifact.token);
+      previousRestoredLinkEnd = restored.length;
+    } else {
+      restored += ARTIFACT_TOKEN_MASK;
+      previousRestoredLinkEnd = null;
+    }
     restored += segment;
   });
   return restored;

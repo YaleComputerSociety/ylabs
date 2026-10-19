@@ -3184,6 +3184,32 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     ).toBe('The lab studies gene regulation and shares protocols with the wider community.');
   });
 
+  it('drops a pointer that opens its own parenthetical or clause', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The lab studies gene regulation in yeast (see https://lab.example.edu/people).',
+      ),
+    ).toBe('The lab studies gene regulation in yeast.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The lab studies gene regulation in yeast; see https://lab.example.edu for details.',
+      ),
+    ).toBe('The lab studies gene regulation in yeast.');
+  });
+
+  it('keeps every link in a list that is the object of its sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Apply to https://a.example.edu/x, https://b.example.edu/y and submit the form.',
+      ),
+    ).toBe('Apply to a.example.edu/x, b.example.edu/y and submit the form.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Apply to https://a.example.edu/x or https://b.example.edu/y before the deadline.',
+      ),
+    ).toBe('Apply to a.example.edu/x or b.example.edu/y before the deadline.');
+  });
+
   it('closes a sentence cleanly when a trailing url and its parenthesis are removed', () => {
     expect(
       stripBibliographicReferenceArtifacts(
@@ -3199,6 +3225,7 @@ describe('a link target that is the object of its sentence (#5365)', () => {
       readableLinkTarget('https://user:secret@portal.example.edu:8443/apply/?session=abc#form'),
     ).toBe('portal.example.edu/apply');
     expect(readableLinkTarget('www.example.edu/path(1)')).toBe('www.example.edu/path(1)');
+    expect(readableLinkTarget('https://example.edu/apply;jsessionid=ABC')).toBe('example.edu/apply');
   });
 
   it('shortens an over-long link target to its host', () => {
