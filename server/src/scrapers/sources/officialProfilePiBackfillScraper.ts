@@ -31,7 +31,7 @@ import {
   stripResearchHomeNameLinkChrome,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
-import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
+import { isNavMenuChromeTitle, isPageHeadingTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
@@ -963,6 +963,14 @@ function hasExternalScholarProfileCallout(value: string): boolean {
   );
 }
 
+function isAdmissibleOfficialProfileTitle(value: string): boolean {
+  return (
+    officialProfileTitlePattern.test(value) &&
+    !isNavMenuChromeTitle(value) &&
+    !isPageHeadingTitle(value)
+  );
+}
+
 function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
   const selectors = [
     '[class*="title"]',
@@ -975,7 +983,7 @@ function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
     for (const el of elements) {
       const value = cleanOfficialProfileTitle($(el).text() || $(el).attr('content') || '');
       if (!value || /^information for$/i.test(value)) continue;
-      if (officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value)) return value;
+      if (isAdmissibleOfficialProfileTitle(value)) return value;
     }
   }
   return '';
@@ -1534,7 +1542,7 @@ export function readOrganizationDirectorProfile(
   }
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+      isAdmissibleOfficialProfileTitle,
     ) || '';
   return { subjectKey, statedMember, claim: { name, role, profileUrl: canonicalUrl, title } };
 }
@@ -3063,7 +3071,7 @@ export function extractOfficialProfileIdentity(
 
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+      isAdmissibleOfficialProfileTitle,
     ) || '';
   if (!title) return null;
 

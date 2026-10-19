@@ -266,7 +266,11 @@ import {
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
-import { isTruncatedPersonTitle, stripTitleFieldLabel } from '../utils/titleHygiene';
+import {
+  isPageHeadingTitle,
+  isTruncatedPersonTitle,
+  stripTitleFieldLabel,
+} from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
@@ -1831,7 +1835,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
     entityType === 'user' &&
     observation.field === 'title' &&
     typeof observation.value === 'string' &&
-    isTruncatedPersonTitle(observation.value)
+    (isTruncatedPersonTitle(observation.value) || isPageHeadingTitle(observation.value))
   ) {
     return true;
   }
@@ -6719,6 +6723,10 @@ async function materializeUserIdentityToResearcher(
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
     }
+  }
+  if (!title && isPageHeadingTitle(researcher.profile.title)) {
+    researcher.profile.title = undefined;
+    fieldsWritten += 1;
   }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
   const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(

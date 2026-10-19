@@ -184,6 +184,20 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(enriched?.identifiers?.netid).toBe('realpi1');
   });
 
+  it('re-derives a stored page-heading title instead of keeping it (#5323)', async () => {
+    const headed = await attachedResearcher('headed1', 'Avery Heading', {
+      profile: { title: 'Research Affiliates' },
+    });
+    await seedDirectoryIdentity('headed1', 'Avery', 'Heading', 'Faculty Impact Award');
+
+    await materializeEntity('user', { entityKey: 'headed1' }, {});
+    expect((await enrichedResearcher(headed._id))?.profile?.title).toBeUndefined();
+
+    await seedDirectoryIdentity('headed1', 'Avery', 'Heading', 'Professor of Ecology');
+    await materializeEntity('user', { entityKey: 'headed1' }, {});
+    expect((await enrichedResearcher(headed._id))?.profile?.title).toBe('Professor of Ecology');
+  });
+
   it('does not mint a researcher when an account exists but no researcher backs it', async () => {
     await Account.create({ netid: 'loginonly1', email: 'loginonly1@yale.edu', status: 'ACTIVE' });
 

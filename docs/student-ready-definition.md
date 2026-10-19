@@ -133,6 +133,8 @@ Both block, because both are the same question; leaving the second unclassified 
 `rightLeadAttached` asks whether the named person can own the research home a student would be joining, not merely whether a person is named.
 `hasStrongLead` in `server/src/services/researchEntityQuality.ts` is the authority, and it refuses two title classes through one shared predicate, `cannotOwnResearchHome` in `server/src/utils/researchHomeOwnership.ts`.
 The retirement lane that acts on the gate's verdict (`role-assignments:retire-non-owner-pi-edges`) reads the same predicate, so a future refusal class added there reaches both.
+The lane runs both ways: an edge it retired whose person's current title no longer refuses is restored to `UNREVIEWED` on the next run, so a corrected title re-derives the lead rather than leaving a stale `DISPUTED` verdict (#5323).
+A page heading or headline stored as a title (`isPageHeadingTitle` in `server/src/utils/titleHygiene.ts`: a plural roster heading such as "Research Affiliates", an award name, a news headline) is read as no title at all, never as a rank.
 
 A trainee cannot host (#2876): a postdoc, postgraduate associate or fellow, research assistant, student, candidate, intern or pre-doctoral fellow runs real research but has no standing to admit an undergraduate, who approaches the PI instead.
 A non-research staff appointment owns no research home (#1897): a programme manager, a financial or data analyst, a biostatistician, a coordinator, a lab manager, a technician, a specialist or a courtesy research affiliate may be indispensable to a research home without being able to offer one.

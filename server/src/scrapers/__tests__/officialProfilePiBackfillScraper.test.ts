@@ -2443,6 +2443,42 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
   });
 
+  it('reads past a news headline or award teaser to the person title (#5323)', () => {
+    for (const teaser of [
+      'Faculty Impact Award',
+      'Faculty and Postdocs Hailed as Outstanding Mentors',
+    ]) {
+      const html = profileHtml.replace(
+        '<h1>Jules Fixture</h1>',
+        `<div class="news-card__title">${teaser}</div><h1>Jules Fixture</h1>`,
+      );
+      const identity = extractOfficialProfileIdentity(html, profileUrl, {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      });
+      expect(identity?.title).toBe('Professor of Surgery (Oncology)');
+    }
+  });
+
+  it('extracts no identity rather than a headline when the page states no title (#5323)', () => {
+    const html = profileHtml
+      .replace('<div class="title">Professor of Surgery (Oncology)</div>', '')
+      .replace(
+        '<meta name="description" content="Professor of Surgery (Oncology)" />',
+        '<meta name="description" content="Faculty Impact Award" />',
+      )
+      .replace(
+        '<h1>Jules Fixture</h1>',
+        '<div class="news-card__title">Faculty Impact Award</div><h1>Jules Fixture</h1>',
+      );
+    expect(
+      extractOfficialProfileIdentity(html, profileUrl, {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      }),
+    ).toBeNull();
+  });
+
   it('fails closed when a nav-menu container is the only title candidate (#708)', () => {
     const chromeProfileUrl = 'https://quantuminstitute.yale.edu/people/vic-fixture';
     const chromeProfileHtml = `

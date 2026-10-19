@@ -1,4 +1,5 @@
 import { isNonResearchStaffTitle } from './nonResearchStaffTitle';
+import { isPageHeadingTitle } from './titleHygiene';
 import { isTraineeLevelTitle } from './traineeLevelTitle';
 
 /**
@@ -6,10 +7,15 @@ import { isTraineeLevelTitle } from './traineeLevelTitle';
  * student would be joining, whether because the person is a trainee (#2876) or holds
  * no research appointment at all (#1897).
  *
+ * A page heading or headline stored as the title ("Research Affiliates", "Faculty Impact
+ * Award") states nothing about the person's own rank, so it is read as silence rather
+ * than as a refusal: it retired real faculty lead edges until #5323.
+ *
  * Exported so the serve-time gate and the retirement lane that acts on the gate's
  * verdict read the same predicate. A future refusal class added here reaches both.
  * `client/src/utils/leadRoleDisplay.ts` mirrors it because client and server are
- * separate packages; parity is pinned by behaviour in a test, per #2433.
+ * separate packages; parity is pinned by behaviour in a test, per #2433. The client
+ * never receives a heading title, because `sanitizePersonTitle` withholds it at serve.
  */
 export const cannotOwnResearchHome = (title?: string): boolean =>
-  isTraineeLevelTitle(title) || isNonResearchStaffTitle(title);
+  !isPageHeadingTitle(title) && (isTraineeLevelTitle(title) || isNonResearchStaffTitle(title));
