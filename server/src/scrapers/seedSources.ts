@@ -217,15 +217,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
-    name: 'center-member-profile-research',
-    displayName: 'Center member profile research',
-    description:
-      "Reads the research statement and biography on a center member's own profile page and attaches them, as writer evidence only, to the one personal research row that member leads. A page joins to a person only through a centers-roster membership edge whose identity was proven, never by name, and the lane mints no row.",
-    baseUrl: 'https://fds.yale.edu',
-    defaultWeight: 0.8,
-    cadence: 'weekly',
-  },
-  {
     name: 'directory-alias-resolution',
     displayName: 'Directory alias resolution',
     description:

@@ -26,6 +26,7 @@
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
   buildFetchAttemptMetrics,
@@ -1555,6 +1556,26 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('#grid__users-member .grid__user').each((_i, el) => {
+    const card = $(el);
+    const name = normalizeName(cleanText(card.find('.grid__user__title').first().text()));
+    if (!name) return;
+
+    const href = card.find('a.grid__user__link').first().attr('href') || '';
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('.grid__user__job-title').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.grid__user__image').first(), ctx.pageUrl);
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
 /**
  * Derive a display-name placeholder from a faculty profile slug such as
  * `/faculty/318-emily-abruzzo` (strip a leading numeric id, title-case tokens).
@@ -1598,10 +1619,14 @@ function isPersonNameShaped(name: string): boolean {
  * Returns undefined when the leading segment does not look like a personal name so a
  * generic listing/section title cannot overwrite a reliable slug-derived placeholder.
  */
+const WORDPRESS_AUTHOR_ARCHIVE_TITLE_SUFFIX = /,\s*Author at\s.+$/i;
+
 function personNameFromProfileHtml($: cheerio.CheerioAPI): string | undefined {
   const raw =
     $('meta[property="og:title"]').attr('content') || cleanText($('title').first().text());
-  const leading = cleanText(raw).split(/\s+[|–—-]\s+/)[0];
+  const leading = cleanText(raw)
+    .split(/\s+[|–—-]\s+/)[0]
+    .replace(WORDPRESS_AUTHOR_ARCHIVE_TITLE_SUFFIX, '');
   if (!leading || !isPersonNameShaped(leading)) return undefined;
   return leading;
 }
@@ -2402,6 +2427,18 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://yibs.yale.edu/people/faculty-affiliates',
     paginated: false,
     extractor: fieldCollectionPersonExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'fds',
+    deptName: 'Foundations of Data Science',
+    schoolName: 'Yale Institute for Foundations of Data Science',
+    url: 'https://fds.yale.edu/people/',
+    paginated: false,
+    extractor: wordpressUsersListExtractor,
+    // Measured 2026-10-18 (#5282): minting planned 67 rows and every one was for a person
+    // the corpus already covers, 58 of them through a row that person leads.
     officialProfileOnly: true,
     affiliatesOnly: true,
   },
@@ -3517,7 +3554,7 @@ export function profileEnrichmentFromHtml(
     $,
     isMeshIndexedProfileUrl(canonicalUrl),
   );
-  const bio = extractBioFromHtml($);
+  const bio = wordpressAuthorProfileBiography($) ?? extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
   const declaredName = personNameFromProfileHtml($);
   const statedLabName = declaredName

@@ -1002,6 +1002,8 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
 > = {
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
   'official-profile-pi-backfill': new Set(['entityType', 'kind']),
+  // Retired (#5282), but its stored observations stay as evidence and must keep reading as
+  // latest-wins until they are gone.
   'center-member-profile-research': new Set(['researchSummary', 'bio']),
 };
 

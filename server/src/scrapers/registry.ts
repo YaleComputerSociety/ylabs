@@ -38,7 +38,6 @@ import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtract
 import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificationScraper';
 import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
 import { RosterBioResearchEvidenceScraper } from './sources/rosterBioResearchEvidenceScraper';
-import { CenterMemberProfileResearchScraper } from './sources/centerMemberProfileResearchScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -82,6 +81,5 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new LabSiteLeadVerificationScraper());
   o.register(new DirectoryAliasResolutionScraper());
   o.register(new RosterBioResearchEvidenceScraper());
-  o.register(new CenterMemberProfileResearchScraper());
   return o;
 }
