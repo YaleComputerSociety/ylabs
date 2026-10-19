@@ -7600,10 +7600,9 @@ function enforceResearchEntityNameAuthority(input: {
     { slug: entityDoc?.slug, leadPersonName: input.nameIdentityAuthority.leadPersonName },
     input.materializationObs,
   );
-  const returnsToFacultyResearch =
+  const servesAsFacultyResearch =
     personRow &&
-    textValue(set.entityType).toUpperCase() === 'FACULTY_RESEARCH_AREA' &&
-    textValue(entityDoc?.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA';
+    textValue(set.entityType ?? entityDoc?.entityType).toUpperCase() === 'FACULTY_RESEARCH_AREA';
   const recordIdentity = {
     entityType: set.entityType ?? entityDoc?.entityType,
     kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
@@ -7776,18 +7775,21 @@ function enforceResearchEntityNameAuthority(input: {
     }
   }
 
-  // A person's row this pass returns to faculty research serves its own name. A display name
-  // left from the lab or organization it was typed as would otherwise keep that identity, or
-  // be suffixed into a hybrid of the two by the derivations below (#5283).
-  if (returnsToFacultyResearch && !input.manuallyLockedFields.includes('displayName')) {
+  // A person's row projected as faculty research serves its own name, on every resolve rather
+  // than only the one that retypes it, so a display name left from the lab or organization it
+  // was typed as, or re-resolved from a live observation, can neither keep that identity nor be
+  // suffixed into a hybrid of the two by the derivations below (#5283).
+  if (servesAsFacultyResearch && !input.manuallyLockedFields.includes('displayName')) {
     const displayName = textValue(set.displayName ?? entityDoc?.displayName);
     if (displayName && displayName !== textValue(set.name ?? entityDoc?.name)) {
       delete set.displayName;
       delete set['fieldProvenance.displayName'];
       delete confidenceByField.displayName;
-      unset.displayName = '';
-      if (entityDoc?.fieldProvenance?.displayName) unset['fieldProvenance.displayName'] = '';
-      fieldsWritten++;
+      if (textValue(entityDoc?.displayName)) {
+        unset.displayName = '';
+        unset['fieldProvenance.displayName'] = '';
+        fieldsWritten++;
+      }
     }
   }
 
