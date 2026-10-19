@@ -56,6 +56,21 @@ The quote is model output deciding what a student reads, which #5296 retires.
 The stored field, the lane that writes it and its admission guards stay, because an explicit invitation quote returns beside the badge designed in #5288.
 The `undergrad-evidence-quote-precision` journey case is retired with the quote rather than left passing over an empty population; its last measurement was 42/50 = 0.84.
 
+## 2026-10-18: Every Scraper Lane Is Deterministic; A Model Helps Only At Materialization (#5296)
+
+The owner decided that every scraper and lane is deterministic, because the work is web scraping and crawling and a web page is deterministic input.
+A lane fetches, crawls and parses with code and stores what the page says as cited observations, so the same page always produces the same observations.
+A language model may help only later, at materialization, and then under three rules: it reads stored observations only and never fetches, its answer is cached by an input hash so a re-run makes no new paid call, and its output is derived, labelled and re-derivable rather than written back as an observation.
+
+Four lanes called a model on 2026-10-18: `lab-microsite-undergrad-llm` (manual-only), `center-director-llm`, `center-affiliation-llm` and `lab-microsite-description-llm` (weekly sweep).
+Each is replaced one at a time and measured on a frozen page set against the lane it replaces before that lane is retired; #5296 holds the order.
+
+The first replacement is the hosted-undergraduates badge.
+A reviewed official roster that lists an undergraduate now counts as hosting evidence (#5233), the extractor reads every undergraduate section and refuses non-Yale students (#5292, #5341), and 36 rosters the record-only derivation (#5294) built were checked against their pages and added to the allowlist (#5337, #5356), which holds 173 labs.
+Of 276 badged rows on Development, 171 rest on a roster, 20 on a fellowship recipient list and 85 on `lab-microsite-undergrad-llm` alone.
+The owner chose to keep those 85 served and freeze the lane rather than drop them: it is not run again, and each badge it holds gives way as a deterministic roster or recipient list covers the row.
+An agent-graded sample of 30 rows resting on that lane alone found the badge right on 25 of 29 gradable rows and the stored count right on 18, so the detail page states no advised count (#5260).
+
 ## 2026-10-18: A Description That Narrates Its Own Sources Is Not A Research Statement (#5281)
 
 A served description must say what is studied and must not narrate its own sources (owner decision, 2026-10-12, #5020).

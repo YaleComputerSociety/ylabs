@@ -7,7 +7,7 @@ const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
   'undergrad-research-posting':
     'no official public page publishes postings in the shape the lane reads, so its page list is empty and it would trip the barren-streak guard on every sweep (#3550, #3553); return it to the sweep when a replacement page is configured (#3551)',
   'lab-microsite-undergrad-llm':
-    "stays manual-only for runtime, not precision, by owner decision on 2026-10-11 (#3569): the 2026-09-29 re-measure with journey:eval --case=undergrad-evidence-quote-precision judged all 50 drawn served quotes and read badge precision 42/50 = 0.84 (95% Wilson 0.71 to 0.92), up from 0.36 at #3569, so the browse card shows the quote beside its badge; but a full pass at about 4 to 19 labs per minute over 4,808 labs takes 4 to 20 hours against a weekly sweep of about 8 hours and Render's 12-hour job limit (#3636), so run it scoped by hand when the quotes need refreshing",
+    'frozen by owner decision on 2026-10-18 (#5296): every scraper lane is to be deterministic, and a model may help only at materialization over stored observations, so this lane is not run again; its stored badge evidence stays served until a deterministic roster or recipient list covers the row, measured on an agent-graded 30-row sample at 25/29 correct on the badge and 18/29 on the count',
 };
 
 export const MANUAL_ONLY_SWEEP_SOURCES: string[] = Object.keys(MANUAL_ONLY_SWEEP_SOURCE_REASONS);
