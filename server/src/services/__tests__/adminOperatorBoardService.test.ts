@@ -7,6 +7,7 @@ import {
   buildRecommendedNextActions,
   classifyOperatorQueueReason,
   splitOperatorSampleReasons,
+  topQueueReasonsPerKind,
   derivePromotionStatus,
   readDataQualityGateArtifact,
   readScraperIntegrityGateArtifact,
@@ -58,6 +59,23 @@ describe('adminOperatorBoardService', () => {
       expect(classifyOperatorQueueReason(gating, 'programs')).toBe('blocking');
       expect(classifyOperatorQueueReason(gating, 'research')).toBe('evidence');
     }
+  });
+
+  it('keeps the top queues of every kind so a small lane is never crowded out', () => {
+    const rows = [
+      { reason: 'b1', count: 900, kind: 'blocking' as const },
+      { reason: 'b2', count: 800, kind: 'blocking' as const },
+      { reason: 'e1', count: 700, kind: 'evidence' as const },
+      { reason: 'b3', count: 600, kind: 'blocking' as const },
+      { reason: 'b4', count: 500, kind: 'blocking' as const },
+      { reason: 'r1', count: 2, kind: 'review' as const },
+    ];
+    expect(topQueueReasonsPerKind(rows, 2).map((row) => row.reason)).toEqual([
+      'b1',
+      'b2',
+      'e1',
+      'r1',
+    ]);
   });
 
   it('lists every reason that is not a signal under the sample blockers', () => {

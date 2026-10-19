@@ -1886,14 +1886,12 @@ async function reasonCounts(
   model: any,
   collection: OperatorQueueCollection,
   match: Record<string, unknown>,
-  limit = 12,
 ): Promise<Array<{ reason: string; count: number; kind: QueueKind }>> {
   const rows = await model.aggregate([
     { $match: match },
     { $unwind: '$studentVisibilityReasons' },
     { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
     { $sort: { count: -1, _id: 1 } },
-    { $limit: limit },
     { $project: { _id: 0, reason: '$_id', count: 1 } },
   ]);
 
@@ -1901,6 +1899,23 @@ async function reasonCounts(
     ...row,
     kind: classifyOperatorQueueReason(row.reason, collection),
   }));
+}
+
+const DISPLAYED_REASON_COUNTS = 12;
+const QUEUES_PER_KIND_PER_COLLECTION = 3;
+
+export function topQueueReasonsPerKind<T extends { count: number; kind: QueueKind }>(
+  rows: T[],
+  perKind = QUEUES_PER_KIND_PER_COLLECTION,
+): T[] {
+  const taken: Record<QueueKind, number> = { blocking: 0, evidence: 0, review: 0 };
+  return [...rows]
+    .sort((a, b) => b.count - a.count)
+    .filter((row) => {
+      if (taken[row.kind] >= perKind) return false;
+      taken[row.kind] += 1;
+      return true;
+    });
 }
 
 const researchReasonActions: Record<string, string> = {
@@ -1994,7 +2009,7 @@ async function buildQueueSummaries() {
   ]);
 
   const researchQueues = await Promise.all(
-    researchReasons.slice(0, 8).map(async (row) => ({
+    topQueueReasonsPerKind(researchReasons).map(async (row) => ({
       collection: 'research' as const,
       reason: row.reason,
       kind: row.kind,
@@ -2007,7 +2022,7 @@ async function buildQueueSummaries() {
   );
 
   const programQueues = await Promise.all(
-    programReasons.slice(0, 8).map(async (row) => ({
+    topQueueReasonsPerKind(programReasons).map(async (row) => ({
       collection: 'programs' as const,
       reason: row.reason,
       kind: row.kind,
@@ -2020,9 +2035,9 @@ async function buildQueueSummaries() {
   );
 
   const queues = [...researchQueues, ...programQueues];
-  const queueKindCounts = queues.reduce(
-    (acc, queue) => {
-      acc[queue.kind] += queue.count;
+  const queueKindCounts = [...researchReasons, ...programReasons].reduce(
+    (acc, row) => {
+      acc[row.kind] += row.count;
       return acc;
     },
     { blocking: 0, evidence: 0, review: 0 },
@@ -2030,8 +2045,8 @@ async function buildQueueSummaries() {
 
   return {
     reasonCounts: {
-      research: researchReasons,
-      programs: programReasons,
+      research: researchReasons.slice(0, DISPLAYED_REASON_COUNTS),
+      programs: programReasons.slice(0, DISPLAYED_REASON_COUNTS),
     },
     queueKindCounts,
     discoveryCandidates: queues
