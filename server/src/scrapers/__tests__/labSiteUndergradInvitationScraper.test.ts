@@ -230,6 +230,25 @@ describe('LabSiteUndergradInvitationScraper', () => {
     ]);
   });
 
+  it('states no absence for a partial read whose loaded opening is a shared program quote', async () => {
+    const shared = 'Undergraduate research positions are available in the department this spring.';
+    const { emitted, result } = await run(
+      {
+        'https://theta.example.edu/': html(shared, '<a href="/join">Join us</a>'),
+      },
+      [lab('theta-lab', 'https://theta.example.edu/')],
+      {
+        'theta-lab': 'We are actively recruiting undergraduate researchers.',
+        'two-faculty': shared,
+        'three-faculty': shared,
+      },
+    );
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain(
+      '1 rows held at their live value because a linked page was unreadable',
+    );
+  });
+
   it('keeps the stronger invitation across the home and join pages', async () => {
     const { emitted } = await run(
       {

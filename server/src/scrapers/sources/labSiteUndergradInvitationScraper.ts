@@ -247,6 +247,10 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
     for (const [slug, lab] of read) {
       const invitation = invitations.get(slug) ?? null;
       if (invitation && shared.has(normalizedQuote(invitation.quote))) {
+        if (partialReads.has(slug)) {
+          heldPartialReads += 1;
+          continue;
+        }
         sharedRefused += 1;
         observations.push(invitationObservation(lab, null));
         continue;
