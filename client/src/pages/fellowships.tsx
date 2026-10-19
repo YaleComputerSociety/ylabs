@@ -47,11 +47,13 @@ import {
   isDepartmentResearchGuidance,
 } from '../utils/programJourney';
 import {
+  citizenshipFilterOptionLabel,
   emptyProgramBoardSummary,
   isOpenToFirstYears,
   needsMentorBeforeApplying,
   programBoardSectionOf,
   PROGRAM_BOARD_SECTIONS,
+  PROGRAM_FACET_NOT_STATED_NOTE,
   type ProgramBoardSection,
   type ProgramBoardSummary,
 } from '../utils/programBoard';
@@ -286,6 +288,16 @@ const searchResultSections: typeof boardSections = [
   ...boardSections.filter((section) => section.key === 'archive'),
 ];
 
+const closeMatchSections: typeof boardSections = [
+  {
+    key: 'bestMatches',
+    title: 'Close matches',
+    description:
+      'Each of these programs mentions all but one of the words you typed, closest match first.',
+  },
+  ...boardSections.filter((section) => section.key === 'archive'),
+];
+
 const dateValue = (value?: string | null) => {
   if (!value) return null;
   const time = new Date(value).getTime();
@@ -414,6 +426,7 @@ const Fellowships = () => {
     queryString,
     queryCorrection,
     resultsRankedByRelevance,
+    resultsMissOneWord,
     searchTypedSpelling,
     fellowships,
     isLoading,
@@ -572,6 +585,7 @@ const Fellowships = () => {
       options: filterOptions.yearOfStudy,
       selected: selectedYearOfStudy,
       setSelected: setSelectedYearOfStudy,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'term',
@@ -579,6 +593,7 @@ const Fellowships = () => {
       options: filterOptions.termOfAward,
       selected: selectedTermOfAward,
       setSelected: setSelectedTermOfAward,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'subjects',
@@ -593,6 +608,7 @@ const Fellowships = () => {
       options: filterOptions.purpose,
       selected: selectedPurpose,
       setSelected: setSelectedPurpose,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'region',
@@ -600,11 +616,14 @@ const Fellowships = () => {
       options: filterOptions.globalRegions,
       selected: selectedRegions,
       setSelected: setSelectedRegions,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'citizenship',
       label: 'Citizenship',
       options: filterOptions.citizenshipStatus,
+      labelFn: citizenshipFilterOptionLabel,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
       selected: selectedCitizenship,
       setSelected: setSelectedCitizenship,
     },
@@ -644,7 +663,12 @@ const Fellowships = () => {
     { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
     { label: 'Subject', values: selectedSubjects, clear: () => setSelectedSubjects([]) },
     { label: 'Region', values: selectedRegions, clear: () => setSelectedRegions([]) },
-    { label: 'Citizenship', values: selectedCitizenship, clear: () => setSelectedCitizenship([]) },
+    {
+      label: 'Citizenship',
+      values: selectedCitizenship,
+      labelFn: citizenshipFilterOptionLabel,
+      clear: () => setSelectedCitizenship([]),
+    },
   ].filter((g) => g.values.length > 0);
 
   const fellowshipChips: ActiveFilterChip[] = fellowshipFilterGroups.map((group) => {
@@ -783,6 +807,8 @@ const Fellowships = () => {
   };
 
   const showSearchRanking = resultsRankedByRelevance && sortBy === 'default';
+  const resultsAreCloseMatches = resultsRankedByRelevance && resultsMissOneWord;
+  const showCloseMatches = showSearchRanking && resultsMissOneWord;
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
   const chooseQuickFilter = (value: FellowshipQuickFilter) => {
@@ -1039,7 +1065,21 @@ const Fellowships = () => {
                     </p>
                   </div>
                 )}
-                {(showSearchRanking ? searchResultSections : boardSections).map((section) =>
+                {resultsAreCloseMatches && (
+                  <p
+                    role="status"
+                    className="mb-4 rounded-card border border-line-brand bg-brand-soft px-4 py-3 text-sm text-brand-navy"
+                  >
+                    <span className="font-semibold">No program mentions every word you typed.</span>{' '}
+                    Try fewer words, or look through the close matches below.
+                  </p>
+                )}
+                {(showCloseMatches
+                  ? closeMatchSections
+                  : showSearchRanking
+                    ? searchResultSections
+                    : boardSections
+                ).map((section) =>
                   boardItems[section.key].length > 0 ? (
                     <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
                       <SectionHeader

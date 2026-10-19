@@ -171,6 +171,11 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },
+  {
+    name: 'center-member-profile-research',
+    phase: 'relationships',
+    readsRowsWrittenBy: ['centers-institutes-index'],
+  },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
   { name: 'research-area-source-extractor', phase: 'content-access' },
   { name: 'ysm-mesh-keyword', phase: 'content-access' },

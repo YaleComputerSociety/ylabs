@@ -24,5 +24,6 @@ export const searchPrograms = async (params: Parameters<typeof searchFellowships
     pageSize: result.pageSize,
     totalPages: result.totalPages,
     ...(result.queryCorrection ? { queryCorrection: result.queryCorrection } : {}),
+    ...(result.queryMatch ? { queryMatch: result.queryMatch } : {}),
   };
 };

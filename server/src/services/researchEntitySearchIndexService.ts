@@ -213,8 +213,6 @@ const SEARCH_INDEX_TEXT_FIELDS = [
   'shortDescription',
   'fullDescription',
   'description',
-  'undergradEvidenceQuote',
-  'undergradAccessEvidence',
 ] as const;
 
 const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [

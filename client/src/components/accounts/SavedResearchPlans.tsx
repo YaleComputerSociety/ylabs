@@ -95,6 +95,9 @@ const MAX_COMPARE_ENTITIES = 4;
 
 const entityDisplayName = (entity: SavedResearchEntity): string => researchEntityTitle(entity);
 
+const noteButtonVerb = (isEditing: boolean, note: string): string =>
+  isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note';
+
 const entitySubtitle = (entity: SavedResearchEntity): string => {
   const departments = (entity.departments || []).filter(Boolean);
   const parts = [departments[0], entity.school].filter((part): part is string =>
@@ -575,13 +578,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           setEditingId((current) => (current === entity._id ? null : entity._id))
                         }
                         aria-expanded={isEditing}
+                        aria-label={`${noteButtonVerb(isEditing, note)} for ${entityDisplayName(entity)}`}
                         className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
                             ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
                             : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
-                        {isEditing ? 'Hide notes' : note ? 'Notes' : 'Add note'}
+                        {noteButtonVerb(isEditing, note)}
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
@@ -595,7 +599,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         onClick={() =>
                           unsavePlan(entity.slug, entity._id, entityDisplayName(entity))
                         }
-                        aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
+                        aria-label={`Unsave ${entityDisplayName(entity)}`}
                         className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
                         Unsave

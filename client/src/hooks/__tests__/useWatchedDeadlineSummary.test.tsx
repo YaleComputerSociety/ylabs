@@ -62,6 +62,7 @@ describe('useWatchedDeadlineSummary', () => {
     expect(result.current.notStartedCount).toBe(1);
     expect(result.current.hasWatchedPrograms).toBe(true);
     expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedPrograms', {
+      params: { view: 'deadlines' },
       withCredentials: true,
     });
     expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramPlans', {

@@ -213,7 +213,9 @@ A program whose served deadline is stale sits under no dates posted and in no ti
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
 An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
-The citizenship filter keeps a not-stated program, because unknown is not ineligible.
+The detail view says "not stated" for a missing year of study the same way (#5235).
+Every facet filter (year, term, purpose, region, citizenship) keeps a program that states no value for that facet, because unknown is not ineligible, and the filter says so (#5235).
+A program text's condition on international students' home country is shown under the citizenship answer (`programCitizenshipCondition`, #5235).
 Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
 When a program's own text ties exactly one date to the deadline and the served deadline's month and day appear nowhere in the text, the detail view says so and points to the official page, because the reader cannot tell which cycle each was written in (`programTextDeadlineConflict`, #5158).
 A projected or stale deadline is never flagged, because the page already labels it.
@@ -513,7 +515,7 @@ The embedded `User.favPathways` field declaration has since been dropped from th
 The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the `LISTING_*` analytics enums remain until the analytics listing surface is retired.
 All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; with the `User` model retired (#2014), no embedded planning fields remain in code (see [`ResearchPlan`](#researchplan-research_plans) for the human-gated #725 backfill of any legacy values in the orphaned `users` collection).
 
-Program watching (the dashboard's Watched programs tab and the `/programs` watch control) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
+Program watching (the dashboard's Watched programs tab and the `/programs` watch control) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection; `watchedPrograms?view=deadlines` narrows that projection to the id, title, and deadline fields the deadline banner reads.
 
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
 Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
@@ -571,8 +573,9 @@ It emits `joinPageUrl` on every complete read, empty when no page is admissible,
 At serve time an `APPLICATION_FORM_EXISTS` claim and its page stand or fall together: its excerpt only says a page was found, so when `getResearchGroupDetail` withholds the signal's link (a refused citation such as a people or members page, or a page known to be gone) it withholds the claim too, and the stored signal is kept (#4430).
 A programme-shaped page the admission keeps, the row's own website or its own department's programme, is served as the link through the same `isProgrammePageAdmittedAsJoinRoute` the admission uses, so a lab's own research-opportunities page is not withheld on a person row.
 
-Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
-The undergraduate quote fields are the exception: they keep the email addresses and phone numbers of the page they quote (`docs/decisions.md`, 2026-10-14).
+Scraped public text keeps the contact details its page publishes: the undergraduate quote fields, `Signal.source.excerpt`, program and fellowship prose and link labels, a row's ways in, grants and honors (`docs/decisions.md`, 2026-10-14; #5046).
+Research descriptions are the exception for now and still redact, and logs, analytics, admin input and config always do.
+A stored excerpt that still carries a legacy `[email redacted]` marker has that sentence dropped rather than served.
 The model reads redacted text, so `quoteWithPageContactsRestored` in `server/src/utils/quotedContactRestoration.ts` puts each one back from the quoted page.
 `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.
 A phone number is redacted even when extracted HTML glues it to a label, as in "Phone" then the number or the number then "Fax", because the pattern is bounded by digit lookarounds rather than word boundaries (#3738).

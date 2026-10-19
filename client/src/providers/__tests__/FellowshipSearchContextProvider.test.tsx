@@ -59,6 +59,7 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
                 <p data-testid="search-exhausted">{String(context.searchExhausted)}</p>
                 <p data-testid="load-error">{String(context.loadError)}</p>
                 <p data-testid="is-loading">{String(context.isLoading)}</p>
+                <p data-testid="miss-one-word">{String(context.resultsMissOneWord)}</p>
                 <p data-testid="query-correction">
                   {context.queryCorrection
                     ? `${context.queryCorrection.originalQuery}>${context.queryCorrection.correctedQuery}`
@@ -608,5 +609,32 @@ describe('FellowshipSearchContextProvider before sign-in is known', () => {
     expect(screen.getByTestId('query').textContent).toBe('marine');
     await waitFor(() => expect(searchCalls()).toHaveLength(1), { timeout: 3000 });
     expect(String(searchCalls()[0][0])).toContain('query=marine');
+  });
+});
+
+describe('FellowshipSearchContextProvider close matches', () => {
+  it('records that the results match all but one typed word', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') return Promise.resolve({ data: {} });
+      if (url.includes('query=sophmore')) {
+        return Promise.resolve({
+          data: {
+            results: [{ _id: 'p1', title: 'Program' }],
+            total: 1,
+            queryMatch: 'allButOneWord',
+          },
+        });
+      }
+      return Promise.resolve({ data: { results: [], total: 0 } });
+    });
+
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('is-loading').textContent).toBe('false'));
+    expect(screen.getByTestId('miss-one-word').textContent).toBe('false');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Type misspelling' }));
+    await waitFor(() => expect(screen.getByTestId('miss-one-word').textContent).toBe('true'), {
+      timeout: 3000,
+    });
   });
 });
