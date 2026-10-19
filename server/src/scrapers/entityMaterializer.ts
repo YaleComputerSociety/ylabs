@@ -148,7 +148,10 @@ import {
   type MergedInResearchEntityRow,
   type ResearchEntityTombstoneNode,
 } from '../services/researchEntityCanonicalTombstone';
-import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
+import {
+  facultyResearchAreaSlugForPersonName,
+  isLowTrustAreaShellSlug,
+} from '../utils/researchEntityShellSlug';
 import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import {
   deriveCanonicalKeys,
@@ -163,6 +166,7 @@ import {
 } from '../scripts/researchEntityPiDedupeCore';
 import {
   isListedLabTargetKey,
+  RELATIONSHIP_TARGET_LEAD_NAME_FIELD,
   RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
   relationshipTargetIdentities,
   type RelationshipTargetIdentity,
@@ -324,6 +328,7 @@ import { evidenceAssertsALab } from './utils/labClaimEvidence';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { sanitizePersonGivenName, sanitizePersonName } from '../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
+import { SURNAME_FETCH_LIMIT, surnameFetchRegex } from './utils/piNameMatch';
 import {
   parseRosterMemberIdentityEvidence,
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
@@ -3083,29 +3088,33 @@ async function listingWouldMintANamesake(
   return identifiedResearcherHoldsDisplayName(plan.facts.displayName);
 }
 
-const DIRECTOR_NAME_CANDIDATE_LIMIT = 40;
-
 /**
  * A named director is only resolvable by name when exactly one live researcher
  * answers to that name. Two or more is a namesake collision, which is the defect
  * class that puts one person's work on another person's page, so an ambiguous
  * name resolves to nobody rather than to a guess.
  *
- * Candidates are narrowed on the surname and then judged by the same
- * `observedPersonNameAgreesWith` comparator every other lane uses, so the
- * diacritic and apostrophe handling stays in one place.
+ * Candidates are narrowed with the person-name resolver's anchored surname pattern
+ * and limit, because an unanchored surname matched a short surname inside longer
+ * names and overflowed the cap, so a common short surname never resolved (#5296).
+ * They are then judged by the same `observedPersonNameAgreesWith` comparator every
+ * other lane uses, so the diacritic and apostrophe handling stays in one place.
  */
-async function findUniqueResearcherByObservedDirectorName(name: string): Promise<any | null> {
+export async function findUniqueResearcherByObservedDirectorName(
+  name: string,
+): Promise<any | null> {
   const observed = splitName(textValue(name));
   if (!observed.last || !observed.first) return null;
+  const surnamePattern = surnameFetchRegex(observed.last);
+  if (!surnamePattern) return null;
   const candidates = await Researcher.find({
     archived: { $ne: true },
-    displayName: new RegExp(escapeRegex(observed.last), 'i'),
+    displayName: surnamePattern,
   })
     .select('_id displayName profile.title')
-    .limit(DIRECTOR_NAME_CANDIDATE_LIMIT + 1)
+    .limit(SURNAME_FETCH_LIMIT)
     .lean();
-  if (candidates.length > DIRECTOR_NAME_CANDIDATE_LIMIT) return null;
+  if (candidates.length >= SURNAME_FETCH_LIMIT) return null;
   const agreeing = candidates.filter((candidate: any) =>
     observedPersonNameAgreesWith(candidate.displayName, textValue(name)),
   );
@@ -4445,12 +4454,14 @@ export async function materializeInferredDirectorMembership(
     (entry) => SUPERSEDED_BY_DIRECTOR_ROLES.includes(entry.role) && matchesDirector(entry),
   ).length;
 
+  const directorPersonId = toMaterializerObjectId(directorResearcherId);
   const directorIdentity: CanonicalMemberIdentity = {
     netid: directorEnrichment.netid,
     email: directorEnrichment.email,
     orcid: directorEnrichment.orcid,
     displayName: name,
     hasCanonicalSourceReference: true,
+    ...(directorPersonId ? { resolvedPersonId: directorPersonId } : {}),
   };
   await materializeCanonicalMembership(
     researchEntityId,
@@ -4470,7 +4481,8 @@ export async function materializeInferredDirectorMembership(
     directorIdentity,
   );
 
-  const supersededPersonId = await resolveCanonicalResearcherId(directorIdentity);
+  const supersededPersonId =
+    directorPersonId ?? (await resolveCanonicalResearcherId(directorIdentity));
   if (supersededPersonId) {
     await archiveSupersededCanonicalRoleAssignments(researchEntityId, supersededPersonId);
   }
@@ -4958,7 +4970,8 @@ export async function resolveRelationshipTarget(
     resolvedTarget:
       namedTarget ||
       (isListedLabTargetKey(targetEntityKey)
-        ? await rowServingListedLabWebsite(researchEntityModel, identity)
+        ? ((await rowServingListedLabWebsite(researchEntityModel, identity)) ??
+          (await rowLedByListedLabLead(researchEntityModel, identity)))
         : await rowLedByListedPersonAtListedWebsite(researchEntityModel, identity)),
   };
 }
@@ -4983,6 +4996,22 @@ export async function rowServingListedLabWebsite(
     .limit(2)
     .lean()) as ResolvedRelationshipTargetRow[];
   return rowsAtWebsite.length === 1 ? rowsAtWebsite[0] : null;
+}
+
+/**
+ * A listed lab whose site no row serves resolves through the head its own page names,
+ * by the same name arm a listed person takes, so it reaches the row that person leads.
+ */
+export async function rowLedByListedLabLead(
+  researchEntityModel: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>,
+  identity: RelationshipTargetIdentity,
+): Promise<ResolvedRelationshipTargetRow | null> {
+  const leadKey = facultyResearchAreaSlugForPersonName(textValue(identity.targetLeadName));
+  if (!leadKey) return null;
+  const { resolvedTarget } = await resolveRelationshipTarget(researchEntityModel, {
+    targetEntityKey: leadKey,
+  });
+  return resolvedTarget;
 }
 
 export async function rowLedByListedPersonAtListedWebsite(
@@ -5085,6 +5114,7 @@ async function materializeResearchEntityRelationship(
     await resolveRelationshipTarget(researchEntityModel, {
       targetEntityKey,
       targetWebsiteUrl: textValue(resolved[RELATIONSHIP_TARGET_WEBSITE_URL_FIELD]?.value),
+      targetLeadName: textValue(resolved[RELATIONSHIP_TARGET_LEAD_NAME_FIELD]?.value),
     });
   if (!resolvedTarget?._id) return skip('target-not-resolved');
   if (relationshipEndpointsAreSameEntity(source._id, resolvedTarget._id)) {
@@ -11721,7 +11751,13 @@ async function centerRelationshipTargetIdsAssertedByOtherSources(
     {
       entityType: 'researchEntityRelationship',
       entityKey: { $in: relationshipKeys },
-      field: { $in: ['targetEntityKey', RELATIONSHIP_TARGET_WEBSITE_URL_FIELD] },
+      field: {
+        $in: [
+          'targetEntityKey',
+          RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
+          RELATIONSHIP_TARGET_LEAD_NAME_FIELD,
+        ],
+      },
     },
     sourceName,
   );

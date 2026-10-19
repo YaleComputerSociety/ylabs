@@ -1589,6 +1589,14 @@ A director counts only from a title label beside exactly one name, or from a str
 Two people at the best rank (a director or faculty director, then a co-director, then a functional head such as an executive, technical or managing director) refuse the read rather than pick one, with one exception the owner decided on 2026-10-19: where the people at the top rank are directors and exactly one of them is a faculty director, the faculty director is the director, and two faculty directors still refuse.
 It emits the same `inferredDirector*` observations, and `materializeInferredDirectorMembership` reads only this lane's director observations wherever it states one, because the fields supersede per field and mixing two lanes would pair one person's name with another's profile URL.
 A director stated only in prose is counted but not stored, because no observation field holds unsettled page text yet.
+A unit that is itself a council or committee is also headed by a chair its page names with no qualifier ("Chair", "Co-Chair", "Council Chair"); on any other unit a bare chair, a department chair or the chair of some other committee never counts.
+A heading that links a person's name to their lab's site opens that person's own card, not a related unit's teaser, when the card names nobody else, and a surname that is also a name particle ("De") is still a surname, so a title is never attached to the card beside it.
+
+The lane also reads the pages the home's director-lane lead edges cite, current or ended, when the page sits on the home's own site: inside the home's subtree on the same host, or on a Yale host whose name or acronym names the home ("yibs.yale.edu" for an institute that states the acronym).
+A model-lane edge's citation is often a people or staff page this lane's own discovery never reaches, behind a fifth link or under another path, and a hand-off that never read it ended an edge the cited page still states.
+Reading the citation keeps the decision on evidence, while keeping an unread edge would also keep every edge whose cited page is a dean's message, another program's page or a stale profile, which a frozen-page judgement found were correct to end.
+A cited page off the home's own site is not read, for the same reason discovery stays inside the subtree, and a cited page that does not fetch adds nothing.
+The materializer resolves the named director with the person-name resolver's anchored surname pattern and its candidate limit, and writes the edge to the researcher it resolved, so a formal or short first name the nickname table pairs (`Harold` and `Harry`) or a middle name joins that researcher rather than minting a namesake.
 
 Each read that fetched a page records a `centerRosterHealth` snapshot listing every person the pages state as a director at any rank, including the people a tie refused, and `settledDirector`, the one it named or null.
 A failed fetch records nothing, and a `--use-cache` read is never admitted.
@@ -1606,15 +1614,25 @@ Under the owner's faculty-director rule 40 of the LLM lane's 80 values named the
 The faculty-director rule settled 13 homes the code lane had refused, every one checked against its page.
 The LLM lane's 24 unsupported values were people named on a different unit's page reached through shared navigation, a name the cited page does not carry, a retired or functional director, a mailing "Attn:" line, a related core's contact card, and a page heading stored as a name.
 
+A read-only audit after the hand-off on 2026-10-19 judged the 17 lead edges it ended: 10 were correct to end and 7 were not.
+Re-reading the frozen pages with the fixes above recovers the lead on 4 of the 7, two councils whose chair sits on a cited people page, an institute whose cited staff page states its director, and a core whose director the page names by a formal first name; none of the 10 correct endings comes back.
+The other 3 are cores where the page states a staff or technical director beside the faculty director the lane keeps; the role vocabulary has no non-lead director role, and `CO_DIRECTOR` is a lead, so that second director is not written.
+Of the 53 homes where the lane named a director, 14 had no current lead edge: 6 now resolve (4 short surnames the unanchored pattern overflowed, 2 name variants), and 8 name a person no live researcher answers to.
+Over the 135 homes of the frozen director set, the only other change is a council where the lane had attached the chair's title to the next card's person; it now names the chair.
+
 ### Center affiliation, read with code (#5296)
 
 `center-affiliation-roster` replaced `center-affiliation-llm` in the research sweep by owner decision on 2026-10-19, and `center-affiliation-llm` is manual-only.
 It reads each organizational home's own `websiteUrl` once with `extractCenterAffiliationsFromPage` in `scrapers/utils/centerAffiliationPageExtractor.ts`, which lists people and labs only from page structure: people grids, directory, reference and lab cards, core contact listings, surname-first profile directories, profile links that open their own block, and lists, labelled lines or short "Name, Director" lines under a membership heading.
 A heading scopes only the container it opens, so a callout heading such as a gift appeal does not suppress the sidebar card beside it.
 News, publications, related offerings, donor, student, staff and advisory sections, dated cards and author bylines are left out, and an administrative title is refused.
+An advisory committee or scientific advisory board seat is not membership of the center (owner decision, 2026-10-19), so those sections stay out.
+Three further shapes are read as listings on a core's own page: a paragraph that lists one linked person per line ("<a>Name, PhD,</a> title"), a one-sentence contact line whose email names the person ("For scheduling, contact <a href="mailto:…">Name</a>"), and a history that says a person founded the unit and still directs it.
+A contact named inside a longer passage, such as the contact for a service that moved to another core, a related offering's card, a publication citation and a named collaborator are not.
 A name stated only in running prose is counted as a `prose-mention` rather than asserted, a name linked to two profiles or a profile shared by two names is refused, and a profile link whose path names somebody else is refused.
 It emits the same `researchEntityRelationship` observations as the LLM lane, keyed `<center>:faculty-research-area-<name>:MEMBER_RESEARCH_AREA`, with the listed profile as `targetWebsiteUrl`, so a person resolves through the existing name arms or the listed-site arm.
 A lab card is keyed `listed-lab-<slug>` and carries the card's link; `rowServingListedLabWebsite` resolves it only to the one live row serving that site that is not itself an organization, and two rows at the site, an organization row or a card with no link resolve to nothing.
+A card whose site no row serves resolves through its head instead: the lane follows the card's link when it sits on the center's own host, and `readListedLabLead` takes the person only when a heading names "<Full Name> Lab" with the card's surname and a Yale profile link on that page names the same person, then emits that name as `targetLeadName`, which `rowLedByListedLabLead` resolves through the same name arm a listed person takes.
 Wherever this lane observes a relationship, `preferredRelationshipObservations` lets its observations alone decide the stored target, site and citation.
 
 A read emits a `centerRosterHealth` snapshot only when it lists someone (`listed`); a failed fetch, a prose-only page and an empty page emit nothing, so none of them can retire a claim or hand one off.
@@ -1639,6 +1657,9 @@ Measured on 2026-10-19 over a uniform sample of 40 of the 150 centers with live 
 
 The LLM lane copied surname-first directory names into its keys (45 of the 100 sampled, and none of one directory center's 252 claims resolves), named paper authors, related-offering contacts, news subjects and donors (12), named people the current page does not state (10), and stored title text or credentials as names.
 The code lane found 61 of the 75 sampled LLM claims judged correct; its misses were membership stated only in prose or captions, advisory boards it leaves out by design, contact lists with no membership heading, and labs linked inside paragraphs.
+
+A read-only audit after the hand-off on 2026-10-19 judged the 49 affiliations it archived: 27 were advisory seats, 14 were people the page names only in a related offering, a citation or as a collaborator, and 8 were real unit people.
+Re-reading the frozen pages with the three listing shapes and the lab-head arm reaches all 8 again and none of the other 41; across the 58 frozen page reads no earlier listing is lost, and the 2 new listings that are not among the 8 resolve to no row.
 
 ### Center roster retirement: members a complete read no longer lists
 

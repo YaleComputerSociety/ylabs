@@ -25,6 +25,7 @@ import { normalizeName, splitName } from '../utils/scraperHelpers';
 import {
   centerDirectorCandidateUrls,
   decideCenterDirector,
+  isOnCenterOwnSite,
   readCenterDirectorSignals,
   statedCenterDirectors,
   type CenterDirectorCandidate,
@@ -42,6 +43,7 @@ export { CENTER_DIRECTOR_SOURCE_NAME };
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const DIRECTOR_ROLE_CONFIDENCE = 0.85;
+const MAX_CITED_PAGES = 3;
 
 const DIRECTOR_LANES = new Set([CENTER_DIRECTOR_SOURCE_NAME, CENTER_DIRECTOR_LLM_SOURCE_NAME]);
 
@@ -49,6 +51,7 @@ export interface CenterDirectorTarget {
   slug: string;
   name: string;
   websiteUrl: string;
+  citedUrls?: string[];
 }
 
 export type CenterDirectorPageFetcher = (url: string) => Promise<{ url: string; html: string }>;
@@ -123,14 +126,62 @@ async function defaultFindTargets(only: string[]): Promise<CenterDirectorTarget[
       .filter((edge) => !DIRECTOR_LANES.has(textValue(edge.rosterProvenance?.sourceName)))
       .map((edge) => serializedDocumentId(edge.target?.id)),
   );
+  const citedUrls = await directorLaneCitedUrls(docs.map((doc) => doc._id));
   return docs
     .filter((doc) => !ledByAnotherLane.has(serializedDocumentId(doc._id)))
     .map((doc) => ({
       slug: textValue(doc.slug),
       name: textValue(doc.name),
       websiteUrl: textValue(doc.websiteUrl),
+      citedUrls: citedUrls.get(serializedDocumentId(doc._id) || '') ?? [],
     }))
     .filter((target) => target.slug && target.name && target.websiteUrl);
+}
+
+/**
+ * The pages a director lane's lead edges cite, current or ended. A director the model
+ * lane read off a page this lane's own discovery never reaches is still stated there,
+ * so the lane reads that page too rather than letting the hand-off end the edge unread.
+ */
+async function directorLaneCitedUrls(targetIds: unknown[]): Promise<Map<string, string[]>> {
+  const edges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: targetIds },
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+    archived: { $ne: true },
+    'rosterProvenance.sourceName': { $in: Array.from(DIRECTOR_LANES) },
+  })
+    .select('target.id rosterProvenance.sourceUrl rosterProvenance.profileUrl')
+    .lean()) as Array<{
+    target?: { id?: unknown };
+    rosterProvenance?: { sourceUrl?: string; profileUrl?: string };
+  }>;
+  const cited = new Map<string, string[]>();
+  for (const edge of edges) {
+    const targetId = serializedDocumentId(edge.target?.id) || '';
+    const urls = [edge.rosterProvenance?.sourceUrl, edge.rosterProvenance?.profileUrl]
+      .map(textValue)
+      .filter(Boolean);
+    if (targetId && urls.length > 0) {
+      cited.set(targetId, Array.from(new Set([...(cited.get(targetId) ?? []), ...urls])));
+    }
+  }
+  return cited;
+}
+
+export function citedOwnSiteUrls(
+  target: Pick<CenterDirectorTarget, 'name' | 'citedUrls'>,
+  landingUrl: string,
+  alreadyRead: readonly string[],
+): string[] {
+  const read = new Set(alreadyRead.map((url) => url.replace(/#.*$/, '')));
+  const urls: string[] = [];
+  for (const raw of target.citedUrls ?? []) {
+    const url = raw.replace(/#.*$/, '');
+    if (read.has(url) || urls.includes(url)) continue;
+    if (isOnCenterOwnSite(landingUrl, url, target.name)) urls.push(url);
+  }
+  return urls.slice(0, MAX_CITED_PAGES);
 }
 
 export function centerDirectorObservations(
@@ -192,7 +243,12 @@ export class CenterDirectorScraper implements IScraper {
     }
     const pages: CenterDirectorPageSignals[] = [];
     const pagesRead: string[] = [];
-    for (const url of centerDirectorCandidateUrls(landing.url, landing.html)) {
+    const discovered = centerDirectorCandidateUrls(landing.url, landing.html);
+    const toRead = [
+      ...discovered,
+      ...citedOwnSiteUrls(target, landing.url, [target.websiteUrl, ...discovered]),
+    ];
+    for (const url of toRead) {
       let page = url === landing.url ? landing : null;
       if (!page) {
         try {
