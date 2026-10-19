@@ -384,12 +384,28 @@ describe('LabMembersList lead email line', () => {
         <LabMembersList members={[leadMember]} />
       </ConfigContext.Provider>,
     );
-    const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    const link = screen.getByRole('link', { name: /^Email Ada Fixture at / });
     expect(link.textContent).toBe('ada.fixture@example.test');
     expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
     const card = link.closest('[data-member-card]');
     expect(card).not.toBeNull();
     expect(card?.textContent).toContain('Ada Fixture');
+  });
+
+  it('keeps the address on one line and names it in full for assistive technology', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList members={[leadMember]} singleColumn />
+      </ConfigContext.Provider>,
+    );
+    const link = screen.getByRole('link', {
+      name: 'Email Ada Fixture at ada.fixture@example.test',
+    });
+    expect(link.getAttribute('title')).toBe('ada.fixture@example.test');
+    expect(link.querySelector('wbr')).toBeNull();
+    const address = link.querySelector('span');
+    expect(address?.className).toContain('truncate');
+    expect(address?.textContent).toBe('ada.fixture@example.test');
   });
 
   it('keeps the email inside the card beside the official profile link', () => {
@@ -402,7 +418,7 @@ describe('LabMembersList lead email line', () => {
       </ConfigContext.Provider>,
     );
     const profile = screen.getByRole('link', { name: "Open Ada Fixture's official profile" });
-    const email = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    const email = screen.getByRole('link', { name: /^Email Ada Fixture at / });
     expect(profile.contains(email)).toBe(false);
     expect(email.closest('[data-member-card]')).toBe(profile.closest('[data-member-card]'));
   });
@@ -420,7 +436,7 @@ describe('LabMembersList lead email line', () => {
         />
       </ConfigContext.Provider>,
     );
-    const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    const link = screen.getByRole('link', { name: /^Email Ada Fixture at / });
     expect(link.textContent).toBe('ada.fixture@example.test');
     expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
   });
@@ -433,7 +449,7 @@ describe('LabMembersList lead email line', () => {
         />
       </ConfigContext.Provider>,
     );
-    expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email Ada Fixture at / })).toBeNull();
     expect(screen.queryByText('[email redacted]')).toBeNull();
   });
 
@@ -445,7 +461,7 @@ describe('LabMembersList lead email line', () => {
         />
       </ConfigContext.Provider>,
     );
-    expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email Ada Fixture at / })).toBeNull();
   });
 });
 

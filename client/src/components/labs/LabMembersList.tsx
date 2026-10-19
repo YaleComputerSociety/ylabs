@@ -208,9 +208,10 @@ const LabMemberCard = ({
     </>
   );
   const hasContactLinks = Boolean(orcidUrl || resolvedEmailHref);
-  const [emailLocalPart, emailDomain] = splitEmailAtSign(
-    resolvedEmailHref.replace(/^mailto:/i, '').split('?')[0],
-  );
+  const emailAddress = resolvedEmailHref
+    .replace(/^mailto:/i, '')
+    .split('?')[0]
+    .trim();
   const profileLink = (className: string) => (
     <a
       href={profileUrl}
@@ -242,19 +243,12 @@ const LabMemberCard = ({
         {resolvedEmailHref && (
           <a
             href={resolvedEmailHref}
-            aria-label={`Email ${fullName}`}
+            aria-label={`Email ${fullName} at ${emailAddress}`}
+            title={emailAddress}
             className="yr-focus-ring yr-pressable inline-flex min-h-11 max-w-full items-center gap-2 self-start rounded-control text-sm font-medium text-brand underline-offset-4 hover:underline"
           >
             <MailIcon className="flex-shrink-0" size={16} />
-            <span className="min-w-0 [overflow-wrap:anywhere]">
-              {emailLocalPart}
-              {emailDomain && (
-                <>
-                  @<wbr />
-                  {emailDomain}
-                </>
-              )}
-            </span>
+            <span className="min-w-0 truncate">{emailAddress}</span>
           </a>
         )}
         {orcidUrl && (
@@ -271,12 +265,6 @@ const LabMemberCard = ({
       </div>
     </div>
   );
-};
-
-const splitEmailAtSign = (email?: string): [string, string] => {
-  const value = (email || '').trim();
-  const at = value.lastIndexOf('@');
-  return at > 0 ? [value.slice(0, at), value.slice(at + 1)] : [value, ''];
 };
 
 const LabMembersList = ({
