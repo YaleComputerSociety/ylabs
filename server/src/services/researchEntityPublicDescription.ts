@@ -638,9 +638,10 @@ function cardServedInPlaceOfAResearchlessBiography(
 }
 
 // A body that only says how to join, only narrates talks, awards or accepted papers, or
-// only reports what its source pages say, states no research, and the quality bar withholds the row for it. The card is then the
-// row's research text, so it is served as the body even when that leaves no separate card,
-// because a thin but accurate description serves (owner decision, 2026-10-04). The stored
+// only reports what its source pages say, states no research, and the quality bar
+// withholds the row for it. The card is then the row's research text, so it is served as
+// the body even when that leaves no separate card, because a thin but accurate
+// description serves (owner decision, 2026-10-04). The stored
 // card is read when the served one is blank, because a card is grounded against the body
 // and this body grounds nothing; the caller still holds it to the body bar.
 function cardServedInPlaceOfANonResearchBody(
