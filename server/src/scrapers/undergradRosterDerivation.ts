@@ -153,7 +153,8 @@ export type DerivedRosterWithheldReason =
   | 'combined-section-label'
   | 'name-not-an-undergraduate'
   | 'too-many-names'
-  | 'no-longer-badged';
+  | 'no-longer-badged'
+  | 'owner-denied';
 
 const sameSiteHost = (url: URL): string => url.hostname.toLowerCase().replace(/^www\./, '');
 
@@ -336,9 +337,9 @@ export function createUndergradRosterDeriver(
       (candidate) => !request.only || request.only.has(candidate.researchEntityKey.toLowerCase()),
     );
     const staticOverridden = all.filter((c) => request.staticKeys.has(c.researchEntityKey)).length;
-    const ownerDenied = all.filter(
+    const deniedCandidates = all.filter(
       (c) => !request.staticKeys.has(c.researchEntityKey) && denied.has(c.researchEntityKey),
-    ).length;
+    );
     const candidates = all
       .filter(
         (c) => !request.staticKeys.has(c.researchEntityKey) && !denied.has(c.researchEntityKey),
@@ -349,12 +350,19 @@ export function createUndergradRosterDeriver(
       if (fetchDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, fetchDelayMs));
       return html;
     };
-    const outcomes: DerivedRosterOutcome[] = [];
+    const outcomes: DerivedRosterOutcome[] = deniedCandidates
+      .filter((candidate) => candidate.hasDerivedRoster)
+      .map((candidate) => ({
+        kind: 'withheld',
+        researchEntityKey: candidate.researchEntityKey,
+        sourceUrl: candidate.websiteUrl,
+        reason: 'owner-denied',
+      }));
     for (const candidate of candidates) {
       outcomes.push(
         await deriveUndergradRosterForCandidate(candidate, readPage, request.observedAt),
       );
     }
-    return { outcomes, staticOverridden, ownerDenied };
+    return { outcomes, staticOverridden, ownerDenied: deniedCandidates.length };
   };
 }
