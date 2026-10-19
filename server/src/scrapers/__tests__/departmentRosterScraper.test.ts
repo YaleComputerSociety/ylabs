@@ -54,6 +54,7 @@ import {
   type FacultyEntry,
   type FacultyExtractor,
   withoutSharedGroupWebsites,
+  withoutSharedRosterEmails,
 } from '../sources/departmentRosterScraper';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -5761,5 +5762,73 @@ describe('collapseLaneOutcomesByDepartment', () => {
       lane('fetch-failed', 0),
     ]);
     expect(collapsed.status).toBe('partial-read');
+  });
+});
+
+describe('department roster refuses office mailboxes as a person email', () => {
+  const lane = (entries: FacultyEntry[]): DeptConfig => ({
+    deptKey: 'physics',
+    deptName: 'Physics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://physics.yale.edu/people',
+    paginated: false,
+    extractor: () => entries,
+  });
+  const run = async (entries: FacultyEntry[]) => {
+    const scraper = new DepartmentRosterScraper(
+      [lane(entries)],
+      null,
+      vi.fn(async () => '<html></html>'),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return emitted.filter((o) => o.entityType === 'user');
+  };
+
+  it('never keys a person by the unit mailbox printed on their profile', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'physics@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['dept:physics:ann-alpha']));
+    expect(userObs.some((o) => o.field === 'email' || o.field === 'netid')).toBe(false);
+  });
+
+  it('keeps two people who share one netid-shaped address apart and gives it to neither', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'zz901@yale.edu', title: 'Professor of Physics' },
+      { name: 'Bob Beta', email: 'zz901@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(
+      new Set(['dept:physics:ann-alpha', 'dept:physics:bob-beta']),
+    );
+    expect(userObs.some((o) => o.field === 'email')).toBe(false);
+  });
+
+  it('still keys a person by their own address', async () => {
+    const userObs = await run([
+      { name: 'Ann Alpha', email: 'ann.alpha@yale.edu', title: 'Professor of Physics' },
+    ]);
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['netid:ann.alpha']));
+  });
+});
+
+describe('withoutSharedRosterEmails', () => {
+  const item = (name: string, email?: string) => ({ entry: { name, email } as FacultyEntry });
+
+  it('refuses an address listed for two different people, for both', () => {
+    const out = withoutSharedRosterEmails([
+      item('Ann Alpha', 'zz901@yale.edu'),
+      item('Bob Beta', 'ZZ901@yale.edu'),
+      item('Cal Gamma', 'cg12@yale.edu'),
+    ]);
+    expect(out.map((o) => o.entry.email)).toEqual([undefined, undefined, 'cg12@yale.edu']);
+  });
+
+  it('keeps an address one person is listed with twice', () => {
+    const out = withoutSharedRosterEmails([
+      item('Ann Alpha', 'aa1@yale.edu'),
+      item('Ann Alpha', 'aa1@yale.edu'),
+    ]);
+    expect(out.map((o) => o.entry.email)).toEqual(['aa1@yale.edu', 'aa1@yale.edu']);
   });
 });

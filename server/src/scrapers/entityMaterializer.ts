@@ -7,6 +7,10 @@
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
+  inferredPiKeyNamesRoleOrUnitMailbox,
+  userKeyNamesRoleOrUnitMailbox,
+} from './roleMailboxUserKey';
+import {
   isProfileTemplateChrome,
   withoutProfileTemplateWidgets,
 } from '../utils/profileTemplateChrome';
@@ -1864,6 +1868,16 @@ export function shouldIgnoreObservationForEntityMaterialization(
   ) {
     return true;
   }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field === 'inferredPiUserKey' &&
+    inferredPiKeyNamesRoleOrUnitMailbox(
+      userEntityKeyForInferredPiUserKey(observation.value),
+      observation,
+    )
+  ) {
+    return true;
+  }
   // A course page describes a class, so nothing read off it is evidence about a research
   // entity: dropping it here keeps an already-stored course name, type or description
   // inert on every resolve without a lock (#5213).
@@ -3475,7 +3489,11 @@ export async function planInferredPiMembership(
     if (facts) leads.push(facts);
   }
 
-  const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
+  const piKeyObservations = observations.filter(
+    (obs) =>
+      obs.field === 'inferredPiUserKey' &&
+      !inferredPiKeyNamesRoleOrUnitMailbox(userEntityKeyForInferredPiUserKey(obs.value), obs),
+  );
   let entityName: string | undefined;
   const loadEntityName = async (): Promise<string> => {
     entityName ??= textValue(
@@ -6438,9 +6456,10 @@ export async function joinUserIdentityToExistingResearcher(
   obs: any[],
   now: Date = new Date(),
 ): Promise<UserIdentityJoinResult> {
-  const materializationObs = obs.filter(
-    (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
-  );
+  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
+  const materializationObs = keyNamesAnOfficeMailbox
+    ? []
+    : obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o));
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -6455,9 +6474,10 @@ export async function joinUserIdentityToExistingResearcher(
     return value && servedUserNameField(field, value);
   };
 
-  const netid =
-    normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
-    normalizedAccountNetid(resolvedValue('netid'));
+  const netid = keyNamesAnOfficeMailbox
+    ? undefined
+    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+      normalizedAccountNetid(resolvedValue('netid')));
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
@@ -6593,6 +6613,9 @@ async function materializeUserIdentityToResearcher(
     skipped: reason,
   });
 
+  if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs)) {
+    return skipped('office-mailbox-user-key');
+  }
   const join = await joinUserIdentityToExistingResearcher(
     identifier,
     obs,
