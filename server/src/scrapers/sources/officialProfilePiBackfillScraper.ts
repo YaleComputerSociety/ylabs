@@ -15,6 +15,11 @@ import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
+import { observedPersonNameAgreesWith } from '../utils/personNameAgreement';
+import {
+  directoryContradictsNetidForAddress,
+  loadDirectoryNetidsByAddress,
+} from '../directoryContradictedProfileNetid';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import {
   claimsAnotherPersonsLabByUrlPath,
@@ -4505,6 +4510,35 @@ async function selectSourceUrlWebsiteTargets(
     .slice(0, limit);
 }
 
+const isNetidMailbox = (address: string, netid: string): boolean =>
+  Boolean(netid) && address === `${netid.toLowerCase()}@yale.edu`;
+
+/**
+ * Holding a page's URL or address is not proof of being its person: the backfill stamped a
+ * sole holder's netid on another person's page, a namesake whose stored link came from an
+ * earlier misattribution (#5370). A candidate is the page's person when it holds the page's
+ * own address, or when its name agrees and its own named address does not differ.
+ */
+export function profileIdentityAgreesWithUser(
+  identity: Pick<OfficialProfileIdentity, 'displayName' | 'email'>,
+  candidate: Record<string, any>,
+  urls: readonly string[] = [],
+): boolean {
+  const pageEmail = textValue(identity.email).toLowerCase();
+  const candidateEmail = textValue(candidate.email).toLowerCase();
+  if (pageEmail && candidateEmail === pageEmail) return true;
+  if (pageEmail && candidateEmail && !isNetidMailbox(candidateEmail, textValue(candidate.netid))) {
+    return false;
+  }
+  const candidateName =
+    textValue(candidate.displayName) ||
+    `${textValue(candidate.fname)} ${textValue(candidate.lname)}`.trim();
+  return (
+    observedPersonNameAgreesWith(candidateName, identity.displayName) ||
+    urls.some((url) => personPageUrlMatchesUser(url, candidate))
+  );
+}
+
 export async function resolveExistingUserForIdentity(
   identity: OfficialProfileIdentity,
 ): Promise<ExistingProfileUser | null> {
@@ -4538,35 +4572,20 @@ export async function resolveExistingUserForIdentity(
   }
   if (researchersById.size === 0) return null;
 
-  const candidates = profileUsersForResearchers(Array.from(researchersById.values()));
-
-  const matchingCandidates =
-    candidates.length <= 1
-      ? candidates
-      : candidates.filter((candidate) => {
-          const candidateEmail = textValue(candidate.email).toLowerCase();
-          if (email && candidateEmail === email) return true;
-
-          const identitySplit = splitName(identity.displayName);
-          const candidateFirst = slugify(normalizeName(textValue(candidate.fname)));
-          const candidateLast = slugify(normalizeName(textValue(candidate.lname)));
-          const identityFirst = slugify(normalizeName(identitySplit.first));
-          const identityLast = slugify(normalizeName(identitySplit.last));
-          const exactNameMatch =
-            candidateFirst &&
-            candidateLast &&
-            identityFirst &&
-            identityLast &&
-            candidateFirst === identityFirst &&
-            candidateLast === identityLast;
-          if (exactNameMatch) return true;
-
-          return urls.some((url) => personPageUrlMatchesUser(url, candidate));
-        });
+  const matchingCandidates = profileUsersForResearchers(
+    Array.from(researchersById.values()),
+  ).filter((candidate) => profileIdentityAgreesWithUser(identity, candidate, urls));
 
   if (matchingCandidates.length !== 1) return null;
   const user = matchingCandidates[0];
   const netid = textValue(user.netid);
+  if (
+    netid &&
+    email &&
+    directoryContradictsNetidForAddress(netid, email, await loadDirectoryNetidsByAddress())
+  ) {
+    return null;
+  }
   return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
 }
 
