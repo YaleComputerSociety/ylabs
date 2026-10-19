@@ -123,6 +123,36 @@ describe('LabSiteUndergradInvitationScraper', () => {
     expect(result.notes).toContain('3 refused as a quote shared');
   });
 
+  it('quotes only the invitation sentence when block elements carry no whitespace between them', async () => {
+    const minified =
+      '<html><body><main><h1>Granite Flow Lab</h1><p>We measure how granite deforms.</p>' +
+      '<p>Interested undergraduates should contact the lab with a CV.</p></main></body></html>';
+    const { emitted } = await run({ 'https://gamma.example.edu/': minified }, [
+      lab('gamma-lab', 'https://gamma.example.edu/'),
+    ]);
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'gamma-lab',
+        value: expect.objectContaining({
+          quote: 'Interested undergraduates should contact the lab with a CV.',
+        }),
+      }),
+    ]);
+  });
+
+  it('refuses a shared quote on minified pages whose headings differ', async () => {
+    const shared = 'Undergraduates interested in research are encouraged to contact faculty directly.';
+    const pages: Record<string, string> = {};
+    const labs = ['one', 'two', 'three'].map((name) => {
+      const url = `https://${name}.example.edu/`;
+      pages[url] = `<html><body><main><h1>${name} heading</h1><p>${shared}</p></main></body></html>`;
+      return lab(`${name}-faculty`, url);
+    });
+    const { emitted, result } = await run(pages, labs);
+    expect(emitted.map((obs) => obs.value)).toEqual([null, null, null]);
+    expect(result.notes).toContain('3 refused as a quote shared');
+  });
+
   it('refuses a quote shared with rows outside this run, counting their live observations', async () => {
     const shared = 'Undergraduates at Yale are welcome to apply to the departmental assistantship.';
     const { emitted } = await run(

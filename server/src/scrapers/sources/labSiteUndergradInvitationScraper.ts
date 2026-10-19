@@ -1,6 +1,8 @@
+import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models';
 import { Observation } from '../../models/observation';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { extractElementTextWithLineBreaks } from '../utils/htmlText';
 import { mapWithConcurrency, resolveSourceConcurrency } from '../utils/mapWithConcurrency';
 import { quotePageIsAboutAnotherEntity } from '../undergradQuoteRelevance';
 import {
@@ -13,8 +15,7 @@ import {
   candidateLabFromResearchEntityDoc,
   defaultFetchPage,
   discoverSubPageUrls,
-  htmlToPromptText,
-  htmlToRosterText,
+  PAGE_CHROME_SELECTOR,
   pagesWithinEntityScope,
   selectLabsToProcess,
   UNDERGRAD_LLM_CANDIDATE_FILTER,
@@ -82,8 +83,21 @@ async function defaultLiveInvitationQuoteFinder(): Promise<Map<string, string>> 
   return quotes;
 }
 
+function blockLinesWithout(html: string, removedSelector: string): string {
+  try {
+    const $ = cheerio.load(html);
+    $(removedSelector).remove();
+    return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0]);
+  } catch {
+    return '';
+  }
+}
+
 function pageText(html: string): string {
-  return htmlToRosterText(html) || htmlToPromptText(html);
+  return (
+    blockLinesWithout(html, PAGE_CHROME_SELECTOR) ||
+    blockLinesWithout(html, 'script, style, noscript, svg, iframe')
+  );
 }
 
 export function strongestInvitationOnPages(

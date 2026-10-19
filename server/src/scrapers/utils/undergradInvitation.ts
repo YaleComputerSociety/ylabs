@@ -129,7 +129,10 @@ function clauseEnd(text: string, matchIndex: number): number {
 
 function candidates(rawText: string): InvitationCandidate[] {
   const found: InvitationCandidate[] = [];
-  for (const sentence of normalizeJoinRouteText(rawText).split(SENTENCE_BOUNDARY)) {
+  const sentences = rawText
+    .split(/\n+/)
+    .flatMap((block) => normalizeJoinRouteText(block).split(SENTENCE_BOUNDARY));
+  for (const sentence of sentences) {
     const audienceMatches = Array.from(sentence.matchAll(AUDIENCE_GLOBAL));
     if (audienceMatches.length === 0) {
       if (sentence.length <= MAX_SENTENCE_CHARS) found.push({ sentence, precedingText: '' });
