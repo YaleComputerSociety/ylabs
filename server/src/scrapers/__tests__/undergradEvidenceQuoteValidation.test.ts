@@ -5,6 +5,7 @@ import {
   laneQuoteStatesUndergraduates,
   isPlausibleUndergradEvidenceQuote,
   quoteExplicitlyDeclinesUndergraduates,
+  isRosterLineRatherThanAStatement,
 } from '../undergradEvidenceQuoteValidation';
 import { quoteStatesAnUndergraduateAccessFact } from '../undergradQuoteRelevance';
 
@@ -266,5 +267,34 @@ describe('a program name or a faculty member own degree is not hosting evidence 
         'Undergraduate majors in biology join the lab each summer.',
       ),
     ).toBe(true);
+  });
+});
+
+describe('isRosterLineRatherThanAStatement', () => {
+  it('reads a roster card or heading as a roster line, not a statement', () => {
+    for (const quote of [
+      'Jordan Example Undergraduate Student Hometown: Example City, ST',
+      'Taylor Example Undergraduate Researcher Email Github',
+      'Undergrad and RAs',
+      'Sam Example SURF student',
+      'Undergraduate students: Example Project: Casey Example, YC 2027',
+    ]) {
+      expect(isRosterLineRatherThanAStatement(quote), quote).toBe(true);
+    }
+  });
+
+  it('keeps a sentence about the lab taking undergraduates', () => {
+    for (const quote of [
+      'We welcome undergraduate students into our lab.',
+      'We welcome undergraduate researchers.',
+      'Undergraduate research positions are also available.',
+      'We have openings for undergraduate students who can commit to more than one year.',
+      'We welcome undergraduates.',
+      'Undergraduates are welcome.',
+      'Open to undergraduates.',
+      'Undergraduate research opportunities available',
+    ]) {
+      expect(isRosterLineRatherThanAStatement(quote), quote).toBe(false);
+    }
   });
 });

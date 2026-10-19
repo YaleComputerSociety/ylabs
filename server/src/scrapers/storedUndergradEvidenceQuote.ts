@@ -1,5 +1,6 @@
 import {
   isPlausibleUndergradEvidenceQuote,
+  isRosterLineRatherThanAStatement,
   RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
   UNDERGRAD_MICROSITE_LANE,
 } from './undergradEvidenceQuoteValidation';
@@ -23,6 +24,7 @@ export function undergradEvidenceQuoteIsInadmissible(
 ): boolean {
   return (
     !isPlausibleUndergradEvidenceQuote(value) ||
+    isRosterLineRatherThanAStatement(value) ||
     isHistoricalUndergradEvidence(value) ||
     namesNonYaleInstitution(value) ||
     quoteListsPeopleWithTheirContactDetails(value) ||

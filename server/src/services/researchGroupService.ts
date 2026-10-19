@@ -51,6 +51,8 @@ import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
+import { isLaneDiscoveryEndpointUrl, servedGrantPageUrl } from '../utils/laneDiscoveryEndpointUrl';
+import { servedCurrentFunding } from './servedCurrentFunding';
 import {
   IDENTITY_LEAD_DIRECTS_ORGANIZATION,
   leadRoleDirectsTheOrganization,
@@ -3699,6 +3701,11 @@ export const publicResearchDetailGroup = (group: any) => {
     sourceFieldContributions: buildSourceFieldContributions(
       publicGroup.fieldProvenance,
       (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
+      undefined,
+      (url) =>
+        isLaneDiscoveryEndpointUrl(url)
+          ? servedGrantPageUrl(servedCurrentFunding(publicGroup).recentGrants, url)
+          : url,
     ),
   };
 };

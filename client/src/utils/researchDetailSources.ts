@@ -1,4 +1,8 @@
 import {
+  memberSignalStatus,
+  type UndergraduateMemberEvidence,
+} from './undergraduateMemberEvidence';
+import {
   comparePersonProfileUrls,
   isCrossSchoolDirectoryProfileUrl,
   isIdentifierRecordUrl,
@@ -66,6 +70,7 @@ export interface BuildResearchDetailSourcesInput {
   accessSignals?: DetailSourceSignal[];
   sourceLinkHealth?: DetailSourceLinkHealth[];
   sourceFieldContributions?: DetailSourceFieldContribution[];
+  undergraduateMembers?: UndergraduateMemberEvidence;
 }
 
 export interface ResearchDetailSource {
@@ -260,15 +265,36 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
   }
 };
 
-const RAW_DATA_API_HOSTS = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
+// Mirrors `isLaneDiscoveryEndpointUrl` in server/src/utils/laneDiscoveryEndpointUrl.ts;
+// changing the arms here requires updating that copy.
+const API_HOST_PREFIX = 'api.';
+const API_HOSTS = new Set(['eutils.ncbi.nlm.nih.gov']);
+const API_PATH_PREFIXES = ['/api/', '/europepmc/webservices/'];
+const AWARD_SEARCH_FORM_HOSTS = new Set(['pamspublic.science.energy.gov']);
+const AWARD_SEARCH_FORM_LEAF = /^awardsearch[a-z]*\.aspx$/i;
+const AWARD_SEARCH_HOME_HOSTS = new Set(['awardsearch.neh.gov']);
+
+const isAwardSearchEntryPage = (host: string, url: URL): boolean => {
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (AWARD_SEARCH_HOME_HOSTS.has(host)) return segments.length === 0 && !url.search;
+  if (!AWARD_SEARCH_FORM_HOSTS.has(host)) return false;
+  return AWARD_SEARCH_FORM_LEAF.test(segments[segments.length - 1] ?? '');
+};
 
 export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
-  const normalized = normalizeSourceUrl(url);
-  if (!normalized) return false;
+  const safe = safeHttpUrl(url);
+  if (!safe) return false;
 
   try {
-    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
-    return RAW_DATA_API_HOSTS.has(host);
+    const parsed = new URL(safe);
+    const host = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/\.$/, '');
+    if (host.startsWith(API_HOST_PREFIX) || API_HOSTS.has(host)) return true;
+    const path = `${parsed.pathname.toLowerCase().replace(/\/+$/, '')}/`;
+    if (API_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+    return isAwardSearchEntryPage(host, parsed);
   } catch {
     return false;
   }
@@ -546,10 +572,32 @@ const ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS: Record<string, string> = {
 
 const UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT = 'Undergraduate access';
 
+const FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT = 'Fellowship recipients';
+
 export const ACCESS_SIGNAL_SOURCE_CONTEXTS: ReadonlySet<string> = new Set([
   ...Object.values(ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS),
   UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT,
+  FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT,
 ]);
+
+/**
+ * A member chip names the members the page shows, so it reads the same evidence as the
+ * research team section (`undergraduateMemberEvidence`). A member signal the section does
+ * not render is still a citation, under the generic access label rather than a roster's.
+ */
+export const memberSignalSourceContext = (
+  signal: DetailSourceSignal,
+  undergraduateMembers?: UndergraduateMemberEvidence,
+): string => {
+  const status = memberSignalStatus(signal.signalType);
+  if (!status || !undergraduateMembers) return accessSignalSourceContext(signal.signalType);
+  if (status === 'past' && undergraduateMembers.citesFellowshipRecipients(signal.sourceUrl)) {
+    return FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT;
+  }
+  return undergraduateMembers.shownStatuses.has(status)
+    ? accessSignalSourceContext(signal.signalType)
+    : UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
+};
 
 export const accessSignalSourceContext = (signalType?: string): string =>
   ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS[(signalType || '').toUpperCase()] ||
@@ -1362,11 +1410,16 @@ const withDistinctLabels = <T extends { url: string; label: string }>(sources: T
   });
 };
 
+const RESEARCH_WEBSITE_SOURCE_CONTEXT = 'Profile website';
+
+const RESEARCH_WEBSITE_CONTRIBUTION_LABEL = 'Research website';
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
   sourceLinkHealth = [],
   sourceFieldContributions = [],
+  undergraduateMembers,
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
   /**
@@ -1392,10 +1445,20 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const contextsFor = (normalizedUrl: string, context: string): string[] => {
+  const contextsFor = (
+    normalizedUrl: string,
+    context: string,
+    existingContexts: string[] = [],
+  ): string[] => {
+    const isResearchWebsiteRow =
+      context === RESEARCH_WEBSITE_SOURCE_CONTEXT ||
+      existingContexts.includes(RESEARCH_WEBSITE_SOURCE_CONTEXT);
+    const contributed = (
+      contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '') ?? []
+    ).filter((label) => !isResearchWebsiteRow || label !== RESEARCH_WEBSITE_CONTRIBUTION_LABEL);
+    if (context === RESEARCH_WEBSITE_SOURCE_CONTEXT) return [context, ...contributed];
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
-    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
-    return contributed && contributed.length ? contributed : [context];
+    return contributed.length ? contributed : [context];
   };
 
   const addSource = (url: string | undefined, context: string, attributionOnly = false) => {
@@ -1412,13 +1475,14 @@ export const buildResearchDetailSources = ({
 
     const existing = sources.get(key);
     /**
-     * A contribution only ever creates a row. It never edits one an earlier pass made,
-     * because a `Profile website` or evidence row already states what it is and the repo
-     * deliberately does not append contribution labels to those.
+     * A contribution only ever creates a row. It never edits one an earlier pass made: an
+     * evidence row already states what it is, and the research website row takes its
+     * contributions when it is made, after its own role, because a research summary,
+     * topics or methods read off that site are otherwise backed by no row at all.
      */
     if (existing && attributionOnly) return;
 
-    const contexts = contextsFor(normalized, context);
+    const contexts = contextsFor(normalized, context, existing?.contexts);
     if (existing) {
       contexts.forEach((entry) => {
         if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
@@ -1432,7 +1496,7 @@ export const buildResearchDetailSources = ({
     sources.set(key, {
       url: normalized,
       label:
-        context === 'Profile website'
+        context === RESEARCH_WEBSITE_SOURCE_CONTEXT
           ? 'Research website'
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts,
@@ -1442,12 +1506,12 @@ export const buildResearchDetailSources = ({
     });
   };
 
-  addSource(group?.websiteUrl, 'Profile website');
+  addSource(group?.websiteUrl, RESEARCH_WEBSITE_SOURCE_CONTEXT);
   group?.sourceUrls?.forEach((url) => addSource(url, GENERIC_PROFILE_SOURCE_CONTEXT));
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
-    addSource(signal.sourceUrl, accessSignalSourceContext(signal.signalType));
+    addSource(signal.sourceUrl, memberSignalSourceContext(signal, undergraduateMembers));
   });
 
   /**

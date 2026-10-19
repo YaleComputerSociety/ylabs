@@ -314,6 +314,25 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([awardPage]);
   });
 
+  it.each([
+    'https://api.crossref.org/types/grant/works',
+    'https://www.osti.gov/api/v1/records',
+    'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx',
+    'https://awardsearch.neh.gov/',
+  ])('never renders the grant lane endpoint %s as a source (#5261)', (endpoint) => {
+    const grantPage = 'https://doi.org/10.99999/fixture-grant-1';
+
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: '', sourceUrls: [endpoint] },
+      sourceFieldContributions: [
+        { sourceUrl: endpoint, contributions: ['Who leads it'] },
+        { sourceUrl: grantPage, contributions: ['Who leads it'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([grantPage]);
+  });
+
   it('names each NIH RePORTER project so distinct grants never share one label', () => {
     const sources = buildResearchDetailSources({
       group: {
@@ -1916,14 +1935,38 @@ describe('buildResearchDetailSources source attribution', () => {
     expect(sources[0].contexts).toEqual(['Profile source']);
   });
 
-  it('leaves a website or evidence context alone, since those already say what they are', () => {
+  it('shows what the research website backs after its own role', () => {
     const sources = buildResearchDetailSources({
       group: { websiteUrl: LAB, sourceUrls: [] },
-      sourceFieldContributions: [{ sourceUrl: LAB, contributions: ['Research summary'] }],
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Research summary', 'Topics', 'Research website'] },
+      ],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile website', 'Research summary', 'Topics']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('does not repeat the research website label when the website is also a cited source', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [LAB] },
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Research summary', 'Topics', 'Research website'] },
+      ],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].contexts).toEqual(['Profile website', 'Research summary', 'Topics']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('keeps the research website row to its role when it backs nothing else', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [] },
+      sourceFieldContributions: [],
     });
 
     expect(sources[0].contexts).toEqual(['Profile website']);
-    expect(sources[0].label).toBe('Research website');
   });
 
   it('ignores an attribution entry with no usable label', () => {

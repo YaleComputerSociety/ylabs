@@ -597,10 +597,26 @@ function paragraphLines($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): s
     .filter(Boolean);
 }
 
+function cardHeadingEntry($: cheerio.CheerioAPI, heading: cheerio.Cheerio<any>): ListedPersonEntry {
+  const [, ...laterLines] = paragraphLines($, heading);
+  const entry = blockEntry($, heading);
+  return { ...entry, years: [entry.years, ...laterLines].join(' ').trim() };
+}
+
+const FACULTY_TITLE =
+  /\b(?:professor|director|chair|principal investigator|lecturer|instructor)\b/i;
+
+function nextHeadingTagName(heading: cheerio.Cheerio<any>): string {
+  const next = heading.nextAll('h1, h2, h3, h4, h5, h6').first().get(0) as
+    { tagName?: string } | undefined;
+  return next?.tagName || '';
+}
+
 function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
   const sections: RosterSection[] = [];
   const trail: HeadingTrailEntry[] = [];
   const entryCells = new Map<ListedPersonEntry, unknown>();
+  const cardHeadingLevels = new Map<ListedPersonEntry, number>();
   const pageSection = {
     label: pageTitleLabel($),
     withinPastSection: false,
@@ -624,14 +640,42 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       if (/^h[1-6]$/.test(tagName)) {
         const text = normalizedText(node.text());
         const level = headingLevel(tagName);
-        if (section && nameHeading && isSingularRoleLine(text)) {
+        const leadName = listItemEntry(leadingLineText($, node)).name;
+        const opensDeeperHeadings = headingLevel(nextHeadingTagName(node)) > level;
+        if (
+          section &&
+          nameHeading &&
+          isSingularRoleLine(text) &&
+          !looksLikeListedPersonName(leadName) &&
+          !opensDeeperHeadings
+        ) {
           nameHeading.years = `${nameHeading.years} ${text}`.trim();
           return;
         }
+        const previous = section?.listItems[section.listItems.length - 1];
+        const previousCardLevel = previous && cardHeadingLevels.get(previous);
+        if (
+          previous &&
+          previousCardLevel &&
+          level > previousCardLevel &&
+          FACULTY_TITLE.test(text)
+        ) {
+          previous.years = `${previous.years} ${text}`.trim();
+          return;
+        }
         nameHeading = undefined;
+        const isCardName = level > (section?.level ?? 7) || node.closest('li').length > 0;
+        if (section && isCardName && looksLikeListedPersonName(leadName)) {
+          const entry = cardHeadingEntry($, node);
+          section.listItems.push(entry);
+          cardHeadingLevels.set(entry, level);
+          nameHeading = entry;
+          return;
+        }
         if (
           section &&
           isCaptionHeading(section, section.level, text, level) &&
+          !(isSingularRoleLine(text) && opensDeeperHeadings) &&
           !looksLikeListedPersonName(listItemEntry(withCapitalizedWords(text)).name)
         ) {
           section = { ...captionedSection(section, text), level: section.level };
