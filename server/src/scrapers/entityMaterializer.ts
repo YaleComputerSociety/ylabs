@@ -318,7 +318,7 @@ import {
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
   type RosterMemberIdentityEvidence,
 } from './utils/rosterMemberIdentityEvidence';
-import { splitName } from './utils/scraperHelpers';
+import { isRoleOrUnitMailbox, splitName, yaleUnitMailboxTokens } from './utils/scraperHelpers';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import {
   isBoilerplatePlatformHostUrl,
@@ -418,6 +418,7 @@ import {
 import { Account } from '../models/account';
 import {
   composeOfficialProfileLink,
+  selectOfficialYaleProfileUrl,
   supersedesOfficialProfileUrl,
 } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
@@ -3713,9 +3714,9 @@ export function userEntityKeyForInferredPiUserKey(value: unknown): string {
   return raw;
 }
 
-async function researcherReachedByUserIdentity(
+async function userIdentityJoinForKey(
   userEntityKey: string,
-): Promise<{ researcherId: mongoose.Types.ObjectId; observedTitle?: string } | undefined> {
+): Promise<UserIdentityJoinResult | undefined> {
   const read = await Observation.find({
     entityType: 'user',
     entityKey: userEntityKey,
@@ -3723,9 +3724,31 @@ async function researcherReachedByUserIdentity(
   }).lean();
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
   if (kept.length === 0) return undefined;
-  const join = await joinUserIdentityToExistingResearcher({ entityKey: userEntityKey }, kept);
-  if (!join.researcher?._id) return undefined;
+  return joinUserIdentityToExistingResearcher({ entityKey: userEntityKey }, kept);
+}
+
+async function researcherReachedByUserIdentity(
+  userEntityKey: string,
+): Promise<{ researcherId: mongoose.Types.ObjectId; observedTitle?: string } | undefined> {
+  const join = await userIdentityJoinForKey(userEntityKey);
+  if (!join?.researcher?._id) return undefined;
   return { researcherId: join.researcher._id, observedTitle: join.title };
+}
+
+/**
+ * The researcher a key's own observed address names: the sole live claimant of the email,
+ * under a name that agrees with the one the key observes. The address is a per-person
+ * identifier where the directory's alias map is not, so it still decides when that map
+ * names two netids for the alias (#2799 stops the netid and name walk there).
+ */
+async function researcherIdentifiedByUserKeyEmail(
+  userEntityKey: string,
+): Promise<{ researcherId: mongoose.Types.ObjectId; observedTitle?: string } | undefined> {
+  const join = await userIdentityJoinForKey(userEntityKey);
+  const observedEmail = normalizedAccountEmail(join?.resolved.email?.value);
+  if (!join || !observedEmail || !join.displayName) return undefined;
+  const researcher = await researcherTheObservedEmailNames(observedEmail, join.displayName);
+  return researcher?._id ? { researcherId: researcher._id, observedTitle: join.title } : undefined;
 }
 
 async function namesAnotherPersonsLab(entityName: string, personName: string): Promise<boolean> {
@@ -3764,18 +3787,30 @@ async function researcherCanLeadEntity(
  *   - the identity join the `user` materializer itself uses (email account, official
  *     profile page, full observed name), so the reclaim reaches the researcher the
  *     materializer already enriches for this key rather than reporting it unresolved.
- * An alias the directory maps to several netids still stops the walk.
+ * An alias the directory maps to several netids still stops the walk, except that the key's
+ * own observed address may still name its sole live claimant (`researcherIdentifiedByUserKeyEmail`).
  */
 async function resolveInferredPiUserKey(
   value: unknown,
   entityName: () => Promise<string>,
 ): Promise<ResearcherPersonNameResolution> {
   const asStored = await resolveInferredPiKeyIdentity(inferredPiUserKeyIdentity(value));
-  if (asStored.status === 'matched' || asStored.aliasNamesSeveralNetids) return asStored;
+  if (asStored.status === 'matched') return asStored;
   const userKey = userEntityKeyForInferredPiUserKey(value);
+  const byKeyEmail = async (): Promise<ResearcherPersonNameResolution> => {
+    const identified = await researcherIdentifiedByUserKeyEmail(userKey);
+    if (!identified) return asStored;
+    const canLead = await researcherCanLeadEntity(
+      identified.researcherId,
+      await entityName(),
+      identified.observedTitle,
+    );
+    return canLead ? { status: 'matched', researcherId: identified.researcherId } : asStored;
+  };
+  if (asStored.aliasNamesSeveralNetids) return byKeyEmail();
   if (userKey !== textValue(value)) {
     const asUserKey = await resolveInferredPiKeyIdentity(inferredPiUserKeyIdentity(userKey));
-    if (asUserKey.aliasNamesSeveralNetids) return asStored;
+    if (asUserKey.aliasNamesSeveralNetids) return byKeyEmail();
     if (asUserKey.status === 'matched' && asUserKey.researcherId) {
       return (await researcherCanLeadEntity(asUserKey.researcherId, await entityName()))
         ? asUserKey
@@ -5217,6 +5252,30 @@ export function officialUserProfileUrlsFromObservations(
   });
 }
 
+/**
+ * The pages the official-profile identity join may match: every `/people/` or `/profile/`
+ * page, plus the page `composeOfficialProfileLink` would stamp as this person's
+ * `YALE_OFFICIAL` link. A department that keeps person pages on another path
+ * (`/faculty-directory/<slug>`) has that page stamped on the researcher it reaches, so
+ * reading only the `/people/` shape back left the stamped page unable to identify the
+ * same person on the next key that cites it.
+ */
+function officialProfileJoinUrlsFromObservations(
+  observations: MaterializerObservationLike[],
+): string[] {
+  const stampedPages = observations
+    .filter(
+      (observation) =>
+        observation.field === 'profileUrls' &&
+        Boolean(observation.value) &&
+        typeof observation.value === 'object',
+    )
+    .map((observation) =>
+      selectOfficialYaleProfileUrl(observation.value as Record<string, unknown>),
+    );
+  return uniqueStrings([...officialUserProfileUrlsFromObservations(observations), ...stampedPages]);
+}
+
 function observedUserNameParts(observations: MaterializerObservationLike[]): {
   firstInitial: string;
   lastToken: string;
@@ -6355,6 +6414,18 @@ async function soleLiveResearcherClaimingEmail(email: string): Promise<any | und
   return claimants.values().next().value;
 }
 
+async function researcherTheObservedEmailNames(
+  observedEmail: string,
+  displayName: string,
+): Promise<any | null> {
+  const claimant = await soleLiveResearcherClaimingEmail(observedEmail);
+  const emailResearcher = claimant?._id ? await Researcher.findById(claimant._id) : null;
+  if (!emailResearcher) return null;
+  return !displayName || observedPersonNameAgreesWith(emailResearcher.displayName, displayName)
+    ? emailResearcher
+    : null;
+}
+
 /**
  * The researcher a `user` key's netid reaches: the researcher holding it as
  * `identifiers.netid`. An alias the directory maps to another live holder's netid resolves to
@@ -6663,6 +6734,97 @@ function inferredPiUserKeyValuesThatCouldName(userEntityKey: string): Array<stri
   ];
 }
 
+type RosterAliasEmailMint =
+  { status: 'mintable'; email: string } | { status: 'refused'; reason: string };
+
+async function otherPersonPrintsAddress(
+  email: string,
+  userEntityKey: string,
+  displayName: string,
+): Promise<boolean> {
+  const printers = (await Observation.find(
+    {
+      entityType: 'user',
+      field: 'email',
+      superseded: false,
+      value: new RegExp(`^${escapeRegex(email)}$`, 'i'),
+      entityKey: { $ne: userEntityKey },
+    },
+    { entityKey: 1 },
+  ).lean()) as Array<{ entityKey?: unknown }>;
+  const otherKeys = uniqueStrings(printers.map((printer) => printer.entityKey));
+  if (otherKeys.length === 0) return false;
+  const nameObservations = (await Observation.find(
+    {
+      entityType: 'user',
+      entityKey: { $in: otherKeys },
+      field: { $in: ['fname', 'lname', 'displayName'] },
+      superseded: false,
+    },
+    { entityKey: 1, field: 1, value: 1 },
+  ).lean()) as Array<{ entityKey?: unknown; field?: string; value?: unknown }>;
+  return otherKeys.some((key) => {
+    const own = nameObservations.filter((observation) => textValue(observation.entityKey) === key);
+    const valueOf = (field: string) =>
+      textValue(own.find((observation) => observation.field === field)?.value);
+    const name =
+      valueOf('displayName') || [valueOf('fname'), valueOf('lname')].filter(Boolean).join(' ');
+    return Boolean(name) && !observedPersonNameAgreesWith(name, displayName);
+  });
+}
+
+/**
+ * Owner decision 2026-10-19, narrowing #2776: an official roster or profile page that prints
+ * a person's own `first.last@yale.edu` address is enough to create that person, keyed by the
+ * address rather than a netid. Every condition is a reason the address could name someone
+ * else, so each refuses with its own reason:
+ *   - the key's own observed address must be exactly `<alias>@yale.edu`, so the key and the
+ *     address are one identity rather than an alias that merely spells a name;
+ *   - an office mailbox is printed for a whole unit (#5332);
+ *   - the alias must spell the name the roster prints, read with the nickname-aware
+ *     comparator the identity joins use;
+ *   - a live researcher or account already holding the address, or a live researcher
+ *     holding the official page, is someone the identity joins refused on the name, so the
+ *     mint would be a second record for a person the corpus already disputes;
+ *   - an address another `user` key prints under a disagreeing name is shared.
+ * The alias is never stamped as a netid (`research-model.md`), and the address resolves the
+ * key back to this record on the next pass through the email join.
+ */
+async function rosterAliasEmailMintIdentity(input: {
+  userEntityKey: string;
+  alias: string;
+  displayName: string;
+  observedEmail: string | undefined;
+  observations: MaterializerObservationLike[];
+}): Promise<RosterAliasEmailMint> {
+  const refused = (reason: string): RosterAliasEmailMint => ({ status: 'refused', reason });
+  const email = `${input.alias.toLowerCase()}@yale.edu`;
+  if (!input.alias || input.observedEmail !== email) {
+    return refused('alias-key-without-its-own-yale-address');
+  }
+  const unitTokens = yaleUnitMailboxTokens(
+    input.observations.map((observation) => observation.sourceUrl),
+  );
+  if (isRoleOrUnitMailbox(email, unitTokens)) return refused('alias-email-names-office-mailbox');
+  if (!observedPersonNameAgreesWith(personNameFromKeySlug(input.alias), input.displayName)) {
+    return refused('alias-disagrees-with-roster-name');
+  }
+  const emailHolder =
+    (await Researcher.exists({ 'identifiers.email': email, archived: { $ne: true } })) ||
+    (await Account.find({ email }).limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT).lean()).some(
+      accountIsLive,
+    );
+  if (emailHolder) return refused('alias-email-claimed-by-another-researcher');
+  const pageHolders = await liveResearchersClaimingOfficialProfileUrls(
+    officialProfileJoinUrlsFromObservations(input.observations),
+  );
+  if (pageHolders.size > 0) return refused('official-profile-claimed-by-another-researcher');
+  if (await otherPersonPrintsAddress(email, input.userEntityKey, input.displayName)) {
+    return refused('alias-email-printed-for-another-person');
+  }
+  return { status: 'mintable', email };
+}
+
 export interface UserIdentityJoinResult {
   resolved: ReturnType<typeof resolveAllFields>;
   netid: string | undefined;
@@ -6773,11 +6935,8 @@ export async function joinUserIdentityToExistingResearcher(
    */
   let identityJoinedOnEmailAlone = false;
   if (!researcher && !account && observedEmail) {
-    const claimant = await soleLiveResearcherClaimingEmail(observedEmail);
-    const emailResearcher = claimant?._id ? await Researcher.findById(claimant._id) : null;
-    const emailAccountNamesThisPerson =
-      !displayName || observedPersonNameAgreesWith(emailResearcher?.displayName, displayName);
-    if (emailResearcher && emailAccountNamesThisPerson) {
+    const emailResearcher = await researcherTheObservedEmailNames(observedEmail, displayName);
+    if (emailResearcher) {
       researcher = emailResearcher;
       const emailResearcherNetid = normalizedAccountNetid(emailResearcher.identifiers?.netid);
       account = emailResearcherNetid
@@ -6810,7 +6969,7 @@ export async function joinUserIdentityToExistingResearcher(
   let identityJoinedOnOfficialProfileUrlAlone = false;
   if (!researcher && displayName) {
     const urlResearcher = await soleLiveResearcherClaimingOfficialProfileUrl(
-      officialUserProfileUrlsFromObservations(materializationObs),
+      officialProfileJoinUrlsFromObservations(materializationObs),
     );
     if (urlResearcher && observedPersonNameAgreesWith(urlResearcher.displayName, displayName)) {
       researcher = await Researcher.findById(urlResearcher._id);
@@ -6919,15 +7078,32 @@ async function materializeUserIdentityToResearcher(
     const resolvedNetid = keyIdentity.netid
       ? await netidForRosterEmailAlias(keyIdentity.netid)
       : undefined;
-    const resolvableBack = Boolean(keyIdentity.name) || Boolean(resolvedNetid);
+    const nameHeldByNobody = Boolean(displayName) && personNameHeldByNobody;
+    const aliasEmailMint =
+      nameHeldByNobody && keyIdentity.emailAliasName && !keyIdentity.name && !resolvedNetid
+        ? await rosterAliasEmailMintIdentity({
+            userEntityKey: attributionKey,
+            alias: keyIdentity.netid ?? '',
+            displayName,
+            observedEmail: normalizedAccountEmail(resolved.email?.value),
+            observations: obs.filter(
+              (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
+            ),
+          })
+        : undefined;
+    const resolvableBack =
+      Boolean(keyIdentity.name) || Boolean(resolvedNetid) || Boolean(aliasEmailMint);
     const namedAsLead =
-      Boolean(displayName) &&
-      personNameHeldByNobody &&
+      nameHeldByNobody &&
       resolvableBack &&
       (await liveResearchEntityNamesUserKeyAsLead(attributionKey));
     if (!namedAsLead) {
       return skipped('directory-identity-without-research-signal');
     }
+    if (aliasEmailMint?.status === 'refused') {
+      return skipped(aliasEmailMint.reason);
+    }
+    const mintedEmail = aliasEmailMint?.status === 'mintable' ? aliasEmailMint.email : undefined;
     // A netid another researcher already holds aborts the mint on the unique
     // `identifiers.netid` index (#2810 measured 5 such failures per apply run), so it fails
     // closed here instead. The claimant is not adopted: this path runs only when the name
@@ -6946,6 +7122,7 @@ async function materializeUserIdentityToResearcher(
       // Stamped from the directory's own observation of this person's netid, never from the
       // alias itself, so the alias is not promoted to a join key (`research-model.md:36`).
       ...(resolvedNetid ? { identifiers: { netid: resolvedNetid } } : {}),
+      ...(mintedEmail ? { identifiers: { email: mintedEmail } } : {}),
       status: 'UNKNOWN',
       archived: false,
     });

@@ -156,4 +156,137 @@ describe('materializeInferredPiMembership follows the user identity join', () =>
     expect(found).toHaveLength(1);
     expect(String(found[0].personId)).toBe(String(researcher._id));
   });
+
+  const seedUserField = async (
+    entityKey: string,
+    field: string,
+    value: unknown,
+    sourceName = 'dept-faculty-roster',
+  ) =>
+    Observation.create({
+      entityType: 'user',
+      entityKey,
+      field,
+      value,
+      sourceName,
+      sourceUrl: 'https://example.edu/roster/synthetic/',
+      sourceId: new mongoose.Types.ObjectId(),
+      confidence: 0.9,
+      observedAt: new Date('2026-01-01T00:00:00Z'),
+      superseded: false,
+    });
+
+  const officialLink = (url: string) => ({
+    kind: 'YALE_OFFICIAL' as const,
+    purpose: 'PRIMARY_IDENTITY' as const,
+    url,
+    verifiedAt: new Date('2026-01-01T00:00:00Z'),
+    healthStatus: 'UNKNOWN' as const,
+  });
+
+  describe('a key whose own address or official page names one live researcher', () => {
+    const seedAliasMappedToTwoNetids = async (alias: string) => {
+      await seedUserField('netid:qz101', 'email', `${alias}@yale.edu`, 'yale-directory');
+      await seedUserField('netid:qz202', 'email', `${alias}@yale.edu`, 'yale-directory');
+    };
+
+    it('follows the key email past an alias the directory maps to two netids', async () => {
+      const entity = await seedEntity('synthetic-email-ambiguous', 'Fenwright Lab');
+      const researcher = await Researcher.create({
+        displayName: 'Odalys Fenwright',
+        identifiers: { email: 'odalys.fenwright@yale.edu' },
+        profile: { title: 'Professor of Engineering' },
+        archived: false,
+      });
+      await seedAliasMappedToTwoNetids('odalys.fenwright');
+      await seedUserName('netid:odalys.fenwright', 'Odalys', 'Fenwright');
+      await seedUserField('netid:odalys.fenwright', 'email', 'odalys.fenwright@yale.edu');
+
+      await materializeInferredPiMembership(String(entity._id), [piKey('netid:odalys.fenwright')]);
+
+      const found = await leads(entity._id);
+      expect(found).toHaveLength(1);
+      expect(String(found[0].personId)).toBe(String(researcher._id));
+    });
+
+    it('still fails closed past an ambiguous alias when two live researchers hold the address', async () => {
+      const entity = await seedEntity('synthetic-email-two-holders', 'Fenwright Lab');
+      for (const title of ['Professor of Engineering', 'Professor of Physics']) {
+        await Researcher.create({
+          displayName: 'Odalys Fenwright',
+          identifiers: { email: 'odalys.fenwright@yale.edu' },
+          profile: { title },
+          archived: false,
+        });
+      }
+      await seedAliasMappedToTwoNetids('odalys.fenwright');
+      await seedUserName('netid:odalys.fenwright', 'Odalys', 'Fenwright');
+      await seedUserField('netid:odalys.fenwright', 'email', 'odalys.fenwright@yale.edu');
+
+      await materializeInferredPiMembership(String(entity._id), [piKey('netid:odalys.fenwright')]);
+
+      expect(await leads(entity._id)).toHaveLength(0);
+    });
+
+    it('joins the stamped official page a department keeps outside a /people/ path', async () => {
+      const page = 'https://som.example.yale.edu/faculty-directory/odalys-fenwright';
+      const entity = await seedEntity(
+        'synthetic-stamped-page',
+        'Odalys Fenwright Faculty Research',
+      );
+      const researcher = await Researcher.create({
+        displayName: 'Odalys Fenwright',
+        profile: { title: 'Professor of Economics' },
+        profileLinks: [officialLink(page)],
+        archived: false,
+      });
+      await seedResearcher('Odalys P. Fenwright', 'Professor of Medicine');
+      await seedUserName('dept:som:odalys-q-fenwright', 'Odalys Q.', 'Fenwright');
+      await seedUserField('dept:som:odalys-q-fenwright', 'profileUrls', { departmental: page });
+
+      await materializeInferredPiMembership(String(entity._id), [
+        piKey('dept:som:odalys-q-fenwright'),
+      ]);
+
+      const found = await leads(entity._id);
+      expect(found).toHaveLength(1);
+      expect(String(found[0].personId)).toBe(String(researcher._id));
+    });
+
+    it('joins a person known by one name through the official page they hold', async () => {
+      const page = 'https://art.example.yale.edu/people/faculty-and-staff/quillane';
+      const entity = await seedEntity('synthetic-mononym', 'Quillane Faculty Research');
+      const researcher = await Researcher.create({
+        displayName: 'Quillane',
+        profile: { title: 'Lecturer' },
+        profileLinks: [officialLink(page)],
+        archived: false,
+      });
+      await seedUserField('dept:art:quillane', 'fname', 'Quillane');
+      await seedUserField('dept:art:quillane', 'profileUrls', { departmental: page });
+
+      await materializeInferredPiMembership(String(entity._id), [piKey('dept:art:quillane')]);
+
+      const found = await leads(entity._id);
+      expect(found).toHaveLength(1);
+      expect(String(found[0].personId)).toBe(String(researcher._id));
+    });
+
+    it('refuses the official page when the person holding it has another single name', async () => {
+      const page = 'https://art.example.yale.edu/people/faculty-and-staff/quillane';
+      const entity = await seedEntity('synthetic-mononym-other', 'Quillane Faculty Research');
+      await Researcher.create({
+        displayName: 'Marisol',
+        profile: { title: 'Lecturer' },
+        profileLinks: [officialLink(page)],
+        archived: false,
+      });
+      await seedUserField('dept:art:quillane', 'fname', 'Quillane');
+      await seedUserField('dept:art:quillane', 'profileUrls', { departmental: page });
+
+      await materializeInferredPiMembership(String(entity._id), [piKey('dept:art:quillane')]);
+
+      expect(await leads(entity._id)).toHaveLength(0);
+    });
+  });
 });
