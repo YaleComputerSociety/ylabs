@@ -5,13 +5,14 @@ export const researchProfilePageClassName =
 export const researchProfileGridClassName = 'grid grid-cols-1 gap-6 lg:gap-8';
 export const researchProfileColumnClassName =
   'lg:mx-auto lg:w-full lg:max-w-5xl space-y-6 sm:space-y-8';
-export const researchProfileBodyGridClassName = 'grid grid-cols-1 gap-6 sm:gap-8 md:flow-root';
+export const researchProfileBodyGridClassName =
+  'grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-[minmax(0,1fr)_18rem] md:gap-x-5';
 export const researchProfileSummaryCardClassName =
-  'min-w-0 rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5 md:float-left md:mb-8 md:w-[calc(100%-19.25rem)]';
+  'min-w-0 rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5 md:col-start-1 md:row-start-1';
 export const researchProfileContactRailClassName =
-  'divide-y divide-[var(--yr-line)] self-start rounded-card border border-line bg-[var(--yr-panel-muted)] p-4 shadow-yr-raised md:float-right md:mb-4 md:ml-5 md:min-h-(--summary-card-height) md:w-72';
+  'divide-y divide-[var(--yr-line)] rounded-card border border-line bg-[var(--yr-panel-muted)] p-4 shadow-yr-raised md:col-start-2 md:row-start-1';
 export const researchProfileBodyMainClassName =
-  'min-w-0 space-y-6 sm:space-y-8 md:*:flow-root md:*:min-w-80';
+  'min-w-0 space-y-6 sm:space-y-8 md:col-span-2 md:row-start-2';
 
 const SkeletonBar = ({ className }: { className: string }) => (
   <div className={`rounded-control bg-panel-muted ${className}`} />
@@ -48,7 +49,7 @@ const ResearchProfileSkeleton = ({ leading }: { leading?: ReactNode }) => (
               <SkeletonBar className="mt-3 h-3 w-2/3" />
               <p className="mt-5 text-xs text-muted">Loading research profile</p>
             </div>
-            <div className={`${researchProfileContactRailClassName} h-40`} />
+            <div className={`${researchProfileContactRailClassName} h-40 md:h-auto`} />
           </div>
         </div>
       </div>
