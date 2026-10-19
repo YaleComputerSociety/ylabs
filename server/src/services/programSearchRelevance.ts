@@ -213,12 +213,17 @@ const byRelevance = <T>(a: ScoredProgram<T>, b: ScoredProgram<T>): number =>
   b.fieldScore - a.fieldScore ||
   a.order - b.order;
 
-export const rankProgramSearchMatches = <T extends Record<string, unknown>>(
+export interface RankedProgramSearch<T> {
+  programs: T[];
+  missingOneWord: boolean;
+}
+
+export const rankProgramSearch = <T extends Record<string, unknown>>(
   query: string,
   programs: readonly T[],
-): T[] => {
+): RankedProgramSearch<T> => {
   const contentWords = programQueryContentWords(query);
-  if (contentWords.length === 0) return [];
+  if (contentWords.length === 0) return { programs: [], missingOneWord: false };
   const umbrella = umbrellaSubjectPhrases(contentWords);
   const score = (subjectPhrasesToMatch: string[][]) =>
     programs
@@ -228,8 +233,13 @@ export const rankProgramSearchMatches = <T extends Record<string, unknown>>(
   if (!scored.some((entry) => entry.kind === 'allWords') && umbrella.aliased.length > 0) {
     scored = score([...umbrella.named, ...umbrella.aliased]);
   }
-  const strongest = scored.some((entry) => entry.kind !== 'allButOneWord')
-    ? scored.filter((entry) => entry.kind !== 'allButOneWord')
-    : scored;
-  return strongest.sort(byRelevance).map((entry) => entry.program);
+  const missingOneWord =
+    scored.length > 0 && scored.every((entry) => entry.kind === 'allButOneWord');
+  const strongest = missingOneWord
+    ? scored
+    : scored.filter((entry) => entry.kind !== 'allButOneWord');
+  return {
+    programs: strongest.sort(byRelevance).map((entry) => entry.program),
+    missingOneWord,
+  };
 };

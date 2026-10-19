@@ -134,9 +134,9 @@ const ActiveFilters = ({
           {chips.map((chip) => (
             <span
               key={chip.key}
-              className={`${chip.colorClass} px-2 py-0.5 rounded-control text-xs flex items-center`}
+              className={`${chip.colorClass} flex max-w-full items-center rounded-control px-2 py-0.5 text-xs`}
             >
-              <span className="whitespace-nowrap">{chip.label}</span>
+              <span className="min-w-0 break-words">{chip.label}</span>
               <button
                 type="button"
                 onClick={chip.onRemove}

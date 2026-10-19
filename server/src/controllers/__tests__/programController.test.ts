@@ -369,6 +369,25 @@ describe('programController search visibility', () => {
     expectPublicProgram(res.json.mock.calls[0][0].results[0]);
   });
 
+  it('tells the reader when the results match all but one typed word', async () => {
+    const res = response();
+    mocks.searchPrograms.mockResolvedValue({
+      programs: [privateProgram],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+      totalPages: 1,
+      queryMatch: 'allButOneWord',
+    });
+
+    await searchProgramsController(
+      { query: { query: 'three typed words' }, user: { userType: 'student' } } as any,
+      res as any,
+    );
+
+    expect(res.json.mock.calls[0][0].queryMatch).toBe('allButOneWord');
+  });
+
   it('filters unsafe public program URLs for normal readers', async () => {
     const res = response();
     mocks.searchPrograms.mockResolvedValue({
@@ -400,7 +419,7 @@ describe('programController search visibility', () => {
     const payload = res.json.mock.calls[0][0].results[0];
     expect(payload.links).toEqual([
       {
-        label: 'Program page. Questions: [email redacted] or [phone redacted].',
+        label: 'Program page. Questions: program@yale.edu or 203-555-1212.',
         url: 'https://example.yale.edu/program',
       },
     ]);
@@ -431,7 +450,7 @@ describe('programController search visibility', () => {
     expect(JSON.stringify(payload)).not.toContain('program@yale.edu?bcc=attacker@example.test');
   });
 
-  it('redacts direct contact details from public program text fields', async () => {
+  it('serves the contact details a program page publishes, except in eligibility (#5046)', async () => {
     const res = response();
     mocks.searchPrograms.mockResolvedValue({
       programs: [
@@ -465,22 +484,24 @@ describe('programController search visibility', () => {
     ]) {
       expect(field).not.toMatch(/redacted/i);
     }
-    expect(payload.summary).toBe('Applications are reviewed each spring.');
-    expect(payload.description).toBe('The grant funds summer study.');
-    expect(payload.applicationInformation).toBe('Complete the online form.');
+    expect(payload.summary).toBe(
+      'Applications are reviewed each spring. Email prose-contact@yale.edu or call 203-555-1212 before applying.',
+    );
+    expect(payload.description).toBe(
+      'The grant funds summer study. Questions: office@example.edu.',
+    );
+    expect(payload.applicationInformation).toBe(
+      'Complete the online form. Call 203.555.3434 for the form.',
+    );
     expect(payload.eligibility).toBe('Open to juniors and seniors.');
-    expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
+    expect(payload.prepSteps).toEqual(['Email prep-contact@yale.edu or call 203-555-7777.']);
     expect(payload.applicationMaterials).toEqual([
-      'Email [email redacted] or call [phone redacted].',
+      'Email materials-contact@yale.edu or call 203-555-8888.',
     ]);
     expect(payload.contactPhone).toBeUndefined();
-    expect(payload.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
-    expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('office@example.edu');
+    expect(payload.contactOffice).toBe('Office contact: office@example.edu or 203-555-0000.');
+    expect(JSON.stringify(payload)).not.toMatch(/redacted/i);
     expect(JSON.stringify(payload)).not.toContain('hidden@yale.edu');
-    expect(JSON.stringify(payload)).not.toContain('203-555');
-    expect(JSON.stringify(payload)).not.toContain('203.555');
   });
 
   it('allowlists public program detail payloads for normal readers', async () => {

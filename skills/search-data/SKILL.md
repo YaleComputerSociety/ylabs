@@ -708,7 +708,7 @@ Some zero-result queries remain zero because no program covers the subject (`neu
 `$text` ORs its terms, and the query also carried every alias of any topic subject it named, so `economics` served 61 programs and `economics summer` served 119, and `economics` pulled in programs that only say `policy` or `psychology`.
 The text index weighted a title word like a description word, and the page then regrouped the results into deadline sections and sorted each by deadline, so the exact title `Blue Center` was second and `Computer Science Research Internship Program` was 32nd of 40 for `computer science`.
 
-`searchFellowships` now reads the filtered catalog (172 visible programs, about 290KB of searchable text on Development) and hands it to `rankProgramSearchMatches` in `server/src/services/programSearchRelevance.ts`:
+`searchFellowships` now reads the filtered catalog (172 visible programs, about 290KB of searchable text on Development) and hands it to `rankProgramSearch` in `server/src/services/programSearchRelevance.ts`:
 
 - A program matches when every content word of the query (stop words and single letters dropped) starts a word in a searchable field or shares its light stem (`economics` and `economic`, `studies` and `study`, `sciences` and `science`), so adding a word narrows the list except in three cases below that can serve a program the shorter query did not: a query that is a subject's own name or abbreviation, a query that is one of a subject's aliases, and the fallback for three or more words.
   An abbreviation alias (`ai`, `ml`, `nlp`) matches whole words only, because `ai` starts `aid`.
@@ -717,6 +717,7 @@ The text index weighted a title word like a description word, and the page then 
   A query that is a subject's own name (`artificial intelligence`) or abbreviation also serves programs naming any of that subject's aliases, after the programs that carry the typed words.
   A query that is one of a subject's aliases (`machine learning`) widens to the subject only when no program carries the typed words, because no program says `machine learning` and the AI programs are the honest answer.
 - A query of three or more words that no program carries in full serves the programs missing only one word, so a long question does not go empty; two-word queries never fall back to one word, which is what served the European Studies grant for `machine learning`.
+  The fallback is never silent: the response carries `queryMatch: 'allButOneWord'`, and the page says no program mentions every word under any sort and, on the default sort, lists those programs under "Close matches" instead of "Best matches" (`economics summer abroad` serves 16 close matches while `economics summer` serves 5 full ones).
 - Ranking: every-word matches first, then subject matches, then the one-word-short fallback; within each, a title equal to the query, then a title carrying the query as a phrase, then a title carrying every word, then a weighted field score (title 8, summary, competition type, purpose and student-facing category 3, eligibility 2, long text 1), then the requested sort.
 
 The page keeps that order: a result set that answers a search renders as one "Best matches" section, with archive records still apart, instead of deadline sections, because each card already shows whether it is open, closing soon or closed.

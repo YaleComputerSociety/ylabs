@@ -281,6 +281,78 @@ describe('LabDetail page', () => {
     expect(await screen.findByRole('button', { name: 'Save research plan' })).toBeTruthy();
   });
 
+  it('offers an undo after unsaving from the detail page and re-saves on undo', async () => {
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    mockedAxios.put.mockResolvedValue({ data: { savedResearchEntityIds: [DEFAULT_SLUG] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+
+    const saved = await screen.findByRole('button', { name: 'Saved to Dashboard' });
+    expect(saved.textContent).toContain('Press again to remove it. You can undo.');
+    fireEvent.click(saved);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedResearchEntities', {
+        withCredentials: true,
+        data: { savedResearchEntities: [DEFAULT_SLUG] },
+      }),
+    );
+    expect(await screen.findByRole('button', { name: 'Saved to Dashboard' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  });
+
+  it('drops the unsave undo when following a link to another research page', async () => {
+    const OTHER_SLUG = 'related-example-research';
+    const servedPayload: LabDetailPayload = {
+      ...basePayload,
+      group: { ...basePayload.group, _id: DEFAULT_SLUG },
+      relatedResearchEntities: [
+        {
+          id: OTHER_SLUG,
+          slug: OTHER_SLUG,
+          name: 'Neighbor Example Lab',
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          departments: [],
+        },
+      ],
+    };
+    const otherPayload: LabDetailPayload = {
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        _id: OTHER_SLUG,
+        slug: OTHER_SLUG,
+        name: 'Neighbor Example Lab',
+      },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
+    renderLabDetail(servedPayload, { savedResearchEntityIds: [DEFAULT_SLUG] });
+    const serveDefault = mockedAxios.get.getMockImplementation() as (url: string) => unknown;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === `/research/${OTHER_SLUG}`
+        ? Promise.resolve({ data: otherPayload })
+        : serveDefault(url),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved to Dashboard' }));
+    expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('link', { name: /Neighbor Example Lab/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Neighbor Example Lab' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(screen.queryByText(/Removed from your Dashboard/)).toBeNull();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+  });
+
   it('redirects an archived slug to the canonical entity slug', async () => {
     const OLD_SLUG = 'nsf-pi-archived-shell';
     const CANONICAL_SLUG = 'named-canonical-lab';
@@ -1056,7 +1128,7 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
-    expect(text).not.toMatch(/Advised \d+ undergrad/);
+    expect(text).not.toMatch(/advised (\d+ )?undergrad/i);
   });
 
   it.each([
@@ -3348,6 +3420,38 @@ describe('LabDetail display name unification', () => {
     expect(screen.getByRole('searchbox', { name: 'Search y/labs' })).toHaveValue(
       'missing example lab',
     );
+  });
+
+  it('asks for one fresh login instead of a retryable failure when the profile answers 401', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      if (url === `/research/${DEFAULT_SLUG}`) {
+        return Promise.reject({ response: { status: 401 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Your session needs a fresh login' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Log in with Yale' }).getAttribute('href')).toBe(
+      '/login',
+    );
+    expect(screen.queryByText(/Something went wrong loading this research profile/)).toBeNull();
   });
 
   it('offers an Explore Research recovery CTA when the profile fails to load for a non-404 reason', async () => {

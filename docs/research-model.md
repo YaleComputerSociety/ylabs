@@ -113,7 +113,8 @@ Classify a research home by observing `entityType`: a source that observes only 
 A live row also carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, one entry per archived row whose `canonicalGroupId` chain ends on it (#5148).
 It is derived rather than written by a lane: `research-entity:derive-survivor-aliases` (`server/src/services/researchEntityMergedFrom.ts`) reads every tombstone, flattens chains onto the final live survivor, credits nobody for a chain that cycles, points at a missing row, or ends on an archived row, and sets each survivor's list exactly, clearing it from a row left with none.
 It runs as the `survivor-alias-derivation` Development sweep stage, writes with `timestamps: false` because the field is neither served nor indexed, and a second run plans no write.
-It exists so Beta and Production can resolve an old slug or id from the live survivor once promotion stops copying archived rows; until a reader uses it, the tombstones stay the source of truth and `mergedFrom` changes no served output.
+Beta and Production hold no archived rows, so they resolve a merge from it: the old-slug redirect behind the API 302 and the page-shell 301 falls back to the one live, publicly servable row whose `mergedFrom.slug` matches, `research-plans:retarget-merged` moves a plan on an id no row carries to the survivor whose `mergedFrom.entityId` names it, and saved-plan status reports such a plan as merged.
+The Development-to-Beta copy re-derives the list at copy time rather than trusting the stored one, so a merge made after the last sweep still reaches Beta with its survivor's entry.
 On Development on 2026-10-18 it planned 3,640 entries on 1,850 survivors from 3,715 tombstones, 75 of which name no live survivor.
 
 ### `RoleAssignment` (`role_assignments`)
@@ -183,12 +184,14 @@ Each merge planner's dry run reports `researchPlanCarry` and `researchPlansThatW
 The department-roster shell fold runs inside materialization and has no dry run.
 
 A plan outlives its target, and the target's visibility is not the plan's to decide, so `/users/savedResearchEntities` returns two lists: the servable summaries, and `unavailableSavedResearchEntities`, one `{ _id, reason }` row per saved plan the first list cannot show.
-`REMOVED` means no `ResearchEntity` carries that id and the owner's only move is to remove the plan; `UNAVAILABLE` means the record exists and is archived, held by the visibility gate, or failing the public-description invariant, any of which a repair or a re-gate reverses, so the plan and its private notes are kept.
+`MERGED` means the record was folded into a live survivor, found through its tombstone or, where no row carries the id, through a survivor's `mergedFrom`.
+`RETIRED` means the record is archived with no live survivor, or no `ResearchEntity` carries that id and no survivor names it, and the owner's only move is to remove the plan; the two are one reason because Beta and Production hold no archived rows (#5148), so there a retired row and a deleted one look the same.
+`UNAVAILABLE` means the record exists and is held by the visibility gate or failing the public-description invariant, either of which a repair or a re-gate reverses, so the plan and its private notes are kept.
 Only the id and the reason are reported, never the record's name or copy, because the gate exists to keep exactly that text away from a student, and the owner already holds the id.
 Before #2174 both classes were dropped from the payload and from the saved count, so a student could not tell an item they had removed from one the corpus had stopped serving; 4,907 of 8,281 research-entity records sat in a state that would drop a saved plan that way when measured on 2026-09-22.
 The dashboard count is the number of plans the owner has rather than the number the list can render, so `SavedResearchPlans` reports `savedSlugs.length + unavailable.length`: counting only the servable half is what let the dashboard read "0 research plans" beside a notice about a plan it was holding back.
 The notice copy claims only that the student directory is not listing the row, never that the research home cannot be opened, because this gate is name-agnostic while `getResearchGroupDetail` resolves lead names, and #2597 measured 3 tier-admitted rows that fail here yet serve their own detail page.
-`REMOVED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable record to key it to, so no surface can read that note back.
+`RETIRED` promises nothing about the note: the plan row survives until the owner removes it, but with the target gone `getSavedResearchEntityPlans` has no servable record to key it to, so no surface can read that note back.
 A dedupe merge is the one removal path that relinks plans itself (`applyResearchEntityDedupeMergeGroup`), which is why repointing through the merged shell's `canonicalGroupId` tombstone is not a second mechanism here.
 
 ## Removed, Retired, And Frozen
@@ -210,7 +213,9 @@ A program whose served deadline is stale sits under no dates posted and in no ti
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
 An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
-The citizenship filter keeps a not-stated program, because unknown is not ineligible.
+The detail view says "not stated" for a missing year of study the same way (#5235).
+Every facet filter (year, term, purpose, region, citizenship) keeps a program that states no value for that facet, because unknown is not ineligible, and the filter says so (#5235).
+A program text's condition on international students' home country is shown under the citizenship answer (`programCitizenshipCondition`, #5235).
 Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
 When a program's own text ties exactly one date to the deadline and the served deadline's month and day appear nowhere in the text, the detail view says so and points to the official page, because the reader cannot tell which cycle each was written in (`programTextDeadlineConflict`, #5158).
 A projected or stale deadline is never flagged, because the page already labels it.
@@ -510,7 +515,7 @@ The embedded `User.favPathways` field declaration has since been dropped from th
 The `favListings` listing-favorites feature was likewise removed (#2010): its `/users/favListings*` endpoints, the generic favorite-objectid helper chain and `logFavoriteEvent` middleware, the client `useFavorites` listings kind and `favoritesReducer` listing state, and the `User.favListings` field are all gone; the `LISTING_*` analytics enums remain until the analytics listing surface is retired.
 All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; with the `User` model retired (#2014), no embedded planning fields remain in code (see [`ResearchPlan`](#researchplan-research_plans) for the human-gated #725 backfill of any legacy values in the orphaned `users` collection).
 
-Program watching (the dashboard's Watched programs tab and the `/programs` watch control) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
+Program watching (the dashboard's Watched programs tab and the `/programs` watch control) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection; `watchedPrograms?view=deadlines` narrows that projection to the id, title, and deadline fields the deadline banner reads.
 
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
 Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
@@ -568,8 +573,9 @@ It emits `joinPageUrl` on every complete read, empty when no page is admissible,
 At serve time an `APPLICATION_FORM_EXISTS` claim and its page stand or fall together: its excerpt only says a page was found, so when `getResearchGroupDetail` withholds the signal's link (a refused citation such as a people or members page, or a page known to be gone) it withholds the claim too, and the stored signal is kept (#4430).
 A programme-shaped page the admission keeps, the row's own website or its own department's programme, is served as the link through the same `isProgrammePageAdmittedAsJoinRoute` the admission uses, so a lab's own research-opportunities page is not withheld on a person row.
 
-Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
-The undergraduate quote fields are the exception: they keep the email addresses and phone numbers of the page they quote (`docs/decisions.md`, 2026-10-14).
+Scraped public text keeps the contact details its page publishes: the undergraduate quote fields, `Signal.source.excerpt`, program and fellowship prose and link labels, a row's ways in, grants and honors (`docs/decisions.md`, 2026-10-14; #5046).
+Research descriptions are the exception for now and still redact, and logs, analytics, admin input and config always do.
+A stored excerpt that still carries a legacy `[email redacted]` marker has that sentence dropped rather than served.
 The model reads redacted text, so `quoteWithPageContactsRestored` in `server/src/utils/quotedContactRestoration.ts` puts each one back from the quoted page.
 `redactDirectContactInfo` in `server/src/utils/contactRedaction.ts` is the one owner of that rule, and `sanitizeLogValue` reuses its phone arm.
 A phone number is redacted even when extracted HTML glues it to a label, as in "Phone" then the number or the number then "Fax", because the pattern is bounded by digit lookarounds rather than word boundaries (#3738).

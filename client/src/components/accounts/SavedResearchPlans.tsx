@@ -61,12 +61,12 @@ interface SavedResearchEntity {
 /**
  * A saved plan the list cannot show, reported by the server rather than dropped, so
  * a student can tell an entry they removed from one the corpus stopped
- * serving (#2174). `REMOVED` is terminal; `UNAVAILABLE` can be reversed by a repair
+ * serving (#2174). `RETIRED` is terminal; `UNAVAILABLE` can be reversed by a repair
  * or a re-gate, so its plan and private notes are worth keeping.
  */
 interface UnavailableSavedResearchEntity {
   _id: string;
-  reason: 'REMOVED' | 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
+  reason: 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 }
 
 /**
@@ -74,11 +74,10 @@ interface UnavailableSavedResearchEntity {
  * these reasons is name-agnostic while the detail page resolves lead names, so a
  * held row can still serve its own page (#2597). What is true of every row here is
  * that the student directory is not listing it, which is what the copy says.
- * `REMOVED` promises nothing about the note: the plan row survives until removal,
+ * `RETIRED` promises nothing about the note: the plan row survives until removal,
  * but with the target gone no surface can ever read the note back.
  */
 const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], string> = {
-  REMOVED: 'No longer in the directory, and it will not come back. Remove it to clear this item.',
   MERGED:
     'Combined with another listing for the same research. Your note moves to that listing at the next directory update.',
   RETIRED: 'No longer listed in the student directory. Remove it to clear this item.',
@@ -95,6 +94,9 @@ const MIN_COMPARE_ENTITIES = 2;
 const MAX_COMPARE_ENTITIES = 4;
 
 const entityDisplayName = (entity: SavedResearchEntity): string => researchEntityTitle(entity);
+
+const noteButtonVerb = (isEditing: boolean, note: string): string =>
+  isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note';
 
 const entitySubtitle = (entity: SavedResearchEntity): string => {
   const departments = (entity.departments || []).filter(Boolean);
@@ -576,13 +578,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                           setEditingId((current) => (current === entity._id ? null : entity._id))
                         }
                         aria-expanded={isEditing}
+                        aria-label={`${noteButtonVerb(isEditing, note)} for ${entityDisplayName(entity)}`}
                         className={`inline-flex min-h-[44px] items-center rounded-control border px-3 py-2 text-xs font-semibold transition-colors yr-focus-ring ${
                           note
                             ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
                             : 'border-[var(--yr-line)] text-muted hover:bg-[var(--yr-panel-muted)]'
                         }`}
                       >
-                        {isEditing ? 'Hide notes' : note ? 'Notes' : 'Add note'}
+                        {noteButtonVerb(isEditing, note)}
                       </button>
                       <Link
                         to={`/research/${safeRouteSegment(entity.slug)}`}
@@ -596,7 +599,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
                         onClick={() =>
                           unsavePlan(entity.slug, entity._id, entityDisplayName(entity))
                         }
-                        aria-label={`Remove ${entityDisplayName(entity)} from saved plans`}
+                        aria-label={`Unsave ${entityDisplayName(entity)}`}
                         className="inline-flex min-h-[44px] items-center rounded-control border border-[var(--yr-line)] px-3 py-2 text-xs font-semibold text-muted transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 yr-focus-ring"
                       >
                         Unsave

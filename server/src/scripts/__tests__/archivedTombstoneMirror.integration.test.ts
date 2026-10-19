@@ -4,9 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   archivedResearchEntityIds,
   carryDevelopmentArchive,
-  isSlimArchivedResearchEntity,
-  slimArchivedResearchEntity,
-  withSlimArchivedTombstones,
+  mergedFromBySurvivorAtCopyTime,
+  withLiveResearchRowsOnly,
+  withMergedFromAtCopyTime,
   type DevelopmentArchiveCarryReport,
 } from '../archivedTombstoneMirror';
 import {
@@ -46,7 +46,13 @@ async function seedDevelopment(db: Db): Promise<void> {
       archived: false,
       fullDescription: 'Live.',
     },
-    { _id: liveTwoId, slug: 'live-two', name: 'Live Two', archived: false },
+    {
+      _id: liveTwoId,
+      slug: 'live-two',
+      name: 'Live Two',
+      archived: false,
+      mergedFrom: [{ slug: 'stale-entry', entityId: new ObjectId() }],
+    },
     heavyArchived(mergedId, 'merged-lab', liveId),
     heavyArchived(retiredId, 'retired-lab'),
   ]);
@@ -69,9 +75,10 @@ async function seedDevelopment(db: Db): Promise<void> {
 const corpusCollections = () => collectionsForOptions({ includeObservations: false });
 
 async function syncDevelopmentToBeta(development: Db, beta: Db): Promise<void> {
-  const collections = withSlimArchivedTombstones(
+  const collections = withLiveResearchRowsOnly(
     corpusCollections(),
     await archivedResearchEntityIds(development),
+    await mergedFromBySurvivorAtCopyTime(development),
   );
   await applySync(development, beta, collections, [], async () => {
     expect(syncCountMismatches(await buildPlan(development, beta, collections))).toEqual([]);
@@ -101,28 +108,28 @@ async function syncBetaToDevelopment(
   return carry;
 }
 
-describe('slim archived tombstones (#5208)', () => {
-  it('reduces an archived row to its redirect fields and leaves a live row whole', () => {
-    const slim = slimArchivedResearchEntity(heavyArchived(mergedId, 'merged-lab', liveId));
-    expect(Object.keys(slim).sort()).toEqual(
-      [
-        '_id',
-        'archived',
-        'archivedAt',
-        'archivedReason',
-        'canonicalGroupId',
-        'name',
-        'schemaVersion',
-        'slug',
-      ].sort(),
-    );
-    expect(isSlimArchivedResearchEntity(slim)).toBe(true);
-    const live = { _id: liveId, slug: 'live-lab', archived: false, fullDescription: 'Live.' };
-    expect(slimArchivedResearchEntity(live)).toBe(live);
+describe('mergedFrom at copy time (#5148)', () => {
+  it('replaces a stored list with the derived one and drops a list the tombstones no longer back', () => {
+    const entry = { slug: 'merged-lab', entityId: mergedId };
+    const transform = withMergedFromAtCopyTime(new Map([[String(liveId), [entry]]]));
+    expect(
+      transform({
+        _id: liveId,
+        slug: 'live-lab',
+        mergedFrom: [{ slug: 'stale', entityId: retiredId }],
+      }),
+    ).toEqual({ _id: liveId, slug: 'live-lab', mergedFrom: [entry] });
+    expect(
+      transform({
+        _id: liveTwoId,
+        slug: 'live-two',
+        mergedFrom: [{ slug: 'stale', entityId: retiredId }],
+      }),
+    ).toEqual({ _id: liveTwoId, slug: 'live-two' });
   });
 });
 
-describe('Development, Beta and back with slim tombstones', () => {
+describe('Development, Beta and back with live rows only', () => {
   let replSet: MongoMemoryReplSet;
   let client: MongoClient;
   let development: Db;
@@ -146,14 +153,16 @@ describe('Development, Beta and back with slim tombstones', () => {
     await replSet?.stop();
   });
 
-  it('copies archived entities to Beta as slim tombstones and live entities in full', async () => {
-    const merged = await beta.collection('research_entities').findOne({ _id: mergedId });
-    const retired = await beta.collection('research_entities').findOne({ _id: retiredId });
+  it('copies only live entities to Beta, each survivor carrying its merged identities', async () => {
+    expect(await beta.collection('research_entities').countDocuments({ archived: true })).toBe(0);
+    expect(await beta.collection('research_entities').countDocuments({})).toBe(2);
     const live = await beta.collection('research_entities').findOne({ _id: liveId });
-    expect(isSlimArchivedResearchEntity(merged!)).toBe(true);
-    expect(merged).toMatchObject({ slug: 'merged-lab', canonicalGroupId: liveId });
-    expect(isSlimArchivedResearchEntity(retired!)).toBe(true);
     expect(live).toMatchObject({ fullDescription: 'Live.' });
+    expect(live?.mergedFrom).toEqual([
+      expect.objectContaining({ slug: 'merged-lab', entityId: mergedId }),
+    ]);
+    const liveTwo = await beta.collection('research_entities').findOne({ _id: liveTwoId });
+    expect(liveTwo?.mergedFrom).toBeUndefined();
   });
 
   it('keeps the rows that hang off archived entities in Development', async () => {
@@ -200,8 +209,8 @@ describe('Development, Beta and back with slim tombstones', () => {
       2,
     );
     expect(carry).toEqual({
-      archivedRowsRestored: 2,
-      archivedRowsInserted: 1,
+      archivedRowsRestored: 0,
+      archivedRowsInserted: 3,
       archivedRowsLiveInSource: 1,
       dependentRowsInserted: {
         signals: 1,

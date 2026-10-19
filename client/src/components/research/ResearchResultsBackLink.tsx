@@ -11,7 +11,7 @@ const isPlainPrimaryClick = (event: MouseEvent<HTMLAnchorElement>): boolean =>
   event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 
 const backLinkLabel = (resultsReturn: ResearchResultsReturn | null): string => {
-  if (!resultsReturn) return 'Browse research';
+  if (!resultsReturn) return 'Browse all research';
   return new URLSearchParams(resultsReturn.search).toString()
     ? 'Back to results'
     : 'Back to research';
@@ -34,7 +34,7 @@ const ResearchResultsBackLink = () => {
       onClick={returnThroughHistory}
       className="yr-link yr-focus-ring -ml-1 mb-1 flex min-h-11 w-fit items-center gap-1.5 rounded-control px-1 text-sm font-semibold sm:mb-2"
     >
-      <ArrowLeftIcon className="shrink-0" />
+      {resultsReturn && <ArrowLeftIcon className="shrink-0" />}
       {backLinkLabel(resultsReturn)}
     </Link>
   );

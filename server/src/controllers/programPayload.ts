@@ -1,4 +1,3 @@
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutContactDirections } from '../utils/contactDirection';
 import {
   sanitizeCatalogDescription,
@@ -15,6 +14,7 @@ import { programAudience } from '../services/programAudience';
 import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
 import { programTextDeadlineConflict } from '../utils/programDeadlineText';
 import { formatServedAwardAmount } from '../utils/awardAmountFormat';
+import { programCitizenshipCondition } from '../utils/programCitizenshipCondition';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -54,19 +54,16 @@ const publicProgramLinks = (
           const url = publicSpecificProgramUrl(record.url, sourceUrl);
           if (!url) return [];
           const humanLabel = humanizeProgramLinkLabel(rawLabel, url);
-          const label = humanLabel ? redactDirectContactInfo(humanLabel) : undefined;
+          const label = humanLabel || undefined;
           return [{ ...(label ? { label } : {}), url }];
         })
         .slice(0, MAX_PROGRAM_LINKS)
     : [];
 
-const publicProgramText = (value: unknown): unknown =>
-  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+const publicProgramText = (value: unknown): unknown => value;
 
 export const publicProgramDescription = (value: unknown): unknown =>
-  typeof value === 'string'
-    ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
-    : value;
+  typeof value === 'string' ? stripRedactionPlaceholders(sanitizeCatalogDescription(value)) : value;
 
 const publicCompensationSummary = (value: unknown): unknown => {
   const cleaned = publicProgramDescription(value);
@@ -74,9 +71,7 @@ const publicCompensationSummary = (value: unknown): unknown => {
 };
 
 const publicProgramTextArray = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
-    : [];
+  Array.isArray(value) ? value.flatMap((item) => (typeof item === 'string' ? [item] : [])) : [];
 
 const publicBestNextStep = (program: any): unknown => {
   const stored = publicProgramDescription(program.bestNextStep);
@@ -249,6 +244,13 @@ export const publicProgramForReader = (program: any) => {
     purpose: Array.isArray(program.purpose) ? program.purpose : [],
     globalRegions: Array.isArray(program.globalRegions) ? program.globalRegions : [],
     citizenshipStatus: Array.isArray(program.citizenshipStatus) ? program.citizenshipStatus : [],
+    citizenshipCondition:
+      programCitizenshipCondition([
+        servedProgramEligibility(program).value,
+        publicProgramDescription(program.description),
+        publicProgramDescription(program.applicationInformation),
+        publicProgramDescription(program.additionalInformation),
+      ]) ?? null,
     sourceName: publicProgramText(program.sourceName),
     sourceUrl: publicHttpUrl(program.sourceUrl),
     sourceLinkHealth: publicProgramSourceLinkHealth(program.sourceLinkHealth),

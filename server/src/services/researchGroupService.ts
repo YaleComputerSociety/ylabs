@@ -110,7 +110,6 @@ import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
 } from '../utils/researchEntityDeceasedLead';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
 import {
@@ -3571,9 +3570,7 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 const MAX_PUBLIC_DETAIL_TEXT_LENGTH = 5000;
 
 const publicString = (value: unknown): string | undefined =>
-  typeof value === 'string'
-    ? redactDirectContactInfo(value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH))
-    : undefined;
+  typeof value === 'string' ? value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH) : undefined;
 
 const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | undefined => {
   const url = publicHttpUrl(value);
@@ -3859,8 +3856,23 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
   });
 
   const canonicalSlug = typeof canonical?.slug === 'string' ? canonical.slug.trim() : '';
-  if (!canonicalSlug || canonicalSlug === normalizedSlug) return null;
-  return canonicalSlug;
+  if (canonicalSlug && canonicalSlug !== normalizedSlug) return canonicalSlug;
+  if (mergedShell) return null;
+  return servableSurvivorSlugByMergedFromSlug(normalizedSlug);
+}
+
+// Beta and Production carry no archived rows once promotion copies live rows only
+// (#5148), so an old slug is resolved from the survivor that lists it in `mergedFrom`.
+async function servableSurvivorSlugByMergedFromSlug(slug: string): Promise<string | null> {
+  const survivors = (await ResearchEntity.find({
+    'mergedFrom.slug': slug,
+    archived: { $ne: true },
+  })
+    .limit(2)
+    .lean()) as Array<Record<string, any>>;
+  if (survivors.length !== 1 || !isPubliclyServableCanonicalTarget(survivors[0])) return null;
+  const survivorSlug = String(survivors[0].slug).trim();
+  return survivorSlug === slug ? null : survivorSlug;
 }
 
 export type ResearchDetailWithholdingCheck =
