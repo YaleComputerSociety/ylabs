@@ -341,6 +341,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
       'Sheng Li',
       'Xi Chen',
       'Roxie Trachtenberg',
+      'Michael Adeyi',
+      'Christine Oberhausen',
+      'Daniel King',
+      'Ian Billinge',
     ],
   },
   {
@@ -618,6 +622,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Alumni:'],
+    withheldNames: ['Skylar McDermott', 'Edward Schildnecht'],
   },
   {
     researchEntityKey: 'dept-physics-david-moore',
@@ -939,6 +944,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Lab Alumni'],
+    withheldNames: ['Isaac Kaba'],
   },
   {
     researchEntityKey: 'ysm-faculty-shelli-feder',

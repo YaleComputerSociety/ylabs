@@ -3,6 +3,7 @@ import {
   isProposableSectionLabel,
   labSitePageLinks,
   officialRosterConfigSource,
+  pageOwnershipRefusal,
   proposeUndergradRosterConfig,
   renderUndergradRosterReviewSheet,
 } from '../proposeUndergradRosterConfigsCore';
@@ -104,6 +105,12 @@ describe('isProposableSectionLabel', () => {
     expect(isProposableSectionLabel('Lab Members', 'profile-grid')).toBe(true);
     expect(
       isProposableSectionLabel(
+        'Post Baccalaureate and Undergraduate Research Project Students',
+        'heading-list',
+      ),
+    ).toBe(true);
+    expect(
+      isProposableSectionLabel(
         'Research Assistants: Undergraduate Students',
         'yalesites-directory',
       ),
@@ -167,5 +174,72 @@ describe('labSitePageLinks', () => {
       'https://fixturelab.yale.edu/our-team',
       'https://www.fixturelab.yale.edu/lab-members-2',
     ]);
+  });
+});
+
+describe('pageOwnershipRefusal (#5245)', () => {
+  const teamPage = (title: string, body: string) =>
+    `<html><head><title>${title}</title></head><body><main><h2>Our Team</h2>${body}
+      <h2>Undergraduate Researchers</h2><ul><li>Ellis Juniper (2024-present)</li></ul>
+      <p>Part of Yale University.</p></main></body></html>`;
+
+  it("refuses a person's key on a lab page named after someone else the page lists", () => {
+    const html = teamPage(
+      'Team — Thistle Lab',
+      '<ul><li>Rowan Thistle, Principal Investigator</li><li>Avery Quill, Postdoctoral Fellow</li></ul>',
+    );
+    expect(
+      pageOwnershipRefusal(html, 'ysm-faculty-avery-quill', 'https://www.thistlelab.org/team'),
+    ).toBe('page-of-another-lab');
+    expect(
+      proposeUndergradRosterConfig(
+        html,
+        'ysm-faculty-avery-quill',
+        'https://www.thistlelab.org/team',
+        observedAt,
+      ),
+    ).toEqual({ kind: 'page-of-another-lab' });
+    expect(
+      pageOwnershipRefusal(html, 'ysm-faculty-rowan-thistle', 'https://www.thistlelab.org/team'),
+    ).toBeUndefined();
+  });
+
+  it('does not read a descriptive lab name or a lab-keyed row as another lab', () => {
+    const html = teamPage(
+      'Team — Uplift Lab',
+      '<ul><li>Rowan Thistle, Principal Investigator</li></ul>',
+    );
+    expect(
+      pageOwnershipRefusal(html, 'ysm-faculty-rowan-thistle', 'https://www.upliftlab.org/team'),
+    ).toBeUndefined();
+    expect(
+      pageOwnershipRefusal(
+        teamPage('Team — Thistle Lab', '<ul><li>Rowan Thistle, PI</li></ul>'),
+        'fixture-lab-ab12',
+        'https://www.thistlelab.org/team',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses an off-Yale page that never names Yale and keeps naming one other university', () => {
+    const html = `<html><head><title>Team — Fixture Lab</title></head><body><main>
+      <h2>Alumni</h2><ul>
+        <li>Avery Quill, Undergraduate in Bioengineering, University of Elsewhere</li>
+        <li>Harper Wren, undergraduate student at University of Elsewhere</li>
+        <li>Rowan Thistle, now a graduate student at University of Elsewhere</li>
+      </ul></main></body></html>`;
+    expect(
+      pageOwnershipRefusal(html, 'fixture-lab-ab12', 'https://fixturelab.example.com/team'),
+    ).toBe('page-of-another-institution');
+    expect(
+      pageOwnershipRefusal(
+        html.replace('<main>', '<main><p>A Yale lab.</p>'),
+        'fixture-lab-ab12',
+        'https://fixturelab.example.com/team',
+      ),
+    ).toBeUndefined();
+    expect(
+      pageOwnershipRefusal(html, 'fixture-lab-ab12', 'https://fixturelab.yale.edu/team'),
+    ).toBeUndefined();
   });
 });
