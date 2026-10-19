@@ -60,6 +60,7 @@ import {
   findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
+  isSameActionHost,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
@@ -566,8 +567,12 @@ const DecisionSummary = ({
   const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
   const activityCheckUrl = actionLinks.activityCheckUrl;
   const outboundNoteId = useId();
+  const joinLinkLeavesWebsite =
+    Boolean(joinPageLinkUrl) && !isSameActionHost(joinPageLinkUrl, websiteUrl);
   const outboundNote = showsWebsiteCta
-    ? `Opens the ${researchWebsiteLabel(group)} in a new tab, outside y/labs.`
+    ? joinLinkLeavesWebsite
+      ? `Opens the ${researchWebsiteLabel(group)}, or a page about joining on another site, in a new tab, outside y/labs.`
+      : `Opens the ${researchWebsiteLabel(group)} in a new tab, outside y/labs.`
     : showsProfileButton && !offersOrgEngagementPage && !applyPageUrl
       ? 'Opens the official Yale profile in a new tab, outside y/labs.'
       : getInvolvedHasOwnAction
@@ -808,9 +813,11 @@ const DecisionSummary = ({
                     href={directorySearchUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
                     Search the Yale Directory
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
               )}

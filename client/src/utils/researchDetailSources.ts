@@ -183,6 +183,11 @@ export const normalizeActionDestination = (url?: string | null): string | null =
   }
 };
 
+export const isSameActionHost = (first?: string | null, second?: string | null): boolean => {
+  const firstHost = normalizeActionDestination(first)?.split('/')[0];
+  return Boolean(firstHost) && firstHost === normalizeActionDestination(second)?.split('/')[0];
+};
+
 export const labelizeResearchDetailValue = (value?: string): string =>
   (value || 'Unknown')
     .replace(/([a-z])([A-Z])/g, '$1 $2')

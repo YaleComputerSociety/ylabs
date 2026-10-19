@@ -564,6 +564,9 @@ describe('LabDetail page', () => {
     expect(directoryLink.getAttribute('href')).toBe(
       'https://directory.yale.edu/?query=Sample%20Research%20Profile',
     );
+    expect(directoryLink).toHaveAccessibleDescription(
+      'Opens the Yale Directory in a new tab, outside y/labs.',
+    );
   });
 
   it('records no qualified action even when a stale payload names the opened route (#4581)', async () => {
@@ -1694,6 +1697,47 @@ describe('LabDetail page', () => {
       ['See how to join', JOIN_PAGE_URL],
     ]);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+  });
+
+  it('says the join link beside the website opens another site when it sits on a different host', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, JOIN_PAGE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const note =
+      'Opens the research website, or a page about joining on another site, in a new tab, outside y/labs.';
+    expect(
+      screen.getByRole('link', { name: 'Visit research website' }),
+    ).toHaveAccessibleDescription(note);
+    expect(screen.getByRole('link', { name: 'See how to join' })).toHaveAccessibleDescription(note);
+  });
+
+  it('names only the website for a join link beside it on the same host', async () => {
+    const sameHostJoinPageUrl = new URL('join-us', RESEARCH_WEBSITE_URL).toString();
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [OFFICIAL_PROFILE_URL, sameHostJoinPageUrl],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
+      sameHostJoinPageUrl,
+    );
+    expect(screen.getByRole('link', { name: 'See how to join' })).toHaveAccessibleDescription(
+      'Opens the research website in a new tab, outside y/labs.',
+    );
   });
 
   it('does not mark an official profile opened above when a join page takes the only action', async () => {
