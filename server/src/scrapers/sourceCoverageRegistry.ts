@@ -85,15 +85,6 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads the roster lane's stored profile biographies, keeps the present-tense research sentences of people whose title can host a student's research, and mints a faculty-research row with those sentences as writer evidence. Refuses past research, CV records, clinical-service and teaching-only sentences, students, trainees, staff, and anyone the corpus already covers by profile URL, person key, or name.",
   },
-  'center-member-profile-research': {
-    priority: 2,
-    tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['OFFICIAL_PROFILE'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      "Reads a center member's own profile page for the research statement and biography and emits them as researchSummary and bio writer evidence on the one LAB or FACULTY_RESEARCH_AREA row the member leads. Joins only through a centers-institutes-index membership edge with a recorded identity basis; skips a member who leads no such row or several. Mints nothing and asserts no website, contact, title, access, or opportunity evidence.",
-  },
   'directory-alias-resolution': {
     priority: 2,
     tier: 'DERIVED_OFFICIAL',
