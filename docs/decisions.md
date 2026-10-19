@@ -14,7 +14,7 @@ Measured on Development on 2026-10-19: of the 129 live research rows held on `mi
 Decided:
 
 - **Identity is matched before anything is minted, by the key's own address first and then the official profile page.**
-  The PI-key resolver follows the key's address to its sole live claimant even when the directory maps the alias to two netids, because the address is a per-person identifier and the alias map is not.
+  The PI-key resolver follows the key's address, and failing that its official profile page, to its sole live holder even when the directory maps the alias to two netids, because both are per-person identifiers and the alias map is not.
   The official-profile join also reads the page the engine itself stamps as `YALE_OFFICIAL`, not only a `/people/` or `/profile/` path, and two single-token names agree when they are the same name.
 - **A mint from an alias-shaped key requires every one of these, and each failure refuses with its own reason:** the key's own observed address is exactly `<alias>@yale.edu`; it is not a role or unit mailbox (#5332); the alias spells the name the roster prints, read with the nickname-aware comparator; no live researcher or account holds the address and no live researcher holds the official page; no other `user` key prints the address under a disagreeing name; #4388's rule that nobody else plausibly holds the name; and a live row names the key as its lead.
 - **The minted researcher carries `identifiers.email`, lowercased, and never the alias as a netid.**

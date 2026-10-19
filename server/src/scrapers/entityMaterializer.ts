@@ -3716,7 +3716,7 @@ export function userEntityKeyForInferredPiUserKey(value: unknown): string {
 
 async function userIdentityJoinForKey(
   userEntityKey: string,
-): Promise<UserIdentityJoinResult | undefined> {
+): Promise<{ join: UserIdentityJoinResult; observations: any[] } | undefined> {
   const read = await Observation.find({
     entityType: 'user',
     entityKey: userEntityKey,
@@ -3724,31 +3724,48 @@ async function userIdentityJoinForKey(
   }).lean();
   const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
   if (kept.length === 0) return undefined;
-  return joinUserIdentityToExistingResearcher({ entityKey: userEntityKey }, kept);
+  return {
+    join: await joinUserIdentityToExistingResearcher({ entityKey: userEntityKey }, kept),
+    observations: kept,
+  };
 }
 
 async function researcherReachedByUserIdentity(
   userEntityKey: string,
 ): Promise<{ researcherId: mongoose.Types.ObjectId; observedTitle?: string } | undefined> {
-  const join = await userIdentityJoinForKey(userEntityKey);
+  const join = (await userIdentityJoinForKey(userEntityKey))?.join;
   if (!join?.researcher?._id) return undefined;
   return { researcherId: join.researcher._id, observedTitle: join.title };
 }
 
 /**
- * The researcher a key's own observed address names: the sole live claimant of the email,
- * under a name that agrees with the one the key observes. The address is a per-person
- * identifier where the directory's alias map is not, so it still decides when that map
+ * The researcher a key's own per-person identifier names: the sole live claimant of the
+ * key's observed email, else the sole live holder of the official profile page it cites,
+ * either under a name that agrees with the one the key observes. Both are per-person
+ * identifiers where the directory's alias map is not, so they still decide when that map
  * names two netids for the alias (#2799 stops the netid and name walk there).
  */
-async function researcherIdentifiedByUserKeyEmail(
+async function researcherIdentifiedByUserKeyIdentifier(
   userEntityKey: string,
 ): Promise<{ researcherId: mongoose.Types.ObjectId; observedTitle?: string } | undefined> {
-  const join = await userIdentityJoinForKey(userEntityKey);
-  const observedEmail = normalizedAccountEmail(join?.resolved.email?.value);
-  if (!join || !observedEmail || !join.displayName) return undefined;
-  const researcher = await researcherTheObservedEmailNames(observedEmail, join.displayName);
-  return researcher?._id ? { researcherId: researcher._id, observedTitle: join.title } : undefined;
+  const read = await userIdentityJoinForKey(userEntityKey);
+  if (!read?.join.displayName) return undefined;
+  const { join, observations } = read;
+  const identified = (researcher: any) =>
+    researcher?._id ? { researcherId: researcher._id, observedTitle: join.title } : undefined;
+  const observedEmail = normalizedAccountEmail(join.resolved.email?.value);
+  const byEmail = observedEmail
+    ? await researcherTheObservedEmailNames(observedEmail, join.displayName)
+    : undefined;
+  if (byEmail) return identified(byEmail);
+  const pageHolder = await soleLiveResearcherClaimingOfficialProfileUrl(
+    officialProfileJoinUrlsFromObservations(
+      observations.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+    ),
+  );
+  return pageHolder && observedPersonNameAgreesWith(pageHolder.displayName, join.displayName)
+    ? identified(pageHolder)
+    : undefined;
 }
 
 async function namesAnotherPersonsLab(entityName: string, personName: string): Promise<boolean> {
@@ -3788,7 +3805,8 @@ async function researcherCanLeadEntity(
  *     profile page, full observed name), so the reclaim reaches the researcher the
  *     materializer already enriches for this key rather than reporting it unresolved.
  * An alias the directory maps to several netids still stops the walk, except that the key's
- * own observed address may still name its sole live claimant (`researcherIdentifiedByUserKeyEmail`).
+ * own observed address or official page may still name its sole live holder
+ * (`researcherIdentifiedByUserKeyIdentifier`).
  */
 async function resolveInferredPiUserKey(
   value: unknown,
@@ -3797,8 +3815,8 @@ async function resolveInferredPiUserKey(
   const asStored = await resolveInferredPiKeyIdentity(inferredPiUserKeyIdentity(value));
   if (asStored.status === 'matched') return asStored;
   const userKey = userEntityKeyForInferredPiUserKey(value);
-  const byKeyEmail = async (): Promise<ResearcherPersonNameResolution> => {
-    const identified = await researcherIdentifiedByUserKeyEmail(userKey);
+  const byKeyIdentifier = async (): Promise<ResearcherPersonNameResolution> => {
+    const identified = await researcherIdentifiedByUserKeyIdentifier(userKey);
     if (!identified) return asStored;
     const canLead = await researcherCanLeadEntity(
       identified.researcherId,
@@ -3807,10 +3825,10 @@ async function resolveInferredPiUserKey(
     );
     return canLead ? { status: 'matched', researcherId: identified.researcherId } : asStored;
   };
-  if (asStored.aliasNamesSeveralNetids) return byKeyEmail();
+  if (asStored.aliasNamesSeveralNetids) return byKeyIdentifier();
   if (userKey !== textValue(value)) {
     const asUserKey = await resolveInferredPiKeyIdentity(inferredPiUserKeyIdentity(userKey));
-    if (asUserKey.aliasNamesSeveralNetids) return byKeyEmail();
+    if (asUserKey.aliasNamesSeveralNetids) return byKeyIdentifier();
     if (asUserKey.status === 'matched' && asUserKey.researcherId) {
       return (await researcherCanLeadEntity(asUserKey.researcherId, await entityName()))
         ? asUserKey
@@ -7079,20 +7097,11 @@ async function materializeUserIdentityToResearcher(
       ? await netidForRosterEmailAlias(keyIdentity.netid)
       : undefined;
     const nameHeldByNobody = Boolean(displayName) && personNameHeldByNobody;
-    const aliasEmailMint =
-      nameHeldByNobody && keyIdentity.emailAliasName && !keyIdentity.name && !resolvedNetid
-        ? await rosterAliasEmailMintIdentity({
-            userEntityKey: attributionKey,
-            alias: keyIdentity.netid ?? '',
-            displayName,
-            observedEmail: normalizedAccountEmail(resolved.email?.value),
-            observations: obs.filter(
-              (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
-            ),
-          })
-        : undefined;
+    const mintsFromAliasEmail = Boolean(
+      keyIdentity.emailAliasName && !keyIdentity.name && !resolvedNetid,
+    );
     const resolvableBack =
-      Boolean(keyIdentity.name) || Boolean(resolvedNetid) || Boolean(aliasEmailMint);
+      Boolean(keyIdentity.name) || Boolean(resolvedNetid) || mintsFromAliasEmail;
     const namedAsLead =
       nameHeldByNobody &&
       resolvableBack &&
@@ -7100,6 +7109,17 @@ async function materializeUserIdentityToResearcher(
     if (!namedAsLead) {
       return skipped('directory-identity-without-research-signal');
     }
+    const aliasEmailMint = mintsFromAliasEmail
+      ? await rosterAliasEmailMintIdentity({
+          userEntityKey: attributionKey,
+          alias: keyIdentity.netid ?? '',
+          displayName,
+          observedEmail: normalizedAccountEmail(resolved.email?.value),
+          observations: obs.filter(
+            (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
+          ),
+        })
+      : undefined;
     if (aliasEmailMint?.status === 'refused') {
       return skipped(aliasEmailMint.reason);
     }

@@ -228,6 +228,26 @@ describe('materializeInferredPiMembership follows the user identity join', () =>
       expect(await leads(entity._id)).toHaveLength(0);
     });
 
+    it('follows the official page past an alias the directory maps to two netids', async () => {
+      const page = 'https://eng.example.yale.edu/people/odalys-fenwright';
+      const entity = await seedEntity('synthetic-page-ambiguous', 'Fenwright Lab');
+      const researcher = await Researcher.create({
+        displayName: 'Odalys Fenwright',
+        profile: { title: 'Professor of Engineering' },
+        profileLinks: [officialLink(page)],
+        archived: false,
+      });
+      await seedAliasMappedToTwoNetids('odalys.fenwright');
+      await seedUserName('netid:odalys.fenwright', 'Odalys', 'Fenwright');
+      await seedUserField('netid:odalys.fenwright', 'profileUrls', { departmental: page });
+
+      await materializeInferredPiMembership(String(entity._id), [piKey('netid:odalys.fenwright')]);
+
+      const found = await leads(entity._id);
+      expect(found).toHaveLength(1);
+      expect(String(found[0].personId)).toBe(String(researcher._id));
+    });
+
     it('joins the stamped official page a department keeps outside a /people/ path', async () => {
       const page = 'https://som.example.yale.edu/faculty-directory/odalys-fenwright';
       const entity = await seedEntity(
