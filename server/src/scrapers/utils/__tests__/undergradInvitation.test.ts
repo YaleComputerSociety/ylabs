@@ -40,6 +40,11 @@ describe('extractUndergradInvitation', () => {
     'We are currently hiring graduate students and postdocs; undergraduates are welcome to contact us.',
     'We are actively recruiting postdocs, but undergraduates are welcome to reach out about projects.',
     'We are currently hiring postdocs, and undergraduates are welcome to contact us.',
+    'We are always happy to welcome motivated undergraduates to the lab.',
+    'We welcome new undergraduate researchers each semester; please email the PI.',
+    'We welcome Undergraduates, Graduate Students and Postdocs to apply.',
+    'Undergraduates seeking research advising are welcome to email me.',
+    'Students who want to do their undergraduate senior thesis with the lab are welcome to email me.',
   ])('reads a standing invitation as welcomes undergrads: %s', (text) => {
     expect(level(text)).toBe('welcomes_undergrads');
   });

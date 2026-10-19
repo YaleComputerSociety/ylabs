@@ -16,7 +16,7 @@ const MAX_CLASSIFIED_CHARS = 650;
 const MAX_HEADING_CHARS = 40;
 
 const NOT_AN_AUDIENCE_MENTION =
-  /\bundergrad\w*\s+(?:degree|studies|study|education|courses?|program(?:me)?s?|majors?|teaching|curricul\w*|prizes?|admissions?|advis(?:er|or)s?|dean)\b|\bdirector\s+of\s+undergrad\w*|\b(?:teach|teaches|teaching|taught|lectur\w*)\b[^.]{0,80}\bundergrad|\b(?:during|after|through)\s+(?:(?:my|his|her|their|your)\s+)?undergrad|\b(?:my|his|her|their)\s+undergrad|\bundergrad\w*\s+teach|\bexperience\s+(?:comes\s+)?from\b[^.]{0,80}\bundergrad|\bas\s+an\s+undergrad\w*\b|\b(?:BA|BS|B\.A\.|B\.S\.)[-\s/]+(?:BS[-\s/]+)?MPH\b/i;
+  /\bundergrad\w*\s+(?:degree|studies|study|education|courses?|program(?:me)?s?|majors?|teaching|curricul\w*|prizes?|admissions?|advis(?:er|or)s?|dean)\b|\bdirector\s+of\s+undergrad\w*|\b(?:teach|teaches|teaching|taught|lectur\w*)\b[^.]{0,80}\bundergrad|\b(?:during|after|through)\s+(?:(?:my|his|her|their|your)\s+)?undergrad|\b(?:for|in|from)\s+(?:my|his|her|their|your)\s+undergrad|^\s*(?:my|his|her)\s+undergrad|\bundergrad\w*\s+teach|\bexperience\s+(?:comes\s+)?from\b[^.]{0,80}\bundergrad|\bas\s+an\s+undergrad\w*\b|\b(?:BA|BS|B\.A\.|B\.S\.)[-\s/]+(?:BS[-\s/]+)?MPH\b/i;
 
 const CLOSED_OR_DECLINED =
   /\b(?:no\s+longer|not\s+(?:currently\s+)?(?:accepting|recruiting|hiring|taking|seeking|looking)|(?:have|has)\s+(?:all\s+)?been\s+filled|(?:are|is)\s+(?:now\s+)?(?:filled|closed)|no\s+(?:open\s+)?(?:positions|openings|spots)|(?:unable|not\s+able)\s+to\s+(?:take|accept|host|supervise)|cannot\s+(?:take|accept|host|supervise)|do\s+not\s+(?:take|accept|host))\b/i;
@@ -25,12 +25,15 @@ const PAST_OR_DESCRIPTIVE =
   /\b(?:former|formerly|previously|alumni|alumnus|alumna|have\s+hosted|has\s+hosted|have\s+mentored|has\s+mentored|joined\s+the\s+lab)\b/i;
 
 const NEWS_ITEM =
-  /\b(?:delighted|pleased|happy|excited|thrilled|proud)\s+to\s+welcome\b|\bwelcomes?\s+(?:a\s+|our\s+)?(?:new|back)\b|\bwelcome\s+(?:to\s+)?(?:the\s+)?20\d\d\b|^\s*\d{1,2}\/\d{1,2}\/\d{2,4}\b/i;
+  /\bwelcom(?:e|es|ed)\s+(?:(?:a|our|the|new|back|incoming)\s+){0,3}(?:class|cohort|members?|scholars|fellows)\b|\bwelcome\s+(?:to\s+)?(?:the\s+)?20\d\d\b|^\s*\d{1,2}\/\d{1,2}\/\d{2,4}\b/i;
 
-const WELCOMES_A_NAMED_PERSON =
-  /\b[Ww]elcome\s+(?:to\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s*(?:[!,(]|$)/;
+const PERSON_NAME =
+  String.raw`(?!(?:Undergrad\w*|Graduates?|Students?|Postdoc\w*|Yale|Applicants?|Researchers?|All|Anyone|Everyone)\b)[A-Z][a-z]+`;
+const WELCOMES_A_NAMED_PERSON = new RegExp(
+  String.raw`\b[Ww]elcome\s+(?:to\s+)?(?:[a-z]+\s+){0,2}${PERSON_NAME}(?:\s+${PERSON_NAME})?\s*(?:[!,(]|\s+to\s+(?:the|our)\b|$)`,
+);
 
-const COURSE_ADVISING = /\b(?:in|about)\s+(?:their|his|her|my|our)\s+courses\b|\badvising\b/i;
+const COURSE_ADVISING = /\b(?:in|about)\s+(?:their|his|her|my|our)\s+courses\b/i;
 
 const ROSTER_ENTRY =
   /\b(?:first|second|third|fourth|senior|junior)[-\s]year\s+undergrad|\bclass\s+of\s+20\d\d\b|\b(?:is|was)\s+an?\s+(?:\w+\s+){0,2}undergrad\w*|\bbachelor\w*\s+(?:and|or|&)\s+master|,\s*undergrad\w*\s+at\s+(?:yale|the\s+university)\b/i;
