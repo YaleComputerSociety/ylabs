@@ -30,9 +30,19 @@ const roster = (overrides: Partial<LabRosterDisclosure> = {}): LabRosterDisclosu
 });
 
 describe('ResearchTeamSection', () => {
-  it('presents the observed date as a UTC calendar date', () => {
+  it('presents the observed date as a New York calendar date', () => {
     render(<ResearchTeamSection members={[member(1)]} roster={roster()} />);
-    expect(screen.getByText('Official roster observed Jul 14, 2026')).toBeTruthy();
+    expect(screen.getByText('Official roster observed Jul 13, 2026')).toBeTruthy();
+  });
+
+  it('keeps an evening observation in New York on its own day, not the next UTC day', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(1)]}
+        roster={roster({ observedAt: '2026-10-19T00:05:42.810Z' })}
+      />,
+    );
+    expect(screen.getByText('Official roster observed Oct 18, 2026')).toBeTruthy();
   });
 
   it('groups verified members by honest role and links only official public profiles', () => {

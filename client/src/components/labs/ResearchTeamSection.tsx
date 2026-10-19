@@ -5,6 +5,7 @@ import type {
   LabRosterDisclosure,
   LabRosterUndergraduate,
 } from '../../types/labDetail';
+import { formatNewYorkCalendarDate } from '../../utils/newYorkDate';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
 import { isCorroboratedPersonPageUrl } from '../../utils/yalePersonPagePrefix';
 import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvidence';
@@ -25,13 +26,6 @@ const OTHER_GROUPS: TeamGroup[] = [
 
 const displayName = (member: LabMember): string =>
   member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
-
-const observedLabel = (value?: string): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
-};
 
 const PAST_UNDERGRADUATES_SHOWN_FIRST = 6;
 
@@ -303,7 +297,7 @@ export default function ResearchTeamSection({
   const pastUndergraduateLines = undergraduateLines.filter((line) => line.status === 'past');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
-  const dateLabel = observedLabel(roster.observedAt);
+  const dateLabel = formatNewYorkCalendarDate(roster.observedAt);
 
   return (
     <section aria-labelledby="research-team-heading">
