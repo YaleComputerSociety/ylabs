@@ -9,7 +9,7 @@ import { classifyRecoverabilityForRecordIds } from './visibilityRecoverabilitySe
 import { isBlockingVisibilityReason } from './studentVisibilityGateService';
 import {
   isStudentVisibilitySignalReason,
-  partitionStudentVisibilityReasons,
+  STUDENT_VISIBILITY_EVIDENCE_REASONS,
 } from './studentVisibilityTier';
 import { buildSourceHealthReviewSummary } from '../scripts/sourceHealth';
 import { workPlannerSourcePolicies } from '../scrapers/workPlanner';
@@ -387,25 +387,41 @@ export type PromotionCopyDryRunArtifact =
       ageHours: number;
     };
 
-const reviewDecisionReasons = new Set([
-  'application_source_only',
-  'archive_review',
-  'duplicate_risk',
-  'exact_url_duplicate_risk',
-  'formalization_only',
-  'not_undergraduate_relevant',
+type OperatorQueueCollection = 'research' | 'programs';
+
+const reviewDecisionReasons = new Set(['application_source_only', 'formalization_only']);
+
+const programStudentReadyGatingReasons = new Set([
+  'missing_official_source',
+  'missing_application_route',
 ]);
 
-export function classifyOperatorQueueReason(reason: string): QueueKind {
+export function classifyOperatorQueueReason(
+  reason: string,
+  collection: OperatorQueueCollection = 'research',
+): QueueKind {
+  if (collection === 'programs' && programStudentReadyGatingReasons.has(reason)) return 'blocking';
   if (isStudentVisibilitySignalReason(reason)) return 'evidence';
   if (reviewDecisionReasons.has(reason)) return 'review';
   if (isBlockingVisibilityReason(reason)) return 'blocking';
   return 'review';
 }
 
-const sampleReasonSplit = (reasons: unknown) => {
-  const { blocking, signals } = partitionStudentVisibilityReasons(reasons);
-  return { blockerReasons: blocking, signalReasons: signals };
+export const splitOperatorSampleReasons = (
+  reasons: unknown,
+  collection: OperatorQueueCollection,
+) => {
+  const stored: string[] = Array.isArray(reasons)
+    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
+    : [];
+  return {
+    blockerReasons: stored.filter(
+      (reason) => classifyOperatorQueueReason(reason, collection) === 'blocking',
+    ),
+    signalReasons: stored.filter(
+      (reason) => classifyOperatorQueueReason(reason, collection) === 'evidence',
+    ),
+  };
 };
 
 export function summarizeDryRunPosture(runs: any[]) {
@@ -1859,7 +1875,12 @@ async function countByTier(model: any, match: Record<string, unknown>) {
   return normalizeTierCounts(rows);
 }
 
-async function reasonCounts(model: any, match: Record<string, unknown>, limit = 12) {
+async function reasonCounts(
+  model: any,
+  collection: OperatorQueueCollection,
+  match: Record<string, unknown>,
+  limit = 12,
+): Promise<Array<{ reason: string; count: number; kind: QueueKind }>> {
   const rows = await model.aggregate([
     { $match: match },
     { $unwind: '$studentVisibilityReasons' },
@@ -1871,7 +1892,7 @@ async function reasonCounts(model: any, match: Record<string, unknown>, limit = 
 
   return rows.map((row: { reason: string; count: number }) => ({
     ...row,
-    kind: classifyOperatorQueueReason(row.reason),
+    kind: classifyOperatorQueueReason(row.reason, collection),
   }));
 }
 
@@ -1939,7 +1960,7 @@ function compactResearchSample(row: any) {
     slug: row.slug || '',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
-    ...sampleReasonSplit(row.studentVisibilityReasons),
+    ...splitOperatorSampleReasons(row.studentVisibilityReasons, 'research'),
     sourceUrl: row.websiteUrl || row.sourceUrls?.[0] || '',
     summary: row.shortDescription || '',
   };
@@ -1952,7 +1973,7 @@ function compactProgramSample(row: any) {
     label: row.title || id || '[unknown program]',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
-    ...sampleReasonSplit(row.studentVisibilityReasons),
+    ...splitOperatorSampleReasons(row.studentVisibilityReasons, 'programs'),
     sourceUrl: row.sourceUrl || '',
     category: row.studentFacingCategory || '',
     summary: row.summary || '',
@@ -1961,15 +1982,15 @@ function compactProgramSample(row: any) {
 
 async function buildQueueSummaries() {
   const [researchReasons, programReasons] = await Promise.all([
-    reasonCounts(ResearchEntity, { archived: { $ne: true } }),
-    reasonCounts(Fellowship, { archived: false }),
+    reasonCounts(ResearchEntity, 'research', { archived: { $ne: true } }),
+    reasonCounts(Fellowship, 'programs', { archived: false }),
   ]);
 
   const researchQueues = await Promise.all(
-    researchReasons.slice(0, 8).map(async (row: { reason: string; count: number }) => ({
+    researchReasons.slice(0, 8).map(async (row) => ({
       collection: 'research' as const,
       reason: row.reason,
-      kind: classifyOperatorQueueReason(row.reason),
+      kind: row.kind,
       count: row.count,
       nextAction: researchReasonActions[row.reason] || 'Review samples and decide repair action.',
       samples: (await sampleResearch({ studentVisibilityReasons: row.reason })).map(
@@ -1979,10 +2000,10 @@ async function buildQueueSummaries() {
   );
 
   const programQueues = await Promise.all(
-    programReasons.slice(0, 8).map(async (row: { reason: string; count: number }) => ({
+    programReasons.slice(0, 8).map(async (row) => ({
       collection: 'programs' as const,
       reason: row.reason,
-      kind: classifyOperatorQueueReason(row.reason),
+      kind: row.kind,
       count: row.count,
       nextAction: programReasonActions[row.reason] || 'Review samples and decide repair action.',
       samples: (await samplePrograms({ studentVisibilityReasons: row.reason })).map(
@@ -2007,7 +2028,11 @@ async function buildQueueSummaries() {
     },
     queueKindCounts,
     discoveryCandidates: queues
-      .filter((queue) => queue.kind === 'evidence' || queue.reason.includes('official_source'))
+      .filter(
+        (queue) =>
+          STUDENT_VISIBILITY_EVIDENCE_REASONS.has(queue.reason) ||
+          queue.reason.includes('official_source'),
+      )
       .slice(0, 6)
       .map((queue) => ({
         collection: queue.collection,

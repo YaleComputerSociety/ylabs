@@ -6,6 +6,7 @@ import {
   deriveDataQualityGate,
   buildRecommendedNextActions,
   classifyOperatorQueueReason,
+  splitOperatorSampleReasons,
   derivePromotionStatus,
   readDataQualityGateArtifact,
   readScraperIntegrityGateArtifact,
@@ -30,15 +31,54 @@ describe('adminOperatorBoardService', () => {
     expect(classifyOperatorQueueReason('public_description_invariant_failed')).toBe('blocking');
     expect(classifyOperatorQueueReason('non_research_program')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
-    expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
     expect(classifyOperatorQueueReason('application_source_only')).toBe('review');
-    expect(classifyOperatorQueueReason('archive_review')).toBe('review');
-    expect(classifyOperatorQueueReason('duplicate_risk')).toBe('review');
-    expect(classifyOperatorQueueReason('exact_url_duplicate_risk')).toBe('review');
     expect(classifyOperatorQueueReason('concrete_next_step')).not.toBe('evidence');
     expect(classifyOperatorQueueReason('source_backed_description')).toBe('evidence');
     expect(classifyOperatorQueueReason('operator_override')).toBe('review');
+  });
+
+  it('classifies every canonical hard blocker as blocking, never review', () => {
+    for (const hard of [
+      'not_undergraduate_relevant',
+      'archive_review',
+      'duplicate_risk',
+      'exact_url_duplicate_risk',
+    ]) {
+      expect(classifyOperatorQueueReason(hard)).toBe('blocking');
+      expect(classifyOperatorQueueReason(hard, 'programs')).toBe('blocking');
+    }
+  });
+
+  it('keeps the reasons the program tier still gates on as program blockers', () => {
+    for (const gating of ['missing_official_source', 'missing_application_route']) {
+      expect(classifyOperatorQueueReason(gating, 'programs')).toBe('blocking');
+      expect(classifyOperatorQueueReason(gating, 'research')).toBe('evidence');
+    }
+  });
+
+  it('splits sample reasons with the same classification as the queue lanes', () => {
+    const reasons = [
+      'missing_lead',
+      'formalization_only',
+      'application_source_only',
+      'operator_override',
+      'missing_official_source',
+      'official_source',
+      'missing_lead',
+    ];
+    expect(splitOperatorSampleReasons(reasons, 'research')).toEqual({
+      blockerReasons: ['missing_lead'],
+      signalReasons: ['missing_official_source', 'official_source'],
+    });
+    expect(splitOperatorSampleReasons(reasons, 'programs')).toEqual({
+      blockerReasons: ['missing_lead', 'missing_official_source'],
+      signalReasons: ['official_source'],
+    });
+    expect(splitOperatorSampleReasons(undefined, 'research')).toEqual({
+      blockerReasons: [],
+      signalReasons: [],
+    });
   });
 
   it('classifies every soft student_ready signal as a signal, never a blocker', () => {

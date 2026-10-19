@@ -1894,7 +1894,7 @@ The first control-plane slice is the admin Operator Board. It remains read-only 
 
 - source readiness from seeded `Source` rows, recent `ScrapeRun` posture, expected artifacts, and next actions
 - latest dry-run and write-run posture so operators can see whether Mongo writes need a follow-up Meili rebuild
-- review queues split into repair blockers, review signals, and positive evidence or soft enrichment signals, classified on the server from the canonical taxonomy (`isStudentVisibilitySignalReason` and `isBlockingVisibilityReason`), with each sample carrying its own `blockerReasons` and `signalReasons` so the client never classifies a reason itself (#5343)
+- review queues split into repair blockers, review signals, and positive evidence or soft enrichment signals, classified on the server from the canonical taxonomy (`isStudentVisibilitySignalReason` and `isBlockingVisibilityReason`), except that program queues keep `missing_official_source` and `missing_application_route` as blockers because the program tier still gates on them, with each sample carrying its own `blockerReasons` and `signalReasons` so the client never classifies a reason itself (#5343)
 - release queue pressure from held visibility records, grouped by blocker and source
 - discovery candidates from high-signal evidence queues that may be promotable after review
 - WorkPlanner freshness policies for broad, paid, API-limited, or stale-sensitive sources
