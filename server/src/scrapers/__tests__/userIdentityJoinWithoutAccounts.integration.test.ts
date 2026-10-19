@@ -76,7 +76,7 @@ describe('the user identity join reads researcher identifiers when no account ex
   it('reaches nobody through a key minted from the mailbox of the unit whose pages it cites', async () => {
     await Researcher.create({
       displayName: 'Rowan Synthetic',
-      identifiers: { netid: 'fixtureunit', email: 'fixtureunit@yale.edu' },
+      identifiers: { netid: 'fixtureunit', email: 'fixture.contact@yale.edu' },
     });
     const key = 'netid:fixtureunit';
     const unitPage = (field: string, value: unknown) => ({
@@ -85,7 +85,7 @@ describe('the user identity join reads researcher identifiers when no account ex
     });
     const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [
       unitPage('netid', 'fixtureunit'),
-      unitPage('email', 'fixtureunit@yale.edu'),
+      unitPage('email', 'fixture.contact@yale.edu'),
       unitPage('fname', 'Rowan'),
       unitPage('lname', 'Synthetic'),
     ]);

@@ -5767,10 +5767,10 @@ describe('collapseLaneOutcomesByDepartment', () => {
 
 describe('department roster refuses office mailboxes as a person email', () => {
   const lane = (entries: FacultyEntry[]): DeptConfig => ({
-    deptKey: 'physics',
-    deptName: 'Physics',
+    deptKey: 'fixture',
+    deptName: 'Fixture Studies',
     schoolName: 'Yale Faculty of Arts and Sciences',
-    url: 'https://physics.yale.edu/people',
+    url: 'https://fixture.yale.edu/people',
     paginated: false,
     extractor: () => entries,
   });
@@ -5787,9 +5787,9 @@ describe('department roster refuses office mailboxes as a person email', () => {
 
   it('never keys a person by the unit mailbox printed on their profile', async () => {
     const userObs = await run([
-      { name: 'Ann Alpha', email: 'physics@yale.edu', title: 'Professor of Physics' },
+      { name: 'Ann Alpha', email: 'fixture@yale.edu', title: 'Professor of Physics' },
     ]);
-    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['dept:physics:ann-alpha']));
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['dept:fixture:ann-alpha']));
     expect(userObs.some((o) => o.field === 'email' || o.field === 'netid')).toBe(false);
   });
 
@@ -5799,16 +5799,16 @@ describe('department roster refuses office mailboxes as a person email', () => {
       { name: 'Bob Beta', email: 'zz901@yale.edu', title: 'Professor of Physics' },
     ]);
     expect(new Set(userObs.map((o) => o.entityKey))).toEqual(
-      new Set(['dept:physics:ann-alpha', 'dept:physics:bob-beta']),
+      new Set(['dept:fixture:ann-alpha', 'dept:fixture:bob-beta']),
     );
     expect(userObs.some((o) => o.field === 'email')).toBe(false);
   });
 
   it('still keys a person by their own address', async () => {
     const userObs = await run([
-      { name: 'Ann Alpha', email: 'ann.alpha@yale.edu', title: 'Professor of Physics' },
+      { name: 'Ann Fixture', email: 'ann.fixture@yale.edu', title: 'Professor of Physics' },
     ]);
-    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['netid:ann.alpha']));
+    expect(new Set(userObs.map((o) => o.entityKey))).toEqual(new Set(['netid:ann.fixture']));
   });
 });
 

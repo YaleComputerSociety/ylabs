@@ -122,17 +122,17 @@ describe('isPhotoSceneDescription', () => {
 });
 
 describe('isRoleOrUnitMailbox', () => {
-  const physicsPage = yaleUnitMailboxTokens(['https://physics.yale.edu/profile/ann-alpha']);
+  const fixturePage = yaleUnitMailboxTokens(['https://fixture.yale.edu/profile/ann-fixture']);
 
   it('refuses an address that is only the name of the unit whose page printed it', () => {
-    expect(isRoleOrUnitMailbox('physics@yale.edu', physicsPage)).toBe(true);
-    expect(isRoleOrUnitMailbox('mailto:Physics@yale.edu', physicsPage)).toBe(true);
+    expect(isRoleOrUnitMailbox('fixture@yale.edu', fixturePage)).toBe(true);
+    expect(isRoleOrUnitMailbox('mailto:Fixture@yale.edu', fixturePage)).toBe(true);
   });
 
   it('refuses an address whose local part names an office role, with no unit context', () => {
-    expect(isRoleOrUnitMailbox('unitx.dus@yale.edu')).toBe(true);
-    expect(isRoleOrUnitMailbox('dgs-unitx@yale.edu')).toBe(true);
-    expect(isRoleOrUnitMailbox('registrar@yale.edu')).toBe(true);
+    expect(isRoleOrUnitMailbox('fixture.dus@yale.edu')).toBe(true);
+    expect(isRoleOrUnitMailbox('dgs-fixture@yale.edu')).toBe(true);
+    expect(isRoleOrUnitMailbox('registrar.fixture@yale.edu')).toBe(true);
   });
 
   it('reads unit names the caller holds as well as the page host', () => {
@@ -141,23 +141,25 @@ describe('isRoleOrUnitMailbox', () => {
   });
 
   it('keeps a person-shaped address on a unit page', () => {
-    expect(isRoleOrUnitMailbox('ann.alpha@yale.edu', physicsPage)).toBe(false);
-    expect(isRoleOrUnitMailbox('aa123@yale.edu', physicsPage)).toBe(false);
+    expect(isRoleOrUnitMailbox('ann.fixture@yale.edu', fixturePage)).toBe(false);
+    expect(isRoleOrUnitMailbox('aa123@yale.edu', fixturePage)).toBe(false);
   });
 
   it('says nothing about a unit name without unit evidence, or about a non-Yale address', () => {
-    expect(isRoleOrUnitMailbox('physics@yale.edu')).toBe(false);
-    expect(isRoleOrUnitMailbox('physics@example.org', physicsPage)).toBe(false);
+    expect(isRoleOrUnitMailbox('fixture@yale.edu')).toBe(false);
+    expect(isRoleOrUnitMailbox('fixture@example.org', fixturePage)).toBe(false);
   });
 
   it('takes no unit evidence from a non-Yale host', () => {
-    expect(yaleUnitMailboxTokens(['https://physics.example.org/x']).size).toBe(0);
+    expect(yaleUnitMailboxTokens(['https://fixture.example.org/x']).size).toBe(0);
   });
 });
 
 describe('isLikelyPersonSpecificYaleEmail refuses role mailboxes', () => {
   it('refuses a unit role mailbox printed next to a faculty name', () => {
-    expect(isLikelyPersonSpecificYaleEmail('unitx.dus@yale.edu', 'Ann Alpha')).toBe(false);
-    expect(isLikelyPersonSpecificYaleEmail('registrar@yale.edu', 'Ann Alpha')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('fixture.dus@yale.edu', 'Ann Fixture')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('registrar.fixture@yale.edu', 'Ann Fixture')).toBe(
+      false,
+    );
   });
 });

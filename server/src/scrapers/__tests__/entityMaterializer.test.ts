@@ -570,7 +570,7 @@ describe('entityMaterializer post-materialization metrics', () => {
         value,
       });
     expect(lead('netid:fixtureunit')).toBe(true);
-    expect(lead('fixtureunit.dus@yale.edu')).toBe(true);
+    expect(lead('fixture.dus@yale.edu')).toBe(true);
     expect(lead('netid:rowan.synthetic')).toBe(false);
     expect(lead('dept:fixtureunit:rowan-synthetic')).toBe(false);
   });

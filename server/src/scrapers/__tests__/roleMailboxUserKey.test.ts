@@ -20,10 +20,7 @@ describe('userKeyNamesRoleOrUnitMailbox', () => {
 
   it('flags a role-word key whatever its pages', () => {
     expect(
-      userKeyNamesRoleOrUnitMailbox(
-        'netid:unitx.dus',
-        personObservations('https://example.org/x'),
-      ),
+      userKeyNamesRoleOrUnitMailbox('netid:unitx.dus', personObservations('https://example.org/x')),
     ).toBe(true);
   });
 
@@ -40,9 +37,9 @@ describe('userKeyNamesRoleOrUnitMailbox', () => {
     expect(userKeyNamesRoleOrUnitMailbox('netid:aa123', personObservations(unitProfile))).toBe(
       false,
     );
-    expect(
-      userKeyNamesRoleOrUnitMailbox('netid:ann.alpha', personObservations(unitProfile)),
-    ).toBe(false);
+    expect(userKeyNamesRoleOrUnitMailbox('netid:ann.alpha', personObservations(unitProfile))).toBe(
+      false,
+    );
     expect(
       userKeyNamesRoleOrUnitMailbox('dept:physics:ann-alpha', personObservations(unitProfile)),
     ).toBe(false);
@@ -64,8 +61,6 @@ describe('inferredPiKeyNamesRoleOrUnitMailbox', () => {
     };
     expect(inferredPiKeyNamesRoleOrUnitMailbox('netid:physics', observation)).toBe(true);
     expect(inferredPiKeyNamesRoleOrUnitMailbox('netid:ann.alpha', observation)).toBe(false);
-    expect(inferredPiKeyNamesRoleOrUnitMailbox('dept:physics:ann-alpha', observation)).toBe(
-      false,
-    );
+    expect(inferredPiKeyNamesRoleOrUnitMailbox('dept:physics:ann-alpha', observation)).toBe(false);
   });
 });
