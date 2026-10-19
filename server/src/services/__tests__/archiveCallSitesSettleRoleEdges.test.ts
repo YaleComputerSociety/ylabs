@@ -105,6 +105,7 @@ describe('every research-entity archive settles its role edges and access signal
     expect(callers).toEqual(
       [
         'scrapers/entityMaterializer.ts',
+        'scrapers/rosterMintWithdrawal.ts',
         'scripts/mergeSameLeadDuplicateGroups.ts',
         'scripts/portGrantShellsToFacultyProfiles.ts',
         'scripts/retireDeadCitationResearchEntities.ts',
