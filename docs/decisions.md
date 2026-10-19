@@ -17,6 +17,7 @@ Decided:
   A survivor that states its own never takes a loser's, so a merge cannot put a second person beside the lead its own lane read; every other identity field stays the survivor's own.
 - **The person-mint gate counts a merged-in loser's attribution as its survivor's** under the same condition, because the archived loser was the only row naming the person and the mint refused it as a dead entity's word.
 - It is a derivation on every resolve: no field is written outside the ordinary projection and nothing is locked.
+
 ## 2026-10-18: A Lab Page That Invites Undergraduates Earns A Quoted Badge (#5288)
 
 The owner chose a three-step scale for how strongly a lab invites undergraduates, with no badge at the default step.
