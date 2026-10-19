@@ -166,7 +166,10 @@ export class CenterMemberProfileResearchScraper implements IScraper {
       live: await loadLiveProfileTextRows(),
       reads,
       rosterProfileUrls,
-      attachedEntityIds: new Set(plan.observations.map((obs) => String(obs.entityId))),
+      keptEntityIds: new Set([
+        ...plan.observations.map((obs) => String(obs.entityId)),
+        ...plan.undecidedEntityIds,
+      ]),
     });
     const observations = [...plan.observations, ...retractions].filter(
       (obs) => !only || only.has(String(obs.entityKey)),

@@ -81,52 +81,66 @@ export type CenterMemberProfileSkip =
   | 'leads-no-research-row'
   | 'leads-several-research-rows'
   | 'row-led-by-several-members'
-  | 'row-has-a-fuller-profile';
+  | 'row-has-an-unread-profile'
+  | 'row-has-several-profiles';
 
 export interface CenterMemberProfilePlan {
   observations: ObservationInput[];
   emittedRows: number;
+  undecidedEntityIds: ReadonlySet<string>;
   skipped: Record<CenterMemberProfileSkip, number>;
 }
 
-const FIELD_VALUE: Record<
-  (typeof CENTER_MEMBER_PROFILE_RESEARCH_FIELDS)[number],
-  keyof CenterMemberProfileText
-> = {
+type ProfileTextField = (typeof CENTER_MEMBER_PROFILE_RESEARCH_FIELDS)[number];
+
+const FIELD_VALUE: Record<ProfileTextField, keyof CenterMemberProfileText> = {
   [RESEARCH_STATEMENT_FIELD]: 'researchStatement',
   [BIOGRAPHY_FIELD]: 'biography',
 };
 
-export function profileTextObservations(
+function profileFieldObservation(
   row: Pick<PersonalResearchRow, 'entityId' | 'slug'>,
+  field: ProfileTextField,
   profileUrl: string,
   text: CenterMemberProfileText,
-): ObservationInput[] {
+): ObservationInput {
   const base = {
     entityType: 'researchEntity' as const,
     entityId: row.entityId,
     entityKey: row.slug,
     sourceUrl: profileUrl,
   };
-  return CENTER_MEMBER_PROFILE_RESEARCH_FIELDS.map((field) => {
-    const value = text[FIELD_VALUE[field]];
-    return value
-      ? { ...base, field, value }
-      : { ...base, field, value: '', assertsNoValueFor: [field] };
-  });
+  const value = text[FIELD_VALUE[field]];
+  return value
+    ? { ...base, field, value }
+    : { ...base, field, value: '', assertsNoValueFor: [field] };
 }
 
-const profileTextLength = (read: CenterMemberProfileRead): number =>
-  (read.text?.researchStatement?.length ?? 0) + (read.text?.biography?.length ?? 0);
+export function profileTextObservations(
+  row: Pick<PersonalResearchRow, 'entityId' | 'slug'>,
+  profileUrl: string,
+  text: CenterMemberProfileText,
+): ObservationInput[] {
+  return CENTER_MEMBER_PROFILE_RESEARCH_FIELDS.map((field) =>
+    profileFieldObservation(row, field, profileUrl, text),
+  );
+}
 
-// The two fields are latest-wins for this source, so a row read from two center profiles
-// keeps exactly one page, chosen the same way on every run.
-function profileReadOutranks(
-  candidate: CenterMemberProfileRead,
-  incumbent: CenterMemberProfileRead,
-): boolean {
-  const lengthDelta = profileTextLength(candidate) - profileTextLength(incumbent);
-  return lengthDelta !== 0 ? lengthDelta > 0 : candidate.profileUrl < incumbent.profileUrl;
+const fieldLength = (read: CenterMemberProfileRead, field: ProfileTextField): number =>
+  read.text?.[FIELD_VALUE[field]]?.length ?? 0;
+
+// The two fields are latest-wins for this source, so each field of a row read from several
+// center profiles comes from exactly one page, chosen the same way on every run.
+function fullestReadFor(
+  field: ProfileTextField,
+  reads: readonly CenterMemberProfileRead[],
+): CenterMemberProfileRead {
+  return reads.reduce((best, read) => {
+    const lengthDelta = fieldLength(read, field) - fieldLength(best, field);
+    return lengthDelta > 0 || (lengthDelta === 0 && read.profileUrl < best.profileUrl)
+      ? read
+      : best;
+  });
 }
 
 /**
@@ -147,7 +161,8 @@ export function planCenterMemberProfileResearch(input: {
     'leads-no-research-row': 0,
     'leads-several-research-rows': 0,
     'row-led-by-several-members': 0,
-    'row-has-a-fuller-profile': 0,
+    'row-has-an-unread-profile': 0,
+    'row-has-several-profiles': 0,
   };
   const peopleByProfileUrl = new Map<string, Set<string>>();
   for (const join of input.joins) {
@@ -165,49 +180,60 @@ export function planCenterMemberProfileResearch(input: {
     leaders.add(row.personId);
     leadersByRow.set(row.entityId, leaders);
   }
+  const rowReachedBy = (profileUrl: string): PersonalResearchRow | CenterMemberProfileSkip => {
+    const people = [...(peopleByProfileUrl.get(profileUrl) ?? [])];
+    if (people.length === 0) return 'no-identity-joined-member';
+    if (people.length > 1) return 'ambiguous-member';
+    const rows = [...(rowsByPerson.get(people[0])?.values() ?? [])];
+    if (rows.length === 0) return 'leads-no-research-row';
+    if (rows.length > 1) return 'leads-several-research-rows';
+    if ((leadersByRow.get(rows[0].entityId)?.size ?? 0) > 1) return 'row-led-by-several-members';
+    return rows[0];
+  };
 
-  const chosenByRow = new Map<
+  const readProfileUrls = new Set(
+    input.reads.filter((read) => read.text).map((read) => read.profileUrl),
+  );
+  const undecidedEntityIds = new Set<string>();
+  for (const profileUrl of peopleByProfileUrl.keys()) {
+    if (readProfileUrls.has(profileUrl)) continue;
+    const reached = rowReachedBy(profileUrl);
+    if (typeof reached !== 'string') undecidedEntityIds.add(reached.entityId);
+  }
+
+  const readsByRow = new Map<
     string,
-    { row: PersonalResearchRow; read: CenterMemberProfileRead }
+    { row: PersonalResearchRow; reads: CenterMemberProfileRead[] }
   >();
   for (const read of input.reads) {
     if (!read.text) {
       skipped['profile-unread'] += 1;
       continue;
     }
-    const people = [...(peopleByProfileUrl.get(read.profileUrl) ?? [])];
-    if (people.length === 0) {
-      skipped['no-identity-joined-member'] += 1;
+    const reached = rowReachedBy(read.profileUrl);
+    if (typeof reached === 'string') {
+      skipped[reached] += 1;
       continue;
     }
-    if (people.length > 1) {
-      skipped['ambiguous-member'] += 1;
+    if (undecidedEntityIds.has(reached.entityId)) {
+      skipped['row-has-an-unread-profile'] += 1;
       continue;
     }
-    const rows = [...(rowsByPerson.get(people[0])?.values() ?? [])];
-    if (rows.length === 0) {
-      skipped['leads-no-research-row'] += 1;
-      continue;
+    const candidates = readsByRow.get(reached.entityId);
+    if (candidates) {
+      skipped['row-has-several-profiles'] += 1;
+      candidates.reads.push(read);
+    } else {
+      readsByRow.set(reached.entityId, { row: reached, reads: [read] });
     }
-    if (rows.length > 1) {
-      skipped['leads-several-research-rows'] += 1;
-      continue;
-    }
-    if ((leadersByRow.get(rows[0].entityId)?.size ?? 0) > 1) {
-      skipped['row-led-by-several-members'] += 1;
-      continue;
-    }
-    const chosen = chosenByRow.get(rows[0].entityId);
-    if (chosen) {
-      skipped['row-has-a-fuller-profile'] += 1;
-      if (!profileReadOutranks(read, chosen.read)) continue;
-    }
-    chosenByRow.set(rows[0].entityId, { row: rows[0], read });
   }
-  const observations = [...chosenByRow.values()].flatMap(({ row, read }) =>
-    profileTextObservations(row, read.profileUrl, read.text ?? {}),
+  const observations = [...readsByRow.values()].flatMap(({ row, reads }) =>
+    CENTER_MEMBER_PROFILE_RESEARCH_FIELDS.map((field) => {
+      const read = fullestReadFor(field, reads);
+      return profileFieldObservation(row, field, read.profileUrl, read.text ?? {});
+    }),
   );
-  return { observations, emittedRows: chosenByRow.size, skipped };
+  return { observations, emittedRows: readsByRow.size, undecidedEntityIds, skipped };
 }
 
 /**
@@ -219,14 +245,14 @@ export function staleProfileTextRetractions(input: {
   live: readonly LiveProfileTextRow[];
   reads: readonly CenterMemberProfileRead[];
   rosterProfileUrls: ReadonlySet<string>;
-  attachedEntityIds: ReadonlySet<string>;
+  keptEntityIds: ReadonlySet<string>;
 }): ObservationInput[] {
   const readProfileUrls = new Set(
     input.reads.filter((read) => read.text).map((read) => read.profileUrl),
   );
   const retracted = new Set<string>();
   return input.live.flatMap((row) => {
-    if (input.attachedEntityIds.has(row.entityId) || retracted.has(row.entityId)) return [];
+    if (input.keptEntityIds.has(row.entityId) || retracted.has(row.entityId)) return [];
     if (input.rosterProfileUrls.has(row.profileUrl) && !readProfileUrls.has(row.profileUrl)) {
       return [];
     }

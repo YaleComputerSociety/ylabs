@@ -225,7 +225,7 @@ describe(
       expect(statements.map((obs) => obs.value)).toEqual([STATEMENT]);
     });
 
-    it('keeps one profile for a row that two of its member centers both describe', async () => {
+    it('takes each field from the member center page that carries it', async () => {
       await membership(joinedPerson, COWLES, 'identity-evidence');
       const longer = `${STATEMENT} The member also studies how synthetic panels change estimates of policy effects over long horizons.`;
       await runLane({
@@ -235,8 +235,25 @@ describe(
         [COWLES]: cowlesProfileHtml(longer),
       });
       const live = await liveTexts();
-      expect(new Set(live.map((obs) => obs.sourceUrl))).toEqual(new Set([COWLES]));
-      expect(live.find((obs) => obs.field === 'bio')?.value).toBe(longer);
+      const statement = live.find((obs) => obs.field === 'researchSummary');
+      const biography = live.find((obs) => obs.field === 'bio');
+      expect([statement?.value, statement?.sourceUrl]).toEqual([STATEMENT, JOINED]);
+      expect([biography?.value, biography?.sourceUrl]).toEqual([longer, COWLES]);
+    });
+
+    it('changes nothing on a row while one of its member center pages is unread', async () => {
+      await membership(joinedPerson, COWLES, 'identity-evidence');
+      const longer = `${STATEMENT} The member also studies how synthetic panels change estimates of policy effects over long horizons.`;
+      const pages = {
+        [NAME_ONLY]: profileHtml(),
+        [UNLED]: profileHtml(),
+        [COWLES]: cowlesProfileHtml(longer),
+      };
+      await runLane({ ...pages, [JOINED]: profileHtml(STATEMENT) });
+      const before = await liveTexts();
+      const emitted = await runLane(pages);
+      expect(emitted.filter((obs) => String(obs.entityId) === String(rowId))).toEqual([]);
+      expect(await liveTexts()).toEqual(before);
     });
   },
 );

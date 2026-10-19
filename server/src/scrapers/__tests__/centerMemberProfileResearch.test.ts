@@ -185,7 +185,7 @@ describe('staleProfileTextRetractions', () => {
       live,
       reads: [{ profileUrl: PROFILE, text: { biography: BIOGRAPHY } }],
       rosterProfileUrls: roster,
-      attachedEntityIds: new Set(),
+      keptEntityIds: new Set(),
     });
     expect(retractions).toEqual([
       expect.objectContaining({
@@ -203,7 +203,7 @@ describe('staleProfileTextRetractions', () => {
       live,
       reads: [],
       rosterProfileUrls: new Set(),
-      attachedEntityIds: new Set(),
+      keptEntityIds: new Set(),
     });
     expect(retractions).toHaveLength(2);
   });
@@ -214,7 +214,7 @@ describe('staleProfileTextRetractions', () => {
         live,
         reads: [{ profileUrl: PROFILE, text: {} }],
         rosterProfileUrls: roster,
-        attachedEntityIds: new Set([row.entityId]),
+        keptEntityIds: new Set([row.entityId]),
       }),
     ).toEqual([]);
     expect(
@@ -222,7 +222,7 @@ describe('staleProfileTextRetractions', () => {
         live,
         reads: [{ profileUrl: PROFILE }],
         rosterProfileUrls: roster,
-        attachedEntityIds: new Set(),
+        keptEntityIds: new Set(),
       }),
     ).toEqual([]);
   });
@@ -253,22 +253,60 @@ describe('Drupal person-page profile extractors', () => {
   });
 });
 
-describe('one profile per row', () => {
+describe('one page per field of a row', () => {
   const OTHER = 'https://cowles.yale.edu/people/fixture-member';
-  it('keeps the fuller of two profiles that join to the same row', () => {
+  const joins = [
+    { profileUrl: PROFILE, personId: 'person-a' },
+    { profileUrl: OTHER, personId: 'person-a' },
+  ];
+  const LONGER_BIOGRAPHY = `${BIOGRAPHY} ${STATEMENT} ${BIOGRAPHY}`;
+
+  it('takes the statement and the fuller biography each from the page that carries it', () => {
     const plan = planCenterMemberProfileResearch({
       reads: [
-        { profileUrl: PROFILE, text: { biography: BIOGRAPHY } },
-        { profileUrl: OTHER, text: { biography: `${BIOGRAPHY} ${STATEMENT}` } },
+        { profileUrl: PROFILE, text: { researchStatement: STATEMENT, biography: BIOGRAPHY } },
+        { profileUrl: OTHER, text: { biography: LONGER_BIOGRAPHY } },
       ],
+      joins,
+      rows: [row],
+    });
+    expect(plan.emittedRows).toBe(1);
+    expect(plan.observations).toEqual([
+      expect.objectContaining({ field: 'researchSummary', value: STATEMENT, sourceUrl: PROFILE }),
+      expect.objectContaining({ field: 'bio', value: LONGER_BIOGRAPHY, sourceUrl: OTHER }),
+    ]);
+    expect(plan.skipped['row-has-several-profiles']).toBe(1);
+  });
+
+  it('emits nothing for a row a competing page this run did not read would reach', () => {
+    const competingUnread = planCenterMemberProfileResearch({
+      reads: [{ profileUrl: OTHER, text: { biography: LONGER_BIOGRAPHY } }, { profileUrl: PROFILE }],
+      joins,
+      rows: [row],
+    });
+    expect(competingUnread.observations).toEqual([]);
+    expect(competingUnread.undecidedEntityIds).toEqual(new Set([row.entityId]));
+    expect(competingUnread.skipped['row-has-an-unread-profile']).toBe(1);
+
+    const competingNotFetched = planCenterMemberProfileResearch({
+      reads: [{ profileUrl: OTHER, text: { biography: LONGER_BIOGRAPHY } }],
+      joins,
+      rows: [row],
+    });
+    expect(competingNotFetched.observations).toEqual([]);
+    expect(competingNotFetched.undecidedEntityIds).toEqual(new Set([row.entityId]));
+  });
+
+  it('leaves a row decided when the unread page would reach no row', () => {
+    const plan = planCenterMemberProfileResearch({
+      reads: [{ profileUrl: PROFILE, text: { biography: BIOGRAPHY } }, { profileUrl: OTHER }],
       joins: [
         { profileUrl: PROFILE, personId: 'person-a' },
-        { profileUrl: OTHER, personId: 'person-a' },
+        { profileUrl: OTHER, personId: 'person-b' },
       ],
       rows: [row],
     });
     expect(plan.emittedRows).toBe(1);
-    expect(new Set(plan.observations.map((obs) => obs.sourceUrl))).toEqual(new Set([OTHER]));
-    expect(plan.skipped['row-has-a-fuller-profile']).toBe(1);
+    expect(plan.undecidedEntityIds.size).toBe(0);
   });
 });
