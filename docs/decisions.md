@@ -13,7 +13,10 @@ Both are facts about the survivor, so each live row carries `mergedFrom: [{ slug
 The copy filters `research_entities` to live rows and drops the rows that hang off archived ones; Beta-to-Production copies Beta as is.
 The old-slug redirect falls back to `mergedFrom.slug`, `research-plans:retarget-merged` resolves an id no row carries through `mergedFrom.entityId`, and a saved plan on such an id reads as merged, or as retired when no survivor names it, since a serving environment cannot tell a retired row from a deleted one.
 This is not the retired redirect ledger: that was a second collection written beside the rows and it drifted, whereas `mergedFrom` is derived from the tombstones on every sweep and every copy.
-Development keeps its full archive, and the Beta-to-Development refresh still carries it back from the swap backup; deleting it is #5189.
+Development keeps its full archive, and the Beta-to-Development refresh still carries it back from the swap backup.
+Decision (owner, 2026-10-18): Development keeps its archive permanently, and deleting it (#5189) is not planned.
+The archive is working memory for the engine, not dead weight: it routes 191,965 observations filed under merged slugs to their survivors, refuses re-mints of merged duplicates, and stops 893 of the 1,644 retired rows from being minted again from their own stored observations (measured by `research-entity:measure-retired-remint`).
+Replacing those jobs would mean moving five key resolvers, merged-in evidence and benchmark replay onto `mergedFrom`, retiring stored observations, and adding lane refusals, to remove about 5,000 rows no student sees; Beta and Production already hold none.
 
 ## 2026-10-18: Beta And Production Carry Slim Archived Tombstones (#5208)
 

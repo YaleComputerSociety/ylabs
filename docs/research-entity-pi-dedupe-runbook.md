@@ -324,8 +324,9 @@ It runs `materializeEntity` as a dry run with `treatArchivedResearchEntitiesAsAb
 It is read-only, refuses `--apply`, and passes a card synthesizer that calls no model.
 A planned create counts as a mint only when it resolves the fields a real create requires, because the dry run plans a create before the create path skips one with no `name`; such a row reports `skipped: missing-required-fields`, and a row with no slug reports `skipped: no-entity-key`.
 The option is refused outside a dry run, because a projection planned against a row that still exists must never be written.
-On Development on 2026-10-18 it found 1,325 of 1,644 retired rows would be minted again from their own stored observations, measured before a planned create with no `name` stopped counting as a mint, so 1,325 is an upper bound until a re-run confirms it: the subordinate-rank and staff-title gates run in the lanes before an observation is written, so stored evidence reaches the materializer ungated, and only the `PROGRAM` refusal, which sits in the materializer, plans no mint.
-A retired row is not deletable until its key plans no mint here.
+On Development on 2026-10-18 it found 893 of 1,644 retired rows would be minted again from their own stored observations (288 of 300 staff-minted, 283 of 496 subordinate-rank, 321 of 789 with no archive reason), and 432 planned creates lacked the required fields.
+The subordinate-rank and staff-title gates run in the lanes before an observation is written, so stored evidence reaches the materializer ungated; only the `PROGRAM` refusal, which sits in the materializer, plans no mint.
+That measurement is why Development keeps its archive (see the 2026-10-18 entry in `docs/decisions.md`): an archived row is what refuses those re-mints.
 
 ## Asking whether an archive lost a lab
 
