@@ -6,6 +6,7 @@ import {
   getFellowshipApplicationStatus,
 } from './fellowshipStatus';
 import {
+  formatProjectedProgramDate,
   formatShortProgramDate,
   newYorkCalendarDaysUntil,
   programDeadlineClosingInstant,
@@ -165,7 +166,7 @@ export function getFellowshipDeadlineSubtitle(
     return `Opens ${formatShortProgramDate(fellowship.applicationOpenDate)}`;
   }
   if (status.category === 'projectedNextCycle' && fellowship.deadline) {
-    return `Est. next cycle ~${formatShortProgramDate(fellowship.deadline)} (unconfirmed)`;
+    return `Est. next cycle ~${formatProjectedProgramDate(fellowship.deadline)} (unconfirmed)`;
   }
   const deadline = programDeadlineClosingInstant(fellowship.deadline);
   if (!deadline) return 'No deadline';

@@ -4,6 +4,7 @@ import {
   type ProgramDateBoundary,
   formatProgramDate,
   formatShortProgramDate,
+  formatProjectedProgramDate,
   parseProgramDate,
   newYorkCalendarDaysUntil,
   programDeadlineClosingInstant,
@@ -150,7 +151,7 @@ export const getFellowshipApplicationStatus = (
       ...base,
       kind: 'projectedNextCycle',
       label: 'Projected next cycle',
-      detail: `Est. next deadline ~${formatShortFellowshipDate(fellowship.deadline)} - unconfirmed, verify at source`,
+      detail: `Est. next deadline ~${formatProjectedProgramDate(fellowship.deadline)} - unconfirmed, verify at source`,
       isCurrentlyRelevant: true,
       isApplicationWindowOpen: false,
     };
