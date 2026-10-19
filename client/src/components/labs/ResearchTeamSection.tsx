@@ -11,8 +11,11 @@ import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvi
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
 
-const GROUPS: Array<{ role: LabMemberRole; label: string }> = [
-  { role: 'undergrad', label: 'Undergraduate researchers' },
+type TeamGroup = { role: LabMemberRole; label: string };
+
+const UNDERGRADUATE_GROUP: TeamGroup = { role: 'undergrad', label: 'Undergraduate researchers' };
+
+const OTHER_GROUPS: TeamGroup[] = [
   { role: 'postdoc', label: 'Postdoctoral researchers' },
   { role: 'grad-student', label: 'Graduate students' },
   { role: 'staff', label: 'Research staff' },
@@ -220,6 +223,58 @@ function UndergraduateMemberLineRow({
   );
 }
 
+function TeamMemberGroup({
+  group: { role, label },
+  members,
+}: {
+  group: TeamGroup;
+  members: LabMember[];
+}) {
+  const groupedMembers = members.filter((member) => member.role === role);
+  if (groupedMembers.length === 0) return null;
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-semibold text-ink">{label}</h3>
+      <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+        {groupedMembers.map((member) => {
+          const name = displayName(member);
+          const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
+          const content = (
+            <>
+              <span className="block font-semibold text-ink">{name}</span>
+              {member.user.title && (
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted">
+                  {member.user.title}
+                </span>
+              )}
+            </>
+          );
+          return (
+            <li
+              key={`${member.user.publicKey || name}-${member.role}`}
+              className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
+            >
+              {profileUrl ? (
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable block min-h-11 rounded-control py-1 yr-focus-ring"
+                  aria-label={`${name}, ${label}. Open official public profile`}
+                >
+                  {content}
+                </a>
+              ) : (
+                <div className="min-h-11 py-1">{content}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function ResearchTeamSection({
   members,
   roster,
@@ -244,6 +299,8 @@ export default function ResearchTeamSection({
     teamMembers.length > 0 ||
     listsCurrentUndergraduates ||
     undergraduateLines.some((line) => line.status === 'current');
+  const currentUndergraduateLines = undergraduateLines.filter((line) => line.status === 'current');
+  const pastUndergraduateLines = undergraduateLines.filter((line) => line.status === 'past');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
   const dateLabel = observedLabel(roster.observedAt);
@@ -274,59 +331,25 @@ export default function ResearchTeamSection({
             until its freshness window expires.
           </p>
         )}
-        {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
-        {undergraduateLines.map((line) => (
+        {currentUndergraduateLines.map((line) => (
           <UndergraduateMemberLineRow
             key={line.status}
             line={line}
             leadPersonNames={leadPersonNames}
           />
         ))}
-        {GROUPS.map(({ role, label }) => {
-          const groupedMembers = teamMembers.filter((member) => member.role === role);
-          if (groupedMembers.length === 0) return null;
-          return (
-            <div key={role}>
-              <h3 className="mb-2 text-sm font-semibold text-ink">{label}</h3>
-              <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-                {groupedMembers.map((member) => {
-                  const name = displayName(member);
-                  const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
-                  const content = (
-                    <>
-                      <span className="block font-semibold text-ink">{name}</span>
-                      {member.user.title && (
-                        <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-                          {member.user.title}
-                        </span>
-                      )}
-                    </>
-                  );
-                  return (
-                    <li
-                      key={`${member.user.publicKey || name}-${member.role}`}
-                      className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
-                    >
-                      {profileUrl ? (
-                        <a
-                          href={profileUrl}
-                          target="_blank"
-                          rel={EXTERNAL_LINK_REL}
-                          className="yr-pressable block min-h-11 rounded-control py-1 yr-focus-ring"
-                          aria-label={`${name}, ${label}. Open official public profile`}
-                        >
-                          {content}
-                        </a>
-                      ) : (
-                        <div className="min-h-11 py-1">{content}</div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
+        <TeamMemberGroup group={UNDERGRADUATE_GROUP} members={teamMembers} />
+        {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
+        {pastUndergraduateLines.map((line) => (
+          <UndergraduateMemberLineRow
+            key={line.status}
+            line={line}
+            leadPersonNames={leadPersonNames}
+          />
+        ))}
+        {OTHER_GROUPS.map((group) => (
+          <TeamMemberGroup key={group.role} group={group} members={teamMembers} />
+        ))}
         {(teamMembers.length > 0 || undergraduates.length > 0) && (
           <p className="text-xs leading-relaxed text-muted">
             {undergraduates.length > 0 && teamMembers.length > 0

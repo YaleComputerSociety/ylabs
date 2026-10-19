@@ -148,6 +148,55 @@ describe('ResearchTeamSection', () => {
     expect(screen.queryByRole('heading', { name: 'Undergraduate researchers' })).toBeNull();
   });
 
+  it('lists a current count from the lab page above named past undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+        undergraduateLines={[
+          { status: 'current', count: 5, sourceUrl: 'https://fixture-lab.example.org/people' },
+        ]}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Undergraduate researchers', 'Past undergraduate researchers (1)']);
+  });
+
+  it('lists named current undergraduates above a past line from the lab page', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          undergraduates: [{ name: 'Current Fixture', status: 'current', startYear: 2024 }],
+        })}
+        undergraduateLines={[
+          { status: 'past', sourceUrl: 'https://fixture-lab.example.org/alumni' },
+        ]}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Undergraduate researchers', 'Past undergraduate researchers']);
+  });
+
+  it('lists current undergraduate members above named past undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(1, 'undergrad'), member(2, 'postdoc')]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Undergraduate researchers',
+      'Past undergraduate researchers (1)',
+      'Postdoctoral researchers',
+    ]);
+  });
+
   it('keeps the past list as a subheading under current undergraduates', () => {
     render(
       <ResearchTeamSection
