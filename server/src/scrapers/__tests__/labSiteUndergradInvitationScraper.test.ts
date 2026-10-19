@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   LabSiteUndergradInvitationScraper,
+  scopedCrawlUrls,
   UNDERGRAD_INVITATION_FIELD,
 } from '../sources/labSiteUndergradInvitationScraper';
 import type { CandidateLab } from '../sources/labMicrositeUndergradLLMExtractor';
@@ -266,5 +267,53 @@ describe('LabSiteUndergradInvitationScraper', () => {
       level: 'actively_hiring',
       sourceUrl: 'https://gamma.example.edu/opportunities',
     });
+  });
+
+  it('fetches a page shared by several rows once per run', async () => {
+    const fetched: string[] = [];
+    const pages: Record<string, string> = {
+      'https://shared.example.edu/lab/one': html('We study cells.'),
+      'https://shared.example.edu/lab/two': html('We study rocks.'),
+    };
+    const scraper = new LabSiteUndergradInvitationScraper({
+      labFinder: async () => [
+        lab('one-lab', 'https://shared.example.edu/lab/one'),
+        lab('two-lab', 'https://shared.example.edu/lab/one'),
+        lab('three-lab', 'https://shared.example.edu/lab/two'),
+      ],
+      fetchPage: async (url) => {
+        fetched.push(url);
+        return pages[url] ? { url, html: pages[url] } : null;
+      },
+      liveQuoteFinder: async () => new Map(),
+    });
+    await scraper.run(runContext([]));
+    expect(fetched.filter((url) => url.endsWith('/lab/one'))).toHaveLength(1);
+  });
+});
+
+describe('scopedCrawlUrls', () => {
+  it('follows only links inside a section-hosted lab and guesses no site-wide paths', () => {
+    const homeHtml =
+      '<a href="/people">People</a><a href="/lab/alpha/join">Join us</a><a href="/lab/beta/join">Join</a>';
+    expect(scopedCrawlUrls(homeHtml, 'https://shared.example.edu/lab/alpha/').urls).toEqual([
+      'https://shared.example.edu/lab/alpha/join',
+    ]);
+  });
+
+  it('adds guessed join paths only for a site hosted at its own root', () => {
+    const { urls } = scopedCrawlUrls('', 'https://alpha.example.edu/');
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every((url) => url.startsWith('https://alpha.example.edu/'))).toBe(true);
+  });
+
+  it('treats a root landing page as the site root when guessing join paths', () => {
+    const rootGuesses = scopedCrawlUrls('', 'https://alpha.example.edu/').urls;
+    for (const homeUrl of [
+      'https://alpha.example.edu/home',
+      'https://alpha.example.edu/index.html',
+    ]) {
+      expect(scopedCrawlUrls('', homeUrl).urls).toEqual(rootGuesses);
+    }
   });
 });

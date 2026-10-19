@@ -647,6 +647,10 @@ function sectionPrefix(url: string): { host: string; prefix: string } | null {
   }
 }
 
+export function isAtOwnSiteRoot(url: string): boolean {
+  return sectionPrefix(url)?.prefix === '';
+}
+
 /**
  * The fetched pages that belong to this entity. A home page with its own path, such as a center
  * that lives at `/southasia` on a shared host, can link into a sibling program's section of the

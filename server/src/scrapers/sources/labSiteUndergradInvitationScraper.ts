@@ -15,6 +15,7 @@ import {
   candidateLabFromResearchEntityDoc,
   defaultFetchPage,
   discoverSubPageUrls,
+  isAtOwnSiteRoot,
   PAGE_CHROME_SELECTOR,
   pagesWithinEntityScope,
   selectLabsToProcess,
@@ -28,6 +29,7 @@ export const LAB_SITE_UNDERGRAD_INVITATION_SOURCE = 'lab-site-undergrad-invitati
 export const UNDERGRAD_INVITATION_FIELD = 'undergradInvitation';
 
 const MAX_SUBPAGES_READ = 4;
+const MAX_CANDIDATE_LINKS = 8;
 const DEFAULT_CONCURRENCY = 6;
 export const SHARED_QUOTE_ENTITY_THRESHOLD = 3;
 
@@ -42,6 +44,15 @@ export interface LabSiteUndergradInvitationDeps {
   fetchPage?: FetchPageFn;
   labFinder?: InvitationLabFinder;
   liveQuoteFinder?: LiveInvitationQuoteFinder;
+}
+
+interface CrawlPlan {
+  urls: string[];
+  linked: Set<string>;
+}
+
+interface ReadPage extends PromptSourcePage {
+  crawl: CrawlPlan;
 }
 
 interface LabPagesRead {
@@ -122,6 +133,27 @@ function withoutHash(url: string): string {
   return parsed.toString();
 }
 
+export function scopedCrawlUrls(homeHtml: string, homeUrl: string): CrawlPlan {
+  const home = withoutHash(homeUrl);
+  const discovered = discoverSubPageUrls(homeHtml, homeUrl, MAX_CANDIDATE_LINKS).map(withoutHash);
+  const guessed = isAtOwnSiteRoot(homeUrl)
+    ? candidateCrawlUrls('', homeUrl, MAX_CANDIDATE_LINKS)
+    : [];
+  const candidates = [...new Set([...discovered, ...guessed.map(withoutHash)])].filter(
+    (url) => url !== home,
+  );
+  const inScope = new Set(
+    pagesWithinEntityScope([
+      { url: homeUrl, text: '' },
+      ...candidates.map((url) => ({ url, text: '' })),
+    ])
+      .slice(1)
+      .map((page) => page.url),
+  );
+  const urls = candidates.filter((url) => inScope.has(url)).slice(0, MAX_SUBPAGES_READ);
+  return { urls, linked: new Set(discovered.filter((url) => urls.includes(url))) };
+}
+
 const normalizedQuote = (quote: string) => quote.toLowerCase().replace(/\s+/g, ' ').trim();
 
 export function quotesSharedAcrossEntities(
@@ -166,6 +198,7 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
   private readonly fetchPage: FetchPageFn;
   private readonly labFinder: InvitationLabFinder;
   private readonly liveQuoteFinder: LiveInvitationQuoteFinder;
+  private readonly pageCache = new Map<string, Promise<ReadPage | null>>();
 
   constructor(deps: LabSiteUndergradInvitationDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
@@ -173,17 +206,28 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
     this.liveQuoteFinder = deps.liveQuoteFinder ?? defaultLiveInvitationQuoteFinder;
   }
 
-  private async readLabPages(lab: CandidateLab): Promise<LabPagesRead | null> {
-    const home = await this.fetchPage(lab.websiteUrl);
-    if (!home) return null;
-    const pages: PromptSourcePage[] = [{ url: home.url, text: pageText(home.html) }];
-    const linked = new Set(
-      discoverSubPageUrls(home.html, home.url, MAX_SUBPAGES_READ).map(withoutHash),
+  private readOnce(url: string): Promise<ReadPage | null> {
+    const key = withoutHash(url);
+    const cached = this.pageCache.get(key);
+    if (cached) return cached;
+    const pending = this.fetchPage(url).then((page) =>
+      page
+        ? { url: page.url, text: pageText(page.html), crawl: scopedCrawlUrls(page.html, page.url) }
+        : null,
     );
+    this.pageCache.set(key, pending);
+    return pending;
+  }
+
+  private async readLabPages(lab: CandidateLab): Promise<LabPagesRead | null> {
+    const home = await this.readOnce(lab.websiteUrl);
+    if (!home) return null;
+    const pages: PromptSourcePage[] = [{ url: home.url, text: home.text }];
+    const { urls, linked } = home.crawl;
     let complete = true;
-    for (const url of candidateCrawlUrls(home.html, home.url, MAX_SUBPAGES_READ)) {
-      const page = await this.fetchPage(url);
-      if (page) pages.push({ url: page.url, text: pageText(page.html) });
+    for (const url of urls) {
+      const page = await this.readOnce(url);
+      if (page) pages.push({ url: page.url, text: page.text });
       else if (linked.has(url)) complete = false;
     }
     return { pages, complete };
@@ -191,6 +235,7 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const now = ctx.options.referenceDate ?? new Date();
+    this.pageCache.clear();
     const labs = selectLabsToProcess(await this.labFinder(), {
       only: ctx.options.only,
       limit: ctx.options.limit,
