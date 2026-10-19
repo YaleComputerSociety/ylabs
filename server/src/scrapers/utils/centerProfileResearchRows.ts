@@ -7,6 +7,7 @@ import {
   rosterBioTitleVerdict,
 } from './rosterBioResearchEvidence';
 import { normalizedYaleNetid } from '../../utils/yaleNetid';
+import { mintsNoResearchEntityAsTeachingAppointment } from '../sources/yaleDirectoryScraper';
 
 export const CENTER_PROFILE_RESEARCH_ROWS_SOURCE = 'center-profile-research-rows';
 
@@ -22,7 +23,8 @@ export interface CenterProfileRowCandidate {
 export interface CenterProfileRowCoverage {
   slugs: ReadonlySet<string>;
   citedUrls: ReadonlySet<string>;
-  archivedPersonalRowNames: ReadonlySet<string>;
+  personalRowNames: ReadonlySet<string>;
+  inferredLeadKeys: ReadonlySet<string>;
 }
 
 export type CenterProfileRowSkip =
@@ -34,11 +36,13 @@ export type CenterProfileRowSkip =
   | 'no_research_statement'
   | 'only_past_research'
   | 'not_useful_after_filtering'
+  | 'teaching_appointment'
   | 'no_netid'
   | 'unusable_name'
   | 'slug_taken'
   | 'profile_already_cited'
-  | 'archived_row_for_person';
+  | 'row_already_infers_lead'
+  | 'personal_row_for_person';
 
 export interface CenterProfilePlannedRow {
   personId: string;
@@ -60,8 +64,9 @@ export function normalizeCitedUrl(value: unknown): string {
 
 /**
  * A row is minted only for a member the corpus holds nothing for: no row under the slug the
- * mint would take, no row already citing the profile, and no archived personal row in the
- * member's name, because an archive is a decision about that person a new mint must not undo.
+ * mint would take, no row already citing the profile, no row already inferring the member as
+ * its lead, and no personal row, live or archived, in the member's name, because an archive
+ * is a decision about that person a new mint must not undo.
  */
 export function planCenterProfileResearchRows(
   candidates: readonly CenterProfileRowCandidate[],
@@ -92,6 +97,14 @@ export function planCenterProfileResearchRows(
       skip(derived.rejection);
       continue;
     }
+    if (
+      mintsNoResearchEntityAsTeachingAppointment(candidate.title, {
+        fullDescription: derived.fullDescription,
+      })
+    ) {
+      skip('teaching_appointment');
+      continue;
+    }
     const netid = normalizedYaleNetid(candidate.netid);
     if (!netid) {
       skip('no_netid');
@@ -111,8 +124,12 @@ export function planCenterProfileResearchRows(
       skip('profile_already_cited');
       continue;
     }
-    if (coverage.archivedPersonalRowNames.has(nameKey)) {
-      skip('archived_row_for_person');
+    if (coverage.inferredLeadKeys.has(`netid:${netid}`)) {
+      skip('row_already_infers_lead');
+      continue;
+    }
+    if (coverage.personalRowNames.has(nameKey)) {
+      skip('personal_row_for_person');
       continue;
     }
     plannedSlugs.add(slug);

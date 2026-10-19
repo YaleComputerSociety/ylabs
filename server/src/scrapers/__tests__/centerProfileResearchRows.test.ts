@@ -25,7 +25,8 @@ const candidate = (
 const emptyCoverage: CenterProfileRowCoverage = {
   slugs: new Set(),
   citedUrls: new Set(),
-  archivedPersonalRowNames: new Set(),
+  personalRowNames: new Set(),
+  inferredLeadKeys: new Set(),
 };
 
 describe('planCenterProfileResearchRows', () => {
@@ -84,10 +85,33 @@ describe('planCenterProfileResearchRows', () => {
       citedUrls: new Set(['macmillan.yale.edu/people/fixture-member']),
     });
     expect(cited.skipped.profile_already_cited).toBe(1);
-    const archived = planCenterProfileResearchRows([candidate()], {
+    const namedRow = planCenterProfileResearchRows([candidate()], {
       ...emptyCoverage,
-      archivedPersonalRowNames: new Set(['robin fixture']),
+      personalRowNames: new Set(['robin fixture']),
     });
-    expect(archived.skipped.archived_row_for_person).toBe(1);
+    expect(namedRow.skipped.personal_row_for_person).toBe(1);
+  });
+
+  it('never mints for a member another row already infers as its lead', () => {
+    const { planned, skipped } = planCenterProfileResearchRows([candidate()], {
+      ...emptyCoverage,
+      inferredLeadKeys: new Set(['netid:zz0001']),
+    });
+    expect(planned).toEqual([]);
+    expect(skipped.row_already_infers_lead).toBe(1);
+  });
+
+  it('refuses a teaching-only title whose profile affirms no research', () => {
+    const { planned, skipped } = planCenterProfileResearchRows(
+      [
+        candidate({
+          profileText:
+            'Her current work focuses on new teaching materials for advanced learners of synthetic languages across regions.',
+        }),
+      ],
+      emptyCoverage,
+    );
+    expect(planned).toEqual([]);
+    expect(skipped.teaching_appointment).toBe(1);
   });
 });

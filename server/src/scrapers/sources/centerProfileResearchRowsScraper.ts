@@ -33,18 +33,28 @@ export async function loadCenterProfileRowCoverage(): Promise<CenterProfileRowCo
     .lean()) as Array<Record<string, any>>;
   const slugs = new Set<string>();
   const citedUrls = new Set<string>();
-  const archivedPersonalRowNames = new Set<string>();
+  const personalRowNames = new Set<string>();
   for (const row of rows) {
     if (row.slug) slugs.add(row.slug);
     for (const url of [row.websiteUrl, ...(Array.isArray(row.sourceUrls) ? row.sourceUrls : [])]) {
       if (url) citedUrls.add(normalizeCitedUrl(url));
     }
-    if (row.archived === true && PERSONAL_RESEARCH_ROW_TYPES.includes(row.entityType)) {
+    if (PERSONAL_RESEARCH_ROW_TYPES.includes(row.entityType)) {
       const nameKey = rosterBioPersonNameKey(row.name);
-      if (nameKey) archivedPersonalRowNames.add(nameKey);
+      if (nameKey) personalRowNames.add(nameKey);
     }
   }
-  return { slugs, citedUrls, archivedPersonalRowNames };
+  const leadKeys = (await Observation.find({ field: 'inferredPiUserKey', superseded: false })
+    .select('entityKey value')
+    .lean()) as Array<{ entityKey?: string; value?: unknown }>;
+  const inferredLeadKeys = new Set(
+    leadKeys.flatMap((row) =>
+      row.entityKey && slugs.has(row.entityKey) && typeof row.value === 'string'
+        ? [row.value.trim().toLowerCase()]
+        : [],
+    ),
+  );
+  return { slugs, citedUrls, personalRowNames, inferredLeadKeys };
 }
 
 async function listedTitleByProfileUrl(
@@ -141,6 +151,7 @@ export class CenterProfileResearchRowsScraper implements IScraper {
       .filter((candidate) => candidate.profileUrl)
       .slice(0, ctx.options.limit ?? undefined);
 
+    let unreadProfiles = 0;
     await mapWithConcurrency(candidates, PROFILE_FETCH_CONCURRENCY, async (candidate) => {
       for (const url of candidate.urls) {
         try {
@@ -151,7 +162,7 @@ export class CenterProfileResearchRowsScraper implements IScraper {
             candidate.profileUrl = url;
           }
         } catch {
-          continue;
+          unreadProfiles += 1;
         }
       }
     });
@@ -164,7 +175,7 @@ export class CenterProfileResearchRowsScraper implements IScraper {
     const scoped = planned.filter((row) => !only || only.has(row.slug));
     const observations = scoped.flatMap(centerProfileResearchRowObservations);
     if (observations.length) await ctx.emit(observations);
-    const notes = `${candidates.length} members lead no personal row; planned ${planned.length}, emitting ${scoped.length}; skipped ${JSON.stringify(skipped)}`;
+    const notes = `${candidates.length} members lead no personal row; ${unreadProfiles} profile pages unread; planned ${planned.length}, emitting ${scoped.length}; skipped ${JSON.stringify(skipped)}`;
     ctx.log(notes);
     return { observationCount: observations.length, entitiesObserved: scoped.length, notes };
   }
