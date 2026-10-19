@@ -41,6 +41,7 @@ import {
 import {
   inferProgramSubjects,
   PROGRAM_TOPIC_TAXONOMY,
+  programSubjectFilterOptions,
   topicRegexForSubjects,
 } from './programTopicService';
 
@@ -1112,6 +1113,6 @@ export const getFilterOptions = async () => {
     programKind: programKindOptions.filter(Boolean).sort(),
     entryMode: entryModeOptions.filter(Boolean).sort(),
     studentFacingCategory: studentFacingCategoryOptions.filter(Boolean).sort(),
-    subjects: PROGRAM_TOPIC_TAXONOMY.map((topic) => topic.subject),
+    subjects: programSubjectFilterOptions(),
   };
 };
