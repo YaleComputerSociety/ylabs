@@ -56,7 +56,16 @@ const WRITES_IN_THE_AREAS_OF =
 const SCHOLAR_OF_A_FIELD =
   /\bis\s+an?\s+(?:(?!(?:board|fellowship|clinical)\b)[\p{L}-]+\s+){0,2}(?:scholar|specialist)\s+(?:in|of|on)\b/iu;
 
+const WRITES_ABOUT_A_SUBJECT = /\bwrites\s+(?:and\s+teaches\s+)?(?:about|on)\s+(?!behalf\b)/i;
+
+const BOOK_IN_PROGRESS =
+  /\b(?:is|are)\s+(?:now\s+|currently\s+)?(?:working\s+on|completing|writing|finishing)\s+(?:a|an|her|his|their)\s+(?:new\s+|next\s+|forthcoming\s+)?(?:book|monograph|study)\b/i;
+
+export const statesScholarlySubject = (sentence: string): boolean =>
+  WRITES_ABOUT_A_SUBJECT.test(sentence) || BOOK_IN_PROGRESS.test(sentence);
+
 const statesResearch = (sentence: string): boolean =>
+  statesScholarlySubject(sentence) ||
   RESEARCH_SUBJECT_STATEMENT.test(sentence.replace(DEGREE_LEVEL_STUDIES_PROGRAM, ' ')) ||
   RESEARCH_VERB.test(sentence) ||
   RESEARCH_PARTICIPLE.test(sentence) ||

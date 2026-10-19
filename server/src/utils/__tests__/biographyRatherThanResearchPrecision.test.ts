@@ -194,3 +194,55 @@ describe('a career biography as writer evidence', () => {
     ]);
   });
 });
+
+describe('a scholar who states the research as what they write about', () => {
+  const bookList =
+    'Example’s most recent book is Sample Planet (2020). Other books include Across Deep Time (2006); Shades of the Coast (2007); and an edited anthology, Literature in the World (2017). Her essays have appeared in Sample Review, Example Quarterly, and the Synthetic Times.';
+  const card =
+    'Scholarship on American literature addressing climate change, coastal communities, and human–nonhuman relations.';
+
+  it.each([
+    [
+      'a subject the scholar writes about',
+      'Sam Example writes about climate change, public health, and coastal communities, focusing on the relation between humans and nonhumans.',
+      'writes about climate change',
+    ],
+    [
+      'a book the scholar is working on',
+      'She is now working on a new book, Rivers and Machines: Repairing a Damaged Coast.',
+      'working on a new book',
+    ],
+  ])('serves a book list led by %s', (_shape, research, served) => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: facultyRow({ fullDescription: `${research} ${bookList}`, shortDescription: card }),
+    });
+
+    expect(representation.fullDescription).toContain(served);
+    expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(false);
+    expect(servedBodyIsCareerBiographyWithoutResearch(representation)).toBe(false);
+  });
+
+  it('still holds the book list when nothing states the research', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: facultyRow({ fullDescription: bookList, shortDescription: card }),
+    });
+
+    expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(true);
+  });
+
+  it('does not read a role opener as a biography when it names what the scholar writes on', () => {
+    expect(
+      isBiographyRatherThanResearch(
+        'Professor of Performance Studies, Synthetic University* Sam Example is a cultural critic and an Associate Professor in the Department of Performance Studies at Sample University. He writes on art, music, politics, and theory.',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps writing on behalf of an organisation as a career fact', () => {
+    expect(
+      isBiographyRatherThanResearch(
+        'Sam Example previously taught at Sample College. She writes on behalf of the Synthetic Foundation.',
+      ),
+    ).toBe(true);
+  });
+});
