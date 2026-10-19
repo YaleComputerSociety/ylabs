@@ -102,10 +102,6 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
-import {
-  UNDERGRAD_QUOTE_LABEL,
-  undergradQuoteEvidenceFromEntity,
-} from '../utils/undergradQuoteEvidence';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -508,10 +504,6 @@ const DecisionSummary = ({
   const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const undergradQuote =
-    wayInWithheld || rosterListsUndergraduates
-      ? undefined
-      : undergradQuoteEvidenceFromEntity(group);
   const hasEvidenceList =
     Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
@@ -621,32 +613,6 @@ const DecisionSummary = ({
                 ))}
               </div>
             </div>
-          )}
-
-          {undergradQuote && (
-            <figure className="mt-6 max-w-[68ch] border-t border-[var(--yr-line)] pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                {UNDERGRAD_QUOTE_LABEL}
-              </p>
-              <blockquote
-                cite={undergradQuote.sourceUrl}
-                className="mt-2 border-l-2 border-line-brand pl-4 text-base leading-relaxed text-ink-soft"
-              >
-                <p>&ldquo;{undergradQuote.quote}&rdquo;</p>
-              </blockquote>
-              <figcaption className="mt-2 pl-4.5 text-sm text-muted">
-                Quoted from{' '}
-                <a
-                  href={undergradQuote.sourceUrl}
-                  aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
-                  target="_blank"
-                  rel={EXTERNAL_LINK_REL}
-                  className="yr-link yr-focus-ring -my-1.5 inline-block break-words rounded-control py-1.5"
-                >
-                  {undergradQuote.sourceHost}
-                </a>
-              </figcaption>
-            </figure>
           )}
         </div>
 

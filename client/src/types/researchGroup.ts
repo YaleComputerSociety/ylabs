@@ -114,10 +114,6 @@ export interface ResearchGroup {
   schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
-  /** Verbatim quote from the source page supporting undergraduate access. */
-  undergradEvidenceQuote?: string;
-  /** The page `undergradEvidenceQuote` is quoted from, served only beside a served quote. */
-  undergradEvidenceSourceUrl?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
   fellowshipRecipients?: FellowshipRecipient[];

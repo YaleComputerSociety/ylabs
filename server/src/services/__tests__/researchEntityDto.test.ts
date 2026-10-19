@@ -629,71 +629,7 @@ describe('researchEntityDto', () => {
     expect(dto.websiteUrl).toBe('http://het.yale.edu/');
   });
 
-  it('serves the email and phone number in an evidence quote as written', () => {
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-evidence-redaction',
-      slug: 'evidence-redaction-lab',
-      name: 'Evidence Redaction Lab',
-      undergradEvidenceQuote:
-        'Interested students can email private-contact@yale.edu or call 203-432-1234.',
-    });
-
-    expect(dto.undergradEvidenceQuote).toBe(
-      'Interested students can email private-contact@yale.edu or call 203-432-1234.',
-    );
-  });
-
-  it('withholds a quote that lists members with their own contact details (#5041)', () => {
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-people-listing',
-      slug: 'people-listing-lab',
-      name: 'People Listing Lab',
-      undergradEvidenceQuote:
-        'Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
-    });
-    expect(dto.undergradEvidenceQuote).toBeUndefined();
-  });
-
-  it('withholds a roster card served as an undergraduate quote', () => {
-    const roster = toPublicResearchEntityDto({
-      id: 'entity-roster-line-quote',
-      slug: 'roster-line-quote-lab',
-      name: 'Roster Line Quote Lab',
-      undergradEvidenceQuote: 'Jordan Example Undergraduate Student Hometown: Example City, ST',
-    });
-    expect(roster.undergradEvidenceQuote).toBeUndefined();
-
-    const statement = toPublicResearchEntityDto({
-      id: 'entity-statement-quote',
-      slug: 'statement-quote-lab',
-      name: 'Statement Quote Lab',
-      undergradEvidenceQuote: 'We welcome undergraduate researchers.',
-    });
-    expect(statement.undergradEvidenceQuote).toBe('We welcome undergraduate researchers.');
-  });
-
-  it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
-    const note = toPublicResearchEntityDto({
-      id: 'entity-search-note',
-      slug: 'search-note-lab',
-      name: 'Search Note Lab',
-      undergradEvidenceQuote:
-        'No explicit mention of undergraduate students was found on the provided pages.',
-    });
-    expect(note.undergradEvidenceQuote).toBeUndefined();
-
-    const alumni = toPublicResearchEntityDto({
-      id: 'entity-alumni-quote',
-      slug: 'alumni-quote-lab',
-      name: 'Alumni Quote Lab',
-      undergradEvidenceQuote: 'Former undergraduate researchers include three Yale College alumni.',
-    });
-    expect(alumni.undergradEvidenceQuote).toBe(
-      'Former undergraduate researchers include three Yale College alumni.',
-    );
-  });
-
-  describe('the page an undergraduate quote cites (#3569)', () => {
+  describe('the undergraduate mention quote (#5309)', () => {
     const quotedRow = {
       id: 'entity-cited-quote',
       slug: 'cited-quote-lab',
@@ -705,42 +641,23 @@ describe('researchEntityDto', () => {
           sourceUrl: 'https://example.yale.edu/join',
         },
       },
+      pastUndergradAdvisees: [{ year: 2024, programName: 'Summer Program', count: 2 }],
     };
 
-    it('serves the cited page beside a served quote on detail and browse', () => {
-      expect(toPublicResearchEntityDto({ ...quotedRow }).undergradEvidenceSourceUrl).toBe(
-        'https://example.yale.edu/join',
-      );
-      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...quotedRow }] });
-      expect(researchEntities[0].undergradEvidenceQuote).toBe(quotedRow.undergradEvidenceQuote);
-      expect(researchEntities[0].undergradEvidenceSourceUrl).toBe('https://example.yale.edu/join');
-    });
-
-    it('serves no cited page when the quote itself is withheld', () => {
-      const note = toPublicResearchEntityDto({
-        ...quotedRow,
-        undergradEvidenceQuote:
-          'No explicit mention of undergraduate students was found on the provided pages.',
-      });
-      expect(note.undergradEvidenceQuote).toBeUndefined();
-      expect(note).not.toHaveProperty('undergradEvidenceSourceUrl');
-    });
-
-    it('serves no cited page that is not a public http url', () => {
-      const dto = toPublicResearchEntityDto({
-        ...quotedRow,
-        fieldProvenance: {
-          undergradEvidenceQuote: { sourceName: 'synthetic-quote-lane', sourceUrl: 'file:///etc' },
-        },
-      });
-      expect(dto.undergradEvidenceQuote).toBe(quotedRow.undergradEvidenceQuote);
-      expect(dto).not.toHaveProperty('undergradEvidenceSourceUrl');
-    });
-
-    it('withholds the quote and its page when an emeritus lead withholds the way in', () => {
-      const dto = toPublicResearchEntityDto({ ...quotedRow, wayInWithheld: true });
+    it('serves neither the quote nor its page on detail, even for an admissible stored quote', () => {
+      const dto = toPublicResearchEntityDto({ ...quotedRow });
       expect(dto).not.toHaveProperty('undergradEvidenceQuote');
       expect(dto).not.toHaveProperty('undergradEvidenceSourceUrl');
+      expect(dto.hasUndergradHostingEvidence).toBe(true);
+    });
+
+    it('serves neither on a browse hit or the detail alias', () => {
+      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...quotedRow }] });
+      expect(researchEntities[0]).not.toHaveProperty('undergradEvidenceQuote');
+      expect(researchEntities[0]).not.toHaveProperty('undergradEvidenceSourceUrl');
+      const { researchEntity } = addResearchEntityDetailAlias({ group: { ...quotedRow } });
+      expect(researchEntity).not.toHaveProperty('undergradEvidenceQuote');
+      expect(researchEntity).not.toHaveProperty('undergradEvidenceSourceUrl');
     });
   });
 
@@ -836,9 +753,8 @@ describe('researchEntityDto', () => {
       for (const field of unfilledFields) expect(researchEntities[0]).not.toHaveProperty(field);
     });
 
-    it('still serves the evidence quote and past advisees exactly as stored', () => {
+    it('still serves past advisees exactly as stored', () => {
       const detail = toPublicResearchEntityDto({ ...storedRow });
-      expect(detail.undergradEvidenceQuote).toBe(storedRow.undergradEvidenceQuote);
       expect(detail.pastUndergradAdvisees).toEqual(storedRow.pastUndergradAdvisees);
       expect(detail.hasUndergradHostingEvidence).toBe(true);
     });

@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: The Undergraduate Mention Quote Is No Longer Shown (#5309)
+
+Decision (owner, 2026-10-18): the detail page no longer shows the "Mentions undergraduate research" quote, and the API no longer serves `undergradEvidenceQuote` or `undergradEvidenceSourceUrl` on any route.
+This supersedes the 2026-10-12 and 2026-10-11 quote-display entries below.
+Measured on Development (2026-10-18), 117 rows showed a quote, and about 43 of them were an explicit invitation to undergraduates by the `textInvitesUndergraduates` detector.
+The rest were member bios, which the roster name list carries (#5039, #5278), or passing mentions of teaching or mentorship that a student cannot act on and that read as a claim the lab did not make.
+The quote is model output deciding what a student reads, which #5296 retires.
+"Has hosted undergraduate researchers" never read the quote (#3593), so no row loses the badge.
+The stored field, the lane that writes it and its admission guards stay, because an explicit invitation quote returns beside the badge designed in #5288.
+The `undergrad-evidence-quote-precision` journey case is retired with the quote rather than left passing over an empty population; its last measurement was 42/50 = 0.84.
+
 ## 2026-10-18: A Description That Narrates Its Own Sources Is Not A Research Statement (#5281)
 
 A served description must say what is studied and must not narrate its own sources (owner decision, 2026-10-12, #5020).
@@ -138,6 +149,7 @@ On Development that was 7 of the 12 quotes that had contacts restored, and the r
 
 ## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
 
+Superseded on 2026-10-18 by "The Undergraduate Mention Quote Is No Longer Shown (#5309)".
 This narrows where the 2026-10-11 entry below renders a quote, and keeps everything else it decided.
 On the browse card the quote was the heaviest block, a label, up to 140 characters of quote and a source link, on about a third of cards, and it was the one item a student had to read and judge rather than scan.
 At 0.84 precision about one quote in six is wrong, which suits the surface where a student is evaluating one row closely more than the surface they skim.
@@ -146,6 +158,7 @@ The search response still carries `undergradEvidenceQuote`, because the `undergr
 
 ## 2026-10-11: The Browse Card Shows An Undergraduate Quote With Its Page, Not A Hosting Claim (#3569)
 
+Superseded on 2026-10-18 by "The Undergraduate Mention Quote Is No Longer Shown (#5309)".
 #3607 took the undergraduate badge off the browse card when #3569 measured its quotes at 18/50 = 0.36 badge precision (95% Wilson 0.24 to 0.50), because showing a quote then would have published model-written text with a citation attached.
 After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 like-for-like re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with grounding 49/50.
 That is the middling case #3569 committed to in advance, where the badge carries its evidence rather than asserting, and the owner chose that option.

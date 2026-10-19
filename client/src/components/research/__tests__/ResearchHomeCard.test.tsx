@@ -300,64 +300,6 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
   });
 
-  describe('undergraduate quote evidence (#3569)', () => {
-    const SYNTHETIC_QUOTE = 'Undergraduates are welcome to join the lab for summer projects.';
-    const SYNTHETIC_SOURCE = 'https://www.example.yale.edu/join';
-    const quotedHome = (entityOverrides: Partial<ResearchCluster['entities'][number]> = {}) => {
-      const home = researchHome();
-      return {
-        ...home,
-        entities: [
-          {
-            ...home.entities[0],
-            undergradEvidenceQuote: SYNTHETIC_QUOTE,
-            undergradEvidenceSourceUrl: SYNTHETIC_SOURCE,
-            ...entityOverrides,
-          },
-        ],
-      };
-    };
-
-    it.each([
-      ['default', undefined],
-      ['compact', 'compact'],
-    ] as const)(
-      'leaves a served quote to the detail page on the %s card (#5022)',
-      (_label, variant) => {
-        const { container } = render(
-          <MemoryRouter>
-            <ResearchHomeCard home={quotedHome()} variant={variant} />
-          </MemoryRouter>,
-        );
-
-        expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-        expect(container.querySelector('blockquote')).toBeNull();
-        expect(screen.queryByRole('link', { name: /example\.yale\.edu/ })).toBeNull();
-      },
-    );
-
-    it('never turns a quote into the hosted-undergraduates claim', () => {
-      render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome()} variant="compact" />
-        </MemoryRouter>,
-      );
-
-      expect(screen.queryByText('Has hosted undergraduate researchers')).toBeNull();
-    });
-
-    it('keeps the hosted-undergraduates lead line when a quote is also served', () => {
-      render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome({ hasUndergradHostingEvidence: true })} />
-        </MemoryRouter>,
-      );
-
-      expect(screen.getByText('Has hosted undergraduate researchers')).toBeTruthy();
-      expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    });
-  });
-
   it('does not elevate a fallback contact route to the prominent lead line', () => {
     render(
       <MemoryRouter>
