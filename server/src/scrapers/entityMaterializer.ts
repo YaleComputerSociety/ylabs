@@ -2132,6 +2132,9 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
     state: enrichment.state,
     memberKeys,
     sourceUrl,
+    ...(textValue(enrichment.configOrigin)
+      ? { configOrigin: textValue(enrichment.configOrigin) }
+      : {}),
     ...(undergraduates.length > 0 ? { undergraduates } : {}),
     ...(textValue(enrichment.alumniSourceUrl)
       ? { alumniSourceUrl: textValue(enrichment.alumniSourceUrl) }

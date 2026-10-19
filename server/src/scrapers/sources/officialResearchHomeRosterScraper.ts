@@ -15,9 +15,13 @@ import { createHash } from 'crypto';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
-import type { OfficialRosterUndergraduateStatus } from '../../models/storedVocabularies';
+import type {
+  OfficialRosterConfigOrigin,
+  OfficialRosterUndergraduateStatus,
+} from '../../models/storedVocabularies';
 import { OFFICIAL_ROSTER_CONFIGS } from '../officialRosterConfigs';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { derivedUndergradRostersServe } from '../../services/hostedUndergraduates';
 
 export const OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE = 'official-research-home-roster';
 export const OFFICIAL_ROSTER_REFRESH_OWNER = 'Yale Research data operations';
@@ -920,9 +924,11 @@ export function extractOfficialResearchHomeRoster(
 export function officialRosterObservations(
   config: OfficialRosterConfig,
   roster: ExtractedOfficialRoster,
+  configOrigin: OfficialRosterConfigOrigin = 'static',
 ): ObservationInput[] {
   const statusValue = {
     state: roster.state,
+    configOrigin,
     complete: roster.complete,
     memberCount: roster.members.length,
     withheldCount: roster.withheldCount,
@@ -949,6 +955,7 @@ export function officialRosterObservations(
     },
   ];
 
+  if (configOrigin === 'derived') return observations;
   for (const member of roster.members) {
     const entityKey = `official-roster:${config.researchEntityKey}:${stableKey(member.membershipKey)}`;
     const base = {
@@ -991,6 +998,7 @@ function failedRosterObservation(config: OfficialRosterConfig, observedAt: Date)
     field: 'rosterEnrichment',
     value: {
       state: 'failed',
+      configOrigin: 'static',
       complete: false,
       memberCount: 0,
       withheldCount: 0,
@@ -1005,6 +1013,79 @@ function failedRosterObservation(config: OfficialRosterConfig, observedAt: Date)
     observedAt,
   };
 }
+
+export type DerivedRosterOutcome =
+  | {
+      kind: 'derived';
+      researchEntityKey: string;
+      config: OfficialRosterConfig;
+      roster: ExtractedOfficialRoster;
+    }
+  | { kind: 'withheld'; researchEntityKey: string; sourceUrl: string; reason: string }
+  | { kind: 'not-found'; researchEntityKey: string; reason: string };
+
+export interface DerivedRosterRequest {
+  staticKeys: ReadonlySet<string>;
+  only?: ReadonlySet<string>;
+  limit?: number;
+  observedAt: Date;
+  fetchPage: (url: string) => Promise<string>;
+}
+
+export interface DerivedRosterRun {
+  outcomes: DerivedRosterOutcome[];
+  staticOverridden: number;
+  ownerDenied: number;
+}
+
+export type OfficialRosterDeriver = (request: DerivedRosterRequest) => Promise<DerivedRosterRun>;
+
+export function derivedRosterObservations(
+  config: OfficialRosterConfig,
+  roster: ExtractedOfficialRoster,
+): ObservationInput[] {
+  const observations = officialRosterObservations(config, roster, 'derived');
+  return observations.map((observation) => ({
+    ...observation,
+    value: { ...(observation.value as Record<string, unknown>), memberCount: 0, memberKeys: [] },
+  }));
+}
+
+export function withheldDerivedRosterObservation(
+  researchEntityKey: string,
+  sourceUrl: string,
+  reason: string,
+  observedAt: Date,
+): ObservationInput {
+  return {
+    entityType: 'researchEntity',
+    entityKey: researchEntityKey,
+    field: 'rosterEnrichment',
+    value: {
+      state: 'withheld',
+      configOrigin: 'derived',
+      withheldReason: reason,
+      complete: false,
+      memberCount: 0,
+      withheldCount: 0,
+      duplicateCount: 0,
+      memberKeys: [],
+      undergraduates: [],
+      sourceUrl,
+      observedAt: observedAt.toISOString(),
+      refreshOwner: OFFICIAL_ROSTER_REFRESH_OWNER,
+      refreshCadence: OFFICIAL_ROSTER_REFRESH_CADENCE,
+    },
+    sourceUrl,
+    observedAt,
+  };
+}
+
+const countBy = (values: string[]): Record<string, number> =>
+  values.reduce<Record<string, number>>((counts, value) => {
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
 
 async function fetchRosterPage(url: string, useCache: boolean): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
@@ -1038,6 +1119,7 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
       url: string,
       useCache: boolean,
     ) => Promise<string> = fetchRosterPage,
+    private readonly deriveRosters: OfficialRosterDeriver | null = null,
   ) {}
 
   async run(context: ScraperContext): Promise<ScraperResult> {
@@ -1091,10 +1173,74 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
       );
     }
 
+    const derived = await this.runDerivedRosters(context, only);
+    observationCount += derived.observationCount;
+    entitiesObserved += derived.entitiesObserved;
+
     return {
       observationCount,
       entitiesObserved,
-      notes: `Reviewed sources=${selected.length}; failed=${failed}; withheld=${withheld}; broad enablement remains audit-gated.`,
+      notes: `Reviewed sources=${selected.length}; failed=${failed}; withheld=${withheld}; broad enablement remains audit-gated.${derived.notes}`,
+    };
+  }
+
+  private async runDerivedRosters(
+    context: ScraperContext,
+    only: ReadonlySet<string> | undefined,
+  ): Promise<{ observationCount: number; entitiesObserved: number; notes: string }> {
+    if (!this.deriveRosters) return { observationCount: 0, entitiesObserved: 0, notes: '' };
+    const observedAt = context.options.referenceDate ?? new Date();
+    const useCache = context.options.useCache;
+    const run = await this.deriveRosters({
+      staticKeys: new Set(this.configs.map((config) => config.researchEntityKey)),
+      only,
+      limit: context.options.limit,
+      observedAt,
+      fetchPage: (url) => this.fetchPage(url, useCache),
+    });
+    let observationCount = 0;
+    for (const outcome of run.outcomes) {
+      const observations =
+        outcome.kind === 'derived'
+          ? derivedRosterObservations(outcome.config, outcome.roster)
+          : outcome.kind === 'withheld'
+            ? [
+                withheldDerivedRosterObservation(
+                  outcome.researchEntityKey,
+                  outcome.sourceUrl,
+                  outcome.reason,
+                  observedAt,
+                ),
+              ]
+            : [];
+      if (observations.length === 0) continue;
+      await context.emit(observations);
+      observationCount += observations.length;
+    }
+    const passed = run.outcomes.filter((outcome) => outcome.kind === 'derived');
+    const report = {
+      attempted: run.outcomes.length,
+      passed: passed.length,
+      passedUndergraduates: passed.reduce(
+        (sum, outcome) =>
+          sum + (outcome.kind === 'derived' ? outcome.roster.undergraduates.length : 0),
+        0,
+      ),
+      withheldByReason: countBy(
+        run.outcomes.flatMap((outcome) => (outcome.kind === 'withheld' ? [outcome.reason] : [])),
+      ),
+      notFoundByReason: countBy(
+        run.outcomes.flatMap((outcome) => (outcome.kind === 'not-found' ? [outcome.reason] : [])),
+      ),
+      staticOverridden: run.staticOverridden,
+      ownerDenied: run.ownerDenied,
+      serving: derivedUndergradRostersServe(),
+    };
+    context.log(`derived rosters: ${JSON.stringify(report)}`);
+    return {
+      observationCount,
+      entitiesObserved: passed.length,
+      notes: ` Derived rosters=${JSON.stringify(report)}.`,
     };
   }
 }
