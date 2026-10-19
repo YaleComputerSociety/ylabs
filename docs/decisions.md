@@ -16,6 +16,7 @@ Decided:
 - **A loser's `inferredPiUserKey` and `inferredPiUserId` reach the survivor only while the survivor states no PI attribution of its own and holds no lead lock.**
   A survivor that states its own never takes a loser's, so a merge cannot put a second person beside the lead its own lane read; every other identity field stays the survivor's own.
   The losers must also name one person, and that person must be the only lead the survivor already holds on a live `PI` or `DIRECTOR` edge from any lane, so neither a disagreeing pair of losers nor another lane's lead can end with two leads.
+  An attribution that resolves to an archived researcher names nobody who can lead, so it neither reaches the survivor nor counts as a second person; on Development the motivating row's loser carried a retired mailbox-shaped key beside the roster's current key.
 - **The person-mint gate counts a merged-in loser's attribution as its survivor's** only when the survivor's own merged read (`mergedSurvivorEvidence`) admits it, so locks, refusals and invalidated runs decide both the same way, because the archived loser was the only row naming the person and the mint refused it as a dead entity's word.
 - It is a derivation on every resolve: no field is written outside the ordinary projection and nothing is locked.
 

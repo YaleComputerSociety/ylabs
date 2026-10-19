@@ -805,6 +805,34 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       expect(await leadPersonIds(survivor._id)).toEqual([]);
     });
 
+    it('takes the live person when another loser attribution names an archived researcher', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      const person = await seedPerson('Example Lead', 'el123');
+      await Researcher.create({
+        schemaVersion: 1,
+        displayName: 'Example Lead',
+        status: 'UNKNOWN',
+        archived: true,
+        identifiers: { netid: 'retired1' },
+      });
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:retired1',
+        'dept-faculty-roster',
+      );
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:el123',
+        'dept-faculty-roster',
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+      expect(await leadPersonIds(survivor._id)).toEqual([String(person._id)]);
+    });
+
     it('leaves a survivor whose lead is locked without a loser lead', async () => {
       const survivor = await seedMerge('dept-example-lead');
       await ResearchEntity.updateOne(

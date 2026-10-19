@@ -5795,8 +5795,22 @@ async function personNamedByPiAttribution(
     : `key:${textValue(attribution.value)}`;
 }
 
+async function liveResearcherIdsAmong(personIds: readonly unknown[]): Promise<Set<string>> {
+  const objectIds = personIds
+    .map((personId) => toMaterializerObjectId(personId))
+    .filter((personId): personId is mongoose.Types.ObjectId => Boolean(personId));
+  if (objectIds.length === 0) return new Set();
+  const live = (await Researcher.find({ _id: { $in: objectIds }, archived: { $ne: true } })
+    .select('_id')
+    .lean()) as Array<{ _id: unknown }>;
+  return new Set(live.map((researcher) => String(researcher._id)));
+}
+
 // The losers must name one person, and that person must be the only lead the survivor
 // already holds from any lane, so a merge never puts a second lead beside the first.
+// An attribution that resolves to an archived researcher names nobody who can lead, so
+// it neither counts as a second person nor reaches the survivor: a roster's retired
+// mailbox-shaped key would otherwise veto the person the same roster names today.
 async function loserLeadAttributionsTheSurvivorTakes(
   survivorId: mongoose.Types.ObjectId,
   attributions: any[],
@@ -5809,20 +5823,35 @@ async function loserLeadAttributionsTheSurvivorTakes(
     );
     return entityName;
   };
-  const people = new Set<string>();
+  const named = [];
   for (const attribution of attributions) {
-    people.add(await personNamedByPiAttribution(attribution, loadEntityName));
+    named.push({
+      attribution,
+      person: await personNamedByPiAttribution(attribution, loadEntityName),
+    });
   }
+  const resolvedPeople = named
+    .map(({ person }) => person)
+    .filter((person) => mongoose.isValidObjectId(person));
+  const livePeople = await liveResearcherIdsAmong(resolvedPeople);
+  const usable = named.filter(
+    ({ person }) => !mongoose.isValidObjectId(person) || livePeople.has(person),
+  );
+  const people = new Set(usable.map(({ person }) => person));
   if (people.size !== 1) return [];
   const [person] = people;
-  const heldLeads = (await RoleAssignment.distinct('personId', {
-    'target.kind': 'RESEARCH_ENTITY',
-    'target.id': survivorId,
-    role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
-    state: { $ne: 'HISTORICAL' },
-    archived: { $ne: true },
-  })) as unknown[];
-  return heldLeads.every((held) => materializerDocumentId(held) === person) ? attributions : [];
+  const heldLeads = await liveResearcherIdsAmong(
+    (await RoleAssignment.distinct('personId', {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': survivorId,
+      role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    })) as unknown[],
+  );
+  return [...heldLeads].every((held) => held === person)
+    ? usable.map(({ attribution }) => attribution)
+    : [];
 }
 
 // These lanes fork a lab identity (`name`, `kind`, `entityType`, `websiteUrl`) on
@@ -6534,8 +6563,13 @@ async function mergedSurvivorTakesLoserLeadAttribution(
   const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
     await Observation.find({
       entityType,
-      entityId: canonical._id,
       ...materializationReadScopeFilter(),
+      $or: [
+        { entityId: canonical._id },
+        ...(textValue(survivor.slug)
+          ? [{ entityKey: textValue(survivor.slug), entityId: null }]
+          : []),
+      ],
     }).lean(),
     await invalidatedScrapeRunIds(),
   );

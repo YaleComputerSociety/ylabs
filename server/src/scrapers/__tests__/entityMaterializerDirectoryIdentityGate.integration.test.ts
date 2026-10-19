@@ -881,6 +881,29 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({})).toBe(before + 1);
     });
 
+    it('mints when the merged-in attributor also carries a key that names an archived researcher', async () => {
+      await seedNamingResearchEntity(true);
+      await seedLeadlessSurvivorOfNamingEntity();
+      await Researcher.create({
+        displayName: 'Grace Hopper',
+        identifiers: { netid: 'retired1' },
+        status: 'UNKNOWN',
+        archived: true,
+      });
+      await seedPiAttribution('netid:retired1');
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+    });
+
     it('refuses when the merged-in attributor survivor states its own lead', async () => {
       await seedNamingResearchEntity(true);
       const survivor = await seedLeadlessSurvivorOfNamingEntity();
