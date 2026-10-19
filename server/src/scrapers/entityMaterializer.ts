@@ -145,6 +145,7 @@ import {
   listResearchEntityMergedInRows,
   resolveResearchEntityCanonicalByTombstone,
   type MergedInResearchEntityRow,
+  type ResearchEntityTombstoneNode,
 } from '../services/researchEntityCanonicalTombstone';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
@@ -5769,6 +5770,84 @@ const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
   'studentVisibilityReviewNote',
 ]);
 
+// A loser's PI attribution may name the survivor's lead only while the survivor states
+// none of its own, because a merge leaves the roster that lists the person reading the
+// loser's key, and a survivor with no lead of its own would otherwise be held on
+// `missing_lead` by a lead the merge itself established. The person-mint gate asks
+// `mergedSurvivorEvidence` itself, so both read one condition.
+const MERGED_LOSER_PI_LEAD_FIELDS: ReadonlySet<string> = new Set([
+  'inferredPiUserKey',
+  'inferredPiUserId',
+]);
+
+const PI_LEAD_LOCK_FIELDS: ReadonlySet<string> = new Set([...MERGED_LOSER_PI_LEAD_FIELDS, 'lead']);
+
+async function personNamedByPiAttribution(
+  attribution: any,
+  entityName: () => Promise<string>,
+): Promise<string> {
+  if (attribution.field === 'inferredPiUserId') {
+    return normalizeMaterializerObjectId(textValue(attribution.value)) || `id:${attribution.value}`;
+  }
+  const resolution = await resolveInferredPiUserKey(attribution.value, entityName);
+  return resolution.status === 'matched' && resolution.researcherId
+    ? String(resolution.researcherId)
+    : `key:${textValue(attribution.value)}`;
+}
+
+async function liveResearcherIdsAmong(personIds: readonly unknown[]): Promise<Set<string>> {
+  const objectIds = personIds
+    .map((personId) => toMaterializerObjectId(personId))
+    .filter((personId): personId is mongoose.Types.ObjectId => Boolean(personId));
+  if (objectIds.length === 0) return new Set();
+  const live = (await Researcher.find({ _id: { $in: objectIds }, archived: { $ne: true } })
+    .select('_id')
+    .lean()) as Array<{ _id: unknown }>;
+  return new Set(live.map((researcher) => String(researcher._id)));
+}
+
+// The losers must name one person, and that person must be the only lead the survivor
+// already holds from any lane, so a merge never puts a second lead beside the first.
+// An attribution that resolves to an archived researcher names nobody who can lead, so
+// it neither counts as a second person nor reaches the survivor: a roster's retired
+// mailbox-shaped key would otherwise veto the person the same roster names today.
+async function loserLeadAttributionsTheSurvivorTakes(
+  survivorId: mongoose.Types.ObjectId,
+  survivorName: string,
+  attributions: any[],
+): Promise<any[]> {
+  if (attributions.length === 0) return [];
+  const named = [];
+  for (const attribution of attributions) {
+    named.push({
+      attribution,
+      person: await personNamedByPiAttribution(attribution, async () => survivorName),
+    });
+  }
+  const resolvedPeople = named
+    .map(({ person }) => person)
+    .filter((person) => mongoose.isValidObjectId(person));
+  const livePeople = await liveResearcherIdsAmong(resolvedPeople);
+  const usable = named.filter(
+    ({ person }) => !mongoose.isValidObjectId(person) || livePeople.has(person),
+  );
+  const people = new Set(usable.map(({ person }) => person));
+  if (people.size !== 1) return [];
+  const [person] = people;
+  const heldLeads = await liveResearcherIdsAmong(
+    (await RoleAssignment.distinct('personId', {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': survivorId,
+      role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    })) as unknown[],
+  );
+  return [...heldLeads].every((held) => held === person)
+    ? usable.map(({ attribution }) => attribution)
+    : [];
+}
+
 // These lanes fork a lab identity (`name`, `kind`, `entityType`, `websiteUrl`) on
 // one profile link, so once one of them has typed the survivor from the survivor's
 // own key its website is part of that decision. A loser's website would otherwise
@@ -5912,6 +5991,37 @@ export async function mergedSurvivorEvidence(
   const survivorTypeIsLocked =
     Array.isArray(survivor.manuallyLockedFields) &&
     survivor.manuallyLockedFields.includes('entityType');
+  const survivorLeadIsLocked =
+    Array.isArray(survivor.manuallyLockedFields) &&
+    survivor.manuallyLockedFields.some((field: unknown) => PI_LEAD_LOCK_FIELDS.has(String(field)));
+  const survivorStatesItsOwnPiLead = [...loadedObservations, ...kept].some(
+    (observation: any) =>
+      !loserOrigin(observation) && MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')),
+  );
+  const loserLeadAttributions =
+    survivorLeadIsLocked || survivorStatesItsOwnPiLead
+      ? []
+      : [...loadedObservations, ...kept].filter(
+          (observation: any) =>
+            loserOrigin(observation) &&
+            MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')) &&
+            !valueIsRefused(
+              survivor.fieldValueRefusals,
+              String(observation.field),
+              observation.value,
+            ),
+        );
+  const takenLoserLeadIds = new Set(
+    (
+      await loserLeadAttributionsTheSurvivorTakes(
+        survivorId,
+        textValue(survivor.name),
+        loserLeadAttributions,
+      )
+    ).map((observation: any) => String(observation._id)),
+  );
+  const loserNamesLeadOfLeadlessSurvivor = (observation: any): boolean =>
+    takenLoserLeadIds.has(String(observation._id));
   const survivorOwnsItsWebsite =
     !survivorTypeIsLocked &&
     [...loadedObservations, ...kept].some(
@@ -6045,6 +6155,7 @@ export async function mergedSurvivorEvidence(
       if (survivorReadOnARoster) return false;
     }
     if (loserCorroboratesUnbackedSurvivorType(observation)) return true;
+    if (loserNamesLeadOfLeadlessSurvivor(observation)) return true;
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
     if (survivorOwnsItsWebsite && LAB_IDENTITY_WEBSITE_FIELDS.has(field)) {
       droppedLoserWebsiteValues.push(observation.value);
@@ -6179,7 +6290,7 @@ async function observationsMergedIntoLiveSurvivor(
     routedSurvivor?.hit
       ? routedSurvivor.value
       : await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-          .select('_id slug fieldValueRefusals manuallyLockedFields')
+          .select('_id slug name fieldValueRefusals manuallyLockedFields')
           .lean()
   ) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
@@ -6436,12 +6547,46 @@ function normalizedResearcherProfileText(
   return normalized.slice(0, bound).trim() || undefined;
 }
 
+async function mergedSurvivorTakesLoserLeadAttribution(
+  loser: ResearchEntityTombstoneNode,
+  entityType: ObservedEntityType,
+  userEntityKey: string,
+): Promise<boolean> {
+  const canonical = await resolveResearchEntityCanonicalByTombstone(loser);
+  if (!canonical) return false;
+  const survivor = (await ResearchEntity.findOne({ _id: canonical._id, archived: { $ne: true } })
+    .select('_id slug name fieldValueRefusals manuallyLockedFields')
+    .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
+  if (!survivor) return false;
+  const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
+    await Observation.find({
+      entityType,
+      ...materializationReadScopeFilter(),
+      $or: [
+        { entityId: canonical._id },
+        ...(textValue(survivor.slug)
+          ? [{ entityKey: textValue(survivor.slug), entityId: null }]
+          : []),
+      ],
+    }).lean(),
+    await invalidatedScrapeRunIds(),
+  );
+  const { observations } = await mergedSurvivorEvidence(entityType, survivor, ownObservations);
+  return observations.some(
+    (observation: any) =>
+      observation.field === 'inferredPiUserKey' &&
+      userEntityKeyForInferredPiUserKey(observation.value) === userEntityKey,
+  );
+}
+
 /**
  * A folded dept-roster shell is archived without superseding its observations
  * (`foldDeptRosterShellIntoCanonicalResearchEntity`), so a live `inferredPiUserKey` can
  * outlive the entity that asserted it. The lead materializer already requires a live
  * entity (`inferredPiLeadReclaim`), and minting a person on a dead entity's word would
- * create a record no entity can ever use.
+ * create a record no entity can ever use. A merged-in loser's attribution is the
+ * exception: its survivor resolves over it while stating no lead of its own
+ * (`mergedSurvivorEvidence`), so the person it names is the lead that survivor uses.
  */
 async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Promise<boolean> {
   const attributions = (
@@ -6451,8 +6596,13 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
         value: { $in: inferredPiUserKeyValuesThatCouldName(userEntityKey) },
         superseded: false,
       },
-      { entityKey: 1, entityId: 1, value: 1 },
-    ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown; value?: unknown }>
+      { entityType: 1, entityKey: 1, entityId: 1, value: 1 },
+    ).lean()) as Array<{
+      entityType?: ObservedEntityType;
+      entityKey?: unknown;
+      entityId?: unknown;
+      value?: unknown;
+    }>
   ).filter((attribution) => userEntityKeyForInferredPiUserKey(attribution.value) === userEntityKey);
   const slugs = uniqueStrings(attributions.map((attribution) => attribution.entityKey));
   const entityIds = attributions
@@ -6462,7 +6612,24 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
   if (slugs.length > 0) namingEntity.push({ slug: { $in: slugs } });
   if (entityIds.length > 0) namingEntity.push({ _id: { $in: entityIds } });
   if (namingEntity.length === 0) return false;
-  return Boolean(await ResearchEntity.exists({ archived: { $ne: true }, $or: namingEntity }));
+  const named = (await ResearchEntity.find({ $or: namingEntity })
+    .select('_id slug archived canonicalGroupId')
+    .lean()) as unknown as ResearchEntityTombstoneNode[];
+  if (named.some((entity) => entity.archived !== true)) return true;
+  for (const loser of named.filter((entity) => entity.canonicalGroupId)) {
+    const attribution = attributions.find(
+      (candidate) =>
+        textValue(candidate.entityKey) === loser.slug ||
+        normalizeMaterializerObjectId(candidate.entityId) === String(loser._id),
+    );
+    if (
+      attribution?.entityType &&
+      (await mergedSurvivorTakesLoserLeadAttribution(loser, attribution.entityType, userEntityKey))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
