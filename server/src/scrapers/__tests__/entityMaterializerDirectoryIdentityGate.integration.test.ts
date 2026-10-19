@@ -1094,5 +1094,41 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(result.created).toBe(false);
       expect(await Researcher.countDocuments({})).toBe(before);
     });
+
+    it.each([
+      ['the bare alias', 'edsger.fixture'],
+      ['the Yale address', 'Edsger.Fixture@yale.edu'],
+    ])('mints when the roster stored the lead as %s (#4697)', async (_label, storedKey) => {
+      await seedDirectoryEmail('netid:wx456', 'edsger.fixture@yale.edu');
+      await seedRosterIdentity('netid:edsger.fixture', 'Edsger', 'Fixture');
+      await seedNamingResearchEntity();
+      await seedPiAttribution(storedKey);
+
+      const result = await materializeEntity('user', { entityKey: 'netid:edsger.fixture' }, {});
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      const minted = await Researcher.findOne({ displayName: 'Edsger Fixture' }).lean<{
+        identifiers?: { netid?: string };
+      }>();
+      expect(minted?.identifiers?.netid).toBe('wx456');
+    });
+
+    it('does not read an attribution naming a longer alias as naming this one', async () => {
+      await seedDirectoryEmail('netid:wx456', 'edsger.fixture@yale.edu');
+      await seedRosterIdentity('netid:edsger.fixture', 'Edsger', 'Fixture');
+      await seedNamingResearchEntity();
+      await seedPiAttribution('edsger.fixture2@yale.edu');
+
+      const result = await materializeEntity('user', { entityKey: 'netid:edsger.fixture' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+    });
+
+    it('resolves past a grant lane key that carries the same address', async () => {
+      await seedDirectoryEmail('netid:yz789', 'barbara.fixture@yale.edu');
+      await seedDirectoryEmail('nsf-pi:barbara fixture', 'barbara.fixture@yale.edu');
+      expect(await netidForRosterEmailAlias('barbara.fixture')).toBe('yz789');
+    });
   });
 });

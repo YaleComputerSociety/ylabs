@@ -9,7 +9,8 @@
  * full re-scrape.
  *
  * Selection is deliberately narrow: a `user` entityKey is a candidate only when a
- * live `inferredPiUserKey` or `inferredPiUserId` observation carries that exact key.
+ * live `inferredPiUserKey` or `inferredPiUserId` observation names that key, read through
+ * `userEntityKeyForInferredPiUserKey` so every stored spelling of one key counts.
  * The materializer applies every mint guard itself, so this module decides only which
  * keys to visit, never whether one deserves a researcher.
  */
@@ -62,6 +63,26 @@ export function parseMaterializePiAttributedUsersArgs(
     throw new Error(`${PI_ATTRIBUTED_USERS_CONFIRM_FLAG} is required when --apply is set.`);
   }
   return args;
+}
+
+/**
+ * A roster stores the lead it names as `netid:<alias>`, the bare alias or the Yale address
+ * (#4697), while the person's `user` observations carry only the first, so an attribution is
+ * read through `toUserEntityKey` before it is matched or two of the three spellings never
+ * reach the mint.
+ */
+export function piAttributedUserKeyCandidates(
+  attributedValues: readonly string[],
+  userKeys: ReadonlySet<string>,
+  toUserEntityKey: (value: string) => string,
+): string[] {
+  const candidates = new Set<string>();
+  for (const value of attributedValues) {
+    for (const key of [value, toUserEntityKey(value)]) {
+      if (userKeys.has(key)) candidates.add(key);
+    }
+  }
+  return [...candidates].sort();
 }
 
 function parsePositiveInteger(value: string | undefined): number {
