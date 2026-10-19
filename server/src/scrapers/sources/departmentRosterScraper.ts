@@ -324,6 +324,12 @@ export interface FacultyEntry {
   imageUrl?: string;
   /** A lab the person's own official profile says that person leads (#4468). */
   statedLabName?: string;
+  /**
+   * Whether this run read the person's own official profile page: `read` only when the
+   * page was fetched and named the roster person, which is what lets an empty mint
+   * withdraw a row this lane minted earlier (#5380).
+   */
+  profileReadOutcome?: 'read' | 'refused' | 'unread';
 }
 
 /** Context passed to each per-department extractor for URL resolution and logging. */
@@ -3820,9 +3826,12 @@ export function profileBelongsToRosterPerson(args: {
  * and a profile refused as someone else's page is a refusal (#3135, #2647).
  */
 function withUnreadProfileSlot(entry: FacultyEntry, outcome: 'unread' | 'refused'): FacultyEntry {
-  if (entry.labUrl) return entry;
-  if (outcome === 'refused') return { ...entry, labSlotAttestation: 'refused' };
-  return entry.labSlotAttestation === 'empty' ? { ...entry, labSlotAttestation: undefined } : entry;
+  const marked: FacultyEntry = { ...entry, profileReadOutcome: outcome };
+  if (entry.labUrl) return marked;
+  if (outcome === 'refused') return { ...marked, labSlotAttestation: 'refused' };
+  return entry.labSlotAttestation === 'empty'
+    ? { ...marked, labSlotAttestation: undefined }
+    : marked;
 }
 
 export async function enrichEntryFromOfficialProfile(
@@ -3864,7 +3873,7 @@ export async function enrichEntryFromOfficialProfile(
       );
       return withUnreadProfileSlot(entry, 'refused');
     }
-    return mergeProfileEnrichment(entry, enrichment);
+    return { ...mergeProfileEnrichment(entry, enrichment), profileReadOutcome: 'read' };
   } catch (err: any) {
     log(`[profile] fetch failed: ${sanitizeLogValue(err)}`);
     return withUnreadProfileSlot(entry, 'unread');
@@ -4211,6 +4220,27 @@ export function rosterResearchEntityMint(
 }
 
 /**
+ * The row this lane minted for the person earlier and no longer mints, when this read
+ * is evidence of that (#5380).
+ *
+ * Only a read that fetched the person's own profile and found nothing to mint counts. An
+ * unread or refused profile says nothing, a title refusal is already recorded as still
+ * listed, and a profile-only or programme lane never mints at all, so none of those
+ * withdraws anything. Whether a live row exists, and whether another lane still holds
+ * evidence for it, is decided after the run by `rosterMintWithdrawal.ts`.
+ */
+export function rosterMintWithdrawnEntityKey(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  mint: { observations: readonly ObservationInput[]; refusedByTitle: boolean },
+): string {
+  if (dept.officialProfileOnly || dept.crossListedProgramme) return '';
+  if (mint.observations.length > 0 || mint.refusedByTitle) return '';
+  if (entry.profileReadOutcome !== 'read') return '';
+  return rosterResearchEntitySlug(entry, dept);
+}
+
+/**
  * A faculty member with no off-directory lab website is still a research home:
  * a school whose faculty publish research on their own official profile and
  * never run a separate lab site (Art, Architecture) otherwise materializes
@@ -4484,6 +4514,8 @@ export class DepartmentRosterScraper implements IScraper {
     const seenUserKeys = new Set<string>();
     const seenLabKeys = new Set<string>();
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
+    const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
+    const profilesReadByDept = new Map<string, number>();
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -4597,6 +4629,15 @@ export class DepartmentRosterScraper implements IScraper {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(discoveredKey);
           discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
+        }
+        if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
+          profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
+        }
+        const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, mint);
+        if (withdrawnKey) {
+          const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          deptWithdrawn.add(withdrawnKey);
+          withdrawnEntityKeysByDept.set(dept.deptKey, deptWithdrawn);
         }
         faculty++;
         totalFaculty++;
@@ -4850,6 +4891,12 @@ export class DepartmentRosterScraper implements IScraper {
       const discoveredEntityKeys = Array.from(
         discoveredEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
       ).sort();
+      const discoveredKeySet = new Set(discoveredEntityKeys);
+      const withdrawnEntityKeys = Array.from(
+        withdrawnEntityKeysByDept.get(deptResult.deptKey) ?? new Set<string>(),
+      )
+        .filter((key) => !discoveredKeySet.has(key))
+        .sort();
       // A department whose page was not read in this run is not authoritative
       // about who its roster lists, whatever its lane status says. This is the
       // half of #3251 that was real: the snapshot asserted "this is who the
@@ -4872,6 +4919,9 @@ export class DepartmentRosterScraper implements IScraper {
           complete: entityAuthoritative,
           discoveredCount: discoveredEntityKeys.length,
           discoveredEntityKeys,
+          mintWithdrawalRecorded: true,
+          withdrawnEntityKeys,
+          profilesRead: profilesReadByDept.get(deptResult.deptKey) ?? 0,
           read: {
             pagesRead: deptResult.pagesRead,
             readMode: deptResult.readMode,

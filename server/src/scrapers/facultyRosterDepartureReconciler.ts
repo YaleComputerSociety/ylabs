@@ -793,6 +793,11 @@ export async function loadRunRosterPresence(
   for (const row of snapshots) {
     const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
     for (const key of snapshotDiscoveredEntityKeys(snapshot)) present.add(key);
+    // A withdrawn mint is a person the roster still lists, so it is presence (#5380).
+    const withdrawn = (snapshot as { withdrawnEntityKeys?: unknown }).withdrawnEntityKeys;
+    if (Array.isArray(withdrawn)) {
+      for (const key of withdrawn) if (typeof key === 'string' && key) present.add(key);
+    }
   }
   const observed = (await Observation.distinct('entityKey', {
     scrapeRunId: runObjectId,
