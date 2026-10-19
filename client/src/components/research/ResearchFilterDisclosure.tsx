@@ -238,6 +238,9 @@ const ResearchFilterDisclosure = ({
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
 
+  const facetCountSuffix = (count: number | undefined): string =>
+    hasFacetError || count === undefined ? '' : ` (${count})`;
+
   const facetCountWarning = hasFacetError && visibleFields.length > 0 && (
     <p className="rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
       Current filter counts are unavailable. Active values remain clearable.
@@ -267,7 +270,7 @@ const ResearchFilterDisclosure = ({
               />
               <span className={`min-w-0 ${noHostedUndergraduateEvidence ? 'text-muted' : ''}`}>
                 {HOSTED_UNDERGRADUATES_LABEL}
-                {hostsUndergradsCount !== undefined ? ` (${hostsUndergradsCount})` : ''}
+                {facetCountSuffix(hostsUndergradsCount)}
               </span>
             </label>
             {noHostedUndergraduateEvidence && (
@@ -291,7 +294,7 @@ const ResearchFilterDisclosure = ({
               {entityTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label || researchEntityTypeFilterLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
             </select>
@@ -311,7 +314,7 @@ const ResearchFilterDisclosure = ({
               {schoolOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
             </select>
@@ -331,7 +334,7 @@ const ResearchFilterDisclosure = ({
               {departmentOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {departmentLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
             </select>
