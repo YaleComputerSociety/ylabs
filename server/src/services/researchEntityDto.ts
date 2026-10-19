@@ -541,7 +541,7 @@ export function publicUndergradInvitation(
   if (quoteListsPeopleWithTheirContactDetails(quote)) return undefined;
   return {
     level: level as UndergradInvitationLevel,
-    quote: quote.trim().slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+    quote: redactDirectContactInfo(quote.trim().slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH)),
     sourceUrl: servedUrl,
   };
 }

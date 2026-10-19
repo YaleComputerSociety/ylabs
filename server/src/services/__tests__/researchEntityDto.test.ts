@@ -717,6 +717,16 @@ describe('researchEntityDto', () => {
       });
     });
 
+    it('redacts a scraped email address from the served quote', () => {
+      const served = row({
+        level: 'welcomes_undergrads',
+        quote: 'Interested undergraduates should email someone@example.edu with a CV.',
+        sourceUrl: 'https://invitation.example.edu/join',
+      }).undergradInvitation as { quote: string } | undefined;
+      expect(served?.quote).toBeDefined();
+      expect(served?.quote).not.toContain('someone@example.edu');
+    });
+
     it.each([
       [
         'an unknown level',

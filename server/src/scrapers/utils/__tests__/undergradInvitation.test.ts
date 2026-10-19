@@ -37,6 +37,9 @@ describe('extractUndergradInvitation', () => {
     'Undergraduate research opportunities are available during both the academic year and the summer.',
     'If you are a current Yale undergraduate interested in research, feel free to email me to check if there are any research opportunities available.',
     'We also offer opportunities to undergraduate students who wish to pursue applied research.',
+    'We are currently hiring graduate students and postdocs; undergraduates are welcome to contact us.',
+    'We are actively recruiting postdocs, but undergraduates are welcome to reach out about projects.',
+    'We are currently hiring postdocs, and undergraduates are welcome to contact us.',
   ])('reads a standing invitation as welcomes undergrads: %s', (text) => {
     expect(level(text)).toBe('welcomes_undergrads');
   });

@@ -45,6 +45,8 @@ const ACTIVE_CUES = [
 const STANDING_QUALIFIER =
   /\b(?:always|often|constantly|continually|regularly|occasionally|generally|typically)\b/i;
 const CONDITIONAL_AVAILABILITY = /\b(?:if|whether)\s+(?:there\s+(?:are|is)|any)\b/i;
+const INDEPENDENT_CLAUSE_BREAK =
+  /;|,?\s+(?:but|while|whereas)\s+|,\s+and\s+(?=(?:\w+\s+){0,2}(?:are|is|can|may|should|will)\b)/i;
 
 const WELCOME_CUES = [
   /\bwelcom(?:e|es|ed|ing)\b/i,
@@ -162,6 +164,17 @@ function namesUndergraduateAudience(sentence: string): boolean {
   );
 }
 
+function activeOpeningIsForUndergraduates(sentence: string): boolean {
+  const sentenceNamesAudience = namesUndergraduateAudience(sentence);
+  return sentence
+    .split(INDEPENDENT_CLAUSE_BREAK)
+    .some(
+      (clause) =>
+        ACTIVE_CUES.some((cue) => cue.test(clause)) &&
+        (!sentenceNamesAudience || namesUndergraduateAudience(clause)),
+    );
+}
+
 export function classifyInvitationSentence(
   sentence: string,
   now: Date,
@@ -175,7 +188,7 @@ export function classifyInvitationSentence(
   const active =
     !STANDING_QUALIFIER.test(sentence) &&
     !CONDITIONAL_AVAILABILITY.test(sentence) &&
-    ACTIVE_CUES.some((cue) => cue.test(sentence));
+    activeOpeningIsForUndergraduates(sentence);
   if (active) return 'actively_hiring';
   return WELCOME_CUES.some((cue) => cue.test(sentence)) ? 'welcomes_undergrads' : null;
 }
