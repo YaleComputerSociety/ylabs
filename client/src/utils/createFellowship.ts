@@ -31,6 +31,7 @@ export function createFellowship(data: any): Fellowship {
     cardSummary: typeof data.cardSummary === 'string' ? data.cardSummary : undefined,
     description: data.description || '',
     applicationInformation: data.applicationInformation || '',
+    applicationMaterials: Array.isArray(data.applicationMaterials) ? data.applicationMaterials : [],
     eligibility: data.eligibility || '',
     restrictionsToUseOfAward: data.restrictionsToUseOfAward || '',
     additionalInformation: data.additionalInformation || '',

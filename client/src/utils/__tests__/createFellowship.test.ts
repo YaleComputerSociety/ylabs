@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { getItemCardSummary, getItemSubtitle, isItemOpen } from '../../types/browsable';
 import { getFellowshipCycleStatus } from '../fellowshipCycle';
 import { createFellowship } from '../createFellowship';
+import { programLetterRequirement } from '../programLetterRequirement';
 
 const cardLineFor = (row: Record<string, unknown>) =>
   getItemCardSummary({ type: 'fellowship', data: createFellowship(row) });
@@ -120,5 +121,27 @@ describe('createFellowship citizenship condition (#5235)', () => {
   it('reads no condition when the server sends none', () => {
     expect(served(null).citizenshipCondition).toBeNull();
     expect(served(undefined).citizenshipCondition).toBeNull();
+  });
+});
+
+describe('createFellowship application materials (#5302)', () => {
+  it('carries the served materials so a letter listed only there reaches the mentor answer', () => {
+    const program = createFellowship({
+      _id: 'p-materials',
+      applicationMaterials: ['Resume', 'One letter of recommendation from a Yale faculty member'],
+    });
+    expect(program.applicationMaterials).toEqual([
+      'Resume',
+      'One letter of recommendation from a Yale faculty member',
+    ]);
+    expect(programLetterRequirement(program)).toBe('faculty');
+  });
+
+  it('reads no materials when the server sends none', () => {
+    expect(createFellowship({ _id: 'p-no-materials' }).applicationMaterials).toEqual([]);
+    expect(
+      createFellowship({ _id: 'p-bad-materials', applicationMaterials: 'Resume' })
+        .applicationMaterials,
+    ).toEqual([]);
   });
 });
