@@ -1575,6 +1575,32 @@ A read that names someone else is held: it emits only the snapshot, and the new 
 A read that names nobody emits no snapshot, so an unreadable leadership page never ends an edge.
 The hold exists because two identical passes over the 46 supplied homes on Development named a different director for 3 of them.
 
+### Center director, read with code (#5296)
+
+`center-director` replaced `center-director-llm` in the research sweep by owner decision on 2026-10-19, and `center-director-llm` is manual-only.
+It reads the home's own page first, then up to three leadership pages inside the home's own URL subtree.
+The LLM lane reads up to three same-host leadership links and its own page last, so on a school's shared theme it read the school's About, Leadership or dean's page and never the center's page.
+A director counts only from a title label beside exactly one name, or from a strict sentence, and the title must be a current directorship of this unit or the chair of this council.
+Two people at the best rank (a director or faculty director, then a co-director, then a functional head such as an executive, technical or managing director) refuse the read rather than pick one, with one exception the owner decided on 2026-10-19: where the people at the top rank are directors and exactly one of them is a faculty director, the faculty director is the director, and two faculty directors still refuse.
+It emits the same `inferredDirector*` observations, and `materializeInferredDirectorMembership` reads only this lane's director observations wherever it states one, because the fields supersede per field and mixing two lanes would pair one person's name with another's profile URL.
+A director stated only in prose is counted but not stored, because no observation field holds unsettled page text yet.
+
+Each read that fetched a page records a `centerRosterHealth` snapshot listing every person the pages state as a director at any rank, including the people a tie refused, and `settledDirector`, the one it named or null.
+A failed fetch records nothing, and a `--use-cache` read is never admitted.
+`reconcileCodeLaneDirectorRetirementsFromRun` in `centerDirectorRetirement.ts` runs from `materializeFromRun` and governs two populations on every home the run read:
+
+- its own lead edge ends once two admitted reads in distinct runs after the edge was last observed no longer state that person, the centres absence rule;
+- a lead edge `center-director-llm` wrote is judged by the latest admitted read after the edge was last observed: it ends when that read settled on a different director, or settled on nobody and does not state that person at any rank, and is kept otherwise.
+
+One read decides the hand-off, because the code lane is deterministic and the LLM lane no longer runs, so a second read of an unchanged page adds nothing; an edge with no supporting deterministic observation ends.
+An LLM edge for the person the code lane settles on is not ended: the materializer's upsert re-attributes it to this lane.
+An ended edge's lane observations are retired with it through the shared `superseded` plus `rollback` shape, because latest-wins observations a lane stopped emitting are never superseded and would write the edge again on the next materialization.
+
+Measured on 2026-10-19 over the 106 homes the LLM lane read on Development, from pages frozen that day and judged against those pages: the code lane named 58 directors and the page supported all 58 (Wilson 95% 94% to 100%), covering 58 of the 68 homes whose pages state a director.
+Under the owner's faculty-director rule 40 of the LLM lane's 80 values named the director (50%, 39% to 61%), and 56 named someone the page lists as some director.
+The faculty-director rule settled 13 homes the code lane had refused, every one checked against its page.
+The LLM lane's 24 unsupported values were people named on a different unit's page reached through shared navigation, a name the cited page does not carry, a retired or functional director, a mailing "Attn:" line, a related core's contact card, and a page heading stored as a name.
+
 ### Center roster retirement: members a complete read no longer lists
 
 `centers-institutes-index` keys every roster member as its own observation (`<center>:<member>`), so a member the roster stops listing is never re-asserted, never superseded, and keeps its role edge forever, including a stale lead edge (#3781).

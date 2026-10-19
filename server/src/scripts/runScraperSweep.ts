@@ -170,7 +170,7 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'lab-site-lead-verification', phase: 'relationships' },
   { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
-  { name: 'center-director-llm', phase: 'relationships' },
+  { name: 'center-director', phase: 'relationships' },
   {
     name: 'center-member-profile-research',
     phase: 'relationships',

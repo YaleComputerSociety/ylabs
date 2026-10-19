@@ -214,6 +214,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads an organizational home's official site + leadership pages and emits an entity-level inferred-director observation. The materializer resolves the named director to a unique Yale User before promoting them to a `director` member (skips unresolved/ambiguous names; never mints a lead).",
   },
+  'center-director': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP'],
+    defaultConfidence: 'HIGH',
+    notes:
+      "Reads an organizational home's own page and in-subtree leadership pages with code and emits an entity-level inferred-director observation only when one director is stated by a title label or a strict sentence; a tie at the top rank is refused. The materializer resolves the name to a unique Yale User before promoting them to a `director` member.",
+  },
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
