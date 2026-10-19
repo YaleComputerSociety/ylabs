@@ -1257,14 +1257,14 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   });
 
   describe('mints from an official roster address when nothing else holds the person (owner decision 2026-10-19)', () => {
-    const ALIAS_KEY = 'netid:odalys.fenwright';
-    const ALIAS_EMAIL = 'odalys.fenwright@yale.edu';
+    const ALIAS_KEY = 'netid:wren.fenwright';
+    const ALIAS_EMAIL = 'wren.fenwright@yale.edu';
 
     const seedAliasRoster = async (
       overrides: { fname?: string; lname?: string; email?: string | null; page?: string } = {},
     ) => {
       const fields: Array<readonly [string, unknown]> = [
-        ['fname', overrides.fname ?? 'Odalys'],
+        ['fname', overrides.fname ?? 'Wren'],
         ['lname', overrides.lname ?? 'Fenwright'],
         ['title', 'Professor of Physics'],
       ];
@@ -1277,7 +1277,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     };
 
     const mintedFenwright = async () =>
-      Researcher.findOne({ displayName: 'Odalys Fenwright' }).lean<{
+      Researcher.findOne({ displayName: 'Wren Fenwright' }).lean<{
         _id: mongoose.Types.ObjectId;
         identifiers?: { netid?: string; email?: string };
       }>();
@@ -1322,7 +1322,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       await seedAliasRoster();
       await materializeEntity('user', { entityKey: ALIAS_KEY }, {});
       const minted = await mintedFenwright();
-      await Researcher.create({ displayName: 'Odalys Fenwright', archived: false });
+      await Researcher.create({ displayName: 'Wren Fenwright', archived: false });
       const entity = await ResearchEntity.findOne({ slug: NAMING_ENTITY_SLUG }).lean();
       const observations = await Observation.find({
         entityKey: NAMING_ENTITY_SLUG,
@@ -1345,7 +1345,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('refuses a key whose own address is not its alias at yale.edu', async () => {
-      await seedAliasRoster({ email: 'odalys.fenwright@example.invalid' });
+      await seedAliasRoster({ email: 'wren.fenwright@example.invalid' });
 
       const result = await materializeEntity('user', { entityKey: ALIAS_KEY }, {});
 
@@ -1371,13 +1371,13 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('accepts a roster nickname the alias spells in full', async () => {
-      const key = 'netid:katherine.brindle';
+      const key = 'netid:katherine.sample';
       const base = { ...directoryObservationBase(key), sourceName: 'dept-faculty-roster' };
       for (const [field, value] of [
         ['fname', 'Kate'],
-        ['lname', 'Brindle'],
+        ['lname', 'Sample'],
         ['title', 'Professor of Physics'],
-        ['email', 'katherine.brindle@yale.edu'],
+        ['email', 'katherine.sample@yale.edu'],
       ] as const) {
         await Observation.create({ ...base, field, value });
       }
@@ -1404,7 +1404,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('refuses when a live researcher under another name already holds the official page', async () => {
-      const page = 'https://physics.example.yale.edu/people/odalys-fenwright';
+      const page = 'https://physics.example.yale.edu/people/wren-fenwright';
       await Researcher.create({
         displayName: 'Marisol Quill',
         profileLinks: [yaleOfficialProfileLink(page)],
@@ -1436,9 +1436,9 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('still mints when another roster prints the address under the same name', async () => {
-      const other = directoryObservationBase('dept:chemistry:odalys-fenwright');
+      const other = directoryObservationBase('dept:chemistry:wren-fenwright');
       for (const [field, value] of [
-        ['fname', 'Odalys'],
+        ['fname', 'Wren'],
         ['lname', 'Fenwright'],
         ['email', ALIAS_EMAIL],
       ] as const) {
@@ -1455,7 +1455,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     it('still refuses an alias key no live research row names as its lead', async () => {
       const base = { ...directoryObservationBase(ALIAS_KEY), sourceName: 'dept-faculty-roster' };
       for (const [field, value] of [
-        ['fname', 'Odalys'],
+        ['fname', 'Wren'],
         ['lname', 'Fenwright'],
         ['email', ALIAS_EMAIL],
       ] as const) {
@@ -1468,7 +1468,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('still refuses when a same-surname researcher could be the same person (#4388)', async () => {
-      await Researcher.create({ displayName: 'O. Fenwright', archived: false });
+      await Researcher.create({ displayName: 'W. Fenwright', archived: false });
       await seedAliasRoster();
 
       const result = await materializeEntity('user', { entityKey: ALIAS_KEY }, {});

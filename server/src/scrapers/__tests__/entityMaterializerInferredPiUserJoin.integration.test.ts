@@ -135,8 +135,8 @@ describe('materializeInferredPiMembership follows the user identity join', () =>
   });
 
   it('refuses a joined researcher who is not the person an eponymous lab name names', async () => {
-    const entity = await seedEntity('synthetic-join-eponym', 'Brindlecomb Lab');
-    await seedResearcher('Odile Brindlecomb', 'Professor of Genetics');
+    const entity = await seedEntity('synthetic-join-eponym', 'Samplecomb Lab');
+    await seedResearcher('Odile Samplecomb', 'Professor of Genetics');
     await seedResearcher('Tamsin Quorvale', 'Associate Research Scientist');
     await seedUserName('ysm:tq417', 'Tamsin', 'Quorvale');
 
@@ -193,16 +193,16 @@ describe('materializeInferredPiMembership follows the user identity join', () =>
     it('follows the key email past an alias the directory maps to two netids', async () => {
       const entity = await seedEntity('synthetic-email-ambiguous', 'Fenwright Lab');
       const researcher = await Researcher.create({
-        displayName: 'Odalys Fenwright',
-        identifiers: { email: 'odalys.fenwright@yale.edu' },
+        displayName: 'Wren Fenwright',
+        identifiers: { email: 'wren.fenwright@yale.edu' },
         profile: { title: 'Professor of Engineering' },
         archived: false,
       });
-      await seedAliasMappedToTwoNetids('odalys.fenwright');
-      await seedUserName('netid:odalys.fenwright', 'Odalys', 'Fenwright');
-      await seedUserField('netid:odalys.fenwright', 'email', 'odalys.fenwright@yale.edu');
+      await seedAliasMappedToTwoNetids('wren.fenwright');
+      await seedUserName('netid:wren.fenwright', 'Wren', 'Fenwright');
+      await seedUserField('netid:wren.fenwright', 'email', 'wren.fenwright@yale.edu');
 
-      await materializeInferredPiMembership(String(entity._id), [piKey('netid:odalys.fenwright')]);
+      await materializeInferredPiMembership(String(entity._id), [piKey('netid:wren.fenwright')]);
 
       const found = await leads(entity._id);
       expect(found).toHaveLength(1);
@@ -213,35 +213,35 @@ describe('materializeInferredPiMembership follows the user identity join', () =>
       const entity = await seedEntity('synthetic-email-two-holders', 'Fenwright Lab');
       for (const title of ['Professor of Engineering', 'Professor of Physics']) {
         await Researcher.create({
-          displayName: 'Odalys Fenwright',
-          identifiers: { email: 'odalys.fenwright@yale.edu' },
+          displayName: 'Wren Fenwright',
+          identifiers: { email: 'wren.fenwright@yale.edu' },
           profile: { title },
           archived: false,
         });
       }
-      await seedAliasMappedToTwoNetids('odalys.fenwright');
-      await seedUserName('netid:odalys.fenwright', 'Odalys', 'Fenwright');
-      await seedUserField('netid:odalys.fenwright', 'email', 'odalys.fenwright@yale.edu');
+      await seedAliasMappedToTwoNetids('wren.fenwright');
+      await seedUserName('netid:wren.fenwright', 'Wren', 'Fenwright');
+      await seedUserField('netid:wren.fenwright', 'email', 'wren.fenwright@yale.edu');
 
-      await materializeInferredPiMembership(String(entity._id), [piKey('netid:odalys.fenwright')]);
+      await materializeInferredPiMembership(String(entity._id), [piKey('netid:wren.fenwright')]);
 
       expect(await leads(entity._id)).toHaveLength(0);
     });
 
     it('follows the official page past an alias the directory maps to two netids', async () => {
-      const page = 'https://eng.example.yale.edu/people/odalys-fenwright';
+      const page = 'https://eng.example.yale.edu/people/wren-fenwright';
       const entity = await seedEntity('synthetic-page-ambiguous', 'Fenwright Lab');
       const researcher = await Researcher.create({
-        displayName: 'Odalys Fenwright',
+        displayName: 'Wren Fenwright',
         profile: { title: 'Professor of Engineering' },
         profileLinks: [officialLink(page)],
         archived: false,
       });
-      await seedAliasMappedToTwoNetids('odalys.fenwright');
-      await seedUserName('netid:odalys.fenwright', 'Odalys', 'Fenwright');
-      await seedUserField('netid:odalys.fenwright', 'profileUrls', { departmental: page });
+      await seedAliasMappedToTwoNetids('wren.fenwright');
+      await seedUserName('netid:wren.fenwright', 'Wren', 'Fenwright');
+      await seedUserField('netid:wren.fenwright', 'profileUrls', { departmental: page });
 
-      await materializeInferredPiMembership(String(entity._id), [piKey('netid:odalys.fenwright')]);
+      await materializeInferredPiMembership(String(entity._id), [piKey('netid:wren.fenwright')]);
 
       const found = await leads(entity._id);
       expect(found).toHaveLength(1);
@@ -249,23 +249,20 @@ describe('materializeInferredPiMembership follows the user identity join', () =>
     });
 
     it('joins the stamped official page a department keeps outside a /people/ path', async () => {
-      const page = 'https://som.example.yale.edu/faculty-directory/odalys-fenwright';
-      const entity = await seedEntity(
-        'synthetic-stamped-page',
-        'Odalys Fenwright Faculty Research',
-      );
+      const page = 'https://som.example.yale.edu/faculty-directory/wren-fenwright';
+      const entity = await seedEntity('synthetic-stamped-page', 'Wren Fenwright Faculty Research');
       const researcher = await Researcher.create({
-        displayName: 'Odalys Fenwright',
+        displayName: 'Wren Fenwright',
         profile: { title: 'Professor of Economics' },
         profileLinks: [officialLink(page)],
         archived: false,
       });
-      await seedResearcher('Odalys P. Fenwright', 'Professor of Medicine');
-      await seedUserName('dept:som:odalys-q-fenwright', 'Odalys Q.', 'Fenwright');
-      await seedUserField('dept:som:odalys-q-fenwright', 'profileUrls', { departmental: page });
+      await seedResearcher('Wren P. Fenwright', 'Professor of Medicine');
+      await seedUserName('dept:som:wren-q-fenwright', 'Wren Q.', 'Fenwright');
+      await seedUserField('dept:som:wren-q-fenwright', 'profileUrls', { departmental: page });
 
       await materializeInferredPiMembership(String(entity._id), [
-        piKey('dept:som:odalys-q-fenwright'),
+        piKey('dept:som:wren-q-fenwright'),
       ]);
 
       const found = await leads(entity._id);

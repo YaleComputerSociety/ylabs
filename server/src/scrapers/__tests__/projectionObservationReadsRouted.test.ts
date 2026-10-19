@@ -39,9 +39,14 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       "Called only from `liveResearchEntityNamesUserKeyAsLead`, the person-mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It loads the survivor a merged-in loser resolves to and that survivor's own observations, a different row from any being projected.",
   },
   {
-    fn: 'researcherReachedByUserIdentity',
+    fn: 'userIdentityJoinForKey',
     reason:
       'On the inferred-PI lead path, reached only from `planInferredPiMembership`, which the projection calls inside `if (!options.dryRun)` and the reclaim stage calls directly, so THE BENCHMARK NEVER MAKES THIS READ: it replays rows with `dryRun: true`. It reads `user` observations under the key a PI attribution names, a different entity from the row being projected, so an entity-keyed source for that row cannot answer it (#4697).',
+  },
+  {
+    fn: 'otherPersonPrintsAddress',
+    reason:
+      'Called only from `rosterAliasEmailMintIdentity`, the address-keyed mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by value for other `user` keys printing one address, whose purpose is to find people other than the one being minted, so an entity-keyed source cannot answer it.',
   },
   {
     fn: 'listingsSharingProfileUrl',
