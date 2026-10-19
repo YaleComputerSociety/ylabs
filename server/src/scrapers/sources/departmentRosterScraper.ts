@@ -78,6 +78,7 @@ import {
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
   isOffsiteInstitutionPersonProfileUrl,
+  isPatientCarePageUrl,
   isPostingPageUrl,
   isPersonProfileOrDirectoryUrl,
   isSharedPeopleRosterUrl,
@@ -3528,7 +3529,7 @@ export function profileEnrichmentFromHtml(
       labUrlCandidateRefused = true;
       return;
     }
-    if (isPostingPageUrl(absolute) || isCoursePageUrl(absolute)) {
+    if (isPostingPageUrl(absolute) || isCoursePageUrl(absolute) || isPatientCarePageUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
     }
@@ -3884,7 +3885,8 @@ function withoutInadmissibleLabWebsite(entry: FacultyEntry): FacultyEntry {
     !(
       isOffsiteInstitutionPersonProfileUrl(entry.labUrl) ||
       isPostingPageUrl(entry.labUrl) ||
-      isCoursePageUrl(entry.labUrl)
+      isCoursePageUrl(entry.labUrl) ||
+      isPatientCarePageUrl(entry.labUrl)
     )
   ) {
     return entry;

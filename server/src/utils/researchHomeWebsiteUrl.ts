@@ -1173,6 +1173,48 @@ export function isPostingPageCitedAsResearchWebsite(
   return isPostingPageUrl(value) && isPersonScopedHostTenant(entity);
 }
 
+const CLINICAL_PRACTICE_HOSTS: readonly string[] = ['yalemedicine.org', 'ynhh.org', 'ynhhs.org'];
+
+const isClinicalPracticeHost = (url: URL): boolean => {
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  return CLINICAL_PRACTICE_HOSTS.some(
+    (clinicalHost) => host === clinicalHost || host.endsWith(`.${clinicalHost}`),
+  );
+};
+
+const PATIENT_CARE_PATH_SEGMENT =
+  /^(?:patients?|for-patients|care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
+
+const RESEARCH_OR_LAB_PATH_SEGMENT = /research|^labs?$/i;
+
+/**
+ * A page for patients rather than for research: any page on a clinical-practice or
+ * hospital host, or a page under a patient or clinical-care path segment, such as a
+ * cancer center's patient program or a department's condition page (#5364). A path that
+ * also carries a research or lab segment is a research page that happens to sit under a
+ * clinical section, so it never counts.
+ */
+export function isPatientCarePageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (isClinicalPracticeHost(url)) return true;
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.some((segment) => RESEARCH_OR_LAB_PATH_SEGMENT.test(segment))) return false;
+  return segments.some((segment) => PATIENT_CARE_PATH_SEGMENT.test(segment));
+}
+
+/**
+ * A patient-care page offered as the research website of a lab or person-scoped row. An
+ * organization row keeps the scope `isUmbrellaPageCitedByPerson` uses, because a clinic
+ * or program row is the collective the page describes.
+ */
+export function isPatientCarePageCitedAsResearchWebsite(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return isPatientCarePageUrl(value) && isPersonScopedHostTenant(entity);
+}
+
 // Organization shapes whose identity is the collective that publishes a site rather
 // than a tenant of it, so the site the collective's name designates is its own
 // research home. Deliberately an ALLOWLIST and not the negation of
@@ -1750,6 +1792,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'school-section-page'
   | 'posting-page'
   | 'course-page'
+  | 'patient-care-page'
   | 'yale-path-vocabulary';
 
 /**
@@ -1803,6 +1846,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'school-section-page',
   'posting-page',
   'course-page',
+  'patient-care-page',
 ]);
 
 export function researchHomeWebsiteUrlRefusalBlocksWrite(
@@ -1877,6 +1921,9 @@ export function researchHomeWebsiteUrlDecision(
   if (isInstitutionalAdvancementUrl(raw)) return refuse('institutional-advancement');
   if (isPostingPageCitedAsResearchWebsite(raw, entity)) return refuse('posting-page');
   if (isCoursePageUrl(raw)) return refuse('course-page');
+  // Ahead of the `isDirectPersonalSite` shortcut, because a clinical-practice host is not
+  // Yale and would otherwise skip every path check.
+  if (isPatientCarePageCitedAsResearchWebsite(raw, entity)) return refuse('patient-care-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
   try {

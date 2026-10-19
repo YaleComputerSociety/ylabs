@@ -48,6 +48,7 @@ import {
   isMapOrDirectionsUrl,
   isMultiTenantAcademicHostRootUrl,
   isOffsiteInstitutionPersonProfileUrl,
+  isPatientCarePageUrl,
   isPersonProfileOrDirectoryUrl,
   isPressOrNewsHostUrl,
   isProfileOrPeopleDirectoryPath,
@@ -1840,7 +1841,7 @@ function disallowedProfileLinkedResearchHome(name: string, url: string): boolean
     /(?:^|\/\/)(?:www\.)?sozenlab\.org\/?$/i.test(url) ||
     /(?:^|\/\/)(?:www\.)?partnershipsforschools\.org\/?$/i.test(url) ||
     /(?:^|\/\/)(?:www\.)?painmanagementcollaboratory\.org\/?$/i.test(url) ||
-    /yalemedicine\.org\/departments\//i.test(url) ||
+    isPatientCarePageUrl(url) ||
     /\bdiagnostic(?:s)?\s+laborator(?:y|ies)\b/i.test(name) ||
     /medicine\.yale\.edu\/genetics\/dna\//i.test(url) ||
     /medicine\.yale\.edu\/childstudy\/research\/?$/i.test(url)
