@@ -1293,6 +1293,10 @@ describe('LabDetail page', () => {
     const websiteLinks = screen.getAllByRole('link', { name: 'Visit lab website' });
     expect(websiteLinks).toHaveLength(1);
     expect(websiteLinks[0].getAttribute('href')).toBe(RESEARCH_WEBSITE_URL);
+    expect(websiteLinks[0]).toHaveAccessibleDescription(
+      'Opens the lab website in a new tab, outside y/labs.',
+    );
+    expect(screen.getByText('Opens the lab website in a new tab, outside y/labs.')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();

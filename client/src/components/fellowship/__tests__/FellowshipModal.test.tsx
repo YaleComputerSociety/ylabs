@@ -450,7 +450,7 @@ describe('FellowshipModal', () => {
 
     expect(screen.getByText('Opens soon', { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText(/Applications are not open yet/i)).toBeInTheDocument();
-    const closedWindowAction = screen.getByText('Track the opening date').closest('a');
+    const closedWindowAction = screen.getByText('See the official program page').closest('a');
     expect(closedWindowAction).toHaveClass('bg-muted');
     expect(closedWindowAction).not.toHaveClass('bg-brand');
     expect(screen.queryByText('Apply now')).not.toBeInTheDocument();
