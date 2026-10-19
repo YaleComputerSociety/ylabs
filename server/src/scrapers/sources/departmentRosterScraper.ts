@@ -57,12 +57,14 @@ import type {
 } from '../types';
 import {
   isLikelyPersonSpecificYaleEmail,
+  isRoleOrUnitMailbox,
   netidFromEmail,
   isPhotoSceneDescription,
   normalizeName,
   normalizeNameKeepingCaption,
   slugify,
   splitName,
+  yaleUnitMailboxTokens,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
@@ -3939,6 +3941,48 @@ export function withoutSharedGroupWebsites<T extends { entry: FacultyEntry; pers
   });
 }
 
+function rosterUnitMailboxTokens(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  sourceUrl: string,
+): Set<string> {
+  return yaleUnitMailboxTokens(
+    [dept.url, sourceUrl, entry.profileUrl, entry.profileSourceUrl],
+    [dept.deptKey, dept.deptName],
+  );
+}
+
+function normalizedRosterEmail(email: string | undefined): string {
+  return String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
+}
+
+/**
+ * An address the roster prints for two different people is an office's, not either
+ * person's, whatever its shape: a staff netid on every profile page passes the netid
+ * shape test, and keying both people by it collapses them into one user key, so the
+ * second is dropped as a duplicate of the first. Refused for every sharer, and decided
+ * before any person key is minted from it.
+ */
+export function withoutSharedRosterEmails<T extends { entry: FacultyEntry }>(
+  items: readonly T[],
+): T[] {
+  const peopleByEmail = new Map<string, Set<string>>();
+  for (const { entry } of items) {
+    const email = normalizedRosterEmail(entry.email);
+    if (!email) continue;
+    const person = rosterIdentityNameSlug(entry) || entry.name;
+    peopleByEmail.set(email, (peopleByEmail.get(email) ?? new Set()).add(person));
+  }
+  return items.map((item) => {
+    const email = normalizedRosterEmail(item.entry.email);
+    if (!email || (peopleByEmail.get(email)?.size ?? 0) < 2) return item;
+    return { ...item, entry: { ...item.entry, email: undefined } };
+  });
+}
+
 const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
   'mechanical-engineering': 'meng-matsci',
   'materials-science': 'meng-matsci',
@@ -4022,9 +4066,11 @@ function entryToUserObservations(
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeName(entry.name);
   const { first, last } = splitName(cleaned);
-  const personEmail = isLikelyPersonSpecificYaleEmail(entry.email, cleaned)
-    ? entry.email
-    : undefined;
+  const personEmail =
+    isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
+    !isRoleOrUnitMailbox(entry.email, rosterUnitMailboxTokens(entry, dept, sourceUrl))
+      ? entry.email
+      : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = rosterIdentityNameSlug(entry);
   const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
@@ -4458,14 +4504,14 @@ export class DepartmentRosterScraper implements IScraper {
 
       // Enriched before anything is emitted, because whether a website is one person's
       // or a group's is a fact about the whole roster, not about one row.
-      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      const admitted: Array<{ entry: FacultyEntry }> = [];
       const rosterSurnames: ReadonlySet<string> = new Set(
         entries
           .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
           .filter((surname): surname is string => Boolean(surname)),
       );
       for (const rawEntry of entries) {
-        if (totalFaculty + enriched.length >= limit) {
+        if (totalFaculty + admitted.length >= limit) {
           truncatedByLimit = true;
           break;
         }
@@ -4485,6 +4531,10 @@ export class DepartmentRosterScraper implements IScraper {
           rosterSurnames,
         );
         if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
+        admitted.push({ entry });
+      }
+      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      for (const { entry } of withoutSharedRosterEmails(admitted)) {
         const personKey = entryToUserObservations(entry, dept, sourceUrl).entityKey;
         const userDedupeKey = `${dept.deptKey}:${personKey}`;
         if (seenUserKeys.has(userDedupeKey)) continue;

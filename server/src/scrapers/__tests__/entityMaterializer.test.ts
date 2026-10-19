@@ -560,6 +560,21 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
   });
 
+  it('ignores a lead key minted from the mailbox of the unit whose roster named it', () => {
+    const rosterPage = 'https://fixtureunit.yale.edu/people/faculty';
+    const lead = (value: string) =>
+      shouldIgnoreObservationForEntityMaterialization('researchEntity', {
+        field: 'inferredPiUserKey',
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: rosterPage,
+        value,
+      });
+    expect(lead('netid:fixtureunit')).toBe(true);
+    expect(lead('fixture.dus@yale.edu')).toBe(true);
+    expect(lead('netid:rowan.synthetic')).toBe(false);
+    expect(lead('dept:fixtureunit:rowan-synthetic')).toBe(false);
+  });
+
   it('ignores sourceContentHash bookkeeping observations for entity materialization', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('researchEntity', {
