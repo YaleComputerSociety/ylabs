@@ -399,7 +399,9 @@ export function readableLinkTarget(token: string): string {
 }
 
 const hasSubstantiveWord = (text: string): boolean =>
-  (text.match(/[A-Za-z]{2,}/g) || []).some((word) => !REFERENCE_SCAFFOLD_WORDS.has(word.toLowerCase()));
+  (text.match(/[A-Za-z]{2,}/g) || []).some(
+    (word) => !REFERENCE_SCAFFOLD_WORDS.has(word.toLowerCase()),
+  );
 
 const LINK_LIST_SEPARATOR = /^\s*(?:,|,?\s*(?:and|or))\s*$/i;
 

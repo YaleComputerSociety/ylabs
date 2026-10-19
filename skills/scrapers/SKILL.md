@@ -1290,8 +1290,9 @@ Three reads keep their length on purpose: the office lane's eligibility statemen
 More prose reaches the classifier's keyword arms too, so the research-assistant arm ignores a budget line that pays research assistants ("stipends for field or research assistants"), which on the frozen grants benchmark otherwise turned one fellowship into an RA program.
 The classifier reads `textForProgram`, which omits `restrictionsToUseOfAward`, so text recovered there reaches display only.
 Prose keeps a link's visible text: section text is read as text, so an anchor's label survives and its `href` never enters prose (#5365).
-A bare URL that is the object of its sentence ("please go to https://... and print it") is kept as its host and path by `stripBibliographicReferenceArtifacts` (`readableLinkTarget`), with no scheme, credentials, port, query string or fragment, because deleting it leaves "please go to and print it".
-A `javascript:`, `vbscript:` or `data:` token never survives as text: it becomes "the linked page" where it is the object of a sentence and is removed elsewhere.
+A bare URL that is the object of its sentence ("please go to https://... and print it") is kept as its host and path by `stripBibliographicReferenceArtifacts` (`readableLinkTarget`), with no scheme, credentials, port, `;` path parameters, query string or fragment, because deleting it leaves "please go to and print it".
+A second link joined to a kept one by a comma, "and" or "or" is kept the same way.
+A `javascript:`, `vbscript:` or `data:` token never survives as text: it becomes "the linked page" ("linked page" after a determiner) where it is the object of a sentence and is removed elsewhere.
 A URL that is only a pointer ("See https://... for details") is still removed, and a removed token never takes the sentence's closing period with it.
 
 A fellowship lane withdraws a value it no longer asserts by saying the page has none, on the `sourceKey` observation that witnesses its read: `assertsNoValueFor: [field]`, built by `fellowshipAbsenceAssertion` (`scrapers/fellowshipFieldAbsence.ts`, #4230).

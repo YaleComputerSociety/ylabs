@@ -3168,7 +3168,9 @@ describe('a link target that is the object of its sentence (#5365)', () => {
       stripBibliographicReferenceArtifacts(
         'Our analysis code is available at https://code.example.org/lab/tool and is used by many groups.',
       ),
-    ).toBe('Our analysis code is available at code.example.org/lab/tool and is used by many groups.');
+    ).toBe(
+      'Our analysis code is available at code.example.org/lab/tool and is used by many groups.',
+    );
   });
 
   it('still drops a sentence-initial pointer and an adjunct url', () => {
@@ -3240,7 +3242,9 @@ describe('a link target that is the object of its sentence (#5365)', () => {
       readableLinkTarget('https://user:secret@portal.example.edu:8443/apply/?session=abc#form'),
     ).toBe('portal.example.edu/apply');
     expect(readableLinkTarget('www.example.edu/path(1)')).toBe('www.example.edu/path(1)');
-    expect(readableLinkTarget('https://example.edu/apply;jsessionid=ABC')).toBe('example.edu/apply');
+    expect(readableLinkTarget('https://example.edu/apply;jsessionid=ABC')).toBe(
+      'example.edu/apply',
+    );
   });
 
   it('shortens an over-long link target to its host', () => {
