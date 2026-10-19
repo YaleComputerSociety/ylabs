@@ -89,6 +89,25 @@ describe('deriveResearchEntityYaleStatus', () => {
     ).toBe('deceased');
   });
 
+  it('flags an in-memoriam heading that runs straight into the lifespan', () => {
+    expect(
+      deriveResearchEntityYaleStatus({
+        name: 'Sam Example',
+        fullDescription:
+          'In Memoriam1945-2026 Dr. Sam Example was a board-certified surgeon. He devoted four decades to patient care.',
+      })?.reason,
+    ).toBe('deceased');
+  });
+
+  it('does not read a word that only begins with memoriam as the marker', () => {
+    expect(
+      deriveResearchEntityYaleStatus({
+        name: 'Sam Example',
+        fullDescription: 'In memoriamized texts, Sam Example studies how communities record loss.',
+      }),
+    ).toBeNull();
+  });
+
   it('returns null for an ordinary active faculty entity', () => {
     const signal = deriveResearchEntityYaleStatus({
       name: 'Jane Doe Lab',
