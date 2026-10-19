@@ -89,6 +89,7 @@ import {
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
+import { PERSON_SCOPED_RESEARCH_ENTITY_TYPES } from '../../models/storedVocabularies';
 import { memberObservationsForEntityKey, type MemberRole } from './centersInstitutesScraper';
 import {
   buildCenterRosterHealthSnapshot,
@@ -2264,7 +2265,8 @@ export type ProfileLinkedHomeRefusal =
   | 'names-another-persons-lab'
   | 'names-a-colleagues-lab'
   | 'institutional-home-on-a-grant-shell'
-  | 'institutional-home-on-a-person-keyed-shell';
+  | 'institutional-home-on-a-person-keyed-shell'
+  | 'organization-home-on-a-faculty-research-row';
 
 /**
  * Whether a home named "<Surname> Lab" names a colleague: the surname belongs to a known
@@ -2299,17 +2301,87 @@ export function profileLinkedHomeRefusal(
   if (linksAnOrganizationThePersonDoesNotLead(home, personName)) {
     return 'affiliated-organization-without-leadership';
   }
+  if (home.entityType !== 'LAB') {
+    const personRowRefusal = organizationHomeOnAPersonRowRefusal(entity, personName);
+    if (personRowRefusal) return personRowRefusal;
+  }
   if (home.entityType === 'LAB' || !classifyResearchHome(home.name, home.url)) {
     return homeNamesAnotherPersonsLab(entity, home, personName)
       ? 'names-another-persons-lab'
       : null;
   }
+  return null;
+}
+
+const FACULTY_RESEARCH_ROW_TYPES: ReadonlySet<string> = new Set(
+  [...PERSON_SCOPED_RESEARCH_ENTITY_TYPES].filter((entityType) => entityType !== 'LAB'),
+);
+
+/**
+ * The live `entityType` values other sources assert for a row this lane once retyped, set on
+ * every selected row before the research-home step reads it. The row's stored type is then
+ * this lane's own earlier claim, and judging the row on it would let a past retype exempt the
+ * row from the guard that should have refused it.
+ */
+export const ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD = '__entityTypesFromOtherSources';
+
+const ROW_TYPE_FIELDS = 'entityType fieldProvenance.entityType';
+
+function rowTypesIndependentOfThisLane(entity: Record<string, any>): string[] {
+  if (entity.fieldProvenance?.entityType?.sourceName !== SOURCE_NAME) {
+    return [textValue(entity.entityType)];
+  }
+  return uniqueStrings(
+    Array.isArray(entity[ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD])
+      ? entity[ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD]
+      : [],
+  );
+}
+
+/**
+ * Owner decision 2026-10-17: a person who directs or co-founds an organization keeps two
+ * rows, their own faculty research row and the organization's row with them as its
+ * director. So an organization a profile links never becomes the name, type or kind of the
+ * person's row, whatever the profile says about who leads it; the organization's own row
+ * gets the director through this lane's organization-director mode. A lab-typed home is
+ * the person's own lab and is judged on the lab arm instead.
+ */
+function organizationHomeOnAPersonRowRefusal(
+  entity: Record<string, any>,
+  personName: unknown,
+): ProfileLinkedHomeRefusal | null {
   if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) {
     return 'institutional-home-on-a-grant-shell';
   }
-  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName })
-    ? 'institutional-home-on-a-person-keyed-shell'
+  if (entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName })) {
+    return 'institutional-home-on-a-person-keyed-shell';
+  }
+  return rowTypesIndependentOfThisLane(entity).some((entityType) =>
+    FACULTY_RESEARCH_ROW_TYPES.has(entityType.toUpperCase()),
+  )
+    ? 'organization-home-on-a-faculty-research-row'
     : null;
+}
+
+/**
+ * A refusal emits nothing by default, which left every organization this lane adopted onto
+ * a person's row before the guard reached it live and winning. These refusals state the
+ * refused name, so resolve withdraws this lane's older name for the row and its type and
+ * kind fall with it. The website is left as it is: whether an organization's site may stand
+ * as the person's research website is a separate question from the row's identity.
+ */
+const PERSON_ROW_ORGANIZATION_REFUSALS: ReadonlySet<string> = new Set<ProfileLinkedHomeRefusal>([
+  'institutional-home-on-a-grant-shell',
+  'institutional-home-on-a-person-keyed-shell',
+  'organization-home-on-a-faculty-research-row',
+]);
+
+export function refusedPersonRowOrganizationObservations(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  evidenceUrl: string,
+): ObservationInput[] {
+  return [refusedResearchHomeNameObservation(entity, home, evidenceUrl)];
 }
 
 /**
@@ -3547,7 +3619,9 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
 
   const [entities, leadRosterByEntity] = await Promise.all([
     ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
+      .select(
+        `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
+      )
       .lean(),
     currentLeadRosterEntriesByEntity(entityIds, LEAD_MEMBER_ROLES),
   ]);
@@ -3611,7 +3685,7 @@ export async function selectVisibleProfileBioTargets(
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   })
-    .select('_id website websiteUrl sourceUrls')
+    .select(`_id website websiteUrl sourceUrls ${ROW_TYPE_FIELDS}`)
     .lean();
   const entitiesById = new Map((entities as any[]).map((entity) => [idValue(entity._id), entity]));
 
@@ -3713,7 +3787,7 @@ async function selectProfileDescriptionTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...identityFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
 
@@ -3930,6 +4004,47 @@ export async function annotateEntitiesWithSourceObservationUrls(
   }));
 }
 
+export async function annotateEntitiesWithEntityTypesFromOtherSources(
+  entities: Array<Record<string, any>>,
+): Promise<Array<Record<string, any>>> {
+  const retypedByThisLane = entities.filter(
+    (entity) => entity.fieldProvenance?.entityType?.sourceName === SOURCE_NAME,
+  );
+  if (retypedByThisLane.length === 0) return entities;
+
+  const typesByEntity = new Map<string, Set<string>>();
+  for (const scope of observationEntityScopeChunks(retypedByThisLane)) {
+    const rows = await Observation.find({
+      entityType: 'researchEntity',
+      superseded: { $ne: true },
+      field: 'entityType',
+      sourceName: { $ne: SOURCE_NAME },
+      $or: observationEntityScopeClauses(scope),
+    })
+      .select('entityId entityKey value')
+      .lean();
+    for (const row of rows as Array<Record<string, any>>) {
+      const value = textValue(row.value);
+      if (!value) continue;
+      for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
+        if (!typesByEntity.has(key)) typesByEntity.set(key, new Set());
+        typesByEntity.get(key)!.add(value);
+      }
+    }
+  }
+
+  return entities.map((entity) => {
+    if (entity.fieldProvenance?.entityType?.sourceName !== SOURCE_NAME) return entity;
+    return {
+      ...entity,
+      [ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD]: uniqueStrings([
+        ...(typesByEntity.get(idValue(entity._id || entity.id)) || []),
+        ...(typesByEntity.get(textValue(entity.slug)) || []),
+      ]),
+    };
+  });
+}
+
 export async function annotateProfileDescriptionPreferredSourceEvidence(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
@@ -3982,8 +4097,7 @@ export async function annotateProfileDescriptionPreferredSourceEvidence(
  */
 export const PERSONAL_SITE_ONLY_TARGET_FIELD = '__personalSiteOnly';
 
-const RESEARCH_HOME_PROFILE_TARGET_FIELDS =
-  '_id slug name displayName entityType website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl';
+const RESEARCH_HOME_PROFILE_TARGET_FIELDS = `_id slug name displayName website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl ${ROW_TYPE_FIELDS}`;
 
 function readsOnlyItsPersonalSite(entity: Record<string, any>, targeted: boolean): boolean {
   return (
@@ -4233,7 +4347,7 @@ async function selectLeadDirectWebsiteTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
   if (entities.length === 0) return [];
@@ -4324,7 +4438,7 @@ async function selectSourceUrlWebsiteTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
   if (entities.length === 0) return [];
@@ -4654,7 +4768,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         : []),
     ];
     const seenEntities = new Set<string>();
-    const entities = selectedEntities
+    const uniqueEntities = selectedEntities
       .filter((entity) => {
         const key = idValue(entity._id) || textValue(entity.slug);
         if (!key || seenEntities.has(key)) return false;
@@ -4662,6 +4776,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         return true;
       })
       .slice(0, limit);
+    const entities = runProfileResearchHomeBackfill
+      ? await annotateEntitiesWithEntityTypesFromOtherSources(uniqueEntities)
+      : uniqueEntities;
     let emitted = 0;
     let observed = 0;
     let homesAdopted = 0;
@@ -4956,7 +5073,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               homesAdoptedAsHostLabWebsite += 1;
             } else if (homeRefusal) {
               homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
-              if (
+              if (home && PERSON_ROW_ORGANIZATION_REFUSALS.has(homeRefusal)) {
+                observations.push(
+                  ...refusedPersonRowOrganizationObservations(entity, home, homeEvidenceUrl),
+                );
+              } else if (
                 home &&
                 LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal) &&
                 rowStoresWebsite(entity, home.url)
