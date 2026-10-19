@@ -1523,3 +1523,135 @@ describe('derived roster precision (#5296)', () => {
     expect(listed(html, headingConfig(['Team']))).toEqual([]);
   });
 });
+
+describe('undergraduates the roster used to miss (#5296)', () => {
+  const observedAt = new Date('2026-10-18T12:00:00Z');
+  const rosterConfig = (
+    currentSectionLabels: string[],
+    pastSectionLabels: string[] = [],
+  ): OfficialRosterConfig => ({
+    researchEntityKey: 'dept-fixture-missed',
+    url: 'https://missedlab.yale.edu/people',
+    template: 'heading-list',
+    currentSectionLabels,
+    pastSectionLabels,
+  });
+  const listed = (html: string, rosterConfig: OfficialRosterConfig) =>
+    extractOfficialResearchHomeRoster(html, rosterConfig, observedAt).undergraduates.map(
+      ({ name, status }) => `${name}:${status}`,
+    );
+  const main = (body: string) => `<html><body><main>${body}</main></body></html>`;
+
+  it('keeps reading an alumni section past a name with a bracketed nickname', () => {
+    const html = main(`<h2>Lab Alumni</h2>
+      <h3>Rowan (Ro) Thistle</h3><h4>Undergraduate Research Assistant</h4>
+      <h3>Harper Wren</h3><h4>Undergraduate Research Assistant</h4>`);
+    expect(listed(html, rosterConfig([], ['Lab Alumni']))).toEqual([
+      'Rowan (Ro) Thistle:past',
+      'Harper Wren:past',
+    ]);
+  });
+
+  it('gives a name heading the role heading after an empty heading', () => {
+    const html = main(`<h3>Lab Members:</h3>
+      <h4><strong>Avery Quill</strong></h4><h4> </h4><h4>Undergraduate Researcher</h4>
+      <h4><strong>Jordan Alder</strong></h4><h4></h4><h4>Visiting Undergraduate Researcher</h4>
+      <h4><strong>Sasha Ember</strong></h4><h4>PhD Student</h4>`);
+    expect(listed(html, rosterConfig(['Lab Members:']))).toEqual(['Avery Quill:current']);
+  });
+
+  it('gives a bare name paragraph the role line in the paragraph after it', () => {
+    const html = main(`<h2>Alumni</h2><p>Harper Wren</p>
+      <p>former undergraduate (now a graduate student in the Example Lab at Elsewhere University)</p>
+      <p>Avery Quill</p><p>former graduate student (now a scientist at Example Co)</p>`);
+    expect(listed(html, rosterConfig([], ['Alumni']))).toEqual(['Harper Wren:past']);
+  });
+
+  it('splits a name from a role joined by a dash with no space after it', () => {
+    const html = main(`<h2>Previous Members</h2>
+      <div>Avery Quill -Graduate Student PhD 2022</div>
+      <div>Harper Wren -Yale Undergraduate – Class of 2022</div>`);
+    expect(listed(html, rosterConfig([], ['Previous Members']))).toEqual(['Harper Wren:past']);
+  });
+
+  it('takes the role from a group label inside a general section and reads a "Previous" list as past', () => {
+    const html = main(`<h2>people</h2>
+      <div class="paragraph"><strong>UNDERGRADUATE RESEARCHERS</strong></div>
+      <div class="paragraph">Harper Wren (Yale, '29)<br />Sasha Ember (Elsewhere State, '25)- summer student</div>
+      <div class="paragraph"><strong>Previous</strong><br />Rowan Thistle (Yale, '27)<br />Morgan Fern (Yale, '24)- Honors essay student</div>`);
+    expect(listed(html, rosterConfig(['people']))).toEqual([
+      'Harper Wren:current',
+      'Rowan Thistle:past',
+      'Morgan Fern:past',
+    ]);
+  });
+
+  it('takes an alumni group label as the role only for a person the page places at Yale', () => {
+    const html = main(`<h2>Alumni</h2>
+      <p><strong>Undergraduate Students</strong></p>
+      <p>Avery Quill</p><p>Jordan Alder</p><p>Harper Wren (Yale, '22)</p>`);
+    expect(listed(html, rosterConfig([], ['Alumni']))).toEqual(['Harper Wren:past']);
+  });
+
+  it('reads a combined undergraduate and master’s student as an undergraduate', () => {
+    expect(mapOfficialRosterRole('Undergraduate/Master’s student', '')).toBe('undergrad');
+    expect(mapOfficialRosterRole('B.S./M.S. student', '')).toBe('undergrad');
+    expect(mapOfficialRosterRole('Graduate Student', '')).toBe('grad-student');
+    const html = main(`<h2>Alumni</h2><ul>
+      <li>Harper Wren, Undergraduate/Master’s student, now consultant at Example Co</li>
+      <li>Avery Quill, Yale MD-PhD Student, BA/MS Elsewhere University</li>
+      <li>Sasha Ember, Undergraduate/Master’s student at Elsewhere University</li>
+    </ul>`);
+    expect(listed(html, rosterConfig([], ['Alumni']))).toEqual(['Harper Wren:past']);
+  });
+
+  it('reads a class standing such as "Senior" or "First-year" as an undergraduate role', () => {
+    const role = (years: string) => listedEntryRole({ title: '', years }, 'Lab Members');
+    expect(role('Applied Physics Senior')).toBe('undergrad');
+    expect(role('First-year, Chemistry')).toBe('undergrad');
+    expect(role('Senior Research Scientist')).toBe('staff');
+    expect(role('Senior Lecturer')).not.toBe('undergrad');
+    expect(role('first-year PhD student')).toBe('grad-student');
+    const html = main(`<h2>Lab Members</h2>
+      <h3>Harper Wren</h3><p>Applied Physics Senior</p>
+      <h3>Jordan Alder</h3><p>Physics Senior</p>
+      <p>Jordan is a visiting senior undergraduate from Elsewhere University.</p>`);
+    expect(listed(html, rosterConfig(['Lab Members']))).toEqual(['Harper Wren:current']);
+  });
+
+  it('reads an alumni title the page gives its current undergraduates as undergraduate', () => {
+    const html = main(`<h2>Undergraduate Students</h2>
+      <ul><li>Harper Wren, Student Employee</li></ul>
+      <h2>Alumni</h2>
+      <ul><li>Rowan Thistle, Former Student Employee</li><li>Avery Quill, Former Postdoc</li><li>Jordan Alder, Former Lab Assistant</li></ul>`);
+    expect(listed(html, rosterConfig(['Undergraduate Students'], ['Alumni']))).toEqual([
+      'Harper Wren:current',
+      'Rowan Thistle:past',
+    ]);
+  });
+
+  it('reads a biography that states Yale undergraduate enrollment', () => {
+    const html = main(`<h2>Lab Members</h2>
+      <h3>Harper Wren</h3><p>Engineering Student Researcher</p>
+      <p>Harper is a Yale undergraduate majoring in mechanical engineering and builds wearable sensors.</p>
+      <h3>Avery Quill</h3><p>Engineering Student Researcher</p>
+      <p>Avery designs low-power circuits for implantable pumps and joined the lab last spring.</p>
+      <h3>Sasha Ember</h3><p>Undergraduate Research Assistant</p>
+      <p>Sasha is a rising senior in Elsewhere College, majoring in biology and chemistry.</p>
+      <h3>Morgan Fern</h3><p>Undergraduate Research Assistant</p>
+      <p>Morgan is a rising senior at Sewanee studying psychology and neuroscience.</p>`);
+    expect(listed(html, rosterConfig(['Lab Members']))).toEqual(['Harper Wren:current']);
+  });
+
+  it('reads a dash after a former member’s name that names a later role as where they went next', () => {
+    const html = main(`<h2>Former Undergraduate Research Students</h2><ul>
+      <li>Harper Wren - Graduate student at UC Example (Example Group)</li>
+      <li>Avery Quill</li>
+      <li>Jordan Alder - Undergraduate at Elsewhere University</li>
+    </ul>`);
+    expect(listed(html, rosterConfig([], ['Former Undergraduate Research Students']))).toEqual([
+      'Harper Wren:past',
+      'Avery Quill:past',
+    ]);
+  });
+});

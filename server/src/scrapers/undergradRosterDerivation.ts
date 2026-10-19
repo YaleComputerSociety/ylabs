@@ -311,6 +311,13 @@ export function sectionLabelMixesOtherGroups(label: string): boolean {
   );
 }
 
+/**
+ * More current undergraduates than one lab hosts means the page is not one lab's roster. An
+ * alumni list grows with every year the lab has run, so its length says nothing of the kind.
+ */
+const currentUndergraduateCount = (roster: ExtractedOfficialRoster): number =>
+  roster.undergraduates.filter((member) => member.status === 'current').length;
+
 export function derivedRosterWithheldReason(
   config: OfficialRosterConfig,
   roster: ExtractedOfficialRoster,
@@ -323,7 +330,8 @@ export function derivedRosterWithheldReason(
   if (labels.some((label) => !separated.has(label) && sectionLabelMixesOtherGroups(label))) {
     return 'combined-section-label';
   }
-  if (roster.undergraduates.length > DERIVED_ROSTER_MAX_UNDERGRADUATES) return 'too-many-names';
+  if (currentUndergraduateCount(roster) > DERIVED_ROSTER_MAX_UNDERGRADUATES)
+    return 'too-many-names';
   if (roster.undergraduates.some((member) => !rosterSnippetNamesAnUndergraduate(member.name))) {
     return 'name-not-an-undergraduate';
   }
