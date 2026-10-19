@@ -104,6 +104,7 @@ import {
   isOffSitePageTitleForPersonScopedName,
   isLabShapedResearchHome,
   isRefusedProfileLinkedHomeName,
+  nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -7763,6 +7764,13 @@ function enforceResearchEntityNameAuthority(input: {
     materializationObs: input.materializationObs,
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
   });
+  const personRow = isPersonRowForProfileHomeClaims(
+    { slug: entityDoc?.slug, leadPersonName: input.nameIdentityAuthority.leadPersonName },
+    input.materializationObs,
+  );
+  const servesAsFacultyResearch =
+    personRow &&
+    textValue(set.entityType ?? entityDoc?.entityType).toUpperCase() === 'FACULTY_RESEARCH_AREA';
   const recordIdentity = {
     entityType: set.entityType ?? entityDoc?.entityType,
     kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
@@ -7860,7 +7868,7 @@ function enforceResearchEntityNameAuthority(input: {
       (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
         !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
         !(
-          withdrawnRetype &&
+          (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
           isWithdrawnProfileHomeName(servedValue, provenance.sourceName, input.materializationObs)
         ))
     ) {
@@ -7932,6 +7940,29 @@ function enforceResearchEntityNameAuthority(input: {
       unset[field] = '';
       unset[`fieldProvenance.${field}`] = '';
       fieldsWritten++;
+    }
+  }
+
+  // A person's row projected as faculty research serves its own name, on every resolve rather
+  // than only the one that retypes it, so a display name left from the lab or organization it
+  // was typed as, or re-resolved from a live observation, can neither keep that identity nor be
+  // suffixed into a hybrid of the two by the derivations below (#5283). A display name carrying
+  // the lead's own name (an eponymous lab, a spelling of the person) is the person's and stays.
+  if (servesAsFacultyResearch && !input.manuallyLockedFields.includes('displayName')) {
+    const displayName = textValue(set.displayName ?? entityDoc?.displayName);
+    if (
+      displayName &&
+      displayName !== textValue(set.name ?? entityDoc?.name) &&
+      !nameCarriesPersonIdentity(displayName, input.nameIdentityAuthority.leadPersonName)
+    ) {
+      delete set.displayName;
+      delete set['fieldProvenance.displayName'];
+      delete confidenceByField.displayName;
+      if (textValue(entityDoc?.displayName)) {
+        unset.displayName = '';
+        unset['fieldProvenance.displayName'] = '';
+        fieldsWritten++;
+      }
     }
   }
 
