@@ -1403,7 +1403,8 @@ Read the lane rather than inferring it: `yarn --cwd server research-entity:audit
 With no `--run` it plans against the newest successful `dept-faculty-roster` run that was not scoped by `--only` or `--limit`, and prints that choice as `plannedRunSelection`, because a newer one-department run reads as a lane that governs nothing (#4613).
 The lane itself is unaffected: a materialize pass reconciles the run it materialized, never the newest one.
 A roster snapshot whose department no `OrgUnit` names governs nothing and is reported in `unresolvedDepartments`.
-The roster keys that are deliberately not departments the lane may govern are declared with their reason in `server/src/scrapers/rosterDepartmentsOutsideDepartureLane.ts`: the five school-wide directories, the nine affiliates rosters, and three centre, programme and campus rosters, measured as the 17 unresolved on 2026-10-03.
+The roster keys that are deliberately not departments the lane may govern are declared with their reason in `server/src/scrapers/rosterDepartmentsOutsideDepartureLane.ts`: the five school-wide directories, the ten affiliates rosters, and three centre, programme and campus rosters.
+The first 17 were the unresolved keys measured on 2026-10-03, and `fds` was declared when its affiliates config was added (#5282).
 None of them is a spelling difference for a department rows carry, so none gained an alias, because an alias would let an affiliates or school roster's absence govern rows it never claimed.
 `undeclaredUnresolvedDepartments` counts the rest, and only those log a warning, so a nonzero value is a roster config that needs an alias or a declaration (#4612).
 It writes nothing, needs no flag, and has no `--apply`, because a suppression removes a research home from the directory and belongs to a materialize pass an operator turned on deliberately.
