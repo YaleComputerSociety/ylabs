@@ -38,7 +38,7 @@ They are separate lists on purpose, and the separation is load-bearing rather th
 
 - `looksLikeNonResearchTitle` is staff, admin, ops and athletics. It also short-circuits `isFacultyTitle`, so anything added here stops being faculty everywhere, including in the Yalies lane.
 - `isSubordinateResearchRank` is academic ranks held inside somebody else's group (postdoc, research associate, graduate student). These people stay researchers and keep their lab membership; they simply own no research of their own (#2304).
-- `isResearchSupportStaffTitle` is support and technical roles held inside somebody else's group: lab and clinical assistants, technicians, technologists, a laboratory supervisor, a research aide, a genetic counselor, a librarian, a software engineer, a business systems analyst, a registrar (#3410).
+- `isResearchSupportStaffTitle` is support and technical roles held inside somebody else's group: lab and clinical assistants, technicians, technologists, a laboratory supervisor, a research aide, a genetic counselor, a librarian, a software engineer, any analyst, a statistician or biostatistician, a financial or account assistant, a registrar (#3410).
 
 Ask all three, through `ownsNoResearchEntityByTitle` unless you have a reason not to.
 A lane that asks a subset re-mints exactly the rows `research-entity:retire-staff-minted-entities` archives, and that is what #3410 was: the YSM mint asked two of the three, the department-roster and YSE mints asked none.

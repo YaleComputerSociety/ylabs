@@ -2397,6 +2397,12 @@ Before #4752 the edges were left current, and `integrity-gate` counted 72 of the
 It supersedes nothing and deletes nothing: the row and its observations stay as evidence of what the lane once asserted.
 The `--output` report is resolved and written **before** the archive, and it records the pre-apply tier of exactly the rows the run touches, because a peer session writes Development concurrently and a post-hoc corpus-wide tier delta cannot be attributed to this run without it.
 
+The research-support vocabulary also names every analyst, a statistician or biostatistician, and a financial or account assistant, and the staff vocabulary names the `Admin Asst` abbreviation and an executive assistant, because a school directory lists those job classes on profile pages and the pass refused every such row as `title-owns-research` while the roster mint let them through.
+The serve-time `isNonResearchStaffTitle` (#1897) already read analysts and statisticians as staff, so this aligns the mint and retirement screens with it; a title stating any faculty appointment still yields, so `Assistant Professor of Biostatistics` is spared.
+The administrative object list adds career management, student life, financial planning, foundation relations and gifts, still under the description witness.
+A postgraduate fellow is not added: the owner ruling does not name it.
+A `--record-id=` run reports `recordRefusals`, each requested refused record's refusal, identity source (`mint-citation`, `sole-lead`, `mint-key` or `none`) and live titles, because `refusedByReason` is aggregate-only and cannot say which branch kept a row.
+
 **What this pass does not reach.** Its population is rows whose identity citation is a page about exactly one person, which is what licenses a stored title to decide the row's fate.
 A department-roster entry that carries an explicit lab website cites the roster page rather than the person's profile (`base.sourceUrl` falls back to the roster URL once `entry.labUrl` is set), and no configured roster URL satisfies `isPersonProfileIdentityUrl`, so those rows are out of population by construction.
 They are not unprotected: the same website makes them `has-foreign-website` had they been in it, because the website's provenance is the roster page rather than an identity page.
