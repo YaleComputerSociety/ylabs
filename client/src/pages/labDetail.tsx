@@ -106,6 +106,7 @@ import {
   UNDERGRAD_QUOTE_LABEL,
   undergradQuoteEvidenceFromEntity,
 } from '../utils/undergradQuoteEvidence';
+import { quotesOverlap, undergradInvitationFromEntity } from '../utils/undergradInvitation';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -508,10 +509,15 @@ const DecisionSummary = ({
   const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const undergradQuote =
+  const invitation = wayInWithheld ? undefined : undergradInvitationFromEntity(group);
+  const hostingQuote =
     wayInWithheld || rosterListsUndergraduates
       ? undefined
       : undergradQuoteEvidenceFromEntity(group);
+  const undergradQuote =
+    hostingQuote && invitation && quotesOverlap(hostingQuote.quote, invitation.quote)
+      ? undefined
+      : hostingQuote;
   const hasEvidenceList =
     Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
@@ -621,6 +627,32 @@ const DecisionSummary = ({
                 ))}
               </div>
             </div>
+          )}
+
+          {invitation && (
+            <figure className="mt-6 max-w-[68ch] border-t border-[var(--yr-line)] pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--yr-green)]">
+                {invitation.label}
+              </p>
+              <blockquote
+                cite={invitation.sourceUrl}
+                className="mt-2 border-l-2 border-line-brand pl-4 text-base leading-relaxed text-ink-soft"
+              >
+                <p>&ldquo;{invitation.quote}&rdquo;</p>
+              </blockquote>
+              <figcaption className="mt-2 pl-4.5 text-sm text-muted">
+                Quoted from{' '}
+                <a
+                  href={invitation.sourceUrl}
+                  aria-label={`${invitation.sourceHost} (opens in a new tab)`}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-link yr-focus-ring -my-1.5 inline-block break-words rounded-control py-1.5"
+                >
+                  {invitation.sourceHost}
+                </a>
+              </figcaption>
+            </figure>
           )}
 
           {undergradQuote && (

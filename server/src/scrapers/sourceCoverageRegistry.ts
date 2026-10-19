@@ -223,6 +223,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs. A crawled sub-page is a crawl seed until it is shown to be about this entity: a paginated or multi-person index page, and a person page belonging to somebody else, are traversed but never cited as a description source for this row.',
   },
+  'lab-site-undergrad-invitation': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['LAB_WEBSITE', 'JOIN_INSTRUCTIONS', 'UNDERGRAD_ROLE_LANGUAGE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Deterministic extraction of an undergraduate invitation sentence from a lab's own home and join pages. Two levels: an active opening and a standing invitation; a passed stated term, closed or filled wording, roster lines, course or degree mentions and a quote repeated across rows are refused.",
+  },
   'dept-faculty-roster': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

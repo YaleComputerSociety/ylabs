@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ACTIVELY_HIRING_LABEL, WELCOMES_UNDERGRADS_LABEL } from '../../utils/undergradInvitation';
 import { memo, type MouseEvent } from 'react';
 import { CheckIcon } from '../shared/icons';
 
@@ -59,9 +60,20 @@ const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   'Contact route': 'Open to inquiries',
 };
 
-const ACCESS_SIGNAL_PRIORITY = ['Undergrad evidence', 'Student project evidence', 'Contact route'];
+const ACCESS_SIGNAL_PRIORITY = [
+  ACTIVELY_HIRING_LABEL,
+  WELCOMES_UNDERGRADS_LABEL,
+  'Undergrad evidence',
+  'Student project evidence',
+  'Contact route',
+];
 
-const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project evidence']);
+const ELEVATED_ACCESS_SIGNALS = new Set([
+  ACTIVELY_HIRING_LABEL,
+  WELCOMES_UNDERGRADS_LABEL,
+  'Undergrad evidence',
+  'Student project evidence',
+]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
 
