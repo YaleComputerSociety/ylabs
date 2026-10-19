@@ -1,3 +1,4 @@
+import { givenNamesAgree } from '../scrapers/utils/piNameMatch';
 import { escapeRegex } from '../utils/regex';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import type { ResearcherProfileLink } from '../models/researcher';
@@ -216,6 +217,7 @@ interface LeadDirectoryIdentity {
   netid: string;
   nameTokens: Set<string>;
   nameTokenList: string[];
+  compactSurname: string;
   profileSlugs: Set<string>;
   profileSlugNameTokens: string[][];
 }
@@ -267,7 +269,11 @@ const stripWebPageFileExtension = (slug: string): string => {
 const personProfileSlugFromDestination = (destination: string): string => {
   const segments = destination.split('/').filter(Boolean);
   for (let index = segments.length - 2; index >= 1; index -= 1) {
-    if (PERSON_PROFILE_PATH_SEGMENTS.includes(segments[index]) && segments[index + 1]) {
+    if (
+      PERSON_PROFILE_PATH_SEGMENTS.includes(segments[index]) &&
+      segments[index + 1] &&
+      !isGenericProfileCategorySegment(segments[index + 1])
+    ) {
       const slug = stripWebPageFileExtension(segments[index + 1]);
       return isGroupLikeProfileSlug(slug) ? '' : slug;
     }
@@ -306,6 +312,7 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
     nameTokenList: orderedNameTokensFrom(nameSource),
+    compactSurname: normalizeIdentityToken(String(nameSource).trim().split(/\s+/).pop()),
     profileSlugs: new Set(ownProfileSlugs.map(normalizeIdentityToken)),
     profileSlugNameTokens: ownProfileSlugs.map((slug) => nameTokensFrom(slug)),
   };
@@ -360,12 +367,13 @@ const sharesGivenNameAndAnotherToken = (slug: string, orderedNameTokens: string[
 const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
 
 // An abbreviated given name is the SAME name shortened (Doug/Douglas, La/Laurie),
-// not a different one: the shorter form must be a genuine prefix of the longer.
-// This never clears a foreign same-surname graft, which spells out a distinct
-// given name that is not a prefix of the lead's (Mary vs John).
-const givenNamesAbbreviationMatch = (slugGiven: string, leadGiven: string): boolean => {
+// not a different one: the shorter form must be a genuine prefix of the longer, or
+// a pair the curated nickname tables list (Bill/William). This never clears a
+// foreign same-surname graft, which spells out a distinct given name that is
+// neither (Mary vs John).
+const givenNamesNameOnePerson = (slugGiven: string, leadGiven: string): boolean => {
   if (!slugGiven || !leadGiven) return false;
-  if (slugGiven === leadGiven) return true;
+  if (givenNamesAgree(slugGiven, leadGiven)) return true;
   const [shorter, longer] =
     slugGiven.length <= leadGiven.length ? [slugGiven, leadGiven] : [leadGiven, slugGiven];
   return shorter.length >= MIN_ABBREVIATED_GIVEN_NAME_LENGTH && longer.startsWith(shorter);
@@ -435,7 +443,8 @@ const profileSlugCorroboratesLead = (
   if (slugTokens.length >= 2) {
     const slugGiven = slugTokens[0];
     const slugSurname = slugTokens[slugTokens.length - 1];
-    if (slugSurname === leadSurname && givenNamesAbbreviationMatch(slugGiven, leadGiven)) {
+    const surnameMatches = slugSurname === leadSurname || slugSurname === identity.compactSurname;
+    if (surnameMatches && givenNamesNameOnePerson(slugGiven, leadGiven)) {
       return true;
     }
   }
