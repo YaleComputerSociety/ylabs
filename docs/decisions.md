@@ -5,6 +5,24 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: A Description That Narrates Its Own Sources Is Not A Research Statement (#5281)
+
+A served description must say what is studied and must not narrate its own sources (owner decision, 2026-10-12, #5020).
+A row with no research statement is held, while a thin but accurate research line still serves (owner decision, 2026-10-11).
+On 2026-10-18 the owner chose to hold one served faculty research row whose only text narrated its sources.
+That row is a class rather than a case, so `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names `source-narration`: text that reports what a page, profile, site or listing says ("Course and department pages describe ...", "The profile lists ...", "The site focuses on ...") or opens on "According to ...".
+The quality bar refuses it for both the body and the card, and `cardStatesResearchItself` no longer counts such a card as stating the research, so it is never served in place of a body.
+A body that narrates its sources falls back to the row's research card as #5109 does for joining instructions and event narration, and a row with neither is held by the existing gate reasons.
+
+The text is refused only when every sentence narrates a source, so research prose that cites its page and then states the work keeps its body.
+The source document has to be the sentence's subject and has to be marked as a source, by a determiner, by a possessive name of up to four words, by a closed run of source qualifiers such as course, department or faculty, or by a bare "Pages" or "Profile" opening the sentence.
+So "studies how news sites report elections" is research about sites, and "quantum materials feature exotic states" is research about materials, rather than narration.
+
+Measured on Development on 2026-10-18: of 50,344 live description observations, 64 are source narration, all from `lab-microsite-undergrad-llm` (24 cards, 40 bodies).
+Walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code, 5 served texts on 4 rows narrated their sources and only the one held by the owner's decision stopped serving at the route; 2 rows now serve their stored research card in place of the narrated text.
+The student-visibility gate dry run attributes 2 served rows becoming held, the owner's row and one whose card narrates its source site beside a body that describes the site's offerings, and 2 held rows becoming served through the existing card fallback; every other verdict change predates the fix.
+No text is written: the data operation is a gate apply on Development for those rows, and a rematerialize is not run because each affected row would wait on card synthesis, which another session owns.
+
 ## 2026-10-18: Beta And Production Carry No Archived Research Rows (#5148)
 
 This supersedes the slim-tombstone entry below the same day: the owner chose live rows only over slim stubs, confirmed in both sessions that built them.

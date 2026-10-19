@@ -71,6 +71,7 @@ export type DescriptionQualityFlag =
   | 'instruction-offering'
   | 'joining-instructions'
   | 'event-narration'
+  | 'source-narration'
   | 'practice-biography'
   | 'full-not-useful';
 

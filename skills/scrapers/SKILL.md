@@ -1664,6 +1664,13 @@ An event sentence must open on the event, so "who wins awards" as a research obj
 When the row has no admissible body left, `buildResearchEntityPublicDescriptionRepresentation` serves the research card as the body rather than withholding the row, and a card that states no research is not served in its place.
 `docs/decisions.md` (2026-10-18) records the measurement.
 
+#### Text that narrates its own sources is not a description (#5281)
+
+`nonResearchBodyShape` also names `source-narration`: every sentence reports what a page, profile, site or listing says ("Course and department pages describe ...", "The profile lists ...") or opens on "According to ...".
+The quality bar refuses it for the body and the card, and `cardStatesResearchItself` refuses such a card, so it is never served in place of a body that states no research.
+The document must be the sentence's subject, so a research object ("studies how news sites report") keeps its body, and one sentence that states the work beside a cited page keeps it too.
+All 64 live narrating observations measured on 2026-10-18 came from `lab-microsite-undergrad-llm`; `docs/decisions.md` (2026-10-18) records the measurement, and the shape is widened only against a full served-corpus walk.
+
 #### A practice biography with no research is not a description (#4551)
 
 `isPracticeBiographyWithoutResearch` in the same file reads a body that says where a clinician or a lawyer practises ("maintains a private practice", "has a clinical practice at", "clinical lead at") and what they treat or whom they represent, and states no research, publication or teaching; the quality bar flags it `practice-biography` on the body only, never on a card.

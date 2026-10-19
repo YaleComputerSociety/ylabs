@@ -68,6 +68,7 @@ const OFF_TOPIC_FLAGS: DescriptionQualityFlag[] = [
   'instruction-offering',
   'joining-instructions',
   'event-narration',
+  'source-narration',
   'practice-biography',
   'broken-template',
   'malformed-generated-text',
