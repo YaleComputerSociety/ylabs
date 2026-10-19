@@ -38,11 +38,16 @@ function runContext(emitted: ObservationInput[]): ScraperContext {
   };
 }
 
-async function run(pages: Record<string, string>, labs: CandidateLab[]) {
+async function run(
+  pages: Record<string, string>,
+  labs: CandidateLab[],
+  liveQuotes: Record<string, string> = {},
+) {
   const emitted: ObservationInput[] = [];
   const scraper = new LabSiteUndergradInvitationScraper({
     labFinder: async () => labs,
     fetchPage: async (url) => (pages[url] ? { url, html: pages[url] } : null),
+    liveQuoteFinder: async () => new Map(Object.entries(liveQuotes)),
   });
   const result = await scraper.run(runContext(emitted));
   return { emitted, result };
@@ -104,8 +109,36 @@ describe('LabSiteUndergradInvitationScraper', () => {
     pages['https://own.example.edu/'] = html('We welcome undergraduate students to join our lab.');
     labs.push(lab('own-lab', 'https://own.example.edu/'));
     const { emitted, result } = await run(pages, labs);
-    expect(emitted.map((obs) => obs.entityKey)).toEqual(['own-lab']);
+    expect(
+      emitted.map((obs) => [obs.entityKey, (obs.value as { level?: string } | null)?.level ?? null]),
+    ).toEqual([
+      ['one-faculty', null],
+      ['two-faculty', null],
+      ['three-faculty', null],
+      ['own-lab', 'welcomes_undergrads'],
+    ]);
     expect(result.notes).toContain('3 refused as a quote shared');
+  });
+
+  it('refuses a quote shared with rows outside this run, counting their live observations', async () => {
+    const shared = 'Undergraduates at Yale are welcome to apply to the departmental assistantship.';
+    const { emitted } = await run(
+      { 'https://one.example.edu/': html(shared) },
+      [lab('one-faculty', 'https://one.example.edu/')],
+      { 'two-faculty': shared, 'three-faculty': shared },
+    );
+    expect(emitted).toEqual([
+      expect.objectContaining({ entityKey: 'one-faculty', value: null }),
+    ]);
+  });
+
+  it('emits nothing for a row when a linked page could not be read', async () => {
+    const { emitted, result } = await run(
+      { 'https://delta.example.edu/': html('We study cells.', '<a href="/join">Join us</a>') },
+      [lab('delta-lab', 'https://delta.example.edu/')],
+    );
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('1 rows skipped because a linked page was unreadable');
   });
 
   it('keeps the stronger invitation across the home and join pages', async () => {

@@ -1,4 +1,5 @@
 import { ResearchEntity } from '../../models';
+import { Observation } from '../../models/observation';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { mapWithConcurrency, resolveSourceConcurrency } from '../utils/mapWithConcurrency';
 import { quotePageIsAboutAnotherEntity } from '../undergradQuoteRelevance';
@@ -11,6 +12,7 @@ import {
   candidateCrawlUrls,
   candidateLabFromResearchEntityDoc,
   defaultFetchPage,
+  discoverSubPageUrls,
   htmlToPromptText,
   htmlToRosterText,
   pagesWithinEntityScope,
@@ -33,10 +35,17 @@ export interface ServedUndergradInvitation extends UndergradInvitation {
 }
 
 export type InvitationLabFinder = () => Promise<CandidateLab[]>;
+export type LiveInvitationQuoteFinder = () => Promise<Map<string, string>>;
 
 export interface LabSiteUndergradInvitationDeps {
   fetchPage?: FetchPageFn;
   labFinder?: InvitationLabFinder;
+  liveQuoteFinder?: LiveInvitationQuoteFinder;
+}
+
+interface LabPagesRead {
+  pages: PromptSourcePage[];
+  complete: boolean;
 }
 
 async function defaultInvitationLabFinder(): Promise<CandidateLab[]> {
@@ -53,6 +62,24 @@ async function defaultInvitationLabFinder(): Promise<CandidateLab[]> {
     kind: 1,
   }).lean();
   return (docs as Record<string, unknown>[]).map(candidateLabFromResearchEntityDoc);
+}
+
+async function defaultLiveInvitationQuoteFinder(): Promise<Map<string, string>> {
+  const rows = await Observation.find({
+    sourceName: LAB_SITE_UNDERGRAD_INVITATION_SOURCE,
+    entityType: 'researchEntity',
+    field: UNDERGRAD_INVITATION_FIELD,
+    superseded: false,
+    'rollback.rolledBackAt': { $exists: false },
+    'value.quote': { $type: 'string' },
+  })
+    .select('entityKey value')
+    .lean<Array<{ entityKey?: string; value?: { quote?: string } }>>();
+  const quotes = new Map<string, string>();
+  for (const row of rows) {
+    if (row.entityKey && row.value?.quote) quotes.set(row.entityKey, row.value.quote);
+  }
+  return quotes;
 }
 
 function pageText(html: string): string {
@@ -75,15 +102,21 @@ export function strongestInvitationOnPages(
   return best;
 }
 
+function withoutHash(url: string): string {
+  const parsed = new URL(url);
+  parsed.hash = '';
+  return parsed.toString();
+}
+
 const normalizedQuote = (quote: string) => quote.toLowerCase().replace(/\s+/g, ' ').trim();
 
 export function quotesSharedAcrossEntities(
-  invitations: ReadonlyMap<string, ServedUndergradInvitation>,
+  quotesByEntity: ReadonlyMap<string, string>,
   threshold = SHARED_QUOTE_ENTITY_THRESHOLD,
 ): Set<string> {
   const counts = new Map<string, number>();
-  for (const invitation of invitations.values()) {
-    const key = normalizedQuote(invitation.quote);
+  for (const quote of quotesByEntity.values()) {
+    const key = normalizedQuote(quote);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return new Set([...counts].filter(([, count]) => count >= threshold).map(([quote]) => quote));
@@ -118,21 +151,28 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
 
   private readonly fetchPage: FetchPageFn;
   private readonly labFinder: InvitationLabFinder;
+  private readonly liveQuoteFinder: LiveInvitationQuoteFinder;
 
   constructor(deps: LabSiteUndergradInvitationDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
     this.labFinder = deps.labFinder ?? defaultInvitationLabFinder;
+    this.liveQuoteFinder = deps.liveQuoteFinder ?? defaultLiveInvitationQuoteFinder;
   }
 
-  private async readLabPages(lab: CandidateLab): Promise<PromptSourcePage[] | null> {
+  private async readLabPages(lab: CandidateLab): Promise<LabPagesRead | null> {
     const home = await this.fetchPage(lab.websiteUrl);
     if (!home) return null;
     const pages: PromptSourcePage[] = [{ url: home.url, text: pageText(home.html) }];
+    const linked = new Set(
+      discoverSubPageUrls(home.html, home.url, MAX_SUBPAGES_READ).map(withoutHash),
+    );
+    let complete = true;
     for (const url of candidateCrawlUrls(home.html, home.url, MAX_SUBPAGES_READ)) {
       const page = await this.fetchPage(url);
       if (page) pages.push({ url: page.url, text: pageText(page.html) });
+      else if (linked.has(url)) complete = false;
     }
-    return pages;
+    return { pages, complete };
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -145,33 +185,45 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
     const read = new Map<string, CandidateLab>();
     const invitations = new Map<string, ServedUndergradInvitation>();
     let fetchFailed = 0;
+    let partialReads = 0;
     await mapWithConcurrency(
       labs,
       resolveSourceConcurrency(ctx.options.sourceConcurrency, DEFAULT_CONCURRENCY),
       async (lab) => {
-        const pages = await this.readLabPages(lab);
-        if (!pages) {
+        const labPages = await this.readLabPages(lab);
+        if (!labPages) {
           fetchFailed += 1;
           return;
         }
+        if (!labPages.complete) {
+          partialReads += 1;
+          return;
+        }
         read.set(lab.slug, lab);
-        const invitation = strongestInvitationOnPages(pages, lab, now);
+        const invitation = strongestInvitationOnPages(labPages.pages, lab, now);
         if (invitation) invitations.set(lab.slug, invitation);
       },
     );
-    const shared = quotesSharedAcrossEntities(invitations);
+    if (labs.length > 0 && read.size === 0 && partialReads === 0) {
+      throw new Error(`${this.name}: every lab-site fetch failed (${fetchFailed})`);
+    }
+    const corpusQuotes = await this.liveQuoteFinder();
+    for (const slug of read.keys()) {
+      const invitation = invitations.get(slug);
+      if (invitation) corpusQuotes.set(slug, invitation.quote);
+      else corpusQuotes.delete(slug);
+    }
+    const shared = quotesSharedAcrossEntities(corpusQuotes);
     const observations: ObservationInput[] = [];
     let sharedRefused = 0;
     for (const [slug, lab] of read) {
       const invitation = invitations.get(slug) ?? null;
       if (invitation && shared.has(normalizedQuote(invitation.quote))) {
         sharedRefused += 1;
+        observations.push(invitationObservation(lab, null));
         continue;
       }
       observations.push(invitationObservation(lab, invitation));
-    }
-    if (labs.length > 0 && read.size === 0) {
-      throw new Error(`${this.name}: every lab-site fetch failed (${fetchFailed})`);
     }
     await ctx.emit(observations);
     const counts = { actively_hiring: 0, welcomes_undergrads: 0 };
@@ -179,7 +231,7 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
       const level = (observation.value as ServedUndergradInvitation | null)?.level;
       if (level) counts[level] += 1;
     }
-    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable`;
+    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${partialReads} rows skipped because a linked page was unreadable`;
     ctx.log(notes);
     return { observationCount: observations.length, entitiesObserved: read.size, notes };
   }
