@@ -37,7 +37,6 @@ const candidate = (overrides: Partial<DerivedRosterCandidate> = {}): DerivedRost
   researchEntityKey: 'example-lab',
   websiteUrl: 'https://examplelab.example.org/',
   citedUrls: ['https://examplelab.example.org/people'],
-  badged: true,
   hasDerivedRoster: false,
   ...overrides,
 });
@@ -323,15 +322,6 @@ describe('deriveUndergradRosterForCandidate (#5278)', () => {
     expect(outcome.kind === 'derived' && outcome.roster.undergraduates).toEqual([
       { name: 'Quinn Fixture', status: 'past', startYear: 2019, endYear: 2020 },
     ]);
-  });
-
-  it('withdraws a derived roster once the row loses the badge', async () => {
-    const outcome = await deriveUndergradRosterForCandidate(
-      candidate({ badged: false, hasDerivedRoster: true }),
-      readFrom({}),
-      observedAt,
-    );
-    expect(outcome).toMatchObject({ kind: 'withheld', reason: 'no-longer-badged' });
   });
 });
 

@@ -265,7 +265,6 @@ export type DerivedRosterWithheldReason =
   | 'combined-section-label'
   | 'name-not-an-undergraduate'
   | 'too-many-names'
-  | 'no-longer-badged'
   | 'owner-denied';
 
 const sameSiteHost = (url: URL): string => url.hostname.toLowerCase().replace(/^www\./, '');
@@ -342,7 +341,6 @@ export interface DerivedRosterCandidate {
   researchEntityKey: string;
   websiteUrl: string;
   citedUrls: string[];
-  badged: boolean;
   hasDerivedRoster: boolean;
 }
 
@@ -369,16 +367,6 @@ export async function deriveUndergradRosterForCandidate(
   observedAt: Date,
 ): Promise<DerivedRosterOutcome> {
   const key = candidate.researchEntityKey;
-  if (!candidate.badged) {
-    return candidate.hasDerivedRoster
-      ? {
-          kind: 'withheld',
-          researchEntityKey: key,
-          sourceUrl: candidate.websiteUrl,
-          reason: 'no-longer-badged',
-        }
-      : { kind: 'not-found', researchEntityKey: key, reason: 'no-longer-badged' };
-  }
   const pages = [...new Set([...candidate.citedUrls, candidate.websiteUrl].filter(Boolean))];
   let passed: { config: OfficialRosterConfig; roster: ExtractedOfficialRoster } | undefined;
   let refused: { reason: DerivedRosterWithheldReason; url: string; size: number } | undefined;
@@ -438,10 +426,14 @@ export async function deriveUndergradRosterForCandidate(
 export async function loadDerivedRosterCandidates(): Promise<DerivedRosterCandidate[]> {
   const rows = await ResearchEntity.find({
     archived: { $ne: true },
-    $or: [{ hasUndergradHostingEvidence: true }, { 'rosterEnrichment.configOrigin': 'derived' }],
+    $or: [
+      { websiteUrl: { $regex: /^https?:\/\//i } },
+      { hasUndergradHostingEvidence: true },
+      { 'rosterEnrichment.configOrigin': 'derived' },
+    ],
   })
     .select(
-      'slug websiteUrl hasUndergradHostingEvidence rosterEnrichment.configOrigin fieldProvenance.currentUndergradCount.sourceUrl fieldProvenance.undergradEvidenceQuote.sourceUrl',
+      'slug websiteUrl rosterEnrichment.configOrigin fieldProvenance.currentUndergradCount.sourceUrl fieldProvenance.undergradEvidenceQuote.sourceUrl',
     )
     .sort({ slug: 1 })
     .lean();
@@ -456,7 +448,6 @@ export async function loadDerivedRosterCandidates(): Promise<DerivedRosterCandid
         ].filter(Boolean),
       ),
     ],
-    badged: row.hasUndergradHostingEvidence === true,
     hasDerivedRoster: row.rosterEnrichment?.configOrigin === 'derived',
   }));
 }

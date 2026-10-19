@@ -14,7 +14,7 @@ const boundedRosterText = (value: unknown, maxLength: number): string => {
 export const DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV = 'DERIVED_UNDERGRAD_ROSTERS_SERVE';
 
 /**
- * A roster the lane derived for a badged row, rather than one from the reviewed allowlist, is
+ * A roster the lane derived for a row with a website, rather than one from the reviewed allowlist, is
  * recorded but not served until an owner-graded sample clears it (#5278).
  */
 export const derivedUndergradRostersServe = (): boolean =>
