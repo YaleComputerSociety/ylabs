@@ -1,4 +1,5 @@
 import type { PathwaySearchHit } from '../types/pathway';
+import { undergradInvitationFromEntity } from './undergradInvitation';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -386,6 +387,8 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   if (!entity) return [];
 
   const badges: string[] = [];
+  const invitation = undergradInvitationFromEntity(entity);
+  if (invitation) badges.push(invitation.label);
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
   // which read the same server predicate (#3593). A quote never sets it: a quote

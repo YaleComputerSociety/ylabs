@@ -1,6 +1,10 @@
 import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  undergradInvitationLevels,
+  type UndergradInvitationLevel,
+} from '../models/storedVocabularies';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
@@ -518,6 +522,30 @@ export function publicFellowshipRecipients(value: unknown): PublicFellowshipReci
     .slice(0, MAX_PUBLIC_FELLOWSHIP_RECIPIENTS);
 }
 
+export interface PublicUndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
+}
+
+export function publicUndergradInvitation(
+  value: unknown,
+  group: Parameters<typeof quotePageIsAboutAnotherEntity>[1],
+): PublicUndergradInvitation | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { level, quote, sourceUrl } = value as Record<string, unknown>;
+  if (!undergradInvitationLevels.includes(level as UndergradInvitationLevel)) return undefined;
+  if (typeof quote !== 'string' || !quote.trim()) return undefined;
+  const servedUrl = publicHttpUrl(sourceUrl);
+  if (!servedUrl || quotePageIsAboutAnotherEntity(servedUrl, group)) return undefined;
+  if (quoteListsPeopleWithTheirContactDetails(quote)) return undefined;
+  return {
+    level: level as UndergradInvitationLevel,
+    quote: quote.trim().slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+    sourceUrl: servedUrl,
+  };
+}
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
@@ -527,6 +555,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'schools',
   'currentUndergradCount',
   'undergradEvidenceQuote',
+  'undergradInvitation',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -555,7 +584,11 @@ export interface PublicResearchEntityDtoOptions {
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradEvidenceQuote']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set([
+  'waysIn',
+  'undergradEvidenceQuote',
+  'undergradInvitation',
+]);
 
 const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set([
   'waysIn',
@@ -703,6 +736,11 @@ function derivePublicResearchEntityDto(
           const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
           if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
         }
+        continue;
+      }
+      if (field === 'undergradInvitation') {
+        const invitation = publicUndergradInvitation(group[field], group);
+        if (invitation) dto[field] = invitation;
         continue;
       }
       if (field === 'currentUndergradCount') {

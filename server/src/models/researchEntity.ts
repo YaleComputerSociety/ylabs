@@ -27,6 +27,7 @@ import {
   labSiteLeadVerdicts,
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
+  undergradInvitationLevels,
   officialRosterConfigOrigins,
   officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
@@ -313,6 +314,17 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     undergradEvidenceQuote: {
       type: String,
       default: '',
+    },
+    undergradInvitation: {
+      type: new mongoose.Schema(
+        {
+          level: { type: String, enum: undergradInvitationLevels, required: true },
+          quote: { type: String, required: true },
+          sourceUrl: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: undefined,
     },
     pastUndergradAdvisees: {
       type: [

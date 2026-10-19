@@ -33,6 +33,7 @@ import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergr
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
+import { LabSiteUndergradInvitationScraper } from './sources/labSiteUndergradInvitationScraper';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
 import { createUndergradRosterDeriver } from './undergradRosterDerivation';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
@@ -74,6 +75,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new ProgramOfficialPageScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
   o.register(new LabMicrositeUndergradLLMExtractor());
+  o.register(new LabSiteUndergradInvitationScraper());
   o.register(new CenterAffiliationLLMExtractor());
   o.register(new CenterDirectorLLMExtractor());
   o.register(new OfficialProfilePiBackfillScraper());

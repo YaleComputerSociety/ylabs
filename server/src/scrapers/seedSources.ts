@@ -510,6 +510,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'lab-site-undergrad-invitation',
+    displayName: 'Lab site undergraduate invitations',
+    description:
+      "Deterministic read of each lab site's home and join pages for a sentence that invites undergraduates: an active opening (actively hiring) or a standing invitation to get in touch (welcomes undergrads). No model call; a quote repeated across three or more rows is a shared program page and is refused.",
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
     name: 'lab-site-declared-lead-llm',
     displayName: 'Lab site declared lead (LLM)',
     description:

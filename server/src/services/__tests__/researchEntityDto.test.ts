@@ -693,6 +693,57 @@ describe('researchEntityDto', () => {
     );
   });
 
+  describe('the undergraduate invitation badge', () => {
+    const row = (undergradInvitation: unknown) =>
+      toPublicResearchEntityDto({
+        id: 'entity-invitation',
+        slug: 'invitation-lab',
+        name: 'Invitation Lab',
+        websiteUrl: 'https://invitation.example.edu/',
+        undergradInvitation,
+      });
+
+    it('serves the level, the quote and the page it came from', () => {
+      expect(
+        row({
+          level: 'actively_hiring',
+          quote: 'We are actively recruiting undergraduate researchers.',
+          sourceUrl: 'https://invitation.example.edu/join',
+        }).undergradInvitation,
+      ).toEqual({
+        level: 'actively_hiring',
+        quote: 'We are actively recruiting undergraduate researchers.',
+        sourceUrl: 'https://invitation.example.edu/join',
+      });
+    });
+
+    it.each([
+      [
+        'an unknown level',
+        {
+          level: 'open',
+          quote: 'We welcome undergraduates.',
+          sourceUrl: 'https://invitation.example.edu/',
+        },
+      ],
+      [
+        'an empty quote',
+        { level: 'welcomes_undergrads', quote: ' ', sourceUrl: 'https://invitation.example.edu/' },
+      ],
+      [
+        'a non-http source',
+        {
+          level: 'welcomes_undergrads',
+          quote: 'We welcome undergraduates.',
+          sourceUrl: 'javascript:alert(1)',
+        },
+      ],
+      ['no value', null],
+    ])('withholds %s', (_label, value) => {
+      expect(row(value).undergradInvitation).toBeUndefined();
+    });
+  });
+
   describe('the page an undergraduate quote cites (#3569)', () => {
     const quotedRow = {
       id: 'entity-cited-quote',
