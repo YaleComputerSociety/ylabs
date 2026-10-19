@@ -193,6 +193,24 @@ describe('materializeEntity derives the faculty research name when nothing asser
     expect((entity.fieldProvenance || {}).name).toBeUndefined();
   });
 
+  it('reclassifies a LAB row whose only website is a profile page the pass will not keep', async () => {
+    const entity = await seedEntity({ name: 'Duchamp Lab', kind: 'lab', entityType: 'LAB' });
+    await seedLead(entity._id);
+    await seedObservation({
+      sourceName: 'dept-faculty-roster',
+      field: 'websiteUrl',
+      value: 'https://medicine.yale.edu/profile/rafferty-duchamp/',
+      sourceUrl: 'https://medicine.yale.edu/profile/rafferty-duchamp/',
+      confidence: 0.7,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe(FACULTY_RESEARCH_NAME);
+    expect(stored.entityType).toBe('FACULTY_RESEARCH_AREA');
+  });
+
   it('re-derives the same reclassification on a second pass', async () => {
     await seedLead((await seedEntity({ kind: 'lab', entityType: 'LAB' }))._id);
     await seedObservation({ field: 'departments', value: ['Mathematics'] });

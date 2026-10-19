@@ -8609,6 +8609,23 @@ function documentAsProjected(
  * shape alone, so it stays held. A leadless row stays held too; `missing_lead` would
  * hold it whatever its name.
  */
+// The website arms run after the identity derivations, so a value staged here may still be
+// one they refuse, and a profile page they never store must not back a lab the gate, which
+// reads the stored row, holds as unbacked.
+function withWebsitesThePassKeeps(projected: Record<string, any>): Record<string, any> {
+  const identity: ResearchEntityHostOwnerIdentity = {
+    name: projected.name,
+    displayName: projected.displayName,
+    entityType: projected.entityType,
+    kind: projected.kind,
+  };
+  const kept = (value: unknown) =>
+    typeof value === 'string' && value.trim() && researchHomeWebsiteUrlWriteRefusal(value, identity)
+      ? ''
+      : value;
+  return { ...projected, websiteUrl: kept(projected.websiteUrl), website: kept(projected.website) };
+}
+
 function reclassifyUnbackedLabAsFacultyResearch(input: {
   set: Record<string, unknown>;
   unset: Record<string, ''>;
@@ -8634,7 +8651,7 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
   ) {
     return 0;
   }
-  if (!isUnbackedLabNameShell(projected, input.leadPersonName)) return 0;
+  if (!isUnbackedLabNameShell(withWebsitesThePassKeeps(projected), input.leadPersonName)) return 0;
 
   const facultyResearchIdentity = {
     entityType: 'FACULTY_RESEARCH_AREA',
