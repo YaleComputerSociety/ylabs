@@ -110,7 +110,10 @@ describe('LabSiteUndergradInvitationScraper', () => {
     labs.push(lab('own-lab', 'https://own.example.edu/'));
     const { emitted, result } = await run(pages, labs);
     expect(
-      emitted.map((obs) => [obs.entityKey, (obs.value as { level?: string } | null)?.level ?? null]),
+      emitted.map((obs) => [
+        obs.entityKey,
+        (obs.value as { level?: string } | null)?.level ?? null,
+      ]),
     ).toEqual([
       ['one-faculty', null],
       ['two-faculty', null],
@@ -127,9 +130,7 @@ describe('LabSiteUndergradInvitationScraper', () => {
       [lab('one-faculty', 'https://one.example.edu/')],
       { 'two-faculty': shared, 'three-faculty': shared },
     );
-    expect(emitted).toEqual([
-      expect.objectContaining({ entityKey: 'one-faculty', value: null }),
-    ]);
+    expect(emitted).toEqual([expect.objectContaining({ entityKey: 'one-faculty', value: null })]);
   });
 
   it('emits nothing for a row when a linked page could not be read', async () => {
