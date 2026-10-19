@@ -88,6 +88,7 @@ const NICKNAME_GROUPS: string[][] = [
   ['patricia', 'patty', 'tricia', 'trish'],
   ['victoria', 'vicky', 'tori'],
   ['pamela', 'pam'],
+  ['judith', 'judy'],
 ];
 
 const VARIANT_INDEX = ((): Map<string, Set<string>> => {
