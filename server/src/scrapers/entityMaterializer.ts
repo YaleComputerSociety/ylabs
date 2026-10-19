@@ -243,6 +243,13 @@ import {
   withoutCoursePageEvidence,
 } from './coursePageEvidenceScreen';
 import {
+  directoryContradictsNetidForAddress,
+  loadDirectoryNetidsByAddress,
+  netidOfNetidUserKey,
+  screenDirectoryContradictedProfileEvidenceForKey,
+  withoutDirectoryContradictedProfileEvidenceForKey,
+} from './directoryContradictedProfileNetid';
+import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
 } from './personProfileTopicScreen';
@@ -3590,10 +3597,24 @@ export async function resolveNetidForRosterEmailAlias(
       superseded: false,
       value: new RegExp(`^${escapeRegex(local)}@`, 'i'),
     },
-    { entityKey: 1 },
-  ).lean()) as Array<{ entityKey?: unknown }>;
+    { entityKey: 1, sourceName: 1, value: 1 },
+  ).lean()) as Array<{ entityKey?: unknown; sourceName?: unknown; value?: unknown }>;
+  const directory = matches.some(
+    (match) => match.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
+  )
+    ? await loadDirectoryNetidsByAddress()
+    : new Map();
   const netids = uniqueStrings(
     matches
+      .filter(
+        (match) =>
+          match.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE ||
+          !directoryContradictsNetidForAddress(
+            netidNamedByUserEntityKey(match.entityKey),
+            match.value,
+            directory,
+          ),
+      )
       .map((match) => netidNamedByUserEntityKey(match.entityKey))
       .filter((netid) => Boolean(netid) && netid !== local),
   );
@@ -3722,7 +3743,10 @@ async function userIdentityJoinForKey(
     entityKey: userEntityKey,
     ...materializationReadScopeFilter(),
   }).lean();
-  const { kept } = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds());
+  const kept = await withoutDirectoryContradictedProfileEvidenceForKey(
+    userEntityKey,
+    partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds()).kept,
+  );
   if (kept.length === 0) return undefined;
   return {
     join: await joinUserIdentityToExistingResearcher({ entityKey: userEntityKey }, kept),
@@ -7012,6 +7036,30 @@ export async function joinUserIdentityToExistingResearcher(
     identityJoinedOnEmailAlone,
     identityJoinedOnOfficialProfileUrlAlone,
   };
+}
+
+/**
+ * A namesake's record kept the official link the misattributed page evidence gave it, and
+ * the official-page join reads that link as identity, so the link goes with its evidence.
+ * Only the screened page is withdrawn, from the live holder of the key's own netid.
+ */
+async function withdrawScreenedOfficialProfileLinks(
+  entityKey: string | undefined,
+  screenedPageUrls: string[],
+  options: MaterializeOptions,
+): Promise<number> {
+  const netid = netidOfNetidUserKey(entityKey);
+  if (!netid || screenedPageUrls.length === 0) return 0;
+  const filter = {
+    archived: { $ne: true },
+    'identifiers.netid': netid,
+    profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL', url: { $in: screenedPageUrls } } },
+  };
+  if (options.dryRun) return (await Researcher.countDocuments(filter)) > 0 ? 1 : 0;
+  const result = await Researcher.updateMany(filter, {
+    $pull: { profileLinks: { kind: 'YALE_OFFICIAL', url: { $in: screenedPageUrls } } },
+  });
+  return result.modifiedCount > 0 ? 1 : 0;
 }
 
 async function materializeUserIdentityToResearcher(
@@ -10408,7 +10456,28 @@ export async function materializeEntity(
   }
 
   if (entityType === 'user') {
-    return materializeUserIdentityToResearcher(identifier, obs, options);
+    const { kept: userObs, screenedPageUrls } =
+      await screenDirectoryContradictedProfileEvidenceForKey(identifier.entityKey, obs);
+    const withdrawnLinks = await withdrawScreenedOfficialProfileLinks(
+      identifier.entityKey,
+      screenedPageUrls,
+      options,
+    );
+    if (userObs.length === 0) {
+      return {
+        entityType,
+        ...identifier,
+        fieldsWritten: withdrawnLinks,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'directory-contradicts-profile-netid',
+      };
+    }
+    const result = await materializeUserIdentityToResearcher(identifier, userObs, options);
+    return withdrawnLinks
+      ? { ...result, fieldsWritten: result.fieldsWritten + withdrawnLinks }
+      : result;
   }
 
   if (entityType === 'orgUnit') {
