@@ -314,6 +314,25 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([awardPage]);
   });
 
+  it.each([
+    'https://api.crossref.org/types/grant/works',
+    'https://www.osti.gov/api/v1/records',
+    'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx',
+    'https://awardsearch.neh.gov/',
+  ])('never renders the grant lane endpoint %s as a source (#5261)', (endpoint) => {
+    const grantPage = 'https://doi.org/10.99999/fixture-grant-1';
+
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: '', sourceUrls: [endpoint] },
+      sourceFieldContributions: [
+        { sourceUrl: endpoint, contributions: ['Who leads it'] },
+        { sourceUrl: grantPage, contributions: ['Who leads it'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([grantPage]);
+  });
+
   it('names each NIH RePORTER project so distinct grants never share one label', () => {
     const sources = buildResearchDetailSources({
       group: {

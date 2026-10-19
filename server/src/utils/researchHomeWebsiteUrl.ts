@@ -1,5 +1,6 @@
 import { isExternalScholarlyPlatformHost } from './externalScholarlyPlatforms';
 import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from './urlSafety';
+import { isLaneDiscoveryEndpointUrl } from './laneDiscoveryEndpointUrl';
 import {
   buildSourceFieldContributions,
   contributionFieldIsStoredOnRow,
@@ -735,6 +736,7 @@ export function isDisallowedNonListingResearchEntitySourceUrl(
     isBoilerplatePlatformHostUrl(value) ||
     isInstitutionalAdvancementUrl(value) ||
     isMapOrDirectionsUrl(value) ||
+    isLaneDiscoveryEndpointUrl(value) ||
     isMultiTenantAcademicHostRootUrl(value, entity) ||
     isProgrammePageCitedByPerson(value, entity)
   );

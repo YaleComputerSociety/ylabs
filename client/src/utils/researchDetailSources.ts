@@ -265,15 +265,36 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
   }
 };
 
-const RAW_DATA_API_HOSTS = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
+// Mirrors `isLaneDiscoveryEndpointUrl` in server/src/utils/laneDiscoveryEndpointUrl.ts;
+// changing the arms here requires updating that copy.
+const API_HOST_PREFIX = 'api.';
+const API_HOSTS = new Set(['eutils.ncbi.nlm.nih.gov']);
+const API_PATH_PREFIXES = ['/api/', '/europepmc/webservices/'];
+const AWARD_SEARCH_FORM_HOSTS = new Set(['pamspublic.science.energy.gov']);
+const AWARD_SEARCH_FORM_LEAF = /^awardsearch[a-z]*\.aspx$/i;
+const AWARD_SEARCH_HOME_HOSTS = new Set(['awardsearch.neh.gov']);
+
+const isAwardSearchEntryPage = (host: string, url: URL): boolean => {
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (AWARD_SEARCH_HOME_HOSTS.has(host)) return segments.length === 0 && !url.search;
+  if (!AWARD_SEARCH_FORM_HOSTS.has(host)) return false;
+  return AWARD_SEARCH_FORM_LEAF.test(segments[segments.length - 1] ?? '');
+};
 
 export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
-  const normalized = normalizeSourceUrl(url);
-  if (!normalized) return false;
+  const safe = safeHttpUrl(url);
+  if (!safe) return false;
 
   try {
-    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
-    return RAW_DATA_API_HOSTS.has(host);
+    const parsed = new URL(safe);
+    const host = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/\.$/, '');
+    if (host.startsWith(API_HOST_PREFIX) || API_HOSTS.has(host)) return true;
+    const path = `${parsed.pathname.toLowerCase().replace(/\/+$/, '')}/`;
+    if (API_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+    return isAwardSearchEntryPage(host, parsed);
   } catch {
     return false;
   }

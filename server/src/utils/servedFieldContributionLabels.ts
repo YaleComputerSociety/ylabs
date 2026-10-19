@@ -93,6 +93,7 @@ export function buildSourceFieldContributions(
   fieldProvenance: unknown,
   allowSourceUrl: (url: string) => boolean,
   fieldHoldsValue: (field: string) => boolean = () => true,
+  citedPageFor: (sourceUrl: string) => string | undefined = (sourceUrl) => sourceUrl,
 ): SourceFieldContribution[] {
   const entries = provenanceEntries(fieldProvenance);
   const byUrl = new Map<string, Set<string>>();
@@ -100,7 +101,9 @@ export function buildSourceFieldContributions(
   for (const [field, provenance] of entries) {
     const label = servedFieldContributionLabel(field);
     if (!label || !fieldHoldsValue(field)) continue;
-    const sourceUrl = typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl.trim() : '';
+    const recordedUrl =
+      typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl.trim() : '';
+    const sourceUrl = recordedUrl ? citedPageFor(recordedUrl) : undefined;
     if (!sourceUrl || !allowSourceUrl(sourceUrl)) continue;
     const bucket = byUrl.get(sourceUrl);
     if (bucket) bucket.add(label);
