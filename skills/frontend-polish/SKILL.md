@@ -119,7 +119,7 @@ The student-journey smoke counts first-page program searches per visit and fails
 - Test the range from 1280 to 1536px where sticky rails can overflow, plus mobile.
 - Sticky sidebars must never hide content below the fold on short viewports.
 - The `/research` sticky filter bar is one row below the sidebar breakpoint: the Filters trigger, then the active chips and "Clear all filters" in their own horizontally scrolling strip, because wrapped chips made the bar 156px of a 664px phone screen (#5305).
-The student-journey smoke fails when the bar is taller than 72px at 390x664 with a filter active.
+The student-journey smoke fails when the bar is taller than 72px at 390x664 with a filter active, or when the active chip runs past the strip's edge and hides its remove control.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
 The `/research` operator controls sit at the bottom of the wide-layout sidebar, and inside the closed "Filters" panel on narrower layouts, for this reason.
