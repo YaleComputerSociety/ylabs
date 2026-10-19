@@ -3564,7 +3564,10 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
     expect(eponymousLabAgreementKey('W. Ortolan Lab', lead)).toBe(key);
     expect(eponymousLabAgreementKey('Coastal Ortolan Lab', lead)).toBe('');
     expect(eponymousLabAgreementKey('Coastal Sediment Lab', lead)).toBe('');
-    expect(eponymousLabAgreementKey('Ortolan Faculty Research', lead)).toBe('');
+    expect(eponymousLabAgreementKey('Ortolan Faculty Research', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Ortolan Research Group', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Ortolan', lead)).toBe(key);
+    expect(eponymousLabAgreementKey('Coastal Research Group', lead)).toBe('');
     expect(eponymousLabAgreementKey('Ortolan Lab', {})).toBe('');
   });
 
@@ -3578,6 +3581,19 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
       ]),
     ]);
     expect(members(plan)).toEqual([['a', 'b']]);
+  });
+
+  it('keeps every name the strict key agreed on in the eponymous cluster', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'a', name: 'Ortolan Lab', entityType: 'LAB' },
+        { id: 'b', name: 'Ortolan Research Group', entityType: 'LAB' },
+        { id: 'c', name: 'Ortolan', entityType: 'LAB' },
+        { id: 'd', name: 'The Ortolan Faculty Research Lab', entityType: 'LAB' },
+        { id: 'e', name: 'ORTOLAN LAB Coastal Sediment Genomics @ Yale', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(members(plan)).toEqual([['a', 'b', 'c', 'd', 'e']]);
   });
 
   it('keeps an eponymous lab apart when another person also leads it', () => {
