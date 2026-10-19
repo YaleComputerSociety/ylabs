@@ -2025,6 +2025,7 @@ Run it twice and the second pass plans nothing, which is what makes it a derivat
 `requiresMentorBeforeApply`, the "Do you need a mentor first?" answer, is asserted only from a sentence on the record's own page (`mentorRequirementSentence`, #4131, #4218, #5100, #5229).
 A faculty member tied to the project counts: required supervision by faculty, approval or endorsement from the applicant's adviser, a stated commitment of the faculty adviser to the proposed activities, a letter from the applicant's own project adviser ("your senior essay advisor", "their dissertation supervisor", "their dissertation director"), or a letter from a faculty member who knows, supports, or is related to the project.
 A recommendation letter with no tie to the project, from any writer or from "a faculty advisor", is not a requirement.
+Such a letter still reaches the student: when the answer is no but the program's materials or application text ask for a faculty letter or a recommendation, the detail answer reads "No mentor needed first, but you will need a faculty letter" (or "a recommendation letter"), and a mentor-matching answer gains the same clause, derived at serve time in `client/src/utils/programLetterRequirement.ts` without changing the verdict (#5302).
 A graduate record asserts an adviser only when its page states one or its prose mentions a dissertation and its title names no conference, so a conference-travel grant no longer inherits the requirement.
 
 The same pass derives `citizenshipStatus` from the prose (`utils/programCitizenship.ts`, #5129).

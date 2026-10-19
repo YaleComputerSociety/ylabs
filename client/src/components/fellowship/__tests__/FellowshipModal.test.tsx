@@ -515,6 +515,44 @@ describe('FellowshipModal', () => {
     expect(screen.queryByText('Not usually')).toBeNull();
   });
 
+  it('says a faculty letter is still needed when no mentor is needed first (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      applicationMaterials: ['Project statement', 'A letter from a Yale faculty member'],
+    });
+
+    expect(
+      screen.getByText('No mentor needed first, but you will need a faculty letter'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Not usually')).toBeNull();
+  });
+
+  it('names a required faculty letter in the mentor-matching answer too (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: true,
+      applicationMaterials: ['Project statement', 'A letter from a Yale faculty member'],
+    });
+
+    expect(
+      screen.getByText(
+        'Not first, the program helps match you with a mentor, but you will need a faculty letter',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('answers not usually when the only letter mention says one is not required (#5302)', () => {
+    renderModal({
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      applicationMaterials: [],
+      applicationInformation: 'A letter of recommendation is not required.',
+    });
+
+    expect(screen.getByText('Not usually')).toBeInTheDocument();
+  });
+
   it('still tells students to secure a mentor first when the program requires it (#970)', () => {
     renderModal({ requiresMentorBeforeApply: true, mentorMatching: true });
 
