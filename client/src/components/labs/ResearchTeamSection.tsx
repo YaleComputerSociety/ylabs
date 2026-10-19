@@ -6,6 +6,7 @@ import type {
   LabRosterUndergraduate,
 } from '../../types/labDetail';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import { isCorroboratedPersonPageUrl } from '../../utils/yalePersonPagePrefix';
 import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvidence';
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
@@ -185,13 +186,19 @@ const memberLineText = (line: UndergraduateMemberLine): string =>
     ? `${line.count} current ${line.count === 1 ? 'undergraduate' : 'undergraduates'}`
     : 'past undergraduate researchers';
 
+const memberLinePage = (sourceUrl: string) =>
+  isCorroboratedPersonPageUrl(sourceUrl)
+    ? { lists: 'The official profile lists', link: 'See the profile' }
+    : { lists: 'The lab’s own page lists', link: 'See the lab’s page' };
+
 function UndergraduateMemberLineRow({ line }: { line: UndergraduateMemberLine }) {
   const sourceUrl = safeHttpUrl(line.sourceUrl);
+  const page = memberLinePage(sourceUrl);
   return (
     <div>
       <h3 className="mb-1 text-sm font-semibold text-ink">{memberLineHeading(line)}</h3>
       <p className="text-sm leading-relaxed text-ink-soft">
-        The lab&rsquo;s own page lists {memberLineText(line)}.{' '}
+        {page.lists} {memberLineText(line)}.{' '}
         {sourceUrl && (
           <a
             href={sourceUrl}
@@ -199,7 +206,7 @@ function UndergraduateMemberLineRow({ line }: { line: UndergraduateMemberLine })
             rel={EXTERNAL_LINK_REL}
             className="-my-1.5 inline-block py-1.5 font-semibold text-brand underline-offset-4 hover:underline yr-focus-ring"
           >
-            See the lab&rsquo;s page
+            {page.link}
           </a>
         )}
       </p>

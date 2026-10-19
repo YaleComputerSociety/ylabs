@@ -1100,6 +1100,33 @@ describe('LabDetail page', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('names an official profile as the page an undergraduate count was read from', async () => {
+    const profileUrl = 'https://engineering.yale.edu/research-and-faculty/faculty-directory/fixture';
+    const { container } = renderLabDetail({
+      ...basePayload,
+      group: { ...basePayload.group, currentUndergradCount: 1 },
+      accessSignals: [
+        {
+          _id: 'signal-current-undergrads',
+          signalType: 'CURRENT_UNDERGRADS',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.5,
+          sourceUrl: profileUrl,
+        },
+      ] as never,
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const text = container.textContent || '';
+    expect(text).toContain('The official profile lists 1 current undergraduate.');
+    expect(text).not.toContain('own page lists');
+    expect(screen.queryByRole('link', { name: /See the lab.s page/ })).toBeNull();
+    expect(screen.getByRole('link', { name: 'See the profile' }).getAttribute('href')).toBe(
+      profileUrl,
+    );
+  });
+
   it('shows past undergraduate members its Sources chip cites without stating an alumni count', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
