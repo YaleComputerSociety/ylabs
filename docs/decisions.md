@@ -22,7 +22,7 @@ Decided:
   A row is withdrawn only when the two newest complete, over-the-wire reads of its department both record it and neither minted it.
   The department is frozen when its discovery or its count of profiles read fell below 0.75 of the previous admitted read, or when more than half of the live rows the read reached would be withdrawn at once.
 - **Any other evidence keeps the row.**
-  A served tier, a description, a website, a lead edge from another lane, a non-empty live observation from another lane, or a row merged into it each keep it; page-read bookkeeping and the lead-school inheritance derivation do not.
+  A served tier, a description, a website, a lead edge from another lane, a non-empty live observation from another lane, or a row merged into it each keep it; page-read bookkeeping, the lead-school inheritance derivation, and a website the roster lane itself still asserts do not.
 - **The lane reverses its own archive.**
   A row archived for this reason is restored and rematerialized when an admitted read mints it again.
 - A withdrawn key counts as still listed for the faculty-departure lane, because the person is on the roster.

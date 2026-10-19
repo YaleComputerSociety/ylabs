@@ -174,6 +174,36 @@ describe('roster mint withdrawal', () => {
     ).toBe(1);
   });
 
+  it('archives a row whose only website is the lane own stale assertion', async () => {
+    for (const slug of listedSlugs) await seedLaneRow(slug);
+    const laneWebsite = await seedLaneRow('dept-synthetic-studies-lane-website', {
+      websiteUrl: 'https://synthetic-lab.example.edu/',
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: laneWebsite.slug,
+      field: 'websiteUrl',
+      value: 'https://synthetic-lab.example.edu/',
+      sourceId,
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.7,
+      superseded: false,
+      observedAt: new Date('2026-08-28T00:00:00Z'),
+    });
+    const operatorWebsite = await seedLaneRow('dept-synthetic-studies-operator-website', {
+      websiteUrl: 'https://other-synthetic-lab.example.edu/',
+    });
+    const withdrawn = [laneWebsite.slug, operatorWebsite.slug];
+    await seedRead({ runId: firstRun, observedAt: firstAt, discovered: listedSlugs, withdrawn });
+    await seedRead({ runId: secondRun, observedAt: secondAt, discovered: listedSlugs, withdrawn });
+
+    const applied = await reconcileRosterMintWithdrawalsFromRun(String(secondRun));
+    expect(applied.counts.archived).toBe(1);
+    expect(applied.counts.keptByReason).toEqual({ has_website: 1 });
+    const archived = await ResearchEntity.find({ archived: true }).select('slug').lean();
+    expect(archived.map((row) => row.slug)).toEqual([laneWebsite.slug]);
+  });
+
   it('freezes a department whose profile reads collapsed', async () => {
     for (const slug of listedSlugs) await seedLaneRow(slug);
     const bare = await seedLaneRow('dept-synthetic-studies-bare');

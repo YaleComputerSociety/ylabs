@@ -6,6 +6,8 @@ import { publicSafeStudentVisibilityTiers } from '../models/studentVisibility';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { deleteFromIndex } from '../services/meiliSyncService';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
+import { LANE_WITHDRAWABLE_WEBSITE_FIELDS } from './laneRefusedWebsiteUrl';
+import { websiteIdentity } from './survivorOwnedWebsiteClear';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
   ROSTER_DISCOVERY_RETENTION_MIN_FRACTION,
@@ -38,7 +40,7 @@ import {
  *      are withdrawn in one pass; above it the department is frozen, never applied partly.
  *
  * A row is archived only when nothing else holds it up: a served tier, a description, a
- * website, a lead edge from another lane, a live observation from another lane, or a row
+ * website this lane did not assert itself, a lead edge from another lane, a live observation from another lane, or a row
  * merged into it each keep it. Archiving is the lane's own decision, so the lane reverses
  * it: a row archived for this reason is restored when an admitted read mints it again.
  */
@@ -346,6 +348,28 @@ async function loadRowEvidence(
     { entityId: 1, entityKey: 1, sourceName: 1, field: 1, value: 1 },
   ).lean()) as Array<Record<string, unknown>>;
   const idBySlug = new Map(rows.map((row) => [String(row.slug), String(row._id)]));
+  const laneWebsiteObservations = (await Observation.find(
+    {
+      $or: [
+        { entityId: { $in: ids } },
+        { entityType: 'researchEntity', entityKey: { $in: [...slugs] } },
+      ],
+      superseded: false,
+      sourceName: ROSTER_LANE_SOURCE_NAME,
+      field: { $in: [...LANE_WITHDRAWABLE_WEBSITE_FIELDS] },
+    },
+    { entityId: 1, entityKey: 1, value: 1 },
+  ).lean()) as Array<Record<string, unknown>>;
+  const laneWebsitesById = new Map<string, Set<string>>();
+  for (const observation of laneWebsiteObservations) {
+    const id = observation.entityId
+      ? String(observation.entityId)
+      : idBySlug.get(String(observation.entityKey));
+    if (!id) continue;
+    const websites = laneWebsitesById.get(id) ?? new Set<string>();
+    websites.add(websiteIdentity(observation.value));
+    laneWebsitesById.set(id, websites);
+  }
   const foreignObservationsById = new Map<string, number>();
   for (const observation of observations) {
     if (!isForeignWithdrawalBlockingObservation(observation)) continue;
@@ -357,6 +381,9 @@ async function loadRowEvidence(
   }
   return rows.map((row) => {
     const id = String(row._id);
+    const laneWebsites = laneWebsitesById.get(id);
+    const websiteNotFromThisLane = (value: unknown) =>
+      laneWebsites?.has(websiteIdentity(value)) ? undefined : value;
     return {
       entityId: id,
       slug: String(row.slug),
@@ -365,8 +392,8 @@ async function loadRowEvidence(
         studentVisibilityTier: row.studentVisibilityTier,
         fullDescription: row.fullDescription,
         shortDescription: row.shortDescription,
-        websiteUrl: row.websiteUrl,
-        website: row.website,
+        websiteUrl: websiteNotFromThisLane(row.websiteUrl),
+        website: websiteNotFromThisLane(row.website),
         foreignLeadEdges: foreignEdgesById.get(id) ?? 0,
         foreignEvidenceObservations: foreignObservationsById.get(id) ?? 0,
         mergedInRows: mergedIn.get(id)?.length ?? 0,
