@@ -3615,6 +3615,37 @@ describe('buildNameAgreedSharedPersonResearchEntityDedupePlan (#4651)', () => {
     expect(plan).toEqual([]);
   });
 
+  it('groups a faculty research row titled as its lead lab with that lab, keeping the lab', () => {
+    const appointmentRoster = 'https://numbers.example.edu/people/faculty/';
+    const base = leadRow([
+      { id: 'fra', name: 'Ortolan Lab', entityType: 'FACULTY_RESEARCH_AREA' },
+      { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
+      { id: 'project', name: 'Coastal Sediment Atlas', entityType: 'LAB' },
+    ]);
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      {
+        ...base,
+        primaryAppointmentProfileUrl: 'https://numbers.example.edu/profile/wren-ortolan',
+        entities: base.entities.map((entity) =>
+          entity.id === 'fra' ? { ...entity, identitySourceUrl: appointmentRoster } : entity,
+        ),
+      },
+    ]);
+    expect(plan.map((group) => [group.canonicalEntityId, ...group.duplicateEntityIds])).toEqual([
+      ['lab', 'fra'],
+    ]);
+  });
+
+  it('keeps a faculty research row apart from the lab when its name is not a lab name', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      leadRow([
+        { id: 'fra', name: 'Wren Ortolan Research', entityType: 'FACULTY_RESEARCH_AREA' },
+        { id: 'lab', name: 'Ortolan Lab', entityType: 'LAB' },
+      ]),
+    ]);
+    expect(plan).toEqual([]);
+  });
+
   it('plans nothing when no two rows agree on both name and type', () => {
     const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
       row([
@@ -3953,6 +3984,52 @@ describe('buildSameNameDifferentPersonQuarantine', () => {
   });
 });
 
+describe('a name-only group joining a lead lab to a lead-less row of the same name', () => {
+  const sameNameRows = (personLedEntityIds?: string[]) => [
+    {
+      userId: 'pi-ortolan',
+      normalizedName: 'ortolan lab',
+      personLedEntityIds,
+      entities: [
+        {
+          id: 'lead-lab',
+          slug: 'ysm-faculty-wren-ortolan',
+          name: 'Ortolan Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: 'https://ortolanlab.example.org',
+          sourceUrls: ['https://medicine.example.edu/profile/wren-ortolan/'],
+        },
+        {
+          id: 'member-row',
+          slug: 'ysm-faculty-juno-vega',
+          name: 'Ortolan Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          websiteUrl: 'https://www.ortolanlab.example.org/',
+          sourceUrls: [
+            'https://medicine.example.edu/profile/juno-vega/',
+            'https://www.ortolanlab.example.org/',
+          ],
+          fullDescription: 'Studies coastal sediment genomics with field sampling.',
+        },
+      ],
+    },
+  ];
+
+  it('keeps the row its lead leads as canonical and calls the lead-less row the duplicate', () => {
+    const plan = buildResearchEntityPiDedupePlan(sameNameRows(['lead-lab']));
+    expect(plan.map((group) => [group.canonicalEntityId, group.duplicateEntityIds])).toEqual([
+      ['lead-lab', ['member-row']],
+    ]);
+  });
+
+  it('decides on the row evidence alone when no row names its lead', () => {
+    const plan = buildResearchEntityPiDedupePlan(sameNameRows());
+    expect(plan.map((group) => group.canonicalEntityId)).toEqual(['member-row']);
+  });
+});
+
 describe('buildResearchEntityPiDedupePlan center carve-out', () => {
   it('never selects a CENTER as the canonical survivor of an FRA-shadow merge', () => {
     const plan = buildResearchEntityPiDedupePlan([
@@ -4030,6 +4107,39 @@ describe('buildResearchEntityPiDedupePlan center carve-out', () => {
             entityType: 'FACULTY_RESEARCH_AREA',
             sourceUrls: ['https://medicine.yale.edu/profile/grace-hopper/'],
             departments: ['Computer Science'],
+          },
+        ],
+      },
+    ]);
+    expect(
+      plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
+    ).toEqual([]);
+  });
+
+  it('does not fold an FRA shell into a core facility its lead directs, whatever the core is called', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-core-director',
+        normalizedName: 'same-pi:pi-core-director',
+        piFirstName: 'Grace',
+        piLastName: 'Hopper',
+        entities: [
+          {
+            id: 'hopper-core',
+            slug: 'research-yale-rapid-sample-tracing',
+            name: 'Rapid Sample Tracing (RST)',
+            kind: 'core_facility',
+            entityType: 'CORE_FACILITY',
+            websiteUrl: 'https://research.example.edu/cores/rst',
+            sourceUrls: ['https://research.example.edu/cores/rst'],
+          },
+          {
+            id: 'hopper-fra-shell',
+            slug: 'faculty-research-area-grace-hopper',
+            name: 'Grace Hopper Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.example.edu/profile/grace-hopper/'],
           },
         ],
       },

@@ -25,6 +25,7 @@ export interface ResearchEntityPiDedupeRow {
   piFirstName?: string;
   piLastName?: string;
   primaryAppointmentProfileUrl?: string;
+  personLedEntityIds?: string[];
   entities: Array<{
     id: string;
     slug?: string;
@@ -270,6 +271,19 @@ function primaryAppointmentRank(
   entity: ResearchEntityPiDedupeRow['entities'][number],
 ): number {
   return entityMintedByPrimaryAppointmentRoster(row, entity) ? 1 : 0;
+}
+
+/**
+ * A row its person leads outranks one nobody leads. A name-only group joins a lab its
+ * PI leads to a lead-less row carrying the same name, typically a lab member's profile
+ * row that adopted the host lab's card, and the lead-less row can never serve, so
+ * picking it as canonical would hold the only servable card as its duplicate.
+ */
+function personLedRank(
+  row: Pick<ResearchEntityPiDedupeRow, 'personLedEntityIds'>,
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): number {
+  return row.personLedEntityIds?.includes(entity.id) ? 1 : 0;
 }
 
 function withoutPrimaryAppointmentPreference(
@@ -640,6 +654,8 @@ function buildGroupFromCluster(
   if (entities.length <= 1) return null;
 
   const canonical = [...entities].sort((a, b) => {
+    const byPersonLed = personLedRank(row, b) - personLedRank(row, a);
+    if (byPersonLed !== 0) return byPersonLed;
     const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
     if (byAppointment !== 0) return byAppointment;
     const byScore = scoreEntity(b) - scoreEntity(a);
@@ -922,8 +938,9 @@ function sharedPersonEligibleEntities(
 function sharedPersonGroup(
   row: ResearchEntityPiDedupeRow,
   entities: ResearchEntityPiDedupeRow['entities'],
+  scoreEntity: (entity: ResearchEntityPiDedupeRow['entities'][number]) => number = canonicalScore,
 ): ResearchEntityPiDedupeGroup[] {
-  const group = buildGroupFromCluster(row, entities);
+  const group = buildGroupFromCluster(row, entities, scoreEntity);
   return group ? [{ ...group, dedupeCategory: 'shared_person_id' as const }] : [];
 }
 
@@ -1012,13 +1029,49 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
     const clusters = new Map<string, ResearchEntityPiDedupeRow['entities']>();
     for (const entity of sharedPersonEligibleEntities(row, sharedEntityIds)) {
       const name = eponymousLabAgreementKey(entity.name, row) || nameAgreementKey(entity.name);
-      const entityType = (entity.entityType || '').toUpperCase();
+      const entityType = nameAgreementEntityType(entity);
       if (!name || !entityType) continue;
       const key = `${entityType}::${name}`;
       clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
-    return [...clusters.values()].flatMap((entities) => sharedPersonGroup(row, entities));
+    return [...clusters.values()].flatMap((entities) =>
+      joinsFacultyResearchRowToLab(entities)
+        ? sharedPersonGroup(
+            withoutPrimaryAppointmentPreference(row),
+            entities,
+            labTypedRowFirstScore,
+          )
+        : sharedPersonGroup(row, entities),
+    );
   });
+}
+
+const LAB_NAME_WORDS: ReadonlySet<string> = new Set(['lab', 'labs', 'laboratory', 'laboratories']);
+
+/**
+ * A faculty research row its roster titled as a lab ("Avery Lab") is the same kind of
+ * thing as that lead's `LAB` row of the same name: one department roster mints the
+ * person a faculty research row and another school's lab index mints the lab, so the
+ * type alone kept one lab two cards under one lead.
+ */
+function nameAgreementEntityType(entity: ResearchEntityPiDedupeRow['entities'][number]): string {
+  const entityType = (entity.entityType || '').toUpperCase();
+  if (!FACULTY_RESEARCH_AREA_TYPES.has(entityType)) return entityType;
+  return foldedNameWords(entity.name).some((word) => LAB_NAME_WORDS.has(word)) ? 'LAB' : entityType;
+}
+
+const FACULTY_RESEARCH_AREA_TYPES: ReadonlySet<string> = new Set([
+  'FACULTY_RESEARCH_AREA',
+  'INDIVIDUAL_RESEARCH',
+]);
+
+function joinsFacultyResearchRowToLab(entities: ResearchEntityPiDedupeRow['entities']): boolean {
+  const types = new Set(entities.map((entity) => (entity.entityType || '').toUpperCase()));
+  return types.has('LAB') && [...FACULTY_RESEARCH_AREA_TYPES].some((type) => types.has(type));
+}
+
+function labTypedRowFirstScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
+  return canonicalScore(entity) + ((entity.entityType || '').toUpperCase() === 'LAB' ? 1000 : 0);
 }
 
 export function buildMultiPersonEntityQuarantine(
