@@ -27,8 +27,7 @@ const PAST_OR_DESCRIPTIVE =
 const NEWS_ITEM =
   /\bwelcom(?:e|es|ed)\s+(?:(?:a|our|the|new|back|incoming)\s+){0,3}(?:class|cohort|members?|scholars|fellows)\b|\bwelcome\s+(?:to\s+)?(?:the\s+)?20\d\d\b|^\s*\d{1,2}\/\d{1,2}\/\d{2,4}\b/i;
 
-const PERSON_NAME =
-  String.raw`(?!(?:Undergrad\w*|Graduates?|Students?|Postdoc\w*|Yale|Applicants?|Researchers?|All|Anyone|Everyone)\b)[A-Z][a-z]+`;
+const PERSON_NAME = String.raw`(?!(?:Undergrad\w*|Graduates?|Students?|Postdoc\w*|Yale|Applicants?|Researchers?|All|Anyone|Everyone)\b)[A-Z][a-z]+`;
 const WELCOMES_A_NAMED_PERSON = new RegExp(
   String.raw`\b[Ww]elcome\s+(?:to\s+)?(?:[a-z]+\s+){0,2}${PERSON_NAME}(?:\s+${PERSON_NAME})?\s*(?:[!,(]|\s+to\s+(?:the|our)\b|$)`,
 );
