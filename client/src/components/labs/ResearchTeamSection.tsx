@@ -244,6 +244,8 @@ export default function ResearchTeamSection({
     teamMembers.length > 0 ||
     listsCurrentUndergraduates ||
     undergraduateLines.some((line) => line.status === 'current');
+  const currentUndergraduateLines = undergraduateLines.filter((line) => line.status === 'current');
+  const pastUndergraduateLines = undergraduateLines.filter((line) => line.status === 'past');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
   const dateLabel = observedLabel(roster.observedAt);
@@ -274,8 +276,15 @@ export default function ResearchTeamSection({
             until its freshness window expires.
           </p>
         )}
+        {currentUndergraduateLines.map((line) => (
+          <UndergraduateMemberLineRow
+            key={line.status}
+            line={line}
+            leadPersonNames={leadPersonNames}
+          />
+        ))}
         {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
-        {undergraduateLines.map((line) => (
+        {pastUndergraduateLines.map((line) => (
           <UndergraduateMemberLineRow
             key={line.status}
             line={line}
