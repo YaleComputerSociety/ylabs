@@ -1601,6 +1601,40 @@ Under the owner's faculty-director rule 40 of the LLM lane's 80 values named the
 The faculty-director rule settled 13 homes the code lane had refused, every one checked against its page.
 The LLM lane's 24 unsupported values were people named on a different unit's page reached through shared navigation, a name the cited page does not carry, a retired or functional director, a mailing "Attn:" line, a related core's contact card, and a page heading stored as a name.
 
+### Center affiliation, read with code (#5296)
+
+`center-affiliation-roster` replaced `center-affiliation-llm` in the research sweep by owner decision on 2026-10-19, and `center-affiliation-llm` is manual-only.
+It reads each organizational home's own `websiteUrl` once with `extractCenterAffiliationsFromPage` in `scrapers/utils/centerAffiliationPageExtractor.ts`, which lists people and labs only from page structure: people grids, directory, reference and lab cards, core contact listings, surname-first profile directories, profile links that open their own block, and lists, labelled lines or short "Name, Director" lines under a membership heading.
+A heading scopes only the container it opens, so a callout heading such as a gift appeal does not suppress the sidebar card beside it.
+News, publications, related offerings, donor, student, staff and advisory sections, dated cards and author bylines are left out, and an administrative title is refused.
+A name stated only in running prose is counted as a `prose-mention` rather than asserted, a name linked to two profiles or a profile shared by two names is refused, and a profile link whose path names somebody else is refused.
+It emits the same `researchEntityRelationship` observations as the LLM lane, keyed `<center>:faculty-research-area-<name>:MEMBER_RESEARCH_AREA`, with the listed profile as `targetWebsiteUrl`, so a person resolves through the existing name arms or the listed-site arm.
+A lab card is keyed `listed-lab-<slug>` and carries the card's link; `rowServingListedLabWebsite` resolves it only to the one live row serving that site that is not itself an organization, and two rows at the site, an organization row or a card with no link resolve to nothing.
+Wherever this lane observes a relationship, `preferredRelationshipObservations` lets its observations alone decide the stored target, site and citation.
+
+A read emits a `centerRosterHealth` snapshot only when it lists someone (`listed`); a failed fetch, a prose-only page and an empty page emit nothing, so none of them can retire a claim or hand one off.
+The lane's own claims run through the centres retirement pass as `CENTER_AFFILIATION_CODE_ROSTER_LANE`: two admitted reads in distinct runs that omit a claim retire it, under the same freeze guards.
+`reconcileCenterAffiliationHandOffFromRun` in `scrapers/centerAffiliationHandOff.ts` runs from `materializeFromRun` after that pass and judges every live `center-affiliation-llm` relationship claim on each center the run read, against the latest admitted code-lane read after the claim was last observed:
+
+- a claim the read lists under the same key, at the same resolved target, or as the same person in either name order (credential tokens ignored) with no target of its own is re-attributed: its LLM observations retire and the relationship rests on this lane's observations;
+- a claim of a person the read lists whose LLM key reached a row the read's own key does not reach is kept unchanged, because ending it would drop a supported edge;
+- any other claim is handed off: its LLM observations retire with the shared `superseded` plus `rollback` shape, and its relationship is archived unless another lane's live observations, this lane's included, still reach the same target.
+
+One read decides the hand-off, as for directors, because the code lane is deterministic and the LLM lane no longer runs.
+The centre is re-gated and re-indexed when a relationship is archived.
+
+Measured on 2026-10-19 over a uniform sample of 40 of the 150 centers with live LLM claims on Development (seed 5296; 602 live claims; 39 of 42 cited pages fetched once, 557 claims judgeable), each assertion judged by an agent against its page:
+
+| | Code lane | LLM lane |
+|---|---|---|
+| Person named correctly as a member (100-item sample) | 100/100, Wilson 95% 96% to 100% | 75/100, 66% to 82% |
+| Target key names that person | 100/100 | 26/100, 18% to 35% |
+| Claims that resolve to a row on Development | 181 of 341 people | 54 of 557 |
+| Centers with at least one assertion | 24 of 38 fetched | 38 of 38 |
+
+The LLM lane copied surname-first directory names into its keys (45 of the 100 sampled, and none of one directory center's 252 claims resolves), named paper authors, related-offering contacts, news subjects and donors (12), named people the current page does not state (10), and stored title text or credentials as names.
+The code lane found 61 of the 75 sampled LLM claims judged correct; its misses were membership stated only in prose or captions, advisory boards it leaves out by design, contact lists with no membership heading, and labs linked inside paragraphs.
+
 ### Center roster retirement: members a complete read no longer lists
 
 `centers-institutes-index` keys every roster member as its own observation (`<center>:<member>`), so a member the roster stops listing is never re-asserted, never superseded, and keeps its role edge forever, including a stale lead edge (#3781).
@@ -1624,7 +1658,7 @@ Observations get `superseded` plus `rollback.rolledBackAt`, which both read scop
 Members still listed whose edge or claim was retired are re-materialized in the same pass, so a demoted lead gets its current role edge at once; the center is then re-gated and its search document re-synced, because the gate re-indexes only a row whose tier changed and the document carries the roster's names.
 Role edges that carry no `rosterProvenance` at all predate provenance, and this pass never judges an edge that names no source.
 
-`center-affiliation-llm` runs the same pass over its own claims (#4022), as `CENTER_AFFILIATION_ROSTER_LANE`, scoped to observations and edges naming that source.
+`center-affiliation-llm` runs the same pass over its own claims (#4022), as `CENTER_AFFILIATION_ROSTER_LANE`, scoped to observations and edges naming that source; it is manual-only since 2026-10-19, so the pass now acts only on a manual run of it.
 Its claims are relationship keys, and before this pass a key a later read left out stayed live forever and shielded the edge from the roster lane's retirement too.
 One model call is not a repeatable read, so a read lists a live claim of this lane whose person the fetched page text still states, by slug tokens, even when the model omitted it; a claim retires only when two admitted reads omit it and the page no longer names the person.
 A claim whose target key reached the slug length cap may end in a cut-off token, so it is always listed rather than judged absent.

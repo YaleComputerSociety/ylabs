@@ -6,6 +6,8 @@ const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
     'backward-looking recipients source with no clean public feed; run from curated input',
   'undergrad-research-posting':
     'no official public page publishes postings in the shape the lane reads, so its page list is empty and it would trip the barren-streak guard on every sweep (#3550, #3553); return it to the sweep when a replacement page is configured (#3551)',
+  'center-affiliation-llm':
+    'replaced by the deterministic center-affiliation-roster lane by owner decision on 2026-10-19 (#5296): on 40 centers frozen that day (602 live claims, 39 of 42 cited pages fetched), a 100-claim sample of this lane named a current member 75% of the time but emitted a target key naming that person 26% of the time, and 54 of its 557 judgeable claims resolved to a row, while a 100-assertion sample of the code lane was correct 100/100 and 181 of its 341 people resolved; the code lane hands off and ends the relationships this lane wrote when its read does not list them, so this lane must not run again beside it',
   'center-director-llm':
     "replaced by the deterministic center-director lane by owner decision on 2026-10-19 (#5296): on 106 homes frozen that day the code lane named 58 directors and the page supported all 58, while 40 of this lane's 80 values named the director under the owner's rule and 24 named someone the page does not support; the code lane hands off and ends the lead edges this lane wrote, so this lane must not run again beside it",
   'lab-microsite-undergrad-llm':

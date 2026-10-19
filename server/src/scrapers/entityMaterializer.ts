@@ -162,6 +162,7 @@ import {
   websiteUrlIdentityKeyVariants,
 } from '../scripts/researchEntityPiDedupeCore';
 import {
+  isListedLabTargetKey,
   RELATIONSHIP_TARGET_WEBSITE_URL_FIELD,
   relationshipTargetIdentities,
   type RelationshipTargetIdentity,
@@ -396,6 +397,7 @@ import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUr
 import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
+import { reconcileCenterAffiliationHandOffFromRun } from './centerAffiliationHandOff';
 import {
   reconcileCenterDirectorRetirementsFromRun,
   reconcileCodeLaneDirectorRetirementsFromRun,
@@ -406,7 +408,9 @@ import {
   reconcileOfficialProfileDirectorRetirementsFromRun,
 } from './officialProfileDirectorRetirement';
 import {
+  CENTER_AFFILIATION_CODE_ROSTER_LANE,
   CENTER_AFFILIATION_ROSTER_LANE,
+  CENTER_AFFILIATION_ROSTER_SOURCE_NAME,
   CENTERS_INSTITUTES_ROSTER_LANE,
   CENTERS_INSTITUTES_SOURCE_NAME,
   reconcileCenterRosterRetirementsFromRun,
@@ -4948,8 +4952,33 @@ export async function resolveRelationshipTarget(
     canonicalFacultyResearchAreaTarget,
     target,
     resolvedTarget:
-      namedTarget || (await rowLedByListedPersonAtListedWebsite(researchEntityModel, identity)),
+      namedTarget ||
+      (isListedLabTargetKey(targetEntityKey)
+        ? await rowServingListedLabWebsite(researchEntityModel, identity)
+        : await rowLedByListedPersonAtListedWebsite(researchEntityModel, identity)),
   };
+}
+
+const LISTED_LAB_NON_TARGET_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
+
+export async function rowServingListedLabWebsite(
+  researchEntityModel: Pick<typeof ResearchEntity, 'find'>,
+  identity: RelationshipTargetIdentity,
+): Promise<ResolvedRelationshipTargetRow | null> {
+  const websiteKey = normalizeWebsiteUrlIdentityKey(identity.targetWebsiteUrl);
+  if (!websiteKey) return null;
+  const rowsAtWebsite = (await researchEntityModel
+    .find(
+      {
+        websiteUrl: { $in: websiteUrlIdentityKeyVariants(websiteKey) },
+        entityType: { $nin: LISTED_LAB_NON_TARGET_ENTITY_TYPES },
+        archived: { $ne: true },
+      },
+      { _id: 1, name: 1, slug: 1, entityType: 1 },
+    )
+    .limit(2)
+    .lean()) as ResolvedRelationshipTargetRow[];
+  return rowsAtWebsite.length === 1 ? rowsAtWebsite[0] : null;
 }
 
 export async function rowLedByListedPersonAtListedWebsite(
@@ -4990,12 +5019,27 @@ export async function rowLedByListedPersonAtListedWebsite(
   return ledRows.length === 1 ? ledRows[0] : null;
 }
 
+/**
+ * Where the code lane (`center-affiliation-roster`) lists an affiliation, its observations
+ * alone decide the relationship, so the stored citation and target site come from the
+ * repeatable read rather than from `center-affiliation-llm` (#5296).
+ */
+export function preferredRelationshipObservations<
+  Row extends { sourceName?: unknown; field?: unknown },
+>(observations: Row[]): Row[] {
+  const codeLane = observations.filter(
+    (obs) => textValue(obs.sourceName) === CENTER_AFFILIATION_ROSTER_SOURCE_NAME,
+  );
+  return codeLane.some((obs) => obs.field === 'targetEntityKey') ? codeLane : observations;
+}
+
 async function materializeResearchEntityRelationship(
   identifier: { entityId?: string; entityKey?: string },
-  observations: any[],
+  allObservations: any[],
   options: MaterializeOptions,
   deps: ResolvedRelationshipMaterializationDeps = {},
 ): Promise<MaterializeResult> {
+  const observations = preferredRelationshipObservations(allObservations);
   const resolverObs: ResolverObservation[] = observations.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -11924,6 +11968,22 @@ export async function materializeFromRun(
   );
   if (centerAffiliationRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerAffiliationRetirement, CENTER_AFFILIATION_ROSTER_LANE);
+  }
+  const centerAffiliationCodeRetirement = await reconcileCenterRosterRetirementsFromRun(
+    scrapeRunId,
+    centerRosterRetirementDeps(options, CENTER_AFFILIATION_CODE_ROSTER_LANE),
+    { dryRun: options.dryRun, lane: CENTER_AFFILIATION_CODE_ROSTER_LANE },
+  );
+  if (centerAffiliationCodeRetirement.outcome !== 'no-center-roster-read') {
+    logCenterRosterRetirement(centerAffiliationCodeRetirement, CENTER_AFFILIATION_CODE_ROSTER_LANE);
+  }
+  const centerAffiliationHandOff = await reconcileCenterAffiliationHandOffFromRun(
+    scrapeRunId,
+    centerRosterRetirementDeps(options, CENTER_AFFILIATION_ROSTER_LANE),
+    { dryRun: options.dryRun },
+  );
+  if (centerAffiliationHandOff) {
+    console.info(`[center-affiliation-hand-off] ${JSON.stringify(centerAffiliationHandOff)}`);
   }
   const centerDirectorRetirement = await reconcileCenterDirectorRetirementsFromRun(scrapeRunId, {
     dryRun: options.dryRun,

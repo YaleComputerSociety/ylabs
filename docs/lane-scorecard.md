@@ -56,6 +56,8 @@ A resolver failure is not frozen, for the same reason a reset connection is not.
 `center-affiliation-llm`, `center-director-llm` and `research-area-source-extractor` joined once their page fetch moved from a raw `axios.get` onto `fetchPageWithPolicy` (#4606), which keeps the same SSRF guard, redirect cap and retry on a throttled status.
 Their model calls already went over the default axios instance, so the model freeze covered them before the move.
 `center-director`, the code replacement for `center-director-llm` (#5296), fetches only through `fetchPageWithPolicy` and calls no model, so it joined on the same basis; its read snapshot stamps `readAt` from the run's reference date, and it has no benchmark until one is captured.
+`center-affiliation-roster`, the code replacement for `center-affiliation-llm` (#5296), joined on the same basis: one `fetchPageWithPolicy` read per center, no model, and a snapshot stamped from the run's reference date.
+It chooses its centers from the live corpus as the LLM lane does, so a center archived or re-sited after capture shows as `pagesMissed`, and it has no benchmark until one is captured.
 
 A rendered page is frozen at `createScraplingRenderedFetcher`, the one place every rendered lane gets its renderer (#3590).
 Capture records whether a renderer existed at all, because a lane with no renderer takes a different path from one whose render returns nothing, and it records every render, including a null or blocked result.

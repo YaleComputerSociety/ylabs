@@ -33,6 +33,7 @@ import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergr
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { CenterDirectorScraper } from './sources/centerDirectorScraper';
+import { CenterAffiliationRosterScraper } from './sources/centerAffiliationRosterScraper';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
 import { LabSiteUndergradInvitationScraper } from './sources/labSiteUndergradInvitationScraper';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
@@ -81,6 +82,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CenterAffiliationLLMExtractor());
   o.register(new CenterDirectorLLMExtractor());
   o.register(new CenterDirectorScraper());
+  o.register(new CenterAffiliationRosterScraper());
   o.register(new OfficialProfilePiBackfillScraper());
   o.register(
     new OfficialResearchHomeRosterScraper(undefined, undefined, createUndergradRosterDeriver()),

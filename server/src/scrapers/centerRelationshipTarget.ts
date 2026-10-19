@@ -1,4 +1,9 @@
 export const RELATIONSHIP_TARGET_WEBSITE_URL_FIELD = 'targetWebsiteUrl';
+export const LISTED_LAB_TARGET_KEY_PREFIX = 'listed-lab-';
+
+export function isListedLabTargetKey(targetEntityKey: string): boolean {
+  return targetEntityKey.startsWith(LISTED_LAB_TARGET_KEY_PREFIX);
+}
 
 export interface RelationshipTargetIdentity {
   targetEntityKey: string;
