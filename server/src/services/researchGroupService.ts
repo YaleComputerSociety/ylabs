@@ -15,7 +15,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
-import { isStudentVisibilitySignalReason } from './studentVisibilityTier';
+import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
@@ -3900,15 +3900,8 @@ const operatorPreviewReasons = (
   ResearchDetailOperatorPreview,
   'studentVisibilityBlockingReasons' | 'studentVisibilitySignalReasons'
 > => {
-  const stored = Array.isArray(reasons)
-    ? [...new Set(reasons.map((reason) => String(reason ?? '').trim()).filter(Boolean))]
-    : [];
-  return {
-    studentVisibilityBlockingReasons: stored.filter(
-      (reason) => !isStudentVisibilitySignalReason(reason),
-    ),
-    studentVisibilitySignalReasons: stored.filter(isStudentVisibilitySignalReason),
-  };
+  const { blocking, signals } = partitionStudentVisibilityReasons(reasons);
+  return { studentVisibilityBlockingReasons: blocking, studentVisibilitySignalReasons: signals };
 };
 
 export async function getResearchGroupDetail(
