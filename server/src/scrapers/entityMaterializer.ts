@@ -15,11 +15,7 @@ import {
   withoutProfileTemplateWidgets,
 } from '../utils/profileTemplateChrome';
 import mongoose from 'mongoose';
-import {
-  Observation,
-  ObservedEntityType,
-  researchEntityObservationSubjects,
-} from '../models/observation';
+import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../models/fieldProvenanceBacking';
 import {
@@ -5777,14 +5773,57 @@ const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
 // A loser's PI attribution may name the survivor's lead only while the survivor states
 // none of its own, because a merge leaves the roster that lists the person reading the
 // loser's key, and a survivor with no lead of its own would otherwise be held on
-// `missing_lead` by a lead the merge itself established. Changing this also requires
-// `researchEntityStatesItsOwnPiLead`, which the person-mint gate reads, to stay in step.
+// `missing_lead` by a lead the merge itself established. The person-mint gate asks
+// `mergedSurvivorEvidence` itself, so both read one condition.
 const MERGED_LOSER_PI_LEAD_FIELDS: ReadonlySet<string> = new Set([
   'inferredPiUserKey',
   'inferredPiUserId',
 ]);
 
 const PI_LEAD_LOCK_FIELDS: ReadonlySet<string> = new Set([...MERGED_LOSER_PI_LEAD_FIELDS, 'lead']);
+
+async function personNamedByPiAttribution(
+  attribution: any,
+  entityName: () => Promise<string>,
+): Promise<string> {
+  if (attribution.field === 'inferredPiUserId') {
+    return normalizeMaterializerObjectId(textValue(attribution.value)) || `id:${attribution.value}`;
+  }
+  const resolution = await resolveInferredPiUserKey(attribution.value, entityName);
+  return resolution.status === 'matched' && resolution.researcherId
+    ? String(resolution.researcherId)
+    : `key:${textValue(attribution.value)}`;
+}
+
+// The losers must name one person, and that person must be the only lead the survivor
+// already holds from any lane, so a merge never puts a second lead beside the first.
+async function loserLeadAttributionsTheSurvivorTakes(
+  survivorId: mongoose.Types.ObjectId,
+  attributions: any[],
+): Promise<any[]> {
+  if (attributions.length === 0) return [];
+  let entityName: string | undefined;
+  const loadEntityName = async (): Promise<string> => {
+    entityName ??= textValue(
+      ((await ResearchEntity.findById(survivorId).select('name').lean()) as any)?.name,
+    );
+    return entityName;
+  };
+  const people = new Set<string>();
+  for (const attribution of attributions) {
+    people.add(await personNamedByPiAttribution(attribution, loadEntityName));
+  }
+  if (people.size !== 1) return [];
+  const [person] = people;
+  const heldLeads = (await RoleAssignment.distinct('personId', {
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': survivorId,
+    role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })) as unknown[];
+  return heldLeads.every((held) => materializerDocumentId(held) === person) ? attributions : [];
+}
 
 // These lanes fork a lab identity (`name`, `kind`, `entityType`, `websiteUrl`) on
 // one profile link, so once one of them has typed the survivor from the survivor's
@@ -5936,11 +5975,26 @@ export async function mergedSurvivorEvidence(
     (observation: any) =>
       !loserOrigin(observation) && MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')),
   );
+  const loserLeadAttributions =
+    survivorLeadIsLocked || survivorStatesItsOwnPiLead
+      ? []
+      : [...loadedObservations, ...kept].filter(
+          (observation: any) =>
+            loserOrigin(observation) &&
+            MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')) &&
+            !valueIsRefused(
+              survivor.fieldValueRefusals,
+              String(observation.field),
+              observation.value,
+            ),
+        );
+  const takenLoserLeadIds = new Set(
+    (await loserLeadAttributionsTheSurvivorTakes(survivorId, loserLeadAttributions)).map(
+      (observation: any) => String(observation._id),
+    ),
+  );
   const loserNamesLeadOfLeadlessSurvivor = (observation: any): boolean =>
-    MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')) &&
-    !survivorLeadIsLocked &&
-    !survivorStatesItsOwnPiLead &&
-    !valueIsRefused(survivor.fieldValueRefusals, String(observation.field), observation.value);
+    takenLoserLeadIds.has(String(observation._id));
   const survivorOwnsItsWebsite =
     !survivorTypeIsLocked &&
     [...loadedObservations, ...kept].some(
@@ -6466,18 +6520,30 @@ function normalizedResearcherProfileText(
   return normalized.slice(0, bound).trim() || undefined;
 }
 
-async function researchEntityStatesItsOwnPiLead(entity: {
-  _id: mongoose.Types.ObjectId;
-  slug?: unknown;
-}): Promise<boolean> {
-  const slug = textValue(entity.slug);
-  return Boolean(
-    await Observation.exists({
-      entityType: { $in: researchEntityObservationSubjects },
-      field: { $in: [...MERGED_LOSER_PI_LEAD_FIELDS] },
+async function mergedSurvivorTakesLoserLeadAttribution(
+  loser: ResearchEntityTombstoneNode,
+  entityType: ObservedEntityType,
+  userEntityKey: string,
+): Promise<boolean> {
+  const canonical = await resolveResearchEntityCanonicalByTombstone(loser);
+  if (!canonical) return false;
+  const survivor = (await ResearchEntity.findOne({ _id: canonical._id, archived: { $ne: true } })
+    .select('_id slug fieldValueRefusals manuallyLockedFields')
+    .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
+  if (!survivor) return false;
+  const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
+    await Observation.find({
+      entityType,
+      entityId: canonical._id,
       ...materializationReadScopeFilter(),
-      $or: [{ entityId: entity._id }, ...(slug ? [{ entityKey: slug, entityId: null }] : [])],
-    }),
+    }).lean(),
+    await invalidatedScrapeRunIds(),
+  );
+  const { observations } = await mergedSurvivorEvidence(entityType, survivor, ownObservations);
+  return observations.some(
+    (observation: any) =>
+      observation.field === 'inferredPiUserKey' &&
+      userEntityKeyForInferredPiUserKey(observation.value) === userEntityKey,
   );
 }
 
@@ -6498,8 +6564,13 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
         value: { $in: inferredPiUserKeyValuesThatCouldName(userEntityKey) },
         superseded: false,
       },
-      { entityKey: 1, entityId: 1, value: 1 },
-    ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown; value?: unknown }>
+      { entityType: 1, entityKey: 1, entityId: 1, value: 1 },
+    ).lean()) as Array<{
+      entityType?: ObservedEntityType;
+      entityKey?: unknown;
+      entityId?: unknown;
+      value?: unknown;
+    }>
   ).filter((attribution) => userEntityKeyForInferredPiUserKey(attribution.value) === userEntityKey);
   const slugs = uniqueStrings(attributions.map((attribution) => attribution.entityKey));
   const entityIds = attributions
@@ -6514,8 +6585,17 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
     .lean()) as unknown as ResearchEntityTombstoneNode[];
   if (named.some((entity) => entity.archived !== true)) return true;
   for (const loser of named.filter((entity) => entity.canonicalGroupId)) {
-    const survivor = await resolveResearchEntityCanonicalByTombstone(loser);
-    if (survivor && !(await researchEntityStatesItsOwnPiLead(survivor))) return true;
+    const attribution = attributions.find(
+      (candidate) =>
+        textValue(candidate.entityKey) === loser.slug ||
+        normalizeMaterializerObjectId(candidate.entityId) === String(loser._id),
+    );
+    if (
+      attribution?.entityType &&
+      (await mergedSurvivorTakesLoserLeadAttribution(loser, attribution.entityType, userEntityKey))
+    ) {
+      return true;
+    }
   }
   return false;
 }

@@ -910,6 +910,27 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({})).toBe(before);
     });
 
+    it('refuses when the merged-in attributor survivor has its lead locked', async () => {
+      await seedNamingResearchEntity(true);
+      const survivor = await seedLeadlessSurvivorOfNamingEntity();
+      await ResearchEntity.updateOne(
+        { _id: survivor._id },
+        { $set: { manuallyLockedFields: ['inferredPiUserKey'] } },
+      );
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
     it('refuses an ambiguous name, so a name the corpus already holds twice is not duplicated', async () => {
       await seedNamingResearchEntity();
       await Researcher.create({ displayName: 'Jian Wang' });

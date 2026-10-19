@@ -751,6 +751,60 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       expect(await leadPersonIds(survivor._id)).toEqual([String(own._id)]);
     });
 
+    it("never adds a loser's lead beside a lead the survivor holds from another lane", async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      const held = await seedPerson('Example Owner', 'eo456');
+      await seedPerson('Example Lead', 'el123');
+      await RoleAssignment.create({
+        schemaVersion: 1,
+        personId: held._id,
+        target: { kind: 'RESEARCH_ENTITY', id: survivor._id },
+        role: 'DIRECTOR',
+        state: 'CURRENT',
+        confidence: 0.7,
+        reviewStatus: 'UNREVIEWED',
+      });
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:el123',
+        'dept-faculty-roster',
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+      expect(await leadPersonIds(survivor._id)).toEqual([]);
+    });
+
+    it('takes no loser lead when two losers name different people', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      await ResearchEntity.create({
+        slug: 'dept-example-other',
+        name: 'Example Other Research',
+        kind: 'individual',
+        archived: true,
+        canonicalGroupId: survivor._id,
+      });
+      await seedPerson('Example Lead', 'el123');
+      await seedPerson('Example Other', 'eo789');
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:el123',
+        'dept-faculty-roster',
+      );
+      await seedObservation(
+        'dept-example-other',
+        'inferredPiUserKey',
+        'netid:eo789',
+        'dept-faculty-roster',
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+      expect(await leadPersonIds(survivor._id)).toEqual([]);
+    });
+
     it('leaves a survivor whose lead is locked without a loser lead', async () => {
       const survivor = await seedMerge('dept-example-lead');
       await ResearchEntity.updateOne(
