@@ -142,6 +142,73 @@ describe('planSurnameClashLeadDetachment', () => {
     expect(plan.refused.map((row) => row.reason)).toEqual(['identity-names-nobody-in-the-clash']);
   });
 
+  it('lets the served site decide when the identity names nobody and the site is unanimous', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({
+        identityTokens: ['ysm', 'quimby'],
+        leads: [
+          lead({ servedSiteVerdict: 'CONFIRMED' }),
+          lead({
+            assignmentId: 'assignment-2',
+            personId: 'person-2',
+            displayName: 'Pradeep Quimby',
+            servedSiteVerdict: 'NAMESAKE',
+          }),
+        ],
+      }),
+    ]);
+    expect(plan.detach).toEqual([
+      { assignmentId: 'assignment-2', entityId: 'entity-1', personId: 'person-2' },
+    ]);
+    expect(plan.refused).toEqual([]);
+  });
+
+  it('refuses a site that is not unanimous about the clash', () => {
+    const cases: Array<
+      [SurnameClashLeadRow['servedSiteVerdict'], SurnameClashLeadRow['servedSiteVerdict']]
+    > = [
+      ['CONFIRMED', 'CONFIRMED'],
+      ['CONFIRMED', undefined],
+      [undefined, 'NAMESAKE'],
+      ['NAMESAKE', 'NAMESAKE'],
+    ];
+    for (const [first, second] of cases) {
+      const plan = planSurnameClashLeadDetachment([
+        entity({
+          identityTokens: ['ysm', 'quimby'],
+          leads: [
+            lead({ servedSiteVerdict: first }),
+            lead({
+              assignmentId: 'assignment-2',
+              personId: 'person-2',
+              displayName: 'Pradeep Quimby',
+              servedSiteVerdict: second,
+            }),
+          ],
+        }),
+      ]);
+      expect(plan.detach).toEqual([]);
+      expect(plan.refused.map((row) => row.reason)).toEqual(['identity-names-nobody-in-the-clash']);
+    }
+  });
+
+  it('lets the identity overrule the site when the identity names someone', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({
+        leads: [
+          lead({ servedSiteVerdict: 'NAMESAKE' }),
+          lead({
+            assignmentId: 'assignment-2',
+            personId: 'person-2',
+            displayName: 'Pradeep Quimby',
+            servedSiteVerdict: 'CONFIRMED',
+          }),
+        ],
+      }),
+    ]);
+    expect(plan.detach.map((row) => row.personId)).toEqual(['person-2']);
+  });
+
   it('refuses to let a bare-name survivor evict a netid-backed record', () => {
     const plan = planSurnameClashLeadDetachment([
       entity({
