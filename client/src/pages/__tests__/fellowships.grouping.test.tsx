@@ -213,7 +213,7 @@ describe('Fellowships grouping', () => {
 
     expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
-    expect(titlesIn('Due in the next 30 days')).toEqual(['Weaker Match Award']);
+    expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
   });
 
   it('groups the same programs by deadline when they answer no search', () => {
