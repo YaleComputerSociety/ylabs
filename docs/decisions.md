@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: A Merged-In Loser's PI Attribution Names A Leadless Survivor's Lead (#5339)
+
+This narrows field class 1 of the 2026-09-28 #3609 entry, where the lead fields are the survivor's own.
+A merge leaves the roster that lists the person reading the loser's key, so a survivor whose own lanes state no PI had no live lead evidence at all and stayed on `missing_lead` behind a lead the merge itself established.
+Measured on Development on 2026-10-18: of 1,635 live survivors whose merged-in losers carry a live PI attribution, 109 state none of their own, 5 of them are held on `missing_lead`, and for 101 of the other 104 the loser's attribution resolves to the person the survivor's existing lead edge already names.
+
+Decided:
+
+- **A loser's `inferredPiUserKey` and `inferredPiUserId` reach the survivor only while the survivor states no PI attribution of its own and holds no lead lock.**
+  A survivor that states its own never takes a loser's, so a merge cannot put a second person beside the lead its own lane read; every other identity field stays the survivor's own.
+- **The person-mint gate counts a merged-in loser's attribution as its survivor's** under the same condition, because the archived loser was the only row naming the person and the mint refused it as a dead entity's word.
+- It is a derivation on every resolve: no field is written outside the ordinary projection and nothing is locked.
 ## 2026-10-18: A Lab Page That Invites Undergraduates Earns A Quoted Badge (#5288)
 
 The owner chose a three-step scale for how strongly a lab invites undergraduates, with no badge at the default step.
@@ -29,6 +41,7 @@ The 3 misses are pages whose fetched HTML does not carry the text, and none was 
 Across 96 pages of profiles and lab sites with no invitation it flagged one, which was a real invitation the hand-read had missed.
 Those are the pages the rules were tuned on, so the precision of record is a fresh graded sample of served rows after the first Development run, recorded on #5288.
 A sample of 45 faculty profiles and 45 lab sites the undergraduate lane had not credited found no invitation, so coverage is bounded by what labs publish, not by the reader.
+
 
 ## 2026-10-18: The Undergraduate Mention Quote Is No Longer Shown (#5309)
 

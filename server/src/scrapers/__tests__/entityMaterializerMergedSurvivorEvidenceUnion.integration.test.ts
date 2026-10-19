@@ -63,7 +63,13 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities', 'role_assignments', 'scrape_runs']) {
+    for (const name of [
+      'observations',
+      'research_entities',
+      'researchers',
+      'role_assignments',
+      'scrape_runs',
+    ]) {
       await db.collection(name).deleteMany({});
     }
     await Signal.deleteMany({});
@@ -685,6 +691,83 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       expect(stored?.sourceUrls ?? []).not.toContain(
         'https://example.yale.edu/profile/other-person/',
       );
+    });
+  });
+
+  describe("a merged-in loser's PI attribution", () => {
+    const seedPerson = async (displayName: string, netid: string) =>
+      Researcher.create({
+        schemaVersion: 1,
+        displayName,
+        status: 'ACTIVE',
+        archived: false,
+        identifiers: { netid },
+        profile: { title: 'Professor of Example Studies' },
+      });
+
+    const leadPersonIds = async (survivorId: mongoose.Types.ObjectId) =>
+      (
+        await RoleAssignment.find({
+          'target.id': survivorId,
+          role: 'PI',
+          archived: { $ne: true },
+        }).lean()
+      ).map((edge) => String(edge.personId));
+
+    it('names the lead of a survivor that states no lead of its own', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      const person = await seedPerson('Example Lead', 'el123');
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:el123',
+        'dept-faculty-roster',
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+      expect(await leadPersonIds(survivor._id)).toEqual([String(person._id)]);
+    });
+
+    it("never adds a loser's lead beside the survivor's own", async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      const own = await seedPerson('Example Owner', 'eo456');
+      await seedPerson('Example Lead', 'el123');
+      await seedObservation(
+        'example-lead-lab',
+        'inferredPiUserKey',
+        'netid:eo456',
+        'dept-faculty-roster',
+      );
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:el123',
+        'dept-faculty-roster',
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+      expect(await leadPersonIds(survivor._id)).toEqual([String(own._id)]);
+    });
+
+    it('leaves a survivor whose lead is locked without a loser lead', async () => {
+      const survivor = await seedMerge('dept-example-lead');
+      await ResearchEntity.updateOne(
+        { _id: survivor._id },
+        { $set: { manuallyLockedFields: ['inferredPiUserKey'] } },
+      );
+      await seedPerson('Example Lead', 'el123');
+      await seedObservation(
+        'dept-example-lead',
+        'inferredPiUserKey',
+        'netid:el123',
+        'dept-faculty-roster',
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
+
+      expect(await leadPersonIds(survivor._id)).toEqual([]);
     });
   });
 

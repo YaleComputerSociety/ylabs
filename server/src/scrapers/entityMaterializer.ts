@@ -15,7 +15,11 @@ import {
   withoutProfileTemplateWidgets,
 } from '../utils/profileTemplateChrome';
 import mongoose from 'mongoose';
-import { Observation, ObservedEntityType } from '../models/observation';
+import {
+  Observation,
+  ObservedEntityType,
+  researchEntityObservationSubjects,
+} from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../models/fieldProvenanceBacking';
 import {
@@ -145,6 +149,7 @@ import {
   listResearchEntityMergedInRows,
   resolveResearchEntityCanonicalByTombstone,
   type MergedInResearchEntityRow,
+  type ResearchEntityTombstoneNode,
 } from '../services/researchEntityCanonicalTombstone';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
@@ -5769,6 +5774,18 @@ const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
   'studentVisibilityReviewNote',
 ]);
 
+// A loser's PI attribution may name the survivor's lead only while the survivor states
+// none of its own, because a merge leaves the roster that lists the person reading the
+// loser's key, and a survivor with no lead of its own would otherwise be held on
+// `missing_lead` by a lead the merge itself established. Changing this also requires
+// `researchEntityStatesItsOwnPiLead`, which the person-mint gate reads, to stay in step.
+const MERGED_LOSER_PI_LEAD_FIELDS: ReadonlySet<string> = new Set([
+  'inferredPiUserKey',
+  'inferredPiUserId',
+]);
+
+const PI_LEAD_LOCK_FIELDS: ReadonlySet<string> = new Set([...MERGED_LOSER_PI_LEAD_FIELDS, 'lead']);
+
 // These lanes fork a lab identity (`name`, `kind`, `entityType`, `websiteUrl`) on
 // one profile link, so once one of them has typed the survivor from the survivor's
 // own key its website is part of that decision. A loser's website would otherwise
@@ -5912,6 +5929,18 @@ export async function mergedSurvivorEvidence(
   const survivorTypeIsLocked =
     Array.isArray(survivor.manuallyLockedFields) &&
     survivor.manuallyLockedFields.includes('entityType');
+  const survivorLeadIsLocked =
+    Array.isArray(survivor.manuallyLockedFields) &&
+    survivor.manuallyLockedFields.some((field: unknown) => PI_LEAD_LOCK_FIELDS.has(String(field)));
+  const survivorStatesItsOwnPiLead = [...loadedObservations, ...kept].some(
+    (observation: any) =>
+      !loserOrigin(observation) && MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')),
+  );
+  const loserNamesLeadOfLeadlessSurvivor = (observation: any): boolean =>
+    MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')) &&
+    !survivorLeadIsLocked &&
+    !survivorStatesItsOwnPiLead &&
+    !valueIsRefused(survivor.fieldValueRefusals, String(observation.field), observation.value);
   const survivorOwnsItsWebsite =
     !survivorTypeIsLocked &&
     [...loadedObservations, ...kept].some(
@@ -6045,6 +6074,7 @@ export async function mergedSurvivorEvidence(
       if (survivorReadOnARoster) return false;
     }
     if (loserCorroboratesUnbackedSurvivorType(observation)) return true;
+    if (loserNamesLeadOfLeadlessSurvivor(observation)) return true;
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
     if (survivorOwnsItsWebsite && LAB_IDENTITY_WEBSITE_FIELDS.has(field)) {
       droppedLoserWebsiteValues.push(observation.value);
@@ -6436,12 +6466,29 @@ function normalizedResearcherProfileText(
   return normalized.slice(0, bound).trim() || undefined;
 }
 
+async function researchEntityStatesItsOwnPiLead(entity: {
+  _id: mongoose.Types.ObjectId;
+  slug?: unknown;
+}): Promise<boolean> {
+  const slug = textValue(entity.slug);
+  return Boolean(
+    await Observation.exists({
+      entityType: { $in: researchEntityObservationSubjects },
+      field: { $in: [...MERGED_LOSER_PI_LEAD_FIELDS] },
+      ...materializationReadScopeFilter(),
+      $or: [{ entityId: entity._id }, ...(slug ? [{ entityKey: slug, entityId: null }] : [])],
+    }),
+  );
+}
+
 /**
  * A folded dept-roster shell is archived without superseding its observations
  * (`foldDeptRosterShellIntoCanonicalResearchEntity`), so a live `inferredPiUserKey` can
  * outlive the entity that asserted it. The lead materializer already requires a live
  * entity (`inferredPiLeadReclaim`), and minting a person on a dead entity's word would
- * create a record no entity can ever use.
+ * create a record no entity can ever use. A merged-in loser's attribution is the
+ * exception: its survivor resolves over it while stating no lead of its own
+ * (`mergedSurvivorEvidence`), so the person it names is the lead that survivor uses.
  */
 async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Promise<boolean> {
   const attributions = (
@@ -6462,7 +6509,15 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
   if (slugs.length > 0) namingEntity.push({ slug: { $in: slugs } });
   if (entityIds.length > 0) namingEntity.push({ _id: { $in: entityIds } });
   if (namingEntity.length === 0) return false;
-  return Boolean(await ResearchEntity.exists({ archived: { $ne: true }, $or: namingEntity }));
+  const named = (await ResearchEntity.find({ $or: namingEntity })
+    .select('_id slug archived canonicalGroupId')
+    .lean()) as unknown as ResearchEntityTombstoneNode[];
+  if (named.some((entity) => entity.archived !== true)) return true;
+  for (const loser of named.filter((entity) => entity.canonicalGroupId)) {
+    const survivor = await resolveResearchEntityCanonicalByTombstone(loser);
+    if (survivor && !(await researchEntityStatesItsOwnPiLead(survivor))) return true;
+  }
+  return false;
 }
 
 /**

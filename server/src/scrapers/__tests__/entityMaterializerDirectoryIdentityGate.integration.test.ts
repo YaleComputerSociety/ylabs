@@ -848,6 +848,68 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({})).toBe(before);
     });
 
+    const seedLeadlessSurvivorOfNamingEntity = async () => {
+      const survivor = await ResearchEntity.create({
+        slug: 'some-lab-survivor-fixture',
+        name: 'Some Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        archived: false,
+      });
+      await ResearchEntity.updateOne(
+        { slug: NAMING_ENTITY_SLUG },
+        { $set: { canonicalGroupId: survivor._id } },
+      );
+      return survivor;
+    };
+
+    it('mints when the archived attributor is merged into a survivor that states no lead of its own', async () => {
+      await seedNamingResearchEntity(true);
+      await seedLeadlessSurvivorOfNamingEntity();
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      expect(await Researcher.countDocuments({})).toBe(before + 1);
+    });
+
+    it('refuses when the merged-in attributor survivor states its own lead', async () => {
+      await seedNamingResearchEntity(true);
+      const survivor = await seedLeadlessSurvivorOfNamingEntity();
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: survivor.slug,
+        field: 'inferredPiUserKey',
+        value: 'dept:physics:other-person',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.invalid/roster',
+        confidence: 0.7,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
     it('refuses an ambiguous name, so a name the corpus already holds twice is not duplicated', async () => {
       await seedNamingResearchEntity();
       await Researcher.create({ displayName: 'Jian Wang' });
