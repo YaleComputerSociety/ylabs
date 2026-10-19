@@ -281,10 +281,10 @@ export function stripInlineUrls(text: string): string {
 }
 
 const bibliographicArtifactStripPattern =
-  /https?:\/\/\S+|\bwww\.\S+|(?<!@)\b(?:[a-z0-9][a-z0-9-]*\.)+(?:gov|edu|org|com|io|net|us)\b\S*|\bPMCID\s*:?\s*(?:PMC)?\d+|\bPMC\d+\b|\bPMID\s*:?\s*\d+|\bdoi\s*:\s*\S+/gi;
+  /https?:\/\/\S+|\bwww\.\S+|(?<!@)\b(?:[a-z0-9][a-z0-9-]*\.)+(?:gov|edu|org|com|io|net|us)\b\S*|\b(?:javascript|vbscript):\S+|\bdata:[a-z]+\/[a-z0-9.+-]+[;,]\S*|\bPMCID\s*:?\s*(?:PMC)?\d+|\bPMC\d+\b|\bPMID\s*:?\s*\d+|\bdoi\s*:\s*\S+/gi;
 
 const bibliographicArtifactDetectPattern =
-  /https?:\/\/\S+|\bwww\.\S+|(?<!@)\b(?:[a-z0-9][a-z0-9-]*\.)+(?:gov|edu|org|com|io|net|us)\b\S*|\bPMCID\s*:?\s*(?:PMC)?\d+|\bPMC\d+\b|\bPMID\s*:?\s*\d+|\bdoi\s*:\s*\S+/i;
+  /https?:\/\/\S+|\bwww\.\S+|(?<!@)\b(?:[a-z0-9][a-z0-9-]*\.)+(?:gov|edu|org|com|io|net|us)\b\S*|\b(?:javascript|vbscript):\S+|\bdata:[a-z]+\/[a-z0-9.+-]+[;,]\S*|\bPMCID\s*:?\s*(?:PMC)?\d+|\bPMC\d+\b|\bPMID\s*:?\s*\d+|\bdoi\s*:\s*\S+/i;
 
 const REFERENCE_SCAFFOLD_WORDS = new Set([
   'see',
@@ -344,15 +344,111 @@ const trailingReferenceScaffoldPattern =
   /\bfor\s+(?:more\s+)?(?:details?|information|reference)\b\s*(?=[.,;:!?]|$)/gi;
 
 const maskGlobalPattern = new RegExp(ARTIFACT_TOKEN_MASK, 'g');
+const maskWithListSeparatorPattern = new RegExp(`${ARTIFACT_TOKEN_MASK}[,;:]+`, 'g');
 
-function finalizeMaskedReferenceSentence(sentence: string): string {
-  if (!sentence.includes(ARTIFACT_TOKEN_MASK)) return sentence;
+const TRAILING_SENTENCE_PUNCTUATION = /[.,;:!?)\]"'\u2019\u201d]+$/;
+const IDENTIFIER_ARTIFACT = /^(?:PMCID|PMC|PMID|doi)/i;
+const LINK_OBJECT_LEAD_IN =
+  /\b(?:to|into|onto|the|a|an|this|our|your|their|of|visit(?:s|ing)?|see(?:s|ing)?|check(?:s|ing)?|consult(?:s|ing)?|download(?:s|ing)?|access(?:es|ing)?|brows(?:e|es|ing)|open(?:s|ing)?|us(?:e|es|ing)|(?:available|found|located|posted|listed)\s+(?:online\s+)?(?:at|from|on))\s*$/i;
+const MAX_READABLE_LINK_CHARS = 80;
+const UNREADABLE_LINK_TEXT = 'the linked page';
+const DETERMINER_BEFORE_LINK = /\b(?:the|a|an|this|our|your|their)\s*$/i;
+
+interface MaskedArtifact {
+  token: string;
+  isLink: boolean;
+}
+
+const countOf = (text: string, character: string): number => text.split(character).length - 1;
+
+function splitTrailingPunctuation(match: string): { token: string; punctuation: string } {
+  let punctuation = match.match(TRAILING_SENTENCE_PUNCTUATION)?.[0] ?? '';
+  let token = match.slice(0, match.length - punctuation.length);
+  while (punctuation.startsWith(')') && countOf(token, '(') > countOf(token, ')')) {
+    token += ')';
+    punctuation = punctuation.slice(1);
+  }
+  return { token, punctuation };
+}
+
+function maskArtifactTokens(value: string): { masked: string; artifacts: MaskedArtifact[] } {
+  const artifacts: MaskedArtifact[] = [];
+  const masked = value.replace(bibliographicArtifactStripPattern, (match) => {
+    const { token, punctuation } = splitTrailingPunctuation(match);
+    if (!token) return match;
+    artifacts.push({ token, isLink: !IDENTIFIER_ARTIFACT.test(token) });
+    return `${ARTIFACT_TOKEN_MASK}${punctuation}`;
+  });
+  return { masked, artifacts };
+}
+
+const UNSAFE_LINK_SCHEME = /^(?:javascript|vbscript|data):/i;
+
+export function readableLinkTarget(token: string): string {
+  if (UNSAFE_LINK_SCHEME.test(token)) return UNREADABLE_LINK_TEXT;
+  const candidate = /^https?:\/\//i.test(token) ? token : `https://${token}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return UNREADABLE_LINK_TEXT;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return UNREADABLE_LINK_TEXT;
+  const readable = `${url.hostname}${url.pathname.split(';')[0].replace(/\/+$/, '')}`;
+  return readable.length <= MAX_READABLE_LINK_CHARS ? readable : url.hostname;
+}
+
+const hasSubstantiveWord = (text: string): boolean =>
+  (text.match(/[A-Za-z]{2,}/g) || []).some(
+    (word) => !REFERENCE_SCAFFOLD_WORDS.has(word.toLowerCase()),
+  );
+
+const LINK_LIST_SEPARATOR = /^\s*(?:,|,?\s*(?:and|or))\s*$/i;
+
+function isLoadBearingLinkSlot(textBeforeLink: string): boolean {
+  const leadIn = LINK_OBJECT_LEAD_IN.exec(textBeforeLink);
+  return Boolean(leadIn) && hasSubstantiveWord(textBeforeLink.slice(0, leadIn!.index));
+}
+
+function restoreLoadBearingLinks(sentence: string, artifacts: readonly MaskedArtifact[]): string {
+  const [first, ...rest] = sentence.split(ARTIFACT_TOKEN_MASK);
+  let restored = first;
+  let previousRestoredLinkEnd: number | null = null;
+  rest.forEach((segment, index) => {
+    const artifact = artifacts[index];
+    const continuesRestoredList =
+      previousRestoredLinkEnd !== null &&
+      LINK_LIST_SEPARATOR.test(restored.slice(previousRestoredLinkEnd));
+    if (artifact?.isLink && (continuesRestoredList || isLoadBearingLinkSlot(restored))) {
+      const readable = readableLinkTarget(artifact.token);
+      restored +=
+        readable === UNREADABLE_LINK_TEXT && DETERMINER_BEFORE_LINK.test(restored)
+          ? readable.replace(/^the /, '')
+          : readable;
+      previousRestoredLinkEnd = restored.length;
+    } else {
+      restored += ARTIFACT_TOKEN_MASK;
+      previousRestoredLinkEnd = null;
+    }
+    restored += segment;
+  });
+  return restored;
+}
+
+function finalizeMaskedReferenceSentence(
+  maskedSentence: string,
+  artifacts: readonly MaskedArtifact[],
+): string {
+  if (!maskedSentence.includes(ARTIFACT_TOKEN_MASK)) return maskedSentence;
+  const sentence = restoreLoadBearingLinks(maskedSentence, artifacts);
   const residual = sentence
+    .replace(maskWithListSeparatorPattern, ARTIFACT_TOKEN_MASK)
     .replace(referenceLeadInPattern, ' ')
     .replace(maskGlobalPattern, ' ')
     .replace(trailingReferenceScaffoldPattern, ' ')
     .replace(/\(\s*\)/g, ' ')
     .replace(/\s+([.,;:!?])/g, '$1')
+    .replace(/[,;:]+(?=[.!?])/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
   const meaningfulWords = (residual.match(/[A-Za-z]{2,}/g) || []).filter(
@@ -377,13 +473,27 @@ function finalizeMaskedReferenceSentence(sentence: string): string {
  * guarded against `@` so a redacted-later email address is not clipped, and the
  * whole pass is a no-op when no artifact token is present so genuine prose is
  * untouched.
+ *
+ * A URL that is the object of its sentence ("please go to https://... and print
+ * it") cannot be deleted without leaving a hole, so it is kept as its host and path
+ * with no scheme, query or fragment (#5365). The sentence's own trailing
+ * punctuation is never consumed with a token, so the next sentence is not glued on.
  */
 export function stripBibliographicReferenceArtifacts(text: string): string {
   const value = String(text || '');
   if (!bibliographicArtifactDetectPattern.test(value)) return normalizeHygieneWhitespace(value);
-  const masked = value.replace(bibliographicArtifactStripPattern, ARTIFACT_TOKEN_MASK);
+  const { masked, artifacts } = maskArtifactTokens(value);
+  let consumedArtifacts = 0;
   const kept = partitionSentencesForFiltering(masked)
-    .map((sentence) => finalizeMaskedReferenceSentence(sentence.trim()))
+    .map((sentence) => {
+      const sentenceArtifactCount = sentence.split(ARTIFACT_TOKEN_MASK).length - 1;
+      const sentenceArtifacts = artifacts.slice(
+        consumedArtifacts,
+        consumedArtifacts + sentenceArtifactCount,
+      );
+      consumedArtifacts += sentenceArtifactCount;
+      return finalizeMaskedReferenceSentence(sentence.trim(), sentenceArtifacts);
+    })
     .filter((sentence) => sentence.length > 0);
   return normalizeHygieneWhitespace(kept.join(' '));
 }

@@ -16,6 +16,7 @@ import { isExternalScholarlyPlatformName } from './externalScholarlyPlatforms';
 import {
   isMultiTenantAcademicHostRootUrl,
   isMultiTenantAcademicHostTenantPageUrl,
+  isPatientCarePageUrl,
   multiTenantAcademicHostLabelIsDistinctive,
   multiTenantAcademicHostNameMatch,
 } from './researchHomeWebsiteUrl';
@@ -517,25 +518,6 @@ export function namesASupportServiceUnit(value: unknown): boolean {
   const name = textValue(value);
   if (!name) return false;
   return namesAServiceFacility(name) || SUPPORT_OR_CONSULTING_UNIT_RE.test(name);
-}
-
-const CLINICAL_CARE_PATH_SEGMENT_RE =
-  /^(?:care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
-
-/**
- * A page in a school's clinical-care or clinical-service section, which describes a service
- * patients use rather than a lab (#4916). A path that also carries a research segment is
- * a research page that happens to sit under a services section, so it never counts.
- */
-export function isClinicalCareServicePageUrl(value: unknown): boolean {
-  let segments: string[];
-  try {
-    segments = new URL(textValue(value)).pathname.split('/').filter(Boolean);
-  } catch {
-    return false;
-  }
-  if (segments.some((segment) => /research/i.test(segment))) return false;
-  return segments.some((segment) => CLINICAL_CARE_PATH_SEGMENT_RE.test(segment));
 }
 
 // A blurb is prose, so an organizational word inside it can merely MENTION an
@@ -1640,13 +1622,15 @@ export function classifyHarvestedResearchHomeName(args: {
 }): HarvestedNameIdentityVerdict {
   const name = stripResearchHomeNameLinkWrapper(args.harvestedName);
   if (name.length < 2) return 'UNUSABLE';
+  // Ahead of the label and own-name checks, because a patient-care page is never anyone's
+  // research home whatever the slot calls it: read after them, a bare "lab website" label
+  // linking a clinic minted a "<person> Lab" (#5364).
+  if (isPatientCarePageUrl(args.websiteUrl)) return 'AFFILIATED_ORGANIZATION';
   if (isNonIdentifyingLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isPersonPageLinkLabelName(name)) return 'NON_IDENTIFYING_LABEL';
   if (isHarvestedPageFurnitureName(name, args.personName)) return 'NON_IDENTIFYING_LABEL';
   if (nameCarriesPersonIdentity(name, args.personName)) return 'OWN_IDENTITY';
-  if (namesASupportServiceUnit(name) || isClinicalCareServicePageUrl(args.websiteUrl)) {
-    return 'AFFILIATED_ORGANIZATION';
-  }
+  if (namesASupportServiceUnit(name)) return 'AFFILIATED_ORGANIZATION';
   if (isUmbrellaOrganizationName(name)) return 'AFFILIATED_ORGANIZATION';
   if (describesAffiliatedOrganization(args.harvestedDescription)) {
     return 'AFFILIATED_ORGANIZATION';

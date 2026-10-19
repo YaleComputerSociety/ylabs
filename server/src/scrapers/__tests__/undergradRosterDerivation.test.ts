@@ -171,6 +171,48 @@ describe('derivedRosterWithheldReason (#5278)', () => {
   });
 });
 
+describe('derived roster size check (#5296)', () => {
+  const site = 'https://examplelab.example.org/';
+  it('holds the current list to the cap but lets a long alumni list through', () => {
+    const many = Array.from({ length: DERIVED_ROSTER_MAX_UNDERGRADUATES + 1 }, (_, i) => ({
+      name: `Person ${i}`,
+      status: 'past' as const,
+    }));
+    const longAlumni: ExtractedOfficialRoster = {
+      ...roster(['Avery Sample']),
+      undergraduates: [{ name: 'Avery Sample', status: 'current' }, ...many],
+    };
+    expect(derivedRosterWithheldReason(config(), longAlumni, site)).toBeNull();
+  });
+
+  it('derives a lab alumni list read past a name with a bracketed nickname', async () => {
+    const alumni = Array.from(
+      { length: DERIVED_ROSTER_MAX_UNDERGRADUATES + 1 },
+      (_, i) =>
+        `<h3>Alum${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))} Sample</h3><h4>Undergraduate Research Assistant</h4>`,
+    ).join('');
+    const page = `<html><body><main>
+      <h2>Research Assistants</h2><h3>Avery Sample</h3><h4>Undergraduate Research Assistant</h4>
+      <h2>Lab Alumni</h2><h3>Rowan (Ro) Sample</h3><h4>Undergraduate Research Assistant</h4>${alumni}
+    </main></body></html>`;
+    const outcome = await deriveUndergradRosterForCandidate(
+      candidate(),
+      readFrom({ 'https://examplelab.example.org/people': page }),
+      observedAt,
+    );
+    expect(outcome.kind).toBe('derived');
+    if (outcome.kind !== 'derived') return;
+    const undergraduates = outcome.roster.undergraduates;
+    expect(undergraduates.filter((member) => member.status === 'current')).toEqual([
+      { name: 'Avery Sample', status: 'current' },
+    ]);
+    expect(undergraduates.filter((member) => member.status === 'past')).toHaveLength(
+      DERIVED_ROSTER_MAX_UNDERGRADUATES + 2,
+    );
+    expect(undergraduates).toContainEqual({ name: 'Rowan (Ro) Sample', status: 'past' });
+  });
+});
+
 describe('deriveUndergradRosterForCandidate (#5278)', () => {
   it('derives a roster from the cited people page', async () => {
     const outcome = await deriveUndergradRosterForCandidate(

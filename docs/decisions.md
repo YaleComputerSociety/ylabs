@@ -5,6 +5,22 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-19: An Official Roster Address Is Enough To Create A Researcher
+
+The owner decided on 2026-10-19 that an official Yale roster or profile page printing a person's own `first.last@yale.edu` address is enough to create that researcher.
+This narrows #2776, which refused to mint for an alias-shaped `inferredPiUserKey` because the mint could stamp neither a netid nor an account and so left a person no lane could resolve back to.
+Measured on Development on 2026-10-19: of the 129 live research rows held on `missing_lead`, 93 carried a PI key with an address that no researcher, account or official profile link held, and the engine minted for none of them.
+
+Decided:
+
+- **Identity is matched before anything is minted, by the key's own address first and then the official profile page.**
+  The PI-key resolver follows the key's address, and failing that its official profile page, to its sole live holder even when the directory maps the alias to two netids, because both are per-person identifiers and the alias map is not.
+  The official-profile join also reads the page the engine itself stamps as `YALE_OFFICIAL`, not only a `/people/` or `/profile/` path, and two single-token names agree when they are the same name.
+- **A mint from an alias-shaped key requires every one of these, and each failure refuses with its own reason:** the key's own observed address is exactly `<alias>@yale.edu`; it is not a role or unit mailbox (#5332); the alias spells the name the roster prints, read with the nickname-aware comparator; no live researcher or account holds the address and no live researcher holds the official page; no other `user` key prints the address under a disagreeing name; #4388's rule that nobody else plausibly holds the name; and a live row names the key as its lead.
+- **The minted researcher carries `identifiers.email`, lowercased, and never the alias as a netid.**
+  The next pass resolves the key back to it by name, or by the address when the name is ambiguous, and a later netid twin folds into it, because an email holder is the directory-backed tier `researchers:dedupe-accountless-shells` folds toward.
+- A dry run over the 93 rows found 79 that mint; 9 are refused by an earlier rule (#4388, or no live row) and 5 because the alias spells another person than the roster name.
+
 ## 2026-10-18: A Merged-In Loser's PI Attribution Names A Leadless Survivor's Lead (#5339)
 
 This narrows field class 1 of the 2026-09-28 #3609 entry, where the lead fields are the survivor's own.

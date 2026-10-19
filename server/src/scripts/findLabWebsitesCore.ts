@@ -1,3 +1,5 @@
+import { isPatientCarePageUrl } from '../utils/researchHomeWebsiteUrl';
+
 export interface LabSiteCandidateEntity {
   slug?: unknown;
   name?: unknown;
@@ -324,7 +326,7 @@ const REJECT_HOST =
   /(linkedin|twitter|x\.com|bsky\.app|facebook|instagram|researchgate|scholar\.google|pubmed|ncbi\.nlm|doi\.org|semanticscholar|orcid\.org|wikipedia|loop\.frontiersin|expertscape|doximity|healthgrades|sciprofiles|europepmc|research\.com|grantome|rocketreach|contactout|zoominfo|rate?myprofessors|academia\.edu|philpeople|vivo\.|prabook|scilit|colab\.ws|x-mol|chemeurope|patents\.google|justia|bizapedia|crunchbase|sciencegate|typeset\.io|ouci\.dntb|peeref|scispace)/i;
 
 const CLINICAL_DIRECTORY_HOST =
-  /(^|\.)(yalemedicine\.org|ynhh\.org|ynhhs\.org|clinicaltrials\.gov|castleconnolly\.com|vitals\.com|webmd\.com|zocdoc\.com|aan\.com|michaeljfox\.org|tracxn\.com)$/i;
+  /(^|\.)(clinicaltrials\.gov|castleconnolly\.com|vitals\.com|webmd\.com|zocdoc\.com|aan\.com|michaeljfox\.org|tracxn\.com)$/i;
 
 const CLINICAL_DIRECTORY_PATH =
   /\/(specialists?|clinical-trials?|doctors?|providers?|physicians?|find-a-doctor|patient-care|abstractdetails|conditions)(\/|$)/i;
@@ -342,6 +344,7 @@ const CLINICAL_DIRECTORY_PATH =
 export function isClinicalDirectoryUrl(url: string): boolean {
   const host = hostnameOf(url).replace(/^www\./, '');
   if (!host) return false;
+  if (isPatientCarePageUrl(url)) return true;
   if (CLINICAL_DIRECTORY_HOST.test(host)) return true;
   try {
     return CLINICAL_DIRECTORY_PATH.test(new URL(url).pathname.toLowerCase());

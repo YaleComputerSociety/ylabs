@@ -499,12 +499,12 @@ describe('a contact direction in fund prose (#4177)', () => {
     },
   );
 
-  it('leaves a section with no contact direction exactly as it reads', () => {
+  it('leaves a section with no contact direction as it reads, one block apart from the next', () => {
     const fund = fundWith({
       eligibility: '<p>Open to juniors.</p><p>Seniors may apply.</p>',
     });
 
-    expect(fund.eligibility).toBe('Open to juniors.Seniors may apply.');
+    expect(fund.eligibility).toBe('Open to juniors. Seniors may apply.');
   });
 
   it('claims nothing about an eligibility section the page leaves empty', () => {
@@ -1324,5 +1324,60 @@ describe('a fund the portal says is no longer available (#4174)', () => {
       expect(emitted).toEqual([]);
       expect(result.notes).toContain('retired=0');
     }
+  });
+});
+
+describe('link text in fund prose (#5365)', () => {
+  const fundWith = (options: Parameters<typeof fundDetailHtml>[0]) =>
+    parseFundDetailPage(fundDetailHtml(options), { title: '', url: FUND_A_URL })!;
+
+  it('keeps the visible text of an anchor and never its href', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<p>Submit your proposal through <a href="https://portal.example.edu/apply?session=abc">the fellowship portal</a> before the deadline.</p>',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'Submit your proposal through the fellowship portal before the deadline.',
+    );
+  });
+
+  it('keeps a bare link target that is the object of its sentence as a readable host and path', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<ul><li><p>A copy of your transcript. In order to obtain one please go to&nbsp;<font><u>https://records.example.edu/</u></font>&nbsp;and print it as a PDF file.</p></li></ul>',
+      restrictions:
+        'For more information about the review process and requirements go to&nbsp;<a href="http://www.example.edu/review/Student_projects.pdf">http://www.example.edu/review/Student_projects.pdf</a>.<br /><br />Students may only receive the award once.',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'A copy of your transcript. In order to obtain one please go to records.example.edu and print it as a PDF file.',
+    );
+    expect(fund.restrictionsToUseOfAward).toBe(
+      'For more information about the review process and requirements go to www.example.edu/review/Student_projects.pdf. Students may only receive the award once.',
+    );
+  });
+
+  it('keeps an anchor with an unsafe scheme as its text and never emits the scheme', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<p>Complete <a href="javascript:alert(1)">the online form</a> and <a href="data:text/html;base64,PGI+">the budget sheet</a> before you apply.</p>',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'Complete the online form and the budget sheet before you apply.',
+    );
+    expect(JSON.stringify(fund)).not.toMatch(/javascript:|data:text/i);
+  });
+
+  it('keeps each list item apart from the next', () => {
+    const fund = fundWith({
+      applicationInformation:
+        '<ul><li>A budget of your travel expenses.<br /></li><li><span>CV</span><br /></li><li><span>A copy of your most recent transcript.</span></li></ul>',
+    });
+
+    expect(fund.applicationInformation).toBe(
+      'A budget of your travel expenses. CV A copy of your most recent transcript.',
+    );
   });
 });
