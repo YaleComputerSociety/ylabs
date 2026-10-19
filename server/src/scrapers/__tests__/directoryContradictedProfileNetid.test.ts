@@ -137,4 +137,13 @@ describe('official profile identity agreement with a candidate researcher', () =
       ),
     ).toBe(true);
   });
+
+  it('refuses a disagreeing name when the page prints no address', () => {
+    expect(
+      profileIdentityAgreesWithUser(
+        { displayName: 'Rowan Fixture', email: '' },
+        { displayName: 'Robin Sample', fname: 'Robin', lname: 'Sample', netid: 'rs404' },
+      ),
+    ).toBe(false);
+  });
 });

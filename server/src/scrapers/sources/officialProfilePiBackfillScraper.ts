@@ -4522,7 +4522,6 @@ const isNetidMailbox = (address: string, netid: string): boolean =>
 export function profileIdentityAgreesWithUser(
   identity: Pick<OfficialProfileIdentity, 'displayName' | 'email'>,
   candidate: Record<string, any>,
-  urls: readonly string[] = [],
 ): boolean {
   const pageEmail = textValue(identity.email).toLowerCase();
   const candidateEmail = textValue(candidate.email).toLowerCase();
@@ -4533,10 +4532,7 @@ export function profileIdentityAgreesWithUser(
   const candidateName =
     textValue(candidate.displayName) ||
     `${textValue(candidate.fname)} ${textValue(candidate.lname)}`.trim();
-  return (
-    observedPersonNameAgreesWith(candidateName, identity.displayName) ||
-    urls.some((url) => personPageUrlMatchesUser(url, candidate))
-  );
+  return observedPersonNameAgreesWith(candidateName, identity.displayName);
 }
 
 export async function resolveExistingUserForIdentity(
@@ -4574,7 +4570,7 @@ export async function resolveExistingUserForIdentity(
 
   const matchingCandidates = profileUsersForResearchers(
     Array.from(researchersById.values()),
-  ).filter((candidate) => profileIdentityAgreesWithUser(identity, candidate, urls));
+  ).filter((candidate) => profileIdentityAgreesWithUser(identity, candidate));
 
   if (matchingCandidates.length !== 1) return null;
   const user = matchingCandidates[0];

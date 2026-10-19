@@ -206,6 +206,6 @@ describe('the official profile backfill never stamps a namesake netid (#5370)', 
       fieldsWritten: 1,
     });
     const after = await Researcher.findById(namesake._id).lean();
-    expect(after?.profileLinks?.map((link) => link.url)).toEqual([PAGE]);
+    expect(after?.profileLinks?.map((link: { url: string }) => link.url)).toEqual([PAGE]);
   });
 });
