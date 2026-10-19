@@ -24,7 +24,7 @@ describe('netidsEmbeddedInUserEvidence', () => {
   it('reads nothing from a letters-only alias, a plain email, an unsuffixed page, a fused counter or a suffix that is not the initials', () => {
     expect(
       netidsEmbeddedInUserEvidence('netid:quinn.vale', [
-        { field: 'email', value: 'quinn.vale@yale.edu' },
+        { field: 'email', value: 'quinn.synthetic@yale.edu' },
         { field: 'email', value: 'qvale2@yale.edu' },
         { field: 'profileUrl', value: 'https://medicine.yale.edu/profile/quinn-vale/' },
         { field: 'profileUrl', value: 'https://example.org/profile/quinn-vale-qv584/' },
