@@ -92,7 +92,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE'],
     defaultConfidence: 'MEDIUM',
     notes:
-      "Mints a faculty-research row for a centers-institutes-index member with a proven identity basis who leads no LAB or FACULTY_RESEARCH_AREA row, when the member's title can host a student's research and their center profile states present research; the row cites that profile and names its lead by netid. Refuses a member with no netid, a slug or profile another row holds, and anyone with an archived personal row in their name.",
+      "Mints a faculty-research row for a centers-institutes-index member with a proven identity basis who leads no LAB or FACULTY_RESEARCH_AREA row, when the member's title can host a student's research and their center profile states present research; the row cites that profile and names its lead by netid. Refuses a member with no netid, a teaching-only title whose profile affirms no research, a slug or profile another row holds, a member some row already infers as its lead, and anyone with a live or archived personal row in their name.",
   },
   'center-member-profile-research': {
     priority: 2,
