@@ -17,7 +17,7 @@ import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDep
 import { DepartmentNameRecord } from '../../utils/departmentNames';
 import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
-import { ExternalLinkIcon } from '../shared/icons';
+import { ExternalLinkIcon, MailIcon } from '../shared/icons';
 import { personInitials } from '../../utils/personInitials';
 
 interface LabMembersListProps {
@@ -113,7 +113,9 @@ const LabMemberCard = ({
 
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition-colors ${singleColumn ? 'flex flex-col gap-2' : 'flex items-center gap-3'}`;
+  const layoutClassName = singleColumn ? 'flex flex-col gap-2' : 'flex items-center gap-3';
+  const cardShellClassName = 'rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3';
+  const baseClassName = `group ${cardShellClassName} transition-colors ${layoutClassName}`;
   const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
   const avatar = (
     <div className="flex-shrink-0">
@@ -205,44 +207,74 @@ const LabMemberCard = ({
       {externalLinkIcon}
     </>
   );
-  const identityCard =
-    isExternalLink && profileUrl ? (
-      <a
-        href={profileUrl}
-        target="_blank"
-        rel={EXTERNAL_LINK_REL}
-        aria-label={`Open ${fullName}'s official profile`}
-        className={linkClassName}
-      >
-        {identityBody}
-      </a>
+  const hasContactLinks = Boolean(orcidUrl || resolvedEmailHref);
+  const [emailLocalPart, emailDomain] = splitEmailAtSign(user.email);
+  const profileLink = (className: string) => (
+    <a
+      href={profileUrl}
+      target="_blank"
+      rel={EXTERNAL_LINK_REL}
+      aria-label={`Open ${fullName}'s official profile`}
+      className={className}
+    >
+      {identityBody}
+    </a>
+  );
+  if (!hasContactLinks) {
+    return isExternalLink && profileUrl ? (
+      profileLink(linkClassName)
     ) : (
       <div className={baseClassName}>{identityBody}</div>
     );
-  const sideLinkClassName =
-    'yr-focus-ring yr-pressable inline-flex min-h-11 items-center self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
-  if (!orcidUrl && !resolvedEmailHref) return identityCard;
+  }
   return (
-    <div className="flex flex-col">
-      {identityCard}
-      {orcidUrl && (
-        <a
-          href={orcidUrl}
-          target="_blank"
-          rel={EXTERNAL_LINK_REL}
-          aria-label={`Open ${fullName}'s ORCID record`}
-          className={sideLinkClassName}
-        >
-          ORCID {user.orcid}
-        </a>
+    <div className={cardShellClassName} data-member-card="">
+      {isExternalLink && profileUrl ? (
+        profileLink(
+          `group -m-1.5 rounded-control p-1.5 transition-colors hover:bg-brand-soft yr-focus-ring ${layoutClassName}`,
+        )
+      ) : (
+        <div className={layoutClassName}>{identityBody}</div>
       )}
-      {resolvedEmailHref && (
-        <a href={resolvedEmailHref} aria-label={`Email ${fullName}`} className={sideLinkClassName}>
-          {user.email}
-        </a>
-      )}
+      <div className="mt-2 flex flex-col border-t border-[var(--yr-line)] pt-1">
+        {resolvedEmailHref && (
+          <a
+            href={resolvedEmailHref}
+            aria-label={`Email ${fullName}`}
+            className="yr-focus-ring yr-pressable inline-flex min-h-11 max-w-full items-center gap-2 self-start rounded-control text-sm font-medium text-brand underline-offset-4 hover:underline"
+          >
+            <MailIcon className="flex-shrink-0" size={16} />
+            <span className="min-w-0 [overflow-wrap:anywhere]">
+              {emailLocalPart}
+              {emailDomain && (
+                <>
+                  @<wbr />
+                  {emailDomain}
+                </>
+              )}
+            </span>
+          </a>
+        )}
+        {orcidUrl && (
+          <a
+            href={orcidUrl}
+            target="_blank"
+            rel={EXTERNAL_LINK_REL}
+            aria-label={`Open ${fullName}'s ORCID record`}
+            className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center self-start rounded-control text-xs font-medium text-muted hover:text-brand hover:underline"
+          >
+            ORCID {user.orcid}
+          </a>
+        )}
+      </div>
     </div>
   );
+};
+
+const splitEmailAtSign = (email?: string): [string, string] => {
+  const value = (email || '').trim();
+  const at = value.lastIndexOf('@');
+  return at > 0 ? [value.slice(0, at), value.slice(at + 1)] : [value, ''];
 };
 
 const LabMembersList = ({

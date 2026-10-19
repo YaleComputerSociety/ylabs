@@ -378,7 +378,7 @@ describe('LabMembersList lead email line', () => {
     },
   };
 
-  it('shows the lead email as a side link beside the card', () => {
+  it('shows the lead email inside the lead card as a mailto link', () => {
     render(
       <ConfigContext.Provider value={defaultConfigContext}>
         <LabMembersList members={[leadMember]} />
@@ -387,6 +387,36 @@ describe('LabMembersList lead email line', () => {
     const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
     expect(link.textContent).toBe('ada.fixture@example.test');
     expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
+    const card = link.closest('[data-member-card]');
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain('Ada Fixture');
+  });
+
+  it('keeps the email inside the card beside the official profile link', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[leadMember]}
+          resolveMemberProfileUrl={() => 'https://example.test/profile/ada-fixture'}
+        />
+      </ConfigContext.Provider>,
+    );
+    const profile = screen.getByRole('link', { name: "Open Ada Fixture's official profile" });
+    const email = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    expect(profile.contains(email)).toBe(false);
+    expect(email.closest('[data-member-card]')).toBe(profile.closest('[data-member-card]'));
+  });
+
+  it('renders no email for a redacted address', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[{ ...leadMember, user: { ...leadMember.user, email: '[email redacted]' } }]}
+        />
+      </ConfigContext.Provider>,
+    );
+    expect(screen.queryByRole('link', { name: 'Email Ada Fixture' })).toBeNull();
+    expect(screen.queryByText('[email redacted]')).toBeNull();
   });
 
   it('renders no email line when the member has no email', () => {
