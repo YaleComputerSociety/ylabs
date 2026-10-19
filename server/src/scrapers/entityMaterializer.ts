@@ -368,6 +368,7 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
+import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
@@ -6409,6 +6410,22 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
   return Boolean(await ResearchEntity.exists({ archived: { $ne: true }, $or: namingEntity }));
 }
 
+/**
+ * A name match is a guess, and the person page the evidence cites is a per-person identifier,
+ * so a candidate whose own official page on that site is a different person's page is
+ * refused (#5324). Joining it renames the record after the observed person while it keeps
+ * the other person's page, which is how a same-surname stranger came to be served as a lead.
+ */
+function officialPersonPagesContradictNameMatch(observations: any[], candidate: any): boolean {
+  const storedOfficialUrls = (Array.isArray(candidate?.profileLinks) ? candidate.profileLinks : [])
+    .filter((link: ResearcherProfileLink) => link?.kind === 'YALE_OFFICIAL')
+    .map((link: ResearcherProfileLink) => String(link.url ?? ''));
+  return personPagesNameDifferentPeople(
+    officialUserProfileUrlsFromObservations(observations),
+    storedOfficialUrls,
+  );
+}
+
 export interface UserIdentityJoinResult {
   resolved: ReturnType<typeof resolveAllFields>;
   netid: string | undefined;
@@ -6493,8 +6510,11 @@ export async function joinUserIdentityToExistingResearcher(
       resolution.status === 'absent' ||
       (resolution.status === 'ambiguous' && resolution.everyCandidateNamesSomeoneElse === true);
     if (resolution.status === 'matched' && resolution.researcherId) {
-      researcher = await Researcher.findById(resolution.researcherId);
-      if (researcher) identityJoin = 'person-name';
+      const nameMatch = await Researcher.findById(resolution.researcherId);
+      if (nameMatch && !officialPersonPagesContradictNameMatch(materializationObs, nameMatch)) {
+        researcher = nameMatch;
+        identityJoin = 'person-name';
+      }
     }
   }
   /**
