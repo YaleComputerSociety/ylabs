@@ -1173,11 +1173,14 @@ export function isPostingPageCitedAsResearchWebsite(
   return isPostingPageUrl(value) && isPersonScopedHostTenant(entity);
 }
 
-const CLINICAL_PRACTICE_HOSTS: ReadonlySet<string> = new Set([
-  'yalemedicine.org',
-  'ynhh.org',
-  'ynhhs.org',
-]);
+const CLINICAL_PRACTICE_HOSTS: readonly string[] = ['yalemedicine.org', 'ynhh.org', 'ynhhs.org'];
+
+const isClinicalPracticeHost = (url: URL): boolean => {
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  return CLINICAL_PRACTICE_HOSTS.some(
+    (clinicalHost) => host === clinicalHost || host.endsWith(`.${clinicalHost}`),
+  );
+};
 
 const PATIENT_CARE_PATH_SEGMENT =
   /^(?:patients?|for-patients|care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
@@ -1194,7 +1197,7 @@ const RESEARCH_OR_LAB_PATH_SEGMENT = /research|^labs?$/i;
 export function isPatientCarePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
-  if (CLINICAL_PRACTICE_HOSTS.has(hostnameWithoutWwwAlias(url))) return true;
+  if (isClinicalPracticeHost(url)) return true;
   const segments = url.pathname.split('/').filter(Boolean);
   if (segments.some((segment) => RESEARCH_OR_LAB_PATH_SEGMENT.test(segment))) return false;
   return segments.some((segment) => PATIENT_CARE_PATH_SEGMENT.test(segment));

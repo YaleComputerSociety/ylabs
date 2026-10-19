@@ -35,6 +35,7 @@ describe('a patient-care page is recognised by shape (#5364)', () => {
     CLINICAL_DEPARTMENT_PAGE,
     'https://yalemedicine.org/conditions/fixture-condition',
     'https://www.ynhh.org/fixture-hospital/services/fixture-care',
+    'https://fixture.ynhhs.org/fixture-service',
     PATIENT_PROGRAM_PAGE,
     PATIENT_CONDITION_PAGE,
     'https://medicine.yale.edu/fixturecenter/patient/specialty/fixture-program/',
@@ -51,6 +52,7 @@ describe('a patient-care page is recognised by shape (#5364)', () => {
     'https://medicine.yale.edu/fixturedept/services/community-programs/fixture-program/',
     'https://medicine.yale.edu/fixturedept/patient-oriented-research/fixture/',
     'https://fixturelab.yale.edu/',
+    'https://notyalemedicine.org/fixture/',
     'not a url',
   ])('leaves %s alone', (url) => {
     expect(isPatientCarePageUrl(url)).toBe(false);
