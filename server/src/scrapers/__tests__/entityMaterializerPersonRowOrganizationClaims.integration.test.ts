@@ -209,6 +209,44 @@ describe("a profile lane's organization claim on a person's row (#5283)", () => 
     });
   });
 
+  it("clears an organization's display name when the person row returns to faculty research", async () => {
+    const slug = 'ysm-faculty-synthetic-member';
+    const row = await ResearchEntity.create({
+      slug,
+      name: 'Fixture Imaging Core Lab',
+      displayName: 'Fixture Imaging Core Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      archived: false,
+      sourceUrls: [PROFILE_URL],
+    });
+    const lead = await Researcher.create({ displayName: LEAD_NAME });
+    await RoleAssignment.create({
+      personId: lead._id,
+      target: { kind: 'RESEARCH_ENTITY', id: row._id },
+      role: 'PI',
+      state: 'UNKNOWN',
+      confidence: 0.9,
+    });
+    await seed(slug, 'name', `${LEAD_NAME} Faculty Research`, {
+      sourceName: 'ysm-faculty-directory',
+      confidence: 0.8,
+    });
+    await seed(slug, 'entityType', 'FACULTY_RESEARCH_AREA', {
+      sourceName: 'ysm-faculty-directory',
+      confidence: 0.8,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: slug });
+
+    const stored_ = await stored(slug);
+    expect(stored_).toMatchObject({
+      name: `${LEAD_NAME} Faculty Research`,
+      entityType: 'FACULTY_RESEARCH_AREA',
+    });
+    expect(stored_?.displayName).toBeUndefined();
+  });
+
   it("keeps an organization's own row named and typed as the organization", async () => {
     const slug = 'fixture-coastal-studies-collaborative';
     await seedRetypedRow(slug, true);

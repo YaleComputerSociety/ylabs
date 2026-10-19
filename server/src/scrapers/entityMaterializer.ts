@@ -7596,6 +7596,14 @@ function enforceResearchEntityNameAuthority(input: {
     materializationObs: input.materializationObs,
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
   });
+  const personRow = isPersonRowForProfileHomeClaims(
+    { slug: entityDoc?.slug, leadPersonName: input.nameIdentityAuthority.leadPersonName },
+    input.materializationObs,
+  );
+  const returnsToFacultyResearch =
+    personRow &&
+    textValue(set.entityType).toUpperCase() === 'FACULTY_RESEARCH_AREA' &&
+    textValue(entityDoc?.entityType).toUpperCase() !== 'FACULTY_RESEARCH_AREA';
   const recordIdentity = {
     entityType: set.entityType ?? entityDoc?.entityType,
     kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
@@ -7693,7 +7701,7 @@ function enforceResearchEntityNameAuthority(input: {
       (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
         !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
         !(
-          withdrawnRetype &&
+          (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
           isWithdrawnProfileHomeName(servedValue, provenance.sourceName, input.materializationObs)
         ))
     ) {
@@ -7764,6 +7772,21 @@ function enforceResearchEntityNameAuthority(input: {
     if (textValue(entityDoc?.[field])) {
       unset[field] = '';
       unset[`fieldProvenance.${field}`] = '';
+      fieldsWritten++;
+    }
+  }
+
+  // A person's row this pass returns to faculty research serves its own name. A display name
+  // left from the lab or organization it was typed as would otherwise keep that identity, or
+  // be suffixed into a hybrid of the two by the derivations below (#5283).
+  if (returnsToFacultyResearch && !input.manuallyLockedFields.includes('displayName')) {
+    const displayName = textValue(set.displayName ?? entityDoc?.displayName);
+    if (displayName && displayName !== textValue(set.name ?? entityDoc?.name)) {
+      delete set.displayName;
+      delete set['fieldProvenance.displayName'];
+      delete confidenceByField.displayName;
+      unset.displayName = '';
+      if (entityDoc?.fieldProvenance?.displayName) unset['fieldProvenance.displayName'] = '';
       fieldsWritten++;
     }
   }
