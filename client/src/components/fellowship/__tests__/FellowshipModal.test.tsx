@@ -573,11 +573,22 @@ describe('FellowshipModal', () => {
     expect(screen.getByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeInTheDocument();
   });
 
-  it('adds no contact note when the program needs no mentor first or names no contact', () => {
+  it('adds no contact note when the program needs no mentor first', () => {
     renderModal({
       requiresMentorBeforeApply: false,
       applicationInformation: 'Award Manager/Faculty Mentor: Program Office Contact',
     });
+    expect(screen.queryByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeNull();
+  });
+
+  it.each([
+    'Submit the online form and one recommendation letter.',
+    'Applications are reviewed by the program administrator.',
+    'Faculty mentor: must be a ladder faculty member who agrees to supervise.',
+  ])('adds no contact note when the application text names no contact: %s', (text) => {
+    renderModal({ requiresMentorBeforeApply: true, applicationInformation: text });
+
+    expect(screen.getByText('Yes, line up your own mentor before applying')).toBeInTheDocument();
     expect(screen.queryByText(PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE)).toBeNull();
   });
 

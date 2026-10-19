@@ -54,7 +54,7 @@ export function programBoardSectionOf(
 }
 
 const NAMED_PROGRAM_CONTACT_RE =
-  /\b(?:award|program|grant|fellowship)\s+(?:manager|contact|coordinator|administrator)\b|\bfaculty\s+mentor\s*:/i;
+  /\b(?:award|program|grant|fellowship)\s+(?:manager|contact|coordinator|administrator)(?:\s*\/\s*faculty\s+mentor)?\s*:\s*\S/i;
 
 export const applicationTextNamesProgramContact = (text?: string | null): boolean =>
   NAMED_PROGRAM_CONTACT_RE.test(text || '');
