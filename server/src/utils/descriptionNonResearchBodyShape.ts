@@ -272,22 +272,25 @@ const NARRATING_VERB =
     .source;
 
 // The document has to be the sentence's subject and has to be marked as a source: a
-// determiner or possessive, or a closed run of source qualifiers ("Course and department
-// pages describe"). An open slot reads research prose as narration, because "Quantum
-// materials feature exotic states" and "Enzyme active sites show selectivity" also put a
-// document noun before a narrating verb.
+// determiner, a possessive name of up to four words ("A Named Person's profile lists"), a
+// closed run of source qualifiers ("Course and department pages describe"), or a bare
+// "Pages" or "Profile" opening the sentence. An open slot reads research prose as
+// narration, because "Quantum materials feature exotic states" and "Enzyme active sites
+// show selectivity" also put a document noun before a narrating verb.
 const SOURCE_QUALIFIER =
   /(?:course|department|departmental|faculty|program|lab|group|personal|official|university|school|yale|web|online|directory|people|and)/
     .source;
 
-const SOURCE_DETERMINER =
-  /(?:(?:the|this|that|these|those)\s+(?:[\w.-]+\s+){0,3}?[\w.-]+['’]s|the|this|that|these|those|her|his|their|its|our|[\w.-]+['’]s)\s+/
-    .source;
+const POSSESSIVE_NAME = /(?:[\w.-]+\s+){0,3}[\w.-]+(?:['’]s|s['’])/.source;
 
-const SOURCE_SUBJECT = `(?:${SOURCE_DETERMINER}(?:${SOURCE_QUALIFIER}\\s+){0,6}|(?:${SOURCE_QUALIFIER}\\s+){1,6})`;
+const SOURCE_DETERMINER = `(?:(?:the|this|that|these|those)\\s+${POSSESSIVE_NAME}|the|this|that|these|those|her|his|their|its|our|${POSSESSIVE_NAME})\\s+`;
+
+const MARKED_SOURCE_DOCUMENT = `(?:${SOURCE_DETERMINER}(?:${SOURCE_QUALIFIER}\\s+){0,6}|(?:${SOURCE_QUALIFIER}\\s+){1,6})${SOURCE_DOCUMENT}`;
+
+const BARE_SOURCE_DOCUMENT = /(?:pages|profiles?)/.source;
 
 const SOURCE_NARRATION_LEAD = new RegExp(
-  `^["“]?${SOURCE_SUBJECT}${SOURCE_DOCUMENT}\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
+  `^["“]?(?:${MARKED_SOURCE_DOCUMENT}|${BARE_SOURCE_DOCUMENT})\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
   'i',
 );
 
