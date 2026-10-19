@@ -887,6 +887,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['ALUMNI'],
+    withheldNames: ['Ethan Brown'],
   },
   {
     researchEntityKey: 'ysm-faculty-kim-blenman',
@@ -1174,6 +1175,14 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['Undergraduate students'],
     pastSectionLabels: ['Post Baccalaureate and Undergraduate Research Project Students'],
+    withheldNames: [
+      'George Iskander',
+      'Jeremy Tanlimco',
+      'Laura Zhou',
+      'Sami Hakani',
+      'Shivam Raval',
+      'William Eckner',
+    ],
   },
   {
     researchEntityKey: 'dept-physics-eduardo-higino-da-silva-neto',
