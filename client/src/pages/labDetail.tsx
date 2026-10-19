@@ -18,6 +18,7 @@ import {
  * `pages/profile.tsx` pattern.
  */
 import { useContext, useEffect, useId, useReducer, useRef, useState } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import { isCancel } from 'axios';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
@@ -455,6 +456,20 @@ const EmeritusCurrentActivityNotice = ({
   );
 };
 
+const useRenderedHeight = (ref: RefObject<HTMLElement | null>): number | undefined => {
+  const [height, setHeight] = useState<number>();
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const readHeight = () => setHeight(element.getBoundingClientRect().height);
+    readHeight();
+    const observer = new ResizeObserver(readHeight);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return height;
+};
+
 const DecisionSummary = ({
   group,
   profileUrl,
@@ -477,6 +492,8 @@ const DecisionSummary = ({
   rosterListsUndergraduates?: boolean;
 }) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
+  const summaryCardRef = useRef<HTMLElement>(null);
+  const summaryCardHeight = useRenderedHeight(summaryCardRef);
   const topics = detailTopics(group, 5);
   const methods = detailMethods(group);
   const description = sanitizeResearchEntityCopy(detailDescription(group), group);
@@ -578,7 +595,7 @@ const DecisionSummary = ({
         : 'Opens the Yale Directory in a new tab, outside y/labs.';
   return (
     <>
-      <section className={researchProfileSummaryCardClassName}>
+      <section ref={summaryCardRef} className={researchProfileSummaryCardClassName}>
         <div>
           <SectionHeading>{summarySectionLabel(group)}</SectionHeading>
           {description ? (
@@ -664,7 +681,14 @@ const DecisionSummary = ({
         </div>
       </section>
 
-      <section className={researchProfileContactRailClassName}>
+      <section
+        className={researchProfileContactRailClassName}
+        style={
+          summaryCardHeight
+            ? ({ '--summary-card-height': `${summaryCardHeight}px` } as CSSProperties)
+            : undefined
+        }
+      >
         {hasEvidenceList && (
           <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>

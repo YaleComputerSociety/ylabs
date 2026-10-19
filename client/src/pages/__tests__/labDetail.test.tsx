@@ -2594,9 +2594,9 @@ describe('LabDetail page', () => {
     expect(summaryCard.textContent).not.toContain('How to get involved');
     expect(summaryCard.textContent).not.toContain('Jordan Researcher');
     expect(rail.textContent).toContain('Jordan Researcher');
-    expect(rail.className).toContain('md:row-span-2');
+    expect(rail.className).toContain('md:float-right');
     expect(body.textContent).toContain('Affiliated with');
-    expect(body.className).toContain('md:row-start-2');
+    expect(body.className).toContain('md:*:flow-root');
   });
 
   it('does not link an affiliation summary without a navigable slug', async () => {
