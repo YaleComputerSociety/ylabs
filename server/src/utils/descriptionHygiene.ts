@@ -349,7 +349,7 @@ const maskWithListSeparatorPattern = new RegExp(`${ARTIFACT_TOKEN_MASK}[,;:]+`, 
 const TRAILING_SENTENCE_PUNCTUATION = /[.,;:!?)\]"'\u2019\u201d]+$/;
 const IDENTIFIER_ARTIFACT = /^(?:PMCID|PMC|PMID|doi)/i;
 const LINK_OBJECT_LEAD_IN =
-  /\b(?:to|into|onto|visit|visiting|see|check|consult|download|access|browse|(?:available|found|located|posted|listed)\s+(?:online\s+)?(?:at|from|on))\s*$/i;
+  /\b(?:to|into|onto|the|a|an|this|our|your|their|of|visit|visiting|see|check|consult|download|access|browse|(?:available|found|located|posted|listed)\s+(?:online\s+)?(?:at|from|on))\s*$/i;
 const MAX_READABLE_LINK_CHARS = 80;
 const UNREADABLE_LINK_TEXT = 'the linked page';
 
@@ -403,11 +403,8 @@ const hasSubstantiveWord = (text: string): boolean =>
 const LINK_LIST_SEPARATOR = /^\s*(?:,|,?\s*(?:and|or))\s*$/i;
 
 function isLoadBearingLinkSlot(textBeforeLink: string): boolean {
-  const clause = textBeforeLink.slice(
-    Math.max(textBeforeLink.lastIndexOf('('), textBeforeLink.lastIndexOf(';')) + 1,
-  );
-  const leadIn = LINK_OBJECT_LEAD_IN.exec(clause);
-  return Boolean(leadIn) && hasSubstantiveWord(clause.slice(0, leadIn!.index));
+  const leadIn = LINK_OBJECT_LEAD_IN.exec(textBeforeLink);
+  return Boolean(leadIn) && hasSubstantiveWord(textBeforeLink.slice(0, leadIn!.index));
 }
 
 function restoreLoadBearingLinks(sentence: string, artifacts: readonly MaskedArtifact[]): string {

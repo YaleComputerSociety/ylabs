@@ -3184,17 +3184,32 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     ).toBe('The lab studies gene regulation and shares protocols with the wider community.');
   });
 
-  it('drops a pointer that opens its own parenthetical or clause', () => {
+  it('keeps a link that opens a parenthetical or semicolon clause the sentence goes on past', () => {
     expect(
       stripBibliographicReferenceArtifacts(
-        'The lab studies gene regulation in yeast (see https://lab.example.edu/people).',
+        'Applications are due May 1; see https://portal.example.edu/apply for the application form.',
       ),
-    ).toBe('The lab studies gene regulation in yeast.');
+    ).toBe('Applications are due May 1; see portal.example.edu/apply for the application form.');
     expect(
       stripBibliographicReferenceArtifacts(
-        'The lab studies gene regulation in yeast; see https://lab.example.edu for details.',
+        'Students must submit a budget (see https://portal.example.edu/budget for the template).',
       ),
-    ).toBe('The lab studies gene regulation in yeast.');
+    ).toBe('Students must submit a budget (see portal.example.edu/budget for the template).');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Send it (please) to https://portal.example.edu/apply and print it.',
+      ),
+    ).toBe('Send it (please) to portal.example.edu/apply and print it.');
+  });
+
+  it('keeps a link that follows a determiner as the object of its clause', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'All interested applicants must review the https://portal.example.edu/guidelines. Projects in every field are welcome to apply.',
+      ),
+    ).toBe(
+      'All interested applicants must review the portal.example.edu/guidelines. Projects in every field are welcome to apply.',
+    );
   });
 
   it('keeps every link in a list that is the object of its sentence', () => {
