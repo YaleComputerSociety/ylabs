@@ -1283,7 +1283,7 @@ describe('LabDetail page', () => {
       LAB_WEBSITE_URL,
     );
     expect(screen.queryByText(/no separate website/)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Email Fixture Steele' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Email Fixture Steele at / })).toBeTruthy();
   });
 
   it('points an under-review entity to its lab website instead of a Yale Directory dead end', async () => {
@@ -1501,7 +1501,7 @@ describe('LabDetail page', () => {
 
     // The primary action stays the official profile; the email rides alongside like the ORCID line.
     expect(screen.queryByRole('link', { name: 'Email the PI' })).toBeNull();
-    const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    const emailLink = screen.getByRole('link', { name: /^Email Jordan Researcher at / });
     expect(emailLink.textContent).toBe('jordan.researcher@example.test');
     // No prefilled subject or body: the address alone is the action.
     expect(emailLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
@@ -1534,7 +1534,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByRole('link', { name: 'Email Jordan Researcher' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
     expect(screen.queryByText('How to get involved')).toBeNull();
     expect(screen.queryByText(/linked in the card above/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
@@ -1825,7 +1825,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    const emailLink = screen.getByRole('link', { name: /^Email Jordan Researcher at / });
     expect(emailLink.getAttribute('href')).toMatch(/^mailto:/);
     fireEvent.click(emailLink);
 
@@ -1853,7 +1853,7 @@ describe('LabDetail page', () => {
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
-    fireEvent.click(screen.getByRole('link', { name: 'Email Jordan Researcher' }));
+    fireEvent.click(screen.getByRole('link', { name: /^Email Jordan Researcher at / }));
     await flushResearchAnalytics();
 
     const events = mockedAxios.post.mock.calls
@@ -2555,6 +2555,48 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Yale Cancer Center/ }).getAttribute('href')).toBe(
       '/research/center-yale-cancer-center',
     );
+  });
+
+  it('keeps the lead rail beside the page body rather than inside the summary card', async () => {
+    renderLabDetail({
+      ...basePayload,
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+          },
+        },
+      ],
+      affiliatedResearchEntities: [
+        {
+          id: 'entity-umbrella',
+          slug: 'center-yale-cancer-center',
+          name: 'Yale Cancer Center',
+          kind: 'center',
+          entityType: 'CENTER',
+          departments: ['Neuroscience'],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const summaryCard = screen
+      .getByRole('heading', { name: 'Research summary' })
+      .closest('section') as HTMLElement;
+    const rail = summaryCard.nextElementSibling as HTMLElement;
+    const body = rail.nextElementSibling as HTMLElement;
+    expect(summaryCard.textContent).not.toContain('How to get involved');
+    expect(summaryCard.textContent).not.toContain('Jordan Researcher');
+    expect(rail.textContent).toContain('Jordan Researcher');
+    expect(rail.className).toContain('md:row-span-2');
+    expect(body.textContent).toContain('Affiliated with');
+    expect(body.className).toContain('md:row-start-2');
   });
 
   it('does not link an affiliation summary without a navigable slug', async () => {

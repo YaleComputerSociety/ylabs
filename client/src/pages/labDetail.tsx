@@ -24,9 +24,13 @@ import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
 import ResearchProfileSkeleton, {
+  researchProfileBodyGridClassName,
+  researchProfileBodyMainClassName,
   researchProfileColumnClassName,
+  researchProfileContactRailClassName,
   researchProfileGridClassName,
   researchProfilePageClassName,
+  researchProfileSummaryCardClassName,
 } from '../components/labs/ResearchProfileSkeleton';
 import { undergraduateMemberEvidence } from '../utils/undergraduateMemberEvidence';
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
@@ -573,8 +577,8 @@ const DecisionSummary = ({
         ? 'Opens their own page in a new tab, outside y/labs.'
         : 'Opens the Yale Directory in a new tab, outside y/labs.';
   return (
-    <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
+    <>
+      <section className={researchProfileSummaryCardClassName}>
         <div>
           <SectionHeading>{summarySectionLabel(group)}</SectionHeading>
           {description ? (
@@ -658,125 +662,85 @@ const DecisionSummary = ({
             </figure>
           )}
         </div>
+      </section>
 
-        <div className="divide-y divide-[var(--yr-line)] self-start rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
-          {hasEvidenceList && (
-            <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
-              <ul className="mt-3 space-y-1 text-xs text-muted">
-                {grantSummary && <li>• {grantSummary}</li>}
-                {honors.recent && <li>• {honors.recent}</li>}
-                {honors.other && <li>• {honors.other}</li>}
-                {pastAdvisees.map((line) => (
-                  <li key={line}>• {line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {principalInvestigator && (
-            <div className="py-4 first:pt-0 last:pb-0">
-              <LeadSectionHeading
-                heading={leadSectionHeading(
-                  [principalInvestigator],
-                  leadRoleLabelForEntity(group, 'pi'),
-                )}
-              />
-              <div>
-                <LabMembersList
-                  members={[principalInvestigator]}
-                  singleColumn
-                  entityDepartments={group.departments}
-                  resolveMemberProfileUrl={() => leadCardProfileUrl}
-                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
-                />
-              </div>
-            </div>
-          )}
-          {wayInWithheld && (
-            <EmeritusCurrentActivityNotice
-              group={group}
-              activityCheckUrl={activityCheckUrl}
-              leadCardLinksProfile={leadCardLinksProfile}
+      <section className={researchProfileContactRailClassName}>
+        {hasEvidenceList && (
+          <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
+            <ul className="mt-3 space-y-1 text-xs text-muted">
+              {grantSummary && <li>• {grantSummary}</li>}
+              {honors.recent && <li>• {honors.recent}</li>}
+              {honors.other && <li>• {honors.other}</li>}
+              {pastAdvisees.map((line) => (
+                <li key={line}>• {line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {principalInvestigator && (
+          <div className="py-4 first:pt-0 last:pb-0">
+            <LeadSectionHeading
+              heading={leadSectionHeading(
+                [principalInvestigator],
+                leadRoleLabelForEntity(group, 'pi'),
+              )}
             />
-          )}
-          {!wayInWithheld && showGetInvolvedBlock && (
-            <div className="py-4 first:pt-0 last:pb-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                How to get involved
-              </p>
-              {showsWebsiteCta ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={websiteUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                    aria-describedby={outboundNoteId}
-                  >
-                    {researchWebsiteCtaLabel(group)}
+            <div>
+              <LabMembersList
+                members={[principalInvestigator]}
+                singleColumn
+                entityDepartments={group.departments}
+                resolveMemberProfileUrl={() => leadCardProfileUrl}
+                resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+              />
+            </div>
+          </div>
+        )}
+        {wayInWithheld && (
+          <EmeritusCurrentActivityNotice
+            group={group}
+            activityCheckUrl={activityCheckUrl}
+            leadCardLinksProfile={leadCardLinksProfile}
+          />
+        )}
+        {!wayInWithheld && showGetInvolvedBlock && (
+          <div className="py-4 first:pt-0 last:pb-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+              How to get involved
+            </p>
+            {showsWebsiteCta ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={websiteUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  {researchWebsiteCtaLabel(group)}
 
-                    <ExternalLinkIcon className="shrink-0" size={14} />
-                  </a>
-                  {joinPageLinkUrl && (
-                    <a
-                      href={joinPageLinkUrl}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      aria-describedby={outboundNoteId}
-                      className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-                    >
-                      {joinPageLinkLabel(joinPageLinkUrl)}
-                      <ExternalLinkIcon className="shrink-0" size={14} />
-                    </a>
-                  )}
-                </div>
-              ) : offersOrgEngagementPage && officialSource ? (
-                <>
-                  <p className="mt-1 text-sm leading-relaxed text-ink">
-                    This organization coordinates involvement centrally. Open its get-involved page
-                    to see how undergraduates can take part, then reach out to introduce yourself.
-                  </p>
-                  <div className="mt-3 flex flex-col gap-2">
-                    <a
-                      href={officialSource.url}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                      aria-describedby={outboundNoteId}
-                    >
-                      See how to get involved
-                      <ExternalLinkIcon className="shrink-0" size={14} />
-                    </a>
-                  </div>
-                </>
-              ) : applyPageUrl ? (
-                <div className="mt-3 flex flex-col gap-2">
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+                {joinPageLinkUrl && (
                   <a
-                    href={applyPageUrl}
+                    href={joinPageLinkUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     aria-describedby={outboundNoteId}
+                    className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
                   >
-                    {joinPageLinkLabel(applyPageUrl, 'See how to get involved')}
-
+                    {joinPageLinkLabel(joinPageLinkUrl)}
                     <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
-                </div>
-              ) : showsProfileButton ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={profileUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                    aria-describedby={outboundNoteId}
-                  >
-                    Open official profile
-                    <ExternalLinkIcon className="shrink-0" size={14} />
-                  </a>
-                </div>
-              ) : offersOfficialPage && officialSource ? (
+                )}
+              </div>
+            ) : offersOrgEngagementPage && officialSource ? (
+              <>
+                <p className="mt-1 text-sm leading-relaxed text-ink">
+                  This organization coordinates involvement centrally. Open its get-involved page to
+                  see how undergraduates can take part, then reach out to introduce yourself.
+                </p>
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={officialSource.url}
@@ -785,44 +749,84 @@ const DecisionSummary = ({
                     className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     aria-describedby={outboundNoteId}
                   >
-                    Open the official page
+                    See how to get involved
                     <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
-              ) : (
-                <div className="mt-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
-                  <p className="text-sm leading-relaxed text-ink">
-                    {piName
-                      ? `y/labs does not have a direct link for ${piName}${
-                          piAffiliation ? ` (${piAffiliation})` : ''
-                        } yet.`
-                      : 'y/labs does not have a direct link for this research yet.'}
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-muted">
-                    {piName
-                      ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
-                      : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
-                  </p>
-                  <a
-                    href={directorySearchUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                    aria-describedby={outboundNoteId}
-                  >
-                    Search the Yale Directory
-                    <ExternalLinkIcon className="shrink-0" size={14} />
-                  </a>
-                </div>
-              )}
-              <p id={outboundNoteId} className="mt-2 text-xs leading-relaxed text-muted">
-                {outboundNote}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
+              </>
+            ) : applyPageUrl ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={applyPageUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  {joinPageLinkLabel(applyPageUrl, 'See how to get involved')}
+
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            ) : showsProfileButton ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  Open official profile
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            ) : offersOfficialPage && officialSource ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={officialSource.url}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  Open the official page
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
+                <p className="text-sm leading-relaxed text-ink">
+                  {piName
+                    ? `y/labs does not have a direct link for ${piName}${
+                        piAffiliation ? ` (${piAffiliation})` : ''
+                      } yet.`
+                    : 'y/labs does not have a direct link for this research yet.'}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-muted">
+                  {piName
+                    ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
+                    : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
+                </p>
+                <a
+                  href={directorySearchUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  Search the Yale Directory
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            )}
+            <p id={outboundNoteId} className="mt-2 text-xs leading-relaxed text-muted">
+              {outboundNote}
+            </p>
+          </div>
+        )}
+      </section>
+    </>
   );
 };
 
@@ -1271,95 +1275,99 @@ const LabDetail = () => {
             }
           />
 
-          <DecisionSummary
-            group={group}
-            profileUrl={decisionProfileUrl}
-            websiteUrl={officialWebsiteUrl}
-            officialSource={outreachOfficialSource}
-            applySource={outreachApplySource}
-            preferOrgEngagementOutreach={preferOrgEngagementOutreach}
-            principalInvestigator={singlePrincipalInvestigator}
-            leadProfilesLinkedInline={leadProfilesLinkedInline}
-            rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
-          />
+          <div className={researchProfileBodyGridClassName}>
+            <DecisionSummary
+              group={group}
+              profileUrl={decisionProfileUrl}
+              websiteUrl={officialWebsiteUrl}
+              officialSource={outreachOfficialSource}
+              applySource={outreachApplySource}
+              preferOrgEngagementOutreach={preferOrgEngagementOutreach}
+              principalInvestigator={singlePrincipalInvestigator}
+              leadProfilesLinkedInline={leadProfilesLinkedInline}
+              rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
+            />
 
-          {showDedicatedPrincipalInvestigatorSection && (
-            <section>
-              <LeadSectionHeading
-                heading={leadSectionHeading(
-                  principalInvestigators,
-                  leadRoleLabelForEntity(group, 'pi'),
-                )}
+            <div className={researchProfileBodyMainClassName}>
+              {showDedicatedPrincipalInvestigatorSection && (
+                <section>
+                  <LeadSectionHeading
+                    heading={leadSectionHeading(
+                      principalInvestigators,
+                      leadRoleLabelForEntity(group, 'pi'),
+                    )}
+                  />
+                  {leadIdentityUnderReview ? (
+                    <div
+                      className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                      role="status"
+                    >
+                      <p className="font-semibold">Lead not confirmed yet</p>
+                      <p className="mt-1">
+                        The research information remains available, but this lead and profile link
+                        are not shown until their sources agree.
+                      </p>
+                    </div>
+                  ) : (
+                    <LabMembersList
+                      members={principalInvestigators}
+                      entityDepartments={group.departments}
+                      resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
+                      resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+                    />
+                  )}
+                </section>
+              )}
+
+              <ResearchTeamSection
+                members={members}
+                roster={roster}
+                undergraduateLines={undergraduateMembers.memberLines}
+                leadPersonNames={leadPersonNames}
               />
-              {leadIdentityUnderReview ? (
-                <div
-                  className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-                  role="status"
-                >
-                  <p className="font-semibold">Lead not confirmed yet</p>
-                  <p className="mt-1">
-                    The research information remains available, but this lead and profile link are
-                    not shown until their sources agree.
-                  </p>
-                </div>
-              ) : (
-                <LabMembersList
-                  members={principalInvestigators}
-                  entityDepartments={group.departments}
-                  resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
-                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+
+              <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
+
+              {hasRelatedResearchEntities && (
+                <RelatedResearchEntitiesSection
+                  relationships={entityRelationships}
+                  relatedResearchEntities={dedupedRelatedResearchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
                 />
               )}
-            </section>
-          )}
 
-          <ResearchTeamSection
-            members={members}
-            roster={roster}
-            undergraduateLines={undergraduateMembers.memberLines}
-            leadPersonNames={leadPersonNames}
-          />
+              {hasAffiliatedResearchEntities && (
+                <AffiliatedResearchEntitiesSection
+                  affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
+                />
+              )}
 
-          <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
+              {hasSimilarResearchEntities && (
+                <SimilarResearchEntitiesSection
+                  similarResearchEntities={dedupedSimilarResearchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
+                />
+              )}
 
-          {hasRelatedResearchEntities && (
-            <RelatedResearchEntitiesSection
-              relationships={entityRelationships}
-              relatedResearchEntities={dedupedRelatedResearchEntities}
-              relatedProfileOpenState={relatedProfileOpenState}
-            />
-          )}
+              {sources.length > 0 && (
+                <section>
+                  <SectionHeading>Sources</SectionHeading>
+                  <SourcesSection
+                    sources={sources}
+                    describesCreativePractice={isCreativePracticeEntity(group)}
+                    primaryProfileUrl={
+                      decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
+                    }
+                  />
+                </section>
+              )}
 
-          {hasAffiliatedResearchEntities && (
-            <AffiliatedResearchEntitiesSection
-              affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
-              relatedProfileOpenState={relatedProfileOpenState}
-            />
-          )}
-
-          {hasSimilarResearchEntities && (
-            <SimilarResearchEntitiesSection
-              similarResearchEntities={dedupedSimilarResearchEntities}
-              relatedProfileOpenState={relatedProfileOpenState}
-            />
-          )}
-
-          {sources.length > 0 && (
-            <section>
-              <SectionHeading>Sources</SectionHeading>
-              <SourcesSection
-                sources={sources}
-                describesCreativePractice={isCreativePracticeEntity(group)}
-                primaryProfileUrl={
-                  decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
-                }
-              />
-            </section>
-          )}
-
-          {isAuthenticated && slug && (
-            <EntityCorrectionReportPanel slug={slug} entityName={researchEntityTitle(group)} />
-          )}
+              {isAuthenticated && slug && (
+                <EntityCorrectionReportPanel slug={slug} entityName={researchEntityTitle(group)} />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
