@@ -180,6 +180,23 @@ describe('ResearchTeamSection', () => {
     expect(headings).toEqual(['Undergraduate researchers', 'Past undergraduate researchers']);
   });
 
+  it('lists current undergraduate members above named past undergraduates', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(1, 'undergrad'), member(2, 'postdoc')]}
+        roster={roster({
+          undergraduates: [{ name: 'Former Fixture', status: 'past', endYear: 2021 }],
+        })}
+      />,
+    );
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual([
+      'Undergraduate researchers',
+      'Past undergraduate researchers (1)',
+      'Postdoctoral researchers',
+    ]);
+  });
+
   it('keeps the past list as a subheading under current undergraduates', () => {
     render(
       <ResearchTeamSection
