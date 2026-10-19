@@ -112,6 +112,7 @@ The student-journey smoke counts first-page program searches per visit and fails
 - Every student-facing date renders in America/New_York through `client/src/utils/newYorkDate.ts` or the program date helpers built on it, because a UTC formatter showed a roster read on a New York evening as the next day (#5301).
 A `no-restricted-syntax` rule in `eslint.config.js` fails `yarn lint` on any other date formatter or local-zone date getter outside the admin and analytics surfaces.
 - Empty states say what the surface is for and offer the next action.
+- An outbound action names the place it opens and says it leaves y/labs: the research detail "How to get involved" actions carry the external-link icon and a visible note, linked by `aria-describedby`, naming the site they open, and a not-yet-open program's action reads "See the official program page" rather than promising to track a date (#5306).
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.
 

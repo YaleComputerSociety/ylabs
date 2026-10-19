@@ -839,7 +839,7 @@ const FellowshipModal = ({
                       {applicationStatus.isApplicationWindowOpen
                         ? 'Apply now'
                         : applicationStatus.kind === 'notOpenYet'
-                          ? 'Track the opening date'
+                          ? 'See the official program page'
                           : deadlineStale
                             ? 'Open the official page'
                             : 'Open the fellowship source'}
