@@ -5,6 +5,7 @@ import {
   derivedRosterPageBelongsToRow,
   derivedRosterWithheldReason,
   sectionLabelCombinesGraduateLevels,
+  sectionLabelMixesOtherGroups,
   DERIVED_ROSTER_MAX_UNDERGRADUATES,
   type DerivedRosterCandidate,
 } from '../undergradRosterDerivation';
@@ -111,6 +112,25 @@ describe('sectionLabelCombinesGraduateLevels (#5278)', () => {
   it.each(['Undergraduate Researchers', 'Undergraduates', 'Lab Alumni'])('accepts %s', (label) => {
     expect(sectionLabelCombinesGraduateLevels(label)).toBe(false);
   });
+});
+
+describe('sectionLabelMixesOtherGroups (#5296)', () => {
+  it.each([
+    'Postgrads, Yale Undergrads, Other Colleges, High School',
+    'Undergraduate and High School Students',
+    'Visiting and Yale Undergraduates',
+    'Undergraduates from Other Universities',
+    'Graduate and Undergraduate Students',
+  ])('refuses %s', (label) => {
+    expect(sectionLabelMixesOtherGroups(label)).toBe(true);
+  });
+
+  it.each(['Undergraduate Researchers', 'Yale Undergraduates', 'Lab Alumni'])(
+    'accepts %s',
+    (label) => {
+      expect(sectionLabelMixesOtherGroups(label)).toBe(false);
+    },
+  );
 });
 
 describe('derivedRosterWithheldReason (#5278)', () => {
@@ -226,6 +246,41 @@ describe('deriveUndergradRosterForCandidate (#5278)', () => {
       observedAt,
     );
     expect(outcome).toMatchObject({ kind: 'withheld', reason: 'combined-section-label' });
+  });
+
+  it('withholds a mixed section the extractor could not split into sub-groups', async () => {
+    const outcome = await deriveUndergradRosterForCandidate(
+      candidate(),
+      readFrom({
+        'https://examplelab.example.org/people': rosterPage({
+          'Postgrads and Undergraduates': ['Avery Sample', 'Quinn Fixture'],
+        }),
+      }),
+      observedAt,
+    );
+    expect(outcome).toMatchObject({ kind: 'withheld', reason: 'combined-section-label' });
+  });
+
+  it('derives a mixed section whose sub-tables name each group', async () => {
+    const label = 'Postgrads, Yale Undergrads, Other Colleges, High School';
+    const subTable = (group: string, name: string) =>
+      `<table><tbody><tr><th>${group}</th><th>Dates in Lab</th></tr><tr><td>${name}</td><td>2019-2020</td></tr></tbody></table>`;
+    const outcome = await deriveUndergradRosterForCandidate(
+      candidate(),
+      readFrom({
+        'https://examplelab.example.org/people': `<html><body><main><h2>Lab Alumni</h2><h3>${label}</h3>
+          ${subTable('Postgrads', 'Avery Sample')}
+          ${subTable('Yale Undergrads', 'Quinn Fixture')}
+          ${subTable('Undergrads from Other Colleges', 'Rowan Example')}
+          ${subTable('Summer High School Students', 'Jordan Placeholder')}
+        </main></body></html>`,
+      }),
+      observedAt,
+    );
+    expect(outcome.kind).toBe('derived');
+    expect(outcome.kind === 'derived' && outcome.roster.undergraduates).toEqual([
+      { name: 'Quinn Fixture', status: 'past', startYear: 2019, endYear: 2020 },
+    ]);
   });
 
   it('withdraws a derived roster once the row loses the badge', async () => {

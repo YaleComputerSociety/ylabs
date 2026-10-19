@@ -297,6 +297,20 @@ export function sectionLabelCombinesGraduateLevels(label: string): boolean {
   return GRADUATE_LEVEL_LABEL.test(label.replace(/\bundergrad(?:uate)?s?\b/gi, ' '));
 }
 
+const NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL =
+  /\b(?:post-?grads?|postgraduates?|high school|visiting|programs?|other (?:universities|colleges|schools|institutions))\b/i;
+
+/**
+ * A label that also names people who are not Yale undergraduates ("Postgrads, Yale
+ * Undergrads, High School"). It is publishable only where the extractor read every listed
+ * undergraduate from a named sub-group of it; otherwise the list would be a guess.
+ */
+export function sectionLabelMixesOtherGroups(label: string): boolean {
+  return (
+    sectionLabelCombinesGraduateLevels(label) || NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL.test(label)
+  );
+}
+
 export function derivedRosterWithheldReason(
   config: OfficialRosterConfig,
   roster: ExtractedOfficialRoster,
@@ -305,7 +319,10 @@ export function derivedRosterWithheldReason(
   if (!websiteUrl) return 'no-website';
   if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) return 'page-not-this-row';
   const labels = [...config.currentSectionLabels, ...(config.pastSectionLabels ?? [])];
-  if (labels.some(sectionLabelCombinesGraduateLevels)) return 'combined-section-label';
+  const separated = new Set(roster.subgroupedSectionLabels ?? []);
+  if (labels.some((label) => !separated.has(label) && sectionLabelMixesOtherGroups(label))) {
+    return 'combined-section-label';
+  }
   if (roster.undergraduates.length > DERIVED_ROSTER_MAX_UNDERGRADUATES) return 'too-many-names';
   if (roster.undergraduates.some((member) => !rosterSnippetNamesAnUndergraduate(member.name))) {
     return 'name-not-an-undergraduate';
