@@ -202,6 +202,8 @@ Ignoring the observations was not enough for fields the projection keeps without
 The same link reached the lead too: the roster lane emits it as the person's `website`, so the user materializer ignores a course-page `website` value and the roster accessor never serves one as a member website.
 The predicate matches a `course` or `courses` segment followed by a course slug, or a course-catalog host; a bare `/courses` listing on a research site's own host stays an ordinary citation.
 Measured on Development 2026-10-18, it matched 2 of 4,226 live rows, both `student_ready` `LAB` rows the roster lane minted for lecturers and the microsite lane named after a course, and 32 live observations, all on those two rows; the one live row named "Laboratory for <subject>" whose page is a real lab was untouched.
+Neither row was withdrawn: with the course evidence ignored each re-derives as its lecturer's `FACULTY_RESEARCH_AREA`, and the 2026-10-04 owner rule spares a lecturer row.
+`research-entity:withdraw-non-research-home-row --kind=course` is for a row whose only content is a course.
 
 A patient-care page is never a lab's or a person-scoped row's research website (`isPatientCarePageUrl`, `isPatientCarePageCitedAsResearchWebsite` in `utils/researchHomeWebsiteUrl.ts`, #5364).
 It matches any page on a clinical-practice or hospital host (`yalemedicine.org`, `ynhh.org`, `ynhhs.org`) and any page under a `patient`, `patients`, `for-patients`, `care`, `patient-care`, `patient-services` or `clinical-care`/`clinical-services` path segment, unless a path segment carries `research` or is `lab`/`labs`, so a research program under a clinics section or a `/lab/` microsite keeps its website.
@@ -210,8 +212,6 @@ So `researchHomeWebsiteUrlDecision` refuses it as `patient-care-page` (write-blo
 An organization row keeps it, the scope the umbrella-page rule uses, because a clinic or program row is the collective the page describes; no organization row served one when it was measured.
 Measured on Development 2026-10-19: 5 served `FACULTY_RESEARCH_AREA` rows stored one (3 from `official-profile-pi-backfill`, 2 from `ysm-faculty-directory`), and live `websiteUrl` observations of the shape came from those two lanes and `dept-faculty-roster`; research program pages under a clinical section on the same school host matched nothing.
 The legacy `website` field and a lead's member `website` are not cleared by the materializer; the payload withholds the first, and the second is outside this rule.
-Neither row was withdrawn: with the course evidence ignored each re-derives as its lecturer's `FACULTY_RESEARCH_AREA`, and the 2026-10-04 owner rule spares a lecturer row.
-`research-entity:withdraw-non-research-home-row --kind=course` is for a row whose only content is a course.
 
 ## Repairs: export a pure planner
 
