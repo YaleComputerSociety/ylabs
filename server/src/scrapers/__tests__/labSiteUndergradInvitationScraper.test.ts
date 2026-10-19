@@ -141,11 +141,13 @@ describe('LabSiteUndergradInvitationScraper', () => {
   });
 
   it('refuses a shared quote on minified pages whose headings differ', async () => {
-    const shared = 'Undergraduates interested in research are encouraged to contact faculty directly.';
+    const shared =
+      'Undergraduates interested in research are encouraged to contact faculty directly.';
     const pages: Record<string, string> = {};
     const labs = ['one', 'two', 'three'].map((name) => {
       const url = `https://${name}.example.edu/`;
-      pages[url] = `<html><body><main><h1>${name} heading</h1><p>${shared}</p></main></body></html>`;
+      pages[url] =
+        `<html><body><main><h1>${name} heading</h1><p>${shared}</p></main></body></html>`;
       return lab(`${name}-faculty`, url);
     });
     const { emitted, result } = await run(pages, labs);
