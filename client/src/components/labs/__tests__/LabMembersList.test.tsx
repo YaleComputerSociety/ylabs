@@ -407,6 +407,24 @@ describe('LabMembersList lead email line', () => {
     expect(email.closest('[data-member-card]')).toBe(profile.closest('[data-member-card]'));
   });
 
+  it('shows the same normalized address the mail link opens', () => {
+    render(
+      <ConfigContext.Provider value={defaultConfigContext}>
+        <LabMembersList
+          members={[
+            {
+              ...leadMember,
+              user: { ...leadMember.user, email: 'mailto:Ada.Fixture@Example.test' },
+            },
+          ]}
+        />
+      </ConfigContext.Provider>,
+    );
+    const link = screen.getByRole('link', { name: 'Email Ada Fixture' });
+    expect(link.textContent).toBe('ada.fixture@example.test');
+    expect(link.getAttribute('href')).toBe('mailto:ada.fixture@example.test');
+  });
+
   it('renders no email for a redacted address', () => {
     render(
       <ConfigContext.Provider value={defaultConfigContext}>

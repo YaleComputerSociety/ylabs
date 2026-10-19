@@ -208,7 +208,9 @@ const LabMemberCard = ({
     </>
   );
   const hasContactLinks = Boolean(orcidUrl || resolvedEmailHref);
-  const [emailLocalPart, emailDomain] = splitEmailAtSign(user.email);
+  const [emailLocalPart, emailDomain] = splitEmailAtSign(
+    resolvedEmailHref.replace(/^mailto:/i, '').split('?')[0],
+  );
   const profileLink = (className: string) => (
     <a
       href={profileUrl}
