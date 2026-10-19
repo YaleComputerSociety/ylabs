@@ -88,6 +88,21 @@ describe('extractUndergradInvitation', () => {
     ).toBe('Yale undergrads: Positions will be available in Spring 2027.');
   });
 
+  it('reads a passed term from the heading block above an opening', () => {
+    expect(
+      extractUndergradInvitation(
+        'Undergraduate research: Fall 2019 - Summer 2020\nWe are recruiting one or two undergraduate students.',
+        NOW,
+      ),
+    ).toBeNull();
+    expect(
+      extractUndergradInvitation(
+        'Undergraduate research: Spring 2027\nWe are recruiting one or two undergraduate students.',
+        NOW,
+      )?.level,
+    ).toBe('actively_hiring');
+  });
+
   it('returns null for empty input', () => {
     expect(extractUndergradInvitation('', NOW)).toBeNull();
     expect(extractUndergradInvitation(undefined, NOW)).toBeNull();

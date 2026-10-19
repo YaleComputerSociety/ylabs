@@ -19,10 +19,10 @@ Nothing is computed: the badge repeats what the lab's own page states, so it is 
 The `lab-site-undergrad-invitation` lane reads each lab site's home page and up to four linked join, people or opportunities pages, and makes no model call.
 `server/src/scrapers/utils/undergradInvitation.ts` judges each sentence that names undergraduates.
 It refuses closed or filled wording, past or roster lines, course, degree and program mentions, other groups' hiring, and awards.
-It also refuses a stated term that has passed ("Fall 2019 - Summer 2020"), while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
+It also refuses a stated term that has passed ("Fall 2019 - Summer 2020"), whether in the sentence or in a short heading block directly above it, while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
 The lane refuses a quote that three or more rows share, because that is a department or program page repeated across faculty rows rather than one lab's invitation, and it skips a page `quotePageIsAboutAnotherEntity` places on another entity.
 The shared count spans the stored live observations as well as the current run, so a narrow run cannot serve a program page, and a refused row asserts no value so a later run withdraws a quote an earlier one emitted.
-A row with an unreadable linked page still emits an invitation found on the pages that loaded, but states no absence, because a transient fetch failure is not evidence that an invitation is gone.
+A row with an unreadable linked page states no absence, and emits an invitation found on the pages that loaded only when it is an active opening or the row has no live quote, because a transient fetch failure is not evidence that an invitation is gone or weaker.
 
 Measured by hand-reading in the session that built it: against 85 graded quotes from Development, the extractor agreed on every one, and against the full source pages of 80 graded rows it agreed on 77.
 The 3 misses are pages whose fetched HTML does not carry the text, and none was a wrong badge.

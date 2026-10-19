@@ -127,15 +127,27 @@ function clauseEnd(text: string, matchIndex: number): number {
   return matchIndex + (stop ? stop.index + 1 : after.length);
 }
 
+function blockSentences(rawText: string): Array<{ sentence: string; heading: string }> {
+  const out: Array<{ sentence: string; heading: string }> = [];
+  let previousBlock = '';
+  for (const block of rawText.split(/\n+/)) {
+    const normalized = normalizeJoinRouteText(block);
+    if (!normalized) continue;
+    const heading = previousBlock.length <= PRECEDING_CONTEXT_CHARS ? previousBlock : '';
+    normalized.split(SENTENCE_BOUNDARY).forEach((sentence, index) => {
+      out.push({ sentence, heading: index === 0 ? heading : '' });
+    });
+    previousBlock = normalized;
+  }
+  return out;
+}
+
 function candidates(rawText: string): InvitationCandidate[] {
   const found: InvitationCandidate[] = [];
-  const sentences = rawText
-    .split(/\n+/)
-    .flatMap((block) => normalizeJoinRouteText(block).split(SENTENCE_BOUNDARY));
-  for (const sentence of sentences) {
+  for (const { sentence, heading } of blockSentences(rawText)) {
     const audienceMatches = Array.from(sentence.matchAll(AUDIENCE_GLOBAL));
     if (audienceMatches.length === 0) {
-      if (sentence.length <= MAX_SENTENCE_CHARS) found.push({ sentence, precedingText: '' });
+      if (sentence.length <= MAX_SENTENCE_CHARS) found.push({ sentence, precedingText: heading });
       continue;
     }
     const short = sentence.length <= MAX_SENTENCE_CHARS;
@@ -147,9 +159,10 @@ function candidates(rawText: string): InvitationCandidate[] {
         const clause = sentence.slice(start, end).trim();
         if (seen.has(clause)) continue;
         seen.add(clause);
+        const withinSentence = sentence.slice(Math.max(0, start - PRECEDING_CONTEXT_CHARS), start);
         found.push({
           sentence: clause,
-          precedingText: sentence.slice(Math.max(0, start - PRECEDING_CONTEXT_CHARS), start),
+          precedingText: start === 0 ? `${heading} ${withinSentence}`.trim() : withinSentence,
         });
       }
     }

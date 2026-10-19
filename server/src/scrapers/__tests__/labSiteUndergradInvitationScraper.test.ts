@@ -172,7 +172,7 @@ describe('LabSiteUndergradInvitationScraper', () => {
     );
     expect(emitted).toEqual([]);
     expect(result.notes).toContain(
-      '1 rows with no invitation skipped because a linked page was unreadable',
+      '1 rows held at their live value because a linked page was unreadable',
     );
   });
 
@@ -192,6 +192,61 @@ describe('LabSiteUndergradInvitationScraper', () => {
         value: expect.objectContaining({ level: 'welcomes_undergrads' }),
       }),
     ]);
+  });
+
+  it('keeps a live invitation when a linked page fails and the loaded pages only welcome', async () => {
+    const { emitted, result } = await run(
+      {
+        'https://zeta.example.edu/': html(
+          'We welcome undergraduate students to join our lab.',
+          '<a href="/join">Join us</a>',
+        ),
+      },
+      [lab('zeta-lab', 'https://zeta.example.edu/')],
+      { 'zeta-lab': 'We are actively recruiting undergraduate researchers.' },
+    );
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain(
+      '1 rows held at their live value because a linked page was unreadable',
+    );
+  });
+
+  it('emits an active opening found on the loaded pages despite a failed linked page', async () => {
+    const { emitted } = await run(
+      {
+        'https://eta.example.edu/': html(
+          'We are actively recruiting undergraduate researchers.',
+          '<a href="/join">Join us</a>',
+        ),
+      },
+      [lab('eta-lab', 'https://eta.example.edu/')],
+      { 'eta-lab': 'We welcome undergraduate students to join our lab.' },
+    );
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'eta-lab',
+        value: expect.objectContaining({ level: 'actively_hiring' }),
+      }),
+    ]);
+  });
+
+  it('states no absence for a partial read whose loaded opening is a shared program quote', async () => {
+    const shared = 'Undergraduate research positions are available in the department this spring.';
+    const { emitted, result } = await run(
+      {
+        'https://theta.example.edu/': html(shared, '<a href="/join">Join us</a>'),
+      },
+      [lab('theta-lab', 'https://theta.example.edu/')],
+      {
+        'theta-lab': 'We are actively recruiting undergraduate researchers.',
+        'two-faculty': shared,
+        'three-faculty': shared,
+      },
+    );
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain(
+      '1 rows held at their live value because a linked page was unreadable',
+    );
   });
 
   it('keeps the stronger invitation across the home and join pages', async () => {
