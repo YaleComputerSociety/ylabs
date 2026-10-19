@@ -1,6 +1,7 @@
 /**
  * List view row component for browsable listings and fellowships.
  */
+import { PROGRAM_CLOSING_SOON_DAYS } from '../../utils/programClosingSoonWindow';
 import React, { useContext, useMemo, type ReactNode } from 'react';
 import {
   BrowsableItem,
@@ -38,6 +39,7 @@ interface BrowseListItemProps {
   /** Controls that act on this item, rendered inside the card's own border. */
   footer?: ReactNode;
   hideDeadlineUrgency?: boolean;
+  statusBadgeOverride?: { label: string; className: string };
 }
 
 const BrowseListItem = React.memo(
@@ -50,6 +52,7 @@ const BrowseListItem = React.memo(
     isCompact,
     footer,
     hideDeadlineUrgency = false,
+    statusBadgeOverride,
   }: BrowseListItemProps) => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
@@ -58,11 +61,18 @@ const BrowseListItem = React.memo(
 
     const daysUntil = getDaysUntilDeadline(item);
     const urgentBadge =
-      !hideDeadlineUrgency && item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
+      !statusBadgeOverride &&
+      !hideDeadlineUrgency &&
+      item.type === 'fellowship' &&
+      daysUntil !== null &&
+      daysUntil <= PROGRAM_CLOSING_SOON_DAYS;
 
     const subtitle = getItemSubtitle(item);
-    const subtitleColor = hideDeadlineUrgency ? 'text-muted' : getItemSubtitleColor(item);
-    const statusBadge = hideDeadlineUrgency ? null : getItemStatusBadge(item);
+    const subtitleColor =
+      statusBadgeOverride || hideDeadlineUrgency ? 'text-muted' : getItemSubtitleColor(item);
+    const statusBadge = hideDeadlineUrgency
+      ? null
+      : (statusBadgeOverride ?? getItemStatusBadge(item));
     const guidanceHref = isDepartmentResearchGuidance(item.data)
       ? departmentResearchGuidanceHref(item.data)
       : undefined;

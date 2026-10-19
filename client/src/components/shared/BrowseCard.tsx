@@ -1,6 +1,7 @@
 /**
  * Card view component for browsable fellowships.
  */
+import { PROGRAM_CLOSING_SOON_DAYS } from '../../utils/programClosingSoonWindow';
 import React, { useContext, useMemo } from 'react';
 import {
   BrowsableItem,
@@ -40,6 +41,7 @@ interface BrowseCardProps {
   onOpenModal: () => void;
   onAdminEdit?: () => void;
   isCompact?: boolean;
+  statusBadgeOverride?: { label: string; className: string };
 }
 
 const BrowseCard = React.memo(
@@ -50,6 +52,7 @@ const BrowseCard = React.memo(
     onOpenModal,
     onAdminEdit,
     isCompact,
+    statusBadgeOverride,
   }: BrowseCardProps) => {
     const { user } = useContext(UserContext);
     const isAdmin = user?.isAdmin ?? false;
@@ -57,11 +60,15 @@ const BrowseCard = React.memo(
     const trackView = useViewTracking(item.type, getItemId(item));
 
     const daysUntil = getDaysUntilDeadline(item);
-    const showUrgentBanner = item.type === 'fellowship' && daysUntil !== null && daysUntil <= 14;
+    const showUrgentBanner =
+      !statusBadgeOverride &&
+      item.type === 'fellowship' &&
+      daysUntil !== null &&
+      daysUntil <= PROGRAM_CLOSING_SOON_DAYS;
 
     const subtitle = getItemSubtitle(item);
-    const subtitleColor = getItemSubtitleColor(item);
-    const statusBadge = getItemStatusBadge(item);
+    const subtitleColor = statusBadgeOverride ? 'text-muted' : getItemSubtitleColor(item);
+    const statusBadge = statusBadgeOverride ?? getItemStatusBadge(item);
     const guidanceHref = isDepartmentResearchGuidance(item.data)
       ? departmentResearchGuidanceHref(item.data)
       : undefined;

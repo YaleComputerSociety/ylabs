@@ -2,6 +2,9 @@
  * Programs & Fellowships browse page with search, local quick filters,
  * application-cycle empty states, and grid/list view.
  */
+import { useWatchedProgramStages } from '../hooks/useWatchedProgramStages';
+import { programSettledStageBadge } from '../utils/researchPlanStages';
+import { PROGRAM_CLOSING_SOON_PHRASE } from '../utils/programClosingSoonWindow';
 import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
 import { showWarningDialog } from '../utils/warningDialog';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -97,7 +100,7 @@ const quickFilterEmptyCopy = (quickFilter: FellowshipQuickFilter) => {
   if (quickFilter === 'closingSoon')
     return {
       title: 'No application windows are closing soon',
-      body: 'There are no open program or fellowship deadlines due in the next 30 days. Use the next cycle filter to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
+      body: `There are no open program or fellowship deadlines due in the next ${PROGRAM_CLOSING_SOON_PHRASE}. Use the next cycle filter to track recurring opportunities while you prepare eligibility, mentor fit, and materials.`,
     };
   if (quickFilter === 'guidance')
     return {
@@ -159,7 +162,7 @@ const statusTiles: Array<{
   {
     key: 'closingSoon',
     tileLabel: 'Due soon',
-    tileDetail: 'Within 30 days',
+    tileDetail: `Within ${PROGRAM_CLOSING_SOON_PHRASE}`,
     tileClassName: 'yr-pill-gold',
   },
   {
@@ -240,7 +243,7 @@ const boardSections: Array<{
 }> = [
   {
     key: 'closingSoon',
-    title: 'Due in the next 30 days',
+    title: `Due in the next ${PROGRAM_CLOSING_SOON_PHRASE}`,
     description: 'Open now and closing soon, soonest deadline first.',
   },
   {
@@ -485,8 +488,21 @@ const Fellowships = () => {
     setFavorite,
     reloadFavorites,
   } = useFavorites('watchedPrograms', { surface: 'search' });
+  const { stages: watchedProgramStages, reloadStages: reloadWatchedProgramStages } =
+    useWatchedProgramStages(favFellowshipIds);
+  const settledStageBadges = useMemo(
+    () =>
+      Object.fromEntries(
+        favFellowshipIds.map((id) => [id, programSettledStageBadge(watchedProgramStages[id])]),
+      ),
+    [favFellowshipIds, watchedProgramStages],
+  );
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
-    useUndoableProgramUnwatch({ setFavorite, surface: 'search' });
+    useUndoableProgramUnwatch({
+      setFavorite,
+      surface: 'search',
+      onPlanRestored: reloadWatchedProgramStages,
+    });
   const capturingPlanIdsRef = useRef(new Set<string>());
   const {
     selectedItem: selectedFellowship,
@@ -1091,6 +1107,7 @@ const Fellowships = () => {
                       <BrowseGrid
                         items={boardItems[section.key]}
                         favIds={favFellowshipIds}
+                        statusBadgeOverrides={settledStageBadges}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenModal={handleOpenModal}
                         onAdminEdit={isAdmin ? handleAdminEdit : undefined}

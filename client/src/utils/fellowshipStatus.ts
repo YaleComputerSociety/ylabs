@@ -1,3 +1,4 @@
+import { PROGRAM_CLOSING_SOON_DAYS } from './programClosingSoonWindow';
 import type { Fellowship, ProgramAudience } from '../types/types';
 import {
   type ProgramDateBoundary,
@@ -9,7 +10,7 @@ import {
 } from './programDates';
 import { programCitizenshipSummary } from './programBoard';
 
-export const CLOSING_SOON_DAYS = 30;
+export const CLOSING_SOON_DAYS = PROGRAM_CLOSING_SOON_DAYS;
 
 export const closingDetail = (daysUntilDeadline: number): string => {
   if (daysUntilDeadline <= 0) return 'Due today';

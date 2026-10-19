@@ -39,7 +39,9 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
     onToggleFavorite,
     onOpenModal,
     emptyMessage,
+    statusBadgeOverrides = {},
   }: {
+    statusBadgeOverrides?: Record<string, { label: string } | undefined>;
     items: Array<{ type: 'fellowship'; data: Fellowship }>;
     favIds?: string[];
     onToggleFavorite?: (id: string, event: MouseEvent) => void;
@@ -50,6 +52,9 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
       {items.map((item) => (
         <article key={item.data.id}>
           <span>{item.data.title}</span>
+          {statusBadgeOverrides[item.data.id] && (
+            <span>{statusBadgeOverrides[item.data.id]!.label}</span>
+          )}
           {onOpenModal && (
             <button
               type="button"
@@ -567,7 +572,7 @@ describe('Programs page', () => {
     });
 
     for (const [title, tile, count] of [
-      ['Due in the next 30 days', 'Due soon', 1],
+      ['Due in the next 2 weeks', 'Due soon', 1],
       ['Accepting applications', 'Open now', 2],
     ] as const) {
       const header = screen.getByRole('heading', { name: title }).parentElement;
@@ -1005,7 +1010,7 @@ describe('Programs page', () => {
     expect(
       screen.getByRole('heading', { name: 'No application windows are closing soon' }),
     ).toBeTruthy();
-    expect(screen.getByText(/due in the next 30 days/i)).toBeTruthy();
+    expect(screen.getByText(/due in the next 2 weeks/i)).toBeTruthy();
   });
 
   it('shows the first-watch callout pointing to the Watched programs tab', async () => {
@@ -1091,6 +1096,92 @@ describe('Programs page', () => {
     await waitFor(() =>
       expect(mockedAxios.put.mock.calls.map((call) => call[0])).toEqual(['fellowships/f1/addView']),
     );
+  });
+
+  it('shows the stage instead of closing soon on a watched program the student applied to', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['applied-1', 'pending-1'] } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: { watchedProgramPlans: { 'applied-1': { stage: 'APPLIED' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    renderPage([
+      baseFellowship({
+        id: 'applied-1',
+        title: 'Applied Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(5),
+      }),
+      baseFellowship({
+        id: 'pending-1',
+        title: 'Pending Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(6),
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: 'Due in the next 2 weeks' });
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+    const pending = within(section).getByText('Pending Program').closest('article')!;
+    expect(within(pending).queryByText('Applied')).toBeNull();
+  });
+
+  it('shows the restored stage again after undoing an unwatch', async () => {
+    let storedIds = ['applied-1'];
+    let storedPlans: Record<string, { stage: string }> = { 'applied-1': { stage: 'APPLIED' } };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: storedIds } });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: { ...storedPlans } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.delete.mockImplementation(() => {
+      storedIds = [];
+      storedPlans = {};
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockImplementation(
+      (url: string, body?: { data?: { plan?: { stage: string } } }) => {
+        if (url === '/users/watchedPrograms') storedIds = ['applied-1'];
+        const plan = body?.data?.plan;
+        if (url === '/users/watchedProgramPlans/applied-1' && plan) {
+          return new Promise((resolve) =>
+            setTimeout(() => {
+              storedPlans = { 'applied-1': { stage: plan.stage } };
+              resolve({ data: {} });
+            }, 20),
+          );
+        }
+        return Promise.resolve({ data: {} });
+      },
+    );
+
+    renderPage([
+      baseFellowship({
+        id: 'applied-1',
+        title: 'Applied Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(5),
+      }),
+    ]);
+
+    const section = await screen.findByRole('region', { name: 'Due in the next 2 weeks' });
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Saved program applied-1' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
+    await waitFor(() => expect(within(section).getByText('Applied')).toBeTruthy());
   });
 
   describe('a direct link that opens no program', () => {

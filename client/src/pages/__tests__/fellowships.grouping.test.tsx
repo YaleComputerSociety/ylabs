@@ -188,7 +188,7 @@ describe('Fellowships grouping', () => {
 
     expect(titlesIn('Best matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
     expect(titlesIn('Archive / review')).toEqual(['Retained Match Record']);
-    expect(screen.queryByRole('region', { name: 'Due in the next 30 days' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Due in the next 2 weeks' })).toBeNull();
   });
 
   it('says no program carries every word and labels the partial matches', () => {
@@ -213,14 +213,14 @@ describe('Fellowships grouping', () => {
 
     expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
-    expect(titlesIn('Due in the next 30 days')).toEqual(['Weaker Match Award']);
+    expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
   });
 
   it('groups the same programs by deadline when they answer no search', () => {
     renderFellowships({ fellowships: searchMatches() });
 
     expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
-    expect(titlesIn('Due in the next 30 days')).toEqual(['Weaker Match Award']);
+    expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
     expect(titlesIn('Accepting applications')).toEqual(['Best Match Award']);
   });
 
@@ -264,7 +264,7 @@ describe('Fellowships grouping', () => {
     });
 
     const regions = [
-      'Due in the next 30 days',
+      'Due in the next 2 weeks',
       'Accepting applications',
       'Opening soon',
       'Plan for the next cycle',

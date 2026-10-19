@@ -14,6 +14,7 @@
  * existing ResearchPlan stage, so the dashboard, Program Watch list, and
  * /research indicator all derive urgency the same way and cannot diverge.
  */
+import { PROGRAM_CLOSING_SOON_DAYS } from './programClosingSoonWindow';
 import { Fellowship } from '../types/types';
 import { fellowshipFutureDeadlineDate } from './calendarExport';
 import {
@@ -23,7 +24,7 @@ import {
   researchPlanStageLabel,
 } from './researchPlanStages';
 
-export const DEFAULT_DEADLINE_WINDOW_DAYS = 14;
+export const DEFAULT_DEADLINE_WINDOW_DAYS = PROGRAM_CLOSING_SOON_DAYS;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
