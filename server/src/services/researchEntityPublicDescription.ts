@@ -704,7 +704,8 @@ const statesResearchFocus = (sentence: string): boolean =>
 // biography detector itself drops those and keeps every research sentence measured on
 // the Development cohort (#4928).
 const statesResearchFocusRatherThanCareer = (sentence: string): boolean =>
-  statesResearchFocus(sentence) && !isBiographyRatherThanResearch(sentence);
+  statesResearchFocus(sentence) &&
+  (statesScholarlySubject(sentence) || !isBiographyRatherThanResearch(sentence));
 
 function servedBodyStatesNoResearch(
   representation: ResearchEntityPublicDescriptionRepresentation,

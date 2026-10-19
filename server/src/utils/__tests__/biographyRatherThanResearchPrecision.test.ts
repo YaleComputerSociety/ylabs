@@ -230,19 +230,27 @@ describe('a scholar who states the research as what they write about', () => {
     expect(servedBodyIsBiographyWithoutResearch(representation)).toBe(true);
   });
 
-  it('does not read a role opener as a biography when it names what the scholar writes on', () => {
-    expect(
-      isBiographyRatherThanResearch(
-        'Professor of Performance Studies, Synthetic University* Sam Example is a cultural critic and an Associate Professor in the Department of Performance Studies at Sample University. He writes on art, music, politics, and theory.',
-      ),
-    ).toBe(false);
-  });
+  it.each([
+    [
+      'a role opener that names what the scholar writes on',
+      'Professor of Performance Studies, Synthetic University* Sam Example is a cultural critic and an Associate Professor in the Department of Performance Studies at Sample University. He writes on art, music, politics, and theory.',
+      false,
+    ],
+    [
+      'a career record that writes on behalf of an organisation',
+      'Sam Example previously taught at Sample College. She writes on behalf of the Synthetic Foundation.',
+      true,
+    ],
+    [
+      'a career record that writes on a weekly basis for an outlet',
+      'Sam Example previously taught at Sample College. She writes on a weekly basis for the Synthetic Times.',
+      true,
+    ],
+  ])('holds %s only when it states no research', (_shape, body, held) => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: facultyRow({ fullDescription: body }),
+    });
 
-  it('keeps writing on behalf of an organisation as a career fact', () => {
-    expect(
-      isBiographyRatherThanResearch(
-        'Sam Example previously taught at Sample College. She writes on behalf of the Synthetic Foundation.',
-      ),
-    ).toBe(true);
+    expect(servedBodyIsCareerBiographyWithoutResearch(representation)).toBe(held);
   });
 });
