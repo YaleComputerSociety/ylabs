@@ -55,6 +55,7 @@ export const macmillanPersonProfileExtractor = drupalPersonBodyExtractor(
 export interface CenterMemberProfileRead {
   profileUrl: string;
   text?: CenterMemberProfileText;
+  fetched?: boolean;
 }
 
 export interface CenterMemberIdentityJoin {
@@ -191,12 +192,14 @@ export function planCenterMemberProfileResearch(input: {
     return rows[0];
   };
 
-  const readProfileUrls = new Set(
-    input.reads.filter((read) => read.text).map((read) => read.profileUrl),
+  // A page fetched without the host's profile block offers nothing to compete with, while a
+  // page that failed to fetch might hold the fuller text, so only a failed fetch holds a row.
+  const decidedProfileUrls = new Set(
+    input.reads.filter((read) => read.text || read.fetched).map((read) => read.profileUrl),
   );
   const undecidedEntityIds = new Set<string>();
   for (const profileUrl of peopleByProfileUrl.keys()) {
-    if (readProfileUrls.has(profileUrl)) continue;
+    if (decidedProfileUrls.has(profileUrl)) continue;
     const reached = rowReachedBy(profileUrl);
     if (typeof reached !== 'string') undecidedEntityIds.add(reached.entityId);
   }

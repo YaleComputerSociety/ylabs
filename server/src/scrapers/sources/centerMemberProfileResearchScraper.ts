@@ -155,7 +155,9 @@ export class CenterMemberProfileResearchScraper implements IScraper {
     await mapWithConcurrency(reads, PROFILE_FETCH_CONCURRENCY, async (read) => {
       const extractor = extractorByHost.get(hostOf(read.profileUrl));
       try {
-        read.text = extractor?.(await this.pageFetcher(read.profileUrl));
+        const html = await this.pageFetcher(read.profileUrl);
+        read.fetched = true;
+        read.text = extractor?.(html);
       } catch {
         read.text = undefined;
       }

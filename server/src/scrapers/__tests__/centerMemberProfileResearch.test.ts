@@ -278,6 +278,23 @@ describe('one page per field of a row', () => {
     expect(plan.skipped['row-has-several-profiles']).toBe(1);
   });
 
+  it('lets a competing page that was fetched without a profile block decide nothing', () => {
+    const plan = planCenterMemberProfileResearch({
+      reads: [
+        { profileUrl: OTHER, text: { biography: LONGER_BIOGRAPHY }, fetched: true },
+        { profileUrl: PROFILE, fetched: true },
+      ],
+      joins,
+      rows: [row],
+    });
+    expect(plan.undecidedEntityIds).toEqual(new Set());
+    expect(plan.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'bio', value: LONGER_BIOGRAPHY, sourceUrl: OTHER }),
+      ]),
+    );
+  });
+
   it('emits nothing for a row a competing page this run did not read would reach', () => {
     const competingUnread = planCenterMemberProfileResearch({
       reads: [
