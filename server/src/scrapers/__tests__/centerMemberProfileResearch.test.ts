@@ -280,7 +280,10 @@ describe('one page per field of a row', () => {
 
   it('emits nothing for a row a competing page this run did not read would reach', () => {
     const competingUnread = planCenterMemberProfileResearch({
-      reads: [{ profileUrl: OTHER, text: { biography: LONGER_BIOGRAPHY } }, { profileUrl: PROFILE }],
+      reads: [
+        { profileUrl: OTHER, text: { biography: LONGER_BIOGRAPHY } },
+        { profileUrl: PROFILE },
+      ],
       joins,
       rows: [row],
     });
