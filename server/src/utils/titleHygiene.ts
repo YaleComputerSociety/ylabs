@@ -212,6 +212,30 @@ export function isSectionLabelTitle(value: string | null | undefined): boolean {
   return SECTION_LABEL_TITLES.has(normalizeSectionLabel(text));
 }
 
+const PLURAL_ROSTER_CATEGORY_TITLE =
+  /^(?:[A-Z][A-Za-z'’-]*\s+(?:(?:and|&)\s+)?){0,4}(?:affiliates|associates|fellows|scholars|scientists|researchers|investigators|students|postdocs|trainees|members|lecturers|professors|instructors|mentors)$/i;
+const AWARD_NAME_TITLE = /\b(?:awards?|prizes?|medals?)$/i;
+const NEWS_HEADLINE_VERB =
+  /\b(?:hailed|honou?red|wins|receives?|received|awarded|earns?|earned|elected|selected|recognized|celebrates?|announces?|announced)\b/i;
+
+/**
+ * A page heading or news headline lifted whole into a person's title: a roster's plural
+ * section heading ("Research Affiliates"), an award teaser ("Faculty Impact Award"), or a
+ * news card ("Faculty and Postdocs Hailed as Outstanding Mentors"). Each names a group,
+ * an honour or an event rather than the person's appointment, so it is refused only when
+ * no singular role word appears: "Associate Dean of Students" and "Won Park Hahn
+ * Professor" keep their reading (#5323).
+ */
+export function isPageHeadingTitle(value: string | null | undefined): boolean {
+  const text = normalizeTitleWhitespace(value);
+  if (!text || ROLE_WORD_PATTERN.test(text)) return false;
+  return (
+    PLURAL_ROSTER_CATEGORY_TITLE.test(text) ||
+    AWARD_NAME_TITLE.test(text) ||
+    NEWS_HEADLINE_VERB.test(text)
+  );
+}
+
 function sentenceBoundaryCount(text: string): number {
   return (text.match(/[a-z]{4,}[.!?]["')\]]?\s+[A-Z]/g) || []).length;
 }
@@ -275,6 +299,7 @@ export function sanitizePersonTitle(value: string | null | undefined): string | 
   if (isNavMenuChromeTitle(text)) return undefined;
   if (isSpaceSeparatedSiteMenu(text)) return undefined;
   if (isSectionLabelTitle(text)) return undefined;
+  if (isPageHeadingTitle(text)) return undefined;
   if (hasRawEmailAddress(text)) return undefined;
   if (hasStreetAddressFragment(text)) return undefined;
   if (hasPhoneContactFragment(text)) return undefined;

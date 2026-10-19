@@ -6,6 +6,7 @@ import {
   hasStreetAddressFragment,
   isBioProseTitle,
   isNavMenuChromeTitle,
+  isPageHeadingTitle,
   isSectionLabelTitle,
   isTruncatedPersonTitle,
   normalizeTitleWhitespace,
@@ -47,7 +48,7 @@ describe('isNavMenuChromeTitle', () => {
       'Senior Administrative Assistant Child Study Center',
       'Social Worker Child Study Center',
       'Research Associate Internal Medicine General Medicine',
-      'Yale-Foundation Medicine Retrospective Oncology Research Award',
+      'Yale-Foundation Medicine Retrospective Oncology Research Coordinator',
       'Director Of Research Media And Outreach Programs',
       'Home About Research',
       'Senior Communications And Media Events Planner',
@@ -168,6 +169,39 @@ describe('isSectionLabelTitle', () => {
     expect(isSectionLabelTitle('')).toBe(false);
     expect(isSectionLabelTitle(null)).toBe(false);
     expect(isSectionLabelTitle(undefined)).toBe(false);
+  });
+});
+
+describe('isPageHeadingTitle (#5323)', () => {
+  it('refuses a plural roster heading, an award name and a news headline', () => {
+    for (const heading of [
+      'Research Affiliates',
+      'Clinical Research Affiliates',
+      'Faculty Impact Award',
+      'Yale-Foundation Medicine Retrospective Oncology Research Award',
+      'Young Investigator Travel Award',
+      'Faculty and Postdocs Hailed as Outstanding Mentors',
+    ]) {
+      expect(isPageHeadingTitle(heading)).toBe(true);
+      expect(sanitizePersonTitle(heading)).toBeUndefined();
+    }
+  });
+
+  it('keeps a title that names a singular role or a unit', () => {
+    for (const title of [
+      'Research Affiliate',
+      'Associate Dean of Students',
+      'Chief of Staff',
+      'Emeritus Faculty',
+      'Adjunct Faculty',
+      'Won Park Hahn Professor of Global Affairs and Management',
+      'Professor of Ecology and Evolutionary Biology',
+      'Pre-Award Administrator',
+      'Director, Office of Sponsored Awards',
+      'Professor Emeritus of Public Health; Research Associate, National Bureau',
+    ]) {
+      expect(isPageHeadingTitle(title)).toBe(false);
+    }
   });
 });
 
