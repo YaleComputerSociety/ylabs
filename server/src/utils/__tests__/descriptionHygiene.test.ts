@@ -50,6 +50,7 @@ import {
   sanitizeResearchEntityDescription,
   clampShortDescriptionToWholeSentences,
   sanitizeResearchEntityShortDescription,
+  readableLinkTarget,
   sanitizeStoredCatalogDescription,
   stripBibliographicReferenceArtifacts,
   stripCatalogChrome,
@@ -3140,6 +3141,97 @@ describe('descriptionHygiene bibliographic-reference artifact strip (#415)', () 
     expect(sanitizeResearchEntityShortDescription(stored)).toBe(
       'Investigates neural circuits underlying memory.',
     );
+  });
+});
+
+describe('a link target that is the object of its sentence (#5365)', () => {
+  it('keeps a bare url after "go to" as its host and path instead of leaving a hole', () => {
+    expect(
+      sanitizeStoredCatalogDescription(
+        'In order to obtain one please go to https://records.example.edu/ and print it as a PDF file.',
+      ),
+    ).toBe('In order to obtain one please go to records.example.edu and print it as a PDF file.');
+  });
+
+  it('keeps the terminal period after a url so the next sentence is not glued on', () => {
+    expect(
+      sanitizeCatalogDescription(
+        'For details about the review process and requirements go to http://www.example.edu/review/projects.pdf. Students may only receive the award once.',
+      ),
+    ).toBe(
+      'For details about the review process and requirements go to www.example.edu/review/projects.pdf. Students may only receive the award once.',
+    );
+  });
+
+  it('keeps the object of "available at" when prose follows it', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Our analysis code is available at https://code.example.org/lab/tool and is used by many groups.',
+      ),
+    ).toBe('Our analysis code is available at code.example.org/lab/tool and is used by many groups.');
+  });
+
+  it('still drops a sentence-initial pointer and an adjunct url', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Studies memory circuits. See https://lab.example.edu for more details.',
+      ),
+    ).toBe('Studies memory circuits.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The lab studies gene regulation and shares protocols at protocols.io, with the wider community.',
+      ),
+    ).toBe('The lab studies gene regulation and shares protocols with the wider community.');
+  });
+
+  it('closes a sentence cleanly when a trailing url and its parenthesis are removed', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'For research in mathematics, consider applying to the summer math program, https://math.example.edu/summer. For neuroscience, consider the Undergrad Fellowships (https://neuro.example.edu/fellows). Stipend support is granted for ten weeks.',
+      ),
+    ).toBe(
+      'For research in mathematics, consider applying to the summer math program. For neuroscience, consider the Undergrad Fellowships. Stipend support is granted for ten weeks.',
+    );
+  });
+
+  it('never keeps a query string, fragment, credential or port in the readable form', () => {
+    expect(
+      readableLinkTarget('https://user:secret@portal.example.edu:8443/apply/?session=abc#form'),
+    ).toBe('portal.example.edu/apply');
+    expect(readableLinkTarget('www.example.edu/path(1)')).toBe('www.example.edu/path(1)');
+  });
+
+  it('shortens an over-long link target to its host', () => {
+    const longPath = `/${'segment/'.repeat(12)}file.pdf`;
+    expect(readableLinkTarget(`https://files.example.edu${longPath}`)).toBe('files.example.edu');
+  });
+
+  it.each([
+    ['javascript:alert(1)', 'javascript:'],
+    ['data:text/html;base64,PGI+', 'data:'],
+    ['vbscript:msgbox(1)', 'vbscript:'],
+  ])('replaces an unsafe %s link target with a neutral phrase', (target, scheme) => {
+    const served = stripBibliographicReferenceArtifacts(
+      `To finish the application please go to ${target} and submit the completed budget form.`,
+    );
+    expect(served).toBe(
+      'To finish the application please go to the linked page and submit the completed budget form.',
+    );
+    expect(served).not.toContain(scheme);
+    expect(readableLinkTarget(target)).toBe('the linked page');
+  });
+
+  it('removes an unsafe scheme token that is not the object of its sentence', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The fellowship funds summer research abroad javascript:void(0) for juniors and seniors.',
+      ),
+    ).toBe('The fellowship funds summer research abroad for juniors and seniors.');
+  });
+
+  it('leaves a "Data:" label followed by prose untouched', () => {
+    const prose = 'Data: we collect survey responses from many students across campus.';
+    expect(stripBibliographicReferenceArtifacts(prose)).toBe(prose);
   });
 });
 
