@@ -879,6 +879,85 @@ export const isMapOrPublicityPageSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+const COURSE_PAGE_PARENT_SEGMENT = /^courses?$/i;
+
+const COURSE_CATALOG_HOSTS: readonly string[] = ['courses.yale.edu', 'coursetable.com'];
+
+const POSTING_PAGE_SEGMENT =
+  /^(?:jobs?|job-openings?|job-postings?|open-positions?|positions?|openings?|employment|careers?|hiring|vacanc(?:y|ies)|post-?doc(?:toral)?-(?:positions?|openings?|fellowships?))$/i;
+
+const CLINICAL_PRACTICE_HOSTS: readonly string[] = ['yalemedicine.org', 'ynhh.org', 'ynhhs.org'];
+
+const PATIENT_CARE_PATH_SEGMENT =
+  /^(?:patients?|for-patients|care|patient-care|patient-services|clinical-services?|clinical-care)$/i;
+
+const RESEARCH_OR_LAB_PATH_SEGMENT = /research|^labs?$/i;
+
+const parsedSourceUrl = (url?: string | null): URL | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+  try {
+    return new URL(normalized);
+  } catch {
+    return null;
+  }
+};
+
+const bareHostname = (parsed: URL): string => parsed.hostname.toLowerCase().replace(/\.$/, '');
+
+const pathSegments = (parsed: URL): string[] => parsed.pathname.split('/').filter(Boolean);
+
+/**
+ * The course, posting and patient-care page rules. Mirrored by `isCoursePageUrl`,
+ * `isPostingPageUrl` and `isPatientCarePageUrl` in server/src/utils/researchHomeWebsiteUrl.ts,
+ * which refuse the same pages as a stored website and as a lead's member website; parity is
+ * pinned by `contracts/inadmissibleWebsitePages.cases.json`, which both suites read (#5376).
+ */
+export const isCoursePageSourceUrl = (url?: string | null): boolean => {
+  const parsed = parsedSourceUrl(url);
+  if (!parsed) return false;
+  if (COURSE_CATALOG_HOSTS.includes(bareHostname(parsed).replace(/^www\./, ''))) return true;
+  const segments = pathSegments(parsed);
+  return segments.some(
+    (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
+  );
+};
+
+export const isPostingPageSourceUrl = (url?: string | null): boolean => {
+  const parsed = parsedSourceUrl(url);
+  if (!parsed) return false;
+  return pathSegments(parsed).some((segment) => POSTING_PAGE_SEGMENT.test(segment));
+};
+
+export const isPatientCarePageSourceUrl = (url?: string | null): boolean => {
+  const parsed = parsedSourceUrl(url);
+  if (!parsed) return false;
+  const host = bareHostname(parsed);
+  if (
+    CLINICAL_PRACTICE_HOSTS.some((clinical) => host === clinical || host.endsWith(`.${clinical}`))
+  ) {
+    return true;
+  }
+  const segments = pathSegments(parsed);
+  if (segments.some((segment) => RESEARCH_OR_LAB_PATH_SEGMENT.test(segment))) return false;
+  return segments.some((segment) => PATIENT_CARE_PATH_SEGMENT.test(segment));
+};
+
+/**
+ * A page the server never serves as this row's website: a course page for any row, and a
+ * posting or patient-care page for a lab or person-scoped row. The detail page refuses the
+ * same page as its website button and its headline official-page action, so a row whose
+ * stored website the server cleared does not offer the page one button over (#5376).
+ */
+export const isRefusedResearchWebsitePageUrl = (
+  url?: string | null,
+  entityType?: string,
+): boolean => {
+  if (isCoursePageSourceUrl(url)) return true;
+  if (!PERSON_SCOPED_CITING_ENTITY_TYPES.has((entityType || '').toUpperCase())) return false;
+  return isPostingPageSourceUrl(url) || isPatientCarePageSourceUrl(url);
+};
+
 const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
 
 const eligibleOutreachSources = (
@@ -933,6 +1012,7 @@ const eligibleOutreachSources = (
     if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
     if (isPressOrNewsSourceUrl(source.url)) return false;
     if (isMapOrPublicityPageSourceUrl(source.url)) return false;
+    if (isRefusedResearchWebsitePageUrl(source.url, entityType)) return false;
     /**
      * This slot means "this research's own website". Once the page links a person's
      * profile, another profile is the wrong KIND of thing for it, not merely a
@@ -1024,6 +1104,7 @@ export const resolveOutreachOfficialSource = (
 
 interface DecisionProfileGroup {
   leadIdentityStatus?: string;
+  entityType?: string;
   websiteUrl?: string;
   website?: string;
   sourceUrls?: unknown;
@@ -1087,6 +1168,7 @@ export const resolveDecisionProfileUrl = (
       if (!admits(url)) return false;
       if (isPressOrNewsSourceUrl(url)) return false;
       if (isMapOrPublicityPageSourceUrl(url)) return false;
+      if (isRefusedResearchWebsitePageUrl(url, group?.entityType)) return false;
       if (isDepartmentRosterProvenanceUrl(url)) return false;
       if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) return false;
       const destination = normalizeActionDestination(url);

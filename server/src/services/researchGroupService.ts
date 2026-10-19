@@ -51,7 +51,10 @@ import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
+import {
+  isDisallowedResearchEntitySourceUrl,
+  isInadmissiblePersonWebsiteUrl,
+} from '../utils/researchHomeWebsiteUrl';
 import { isLaneDiscoveryEndpointUrl, servedGrantPageUrl } from '../utils/laneDiscoveryEndpointUrl';
 import { servedCurrentFunding } from './servedCurrentFunding';
 import {
@@ -2577,6 +2580,16 @@ function publicMemberKeyForResearchDetail(
     .slice(0, 160);
 }
 
+/**
+ * The first candidate a lead card may link as the member's own website: a public URL that is
+ * not a course, posting or patient-care page (#5376).
+ */
+export function servableMemberWebsite(...candidates: unknown[]): string | undefined {
+  return candidates
+    .map((candidate) => publicHttpUrl(candidate))
+    .find((url) => url && !isInadmissiblePersonWebsiteUrl(url));
+}
+
 function publicMemberUserForResearchDetail(user: any): any {
   const publicUser: Record<string, any> = {};
   const imageUrl = user?.imageUrl || user?.image_url || '';
@@ -2592,7 +2605,7 @@ function publicMemberUserForResearchDetail(user: any): any {
   addPublicMemberField(publicUser, 'primary_department', primaryDepartment);
   addPublicMemberProfileUrls(publicUser, user?.profileUrls || user?.profile_urls);
   if (!hasPublicMemberProfileUrls(publicUser)) {
-    const website = publicHttpUrl(user?.websiteUrl) || publicHttpUrl(user?.website);
+    const website = servableMemberWebsite(user?.websiteUrl, user?.website);
     if (website) {
       publicUser.website = website;
       publicUser.websiteUrl = website;
@@ -2654,10 +2667,10 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
     addPublicMemberProfileUrls(publicUser, { official: officialProfileUrl });
   }
   if (!hasPublicMemberProfileUrls(publicUser)) {
-    const website =
-      publicHttpUrl(
-        canonicalProfileLinkUrl(entry.profileLinks, CANONICAL_PROFILE_LINK_WEBSITE_KINDS),
-      ) || publicHttpUrl(entry.websiteUrl);
+    const website = servableMemberWebsite(
+      canonicalProfileLinkUrl(entry.profileLinks, CANONICAL_PROFILE_LINK_WEBSITE_KINDS),
+      entry.websiteUrl,
+    );
     if (website) {
       publicUser.website = website;
       publicUser.websiteUrl = website;

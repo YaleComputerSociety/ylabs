@@ -1139,6 +1139,11 @@ The refusal is `patient-care-page`, a write-blocking arm of `researchHomeWebsite
 The website backfill's promote and unservable arms and the detail payload consult the same predicate, and so do the harvest-side screens: the shared name authority, the roster lane's lab-link extractor and entry boundary, the official-profile lane's research-home screen, and the lab-site search's clinical-directory filter.
 An organization row keeps its own clinic page, the scope the umbrella-page rule uses.
 It is a stored-data fix: the data operation is `research-entity:rematerialize` scoped to the rows whose stored `websiteUrl` matches, a re-gate of any row whose tier changes, a re-read through the detail route, and a Development search sync.
+The legacy `website` field and a lead's member website follow it too (#5376).
+The materializer declines and clears a `website` in `isWithheldResearchWebsiteUrl`, the set the detail payload withholds, and leaves a profile page there, which the detail page reads as the lead's official profile link.
+The user materializer ignores and clears a member website that `isInadmissiblePersonWebsiteUrl` refuses (a course, posting or patient-care page), and the roster accessor and member serializers never serve one.
+The client refuses the same pages as the website button and the headline actions, pinned to the server by `contracts/inadmissibleWebsitePages.cases.json`.
+That data operation is `research-entity:rematerialize` over the rows storing a withheld `website`, then user materialization of every `user` key that joins a researcher storing a refused member website.
 
 ### Fellowship field absence: how a program lane withdraws a value (#4230)
 

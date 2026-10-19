@@ -1,0 +1,45 @@
+{
+  "$comment": "Shared behavioural contract for the course, posting and patient-care page categories (#5213, #5364, #5376). server/src/utils/researchHomeWebsiteUrl.ts and client/src/utils/researchDetailSources.ts carry independent copies of the same rules, because the server refuses the page as a stored website and as a lead's member website while the client refuses it as the detail page's website button and headline action. Both suites read this table, so a divergence fails on both sides. Every host label and path leaf below is synthetic except the named clinical-practice and course-catalog hosts.",
+  "patientCare": {
+    "refused": [
+      { "name": "a clinical-practice department page", "url": "https://www.yalemedicine.org/departments/example-care-center" },
+      { "name": "a clinical-practice host root", "url": "https://yalemedicine.org/" },
+      { "name": "a hospital service page", "url": "https://www.ynhh.org/example-hospital/services/example-care" },
+      { "name": "a hospital subdomain", "url": "https://example.ynhhs.org/example-service" },
+      { "name": "a school's patient program page", "url": "https://medicine.example.edu/examplecenter/patient/programs/example/" },
+      { "name": "a school's patient condition page", "url": "https://medicine.example.edu/exampledept/patient/conditions/example.aspx" },
+      { "name": "a clinical-care section page", "url": "https://exampledept.example.edu/care/services/example.aspx" },
+      { "name": "a clinical-service page", "url": "https://medicine.example.edu/exampledept/clinical-service/example-diagnostics/" }
+    ],
+    "kept": [
+      { "name": "a lab microsite", "url": "https://medicine.example.edu/lab/example/" },
+      { "name": "a lab microsite whose slug names clinical work", "url": "https://medicine.example.edu/lab/clinical-example/" },
+      { "name": "a research program under a clinics section", "url": "https://medicine.example.edu/exampledept/research/clinics-and-programs/example/" },
+      { "name": "a community program under a services section", "url": "https://medicine.example.edu/exampledept/services/community-programs/example/" },
+      { "name": "a path whose segment merely starts with patient", "url": "https://medicine.example.edu/exampledept/patient-oriented-research/example/" },
+      { "name": "a host whose registrable domain merely ends in a clinical host", "url": "https://notyalemedicine.org/example/" }
+    ]
+  },
+  "course": {
+    "refused": [
+      { "name": "a course page under a courses segment", "url": "https://exampledept.example.edu/courses/example-anatomy" },
+      { "name": "a course page under a course segment", "url": "https://exampledept.example.edu/course/example-ecology-101/" },
+      { "name": "a course-catalog host", "url": "https://courses.yale.edu/?details&srcdb=example" }
+    ],
+    "kept": [
+      { "name": "a bare courses listing", "url": "https://examplelab.example.edu/courses" },
+      { "name": "a research page whose segment merely contains course", "url": "https://exampledept.example.edu/research/coursework-and-examples/" }
+    ]
+  },
+  "posting": {
+    "refused": [
+      { "name": "a lab's jobs page", "url": "https://medicine.example.edu/lab/example/jobs/" },
+      { "name": "a positions page", "url": "https://sites.example.com/site/examplelab/home/positions" },
+      { "name": "a postdoctoral fellowship posting", "url": "https://examplelab.example.org/postdoc-fellowships/" }
+    ],
+    "kept": [
+      { "name": "a lab site root", "url": "https://examplelab.example.org/" },
+      { "name": "a page whose segment merely contains a posting word", "url": "https://examplelab.example.org/careers-in-science-outreach/" }
+    ]
+  }
+}

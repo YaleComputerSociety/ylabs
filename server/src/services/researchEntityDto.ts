@@ -29,15 +29,8 @@ import {
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
 import {
-  isCoursePageUrl,
   isDisallowedResearchEntitySourceUrl,
-  isInstitutionalPublicityPageUrl,
-  isMapOrDirectionsUrl,
-  isMultiTenantAcademicHostRootUrl,
-  isPatientCarePageCitedAsResearchWebsite,
-  isPostingPageCitedAsResearchWebsite,
-  isPressOrNewsHostUrl,
-  isUmbrellaPageCitedByPerson,
+  isWithheldResearchWebsiteUrl,
   withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -679,16 +672,7 @@ function derivePublicResearchEntityDto(
     if (group[field] !== undefined) {
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
-        const ownedByThisEntity =
-          !isMultiTenantAcademicHostRootUrl(url, hostOwnerIdentity) &&
-          !isUmbrellaPageCitedByPerson(url, hostOwnerIdentity) &&
-          !isPressOrNewsHostUrl(url) &&
-          !isMapOrDirectionsUrl(url) &&
-          !isInstitutionalPublicityPageUrl(url) &&
-          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity) &&
-          !isCoursePageUrl(url) &&
-          !isPatientCarePageCitedAsResearchWebsite(url, hostOwnerIdentity);
-        if (url && ownedByThisEntity) dto[field] = url;
+        if (url && !isWithheldResearchWebsiteUrl(url, hostOwnerIdentity)) dto[field] = url;
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {

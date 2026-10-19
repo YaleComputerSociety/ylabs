@@ -65,6 +65,7 @@ import {
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
   isSameActionHost,
+  isRefusedResearchWebsitePageUrl,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
@@ -1097,6 +1098,7 @@ const LabDetail = () => {
   const primaryWebsiteUrl =
     group.websiteUrl &&
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isRefusedResearchWebsitePageUrl(group.websiteUrl, group.entityType) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
       ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth)
       : undefined;

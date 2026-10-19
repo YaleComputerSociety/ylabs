@@ -13,7 +13,7 @@ import {
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { servableOrcid } from '../utils/orcid';
-import { isCoursePageUrl } from '../utils/researchHomeWebsiteUrl';
+import { isInadmissiblePersonWebsiteUrl } from '../utils/researchHomeWebsiteUrl';
 
 export interface ResearchEntityRosterEntry {
   researchEntityId: mongoose.Types.ObjectId;
@@ -98,7 +98,7 @@ const buildRosterEntry = (
       ? { primaryDepartment: person.profile.primaryDepartment }
       : {}),
     ...(person.profile?.imageUrl ? { imageUrl: person.profile.imageUrl } : {}),
-    ...(person.profile?.websiteUrl && !isCoursePageUrl(person.profile.websiteUrl)
+    ...(person.profile?.websiteUrl && !isInadmissiblePersonWebsiteUrl(person.profile.websiteUrl)
       ? { websiteUrl: person.profile.websiteUrl }
       : {}),
     ...(servableOrcid(person.identifiers?.orcid)
