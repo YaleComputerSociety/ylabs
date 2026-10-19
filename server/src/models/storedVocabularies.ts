@@ -204,3 +204,6 @@ export type LoginSignalBucket = (typeof loginSignalBuckets)[number];
 export const officialRosterUndergraduateStatuses = ['current', 'past'] as const;
 export type OfficialRosterUndergraduateStatus =
   (typeof officialRosterUndergraduateStatuses)[number];
+
+export const officialRosterConfigOrigins = ['static', 'derived'] as const;
+export type OfficialRosterConfigOrigin = (typeof officialRosterConfigOrigins)[number];

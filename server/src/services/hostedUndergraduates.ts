@@ -11,9 +11,22 @@ const boundedRosterText = (value: unknown, maxLength: number): string => {
   return text.length <= maxLength ? text : '';
 };
 
-export function servableRosterSnapshot(enrichment: any): Record<string, any> | null {
+export const DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV = 'DERIVED_UNDERGRAD_ROSTERS_SERVE';
+
+/**
+ * A roster the lane derived for a badged row, rather than one from the reviewed allowlist, is
+ * recorded but not served until an owner-graded sample clears it (#5278).
+ */
+export const derivedUndergradRostersServe = (): boolean =>
+  process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] === 'true';
+
+export function servableRosterSnapshot(
+  enrichment: any,
+  derivedRostersServe = derivedUndergradRostersServe(),
+): Record<string, any> | null {
   const snapshot = enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
   if (!['current', 'partial'].includes(snapshot?.state)) return null;
+  if (snapshot?.configOrigin === 'derived' && !derivedRostersServe) return null;
   return Array.isArray(snapshot?.undergraduates) ? snapshot : null;
 }
 
@@ -28,8 +41,11 @@ export function listedRosterUndergraduate(
   return { name, status };
 }
 
-export function rosterListsUndergraduates(enrichment: unknown): boolean {
-  const snapshot = servableRosterSnapshot(enrichment);
+export function rosterListsUndergraduates(
+  enrichment: unknown,
+  derivedRostersServe = derivedUndergradRostersServe(),
+): boolean {
+  const snapshot = servableRosterSnapshot(enrichment, derivedRostersServe);
   return Boolean(snapshot?.undergraduates.some(listedRosterUndergraduate));
 }
 
@@ -58,6 +74,10 @@ export function hasPastUndergradAdvisees(value: unknown): boolean {
  * counts too (#5232), read from the same snapshot the detail page lists them from. Unlike
  * that list it ignores the freshness window: "has hosted" is historical, and the stored
  * copy of this flag must not change with the clock.
+ *
+ * A derived roster never counts: the lane derives one only for a row that already carries
+ * this flag, so counting it would let the roster keep the flag alive after the evidence that
+ * earned it is gone (#5278).
  */
 export function entityHasHostedUndergraduates(entity: {
   pastUndergradAdvisees?: unknown;
@@ -66,7 +86,7 @@ export function entityHasHostedUndergraduates(entity: {
   rosterEnrichment?: unknown;
 }): boolean {
   if (hasPastUndergradAdvisees(entity.pastUndergradAdvisees)) return true;
-  if (rosterListsUndergraduates(entity.rosterEnrichment)) return true;
+  if (rosterListsUndergraduates(entity.rosterEnrichment, false)) return true;
   const count = Number(entity.currentUndergradCount);
   return (
     Number.isFinite(count) &&

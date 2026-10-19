@@ -85,6 +85,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `GATE_ARTIFACT_DIR` | No | Gate scorecard artifacts are read from and written to the operating system's temporary directory. | No |
 | `CORPUS_SNAPSHOT_DISABLED` | No | Unset means the in-process corpus quality snapshot runs; only `true` turns it off. | No |
 | `CORPUS_SNAPSHOT_MAX_AGE_HOURS` | No | The snapshot scheduler uses its default age before taking a new measurement. | No |
+| `DERIVED_UNDERGRAD_ROSTERS_SERVE` | No | Unset means a roster the lane derived for a badged row outside the reviewed allowlist is stored but not served; only `true` serves it, and it stays unset until an owner-graded sample clears derived rosters (#5278). | No |
 | `BETA_DATA_QUALITY_SCORECARD_PATH`, `BETA_REPAIR_QUEUE_REPORT_PATH`, `SCRAPER_INTEGRITY_SCORECARD_PATH`, `PROMOTION_COPY_DRY_RUN_REPORT_PATH`, `LAUNCH_TRUST_SCORECARD_PATH`, `LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH`, `LAUNCH_ACQUISITION_REPORT_PATH` | No | Each overrides one artifact path the admin operator board reads, which otherwise sits under `GATE_ARTIFACT_DIR`. | No |
 | `FEATURE_<FLAG>` | Per flag | One per entry in `RELEASE_FEATURE_FLAGS`, which is empty today. Only the exact string `true` turns a flag on (`docs/release-process.md`, "Holding one feature instead of the whole release"). | No |
 

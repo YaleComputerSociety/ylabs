@@ -34,6 +34,7 @@ import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExt
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
+import { createUndergradRosterDeriver } from './undergradRosterDerivation';
 import { ResearchAreaSourceExtractor } from './sources/researchAreaSourceExtractor';
 import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificationScraper';
 import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
@@ -76,7 +77,9 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CenterAffiliationLLMExtractor());
   o.register(new CenterDirectorLLMExtractor());
   o.register(new OfficialProfilePiBackfillScraper());
-  o.register(new OfficialResearchHomeRosterScraper());
+  o.register(
+    new OfficialResearchHomeRosterScraper(undefined, undefined, createUndergradRosterDeriver()),
+  );
   o.register(new ResearchAreaSourceExtractor());
   o.register(new LabSiteLeadVerificationScraper());
   o.register(new DirectoryAliasResolutionScraper());
