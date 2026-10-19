@@ -516,6 +516,7 @@ const DecisionSummary = ({
   const invitation = wayInWithheld ? undefined : undergradInvitationFromEntity(group);
   const hasEvidenceList =
     Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
+  const showsRail = hasEvidenceList || Boolean(principalInvestigator);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const actionLinks = resolveResearchDetailActionLinks({
@@ -579,7 +580,9 @@ const DecisionSummary = ({
         : 'Opens the Yale Directory in a new tab, outside y/labs.';
   return (
     <>
-      <section className={researchProfileSummaryCardClassName}>
+      <section
+        className={`${researchProfileSummaryCardClassName} ${showsRail ? '' : 'md:col-span-2'}`}
+      >
         <div>
           <SectionHeading>{summarySectionLabel(group)}</SectionHeading>
           {description ? (
@@ -663,41 +666,6 @@ const DecisionSummary = ({
             </figure>
           )}
         </div>
-      </section>
-
-      <section className={researchProfileContactRailClassName}>
-        {hasEvidenceList && (
-          <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
-            <ul className="mt-3 space-y-1 text-xs text-muted">
-              {grantSummary && <li>• {grantSummary}</li>}
-              {honors.recent && <li>• {honors.recent}</li>}
-              {honors.other && <li>• {honors.other}</li>}
-              {pastAdvisees.map((line) => (
-                <li key={line}>• {line}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {principalInvestigator && (
-          <div className="py-4 first:pt-0 last:pb-0">
-            <LeadSectionHeading
-              heading={leadSectionHeading(
-                [principalInvestigator],
-                leadRoleLabelForEntity(group, 'pi'),
-              )}
-            />
-            <div>
-              <LabMembersList
-                members={[principalInvestigator]}
-                singleColumn
-                entityDepartments={group.departments}
-                resolveMemberProfileUrl={() => leadCardProfileUrl}
-                resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
-              />
-            </div>
-          </div>
-        )}
         {wayInWithheld && (
           <EmeritusCurrentActivityNotice
             group={group}
@@ -706,12 +674,12 @@ const DecisionSummary = ({
           />
         )}
         {!wayInWithheld && showGetInvolvedBlock && (
-          <div className="py-4 first:pt-0 last:pb-0">
+          <div className="mt-6 border-t border-[var(--yr-line)] pt-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">
               How to get involved
             </p>
             {showsWebsiteCta ? (
-              <div className="mt-3 flex flex-col gap-2">
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
                   href={websiteUrl}
                   target="_blank"
@@ -742,7 +710,7 @@ const DecisionSummary = ({
                   This organization coordinates involvement centrally. Open its get-involved page to
                   see how undergraduates can take part, then reach out to introduce yourself.
                 </p>
-                <div className="mt-3 flex flex-col gap-2">
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   <a
                     href={officialSource.url}
                     target="_blank"
@@ -756,7 +724,7 @@ const DecisionSummary = ({
                 </div>
               </>
             ) : applyPageUrl ? (
-              <div className="mt-3 flex flex-col gap-2">
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
                   href={applyPageUrl}
                   target="_blank"
@@ -770,7 +738,7 @@ const DecisionSummary = ({
                 </a>
               </div>
             ) : showsProfileButton ? (
-              <div className="mt-3 flex flex-col gap-2">
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
                   href={profileUrl}
                   target="_blank"
@@ -783,7 +751,7 @@ const DecisionSummary = ({
                 </a>
               </div>
             ) : offersOfficialPage && officialSource ? (
-              <div className="mt-3 flex flex-col gap-2">
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
                   href={officialSource.url}
                   target="_blank"
@@ -827,6 +795,43 @@ const DecisionSummary = ({
           </div>
         )}
       </section>
+
+      {showsRail && (
+        <section className={researchProfileContactRailClassName}>
+          {hasEvidenceList && (
+            <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
+              <ul className="mt-3 space-y-1 text-xs text-muted">
+                {grantSummary && <li>• {grantSummary}</li>}
+                {honors.recent && <li>• {honors.recent}</li>}
+                {honors.other && <li>• {honors.other}</li>}
+                {pastAdvisees.map((line) => (
+                  <li key={line}>• {line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {principalInvestigator && (
+            <div className="py-4 first:pt-0 last:pb-0">
+              <LeadSectionHeading
+                heading={leadSectionHeading(
+                  [principalInvestigator],
+                  leadRoleLabelForEntity(group, 'pi'),
+                )}
+              />
+              <div>
+                <LabMembersList
+                  members={[principalInvestigator]}
+                  singleColumn
+                  entityDepartments={group.departments}
+                  resolveMemberProfileUrl={() => leadCardProfileUrl}
+                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+                />
+              </div>
+            </div>
+          )}
+        </section>
+      )}
     </>
   );
 };

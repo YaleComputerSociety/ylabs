@@ -348,6 +348,7 @@ import {
   recordSpecificApplicationPortalIdentity,
   isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
+  isWithheldResearchWebsiteUrl,
   withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
@@ -403,8 +404,13 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
+import {
+  embeddedNetidContradictsCandidate,
+  netidsEmbeddedInUserEvidence,
+} from './utils/embeddedNetidContradiction';
 import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
+import { reconcileRosterMintWithdrawalsFromRun } from './rosterMintWithdrawal';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterAffiliationHandOffFromRun } from './centerAffiliationHandOff';
 import {
@@ -7053,7 +7059,14 @@ export async function joinUserIdentityToExistingResearcher(
       (resolution.status === 'ambiguous' && resolution.everyCandidateNamesSomeoneElse === true);
     if (resolution.status === 'matched' && resolution.researcherId) {
       const nameMatch = await Researcher.findById(resolution.researcherId);
-      if (nameMatch && !officialPersonPagesContradictNameMatch(materializationObs, nameMatch)) {
+      if (
+        nameMatch &&
+        !officialPersonPagesContradictNameMatch(materializationObs, nameMatch) &&
+        !embeddedNetidContradictsCandidate(
+          netidsEmbeddedInUserEvidence(identifier.entityKey, materializationObs),
+          nameMatch.identifiers?.netid,
+        )
+      ) {
         researcher = nameMatch;
         identityJoin = 'person-name';
       }
@@ -8623,6 +8636,34 @@ function documentAsProjected(
   return view;
 }
 
+// The website arms run after the identity derivations, so a value staged here may still be
+// one they refuse, and a profile page they never store must not back a lab the gate, which
+// reads the stored row, holds as unbacked. Each field is screened as its own arm screens
+// it, and a locked field is one no arm touches.
+function withWebsitesThePassKeeps(
+  projected: Record<string, any>,
+  manuallyLockedFields: readonly string[],
+): Record<string, any> {
+  const identity: ResearchEntityHostOwnerIdentity = {
+    name: projected.name,
+    displayName: projected.displayName,
+    entityType: projected.entityType,
+    kind: projected.kind,
+  };
+  const kept = (field: 'websiteUrl' | 'website', refuses: (value: string) => boolean) => {
+    const value = projected[field];
+    if (manuallyLockedFields.includes(field)) return value;
+    return typeof value === 'string' && value.trim() && refuses(value) ? '' : value;
+  };
+  return {
+    ...projected,
+    websiteUrl: kept('websiteUrl', (value) =>
+      Boolean(researchHomeWebsiteUrlWriteRefusal(value, identity)),
+    ),
+    website: kept('website', (value) => isWithheldResearchWebsiteUrl(value, identity)),
+  };
+}
+
 /**
  * A `LAB` row whose lab name nothing backs is one person's faculty research, so it is
  * re-derived as `FACULTY_RESEARCH_AREA` under the person-scoped name on every resolve.
@@ -8664,7 +8705,13 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
   ) {
     return 0;
   }
-  if (!isUnbackedLabNameShell(projected, input.leadPersonName)) return 0;
+  if (
+    !isUnbackedLabNameShell(
+      withWebsitesThePassKeeps(projected, input.manuallyLockedFields),
+      input.leadPersonName,
+    )
+  )
+    return 0;
 
   const facultyResearchIdentity = {
     entityType: 'FACULTY_RESEARCH_AREA',
@@ -12126,6 +12173,20 @@ export async function materializeFromRun(
     // row serving.
     console.info(
       `[faculty-departure] reconciled ${departureResult.governedDepartments.length} department(s): ${departureResult.suppressed} suppressed, ${departureResult.cleared} cleared, ${departureResult.held} held on Yale-profile evidence, ${departureResult.planned.record_first_absence} first absence(s) recorded, ${departureResult.regatedEntities} row(s) re-gated`,
+    );
+  }
+  const rosterMintWithdrawal = await reconcileRosterMintWithdrawalsFromRun(
+    scrapeRunId,
+    { dryRun: options.dryRun },
+    {
+      rematerializeResearchEntity: async (entityKey) => {
+        await materializeEntity('researchEntity', { entityKey }, options);
+      },
+    },
+  );
+  if (rosterMintWithdrawal.outcome !== 'no-roster-health-observations') {
+    console.info(
+      `[roster-mint-withdrawal] ${rosterMintWithdrawal.outcome}: ${JSON.stringify(rosterMintWithdrawal.counts)}`,
     );
   }
   const ysmLabDelistingResult = await reconcileYsmLabDelistingFromRun(scrapeRunId, options);

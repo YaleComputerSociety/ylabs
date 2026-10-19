@@ -1262,7 +1262,7 @@ function profileAreaNamesForVisibilityPi(firstName: unknown, lastName: unknown):
   return [`${first} ${last} Lab`, `${first} ${last} Laboratory`, `${first} ${last} Research`];
 }
 
-function buildNameOnlyVisibilityDedupeRows(args: {
+export function buildNameOnlyVisibilityDedupeRows(args: {
   entities: any[];
   leadsByEntityId: Map<string, any[]>;
 }): ResearchEntityPiDedupeRow[] {
@@ -1278,11 +1278,15 @@ function buildNameOnlyVisibilityDedupeRows(args: {
     .map((entry): ResearchEntityPiDedupeRow | null => {
       const [normalizedName, entities] = entry;
       const piUserIds = new Set<string>();
+      const piLedEntityIds = new Set<string>();
       for (const entity of entities) {
-        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) ||
-          []) {
+        const entityId = studentVisibilityGateDocumentId(entity._id);
+        for (const lead of args.leadsByEntityId.get(entityId) || []) {
           const userId = studentVisibilityGateDocumentId(lead.userId);
-          if (lead.role === 'pi' && userId) piUserIds.add(userId);
+          if (lead.role === 'pi' && userId) {
+            piUserIds.add(userId);
+            piLedEntityIds.add(entityId);
+          }
         }
       }
       if (piUserIds.size > 1) return null;
@@ -1291,6 +1295,7 @@ function buildNameOnlyVisibilityDedupeRows(args: {
       return {
         userId,
         normalizedName,
+        personLedEntityIds: [...piLedEntityIds],
         entities: entities.map(serializeEntityForDedupe),
       };
     })

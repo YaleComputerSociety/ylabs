@@ -37,6 +37,7 @@ import {
   pageStatesPersonAsPrincipalInvestigator,
   personIdentityTokens,
   personScopedResearchEntityNameNamesSomethingElse,
+  nameIsTheRecordsOwnKeyDesignation,
   personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
   namesASupportServiceUnit,
@@ -2401,5 +2402,89 @@ describe('a URL path segment that only spells the lab name is not evidence of a 
     expect([
       ...personSurnamesFromDisplayNames(['Quill Lab', 'Avery Sloan', 'Rowan Group']),
     ]).toEqual(['sloan']);
+  });
+});
+
+describe('a programme name the record key spells is the record own designation', () => {
+  const programmeLab = {
+    entityType: 'LAB',
+    kind: 'lab',
+    slug: 'ysm-quorvane',
+    personName: 'Avery Fixture',
+    candidateName: 'Quorvane Imaging Program',
+    websiteUrl: 'https://medicine.yale.edu/lab/quorvane/',
+    recordCitedUrls: ['https://medicine.yale.edu/lab/quorvane/'],
+    knownPersonSurnames: new Set<string>(),
+  };
+  const programmeOnPersonKey = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    slug: 'dept-quorvane-associate-program-avery-fixture-phd',
+    personName: 'Avery Fixture',
+    candidateName: 'Quorvane Associate Program',
+    websiteUrl: 'https://medicine.yale.edu/fixture-studies/',
+    recordCitedUrls: ['https://medicine.yale.edu/fixture-studies/'],
+    knownPersonSurnames: new Set<string>(),
+  };
+
+  it('reads a key minted for the organization as the name own designation', () => {
+    expect(
+      nameIsTheRecordsOwnKeyDesignation({
+        name: programmeLab.candidateName,
+        slug: programmeLab.slug,
+        leadPersonName: programmeLab.personName,
+      }),
+    ).toBe(true);
+    expect(personScopedResearchEntityNameNamesSomethingElse(programmeLab)).toBe(false);
+  });
+
+  it('does not read a key minted for the lead as a programme designation', () => {
+    expect(
+      nameIsTheRecordsOwnKeyDesignation({
+        name: programmeOnPersonKey.candidateName,
+        slug: programmeOnPersonKey.slug,
+        leadPersonName: programmeOnPersonKey.personName,
+      }),
+    ).toBe(false);
+    expect(personScopedResearchEntityNameNamesSomethingElse(programmeOnPersonKey)).toBe(true);
+  });
+
+  it('refuses the programme name without an own lab site that spells the key', () => {
+    expect(
+      personScopedResearchEntityNameNamesSomethingElse({
+        ...programmeLab,
+        websiteUrl: 'https://medicine.yale.edu/radiology/',
+        recordCitedUrls: ['https://medicine.yale.edu/radiology/'],
+      }),
+    ).toBe(true);
+  });
+
+  it('needs every distinctive key word in the name, so a parent centre stays a graft', () => {
+    expect(
+      nameIsTheRecordsOwnKeyDesignation({
+        name: 'Yale Quorvane Center',
+        slug: 'ysm-quorvane-imaging-lab',
+        leadPersonName: 'Avery Fixture',
+      }),
+    ).toBe(false);
+  });
+
+  it('substitutes the lead for a programme name on a person key and keeps the organization own', () => {
+    expect(
+      personScopedResearchEntityNameFromLeadPersonName({
+        entityType: 'FACULTY_RESEARCH_AREA',
+        slug: programmeOnPersonKey.slug,
+        leadPersonName: 'Avery Fixture',
+        currentName: programmeOnPersonKey.candidateName,
+      }),
+    ).toBe('Avery Fixture Faculty Research');
+    expect(
+      personScopedResearchEntityNameFromLeadPersonName({
+        entityType: 'LAB',
+        slug: programmeLab.slug,
+        leadPersonName: programmeLab.personName,
+        currentName: programmeLab.candidateName,
+      }),
+    ).toBe('');
   });
 });

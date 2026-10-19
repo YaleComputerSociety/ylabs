@@ -91,6 +91,13 @@ export function isProfileAreaShellEntity(
   );
 }
 
+export function isCoreFacilityEntity(entity: ProfileAreaDuplicateEntity): boolean {
+  return (
+    (entity.entityType || '').toUpperCase() === 'CORE_FACILITY' ||
+    (entity.kind || '').toLowerCase() === 'core_facility'
+  );
+}
+
 const centerOrInstituteEntityTypes = new Set(['CENTER', 'INSTITUTE']);
 const centerOrInstituteKinds = new Set(['center', 'institute']);
 
@@ -102,13 +109,17 @@ export function isCenterOrInstituteEntity(entity: ProfileAreaDuplicateEntity): b
 
 /**
  * An organization a professor directs or belongs to, which a faculty research area must
- * never fold into (#1957). A centre or institute is one by type alone; an initiative or a
- * core facility is one only when its name also denotes an organization, because a
+ * never fold into (#1957). A centre, institute or core facility is one by type alone; an
+ * initiative is one only when its name also denotes an organization, because a
  * person-keyed shell typed `INITIATIVE` and titled after the person is a duplicate of
- * that person's other row rather than an organization (#5085).
+ * that person's other row rather than an organization (#5085). A core facility is a
+ * shared service its director runs, and many are named for the service alone
+ * ("Rapid Case Ascertainment"), so a name test let the director's own research row
+ * read as its duplicate.
  */
 export function isOrganizationalHomeEntity(entity: ProfileAreaDuplicateEntity): boolean {
   if (isCenterOrInstituteEntity(entity)) return true;
+  if (isCoreFacilityEntity(entity)) return true;
   return (
     isOrganizationalResearchEntity({ entityType: entity.entityType }) &&
     nameDenotesOrganization(entity.name)

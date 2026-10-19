@@ -101,7 +101,9 @@ Program data stays sign-in only: the server still answers 401 to a signed-out re
 The `/research` programs handoff renders `invisible` with the same copy while a programs-intent search loads, so the results section no longer moves down when it appears (#4524).
 - A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
 `ResearchProfileSkeleton` exports the profile's page, grid and column classes, and `labDetail.tsx` uses the same constants, because a reused container that changes width scored 0.093 at 1440px (#4268).
-The profile body is a page-level grid from those constants: the summary card and then the team, affiliations, and sources in the left column, with the evidence, lead, and "How to get involved" rail beside them from `md` up.
+The profile body is a page-level grid from those constants: from `md` up, the summary card and the evidence and lead rail share the first row and both stretch to its height, so their bottom edges always line up.
+"How to get involved" sits at the bottom of the summary card rather than in the rail, because in the rail it made the rail 130 to 240px taller than the summary on most profiles, and equal heights then left a blank box in the summary card.
+The team, affiliations, similar research, and sources sit below in a full-width second row, so a tall rail never squeezes them into a narrow column.
 The rail used to sit inside the summary card, so a short summary left a large empty area in the card beside a tall rail.
 A lead email in that rail stays on one line, truncating with the full address in its accessible name and `title`, because a wrapped address read as broken.
 Loading copy takes the loaded copy's shape and a control whose label swaps while it loads stacks both labels in one grid cell, because at 375px a two-line loading summary and a narrower "Searching…" button moved the `/research` results when a search resolved (#4796).

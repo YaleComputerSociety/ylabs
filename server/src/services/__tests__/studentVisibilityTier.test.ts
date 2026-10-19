@@ -423,6 +423,51 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('unusable_name');
   });
 
+  it('serves a lab under the programme name its own lab site and key spell', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'programme-named-lab',
+        name: 'Quorvane Imaging Program',
+        slug: 'ysm-quorvane',
+        entityType: 'LAB',
+        kind: 'lab',
+        shortDescription:
+          'Uses positron emission tomography to study synaptic density in the brain.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering positron emission tomography of synaptic density.',
+        websiteUrl: 'https://medicine.yale.edu/lab/quorvane/',
+        sourceUrls: ['https://medicine.yale.edu/lab/quorvane/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('unusable_name');
+  });
+
+  it('holds a person record titled with the programme its roster key names', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'programme-on-person-key',
+        name: 'Quorvane Associate Program',
+        slug: 'dept-quorvane-associate-program-avery-sloan-phd',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        shortDescription: 'Studies clinical training outcomes in associate programmes.',
+        fullDescription:
+          'Source-backed research profile with enough detail for student display, covering clinical training outcomes.',
+        websiteUrl: 'https://medicine.yale.edu/quorvane/',
+        sourceUrls: ['https://medicine.yale.edu/quorvane/'],
+      },
+      leadMembers: [{ userId: 'yz53', role: 'pi', name: 'Avery Sloan' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).toContain('unusable_name');
+  });
+
   it('holds a person-scoped record named after an umbrella organization it does not lead', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

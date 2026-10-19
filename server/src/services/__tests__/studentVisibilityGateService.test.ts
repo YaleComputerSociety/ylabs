@@ -15,6 +15,7 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 }));
 
 import {
+  buildNameOnlyVisibilityDedupeRows,
   buildStudentVisibilityGateApplyOps,
   evaluateStudentVisibilityGateLeadResolution,
   isProfileAreaDuplicateCounterpart,
@@ -30,6 +31,10 @@ import {
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
+import {
+  buildResearchEntityPiDedupePlan,
+  samePiDuplicateEntityIdsRestrictedToPiLed,
+} from '../../scripts/researchEntityPiDedupeCore';
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -780,6 +785,44 @@ describe('studentVisibilityGateService', () => {
         duplicateRiskEntityIds,
       }),
     ]).toEqual(['atoz-owner']);
+  });
+
+  describe('a lead lab and a lead-less row carrying its name', () => {
+    const entities = [
+      {
+        _id: 'lead-lab',
+        slug: 'ysm-faculty-wren-ortolan',
+        name: 'Ortolan Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://ortolanlab.example.org',
+        sourceUrls: ['https://medicine.example.edu/profile/wren-ortolan/'],
+      },
+      {
+        _id: 'member-row',
+        slug: 'ysm-faculty-juno-vega',
+        name: 'Ortolan Lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://www.ortolanlab.example.org/',
+        sourceUrls: [
+          'https://medicine.example.edu/profile/juno-vega/',
+          'https://www.ortolanlab.example.org/',
+        ],
+        fullDescription: 'Studies coastal sediment genomics with field sampling.',
+      },
+    ];
+    const leadsByEntityId = new Map([['lead-lab', [{ role: 'pi', userId: 'user-ortolan' }]]]);
+
+    it('holds the lead-less row as the duplicate rather than the lab its lead leads', () => {
+      const rows = buildNameOnlyVisibilityDedupeRows({ entities, leadsByEntityId });
+      const isPiLed = (userId: string, entityId: string) =>
+        userId === 'user-ortolan' && entityId === 'lead-lab';
+
+      expect(
+        samePiDuplicateEntityIdsRestrictedToPiLed(buildResearchEntityPiDedupePlan(rows), isPiLed),
+      ).toEqual(['member-row']);
+    });
   });
 
   describe("a director's profile cited by an organization and by the director's own row (#5085)", () => {

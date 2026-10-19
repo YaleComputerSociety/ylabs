@@ -15,6 +15,27 @@ Decided:
 - **`center-affiliation-roster` keeps leaving advisory sections out**, and an advisory seat is never a reason to keep or restore an affiliation edge.
 
 A person the same page also lists under a membership heading is still listed through that listing, because the rule is about the advisory section, not the person.
+## 2026-10-19: The Roster Lane Withdraws A Row It No Longer Mints (#5380)
+
+The owner decided on 2026-10-19 that the department roster lane archives a row it minted earlier and no longer mints, when no other lane holds the row up.
+This narrows rule 3 of the 2026-09-24 #3359 entry, where an archive is operator judgement, to exclude this lane-owned case, on the #4110 precedent of the fellowships lane archiving its own mint.
+It is the lane's own claim being withdrawn, not a judgement about one row: the lane minted the row from a read that later proved wrong, and two complete reads now say it would not.
+Measured on Development on 2026-10-19: 299 of 1,177 live rows minted by `dept-faculty-roster` were not re-minted by the 2026-10-17 full run, and the person was re-read in 248 of them.
+Of those, 154 are `student_ready` on other lanes' evidence, and 44 school-wide public health rows held on `citations_identify_no_person` exist only because an August run read a shared giving page as every person's lab website (#2460); replaying the current lane on their profiles found nothing to mint for 43 and a 404 for 1.
+
+Decided:
+
+- **The lane says so; silence never does.**
+  A read records a row's key as `withdrawnEntityKeys` on the department's roster-health snapshot only when it fetched the person's own profile, the profile named the person, and the mint came back empty without a title refusal.
+  An unread or refused profile, a profile-only lane and a programme lane record nothing.
+- **Two admitted reads, a yield guard and a ceiling.**
+  A row is withdrawn only when the two newest complete, over-the-wire reads of its department both record it and neither minted it.
+  The department is frozen when its discovery or its count of profiles read fell below 0.75 of the previous admitted read, or when more than half of the live rows the read reached would be withdrawn at once.
+- **Any other evidence keeps the row.**
+  A served tier, a description, a website, a lead edge from another lane, a non-empty live observation from another lane, or a row merged into it each keep it; page-read bookkeeping, the lead-school inheritance derivation, and a website the roster lane itself still asserts do not.
+- **The lane reverses its own archive.**
+  A row archived for this reason is restored and rematerialized when an admitted read mints it again.
+- A withdrawn key counts as still listed for the faculty-departure lane, because the person is on the roster.
 
 ## 2026-10-19: An Official Roster Address Is Enough To Create A Researcher
 
@@ -61,7 +82,8 @@ Nothing is computed: the badge repeats what the lab's own page states, so it is 
 The `lab-site-undergrad-invitation` lane reads each lab site's home page and up to four linked join, people or opportunities pages, and makes no model call.
 `server/src/scrapers/utils/undergradInvitation.ts` judges each sentence that names undergraduates.
 It refuses closed or filled wording, past or roster lines, course, degree and program mentions, other groups' hiring, and awards.
-It also refuses a stated term that has passed ("Fall 2019 - Summer 2020"), whether in the sentence or in a short heading block directly above it, while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
+It also refuses lab-news welcomes of a cohort or a named person, a bio's own undergraduate years, a job ad's list of prior experience, and course-advising lines, because some of those sat beside a student's name.
+It also refuses a stated term that has passed ("Fall 2019 - Summer 2020", or a month and year), whether in the sentence or in a short heading block directly above it, while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
 The lane refuses a quote that three or more rows share, because that is a department or program page repeated across faculty rows rather than one lab's invitation, and it skips a page `quotePageIsAboutAnotherEntity` places on another entity.
 The shared count spans the stored live observations as well as the current run, so a narrow run cannot serve a program page, and a refused row asserts no value so a later run withdraws a quote an earlier one emitted.
 A row with an unreadable linked page states no absence, and emits an invitation found on the pages that loaded only when it is an active opening or the row has no live quote, because a transient fetch failure is not evidence that an invitation is gone or weaker.
