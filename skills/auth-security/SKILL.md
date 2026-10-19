@@ -400,6 +400,7 @@ Custom errors in `server/src/utils/errors.ts`:
 | `NotFoundError` | 404 |
 | `ObjectIdError` | 404 |
 | `IncorrectPermissionsError` | 403 |
+| `ConflictError` | 409 |
 | `SearchUnavailableError` | 503, with `Retry-After` |
 
 The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, an unavailable MongoDB (lost topology, server selection or socket timeout) to 503 with `Retry-After`, and everything else to 500.
