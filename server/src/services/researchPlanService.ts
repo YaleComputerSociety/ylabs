@@ -25,7 +25,7 @@ import {
   servedResearchEntityCardForRow,
 } from './researchEntityDto';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { NotFoundError } from '../utils/errors';
+import { ConflictError, NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
 
 const RESEARCH_ENTITY_TARGET_KIND = 'RESEARCH_ENTITY' as const;
@@ -133,6 +133,7 @@ export interface ResearchPlanView {
 }
 
 export interface ResearchPlanInput {
+  expectedUpdatedAt?: unknown;
   stage?: unknown;
   privateNotes?: unknown;
   note?: unknown;
@@ -320,6 +321,12 @@ const activateResearchPlan = async (
   );
 };
 
+const planTimestampIso = (value: unknown): string | undefined => {
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
 export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
     typeof doc.stage === 'string' && researchPlanStageSet.has(doc.stage as ResearchPlanStage)
@@ -334,7 +341,7 @@ export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchP
     checklist: serializeStoredChecklist(doc.checklist),
     deadlines: serializeStoredDeadlines(doc.deadlines),
     exportPreferences: normalizeExportPreferences(doc.exportPreferences),
-    updatedAt: doc.updatedAt ? new Date(String(doc.updatedAt)).toISOString() : undefined,
+    updatedAt: planTimestampIso(doc.updatedAt),
   };
 };
 
@@ -703,6 +710,34 @@ export const removeSavedResearchEntities = async (
   return getSavedResearchEntitySlugs(netid);
 };
 
+/**
+ * A write that names the version it was edited from is refused when the stored plan has
+ * moved past it, so a tab holding an older stage or note cannot silently replace a newer
+ * one written from another tab.
+ */
+const expectedPlanVersion = (plan: ResearchPlanInput): Date | undefined => {
+  const raw = isPlainRecord(plan) ? plan.expectedUpdatedAt : undefined;
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) throw badRequestError('Invalid expectedUpdatedAt');
+  return parsed;
+};
+
+const updatePlanAtVersion = async (
+  filter: Record<string, unknown>,
+  update: Record<string, unknown>,
+  expected: Date | undefined,
+  notFoundMessage: string,
+): Promise<void> => {
+  const guarded = expected ? { ...filter, updatedAt: { $lte: expected } } : filter;
+  const result = await ResearchPlan.updateOne(guarded, { $set: update }, { runValidators: true });
+  if (result.matchedCount) return;
+  if (expected && (await ResearchPlan.exists(filter))) {
+    throw new ConflictError('Plan changed since it was loaded');
+  }
+  throw new NotFoundError(notFoundMessage);
+};
+
 export const updateSavedResearchEntityPlan = async (
   netid: any,
   entityId: string,
@@ -724,10 +759,12 @@ export const updateSavedResearchEntityPlan = async (
     }
     return getSavedResearchEntityPlans(netid);
   }
-  const result = await ResearchPlan.updateOne(filter, { $set: update }, { runValidators: true });
-  if (!result.matchedCount) {
-    throw new NotFoundError('Saved research entity not found');
-  }
+  await updatePlanAtVersion(
+    filter,
+    update,
+    expectedPlanVersion(plan),
+    'Saved research entity not found',
+  );
   return getSavedResearchEntityPlans(netid);
 };
 
@@ -863,9 +900,6 @@ export const updateWatchedProgramPlan = async (
     }
     return getWatchedProgramPlans(netid);
   }
-  const result = await ResearchPlan.updateOne(filter, { $set: update }, { runValidators: true });
-  if (!result.matchedCount) {
-    throw new NotFoundError('Watched program not found');
-  }
+  await updatePlanAtVersion(filter, update, expectedPlanVersion(plan), 'Watched program not found');
   return getWatchedProgramPlans(netid);
 };

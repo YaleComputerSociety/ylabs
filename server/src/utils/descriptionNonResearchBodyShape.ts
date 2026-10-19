@@ -10,7 +10,8 @@ export type NonResearchBodyShape =
   | 'third-party-page'
   | 'instruction-offering'
   | 'joining-instructions'
-  | 'event-narration';
+  | 'event-narration'
+  | 'source-narration';
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -262,6 +263,57 @@ export function isEventNarrationText(value: unknown): boolean {
   );
 }
 
+const SOURCE_DOCUMENT =
+  /(?:pages?|profiles?|websites?|sites?|listings?|entr(?:y|ies)|bios?|biograph(?:y|ies)|descriptions?|materials?|sources?|catalog(?:ue)?s?|directory|directories)/
+    .source;
+
+const NARRATING_VERB =
+  /(?:describes?|states?|lists?|notes?|mentions?|indicates?|says|shows?|highlights?|reports?|suggests?|outlines?|presents?|emphasi[sz]es?|focus(?:es)? on|provides?|references?|cites?|covers?|identif(?:y|ies)|names?|features?)/
+    .source;
+
+// The document has to be the sentence's subject and has to be marked as a source: a
+// determiner, a possessive name of up to four words ("A Named Person's profile lists"), a
+// closed run of source qualifiers ("Course and department pages describe"), or a bare
+// "Pages" or "Profile" opening the sentence. An open slot reads research prose as
+// narration, because "Quantum materials feature exotic states" and "Enzyme active sites
+// show selectivity" also put a document noun before a narrating verb.
+const SOURCE_QUALIFIER =
+  /(?:course|department|departmental|faculty|program|lab|group|personal|official|university|school|yale|web|online|directory|people|and)/
+    .source;
+
+const POSSESSIVE_NAME = /(?:[\w.-]+\s+){0,3}[\w.-]+(?:['’]s|s['’])/.source;
+
+const SOURCE_DETERMINER = `(?:(?:the|this|that|these|those)\\s+${POSSESSIVE_NAME}|the|this|that|these|those|her|his|their|its|our|${POSSESSIVE_NAME})\\s+`;
+
+const MARKED_SOURCE_DOCUMENT = `(?:${SOURCE_DETERMINER}(?:${SOURCE_QUALIFIER}\\s+){0,6}|(?:${SOURCE_QUALIFIER}\\s+){1,6})${SOURCE_DOCUMENT}`;
+
+const BARE_SOURCE_DOCUMENT = /(?:pages|profiles?)/.source;
+
+const SOURCE_NARRATION_LEAD = new RegExp(
+  `^["“]?(?:${MARKED_SOURCE_DOCUMENT}|${BARE_SOURCE_DOCUMENT})\\s+(?:also\\s+|further\\s+|primarily\\s+|mainly\\s+)?${NARRATING_VERB}\\b`,
+  'i',
+);
+
+const ACCORDING_TO_SOURCE = /^["“]?according to\b/i;
+
+const isSourceNarrationSentence = (sentence: string): boolean =>
+  SOURCE_NARRATION_LEAD.test(sentence) || ACCORDING_TO_SOURCE.test(sentence);
+
+/**
+ * Text that reports what the row's sources say rather than stating the research: "Course
+ * and department pages describe study of ...", "The profile lists ...", "According to the
+ * page ...". It names the pages a writer read, not what the person or group studies, so
+ * it is not a research statement (owner decision, 2026-10-12, #5020). Refused only when
+ * every sentence narrates a source, so research prose that opens by citing its page and
+ * then states the work keeps its body.
+ */
+export function isSourceNarrationText(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const sentences = sentencesOf(text);
+  return sentences.length > 0 && sentences.every(isSourceNarrationSentence);
+}
+
 const isLabEntityType = (entityType?: ResearchEntityType): boolean =>
   typeof entityType === 'string' && entityType.toUpperCase() === 'LAB';
 
@@ -276,5 +328,6 @@ export function nonResearchBodyShape(
   if (isRoleBiographyWithoutResearchOrPractice(value)) return 'role-biography';
   if (isJoiningInstructionsText(value)) return 'joining-instructions';
   if (isEventNarrationText(value)) return 'event-narration';
+  if (isSourceNarrationText(value)) return 'source-narration';
   return null;
 }

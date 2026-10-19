@@ -38,6 +38,7 @@ import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizat
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -47,6 +48,7 @@ import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import {
   isEventNarrationText,
   isJoiningInstructionsText,
+  isSourceNarrationText,
 } from '../utils/descriptionNonResearchBodyShape';
 import {
   servedResearchEntityCardWithoutLastResort,
@@ -572,7 +574,8 @@ function cardStatesResearchItself(card: unknown): boolean {
     !CITATION_LIKE_CARD.test(text) &&
     !DEGREE_FRAGMENT_CARD.test(text) &&
     !SITE_TAGLINE_CARD.test(text) &&
-    !isTeachingOrPastTraineeSentence(text)
+    !isTeachingOrPastTraineeSentence(text) &&
+    !isSourceNarrationText(text)
   );
 }
 
@@ -634,10 +637,11 @@ function cardServedInPlaceOfAResearchlessBiography(
   return cardStatesResearchItself(card) ? card : '';
 }
 
-// A body that only says how to join, or only narrates talks, awards or accepted papers,
-// states no research, and the quality bar withholds the row for it. The card is then the
-// row's research text, so it is served as the body even when that leaves no separate card,
-// because a thin but accurate description serves (owner decision, 2026-10-04). The stored
+// A body that only says how to join, only narrates talks, awards or accepted papers, or
+// only reports what its source pages say, states no research, and the quality bar
+// withholds the row for it. The card is then the row's research text, so it is served as
+// the body even when that leaves no separate card, because a thin but accurate
+// description serves (owner decision, 2026-10-04). The stored
 // card is read when the served one is blank, because a card is grounded against the body
 // and this body grounds nothing; the caller still holds it to the body bar.
 function cardServedInPlaceOfANonResearchBody(
@@ -645,9 +649,18 @@ function cardServedInPlaceOfANonResearchBody(
   representation: ResearchEntityPublicDescriptionRepresentation,
 ): string {
   const storedBody = entity.fullDescription;
-  if (!isJoiningInstructionsText(storedBody) && !isEventNarrationText(storedBody)) return '';
+  if (
+    !isJoiningInstructionsText(storedBody) &&
+    !isEventNarrationText(storedBody) &&
+    !isSourceNarrationText(storedBody)
+  ) {
+    return '';
+  }
   const card = textValue(representation.servedCard) || textValue(entity.shortDescription);
-  return cardStatesResearchItself(card) ? card : '';
+  return cardStatesResearchItself(card) &&
+    !isStudiesResearchAreaEchoDescription(card, entity.researchAreas)
+    ? card
+    : '';
 }
 
 /**

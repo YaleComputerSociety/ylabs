@@ -261,4 +261,23 @@ describe('usePlanNoteAutosave', () => {
     expect(unload.defaultPrevented).toBe(true);
     expect(persist).toHaveBeenLastCalledWith('plan-1', 'draft two', { keepalive: true });
   });
+
+  it('reports a refused write from an older version as a conflict without retrying it', async () => {
+    const persist = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('conflict'), { isAxiosError: true, response: { status: 409 } }),
+      );
+    const { result } = renderHook(() => usePlanNoteAutosave(persist));
+
+    await act(async () => {
+      await result.current.saveNote('plan-1', 'stale text');
+    });
+    expect(result.current.noteSaveStatuses['plan-1']).toBe('conflict');
+
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+    expect(persist).toHaveBeenCalledTimes(1);
+  });
 });

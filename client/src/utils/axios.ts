@@ -5,6 +5,12 @@ import axios from 'axios';
 import { getApiBaseUrl } from './apiBaseUrl';
 import { dispatchHttpStatusEvent } from './httpStatusEvents';
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    skipAuthRequiredEvent?: boolean;
+  }
+}
+
 const client = axios.create({
   withCredentials: true,
   baseURL: getApiBaseUrl(),
@@ -13,8 +19,10 @@ const client = axios.create({
 client.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status = error?.response?.status;
+    if (status === 401 && error?.config?.skipAuthRequiredEvent) return Promise.reject(error);
     dispatchHttpStatusEvent(
-      error?.response?.status,
+      status,
       error?.response?.headers?.['retry-after'],
       error?.response?.data,
     );

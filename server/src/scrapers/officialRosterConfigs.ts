@@ -1,5 +1,7 @@
 import type { OfficialRosterConfig } from './sources/officialResearchHomeRosterScraper';
 
+export const OWNER_DENIED_ROSTER_KEYS: readonly string[] = [];
+
 // Every entry past the first four was approved lab by lab by the owner after a check of its
 // listed names against the page (#5039); add an entry only through that review.
 export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [

@@ -2132,6 +2132,9 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
     state: enrichment.state,
     memberKeys,
     sourceUrl,
+    ...(textValue(enrichment.configOrigin)
+      ? { configOrigin: textValue(enrichment.configOrigin) }
+      : {}),
     ...(undergraduates.length > 0 ? { undergraduates } : {}),
     ...(textValue(enrichment.alumniSourceUrl)
       ? { alumniSourceUrl: textValue(enrichment.alumniSourceUrl) }
@@ -2141,6 +2144,9 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
     freshnessExpiresAt,
   };
 };
+
+const rosterConfigOrigin = (enrichment: Record<string, unknown>): string =>
+  textValue(enrichment.configOrigin) || 'static';
 
 export function rosterEnrichmentWithRetainedSuccessfulSnapshot(
   value: unknown,
@@ -2155,7 +2161,8 @@ export function rosterEnrichmentWithRetainedSuccessfulSnapshot(
   const retained =
     successfulRosterSnapshot(existing) ||
     successfulRosterSnapshot(objectRecord(existing.lastSuccessfulSnapshot));
-  return retained ? { ...enrichment, lastSuccessfulSnapshot: retained } : enrichment;
+  const sameOrigin = retained && rosterConfigOrigin(retained) === rosterConfigOrigin(enrichment);
+  return sameOrigin ? { ...enrichment, lastSuccessfulSnapshot: retained } : enrichment;
 }
 
 const RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE =

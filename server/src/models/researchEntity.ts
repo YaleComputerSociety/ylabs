@@ -27,6 +27,7 @@ import {
   labSiteLeadVerdicts,
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
+  officialRosterConfigOrigins,
   officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
 
@@ -428,6 +429,8 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           default: undefined,
         },
         undergraduateWithheldCount: { type: Number, min: 0, max: 1000, default: 0 },
+        configOrigin: { type: String, enum: officialRosterConfigOrigins, required: false },
+        withheldReason: { type: String, required: false },
         alumniSourceUrl: { type: String, required: false },
         sourceUrl: { type: String, default: '' },
         sourcePublishedAt: { type: Date, required: false },
@@ -456,6 +459,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
               ],
               default: undefined,
             },
+            configOrigin: { type: String, enum: officialRosterConfigOrigins, required: false },
             sourceUrl: { type: String, required: true },
             alumniSourceUrl: { type: String, required: false },
             sourcePublishedAt: { type: Date, required: false },

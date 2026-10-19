@@ -859,3 +859,46 @@ describe('a body that only says how to join or narrates events serves the card (
     expect(researchEntityServesPublicDetail(entity)).toBe(false);
   });
 });
+
+describe('a row whose only text narrates its sources is held', () => {
+  const facultyRow = (fullDescription: string, shortDescription: string) => ({
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    name: 'Example Faculty Research',
+    fullDescription,
+    shortDescription,
+    sourceUrls: ['https://example.yale.edu/people/example'],
+  });
+  const narratedBody =
+    'Course and departmental pages describe study of example reef morphology, the diversity of marine life, and techniques for studying body plans.';
+  const narratedCard =
+    'Course and department pages describe study of example reef morphology, phylogenetics, and the ecology of marine organisms.';
+
+  it('withholds the row when the body and the card both narrate their sources', () => {
+    const entity = facultyRow(narratedBody, narratedCard);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.invariant.pass).toBe(false);
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+
+  it('serves a research card in place of a body that narrates its sources', () => {
+    const card =
+      'Studies example reef morphology and the evolution of body plans across marine invertebrates.';
+    const entity = facultyRow(narratedBody, card);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.entity.fullDescription).toBe(card);
+    expect(researchEntityServesPublicDetail(entity)).toBe(true);
+  });
+  it('withholds a narrating body rather than serve the topic line built from its chips', () => {
+    const entity = {
+      ...facultyRow(
+        "Example's profile describes work in example ecology. The profile also lists interests in example ecology.",
+        '',
+      ),
+      researchAreas: ['Ecology'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.invariant.pass).toBe(false);
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+});
