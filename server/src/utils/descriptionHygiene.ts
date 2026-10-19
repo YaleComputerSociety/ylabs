@@ -349,7 +349,7 @@ const maskWithListSeparatorPattern = new RegExp(`${ARTIFACT_TOKEN_MASK}[,;:]+`, 
 const TRAILING_SENTENCE_PUNCTUATION = /[.,;:!?)\]"'\u2019\u201d]+$/;
 const IDENTIFIER_ARTIFACT = /^(?:PMCID|PMC|PMID|doi)/i;
 const LINK_OBJECT_LEAD_IN =
-  /\b(?:to|into|onto|the|a|an|this|our|your|their|of|visit|visiting|see|check|consult|download|access|browse|(?:available|found|located|posted|listed)\s+(?:online\s+)?(?:at|from|on))\s*$/i;
+  /\b(?:to|into|onto|the|a|an|this|our|your|their|of|visit|visiting|see|check|consult|download|access|browse|open|use|(?:available|found|located|posted|listed)\s+(?:online\s+)?(?:at|from|on))\s*$/i;
 const MAX_READABLE_LINK_CHARS = 80;
 const UNREADABLE_LINK_TEXT = 'the linked page';
 const DETERMINER_BEFORE_LINK = /\b(?:the|a|an|this|our|your|their)\s*$/i;

@@ -3275,6 +3275,15 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     ).toBe('Applicants must review the linked page before applying to the fellowship.');
   });
 
+  it('keeps a neutral phrase for unsafe link targets that are the objects of "open"', () => {
+    const served = stripBibliographicReferenceArtifacts(
+      'Applicants may also open vbscript:msgbox(1) and data:text/html;base64,PGI+ to read more about the award.',
+    );
+    expect(served).toBe(
+      'Applicants may also open the linked page and the linked page to read more about the award.',
+    );
+  });
+
   it('removes an unsafe scheme token that is not the object of its sentence', () => {
     expect(
       stripBibliographicReferenceArtifacts(
