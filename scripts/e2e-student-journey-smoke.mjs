@@ -297,6 +297,10 @@ await step(
         for (const axis of ['type', 'school', 'department']) {
           await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
         }
+        const hostedToggle = sidebar.getByRole('checkbox', {
+          name: /^Has hosted undergraduate researchers \([1-9][\d,]*\)$/,
+        });
+        await hostedToggle.waitFor({ timeout: 20000 });
         await assertSidebarFits('while browsing');
         await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
         await assertSidebarFits('with a query typed');
