@@ -198,8 +198,11 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
     });
     const read = new Map<string, CandidateLab>();
     const invitations = new Map<string, ServedUndergradInvitation>();
+    const partialReads = new Map<
+      string,
+      { lab: CandidateLab; invitation: ServedUndergradInvitation | null }
+    >();
     let fetchFailed = 0;
-    let partialReads = 0;
     await mapWithConcurrency(
       labs,
       resolveSourceConcurrency(ctx.options.sourceConcurrency, DEFAULT_CONCURRENCY),
@@ -210,18 +213,29 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
           return;
         }
         const invitation = strongestInvitationOnPages(labPages.pages, lab, now);
-        if (!labPages.complete && !invitation) {
-          partialReads += 1;
+        if (!labPages.complete) {
+          partialReads.set(lab.slug, { lab, invitation });
           return;
         }
         read.set(lab.slug, lab);
         if (invitation) invitations.set(lab.slug, invitation);
       },
     );
-    if (labs.length > 0 && read.size === 0 && partialReads === 0) {
+    if (labs.length > 0 && read.size === 0 && partialReads.size === 0) {
       throw new Error(`${this.name}: every lab-site fetch failed (${fetchFailed})`);
     }
     const corpusQuotes = await this.liveQuoteFinder();
+    let heldPartialReads = 0;
+    for (const [slug, { lab, invitation }] of partialReads) {
+      const cannotDowngrade =
+        invitation?.level === 'actively_hiring' || (invitation && !corpusQuotes.has(slug));
+      if (!cannotDowngrade) {
+        heldPartialReads += 1;
+        continue;
+      }
+      read.set(slug, lab);
+      invitations.set(slug, invitation);
+    }
     for (const slug of read.keys()) {
       const invitation = invitations.get(slug);
       if (invitation) corpusQuotes.set(slug, invitation.quote);
@@ -245,7 +259,7 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
       const level = (observation.value as ServedUndergradInvitation | null)?.level;
       if (level) counts[level] += 1;
     }
-    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${partialReads} rows with no invitation skipped because a linked page was unreadable`;
+    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${heldPartialReads} rows held at their live value because a linked page was unreadable`;
     ctx.log(notes);
     return { observationCount: observations.length, entitiesObserved: read.size, notes };
   }
