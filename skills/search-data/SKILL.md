@@ -87,6 +87,8 @@ Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a h
 The 5-second bound alone made every request during a stall wait 5 seconds, because nothing remembered the failure.
 `server/src/utils/meiliAvailability.ts` holds a process-wide breaker: a timeout or connection failure (`MeilisearchRequestError`, `MeilisearchRequestTimeOutError`) marks Meilisearch unavailable for `MEILISEARCH_UNAVAILABLE_COOLDOWN_MS` (30 seconds), and every call through `withMeiliAvailabilityGuard` fails at once with `MeilisearchKnownUnavailableError` until it expires.
 An API error such as a `403` or an invalid filter does not open it, because Meilisearch answered.
+Only a required call opens it: `withMeiliAvailabilityGuard(index, 'optional')` still fails at once while the breaker is open, but its own connection failure leaves the breaker closed.
+Research search sends its primary query through the required guard and every companion query (the embedder check, each disjunctive facet query, the keyword leg and its top-hit re-read, the semantic leg and the deep pool) through the optional one, so a failed companion query degrades only its own response instead of answering every search after it with `503` for the cooldown (#5347).
 The request path in `researchGroupService.ts` wraps its index in the guard, so text search answers its `503` at once and the detail page drops the similar-research rail at once.
 A failed embedder check is also cached as `unknown` for `RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS` (30 seconds), against 5 minutes for `configured` and `absent`, so recovery is picked up within that window.
 Measured on 2026-10-03 against a throwaway paused Meilisearch with the Development corpus: a cold process answered three detail pages in 5.4, 5.3 and 5.3 seconds before the change and 5.4, 0.3 and 0.3 seconds after; a warm process answered three text searches with `503` in 5.1 seconds each before and 5.1, 0.1 and 0.1 seconds after; both served 200 again once the cooldown had passed.
@@ -109,7 +111,7 @@ Sharing one gated set across requests would keep those documents resident: the m
 
 After the change the same three requests answer `503` in 1 ms to 3 ms with no measurable event-loop block, and healthy searches are unchanged.
 The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so within one request only a failed primary query answers `503`.
-A companion query's connection failure still opens the breaker described above, so the searches after it answer `503` until the cooldown passes (#5347).
+A companion query's connection failure leaves the breaker closed, so the next search is answered normally (#5347).
 Do not reintroduce an in-process corpus scan on the request path as a substitute for the index.
 The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForMeiliTask` in `server/src/utils/meiliTask.ts` polls `getTask` with its own overall timeout.
 It does not call the client's `waitForTask`, because meilisearch 0.62 gives every poll one shared abort signal and its per-request timeout leaves a listener on it per poll, which flooded rebuild logs with `MaxListenersExceededWarning`.

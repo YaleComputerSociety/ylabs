@@ -1752,14 +1752,18 @@ async function searchResearchGroupsForQuery(
     searchParams.sort = sortConfig;
   }
 
-  const index = withMeiliAvailabilityGuard(await getMeiliSearchIndex('researchentities'));
+  const meiliIndex = await getMeiliSearchIndex('researchentities');
+  const index = withMeiliAvailabilityGuard(meiliIndex);
+  // A companion query's failure degrades only its own response, so it must not open
+  // the breaker that answers every search after it with a 503 (#5347).
+  const optionalIndex = withMeiliAvailabilityGuard(meiliIndex, 'optional');
   let embedderStateUnknown = false;
   let semanticLegUnaffordable = false;
   if (!isBrowseAllQuery) {
     if (normalizedQuery.aliasExpansionKeepsShorthand) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
     } else {
-      const embedderState = await readResearchEntitySearchEmbedderState(index);
+      const embedderState = await readResearchEntitySearchEmbedderState(optionalIndex);
       embedderStateUnknown = embedderState === 'unknown';
       if (embedderState === 'configured') {
         searchParams.hybrid = {
@@ -1957,7 +1961,7 @@ async function searchResearchGroupsForQuery(
       params.matchingStrategy = finalSearchParams.matchingStrategy;
     }
     params.limit = 0;
-    const result = (await index.search(meiliQueryText, params)) as {
+    const result = (await optionalIndex.search(meiliQueryText, params)) as {
       facetDistribution?: Record<string, Record<string, number>>;
     };
     return result?.facetDistribution;
@@ -2019,7 +2023,7 @@ async function searchResearchGroupsForQuery(
     hitsPerPage: number = HYBRID_CANDIDATE_POOL_SIZE,
   ): Promise<any[]> => {
     try {
-      const keywordLegResult = await index.search(keywordText, {
+      const keywordLegResult = await optionalIndex.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showRankingScoreDetails: true,
         attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -2044,7 +2048,7 @@ async function searchResearchGroupsForQuery(
     const topHit = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits[0];
     if (!topHit) return null;
     try {
-      const topHitResult = await index.search(keywordText, {
+      const topHitResult = await optionalIndex.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showMatchesPosition: true,
         attributesToRetrieve: [
@@ -2142,7 +2146,7 @@ async function searchResearchGroupsForQuery(
   const semanticLegSearch = keywordLegSearch.then(({ rawHits }) =>
     runsSemanticLeg && dropCoincidentalTypoOnlyHits(rawHits).hits.length > 0
       ? settleSearch<Record<string, any>>(() =>
-          index.search(meiliQueryText, {
+          optionalIndex.search(meiliQueryText, {
             filter: candidatePoolFilterString,
             hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
             ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
@@ -2166,7 +2170,7 @@ async function searchResearchGroupsForQuery(
   const { facets: _facets, ...poolParams } = finalSearchParams;
   const searchDeepPool = () =>
     settleSearch<Record<string, any>>(() =>
-      index.search(meiliQueryText, {
+      optionalIndex.search(meiliQueryText, {
         ...poolParams,
         page: 1,
         hitsPerPage: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
