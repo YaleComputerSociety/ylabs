@@ -57,7 +57,7 @@ const SCHOLAR_OF_A_FIELD =
   /\bis\s+an?\s+(?:(?!(?:board|fellowship|clinical)\b)[\p{L}-]+\s+){0,2}(?:scholar|specialist)\s+(?:in|of|on)\b/iu;
 
 const WRITES_ABOUT_A_SUBJECT =
-  /\bwrites\s+(?:and\s+teaches\s+)?(?:about|on)\s+(?!behalf\b|an?\s+(?:daily|weekly|monthly|regular)\b)/i;
+  /\bwrites\s+(?:and\s+teaches\s+)?about\b/i;
 
 const BOOK_IN_PROGRESS =
   /\b(?:is|are)\s+(?:now\s+|currently\s+)?(?:working\s+on|completing|writing|finishing)\s+(?:a|an|her|his|their)\s+(?:new\s+|next\s+|forthcoming\s+)?(?:book|monograph|study)\b/i;

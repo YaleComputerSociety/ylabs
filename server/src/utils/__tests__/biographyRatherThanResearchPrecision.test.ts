@@ -232,8 +232,8 @@ describe('a scholar who states the research as what they write about', () => {
 
   it.each([
     [
-      'a role opener that names what the scholar writes on',
-      'Professor of Performance Studies, Synthetic University* Sam Example is a cultural critic and an Associate Professor in the Department of Performance Studies at Sample University. He writes on art, music, politics, and theory.',
+      'a role opener that names what the scholar writes about',
+      'Professor of Performance Studies, Synthetic University* Sam Example is a cultural critic and an Associate Professor in the Department of Performance Studies at Sample University. He writes about art, music, politics, and theory.',
       false,
     ],
     [
@@ -244,6 +244,11 @@ describe('a scholar who states the research as what they write about', () => {
     [
       'a career record that writes on a weekly basis for an outlet',
       'Sam Example previously taught at Sample College. She writes on a weekly basis for the Synthetic Times.',
+      true,
+    ],
+    [
+      'a career record that writes on a publishing platform',
+      'Sam Example previously taught at Sample College. She writes on Substack for a general audience.',
       true,
     ],
   ])('holds %s only when it states no research', (_shape, body, held) => {
