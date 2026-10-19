@@ -3294,6 +3294,19 @@ describe('a link target that is the object of its sentence (#5365)', () => {
     );
   });
 
+  it('keeps a link that is the object of an inflected lead-in verb', () => {
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'Applicants may apply using https://forms.example.edu/apply and attach a proposal.',
+      ),
+    ).toBe('Applicants may apply using forms.example.edu/apply and attach a proposal.');
+    expect(
+      stripBibliographicReferenceArtifacts(
+        'The portal opens javascript:alert(1) when a student is accepted.',
+      ),
+    ).toBe('The portal opens the linked page when a student is accepted.');
+  });
+
   it('removes an unsafe scheme token that is not the object of its sentence', () => {
     expect(
       stripBibliographicReferenceArtifacts(
