@@ -62,7 +62,7 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
   After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with 25/50 showing that undergraduates were hosted.
   The quote is stored but no longer served or shown on any surface (`docs/decisions.md`, 2026-10-18, #5309); an explicit invitation quote returns beside the badge designed in #5288.
   It is the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 4 to 20 hours, against a weekly sweep of about 8 hours and Render's 12-hour job limit.
-  So it is run scoped by hand when the quotes need refreshing, and a manual run also refreshes its description emits.
+  It is frozen by owner decision on 2026-10-18 (#5296): every lane is to be deterministic, so it is not run again, and the badge evidence and description emits it already stored stay until a deterministic source replaces them (`docs/decisions.md`, 2026-10-18).
 
 `federal-award-usaspending` was manual-only and is now removed (#4548).
 USAspending publishes no principal-investigator field, so across the 293 Yale DOE, NASA and DoD awards its request returned, 1 description embedded a PI name and that name resolved ambiguously (#3542).
