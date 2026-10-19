@@ -39,6 +39,11 @@ import {
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import usePlanDetailSync, {
+  isPlanVersionConflict,
+  type ServedPlanDetail,
+  type ServedPlans,
+} from '../../hooks/usePlanDetailSync';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number | null) => void;
@@ -85,7 +90,7 @@ const UNAVAILABLE_REASON_TEXT: Record<UnavailableSavedResearchEntity['reason'], 
     'Held back from the student directory right now. Your note is kept, and this item will reappear here once the directory lists it again.',
 };
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
 type ListLoadMode = 'replace' | 'merge';
 
@@ -110,29 +115,6 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const persistResearchPlanNote = async (
-  entityId: string,
-  note: string,
-  options?: PersistNoteOptions,
-) => {
-  try {
-    const body = { data: { plan: { privateNotes: note } } };
-    await (options?.keepalive
-      ? keepalivePut(`/users/savedResearchEntityPlans/${entityId}`, body)
-      : axios.put(`/users/savedResearchEntityPlans/${entityId}`, body));
-  } catch (error) {
-    console.error('Error saving research plan note.');
-    throw error;
-  }
-  void trackResearchEvent({
-    eventType: 'research_plan_update',
-    entityType: 'research_entity',
-    entityId,
-    payload: { field: 'note_presence' },
-    dedupeKey: createResearchAnalyticsInteractionId('plan'),
-  });
-};
-
 const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const {
     favIds: savedSlugs,
@@ -151,6 +133,42 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [stageStatuses, setStageStatuses] = useState<Record<string, SaveStatus>>({});
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
   const [isComparing, setIsComparing] = useState(false);
+  const planSyncRef = useRef<ReturnType<typeof usePlanDetailSync> | null>(null);
+  const persistResearchPlanNote = useCallback(
+    async (entityId: string, note: string, options?: PersistNoteOptions) => {
+      const sync = planSyncRef.current;
+      const send = async (version: string | undefined) => {
+        const body = {
+          data: {
+            plan: { privateNotes: note, ...(version ? { expectedUpdatedAt: version } : {}) },
+          },
+        };
+        const served = options?.keepalive
+          ? await keepalivePut(`/users/savedResearchEntityPlans/${entityId}`, body)
+          : (await axios.put(`/users/savedResearchEntityPlans/${entityId}`, body)).data;
+        return (served as { savedResearchEntityPlans?: ServedPlans } | undefined)
+          ?.savedResearchEntityPlans;
+      };
+      try {
+        await (sync
+          ? sync.writePlan(entityId, send, { immediate: options?.keepalive })
+          : send(undefined));
+      } catch (error) {
+        console.error('Error saving research plan note.');
+        if (isPlanVersionConflict(error))
+          void sync?.refreshPlanDetails({ adoptVersionOf: entityId });
+        throw error;
+      }
+      void trackResearchEvent({
+        eventType: 'research_plan_update',
+        entityType: 'research_entity',
+        entityId: entityId,
+        payload: { field: 'note_presence' },
+        dedupeKey: createResearchAnalyticsInteractionId('plan'),
+      });
+    },
+    [],
+  );
   const {
     noteSaveStatuses,
     saveNote,
@@ -159,6 +177,20 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     retainNoteSaves,
     markNotePersisted,
   } = usePlanNoteAutosave(persistResearchPlanNote);
+
+  const planSync = usePlanDetailSync({
+    plansPath: '/users/savedResearchEntityPlans',
+    responseKey: 'savedResearchEntityPlans',
+    notes,
+    stages,
+    setNotes,
+    setStages,
+    markNotePersisted,
+  });
+  const { recordServedPlan, writePlan, refreshPlanDetails, takeServerStage } = planSync;
+  useEffect(() => {
+    planSyncRef.current = planSync;
+  });
 
   // The count is how many plans the owner has, not how many of them are servable:
   // reporting only the servable ones is what let the dashboard read "0 research
@@ -197,7 +229,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           entityResponse.data.unavailableSavedResearchEntities || [];
         const plans = (planResponse.data.savedResearchEntityPlans || {}) as Record<
           string,
-          { privateNotes?: string; stage?: string }
+          ServedPlanDetail
         >;
         const loadedNotes: Record<string, string> = {};
         const loadedStages: Record<string, ResearchPlanStage> = {};
@@ -206,6 +238,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
           loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
           markNotePersisted(entity._id, loadedNotes[entity._id]);
+          recordServedPlan(entity._id, plans[entity._id]);
         }
         loadedIdsRef.current = new Set([
           ...(merging ? loadedIdsRef.current : []),
@@ -229,10 +262,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         if (ticket.isCurrent()) setIsLoading(false);
       }
     },
-    [planRequest, markNotePersisted],
+    [planRequest, markNotePersisted, recordServedPlan],
   );
 
   useLoadEffect(loadPlans);
+
+  useEffect(() => {
+    if (savedSlugsLoaded) void refreshPlanDetails();
+  }, [savedSlugs, savedSlugsLoaded, refreshPlanDetails]);
 
   const requestedSaveIdsRef = useRef(new Set<string>());
   useEffect(() => {
@@ -262,8 +299,13 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       setStages((current) => ({ ...current, [entityId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
       try {
-        await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
-          data: { plan: { stage: nextStage } },
+        await writePlan(entityId, async (version) => {
+          const response = await axios.put(`/users/savedResearchEntityPlans/${entityId}`, {
+            data: {
+              plan: { stage: nextStage, ...(version ? { expectedUpdatedAt: version } : {}) },
+            },
+          });
+          return response.data?.savedResearchEntityPlans;
         });
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saved' }));
         void trackResearchEvent({
@@ -273,13 +315,17 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
           payload: { field: 'stage' },
           dedupeKey: createResearchAnalyticsInteractionId('plan'),
         });
-      } catch {
+      } catch (error) {
         console.error('Error saving research plan stage.');
+        if (isPlanVersionConflict(error) && (await takeServerStage(entityId))) {
+          setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'conflict' }));
+          return;
+        }
         setStages((current) => ({ ...current, [entityId]: previousStage }));
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
       }
     },
-    [stages],
+    [stages, writePlan, takeServerStage],
   );
 
   /**
@@ -317,6 +363,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       // failed re-favourite outside the server's restore window discards the only copy
       // of the note, which is the loss this undo exists to prevent.
       if (note) {
+        await refreshPlanDetails({ adoptVersionOf: entityId });
         setNotes((current) => ({ ...current, [entityId]: note }));
         await saveNote(entityId, note);
       }

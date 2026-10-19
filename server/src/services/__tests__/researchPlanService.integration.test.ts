@@ -173,6 +173,47 @@ describe('researchPlanService saved plans', () => {
     expect(ttlIndex?.[1]).toMatchObject({ expireAfterSeconds: 0 });
   });
 
+  it('refuses a plan write made from a version older than the stored plan', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    const loaded = (await getSavedResearchEntityPlans(NETID))[entityId];
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const newer = await updateSavedResearchEntityPlan(NETID, entityId, {
+      stage: 'APPLIED',
+      expectedUpdatedAt: loaded.updatedAt,
+    });
+
+    await expect(
+      updateSavedResearchEntityPlan(NETID, entityId, {
+        stage: 'CONTACTED',
+        expectedUpdatedAt: loaded.updatedAt,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect((await getSavedResearchEntityPlans(NETID))[entityId].stage).toBe('APPLIED');
+
+    await updateSavedResearchEntityPlan(NETID, entityId, {
+      stage: 'CONTACTED',
+      expectedUpdatedAt: newer[entityId].updatedAt,
+    });
+    expect((await getSavedResearchEntityPlans(NETID))[entityId].stage).toBe('CONTACTED');
+  });
+
+  it('refuses a stale watched-program plan write and keeps an unversioned write working', async () => {
+    const programId = PROGRAM_ID.toHexString();
+    await addWatchedPrograms(NETID, [programId]);
+    const loaded = (await getWatchedProgramPlans(NETID))[programId];
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await updateWatchedProgramPlan(NETID, programId, { privateNotes: 'newer note' });
+
+    await expect(
+      updateWatchedProgramPlan(NETID, programId, {
+        privateNotes: 'stale note',
+        expectedUpdatedAt: loaded.updatedAt,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect((await getWatchedProgramPlans(NETID))[programId].privateNotes).toBe('newer note');
+  });
+
   it('restores the watched-program plan when the student undoes an unwatch', async () => {
     const programId = PROGRAM_ID.toHexString();
     await addWatchedPrograms(NETID, [programId]);
