@@ -198,7 +198,7 @@ const CombinedFilterDropdown = ({
           }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[26rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
+              ? 'fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[26rem] sm:block sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
               : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
           }
         >
@@ -245,13 +245,7 @@ const CombinedFilterDropdown = ({
             ))}
           </div>
 
-          <div
-            className={
-              mobileSheet
-                ? 'max-h-[calc(85dvh-7rem)] overflow-y-auto p-3 sm:max-h-none sm:overflow-visible'
-                : 'p-3'
-            }
-          >
+          <div className={mobileSheet ? 'min-h-0 overflow-y-auto p-3 sm:overflow-visible' : 'p-3'}>
             {activeTab.filterMode && activeTab.setFilterMode && activeTab.selected.length >= 2 && (
               <div className="mb-3">
                 <VennDiagramToggle mode={activeTab.filterMode} setMode={activeTab.setFilterMode} />

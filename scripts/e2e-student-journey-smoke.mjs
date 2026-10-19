@@ -1599,6 +1599,85 @@ await step('a student sees only student-worded program filter tabs, all in view'
   }
 });
 
+const SYNTHETIC_SHORT_FACET = Array.from({ length: 10 }, (_, index) => `Subject area ${index + 1}`);
+const SYNTHETIC_LONG_FACET = Array.from({ length: 21 }, (_, index) => `Purpose kind ${index + 1}`);
+
+const lastOptionPlacement = (dialog) =>
+  dialog.evaluate((element) => {
+    const list = element.querySelector('fieldset');
+    const options = list.querySelectorAll('label');
+    const last = options[options.length - 1];
+    const box = element.getBoundingClientRect();
+    const rect = last.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const probe = (x, y) => element.contains(document.elementFromPoint(x, y));
+    return {
+      listOverflow: list.scrollHeight - list.clientHeight,
+      insideViewport: rect.top >= 0 && rect.bottom <= window.innerHeight,
+      insideDialog: rect.top >= box.top && rect.bottom <= box.bottom,
+      lastOptionOnTop: probe(centerX, centerY),
+      dialogEdgeOnTop: probe(box.right - 8, box.top + box.height / 2),
+    };
+  });
+
+await step('a short program facet shows in full and the filter popover paints on top', async () => {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await withSyntheticBrowsePage(
+      viewport,
+      async (syntheticPage) => {
+        await syntheticPage.route('**/api/programs/filters', (route) =>
+          route.fulfill({
+            json: { subjects: SYNTHETIC_SHORT_FACET, purpose: SYNTHETIC_LONG_FACET },
+          }),
+        );
+        await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+        await syntheticPage.getByText('Program Fixture 0').first().waitFor({ timeout: 20000 });
+        await syntheticPage
+          .getByRole('button', { name: /^Filters/ })
+          .first()
+          .click();
+        const dialog = syntheticPage.getByRole('dialog', { name: 'Program filters' });
+        await dialog.waitFor({ timeout: 20000 });
+        await dialog.getByRole('button', { name: 'Subject', exact: true }).click();
+        await dialog.getByText(SYNTHETIC_SHORT_FACET.at(-1), { exact: true }).waitFor();
+        const subject = await lastOptionPlacement(dialog);
+        record('program short facet placement', { width: viewport.width, ...subject });
+        const at = `${viewport.width}x${viewport.height}`;
+        assert(
+          subject.listOverflow <= 1,
+          `The Subject options scroll in an inner box at ${at}: ${subject.listOverflow}px hidden.`,
+        );
+        assert(
+          subject.insideViewport && subject.insideDialog,
+          `The last Subject option is cut off at ${at}.`,
+        );
+        assert(
+          subject.lastOptionOnTop && subject.dialogEdgeOnTop,
+          `Something paints over the program filter popover at ${at}.`,
+        );
+
+        if (viewport.width >= 640) return;
+        await dialog.getByText(SYNTHETIC_SHORT_FACET[0], { exact: true }).click();
+        await dialog.getByRole('button', { name: /^Clear all filters/ }).waitFor();
+        await dialog.getByRole('button', { name: /^Purpose/ }).click();
+        const lastPurpose = dialog.getByText(SYNTHETIC_LONG_FACET.at(-1), { exact: true });
+        await lastPurpose.scrollIntoViewIfNeeded();
+        const purpose = await lastOptionPlacement(dialog);
+        record('program long facet placement', { width: viewport.width, ...purpose });
+        assert(
+          purpose.insideViewport && purpose.insideDialog && purpose.lastOptionOnTop,
+          `The last Purpose option cannot be reached in the phone filter sheet at ${at}.`,
+        );
+      },
+      { reducedMotion: 'reduce' },
+    );
+  }
+});
+
 const summary = {
   generatedAt: new Date().toISOString(),
   baseUrl,
