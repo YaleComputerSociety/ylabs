@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-19: An Advisory Seat Is Not Center Membership
+
+The owner decided on 2026-10-19 that a seat on a center's advisory committee or scientific advisory board is not membership of that center.
+A read-only audit of the affiliations the deterministic affiliation lane archived when it replaced the model lane (#5296) found 27 of 49 were advisory seats the model lane had recorded as members.
+
+Decided:
+
+- **`center-affiliation-roster` keeps leaving advisory sections out**, and an advisory seat is never a reason to keep or restore an affiliation edge.
+
+A person the same page also lists under a membership heading is still listed through that listing, because the rule is about the advisory section, not the person.
 ## 2026-10-19: The Roster Lane Withdraws A Row It No Longer Mints (#5380)
 
 The owner decided on 2026-10-19 that the department roster lane archives a row it minted earlier and no longer mints, when no other lane holds the row up.

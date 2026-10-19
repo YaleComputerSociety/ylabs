@@ -193,7 +193,9 @@ const NAME_STOP_WORDS = new Set([
   'programs',
   'read',
   'research',
+  'resource',
   'resources',
+  'shared',
   'school',
   'science',
   'sciences',
@@ -251,10 +253,10 @@ export function personNameFromText(raw: string): string | undefined {
   const tokens = name.split(/\s+/).filter(Boolean);
   if (tokens.length < 2 || tokens.length > 5) return undefined;
   let lettered = 0;
-  for (const token of tokens) {
+  for (const [index, token] of tokens.entries()) {
     const lower = token.toLowerCase().replace(/[.,]+$/, '');
     if (NAME_STOP_WORDS.has(lower)) return undefined;
-    if (NAME_PARTICLES.has(lower)) continue;
+    if (NAME_PARTICLES.has(lower) && index < tokens.length - 1) continue;
     if (!NAME_TOKEN.test(token)) return undefined;
     if (/\p{Ll}/u.test(token) || token.replace(/[^\p{L}]/gu, '').length > 1) lettered += 1;
   }
@@ -310,15 +312,44 @@ function refersToThisUnitGenerically(text: string, centerName: string): boolean 
     .every((word) => unitWords.has(word));
 }
 
+const CHAIRED_UNIT_NOUN = /\b(?:council|committee)\b/i;
+
+/**
+ * Only a unit that is itself a council or committee can be headed by a chair its page
+ * names without a qualifier. Anywhere else a bare "Chair" usually chairs a department
+ * or a board rather than the unit being read.
+ */
+function isBareChairOfChairedUnit(clause: string, centerName: string): boolean {
+  if (!CHAIRED_UNIT_NOUN.test(centerName)) return false;
+  const match = clause.match(CHAIR_WORD);
+  if (!match || match.index === undefined) return false;
+  const qualifier = clause.slice(match.index + match[0].length).replace(/[\s,:.]+/g, '');
+  if (qualifier) return false;
+  const prefix = clause
+    .slice(0, match.index)
+    .replace(/[^\p{L}\s-]/gu, ' ')
+    .trim();
+  return (
+    !prefix ||
+    /^co-?$/i.test(prefix) ||
+    refersToThisUnitGenerically(prefix, centerName) ||
+    textNamesThisUnit(prefix, centerName)
+  );
+}
+
 /**
  * A council or committee is led by its chair, so "Chair, Council on African Studies"
- * states the unit's head at the rank a director holds elsewhere. A bare "Chair" never counts, because it usually chairs a
- * department or a board rather than the unit being read.
+ * states the unit's head at the rank a director holds elsewhere.
  */
 function chairTier(clause: string, centerName: string): DirectorTitleTier | null {
   if (DIRECTOR_WORD.test(clause) || !CHAIR_WORD.test(clause)) return null;
   if (NOT_CURRENT_TITLE.test(clause) || SECONDARY_TITLE_WORD.test(clause)) return null;
-  if (!qualifierIsThisUnit(clause, centerName, CHAIR_WORD, true)) return null;
+  if (
+    !qualifierIsThisUnit(clause, centerName, CHAIR_WORD, true) &&
+    !isBareChairOfChairedUnit(clause, centerName)
+  ) {
+    return null;
+  }
   return /\bco[-\s]?chair/i.test(clause) ? 'co' : 'top';
 }
 
@@ -589,6 +620,24 @@ function samePage(left: string, right: string): boolean {
 }
 
 /**
+ * A person's own card can link its heading, the person's name, to their lab's site. It
+ * is that person's card rather than another unit's teaser when the heading is a name and
+ * the card names nobody else.
+ */
+function headingNamesTheCardsOnlyPerson(
+  $: cheerio.CheerioAPI,
+  card: Element,
+  headingText: string,
+): boolean {
+  const name = personNameFromText(headingText);
+  if (!name) return false;
+  return leavesWithin(card).every((leaf) => {
+    const other = personNameFromText(leaf.text);
+    return !other || observedPersonNameAgreesWith(name, other);
+  });
+}
+
+/**
  * A listing of related units repeats each unit's own contact card, so a "Director"
  * label inside a teaser whose heading links to another unit's page names that unit's
  * director, not this one's.
@@ -609,6 +658,7 @@ function insideOtherUnitTeaser(
     const link = headingLinks[0];
     const text = textOf($(link).text());
     if (!text || /\bdirect/i.test(text)) return false;
+    if (headingNamesTheCardsOnlyPerson($, current.get(0) as Element, text)) return false;
     let target: URL;
     try {
       target = new URL(textOf($(link).attr('href')), pageUrl);
@@ -675,7 +725,7 @@ function candidatesFromLabel(
   return people.map((person) => ({
     ...(groupLabel ? { groupLabel: text } : {}),
     name: person.name,
-    title: text.replace(/[:|\s]+$/, ''),
+    title: text.replace(/[:|,\s]+$/, ''),
     tier,
     role: roleForTier(tier),
     signal,
@@ -949,6 +999,29 @@ function subtreePrefix(url: URL): string {
     ? pathname.replace(/\/[^/]*$/, '')
     : pathname;
   return withoutFile.endsWith('/') ? withoutFile : `${withoutFile}/`;
+}
+
+/**
+ * Whether a page sits on the unit's own site: inside the subtree of the unit's page on
+ * the same host, or on a Yale host the unit's name or acronym names ("yibs.yale.edu"
+ * for the Yale Institute for Biospheric Studies (YIBS)). A school-wide page on the same
+ * host is not the unit's own, for the reason `centerDirectorCandidateUrls` gives.
+ */
+export function isOnCenterOwnSite(landingUrl: string, url: string, centerName: string): boolean {
+  let landing: URL;
+  let candidate: URL;
+  try {
+    landing = new URL(landingUrl);
+    candidate = new URL(url);
+  } catch {
+    return false;
+  }
+  if (!/^https?:$/.test(candidate.protocol)) return false;
+  if (candidate.host === landing.host) {
+    return candidate.pathname.toLowerCase().startsWith(subtreePrefix(landing).toLowerCase());
+  }
+  const hostMatch = candidate.hostname.toLowerCase().match(/^(?:www\.)?([a-z0-9-]+)\.yale\.edu$/);
+  return Boolean(hostMatch && textNamesThisUnit(hostMatch[1], centerName));
 }
 
 /**
