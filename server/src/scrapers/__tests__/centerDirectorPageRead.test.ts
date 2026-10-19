@@ -32,7 +32,7 @@ describe('personNameFromText', () => {
     expect(personNameFromText('Rapid Widget Ascertainment (RWA)')).toBeUndefined();
     expect(personNameFromText('Senior Lecturer')).toBeUndefined();
     expect(personNameFromText('Primary Contact')).toBeUndefined();
-    expect(personNameFromText('widgets@yale.edu')).toBeUndefined();
+    expect(personNameFromText('center.director1@yale.edu')).toBeUndefined();
     expect(personNameFromText('Widget Imaging Core')).toBeUndefined();
   });
 });
