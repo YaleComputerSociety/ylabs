@@ -123,10 +123,10 @@ export default [
         'error',
         ...[
           "MemberExpression[object.name='Intl'][property.name='DateTimeFormat']",
-          "CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]",
+          'CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]',
           "CallExpression[callee.property.name='toLocaleString'][arguments.length>0]",
           "CallExpression[callee.property.name='toLocaleString'][callee.object.type='NewExpression'][callee.object.callee.name='Date']",
-          "CallExpression[callee.property.name=/^get(Month|Date|Day|Hours|Minutes)$/]",
+          'CallExpression[callee.property.name=/^get(Month|Date|Day|Hours|Minutes)$/]',
         ].map((selector) => ({
           selector,
           message:
