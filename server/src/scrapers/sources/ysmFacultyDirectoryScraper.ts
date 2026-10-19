@@ -44,6 +44,8 @@ import { flattenHtmlToText } from '../utils/htmlText';
 import { normalizeOrcid } from '../../utils/orcid';
 import {
   classifyHarvestedResearchHomeName,
+  isLabShapedResearchHome,
+  nameCarriesPersonIdentity,
   personSurnamesFromDisplayNames,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -499,7 +501,13 @@ export function facultyToResearchEntityObservations(
     linkIsOwnSite &&
     !linkedSite.adoptableName &&
     isPersonalNameDomainWebsite(profile.labUrl, profile.name);
-  const hasLab = linkIsOwnSite && !linksPersonalWebsite;
+  // A slot naming an organization the person leads keeps the site as their website, but the
+  // organization's name and type stay on the organization's own row (#5283).
+  const linksAnOrganization =
+    Boolean(linkedSite.adoptableName) &&
+    !nameCarriesPersonIdentity(linkedSite.adoptableName, profile.name) &&
+    !isLabShapedResearchHome(linkedSite.adoptableName, profile.labUrl);
+  const hasLab = linkIsOwnSite && !linksPersonalWebsite && !linksAnOrganization;
 
   const slug = researchEntityKeyOf(profile);
   const entityName = hasLab

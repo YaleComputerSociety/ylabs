@@ -112,13 +112,52 @@ describe("the profile lane's home type counts only beside its own name (#3886)",
     expect(row?.name).toBe(PERSON_ROW_NAME);
   });
 
-  it("still admits the lane's type when its name for the row is live", async () => {
+  it("refuses the lane's live organization claim on a person's row (#5283)", async () => {
     await seedPersonRowWithHomeType();
     await seed('name', HOME_NAME, LANE, 0.96);
 
     await materializeEntity('researchEntity', { entityKey: SLUG });
 
-    expect((await stored())?.entityType).toBe('CENTER');
+    const row = await stored();
+    expect(row?.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(row?.name).toBe(PERSON_ROW_NAME);
+  });
+
+  it("still admits the lane's type beside its live name on an organization's row", async () => {
+    const organizationSlug = 'synthetic-coastal-studies-center';
+    await ResearchEntity.create({
+      slug: organizationSlug,
+      name: HOME_NAME,
+      kind: 'center',
+      entityType: 'CENTER',
+      archived: false,
+      sourceUrls: [PROFILE_URL],
+    });
+    for (const [field, value] of [
+      ['name', HOME_NAME],
+      ['entityType', 'CENTER'],
+      ['kind', 'center'],
+    ]) {
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: organizationSlug,
+        field,
+        value,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: LANE,
+        sourceUrl: PROFILE_URL,
+        confidence: 0.96,
+        observedAt: new Date('2026-07-25T00:00:00Z'),
+        superseded: false,
+      });
+    }
+
+    await materializeEntity('researchEntity', { entityKey: organizationSlug });
+
+    expect(
+      (await ResearchEntity.findOne({ slug: organizationSlug }).lean<{ entityType?: string }>())
+        ?.entityType,
+    ).toBe('CENTER');
   });
 
   it("refuses the lane's type and kind when its name for the row is refused", async () => {
