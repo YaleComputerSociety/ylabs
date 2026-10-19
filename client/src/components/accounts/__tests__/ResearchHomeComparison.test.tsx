@@ -97,8 +97,11 @@ describe('ResearchHomeComparison', () => {
           websiteUrl: 'https://lab-a.example.edu/',
           hasUndergradHostingEvidence: true,
           pastUndergradAdvisees: [{ year: 2023 }, { year: 2025, count: 2 }],
-          undergradEvidenceQuote: 'Undergraduates join the lab each summer.',
-          undergradEvidenceSourceUrl: 'https://lab-a.example.edu/team',
+          undergradInvitation: {
+            level: 'welcomes_undergrads',
+            quote: 'Undergraduates join the lab each summer.',
+            sourceUrl: 'https://lab-a.example.edu/team',
+          },
         },
         'lab-b': entityB,
       },
@@ -121,7 +124,8 @@ describe('ResearchHomeComparison', () => {
     );
 
     expect(await screen.findByText('Has hosted undergrads before')).toBeTruthy();
-    expect(screen.getByText('Advised 3 undergrads (2023–2025)')).toBeTruthy();
+    expect(screen.getByText('Has advised undergrads (2023–2025)')).toBeTruthy();
+    expect(screen.getByText('Welcomes undergrads')).toBeTruthy();
     expect(screen.getByText(/Undergraduates join the lab each summer/)).toBeTruthy();
     expect(
       screen

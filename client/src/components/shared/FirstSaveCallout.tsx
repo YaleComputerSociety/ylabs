@@ -7,12 +7,16 @@ interface FirstSaveCalloutProps {
 
 const copy = {
   program: {
-    title: 'Program saved',
-    body: 'Track application notes and compare it with saved research plans from your Dashboard.',
+    title: 'Watching this program',
+    body: 'Track its deadline and keep application notes from Watched programs on your Dashboard.',
+    linkTo: '/dashboard?tab=programs',
+    linkLabel: 'Open Watched programs',
   },
   researchPlan: {
     title: 'Research plan saved',
     body: 'Open it from your Dashboard to find its official profile and reach out, and keep private notes as you plan.',
+    linkTo: '/dashboard',
+    linkLabel: 'Open Dashboard',
   },
 };
 
@@ -31,10 +35,10 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
-            to="/dashboard"
+            to={message.linkTo}
             className="yr-pressable yr-focus-ring inline-flex min-h-[40px] items-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-navy"
           >
-            Open Dashboard
+            {message.linkLabel}
           </Link>
           <button
             type="button"

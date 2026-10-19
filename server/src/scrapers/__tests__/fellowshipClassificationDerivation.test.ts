@@ -136,7 +136,7 @@ describe('planFellowshipClassification reads the whole observed prose (#4232)', 
     expect(plan.classification.requiresMentorBeforeApply).toBe(false);
   });
 
-  it('never hands the classifier a raw contact address from any prose field', () => {
+  it('hands the classifier the contact addresses the program page publishes (#5046)', () => {
     const address = 'fixture.office@example.edu';
     const input = fellowshipClassifierInput({
       stored: { title: 'Fixture Research Grant', additionalInformation: `Write to ${address}.` },
@@ -146,9 +146,59 @@ describe('planFellowshipClassification reads the whole observed prose (#4232)', 
         eligibility: `Open to juniors. Email ${address} to confirm.`,
       },
     });
-    expect(JSON.stringify(input)).not.toContain(address);
+    expect(JSON.stringify(input)).not.toMatch(/redacted/i);
     expect(input.description?.length).toBeGreaterThan(2000);
-    expect(input.eligibility).toContain('[email redacted]');
-    expect(input.additionalInformation).toContain('[email redacted]');
+    expect(input.eligibility).toContain(address);
+    expect(input.additionalInformation).toContain(address);
+  });
+});
+
+describe('planFellowshipClassification derives the citizenship the prose states (#5129)', () => {
+  const restricted = {
+    title: 'Fixture Summer Research Program',
+    description: 'A summer research program in materials science.',
+    eligibility: 'US citizenship [or permanent residency] is required.',
+  };
+
+  it('replaces the listing facet with the prose statement and is a no-op on its own output', () => {
+    const plan = planFellowshipClassification({
+      stored: {
+        ...restricted,
+        citizenshipStatus: ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+      },
+    });
+    expect(plan.set.citizenshipStatus).toEqual([
+      'U.S. citizens are eligible',
+      'U.S. permanent residents are eligible',
+    ]);
+    const rerun = planFellowshipClassification({ stored: { ...restricted, ...plan.set } });
+    expect(rerun.set.citizenshipStatus).toBeUndefined();
+  });
+
+  it('fills a row no lane stated citizenship for', () => {
+    expect(planFellowshipClassification({ stored: restricted }).set.citizenshipStatus).toEqual([
+      'U.S. citizens are eligible',
+      'U.S. permanent residents are eligible',
+    ]);
+  });
+
+  it('keeps the observed facet when the prose is silent', () => {
+    const plan = planFellowshipClassification({
+      stored: {
+        title: 'Fixture Travel Grant',
+        description: 'Supports summer travel.',
+        citizenshipStatus: ['U.S. citizens are eligible'],
+      },
+    });
+    expect(plan.set.citizenshipStatus).toBeUndefined();
+  });
+
+  it('never overwrites a locked citizenship', () => {
+    expect(
+      planFellowshipClassification({
+        stored: { ...restricted, citizenshipStatus: [] },
+        lockedFields: ['citizenshipStatus'],
+      }).set.citizenshipStatus,
+    ).toBeUndefined();
   });
 });

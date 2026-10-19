@@ -2026,15 +2026,40 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(home).toMatchObject({ kind: 'initiative', entityType: 'INITIATIVE' });
     });
 
-    it('still adopts the untyped home onto a shell keyed only to that person', () => {
+    it('never retypes a shell keyed only to that person into the untyped organization', () => {
       const [home] = extractOfficialProfileResearchHomes(
         cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
         cardProfileUrl,
       );
-      expect(home).toMatchObject({ entityType: 'INITIATIVE' });
-      for (const slug of ['ysm-faculty-quinn-marlowfixture', 'nih-pi-quinn-marlowfixture']) {
-        expect(profileLinkedHomeRefusal({ slug }, home, 'Quinn Marlowfixture')).toBeNull();
-      }
+      expect(home).toMatchObject({ entityType: 'INITIATIVE', leadershipEvidenced: true });
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'ysm-faculty-quinn-marlowfixture' },
+          home,
+          'Quinn Marlowfixture',
+        ),
+      ).toBe('institutional-home-on-a-person-keyed-shell');
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'nih-pi-quinn-marlowfixture' },
+          home,
+          'Quinn Marlowfixture',
+        ),
+      ).toBe('institutional-home-on-a-grant-shell');
+    });
+
+    it('still adopts the untyped home onto a row keyed to the organization', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'fixture-imaging-research', entityType: 'LAB' },
+          home,
+          'Quinn Marlowfixture',
+        ),
+      ).toBeNull();
     });
 
     it('keeps a research team named as a group a lab', () => {
@@ -2416,6 +2441,42 @@ describe('officialProfilePiBackfillScraper', () => {
       imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
     });
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
+  });
+
+  it('reads past a news headline or award teaser to the person title (#5323)', () => {
+    for (const teaser of [
+      'Faculty Impact Award',
+      'Faculty and Postdocs Hailed as Outstanding Mentors',
+    ]) {
+      const html = profileHtml.replace(
+        '<h1>Jules Fixture</h1>',
+        `<div class="news-card__title">${teaser}</div><h1>Jules Fixture</h1>`,
+      );
+      const identity = extractOfficialProfileIdentity(html, profileUrl, {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      });
+      expect(identity?.title).toBe('Professor of Surgery (Oncology)');
+    }
+  });
+
+  it('extracts no identity rather than a headline when the page states no title (#5323)', () => {
+    const html = profileHtml
+      .replace('<div class="title">Professor of Surgery (Oncology)</div>', '')
+      .replace(
+        '<meta name="description" content="Professor of Surgery (Oncology)" />',
+        '<meta name="description" content="Faculty Impact Award" />',
+      )
+      .replace(
+        '<h1>Jules Fixture</h1>',
+        '<div class="news-card__title">Faculty Impact Award</div><h1>Jules Fixture</h1>',
+      );
+    expect(
+      extractOfficialProfileIdentity(html, profileUrl, {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      }),
+    ).toBeNull();
   });
 
   it('fails closed when a nav-menu container is the only title candidate (#708)', () => {
@@ -4384,8 +4445,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const result = await scraper.run(profileResearchHomeContextFor(emitted));
 
-    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
-    expect(emitted).toHaveLength(0);
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted.map((o) => o.field)).toEqual(['refusedResearchHomeName']);
   });
 
   it('keeps the PI evidence of a default run when the profile-linked home is refused', async () => {

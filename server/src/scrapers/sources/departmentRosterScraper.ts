@@ -26,6 +26,7 @@
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
   buildFetchAttemptMetrics,
@@ -56,12 +57,14 @@ import type {
 } from '../types';
 import {
   isLikelyPersonSpecificYaleEmail,
+  isRoleOrUnitMailbox,
   netidFromEmail,
   isPhotoSceneDescription,
   normalizeName,
   normalizeNameKeepingCaption,
   slugify,
   splitName,
+  yaleUnitMailboxTokens,
 } from '../utils/scraperHelpers';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
@@ -70,6 +73,7 @@ import {
   withoutMeshNonSubjectDescriptors,
 } from '../utils/meshNonSubjectDescriptors';
 import {
+  isCoursePageUrl,
   isInstitutionalAdvancementUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
@@ -99,6 +103,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { unwrapMicrosoftSafeLinksUrl } from '../../utils/safeLinksUrl';
+import { isTruncatedPersonTitle } from '../../utils/titleHygiene';
 import { orgUnitMatchKey } from '../orgUnitCanonicalization';
 import {
   DEPARTMENT_ROSTER_HEALTH_FIELD,
@@ -1484,6 +1489,43 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * The title on a YIBS affiliate row. The emphasised span is usually the whole title,
+ * followed by a comma and the unit ("Professor of Ecology, Yale School of the
+ * Environment"), but on many rows it is only the start of one, with the rest outside the
+ * emphasis: a linked department ("Professor of" + "Molecular, Cellular, and Developmental
+ * Biology") or the rank after a chair name ("Oastler" + "Professor of Biogeochemistry").
+ * When the span neither ends nor is followed by a separator, the text after it on the same
+ * line completes the title: plain text or further emphasis up to the next separator, and a
+ * link whole, because a department name can carry commas, but only while the title still
+ * dangles at a connective, so a complete title is never joined to a lab-site link.
+ */
+const TITLE_CONTINUATION_TAGS = new Set(['a', 'b', 'em', 'i', 'span', 'strong']);
+
+function fieldCollectionPersonTitle(
+  $: cheerio.CheerioAPI,
+  emphasis: cheerio.Cheerio<AnyNode>,
+): string | undefined {
+  const emphasised = cleanText(emphasis.text());
+  if (!emphasised) return undefined;
+  let title = emphasised;
+  let node = emphasis.get(0)?.nextSibling ?? null;
+  while (node && !/[,;]$/.test(title)) {
+    if (node.type === 'tag' && !TITLE_CONTINUATION_TAGS.has(node.name)) break;
+    if (node.type === 'tag' && node.name === 'a' && !isTruncatedPersonTitle(title)) break;
+    const isText = node.type === 'text';
+    const text = cleanText($(node).text());
+    if (text) {
+      if (/^[,;]/.test(text)) break;
+      const kept = isText ? text.split(/[,;]/)[0] : text;
+      title = cleanText(`${title} ${kept}`);
+      if (isText && kept !== text) break;
+    }
+    node = node.nextSibling;
+  }
+  return title.replace(/[,;]\s*$/, '') || undefined;
+}
+
+/**
  * Legacy Drupal field-collection person rows, used by the YIBS faculty-affiliates
  * roster. Each affiliate is a `field-collection-item-field-person-info` block
  * whose `.field-name-field-person-description` holds an `<h3>` name (often linked
@@ -1504,11 +1546,31 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
 
     const href = nameLink.attr('href') || '';
     const profileUrl = /^https?:\/\//i.test(href) ? href : undefined;
-    const title = cleanText(desc.find('p em').first().text()).replace(/[,;]\s*$/, '') || undefined;
+    const title = fieldCollectionPersonTitle($, desc.find('p em').first());
     const imageUrl = imageUrlFromElement(
       card.find('.field-name-field-person-photo').first(),
       ctx.pageUrl,
     );
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
+export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('#grid__users-member .grid__user').each((_i, el) => {
+    const card = $(el);
+    const name = normalizeName(cleanText(card.find('.grid__user__title').first().text()));
+    if (!name) return;
+
+    const href = card.find('a.grid__user__link').first().attr('href') || '';
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('.grid__user__job-title').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card.find('.grid__user__image').first(), ctx.pageUrl);
 
     out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
@@ -1559,10 +1621,14 @@ function isPersonNameShaped(name: string): boolean {
  * Returns undefined when the leading segment does not look like a personal name so a
  * generic listing/section title cannot overwrite a reliable slug-derived placeholder.
  */
+const WORDPRESS_AUTHOR_ARCHIVE_TITLE_SUFFIX = /,\s*Author at\s.+$/i;
+
 function personNameFromProfileHtml($: cheerio.CheerioAPI): string | undefined {
   const raw =
     $('meta[property="og:title"]').attr('content') || cleanText($('title').first().text());
-  const leading = cleanText(raw).split(/\s+[|–—-]\s+/)[0];
+  const leading = cleanText(raw)
+    .split(/\s+[|–—-]\s+/)[0]
+    .replace(WORDPRESS_AUTHOR_ARCHIVE_TITLE_SUFFIX, '');
   if (!leading || !isPersonNameShaped(leading)) return undefined;
   return leading;
 }
@@ -2363,6 +2429,18 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://yibs.yale.edu/people/faculty-affiliates',
     paginated: false,
     extractor: fieldCollectionPersonExtractor,
+    officialProfileOnly: true,
+    affiliatesOnly: true,
+  },
+  {
+    deptKey: 'fds',
+    deptName: 'Foundations of Data Science',
+    schoolName: 'Yale Institute for Foundations of Data Science',
+    url: 'https://fds.yale.edu/people/',
+    paginated: false,
+    extractor: wordpressUsersListExtractor,
+    // Measured 2026-10-18 (#5282): minting planned 67 rows and every one was for a person
+    // the corpus already covers, 58 of them through a row that person leads.
     officialProfileOnly: true,
     affiliatesOnly: true,
   },
@@ -3450,7 +3528,7 @@ export function profileEnrichmentFromHtml(
       labUrlCandidateRefused = true;
       return;
     }
-    if (isPostingPageUrl(absolute)) {
+    if (isPostingPageUrl(absolute) || isCoursePageUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
     }
@@ -3478,7 +3556,7 @@ export function profileEnrichmentFromHtml(
     $,
     isMeshIndexedProfileUrl(canonicalUrl),
   );
-  const bio = extractBioFromHtml($);
+  const bio = wordpressAuthorProfileBiography($) ?? extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
   const declaredName = personNameFromProfileHtml($);
   const statedLabName = declaredName
@@ -3803,7 +3881,11 @@ export async function enrichEntryFromOfficialProfile(
 function withoutInadmissibleLabWebsite(entry: FacultyEntry): FacultyEntry {
   if (
     !entry.labUrl ||
-    !(isOffsiteInstitutionPersonProfileUrl(entry.labUrl) || isPostingPageUrl(entry.labUrl))
+    !(
+      isOffsiteInstitutionPersonProfileUrl(entry.labUrl) ||
+      isPostingPageUrl(entry.labUrl) ||
+      isCoursePageUrl(entry.labUrl)
+    )
   ) {
     return entry;
   }
@@ -3856,6 +3938,48 @@ export function withoutSharedGroupWebsites<T extends { entry: FacultyEntry; pers
     const url = item.entry.labUrl;
     if (!url || (peopleByUrl.get(labUrlIdentity(url))?.size ?? 0) < 2) return item;
     return { ...item, entry: { ...item.entry, labUrl: undefined, labSlotAttestation: 'refused' } };
+  });
+}
+
+function rosterUnitMailboxTokens(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  sourceUrl: string,
+): Set<string> {
+  return yaleUnitMailboxTokens(
+    [dept.url, sourceUrl, entry.profileUrl, entry.profileSourceUrl],
+    [dept.deptKey, dept.deptName],
+  );
+}
+
+function normalizedRosterEmail(email: string | undefined): string {
+  return String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
+}
+
+/**
+ * An address the roster prints for two different people is an office's, not either
+ * person's, whatever its shape: a staff netid on every profile page passes the netid
+ * shape test, and keying both people by it collapses them into one user key, so the
+ * second is dropped as a duplicate of the first. Refused for every sharer, and decided
+ * before any person key is minted from it.
+ */
+export function withoutSharedRosterEmails<T extends { entry: FacultyEntry }>(
+  items: readonly T[],
+): T[] {
+  const peopleByEmail = new Map<string, Set<string>>();
+  for (const { entry } of items) {
+    const email = normalizedRosterEmail(entry.email);
+    if (!email) continue;
+    const person = rosterIdentityNameSlug(entry) || entry.name;
+    peopleByEmail.set(email, (peopleByEmail.get(email) ?? new Set()).add(person));
+  }
+  return items.map((item) => {
+    const email = normalizedRosterEmail(item.entry.email);
+    if (!email || (peopleByEmail.get(email)?.size ?? 0) < 2) return item;
+    return { ...item, entry: { ...item.entry, email: undefined } };
   });
 }
 
@@ -3942,9 +4066,11 @@ function entryToUserObservations(
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeName(entry.name);
   const { first, last } = splitName(cleaned);
-  const personEmail = isLikelyPersonSpecificYaleEmail(entry.email, cleaned)
-    ? entry.email
-    : undefined;
+  const personEmail =
+    isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
+    !isRoleOrUnitMailbox(entry.email, rosterUnitMailboxTokens(entry, dept, sourceUrl))
+      ? entry.email
+      : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = rosterIdentityNameSlug(entry);
   const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
@@ -4378,14 +4504,14 @@ export class DepartmentRosterScraper implements IScraper {
 
       // Enriched before anything is emitted, because whether a website is one person's
       // or a group's is a fact about the whole roster, not about one row.
-      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      const admitted: Array<{ entry: FacultyEntry }> = [];
       const rosterSurnames: ReadonlySet<string> = new Set(
         entries
           .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
           .filter((surname): surname is string => Boolean(surname)),
       );
       for (const rawEntry of entries) {
-        if (totalFaculty + enriched.length >= limit) {
+        if (totalFaculty + admitted.length >= limit) {
           truncatedByLimit = true;
           break;
         }
@@ -4405,6 +4531,10 @@ export class DepartmentRosterScraper implements IScraper {
           rosterSurnames,
         );
         if (dept.crossListedProgramme && !programmeRosterRowStatesFacultyRank(entry)) continue;
+        admitted.push({ entry });
+      }
+      const enriched: Array<{ entry: FacultyEntry; personKey: string }> = [];
+      for (const { entry } of withoutSharedRosterEmails(admitted)) {
         const personKey = entryToUserObservations(entry, dept, sourceUrl).entityKey;
         const userDedupeKey = `${dept.deptKey}:${personKey}`;
         if (seenUserKeys.has(userDedupeKey)) continue;

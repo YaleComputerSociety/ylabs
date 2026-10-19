@@ -95,7 +95,7 @@ So the panel says "research website" for `websiteUrl` and "topics" for `research
 **Topics are deprecated wording, not a deprecated field.**
 The decision demotes them from a first-class gating field to enrichment, which means they never hide a card.
 It does not mean they are invisible or search-only, and an earlier version of this doc said so wrongly.
-They are load-bearing student-facing content: rendered on every detail page under "Best fit for", compared in the entity comparison view, fed into the intro-email draft, curated through an admin surface, and both searchable and filterable in Meilisearch as well as present in the embedder template.
+They are load-bearing student-facing content: rendered on every detail page under "Topics", compared in the entity comparison view, fed into the intro-email draft, curated through an admin surface, and both searchable and filterable in Meilisearch as well as present in the embedder template.
 
 The stored `researchAreas` field keeps its name: renaming a schema field is a migration, not a vocabulary change.
 

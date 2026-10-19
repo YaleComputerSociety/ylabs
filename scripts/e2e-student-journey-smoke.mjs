@@ -261,7 +261,7 @@ await step('signed-in student reaches the research browse home', async () => {
   await page.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
   await page
-    .getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' })
+    .getByRole('heading', { level: 1, name: 'Find Yale research that fits you.' })
     .waitFor({ timeout: 20000 });
   await page.getByRole('heading', { name: 'Research to explore' }).waitFor({ timeout: 20000 });
   await assertTextIncludes(SMOKE_ENTITY_NAME);
@@ -274,7 +274,10 @@ await step(
     const laptopPage = await context.newPage();
     try {
       const sidebar = laptopPage.locator('header', {
-        has: laptopPage.getByRole('heading', { level: 1, name: 'Find a Yale lab that fits you.' }),
+        has: laptopPage.getByRole('heading', {
+          level: 1,
+          name: 'Find Yale research that fits you.',
+        }),
       });
       const assertSidebarFits = async (state) => {
         const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
@@ -294,6 +297,10 @@ await step(
         for (const axis of ['type', 'school', 'department']) {
           await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
         }
+        const hostedToggle = sidebar.getByRole('checkbox', {
+          name: /^Has hosted undergraduate researchers \([1-9][\d,]*\)$/,
+        });
+        await hostedToggle.waitFor({ timeout: 20000 });
         await assertSidebarFits('while browsing');
         await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
         await assertSidebarFits('with a query typed');
@@ -501,7 +508,7 @@ await screenshot('04-detail-saved');
 await step('the saved entity appears on the dashboard', async () => {
   await page.goto(`${baseUrl}/dashboard`, { waitUntil: 'domcontentloaded' });
   await settleResearchPage();
-  await page.getByRole('tab', { name: /^Dashboard/ }).click();
+  await page.getByRole('tab', { name: /^Saved research/ }).click();
   await page
     .getByRole('heading', { name: 'Saved research plans', exact: true })
     .waitFor({ timeout: 20000 });
@@ -529,15 +536,15 @@ await screenshot('05-account-saved');
 
 await step('each dashboard surface tab paints a full keyboard focus ring', async () => {
   const tabs = page.getByRole('tablist', { name: 'Dashboard surfaces' });
-  const plansTab = tabs.getByRole('tab', { name: /^Dashboard/ });
-  const programsTab = tabs.getByRole('tab', { name: /^Program Watch/ });
+  const plansTab = tabs.getByRole('tab', { name: /^Saved research/ });
+  const programsTab = tabs.getByRole('tab', { name: /^Watched programs/ });
   await plansTab.scrollIntoViewIfNeeded();
   await plansTab.focus();
   await page.keyboard.press('ArrowRight');
-  await assertFocusRingPaintsEverySide(programsTab, 'The Program Watch tab');
+  await assertFocusRingPaintsEverySide(programsTab, 'The Watched programs tab');
   await programsTab.focus();
   await page.keyboard.press('ArrowLeft');
-  await assertFocusRingPaintsEverySide(plansTab, 'The Dashboard tab');
+  await assertFocusRingPaintsEverySide(plansTab, 'The Saved research tab');
 });
 
 await step('each program view-mode segment paints a full keyboard focus ring', async () => {
@@ -674,6 +681,43 @@ await step(
       );
     } finally {
       await narrowPage.close();
+    }
+  },
+);
+
+await step(
+  'the sticky filter bar stays one compact row on a phone with a filter active',
+  async () => {
+    const phonePage = await context.newPage();
+    try {
+      await phonePage.setViewportSize({ width: 390, height: 664 });
+      await phonePage.goto(`${baseUrl}/research?department=Department+of+Fictional+Biology`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await settleResearchPage(phonePage);
+      await phonePage
+        .getByRole('button', { name: /^Remove Department:/ })
+        .waitFor({ timeout: 20000 });
+      const barHeight = await phonePage.evaluate(() => {
+        const bar = document.querySelector('[data-scroll-container] .sticky.top-0');
+        return bar ? Math.round(bar.getBoundingClientRect().height) : null;
+      });
+      assert(
+        barHeight !== null && barHeight <= 72,
+        `The sticky filter bar is ${barHeight}px tall at 390x664 with one filter active; it should stay one row (72px or less) so results keep the screen (#5305).`,
+      );
+      const chipOverflow = await phonePage.evaluate(() => {
+        const strip = document.querySelector('[aria-label="Active research filters"]');
+        const chip = strip?.querySelector('button[aria-label^="Remove Department:"]');
+        if (!strip || !chip) return null;
+        return Math.round(chip.getBoundingClientRect().right - strip.getBoundingClientRect().right);
+      });
+      assert(
+        chipOverflow !== null && chipOverflow <= 0,
+        `The department chip ends ${chipOverflow}px past the edge of the phone chip strip, so its remove control is cut off (#5305).`,
+      );
+    } finally {
+      await phonePage.close();
     }
   },
 );
@@ -1552,6 +1596,85 @@ await step('a student sees only student-worded program filter tabs, all in view'
         `The program filter tabs at ${viewport.width}px run past the popover edge: ${clipped.map((tab) => tab.name).join(', ')}.`,
       );
     });
+  }
+});
+
+const SYNTHETIC_SHORT_FACET = Array.from({ length: 10 }, (_, index) => `Subject area ${index + 1}`);
+const SYNTHETIC_LONG_FACET = Array.from({ length: 21 }, (_, index) => `Purpose kind ${index + 1}`);
+
+const lastOptionPlacement = (dialog) =>
+  dialog.evaluate((element) => {
+    const list = element.querySelector('fieldset');
+    const options = list.querySelectorAll('label');
+    const last = options[options.length - 1];
+    const box = element.getBoundingClientRect();
+    const rect = last.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const probe = (x, y) => element.contains(document.elementFromPoint(x, y));
+    return {
+      listOverflow: list.scrollHeight - list.clientHeight,
+      insideViewport: rect.top >= 0 && rect.bottom <= window.innerHeight,
+      insideDialog: rect.top >= box.top && rect.bottom <= box.bottom,
+      lastOptionOnTop: probe(centerX, centerY),
+      dialogEdgeOnTop: probe(box.right - 8, box.top + box.height / 2),
+    };
+  });
+
+await step('a short program facet shows in full and the filter popover paints on top', async () => {
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await withSyntheticBrowsePage(
+      viewport,
+      async (syntheticPage) => {
+        await syntheticPage.route('**/api/programs/filters', (route) =>
+          route.fulfill({
+            json: { subjects: SYNTHETIC_SHORT_FACET, purpose: SYNTHETIC_LONG_FACET },
+          }),
+        );
+        await syntheticPage.goto(`${baseUrl}/programs`, { waitUntil: 'domcontentloaded' });
+        await syntheticPage.getByText('Program Fixture 0').first().waitFor({ timeout: 20000 });
+        await syntheticPage
+          .getByRole('button', { name: /^Filters/ })
+          .first()
+          .click();
+        const dialog = syntheticPage.getByRole('dialog', { name: 'Program filters' });
+        await dialog.waitFor({ timeout: 20000 });
+        await dialog.getByRole('button', { name: 'Subject', exact: true }).click();
+        await dialog.getByText(SYNTHETIC_SHORT_FACET.at(-1), { exact: true }).waitFor();
+        const subject = await lastOptionPlacement(dialog);
+        record('program short facet placement', { width: viewport.width, ...subject });
+        const at = `${viewport.width}x${viewport.height}`;
+        assert(
+          subject.listOverflow <= 1,
+          `The Subject options scroll in an inner box at ${at}: ${subject.listOverflow}px hidden.`,
+        );
+        assert(
+          subject.insideViewport && subject.insideDialog,
+          `The last Subject option is cut off at ${at}.`,
+        );
+        assert(
+          subject.lastOptionOnTop && subject.dialogEdgeOnTop,
+          `Something paints over the program filter popover at ${at}.`,
+        );
+
+        if (viewport.width >= 640) return;
+        await dialog.getByText(SYNTHETIC_SHORT_FACET[0], { exact: true }).click();
+        await dialog.getByRole('button', { name: /^Clear all filters/ }).waitFor();
+        await dialog.getByRole('button', { name: /^Purpose/ }).click();
+        const lastPurpose = dialog.getByText(SYNTHETIC_LONG_FACET.at(-1), { exact: true });
+        await lastPurpose.scrollIntoViewIfNeeded();
+        const purpose = await lastOptionPlacement(dialog);
+        record('program long facet placement', { width: viewport.width, ...purpose });
+        assert(
+          purpose.insideViewport && purpose.insideDialog && purpose.lastOptionOnTop,
+          `The last Purpose option cannot be reached in the phone filter sheet at ${at}.`,
+        );
+      },
+      { reducedMotion: 'reduce' },
+    );
   }
 });
 

@@ -2,10 +2,12 @@
  * Programs & Fellowships browse page with search, local quick filters,
  * application-cycle empty states, and grid/list view.
  */
+import { useWatchedProgramStages } from '../hooks/useWatchedProgramStages';
+import { programSettledStageBadge } from '../utils/researchPlanStages';
+import { PROGRAM_CLOSING_SOON_PHRASE } from '../utils/programClosingSoonWindow';
 import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
 import { showWarningDialog } from '../utils/warningDialog';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { PROGRAMS_QUERY_PARAM } from '../utils/researchProgramsHandoff';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
@@ -13,6 +15,7 @@ import UserContext from '../contexts/UserContext';
 import BrowseGrid from '../components/shared/BrowseGrid';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import { useProgramSearchUrlSync } from '../hooks/useProgramSearchUrlSync';
 import LoadErrorNotice from '../components/shared/LoadErrorNotice';
 import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
 import CombinedFilterDropdown, {
@@ -47,11 +50,13 @@ import {
   isDepartmentResearchGuidance,
 } from '../utils/programJourney';
 import {
+  citizenshipFilterOptionLabel,
   emptyProgramBoardSummary,
   isOpenToFirstYears,
   needsMentorBeforeApplying,
   programBoardSectionOf,
   PROGRAM_BOARD_SECTIONS,
+  PROGRAM_FACET_NOT_STATED_NOTE,
   type ProgramBoardSection,
   type ProgramBoardSummary,
 } from '../utils/programBoard';
@@ -95,7 +100,7 @@ const quickFilterEmptyCopy = (quickFilter: FellowshipQuickFilter) => {
   if (quickFilter === 'closingSoon')
     return {
       title: 'No application windows are closing soon',
-      body: 'There are no open program or fellowship deadlines due in the next 30 days. Use the next cycle filter to track recurring opportunities while you prepare eligibility, mentor fit, and materials.',
+      body: `There are no open program or fellowship deadlines due in the next ${PROGRAM_CLOSING_SOON_PHRASE}. Use the next cycle filter to track recurring opportunities while you prepare eligibility, mentor fit, and materials.`,
     };
   if (quickFilter === 'guidance')
     return {
@@ -157,7 +162,7 @@ const statusTiles: Array<{
   {
     key: 'closingSoon',
     tileLabel: 'Due soon',
-    tileDetail: 'Within 30 days',
+    tileDetail: `Within ${PROGRAM_CLOSING_SOON_PHRASE}`,
     tileClassName: 'yr-pill-gold',
   },
   {
@@ -229,14 +234,16 @@ const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: strin
   { value: 'suppressed', label: 'Suppressed' },
 ];
 
+type ProgramDisplaySection = ProgramBoardSection | 'bestMatches';
+
 const boardSections: Array<{
-  key: ProgramBoardSection;
+  key: ProgramDisplaySection;
   title: string;
   description: string;
 }> = [
   {
     key: 'closingSoon',
-    title: 'Due in the next 30 days',
+    title: `Due in the next ${PROGRAM_CLOSING_SOON_PHRASE}`,
     description: 'Open now and closing soon, soonest deadline first.',
   },
   {
@@ -272,6 +279,26 @@ const boardSections: Array<{
     description:
       'Retained records that need eligibility review or should not be treated as active undergraduate options.',
   },
+];
+
+const searchResultSections: typeof boardSections = [
+  {
+    key: 'bestMatches',
+    title: 'Best matches',
+    description:
+      'Closest match to your search first. Each card shows whether it is open, closing soon, or closed.',
+  },
+  ...boardSections.filter((section) => section.key === 'archive'),
+];
+
+const closeMatchSections: typeof boardSections = [
+  {
+    key: 'bestMatches',
+    title: 'Close matches',
+    description:
+      'Each of these programs mentions all but one of the words you typed, closest match first.',
+  },
+  ...boardSections.filter((section) => section.key === 'archive'),
 ];
 
 const dateValue = (value?: string | null) => {
@@ -336,6 +363,55 @@ const OPENED_IN_PAGE_HISTORY_STATE: ProgramModalHistoryState = { programModalOpe
 const wasProgramModalOpenedInPage = (historyState: unknown) =>
   (historyState as Partial<ProgramModalHistoryState> | null)?.programModalOpenedInPage === true;
 
+type ProgramLinkProblem = 'notFound' | 'unavailable';
+
+const PROGRAM_LINK_NOT_FOUND_STATUSES = new Set([400, 404]);
+
+const programLinkProblemOf = (error: unknown): ProgramLinkProblem =>
+  PROGRAM_LINK_NOT_FOUND_STATUSES.has(
+    (error as { response?: { status?: number } } | null)?.response?.status ?? 0,
+  )
+    ? 'notFound'
+    : 'unavailable';
+
+const PROGRAM_LINK_NOTICE_COPY: Record<ProgramLinkProblem, { title: string; detail: string }> = {
+  notFound: {
+    title: 'That program link does not match a program',
+    detail:
+      'It may have been removed, or the link may be incomplete. Search below to find the program.',
+  },
+  unavailable: {
+    title: 'We could not open that program',
+    detail:
+      'This is a loading problem, not a sign the program is gone. Check your connection and open the link again.',
+  },
+};
+
+const ProgramLinkNotice = ({
+  problem,
+  onDismiss,
+}: {
+  problem: ProgramLinkProblem;
+  onDismiss: () => void;
+}) => (
+  <div
+    role="alert"
+    className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3"
+  >
+    <div className="min-w-0 text-sm text-amber-900">
+      <p className="font-semibold">{PROGRAM_LINK_NOTICE_COPY[problem].title}</p>
+      <p className="mt-1">{PROGRAM_LINK_NOTICE_COPY[problem].detail}</p>
+    </div>
+    <button
+      type="button"
+      onClick={onDismiss}
+      className="yr-focus-ring inline-flex min-h-[44px] flex-shrink-0 items-center rounded-control border border-amber-300 bg-panel px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+    >
+      Dismiss
+    </button>
+  </div>
+);
+
 const withoutProgramParams = (params: URLSearchParams) => {
   params.delete(PROGRAM_PARAM);
   params.delete(LEGACY_PROGRAM_PARAM);
@@ -352,6 +428,8 @@ const Fellowships = () => {
   const {
     queryString,
     queryCorrection,
+    resultsRankedByRelevance,
+    resultsMissOneWord,
     searchTypedSpelling,
     fellowships,
     isLoading,
@@ -403,14 +481,28 @@ const Fellowships = () => {
     () => createInitialBrowsePageState<Fellowship>(),
   );
   const [showFirstSaveCallout, setShowFirstSaveCallout] = useState(false);
+  const [programLinkProblem, setProgramLinkProblem] = useState<ProgramLinkProblem | null>(null);
   const {
     favIds: favFellowshipIds,
     loadError: watchedProgramsLoadFailed,
     setFavorite,
     reloadFavorites,
   } = useFavorites('watchedPrograms', { surface: 'search' });
+  const { stages: watchedProgramStages, reloadStages: reloadWatchedProgramStages } =
+    useWatchedProgramStages(favFellowshipIds);
+  const settledStageBadges = useMemo(
+    () =>
+      Object.fromEntries(
+        favFellowshipIds.map((id) => [id, programSettledStageBadge(watchedProgramStages[id])]),
+      ),
+    [favFellowshipIds, watchedProgramStages],
+  );
   const { unwatchedProgram, unwatchProgram, undoUnwatch, restartUndoWindow } =
-    useUndoableProgramUnwatch({ setFavorite, surface: 'search' });
+    useUndoableProgramUnwatch({
+      setFavorite,
+      surface: 'search',
+      onPlanRestored: reloadWatchedProgramStages,
+    });
   const capturingPlanIdsRef = useRef(new Set<string>());
   const {
     selectedItem: selectedFellowship,
@@ -418,22 +510,7 @@ const Fellowships = () => {
     adminEditItem: adminEditFellowship,
   } = state;
 
-  const [handedOffQuery] = useState(() => searchParams.get(PROGRAMS_QUERY_PARAM) ?? '');
-  useEffect(() => {
-    setQueryString(handedOffQuery);
-  }, [handedOffQuery, setQueryString]);
-
-  const urlCarriesHandedOffQuery = searchParams.has(PROGRAMS_QUERY_PARAM);
-  useEffect(() => {
-    if (!urlCarriesHandedOffQuery) return;
-    setSearchParams(
-      (params) => {
-        params.delete(PROGRAMS_QUERY_PARAM);
-        return params;
-      },
-      { replace: true },
-    );
-  }, [urlCarriesHandedOffQuery, setSearchParams]);
+  useProgramSearchUrlSync();
 
   useEffect(() => {
     if (!isModalOpen) restartUndoWindow();
@@ -451,27 +528,30 @@ const Fellowships = () => {
     if (isModalOpen && requestedProgramId === selectedProgramId) return;
 
     const openedInPage = wasProgramModalOpenedInPage(location.state);
-    let isLatestRequest = true;
+    const controller = new AbortController();
     axios
-      .get(`/programs/${encodeURIComponent(requestedProgramId)}`)
+      .get(`/programs/${encodeURIComponent(requestedProgramId)}`, { signal: controller.signal })
       .then((response) => {
-        if (!isLatestRequest) return;
         const rawProgram = response.data?.program || response.data?.fellowship;
-        if (rawProgram) {
-          const program = createFellowship(rawProgram);
-          dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
-          if (!openedInPage) {
-            axios.put(`fellowships/${program.id}/addView`).catch(() => {});
-          }
+        if (!rawProgram) {
+          setProgramLinkProblem('notFound');
+          setSearchParams(withoutProgramParams, { replace: true });
+          return;
+        }
+        const program = createFellowship(rawProgram);
+        setProgramLinkProblem(null);
+        dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
+        if (!openedInPage) {
+          axios.put(`fellowships/${program.id}/addView`).catch(() => {});
         }
       })
-      .catch(() => {
-        if (!isLatestRequest) return;
-        console.error('Error fetching direct fellowship link.');
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setProgramLinkProblem(programLinkProblemOf(error));
         setSearchParams(withoutProgramParams, { replace: true });
       });
     return () => {
-      isLatestRequest = false;
+      controller.abort();
     };
   }, [requestedProgramId, selectedProgramId, isModalOpen, setSearchParams, location.state]);
 
@@ -521,6 +601,7 @@ const Fellowships = () => {
       options: filterOptions.yearOfStudy,
       selected: selectedYearOfStudy,
       setSelected: setSelectedYearOfStudy,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'term',
@@ -528,6 +609,7 @@ const Fellowships = () => {
       options: filterOptions.termOfAward,
       selected: selectedTermOfAward,
       setSelected: setSelectedTermOfAward,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'subjects',
@@ -542,6 +624,7 @@ const Fellowships = () => {
       options: filterOptions.purpose,
       selected: selectedPurpose,
       setSelected: setSelectedPurpose,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'region',
@@ -549,11 +632,14 @@ const Fellowships = () => {
       options: filterOptions.globalRegions,
       selected: selectedRegions,
       setSelected: setSelectedRegions,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
     },
     {
       key: 'citizenship',
       label: 'Citizenship',
       options: filterOptions.citizenshipStatus,
+      labelFn: citizenshipFilterOptionLabel,
+      note: PROGRAM_FACET_NOT_STATED_NOTE,
       selected: selectedCitizenship,
       setSelected: setSelectedCitizenship,
     },
@@ -593,7 +679,12 @@ const Fellowships = () => {
     { label: 'Purpose', values: selectedPurpose, clear: () => setSelectedPurpose([]) },
     { label: 'Subject', values: selectedSubjects, clear: () => setSelectedSubjects([]) },
     { label: 'Region', values: selectedRegions, clear: () => setSelectedRegions([]) },
-    { label: 'Citizenship', values: selectedCitizenship, clear: () => setSelectedCitizenship([]) },
+    {
+      label: 'Citizenship',
+      values: selectedCitizenship,
+      labelFn: citizenshipFilterOptionLabel,
+      clear: () => setSelectedCitizenship([]),
+    },
   ].filter((g) => g.values.length > 0);
 
   const fellowshipChips: ActiveFilterChip[] = fellowshipFilterGroups.map((group) => {
@@ -661,12 +752,17 @@ const Fellowships = () => {
       if (quickFilter === 'noMentorFirst') return !needsMentorBeforeApplying(f);
       return true;
     };
-    const byKey = {} as Record<ProgramBoardSection, BrowsableItem[]>;
+    const byKey = {} as Record<ProgramDisplaySection, BrowsableItem[]>;
     for (const key of PROGRAM_BOARD_SECTIONS) {
       byKey[key] = toBrowsable(boardGroups[key].filter(matchesQuickFilter));
     }
+    byKey.bestMatches = toBrowsable(
+      fellowships.filter(
+        (f) => programBoardSectionOf(f, cycleOf.get(f)!) !== 'archive' && matchesQuickFilter(f),
+      ),
+    );
     return byKey;
-  }, [boardGroups, cycleOf, quickFilter]);
+  }, [boardGroups, cycleOf, fellowships, quickFilter]);
 
   const watchProgram = (programId: string) => {
     if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {
@@ -707,6 +803,7 @@ const Fellowships = () => {
 
   const handleOpenModal = (item: BrowsableItem) => {
     if (item.type === 'fellowship') {
+      setProgramLinkProblem(null);
       dispatch({ type: 'OPEN_DETAIL_MODAL', item: item.data });
       setSearchParams(
         (params) => {
@@ -725,6 +822,9 @@ const Fellowships = () => {
     }
   };
 
+  const showSearchRanking = resultsRankedByRelevance && sortBy === 'default';
+  const resultsAreCloseMatches = resultsRankedByRelevance && resultsMissOneWord;
+  const showCloseMatches = showSearchRanking && resultsMissOneWord;
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
   const chooseQuickFilter = (value: FellowshipQuickFilter) => {
@@ -805,7 +905,7 @@ const Fellowships = () => {
                 to="/dashboard?tab=programs"
                 className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition-colors hover:bg-panel yr-focus-ring"
               >
-                Saved programs
+                Watched programs
               </Link>
               <a
                 href="https://yale.communityforce.com/Funds/Search.aspx#4371597136646D517975544F5976596D4E73384E69673D3D"
@@ -829,7 +929,7 @@ const Fellowships = () => {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
-          <aside className="space-y-3 xl:sticky xl:top-6">
+          <aside className="relative z-10 space-y-3 xl:sticky xl:top-6">
             <div className="yr-panel flex flex-col gap-3 rounded-card p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
               <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">
                 <label
@@ -913,6 +1013,13 @@ const Fellowships = () => {
               <FirstSaveCallout kind="program" onDismiss={() => setShowFirstSaveCallout(false)} />
             )}
 
+            {programLinkProblem && (
+              <ProgramLinkNotice
+                problem={programLinkProblem}
+                onDismiss={() => setProgramLinkProblem(null)}
+              />
+            )}
+
             {watchedProgramsLoadFailed && (
               <div
                 role="alert"
@@ -974,7 +1081,21 @@ const Fellowships = () => {
                     </p>
                   </div>
                 )}
-                {boardSections.map((section) =>
+                {resultsAreCloseMatches && (
+                  <p
+                    role="status"
+                    className="mb-4 rounded-card border border-line-brand bg-brand-soft px-4 py-3 text-sm text-brand-navy"
+                  >
+                    <span className="font-semibold">No program mentions every word you typed.</span>{' '}
+                    Try fewer words, or look through the close matches below.
+                  </p>
+                )}
+                {(showCloseMatches
+                  ? closeMatchSections
+                  : showSearchRanking
+                    ? searchResultSections
+                    : boardSections
+                ).map((section) =>
                   boardItems[section.key].length > 0 ? (
                     <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
                       <SectionHeader
@@ -986,6 +1107,7 @@ const Fellowships = () => {
                       <BrowseGrid
                         items={boardItems[section.key]}
                         favIds={favFellowshipIds}
+                        statusBadgeOverrides={settledStageBadges}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenModal={handleOpenModal}
                         onAdminEdit={isAdmin ? handleAdminEdit : undefined}

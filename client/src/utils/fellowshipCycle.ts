@@ -1,12 +1,18 @@
+import { PROGRAM_CLOSING_SOON_DAYS } from './programClosingSoonWindow';
 import { Fellowship } from '../types/types';
 import {
   STALE_DEADLINE_SHORT_LABEL,
   STALE_DEADLINE_STATUS_LABEL,
   getFellowshipApplicationStatus,
 } from './fellowshipStatus';
-import { formatShortProgramDate, programDeadlineClosingInstant } from './programDates';
+import {
+  formatProjectedProgramDate,
+  formatShortProgramDate,
+  newYorkCalendarDaysUntil,
+  programDeadlineClosingInstant,
+} from './programDates';
 
-export const CLOSING_SOON_DAYS = 30;
+export const CLOSING_SOON_DAYS = PROGRAM_CLOSING_SOON_DAYS;
 
 const NEUTRAL_CYCLE_BADGE_CLASS = 'bg-gray-100 text-gray-600 border border-gray-200';
 
@@ -105,8 +111,8 @@ export function getFellowshipCycleStatus(
   }
 
   if (isOpen && deadline) {
-    const daysUntil = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysUntil <= CLOSING_SOON_DAYS && daysUntil > 0) {
+    const daysUntil = newYorkCalendarDaysUntil(deadline, now);
+    if (daysUntil <= CLOSING_SOON_DAYS && daysUntil >= 0) {
       return {
         category: 'closingSoon',
         label: 'Closing soon',
@@ -160,7 +166,7 @@ export function getFellowshipDeadlineSubtitle(
     return `Opens ${formatShortProgramDate(fellowship.applicationOpenDate)}`;
   }
   if (status.category === 'projectedNextCycle' && fellowship.deadline) {
-    return `Est. next cycle ~${formatShortProgramDate(fellowship.deadline)} (unconfirmed)`;
+    return `Est. next cycle ~${formatProjectedProgramDate(fellowship.deadline)} (unconfirmed)`;
   }
   const deadline = programDeadlineClosingInstant(fellowship.deadline);
   if (!deadline) return 'No deadline';

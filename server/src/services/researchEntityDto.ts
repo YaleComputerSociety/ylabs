@@ -1,6 +1,10 @@
 import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  undergradInvitationLevels,
+  type UndergradInvitationLevel,
+} from '../models/storedVocabularies';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
@@ -25,6 +29,7 @@ import {
   type ResearchHomeCardSummary,
 } from '../utils/researchHomeCardSummary';
 import {
+  isCoursePageUrl,
   isDisallowedResearchEntitySourceUrl,
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
@@ -32,6 +37,7 @@ import {
   isPostingPageCitedAsResearchWebsite,
   isPressOrNewsHostUrl,
   isUmbrellaPageCitedByPerson,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
@@ -43,15 +49,8 @@ import {
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
-import {
-  isModelSearchNote,
-  RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
-  UNDERGRAD_MICROSITE_LANE,
-} from '../scrapers/undergradEvidenceQuoteValidation';
-import {
-  quotePageIsAboutAnotherEntity,
-  quoteStatesAnUndergraduateAccessFact,
-} from '../scrapers/undergradQuoteRelevance';
+import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
+import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
 import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
@@ -515,6 +514,30 @@ export function publicFellowshipRecipients(value: unknown): PublicFellowshipReci
     .slice(0, MAX_PUBLIC_FELLOWSHIP_RECIPIENTS);
 }
 
+export interface PublicUndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
+}
+
+export function publicUndergradInvitation(
+  value: unknown,
+  group: Parameters<typeof quotePageIsAboutAnotherEntity>[1],
+): PublicUndergradInvitation | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { level, quote, sourceUrl } = value as Record<string, unknown>;
+  if (!undergradInvitationLevels.includes(level as UndergradInvitationLevel)) return undefined;
+  if (typeof quote !== 'string' || !quote.trim()) return undefined;
+  const servedUrl = publicHttpUrl(sourceUrl);
+  if (!servedUrl || quotePageIsAboutAnotherEntity(servedUrl, group)) return undefined;
+  if (quoteListsPeopleWithTheirContactDetails(quote)) return undefined;
+  return {
+    level: level as UndergradInvitationLevel,
+    quote: quote.trim().slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+    sourceUrl: servedUrl,
+  };
+}
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
@@ -523,7 +546,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'school',
   'schools',
   'currentUndergradCount',
-  'undergradEvidenceQuote',
+  'undergradInvitation',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -542,25 +565,41 @@ export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
   forList?: boolean;
   leadMemberNames?: readonly string[];
+  /**
+   * The hosting verdict read from the whole row, for a caller that narrowed away one of
+   * its inputs before building the DTO: the detail route withholds `rosterEnrichment`
+   * (#5232).
+   */
+  hasHostedUndergraduates?: boolean;
 }
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradEvidenceQuote']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradInvitation']);
 
-function publicTextValue(value: unknown): unknown {
+const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set([
+  'waysIn',
+  'recentGrants',
+  'leadHonors',
+  'fundingAgencies',
+]);
+
+function publicTextValue(value: unknown, keepContacts = false): unknown {
   if (typeof value === 'string') {
-    return redactDirectContactInfo(value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH));
+    const bounded = value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+    return keepContacts ? bounded : redactDirectContactInfo(bounded);
   }
   if (Array.isArray(value)) {
-    return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS).map(publicTextValue);
+    return value
+      .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS)
+      .map((item) => publicTextValue(item, keepContacts));
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const source = value as Record<string, unknown>;
     return Object.fromEntries(
       Object.keys(source)
         .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS)
-        .map((key) => [key, publicTextValue(source[key])]),
+        .map((key) => [key, publicTextValue(source[key], keepContacts)]),
     );
   }
   return value;
@@ -625,7 +664,9 @@ function derivePublicResearchEntityDto(
     if (options.forList && LIST_TRIMMED_DETAIL_ONLY_FIELDS.has(field)) continue;
     if (wayInWithheld && WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD.has(field)) continue;
     if (isCurrentFundingField(field)) {
-      if (currentFunding[field] !== undefined) dto[field] = publicTextValue(currentFunding[field]);
+      if (currentFunding[field] !== undefined) {
+        dto[field] = publicTextValue(currentFunding[field], CONTACT_SHOWN_PUBLIC_FIELDS.has(field));
+      }
       continue;
     }
     if (field === 'shortDescription') {
@@ -643,7 +684,8 @@ function derivePublicResearchEntityDto(
           !isPressOrNewsHostUrl(url) &&
           !isMapOrDirectionsUrl(url) &&
           !isInstitutionalPublicityPageUrl(url) &&
-          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity);
+          !isPostingPageCitedAsResearchWebsite(url, hostOwnerIdentity) &&
+          !isCoursePageUrl(url);
         if (url && ownedByThisEntity) dto[field] = url;
         continue;
       }
@@ -665,21 +707,9 @@ function derivePublicResearchEntityDto(
         dto[field] = String(served[field] || '');
         continue;
       }
-      if (field === 'undergradEvidenceQuote') {
-        const provenance = group.fieldProvenance?.undergradEvidenceQuote;
-        const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
-        const withheld =
-          isModelSearchNote(group[field]) ||
-          quoteListsPeopleWithTheirContactDetails(group[field]) ||
-          provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
-          (fromMicrositeLane &&
-            (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
-              quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
-        if (!withheld) {
-          dto[field] = String(group[field]).slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-          const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
-          if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
-        }
+      if (field === 'undergradInvitation') {
+        const invitation = publicUndergradInvitation(group[field], group);
+        if (invitation) dto[field] = invitation;
         continue;
       }
       if (field === 'currentUndergradCount') {
@@ -698,11 +728,13 @@ function derivePublicResearchEntityDto(
         dto[field] = publicResearchAreaArray(served[field]);
         continue;
       }
-      dto[field] = publicTextValue(group[field]);
+      dto[field] = publicTextValue(group[field], CONTACT_SHOWN_PUBLIC_FIELDS.has(field));
     }
   }
 
-  if (entityHasHostedUndergraduates(group)) dto.hasUndergradHostingEvidence = true;
+  if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
+    dto.hasUndergradHostingEvidence = true;
+  }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 
   // The browse card is the same line `shortDescription` above carries, because both
@@ -732,15 +764,21 @@ function derivePublicResearchEntityDto(
     dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
+  const servedPayload = {
+    ...dto,
+    shortDescription: dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
+  };
+  dto.sourceUrls = withoutUncreditedCreditOnlyCitations(
+    dto.sourceUrls,
+    group.fieldProvenance,
+    servedPayload,
+    group,
+  );
   if (group.sourceFieldContributions !== undefined) {
     dto.sourceFieldContributions = publicSourceFieldContributionsArray(
       group.sourceFieldContributions,
       group.sourceLinkHealth,
-      {
-        ...dto,
-        shortDescription:
-          dto.shortDescription === served.shortDescription ? dto.shortDescription : '',
-      },
+      servedPayload,
     );
   }
 

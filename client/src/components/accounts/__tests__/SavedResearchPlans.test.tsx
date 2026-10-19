@@ -183,7 +183,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     fireEvent.blur(note);
@@ -207,7 +207,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Notes' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Edit note for / }));
     const textarea = await screen.findByRole('textbox', { name: 'Note for Owner Lab' });
     act(() => textarea.focus());
     fireEvent.blur(textarea);
@@ -228,7 +228,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
@@ -256,7 +256,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1), { timeout: 2000 });
@@ -278,7 +278,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Other Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Add note for / }));
     const note = screen.getByRole('textbox', { name: 'Note for Other Lab' });
     fireEvent.change(note, { target: { value: 'Email the PI in September' } });
     await screen.findByText(/Not saved/, {}, { timeout: 2000 });
@@ -299,7 +299,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Owner Lab from saved plans' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsave Owner Lab' }));
 
     await waitFor(() =>
       expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
@@ -380,6 +380,39 @@ describe('SavedResearchPlans', () => {
     expect(screen.queryByText('Open now')).toBeNull();
     expect(screen.queryByText('Not currently available')).toBeNull();
     expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
+  });
+
+  it('labels kind and title through the shared owners the profile page uses', async () => {
+    withAccessPlans([
+      {
+        _id: 'fra-id',
+        slug: 'fra-row',
+        name: 'Fixture Person Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        departments: [],
+      },
+      {
+        _id: 'practice-id',
+        slug: 'practice-row',
+        name: 'Fixture Artist Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        creativePractice: true,
+        departments: [],
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('link', { name: 'Fixture Person' })).toBeTruthy();
+    expect(screen.getByText('Faculty research')).toBeTruthy();
+    expect(screen.getByText('Creative practice')).toBeTruthy();
+    expect(screen.queryByText('Individual')).toBeNull();
   });
 
   it('caps comparison selection at four saved research profiles', async () => {
@@ -516,7 +549,7 @@ describe('SavedResearchPlans', () => {
   });
 
   it('does not promise a readable note for a target that will never come back', async () => {
-    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'RETIRED' }]);
 
     render(
       <MemoryRouter>
@@ -530,7 +563,7 @@ describe('SavedResearchPlans', () => {
 
   it('counts a saved plan the list cannot show so the dashboard tally agrees (#2174)', async () => {
     withUnavailablePlans([
-      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-gone', reason: 'RETIRED' },
       { _id: 'id-held', reason: 'UNAVAILABLE' },
     ]);
     const onCountChange = vi.fn();
@@ -564,7 +597,7 @@ describe('SavedResearchPlans', () => {
 
   it('distinguishes a home that left the directory from one that is only held back', async () => {
     withUnavailablePlans([
-      { _id: 'id-gone', reason: 'REMOVED' },
+      { _id: 'id-gone', reason: 'RETIRED' },
       { _id: 'id-held', reason: 'UNAVAILABLE' },
     ]);
 
@@ -575,7 +608,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('2 saved items are not showing below');
-    expect(screen.getByText(/No longer in the directory/)).toBeTruthy();
+    expect(screen.getByText(/No longer listed in the student directory/)).toBeTruthy();
     expect(screen.getByText(/Held back from the student directory/)).toBeTruthy();
   });
 
@@ -622,7 +655,7 @@ describe('SavedResearchPlans', () => {
   });
 
   it('removes an unavailable plan by its entity id and drops the notice row', async () => {
-    withUnavailablePlans([{ _id: 'id-gone', reason: 'REMOVED' }]);
+    withUnavailablePlans([{ _id: 'id-gone', reason: 'RETIRED' }]);
     mockedAxios.delete.mockResolvedValue({ data: { savedResearchEntityIds: [] } });
 
     render(
@@ -674,7 +707,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
 
     const undo = await screen.findByRole('button', { name: 'Undo' });
     const region = undo.closest('[role="status"]');
@@ -700,7 +733,7 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText('Owner Lab');
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() =>
@@ -728,7 +761,7 @@ describe('SavedResearchPlans', () => {
 
     await screen.findByText('Other Lab');
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /Remove Other Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Other Lab$/ }));
 
     const undo = await screen.findByRole('button', { name: 'Undo' });
     expect(undo.closest('[role="status"]')?.textContent).not.toContain('notes');
@@ -753,7 +786,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
@@ -770,7 +803,7 @@ describe('SavedResearchPlans', () => {
     );
 
     await screen.findByText('Owner Lab');
-    fireEvent.click(screen.getByRole('button', { name: /Remove Owner Lab from saved plans/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Unsave Owner Lab$/ }));
 
     expect(screen.queryByText(/are you sure/i)).toBeNull();
     expect(await screen.findByRole('button', { name: 'Undo' })).toBeTruthy();
@@ -841,5 +874,523 @@ describe('SavedResearchPlans', () => {
       expect(await screen.findByText('Owner Lab')).toBeTruthy();
       expect(screen.queryByRole('alert')).toBeNull();
     });
+  });
+
+  it('loads a plan saved in another tab without resetting a note being edited here', async () => {
+    let ids = ['owner-lab'];
+    let entities: Array<Record<string, unknown>> = [
+      { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ids } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({ data: { savedResearchEntities: entities } });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({
+          data: { savedResearchEntityPlans: { id1: { privateNotes: 'Stored note' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockImplementation(() => new Promise(() => {}));
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    fireEvent.click(screen.getByRole('button', { name: /^Edit note for / }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Note for Owner Lab' }), {
+      target: { value: 'Unsaved local edit' },
+    });
+
+    ids = ['owner-lab', 'other-lab'];
+    entities = [
+      ...entities,
+      { _id: 'id2', slug: 'other-lab', name: 'Other Lab', kind: 'lab', departments: [] },
+    ];
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Other Lab')).toBeTruthy();
+    expect(
+      (screen.getByRole('textbox', { name: 'Note for Owner Lab' }) as HTMLTextAreaElement).value,
+    ).toBe('Unsaved local edit');
+  });
+
+  it('retries loading a plan saved in another tab after a failed refresh', async () => {
+    let ids = ['owner-lab'];
+    let failEntities = false;
+    const entities = [
+      { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+      { _id: 'id2', slug: 'other-lab', name: 'Other Lab', kind: 'lab', departments: [] },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [...ids] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        if (failEntities) return Promise.reject(new Error('network'));
+        return Promise.resolve({
+          data: { savedResearchEntities: entities.filter((entity) => ids.includes(entity.slug)) },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+
+    ids = ['owner-lab', 'other-lab'];
+    failEntities = true;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() =>
+      expect(
+        mockedAxios.get.mock.calls.filter(([url]) => url === '/users/savedResearchEntities'),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByText('Other Lab')).toBeNull();
+
+    failEntities = false;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Other Lab')).toBeTruthy();
+  });
+
+  it('takes a stage changed in another tab when this tab becomes visible again', async () => {
+    let plan = { stage: 'CONTACTED', privateNotes: '', updatedAt: '2026-01-01T00:00:00.000Z' };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab'] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: { id1: plan } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+
+    plan = { stage: 'APPLIED', privateNotes: '', updatedAt: '2026-01-02T00:00:00.000Z' };
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => expect(select.value).toBe('APPLIED'));
+  });
+
+  it('refuses to overwrite a newer stage and shows the latest one instead', async () => {
+    let plan = { stage: 'CONTACTED', privateNotes: '', updatedAt: '2026-01-01T00:00:00.000Z' };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab'] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: { id1: plan } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockRejectedValueOnce(
+      Object.assign(new Error('conflict'), { isAxiosError: true, response: { status: 409 } }),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+    plan = { stage: 'APPLIED', privateNotes: '', updatedAt: '2026-01-02T00:00:00.000Z' };
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+
+    await waitFor(() => expect(select.value).toBe('APPLIED'));
+    expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedResearchEntityPlans/id1', {
+      data: { plan: { stage: 'EXPLORING', expectedUpdatedAt: '2026-01-01T00:00:00.000Z' } },
+    });
+    expect(screen.getByText('Changed in another tab. Showing the latest stage.')).toBeTruthy();
+  });
+
+  const withVersionedPlanServer = (initial: {
+    stage: string;
+    privateNotes: string;
+    updatedAt: string;
+  }) => {
+    const server = { plan: initial, version: 0 };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: ['owner-lab'] } });
+      }
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'id1', slug: 'owner-lab', name: 'Owner Lab', kind: 'lab', departments: [] },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: { id1: server.plan } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const applyWrite = (body: {
+      data: { plan: { stage?: string; privateNotes?: string; expectedUpdatedAt?: string } };
+    }) => {
+      const { expectedUpdatedAt, ...changes } = body.data.plan;
+      if (expectedUpdatedAt && expectedUpdatedAt !== server.plan.updatedAt) {
+        throw Object.assign(new Error('conflict'), {
+          isAxiosError: true,
+          response: { status: 409 },
+        });
+      }
+      server.version += 1;
+      server.plan = {
+        ...server.plan,
+        ...changes,
+        updatedAt: `2026-02-0${server.version}T00:00:00.000Z`,
+      };
+      return { data: { savedResearchEntityPlans: { id1: server.plan } } };
+    };
+    return { server, applyWrite };
+  };
+
+  it('chains two quick stage changes in one tab instead of refusing the second', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const releases: Array<() => void> = [];
+    mockedAxios.put.mockImplementation(
+      (_url: string, body: Parameters<typeof applyWrite>[0]) =>
+        new Promise((resolve, reject) => {
+          releases.push(() => {
+            try {
+              resolve(applyWrite(body));
+            } catch (error) {
+              reject(error);
+            }
+          });
+        }),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+    fireEvent.change(select, { target: { value: 'APPLIED' } });
+    expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+
+    await act(async () => releases[0]());
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(2));
+    expect(mockedAxios.put).toHaveBeenLastCalledWith('/users/savedResearchEntityPlans/id1', {
+      data: { plan: { stage: 'APPLIED', expectedUpdatedAt: '2026-02-01T00:00:00.000Z' } },
+    });
+    await act(async () => releases[1]());
+
+    await waitFor(() => expect(server.plan.stage).toBe('APPLIED'));
+    expect(select.value).toBe('APPLIED');
+    expect(screen.queryByText('Changed in another tab. Showing the latest stage.')).toBeNull();
+  });
+
+  it('takes the newer note with the newer stage after a stage conflict', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: 'Old note',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(
+      async (_url: string, body: Parameters<typeof applyWrite>[0]) => applyWrite(body),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    fireEvent.click(screen.getByRole('button', { name: /note/i }));
+    const note = (await screen.findByRole('textbox', {
+      name: 'Note for Owner Lab',
+    })) as HTMLTextAreaElement;
+    await waitFor(() => expect(note.value).toBe('Old note'));
+    server.plan = {
+      stage: 'APPLIED',
+      privateNotes: 'Newer note',
+      updatedAt: '2026-01-05T00:00:00.000Z',
+    };
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+
+    await waitFor(() => expect(select.value).toBe('APPLIED'));
+    await waitFor(() => expect(note.value).toBe('Newer note'));
+    fireEvent.change(note, { target: { value: 'Newer note, edited' } });
+    fireEvent.blur(note);
+
+    await waitFor(() => expect(server.plan.privateNotes).toBe('Newer note, edited'));
+    expect(mockedAxios.put).toHaveBeenLastCalledWith('/users/savedResearchEntityPlans/id1', {
+      data: {
+        plan: { privateNotes: 'Newer note, edited', expectedUpdatedAt: '2026-01-05T00:00:00.000Z' },
+      },
+    });
+  });
+
+  it('keeps an unsaved note and its old version after a stage conflict', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: 'Old note',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(
+      async (_url: string, body: Parameters<typeof applyWrite>[0]) => applyWrite(body),
+    );
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    fireEvent.click(screen.getByRole('button', { name: /note/i }));
+    const note = (await screen.findByRole('textbox', {
+      name: 'Note for Owner Lab',
+    })) as HTMLTextAreaElement;
+    await waitFor(() => expect(note.value).toBe('Old note'));
+    server.plan = {
+      stage: 'APPLIED',
+      privateNotes: 'Newer note',
+      updatedAt: '2026-01-05T00:00:00.000Z',
+    };
+    fireEvent.change(note, { target: { value: 'Local edit' } });
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+
+    await waitFor(() => expect(select.value).toBe('APPLIED'));
+    expect(note.value).toBe('Local edit');
+    fireEvent.blur(note);
+
+    expect(
+      await screen.findByText(
+        'This note changed in another tab. Your text is kept here; edit it or leave the field to save it.',
+      ),
+    ).toBeTruthy();
+    expect(server.plan.privateNotes).toBe('Newer note');
+    expect(mockedAxios.put).toHaveBeenLastCalledWith('/users/savedResearchEntityPlans/id1', {
+      data: { plan: { privateNotes: 'Local edit', expectedUpdatedAt: '2026-01-01T00:00:00.000Z' } },
+    });
+  });
+
+  it('ignores a refresh that read the plan before this tab saved a newer stage', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(
+      async (_url: string, body: Parameters<typeof applyWrite>[0]) => applyWrite(body),
+    );
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+
+    const serve = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+    const heldReads: Array<() => void> = [];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url !== '/users/savedResearchEntityPlans') return serve(url);
+      const readBeforeWrite = { data: { savedResearchEntityPlans: { id1: server.plan } } };
+      return new Promise((resolve) => heldReads.push(() => resolve(readBeforeWrite)));
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(heldReads.length).toBeGreaterThan(0));
+
+    fireEvent.change(select, { target: { value: 'APPLIED' } });
+    await waitFor(() => expect(server.plan.stage).toBe('APPLIED'));
+    await act(async () => heldReads.forEach((release) => release()));
+
+    expect(select.value).toBe('APPLIED');
+    mockedAxios.get.mockImplementation(serve);
+    fireEvent.change(select, { target: { value: 'CLOSED' } });
+    await waitFor(() => expect(server.plan.stage).toBe('CLOSED'));
+    expect(screen.queryByText('Changed in another tab. Showing the latest stage.')).toBeNull();
+  });
+
+  it('sends a page-hide note flush at once without a version while this tab has a save in flight', async () => {
+    withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: 'Old note',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(() => new Promise(() => {}));
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+      await screen.findByText('Owner Lab');
+      fireEvent.click(screen.getByRole('button', { name: /note/i }));
+      const note = (await screen.findByRole('textbox', {
+        name: 'Note for Owner Lab',
+      })) as HTMLTextAreaElement;
+      await waitFor(() => expect(note.value).toBe('Old note'));
+      fireEvent.change(note, { target: { value: 'First edit' } });
+      fireEvent.blur(note);
+      await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
+      fireEvent.change(note, { target: { value: 'Last edit' } });
+
+      window.dispatchEvent(new Event('pagehide'));
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(JSON.parse(request.body as string)).toEqual({
+        data: {
+          plan: { privateNotes: 'Last edit' },
+        },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('sends a page-hide note flush at once with the known version when no save is in flight', async () => {
+    withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: 'Old note',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      render(
+        <MemoryRouter>
+          <SavedResearchPlans />
+        </MemoryRouter>,
+      );
+      await screen.findByText('Owner Lab');
+      fireEvent.click(screen.getByRole('button', { name: /note/i }));
+      const note = (await screen.findByRole('textbox', {
+        name: 'Note for Owner Lab',
+      })) as HTMLTextAreaElement;
+      await waitFor(() => expect(note.value).toBe('Old note'));
+      fireEvent.change(note, { target: { value: 'Last edit' } });
+
+      window.dispatchEvent(new Event('pagehide'));
+
+      expect(mockedAxios.put).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, request] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+      expect(JSON.parse(request.body as string)).toEqual({
+        data: {
+          plan: { privateNotes: 'Last edit', expectedUpdatedAt: '2026-01-01T00:00:00.000Z' },
+        },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reverts a refused stage when the latest stage cannot be loaded', async () => {
+    const { server, applyWrite } = withVersionedPlanServer({
+      stage: 'CONTACTED',
+      privateNotes: '',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    mockedAxios.put.mockImplementation(
+      async (_url: string, body: Parameters<typeof applyWrite>[0]) => applyWrite(body),
+    );
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+    const select = (await screen.findByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    })) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('CONTACTED'));
+    server.plan = { stage: 'APPLIED', privateNotes: '', updatedAt: '2026-01-05T00:00:00.000Z' };
+    const serve = mockedAxios.get.getMockImplementation() as (url: string) => Promise<unknown>;
+    mockedAxios.get.mockImplementation((url: string) =>
+      url === '/users/savedResearchEntityPlans'
+        ? Promise.reject(new Error('network down'))
+        : serve(url),
+    );
+
+    fireEvent.change(select, { target: { value: 'EXPLORING' } });
+
+    expect(
+      await screen.findByText('Not saved. Check your connection or sign in again, then retry.'),
+    ).toBeTruthy();
+    expect(select.value).toBe('CONTACTED');
+    expect(screen.queryByText('Changed in another tab. Showing the latest stage.')).toBeNull();
   });
 });

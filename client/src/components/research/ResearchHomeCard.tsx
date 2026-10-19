@@ -1,4 +1,5 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ACTIVELY_HIRING_LABEL, WELCOMES_UNDERGRADS_LABEL } from '../../utils/undergradInvitation';
 import { memo, type MouseEvent } from 'react';
 import { CheckIcon } from '../shared/icons';
 
@@ -14,6 +15,7 @@ import { cardSummary } from '../../utils/cardSummary';
 import {
   CREATIVE_PRACTICE_KIND_LABEL,
   entityKindLabel,
+  HOSTED_UNDERGRADUATES_LABEL,
   isCreativePracticeEntity,
   leadRoleLabelForEntity,
   sanitizeResearchEntityCopy,
@@ -24,6 +26,10 @@ import {
   researchProfileOpenState,
   type ResearchProfileOpenSource,
 } from '../../utils/researchAnalytics';
+import {
+  rememberOpenedResearchResult,
+  researchResultsReturnState,
+} from '../../utils/researchResultsReturn';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -45,23 +51,31 @@ const DEFAULT_CONTACT_ROLE = 'Principal investigator';
 
 const servedContactRole = (role?: string): string => (role || '').trim() || DEFAULT_CONTACT_ROLE;
 
+const opensFromResearchResults = (source?: ResearchProfileOpenSource): boolean =>
+  source === 'browse' || source === 'search';
+
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
-  'Undergrad evidence': 'Has hosted undergraduate researchers',
+  'Undergrad evidence': HOSTED_UNDERGRADUATES_LABEL,
   'Student project evidence': 'Supervises student projects',
   'Contact route': 'Open to inquiries',
 };
 
-const ACCESS_SIGNAL_PRIORITY = ['Undergrad evidence', 'Student project evidence', 'Contact route'];
+const ACCESS_SIGNAL_PRIORITY = [
+  ACTIVELY_HIRING_LABEL,
+  WELCOMES_UNDERGRADS_LABEL,
+  'Undergrad evidence',
+  'Student project evidence',
+  'Contact route',
+];
 
-const ELEVATED_ACCESS_SIGNALS = new Set(['Undergrad evidence', 'Student project evidence']);
+const ELEVATED_ACCESS_SIGNALS = new Set([
+  ACTIVELY_HIRING_LABEL,
+  WELCOMES_UNDERGRADS_LABEL,
+  'Undergrad evidence',
+  'Student project evidence',
+]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
-
-const sentenceCaseLabel = (label: string): string =>
-  label
-    .split(' ')
-    .map((word, index) => (index === 0 ? word : word.toLowerCase()))
-    .join(' ');
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -103,7 +117,17 @@ const ResearchHomeCard = ({
   openSource,
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
-  const profileOpenState = openSource ? researchProfileOpenState(openSource) : undefined;
+  const location = useLocation();
+  const returnsToResults = opensFromResearchResults(openSource);
+  const profileOpenState = openSource
+    ? {
+        ...researchProfileOpenState(openSource),
+        ...(returnsToResults ? researchResultsReturnState(location.search) : {}),
+      }
+    : undefined;
+  const rememberOpenedProfile = (slug: string) => {
+    if (returnsToResults) rememberOpenedResearchResult(location.key, slug);
+  };
   const isCompact = variant === 'compact';
   const homeEntities = home.entities.slice(0, 3).map((entity) => ({
     id: entity._id || entity.slug,
@@ -168,7 +192,7 @@ const ResearchHomeCard = ({
     leadRoleLabelForEntity(home.entities[0], contactRole) ?? formatTitleCaseLabel(contactRole);
   const isEmeritusLed = home.entities[0]?.emeritusLed === true;
   const isCreativePractice = isCreativePracticeEntity(home.entities[0]);
-  const kindLabel = sentenceCaseLabel(entityKindLabel(home.entities[0]));
+  const kindLabel = entityKindLabel(home.entities[0]);
   const showsKindLabel =
     isCompact &&
     home.entities.length === 1 &&
@@ -180,7 +204,8 @@ const ResearchHomeCard = ({
   const showsProfileFooter = !(isCompact && singleLinkedEntity);
   const qualityLabels = showAdminQuality ? adminQualityLabels(home) : [];
   const activateCard = () => {
-    if (primaryProfileUrl) {
+    if (primaryProfileUrl && primaryLinkedEntity) {
+      rememberOpenedProfile(primaryLinkedEntity.slug);
       onOpen?.(home);
       void navigate(primaryProfileUrl, { state: profileOpenState });
       return;
@@ -236,7 +261,7 @@ const ResearchHomeCard = ({
     mobileMoreCount > 0 && (
       <span
         key="more-mobile"
-        className={`yr-pill yr-pill-compact px-2 py-0.5 ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
+        className={`self-center px-1 text-xs font-medium text-muted ${moreCountIsResponsive ? 'sm:hidden' : ''}`}
       >
         +{mobileMoreCount} more
       </span>
@@ -244,7 +269,7 @@ const ResearchHomeCard = ({
     moreCountIsResponsive && desktopMoreCount > 0 && (
       <span
         key="more-desktop"
-        className="yr-pill hidden yr-pill-compact px-2 py-0.5 sm:inline-flex"
+        className="hidden self-center px-1 text-xs font-medium text-muted sm:inline"
       >
         +{desktopMoreCount} more
       </span>
@@ -269,9 +294,11 @@ const ResearchHomeCard = ({
               <Link
                 to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}`}
                 state={profileOpenState}
-                className="yr-link yr-focus-ring rounded-control"
+                data-research-result-slug={singleLinkedEntity.slug}
+                className="yr-link yr-focus-ring -my-1.5 inline-block rounded-control py-1.5"
                 onClick={(event) => {
                   event.stopPropagation();
+                  rememberOpenedProfile(singleLinkedEntity.slug);
                   onOpen?.(home);
                 }}
               >
@@ -412,8 +439,12 @@ const ResearchHomeCard = ({
                   key={entity.slug}
                   to={`/research/${safeRouteSegment(entity.slug)}`}
                   state={profileOpenState}
+                  data-research-result-slug={entity.slug}
                   className="yr-focus-ring yr-link inline-flex min-h-[44px] items-center text-sm font-medium"
-                  onClick={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    rememberOpenedProfile(entity.slug);
+                  }}
                 >
                   {entity.label}
                 </Link>
@@ -448,8 +479,12 @@ const ResearchHomeCard = ({
             <Link
               to={`/research/${safeRouteSegment(primaryLinkedEntity.slug)}`}
               state={profileOpenState}
+              data-research-result-slug={primaryLinkedEntity.slug}
               className="yr-focus-ring yr-pressable inline-flex min-h-[44px] flex-shrink-0 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-              onClick={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                rememberOpenedProfile(primaryLinkedEntity.slug);
+              }}
             >
               View profile
               <ArrowRightIcon />

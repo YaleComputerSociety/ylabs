@@ -6,6 +6,9 @@ import {
   compareRerunWithBaseline,
   developmentTargetProblems,
   entrypointSupportsRerun,
+  entrypointSupportsResume,
+  resumeJobStartCommand,
+  resumeRefusals,
   formatSweepStatus,
   parseOpsSweepArgs,
   permissionProbeStartCommand,
@@ -410,5 +413,58 @@ describe('buildPermissionProbePlan', () => {
     expect(command.startsWith('node -e "eval(')).toBe(true);
     expect(decoded).toContain('function runPermissionProbeJob(plan) {}');
     expect(decoded).toContain(`runPermissionProbeJob(${JSON.stringify(plan)});`);
+  });
+});
+
+describe('ops:sweep resume (#5209)', () => {
+  const RUN_ID = 'f'.repeat(24);
+  const SHA = 'a'.repeat(40);
+  const now = new Date('2026-10-20T12:00:00.000Z');
+  const stopped = {
+    _id: RUN_ID,
+    status: 'running',
+    codeSha: SHA,
+    startedAt: new Date(now.getTime() - 13 * 60 * 60_000),
+  };
+
+  it('parses resume with an optional run id and the dry-run flag', () => {
+    expect(parseOpsSweepArgs(['resume'])).toEqual({ command: 'resume', dryRun: false });
+    expect(parseOpsSweepArgs(['resume', RUN_ID, '--dry-run'])).toEqual({
+      command: 'resume',
+      runId: RUN_ID,
+      dryRun: true,
+    });
+    expect(() => parseOpsSweepArgs(['resume', 'nope'])).toThrow('24 hex');
+    expect(() => parseOpsSweepArgs(['resume', RUN_ID, RUN_ID])).toThrow('at most one');
+  });
+
+  it('allows a resume only of an unfinished run past the Render limit with nothing else writing', () => {
+    expect(resumeRefusals({ run: stopped, heldLockSources: [], now })).toEqual([]);
+    expect(resumeRefusals({ run: null, heldLockSources: [], now })).toHaveLength(1);
+    expect(
+      resumeRefusals({
+        run: { ...stopped, startedAt: new Date(now.getTime() - 60 * 60_000) },
+        heldLockSources: [],
+        now,
+      })[0],
+    ).toContain('may still be running');
+    expect(
+      resumeRefusals({ run: { ...stopped, status: 'failed' }, heldLockSources: [], now })[0],
+    ).toContain('only an unfinished run');
+    expect(
+      resumeRefusals({ run: { ...stopped, codeSha: null }, heldLockSources: [], now })[0],
+    ).toContain('no commit');
+    expect(resumeRefusals({ run: stopped, heldLockSources: ['nih-reporter'], now })[0]).toContain(
+      'nih-reporter',
+    );
+  });
+
+  it('builds the entrypoint resume command and detects an image that supports it', () => {
+    expect(resumeJobStartCommand(RUN_ID, SHA)).toBe(
+      `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --resume-weekly-run ${RUN_ID} ${SHA} --confirm-weekly-development-sweep`,
+    );
+    expect(() => resumeJobStartCommand(RUN_ID, 'abc; rm -rf /')).toThrow('refusing');
+    expect(entrypointSupportsResume('if [ "${1:-}" = "--resume-weekly-run" ]; then')).toBe(true);
+    expect(entrypointSupportsResume('if [ "${1:-}" = "--rerun-source" ]; then')).toBe(false);
   });
 });

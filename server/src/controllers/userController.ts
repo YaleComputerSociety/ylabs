@@ -19,6 +19,24 @@ import {
 import { publicProgramForReader } from './programPayload';
 import { routeParam } from '../utils/routeParams';
 
+const WATCHED_PROGRAM_DEADLINES_VIEW = 'deadlines';
+
+const watchedProgramDeadlineFields = ({
+  _id,
+  id,
+  title,
+  deadline,
+  deadlineProjectedNextCycle,
+  deadlineStale,
+}: ReturnType<typeof publicProgramForReader>) => ({
+  _id,
+  id,
+  title,
+  deadline,
+  deadlineProjectedNextCycle,
+  deadlineStale,
+});
+
 const setPrivateAccountResponseHeaders = (response: Response) => {
   response.setHeader('Cache-Control', 'no-store, private, max-age=0');
   response.setHeader('Pragma', 'no-cache');
@@ -167,8 +185,15 @@ export const getWatchedPrograms = async (
 ) => {
   try {
     const currentUser = request.user as { netId?: string };
-    const programs = await getWatchedProgramsService(currentUser.netId);
-    response.status(200).json({ watchedPrograms: programs.map(publicProgramForReader) });
+    const programs = (await getWatchedProgramsService(currentUser.netId)).map(
+      publicProgramForReader,
+    );
+    response.status(200).json({
+      watchedPrograms:
+        request.query?.view === WATCHED_PROGRAM_DEADLINES_VIEW
+          ? programs.map(watchedProgramDeadlineFields)
+          : programs,
+    });
   } catch (error) {
     next(error);
   }

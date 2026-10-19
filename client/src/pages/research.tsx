@@ -1,3 +1,4 @@
+import { echoedQuery } from '../utils/echoedQuery';
 import {
   FormEvent,
   useCallback,
@@ -30,6 +31,8 @@ import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useWatchedDeadlineSummary from '../hooks/useWatchedDeadlineSummary';
 import useMediaQuery from '../hooks/useMediaQuery';
+import { useRestoreOpenedResearchResultFocus } from '../hooks/useRestoreOpenedResearchResultFocus';
+import { forgetOpenedResearchResults } from '../utils/researchResultsReturn';
 import {
   approachingDeadlineAriaLabel,
   approachingDeadlineLabel,
@@ -52,6 +55,7 @@ import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
+import { scrollBehavior } from '../utils/scrollBehavior';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
 import {
@@ -80,6 +84,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   entityType?: string[];
   school?: string[];
+  hostsUndergrads?: boolean;
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -113,6 +118,11 @@ const readSearchParamList = <T extends string>(
     });
 };
 
+const HOSTS_UNDERGRADS_PARAM = 'undergrad';
+
+const readHostsUndergradsParam = (params: URLSearchParams): boolean =>
+  params.get(HOSTS_UNDERGRADS_PARAM) === '1';
+
 const readEntityTypeParam = (params: URLSearchParams): string => {
   const value = (params.get('type') || '').trim();
   return isKnownResearchEntityType(value) ? value : '';
@@ -139,6 +149,7 @@ interface ResearchEntitySearchPage {
   depthLimited?: boolean;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
 }
 
 interface ActiveResearchSearchRequest {
@@ -150,7 +161,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department' | 'research_type';
+  filter: 'school' | 'department' | 'research_type' | 'hosts_undergrads';
 }
 
 interface ResearchPageSnapshot {
@@ -166,6 +177,7 @@ interface ResearchPageSnapshot {
   selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedHostsUndergrads: boolean;
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -197,6 +209,7 @@ interface ResearchEntitySearchOptions {
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
   exactSpelling?: boolean;
+  exactFilterValues?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -233,6 +246,7 @@ const searchResearchEntities = async (
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
       ...(options.exactSpelling ? { correctSpelling: false } : {}),
+      ...(options.exactFilterValues ? { resolveFilterValues: false } : {}),
     },
     { signal },
   );
@@ -246,6 +260,7 @@ const searchResearchEntities = async (
     depthLimited: normalized.depthLimited === true,
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
+    appliedFilters: normalized.appliedFilters,
   };
 };
 
@@ -296,12 +311,12 @@ const resultSummary = (
   if (loading) {
     return query === FILTERED_RESULT_QUERY_LABEL
       ? 'Searching your filters'
-      : `Searching for '${query}'`;
+      : `Searching for '${echoedQuery(query)}'`;
   }
   const loadedHomeCount = results.clusters.length;
   const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
   if (degraded && matchingHomeCount === 0 && results.people.length === 0) {
-    return `No results could be confirmed for '${query}'.`;
+    return `No results could be confirmed for '${echoedQuery(query)}'.`;
   }
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research yet for ${departmentGapLabel}.`;
@@ -310,7 +325,7 @@ const resultSummary = (
   const homeSummary =
     query === FILTERED_RESULT_QUERY_LABEL
       ? `${homeCountLabel} match your filters`
-      : `${homeCountLabel} for '${query}'`;
+      : `${homeCountLabel} for '${echoedQuery(query)}'`;
   const parts = [homeSummary];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
@@ -394,6 +409,7 @@ const researchClusterByEntity = new WeakMap<ResearchEntity, ResearchCluster>();
 
 const Research = () => {
   const location = useLocation();
+  useRestoreOpenedResearchResultFocus();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const {
@@ -452,6 +468,9 @@ const Research = () => {
   );
   const [selectedDepartment, setSelectedDepartment] = useState(
     () => restoredSnapshot?.selectedDepartment ?? searchParams.get('department') ?? '',
+  );
+  const [selectedHostsUndergrads, setSelectedHostsUndergrads] = useState(
+    () => restoredSnapshot?.selectedHostsUndergrads ?? readHostsUndergradsParam(searchParams),
   );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => snapshotForThisPage?.sortBy ?? 'relevance',
@@ -523,6 +542,13 @@ const Research = () => {
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const scrollToResults = () => {
+    // Deferred past the filter sheet's own focus return to its trigger, which cancels a smooth scroll started before it.
+    window.setTimeout(() =>
+      resultsSectionRef.current?.scrollIntoView({ block: 'start', behavior: scrollBehavior() }),
+    );
+  };
   const searchRequestIdRef = useRef(0);
   const defaultSearchRequestIdRef = useRef(0);
   const browseAnalyticsSessionRef = useRef(createResearchAnalyticsInteractionId('browse'));
@@ -586,6 +612,7 @@ const Research = () => {
       entityType?: string;
       school?: string;
       department?: string;
+      hostsUndergrads?: boolean;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -597,6 +624,7 @@ const Research = () => {
     if (nextState.entityType?.trim()) params.set('type', nextState.entityType.trim());
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
+    if (nextState.hostsUndergrads) params.set(HOSTS_UNDERGRADS_PARAM, '1');
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -763,6 +791,7 @@ const Research = () => {
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
         ...currentSortRequestOptions(),
         ...(options.exactSpelling ? { exactSpelling: true } : {}),
+        ...(options.departmentSearch ? { exactFilterValues: true } : {}),
       },
     });
     if (!options.preserveDraftQuery) setQuery(trimmed);
@@ -788,6 +817,7 @@ const Research = () => {
           entityType: filters.entityType?.[0],
           school: filters.school?.[0],
           department: options.departmentSearch ? undefined : filters.departments?.[0],
+          hostsUndergrads: filters.hostsUndergrads === true,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -808,10 +838,58 @@ const Research = () => {
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
           ...(options.exactSpelling ? { exactSpelling: true } : {}),
+          ...(options.departmentSearch ? { exactFilterValues: true } : {}),
         },
       );
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
+
+      const appliedFilters = researchEntitiesPage.appliedFilters;
+      if (appliedFilters && !options.departmentSearch) {
+        const school = appliedFilters.school
+          ? (appliedFilters.school[0] ?? '')
+          : (filters.school?.[0] ?? '');
+        const department = appliedFilters.departments
+          ? (appliedFilters.departments[0] ?? '')
+          : (filters.departments?.[0] ?? '');
+        const entityType = filters.entityType?.[0] ?? '';
+        const hostsUndergrads = filters.hostsUndergrads === true;
+        const appliedStudentFilters: ResearchSearchFilters = {
+          ...(entityType ? { entityType: [entityType] } : {}),
+          ...(school ? { school: [school] } : {}),
+          ...(department ? { departments: [department] } : {}),
+          ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
+        };
+        setSelectedSchool(school);
+        setSelectedDepartment(department);
+        if (!trimmed && !hasStructuredFilters(appliedStudentFilters)) {
+          writeResearchSearchParams(
+            {
+              showWeakest: showWeakestProfilesFirst,
+              quality: qualityFilters,
+              trustTiers: trustTierFilters,
+            },
+            { replace: true, markPending: true },
+          );
+          return;
+        }
+        setActiveSearchRequest((current) =>
+          current ? { ...current, filters: appliedStudentFilters } : current,
+        );
+        writeResearchSearchParams(
+          {
+            query: trimmed,
+            entityType,
+            school,
+            department,
+            hostsUndergrads,
+            showWeakest: showWeakestProfilesFirst,
+            quality: qualityFilters,
+            trustTiers: trustTierFilters,
+          },
+          { replace: true, markPending: true },
+        );
+      }
 
       const researchEntities = researchEntitiesPage.researchEntities;
       setHasFacetError(false);
@@ -859,6 +937,10 @@ const Research = () => {
         setSearchDegraded(true);
         setHasFacetError(true);
         setSearchExhausted(true);
+        // Rows kept on screen while filters applied answer the previous request, so
+        // leaving them under the new filters would show results those filters exclude.
+        setSearchResultResearchEntities([]);
+        setGroupedResults(emptyGroupedResults(resultQueryLabel));
         void trackResearchEvent({
           eventType: 'research_search',
           payload: {
@@ -962,10 +1044,12 @@ const Research = () => {
     school = selectedSchool,
     department = selectedDepartment,
     entityType = selectedEntityType,
+    hostsUndergrads = selectedHostsUndergrads,
   ): ResearchSearchFilters => ({
     ...(entityType ? { entityType: [entityType] } : {}),
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
+    ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
   });
 
   const activeSearchKeepsTypedSpelling = (text: string): boolean =>
@@ -974,7 +1058,13 @@ const Research = () => {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!query.trim() && !selectedEntityType && !selectedSchool && !selectedDepartment) {
+    if (
+      !query.trim() &&
+      !selectedEntityType &&
+      !selectedSchool &&
+      !selectedDepartment &&
+      !selectedHostsUndergrads
+    ) {
       setShowEmptySearchHint(true);
       searchInputRef.current?.focus();
       return;
@@ -997,6 +1087,7 @@ const Research = () => {
     setSelectedEntityType('');
     setSelectedSchool('');
     setSelectedDepartment('');
+    setSelectedHostsUndergrads(false);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1052,11 +1143,24 @@ const Research = () => {
     ) {
       return;
     }
+    const unreadableFilterParams = [
+      searchParams.has('type') && !readEntityTypeParam(searchParams) ? 'type' : null,
+      searchParams.has(HOSTS_UNDERGRADS_PARAM) && !readHostsUndergradsParam(searchParams)
+        ? HOSTS_UNDERGRADS_PARAM
+        : null,
+    ].filter((key): key is string => key !== null);
+    if (unreadableFilterParams.length > 0) {
+      const readableParams = new URLSearchParams(searchParams);
+      unreadableFilterParams.forEach((key) => readableParams.delete(key));
+      setSearchParams(readableParams, { replace: true });
+      return;
+    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlEntityType = readEntityTypeParam(searchParams);
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
+    const urlHostsUndergrads = readHostsUndergradsParam(searchParams);
     const urlQualityFilters = urlQualityFiltersKey
       ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
@@ -1097,12 +1201,17 @@ const Research = () => {
       setSelectedDepartment(urlDepartment);
       return;
     }
+    if (selectedHostsUndergrads !== urlHostsUndergrads) {
+      setSelectedHostsUndergrads(urlHostsUndergrads);
+      return;
+    }
     // Key order matches `studentSearchFilters` because the reconcile below
     // compares these objects with `JSON.stringify`.
     const studentFilters: ResearchSearchFilters = {
       ...(urlEntityType ? { entityType: [urlEntityType] } : {}),
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
+      ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
     };
 
     if (awaitingDepartmentConfig || awaitingAdminScope) return;
@@ -1211,6 +1320,7 @@ const Research = () => {
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
+    selectedHostsUndergrads,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
@@ -1233,6 +1343,7 @@ const Research = () => {
       selectedEntityType,
       selectedSchool,
       selectedDepartment,
+      selectedHostsUndergrads,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1268,6 +1379,7 @@ const Research = () => {
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
+    selectedHostsUndergrads,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1309,18 +1421,19 @@ const Research = () => {
     activeSearchRequest !== null &&
     searchResultResearchEntities.length === 0;
 
-  const hasRelaxedQueryCandidate =
-    isZeroResultSearch &&
-    activeSearchRequest !== null &&
-    Boolean(relaxResearchQuery(activeSearchRequest.searchQuery ?? ''));
+  // A filter that removed every match is what the student should change, and the
+  // panel already offers to clear it; a shorter query would drop the word they meant.
+  const zeroResultQueryToRelax =
+    isZeroResultSearch && activeSearchRequest && !hasStructuredFilters(activeSearchRequest.filters)
+      ? (activeSearchRequest.searchQuery ?? '')
+      : '';
+  const hasRelaxedQueryCandidate = Boolean(relaxResearchQuery(zeroResultQueryToRelax));
   if (!hasRelaxedQueryCandidate && relaxedQuerySuggestion !== null) {
     setRelaxedQuerySuggestion(null);
   }
 
   useEffect(() => {
-    const relaxedQuery = isZeroResultSearch
-      ? relaxResearchQuery(activeSearchRequest?.searchQuery ?? '')
-      : null;
+    const relaxedQuery = relaxResearchQuery(zeroResultQueryToRelax);
     if (!relaxedQuery || !activeSearchRequest) {
       relaxProbeRequestIdRef.current += 1;
       return;
@@ -1355,7 +1468,7 @@ const Research = () => {
     })();
 
     return () => controller.abort();
-  }, [isZeroResultSearch, activeSearchRequest]);
+  }, [zeroResultQueryToRelax, activeSearchRequest]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
   const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
@@ -1403,7 +1516,8 @@ const Research = () => {
   const activeStudentFilterCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment));
+    Number(Boolean(selectedDepartment)) +
+    Number(selectedHostsUndergrads);
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled = searchLoading && !hasSubmittableChange;
@@ -1420,10 +1534,12 @@ const Research = () => {
     school?: string;
     department?: string;
     entityType?: string;
+    hostsUndergrads?: boolean;
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const entityType = next.entityType ?? selectedEntityType;
+    const hostsUndergrads = next.hostsUndergrads ?? selectedHostsUndergrads;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (entityType !== selectedEntityType) {
       filterChanges.push({ operation: entityType ? 'apply' : 'remove', filter: 'research_type' });
@@ -1434,11 +1550,18 @@ const Research = () => {
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
+    if (hostsUndergrads !== selectedHostsUndergrads) {
+      filterChanges.push({
+        operation: hostsUndergrads ? 'apply' : 'remove',
+        filter: 'hosts_undergrads',
+      });
+    }
     if (filterChanges.length > 0) scrollViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
-    const filters = studentSearchFilters(school, department, entityType);
+    setSelectedHostsUndergrads(hostsUndergrads);
+    const filters = studentSearchFilters(school, department, entityType, hostsUndergrads);
     if (departmentSearch && !department) {
       void runSearch(departmentSearch.label, {
         searchQuery: '',
@@ -1597,20 +1720,29 @@ const Research = () => {
     selectedEntityType,
     selectedSchool,
     selectedDepartment,
+    selectedHostsUndergrads,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
     onEntityTypeChange: (entityType: string) => applyStudentFilters({ entityType }),
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
-    onClearAll: () => applyStudentFilters({ school: '', department: '', entityType: '' }),
+    onHostsUndergradsChange: (hostsUndergrads: boolean) => applyStudentFilters({ hostsUndergrads }),
+    onClearAll: () =>
+      applyStudentFilters({ school: '', department: '', entityType: '', hostsUndergrads: false }),
+    resultCount: hasFacetError ? undefined : Math.max(searchTotal, activeClusters.length),
+    resultCountPending: searchLoading,
+    onShowResults: scrollToResults,
   };
 
   const browseFilterProps = {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
     isApplying: false,
+    isLoadingOptions: defaultSearchLoading,
     hasFacetError: false,
+    resultCount: defaultSearchTotal,
+    resultCountPending: defaultSearchLoading,
   };
 
   const retryRelaxedQuery = () => {
@@ -1729,35 +1861,15 @@ const Research = () => {
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
             <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
-              Find a Yale lab that fits you.
+              Find Yale research that fits you.
             </h1>
             <p
               id="research-search-context"
               className="mt-2 hidden max-w-2xl text-sm leading-relaxed text-muted sm:mt-3 sm:block sm:text-base sm:leading-6 xl:hidden"
             >
-              Search by interest, professor, course topic, method, or question.
+              Labs, centers, and faculty research in every field. Search by interest, professor,
+              course topic, method, or question.
             </p>
-
-            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
-              <div
-                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
-                role="status"
-              >
-                <Link
-                  to="/dashboard?tab=programs"
-                  aria-label={approachingDeadlineAriaLabel(
-                    watchedDeadlineApproachingCount,
-                    watchedDeadlineNotStartedCount,
-                  )}
-                  className="font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
-                >
-                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
-                </Link>
-                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
-                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
-                )}
-              </div>
-            )}
 
             <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
               <label
@@ -1814,6 +1926,27 @@ const Research = () => {
               </p>
             </form>
 
+            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
+              <div
+                className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
+                role="status"
+              >
+                <Link
+                  to="/dashboard?tab=programs"
+                  aria-label={approachingDeadlineAriaLabel(
+                    watchedDeadlineApproachingCount,
+                    watchedDeadlineNotStartedCount,
+                  )}
+                  className="-my-1.5 inline-block py-1.5 font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
+                >
+                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+                </Link>
+                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
+                )}
+              </div>
+            )}
+
             {hasSubmittedSearch && isWideFilterLayout && (
               <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
                 <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
@@ -1853,7 +1986,7 @@ const Research = () => {
                   to="/login"
                   state={{ from: `${location.pathname}${location.search}` }}
                   tabIndex={isAuthenticated ? -1 : undefined}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                  className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   Log in with Yale CAS
                 </Link>{' '}
@@ -1867,7 +2000,7 @@ const Research = () => {
                 <Link
                   to="/dashboard"
                   tabIndex={isAuthenticated ? undefined : -1}
-                  className="yr-focus-ring rounded-control font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                  className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
                 >
                   your dashboard
                 </Link>
@@ -1878,7 +2011,11 @@ const Research = () => {
 
           <div className="min-w-0">
             {!hasSubmittedSearch && (
-              <section aria-busy={defaultSearchLoading} aria-label="Research to explore">
+              <section
+                ref={resultsSectionRef}
+                aria-busy={defaultSearchLoading}
+                aria-label="Research to explore"
+              >
                 <div className="mb-3 flex flex-row flex-wrap items-end justify-between gap-3 sm:mb-4">
                   <div className="min-w-0">
                     <SectionHeading>Research to explore</SectionHeading>
@@ -1970,7 +2107,11 @@ const Research = () => {
             )}
 
             {hasSubmittedSearch && (
-              <section aria-busy={searchLoading} aria-label="Search results">
+              <section
+                ref={resultsSectionRef}
+                aria-busy={searchLoading}
+                aria-label="Search results"
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p
@@ -2078,10 +2219,14 @@ const Research = () => {
                       selectedEntityType={selectedEntityType}
                       selectedSchool={selectedSchool}
                       selectedDepartment={selectedDepartment}
+                      selectedHostsUndergrads={selectedHostsUndergrads}
                       departmentLabel={departmentFacetLabel}
                       onRemoveEntityType={() => applyStudentFilters({ entityType: '' })}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
                       onRemoveDepartment={() => applyStudentFilters({ department: '' })}
+                      onRemoveHostsUndergrads={() =>
+                        applyStudentFilters({ hostsUndergrads: false })
+                      }
                       onClearAllFilters={researchFilterProps.onClearAll}
                       relaxedQuery={relaxedQuerySuggestion}
                       onRelaxQuery={retryRelaxedQuery}
@@ -2101,6 +2246,7 @@ const Research = () => {
 
 export const __resetResearchPageSnapshotForTests = () => {
   researchPageSnapshot = null;
+  forgetOpenedResearchResults();
 };
 
 export default Research;

@@ -5,6 +5,7 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export type FellowshipQuickFilter =
   | 'open'
@@ -54,6 +55,8 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   searchedQueryString: string;
   exactSpelling: boolean;
   queryCorrection: ProgramSearchQueryCorrection | null;
+  resultsRankedByRelevance: boolean;
+  resultsMissOneWord: boolean;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
@@ -96,6 +99,10 @@ export type FellowshipSearchAction =
   | { type: 'SET_PAGE'; payload: number | ((prev: number) => number) }
   | { type: 'SET_QUICK_FILTER'; payload: FellowshipQuickFilter }
   | { type: 'RESET_PROGRAM_FILTERS' }
+  | {
+      type: 'APPLY_URL_STATE';
+      payload: ProgramSearchUrlState;
+    }
   | { type: 'SET_FILTER_BAR_HEIGHT'; payload: number }
   | { type: 'SET_FILTER_OPTIONS'; payload: FellowshipFilterOptions }
   | { type: 'SEARCH_REQUEST'; payload?: { queryString: string } }
@@ -107,6 +114,8 @@ export type FellowshipSearchAction =
         pageSize: number;
         append: boolean;
         queryCorrection?: ProgramSearchQueryCorrection | null;
+        missOneWord?: boolean;
+        rankedByRelevance?: boolean;
       };
     }
   | { type: 'SEARCH_FAILURE' }
@@ -121,6 +130,8 @@ export const createInitialFellowshipSearchState = (
   searchedQueryString: '',
   exactSpelling: false,
   queryCorrection: null,
+  resultsRankedByRelevance: false,
+  resultsMissOneWord: false,
   ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
@@ -239,6 +250,20 @@ export function fellowshipSearchReducer(
     case 'RESET_PROGRAM_FILTERS':
       return { ...state, ...createEmptyStudentProgramFilters() };
 
+    case 'APPLY_URL_STATE': {
+      const { queryString, sortBy, sortDirection, ...filters } = action.payload;
+      const sortChanged = sortBy !== 'default';
+      return {
+        ...state,
+        ...filters,
+        queryString,
+        exactSpelling: queryString === state.queryString ? state.exactSpelling : false,
+        sortBy,
+        sortDirection: sortChanged ? sortDirection : state.sortDirection,
+        sortOrder: sortChanged ? (sortDirection === 'asc' ? 1 : -1) : state.sortOrder,
+      };
+    }
+
     case 'SET_FILTER_BAR_HEIGHT':
       return { ...state, filterBarHeight: action.payload };
 
@@ -254,7 +279,15 @@ export function fellowshipSearchReducer(
       };
 
     case 'SEARCH_SUCCESS': {
-      const { fellowships, total, pageSize, append, queryCorrection } = action.payload;
+      const {
+        fellowships,
+        total,
+        pageSize,
+        append,
+        queryCorrection,
+        rankedByRelevance,
+        missOneWord,
+      } = action.payload;
       const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
       const nextTotal = total !== undefined ? total : nextFellowships.length;
       return {
@@ -265,6 +298,10 @@ export function fellowshipSearchReducer(
           total !== undefined ? nextFellowships.length >= total : fellowships.length < pageSize,
         isLoading: false,
         queryCorrection: append ? state.queryCorrection : (queryCorrection ?? null),
+        resultsRankedByRelevance: append
+          ? state.resultsRankedByRelevance
+          : rankedByRelevance === true,
+        resultsMissOneWord: append ? state.resultsMissOneWord : missOneWord === true,
       };
     }
 
@@ -277,6 +314,7 @@ export function fellowshipSearchReducer(
         isLoading: false,
         loadError: true,
         queryCorrection: null,
+        resultsMissOneWord: false,
       };
 
     case 'LOAD_MORE_FAILURE':

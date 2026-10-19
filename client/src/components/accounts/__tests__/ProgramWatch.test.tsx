@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +84,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
+    expect(screen.getByRole('heading', { level: 2, name: 'Watched programs' })).toBeTruthy();
     expect(screen.getByText('Travel Fellowship')).toBeTruthy();
     expect(screen.getByText('Note: Ask about housing')).toBeTruthy();
     await waitFor(() =>
@@ -91,6 +92,62 @@ describe('ProgramWatch', () => {
         expect.objectContaining({
           count: 2,
           nextDeadlineLabel: expect.stringContaining('Summer Research Grant'),
+        }),
+      ),
+    );
+  });
+
+  it('drops the closing-soon urgency from a program the student already applied to', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Applied Grant', deadline: soon },
+              { _id: 'p2', id: 'p2', title: 'Open Grant', deadline: soon },
+            ].map((program) => ({ ...program, isAcceptingApplications: true })),
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: { watchedProgramPlans: { p1: { stage: 'APPLIED' }, p2: { stage: 'SAVED' } } },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const onSummaryChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch onSummaryChange={onSummaryChange} />
+      </MemoryRouter>,
+    );
+
+    const appliedCard = (await screen.findByText('Applied Grant')).closest('li') as HTMLElement;
+    const openCard = screen.getByText('Open Grant').closest('li') as HTMLElement;
+    expect(appliedCard.textContent).not.toMatch(/Closing soon|days left/);
+    expect(within(appliedCard).queryByText('Applied', { selector: 'span' })).toBeNull();
+    expect(
+      (
+        within(appliedCard).getByRole('combobox', {
+          name: /^Outreach stage for /,
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe('APPLIED');
+    expect(openCard.textContent).toMatch(/Closing soon|days left/);
+    expect(appliedCard.querySelector('.text-amber-700')).toBeNull();
+    expect(openCard.querySelector('.text-amber-700')).not.toBeNull();
+    await waitFor(() =>
+      expect(onSummaryChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          approachingCount: 1,
+          notStartedCount: 1,
+          nextDeadlineLabel: expect.stringContaining('Open Grant'),
         }),
       ),
     );
@@ -196,7 +253,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
 
     await waitFor(() =>
       expect(mockedAxios.delete).toHaveBeenCalledWith('/users/watchedPrograms', {
@@ -217,7 +274,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Travel Fellowship');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[1]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[1]);
 
     await waitFor(() => expect(mockedAxios.delete).toHaveBeenCalled());
     expect(
@@ -248,7 +305,7 @@ describe('ProgramWatch', () => {
     );
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
     mockedAxios.put.mockClear();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
 
     await waitFor(() =>
@@ -284,7 +341,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove from favorites' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Stop watching / })[0]);
 
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
     expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
@@ -301,7 +358,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(screen.getByRole('button', { name: 'Add note for Summer Research Grant' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit note for Summer Research Grant' }));
     const note = screen.getByRole('textbox', { name: 'Note for Summer Research Grant' });
     act(() => note.focus());
     fireEvent.blur(note);
@@ -442,7 +499,9 @@ describe('ProgramWatch control containment', () => {
     for (const title of ['Summer Research Grant', 'Travel Fellowship']) {
       const card = cardOf(title);
       expect(card).toBeTruthy();
-      const noteButton = screen.getByRole('button', { name: `Add note for ${title}` });
+      const noteButton = screen.getByRole('button', {
+        name: new RegExp(`^(Add|Edit) note for ${title}$`),
+      });
       const stageControl = screen.getByLabelText(`Outreach stage for ${title}`);
       expect(card?.contains(noteButton)).toBe(true);
       expect(card?.contains(stageControl)).toBe(true);
@@ -476,12 +535,101 @@ describe('ProgramWatch control containment', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    const withNote = screen.getByRole('button', { name: 'Add note for Summer Research Grant' });
+    const withNote = screen.getByRole('button', { name: 'Edit note for Summer Research Grant' });
     const withoutNote = screen.getByRole('button', { name: 'Add note for Travel Fellowship' });
 
     expect(withNote.className).not.toMatch(/\byellow-/);
     expect(withNote.className).toContain('border-gold');
     expect(withNote.className).toContain('bg-gold-soft');
     expect(withoutNote.className).not.toContain('bg-gold-soft');
+  });
+
+  it('shows a program watched in another tab once this tab is visible again', async () => {
+    let ids = ['p1'];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ids } });
+      }
+      if (url === '/users/watchedPrograms') {
+        const all = [
+          { _id: 'p1', id: 'p1', title: 'Summer Research Grant', isAcceptingApplications: true },
+          { _id: 'p2', id: 'p2', title: 'Travel Fellowship', isAcceptingApplications: true },
+        ];
+        return Promise.resolve({
+          data: { watchedPrograms: all.filter((program) => ids.includes(program.id)) },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    expect(screen.queryByText('Travel Fellowship')).toBeNull();
+
+    ids = ['p1', 'p2'];
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Travel Fellowship')).toBeTruthy();
+  });
+
+  it('retries loading a program watched in another tab after a failed refresh', async () => {
+    let ids = ['p1'];
+    let failPrograms = false;
+    const all = [
+      { _id: 'p1', id: 'p1', title: 'Summer Research Grant', isAcceptingApplications: true },
+      { _id: 'p2', id: 'p2', title: 'Travel Fellowship', isAcceptingApplications: true },
+    ];
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: [...ids] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        if (failPrograms) return Promise.reject(new Error('network'));
+        return Promise.resolve({
+          data: { watchedPrograms: all.filter((program) => ids.includes(program.id)) },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({ data: { watchedProgramPlans: {} } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+
+    ids = ['p1', 'p2'];
+    failPrograms = true;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() =>
+      expect(
+        mockedAxios.get.mock.calls.filter(([url]) => url === '/users/watchedPrograms'),
+      ).toHaveLength(2),
+    );
+    expect(screen.queryByText('Travel Fellowship')).toBeNull();
+
+    failPrograms = false;
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(await screen.findByText('Travel Fellowship')).toBeTruthy();
   });
 });

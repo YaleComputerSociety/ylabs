@@ -36,7 +36,7 @@ describe('FellowshipRecipientsSection', () => {
     ).toBeTruthy();
     const names = within(screen.getByRole('list'))
       .getAllByRole('listitem')
-      .map((item) => item.querySelector('span span')?.textContent);
+      .map((item) => item.querySelector('p')?.textContent);
     expect(names).toEqual(['Avery Baker', 'Rowan Thistle', 'Zoe Adams']);
     expect(screen.getByText('Mapping Circuit Activity')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'STARS II symposium booklet' })).toHaveAttribute(

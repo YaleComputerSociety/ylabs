@@ -87,6 +87,8 @@ Every request is bounded by `MEILISEARCH_REQUEST_TIMEOUT_MS` (5 seconds), so a h
 The 5-second bound alone made every request during a stall wait 5 seconds, because nothing remembered the failure.
 `server/src/utils/meiliAvailability.ts` holds a process-wide breaker: a timeout or connection failure (`MeilisearchRequestError`, `MeilisearchRequestTimeOutError`) marks Meilisearch unavailable for `MEILISEARCH_UNAVAILABLE_COOLDOWN_MS` (30 seconds), and every call through `withMeiliAvailabilityGuard` fails at once with `MeilisearchKnownUnavailableError` until it expires.
 An API error such as a `403` or an invalid filter does not open it, because Meilisearch answered.
+Only a required call opens it: `withMeiliAvailabilityGuard(index, 'optional')` still fails at once while the breaker is open, but its own connection failure leaves the breaker closed.
+Research search sends its primary query through the required guard and every companion query (the embedder check, each disjunctive facet query, the keyword leg and its top-hit re-read, the semantic leg and the deep pool) through the optional one, so a failed companion query degrades only its own response instead of answering every search after it with `503` for the cooldown (#5347).
 The request path in `researchGroupService.ts` wraps its index in the guard, so text search answers its `503` at once and the detail page drops the similar-research rail at once.
 A failed embedder check is also cached as `unknown` for `RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS` (30 seconds), against 5 minutes for `configured` and `absent`, so recovery is picked up within that window.
 Measured on 2026-10-03 against a throwaway paused Meilisearch with the Development corpus: a cold process answered three detail pages in 5.4, 5.3 and 5.3 seconds before the change and 5.4, 0.3 and 0.3 seconds after; a warm process answered three text searches with `503` in 5.1 seconds each before and 5.1, 0.1 and 0.1 seconds after; both served 200 again once the cooldown had passed.
@@ -96,6 +98,7 @@ Measured on 2026-10-03 against a throwaway paused Meilisearch with the Developme
 
 When the primary Meilisearch query still throws after `searchWithFallbacks` has applied its recoverable degradations, `searchResearchGroupsViaMeili` throws `SearchUnavailableError`, and the error handler answers `503` with a `Retry-After` hint.
 The client already renders any failed browse or search as the limited-search notice with its retry action (#4188, #4266), so no client change rides on this.
+A failed search also clears the rows the page kept on screen while it was applying filters, because those rows answer the previous request and the new filters may exclude them; while filter counts are unavailable the filter panel keeps the active values but shows no per-option counts and no result count (#5346).
 There used to be a Mongo fallback that read every public row and ran the public-description gate over each one in process, and it was removed rather than bounded, for these measured reasons, against Development with Meilisearch unreachable:
 
 - The gate is synchronous CPU: 11.3 s for the 3,444 tier-admitted rows (about 2 ms a row), after a 2.9 s read of 37 MB of documents.
@@ -107,9 +110,11 @@ Sharing one gated set across requests would keep those documents resident: the m
 - It was reached on 0 of 208 Development searches in 30 days, so it was an expensive path nothing exercised.
 
 After the change the same three requests answer `503` in 1 ms to 3 ms with no measurable event-loop block, and healthy searches are unchanged.
-The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so only a failed primary query answers `503`.
+The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so within one request only a failed primary query answers `503`.
+A companion query's connection failure leaves the breaker closed, so the next search is answered normally (#5347).
 Do not reintroduce an in-process corpus scan on the request path as a substitute for the index.
-The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForTask` polls with its own overall timeout.
+The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForMeiliTask` in `server/src/utils/meiliTask.ts` polls `getTask` with its own overall timeout.
+It does not call the client's `waitForTask`, because meilisearch 0.62 gives every poll one shared abort signal and its per-request timeout leaves a listener on it per poll, which flooded rebuild logs with `MaxListenersExceededWarning`.
 An enqueue is not an outcome: every index write that reports a result confirms its task through `assertMeiliTaskSucceeded` in `server/src/utils/meiliTask.ts`, with a bounded wait, and a failed or timed-out task counts as a failure, so `syncEntity`, `syncEntities`, `deleteFromIndex`, and the rebuild's `indexedDocumentCount` report what the index applied (#3720).
 A pass that writes thousands of rows confirms at the end rather than per row: `withDeferredIndexConfirmation` in `meiliSyncService.ts` makes `syncEntity` enqueue only for the duration of the callback and then confirms the latest write per document, returning `failedDocumentIds`, which is the outcome to read instead of the per-call boolean.
 `materializeFromRun` wraps its whole pass in it and unions those ids into `indexSyncFailures`.
@@ -120,7 +125,7 @@ The embedder check behind hybrid search (`readResearchEntitySearchEmbedderState`
 The rebuild makes the index's embedder follow the environment on every run: a real `OPENAI_API_KEY` sets the `default` embedder, and an unset, blank, or `<...>` placeholder key resets it on the unprefixed local index, because an embedder left over from an earlier seed keeps calling OpenAI on every `addDocuments` and fails the whole seed (#4254).
 A prefixed index (Beta, Production, any `MEILISEARCH_INDEX_PREFIX` target) keeps its stored embedder when the rebuilding shell has no usable key, so an operator reindex without the key cannot silently make a deployed search keyword-only.
 The rebuild and the query-embedding path read the key through `usableOpenAiApiKey` in `server/src/utils/openAiApiKey.ts`, so neither sends a placeholder to OpenAI; the scraper LLM extractors still read `OPENAI_API_KEY` directly.
-The companion queries a search sends after its primary one (the exhaustive hybrid count and facet query, each disjunctive facet query, the keyword-leg query, and the deep and semantic legs) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
+The companion queries a search sends after its primary one (each disjunctive facet query, the keyword-leg query, and the deep and semantic legs) each keep their fallback on failure and also mark the response `degraded: true`, so a search that lost part of its answer to a timeout is shown as limited and kept out of the zero-result analytics (#3751).
 
 Relevant config:
 
@@ -128,7 +133,7 @@ Relevant config:
 | -------------------------- | ---------------------------------------------------------- |
 | `MEILISEARCH_HOST`         | Defaults to `http://localhost:7700` locally; required in deployed runtimes. |
 | `MEILISEARCH_SEARCH_API_KEY` | Search-only key for the web service (`search`, `settings.get` on `<prefix>_researchentities`). |
-| `MEILISEARCH_WRITE_API_KEY` | Write key for the reindex and scripts, scoped to its environment's `<prefix>_*` indexes (#4859); stored on the operator services and the Beta web service, never on the Production web service (`docs/deployment-inventory.md` records where each service holds it). |
+| `MEILISEARCH_WRITE_API_KEY` | On an operator service, the reindex key, scoped to its environment's `<prefix>_*` indexes (#4859). On a web service, a document-sync key that can only add and delete documents in its own `<prefix>_researchentities` index, for live sync after edits; no web service holds the reindex key (`docs/meilisearch-reindex-runbook.md`, "Meilisearch keys"). |
 | `MEILISEARCH_API_KEY`      | Legacy single key; the fallback for either role, logged as a warning when deployed. |
 | `MEILISEARCH_INDEX_PREFIX` | Environment prefix (`beta`, `prod`), giving e.g. `beta_researchentities`; unset locally, required in deployed runtimes. |
 | `OPENAI_API_KEY`           | Used by Meilisearch embedder config and LLM extractors.    |
@@ -168,7 +173,26 @@ A request past that depth is answered with an empty page flagged `depthLimited: 
 That depth-limited page runs no search, so it reports no `estimatedTotalHits` at all instead of inventing one, and the client leaves the total it is already displaying untouched.
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
-The distribution carries `school`, `departments`, and `entityType`, the three facets the filter rail reads.
+The distribution carries `school`, `departments`, `entityType`, and `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), the facets the filter rail reads.
+`hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
+
+### A filter value nothing holds is dropped, not answered empty (#5146)
+
+Before any search runs, `resolveStudentFilterValuesInScope` (`server/src/services/researchFilterVocabulary.ts`) maps each school and department filter value case-insensitively to the spelling the visibility-scoped corpus holds and drops a value no row holds, so a hand-edited or stale link cannot answer 0 results with coverage-gap copy for a filter that does not exist.
+The vocabulary is a `distinct` read on `schools` and `departments`, cached for five minutes per scope, so a value a re-canonicalization added inside that window can be dropped until the cache expires; if it cannot be read the filters apply unchanged.
+When a value changed, the response carries `appliedFilters` with the values actually searched, and `/research` rewrites its URL, selects and chips to match without a second search; it also drops a `type` or `undergrad` value it cannot read from the URL.
+An admin low-quality-first browse skips the resolution, and so does a request with `resolveFilterValues: false`, which a `/research?dept=` department search sends because its department spellings come from the config list rather than the corpus, and dropping them would widen it to an unfiltered browse under the department heading.
+
+### A facet count is the number of results applying it returns (#5101)
+
+A browse and a keyword-only search take their facets from the same filtered Meilisearch query that answers them, plus one disjunctive query per active facet, so they were always consistent.
+A thresholded hybrid text search was not: it serves a locally fused pool (the thresholded pool, the keyword leg, the top-100 semantic leg, and the deep legs) but took its facets from a separate thresholded count query, so the keyword and semantic rows were in the total and in no facet.
+Measured on Development on 2026-10-18, `machine learning` read Computer Science (26) and returned 59, and `cognitive psychology` read Type counts summing to 71 under a total of 255.
+Sending the student's filters into each leg could not be fixed by counting the pool instead, because the semantic leg is a top-K window rather than a predicate: drawn from one department it admits that whole department, so a type or department filter stopped narrowing the query and returned every row of that type.
+So a locally paginated search builds its candidate pool under the visibility scope alone, narrows it with `candidateMatchesStudentFilters`, and tallies every facet over the same pool with `tallyCandidateFacetDistribution`, each facet dropping only its own clause.
+The total is the narrowed pool's length, and no companion count query runs.
+`candidateMatchesStudentFilters` is the in-process twin of `buildResearchGroupFilterString` and both read one field table, so a new student filter is added to both at once; every field it reads must be in `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`.
+`facetCountsMatchAppliedResults.integration.test.ts` asserts the equality for every option over a fake index whose semantic leg is a top-K window, and the `text-query-facet-count-agreement` journey case asserts it on the served route.
 `researchAreas` is still filterable, but its facet is computed only while a `researchAreas` filter is active: with no reader since the topic filter left the client (#1885), its roughly 6,000 values were most of every page-1 body, and measured on Development an empty-query page 1 of 24 fell from 285 KB raw (81 KB gzip) to 40 KB (8 KB gzip) once it and the two card fields below were dropped (#3951).
 A browse card is the `forList` DTO, which omits the detail-only `fullDescription`, `recentGrants`, and `sourceLinkHealth`; `recentGrantCount` stays on the card, the detail page reads the other two from the detail payload, and the saved-research comparison reads only `sourceLinkHealth` from it.
 `profileSynthesisDescription` and `descriptionSource` are on neither payload, because no lane writes either one (#3937); see `docs/research-model.md` under Research Detail Projection.
@@ -374,7 +398,7 @@ Re-run the harness before and after any of them, and move the overlap number rat
 
 ### Every hybrid query in a request must carry the precomputed vector (#3149)
 
-One search request issues several hybrid queries over the same text: the page query, the companion exhaustive threshold-aware count, and one disjunctive facet query per actively filtered facet.
+One search request issues several hybrid queries over the same text: the head pool query, the semantic leg, and the deep pool when the head fills its window.
 Meilisearch 1.13 has no query-embedding cache, so left to itself it re-embeds that text through OpenAI once per query, and the embedding is the whole cost: timed against the Development index for `machine learning`, a hybrid query reports 227-373ms of which ~40ms is the search, while the same query with a `vector` supplied reports 44ms and a keyword-only query over the full 100,000-row window reports 41ms.
 Paid two to four times, that is the difference between a 0.3s search and a 1.4s one.
 
@@ -491,7 +515,7 @@ Two residuals are upstream of the service and are the next levers, not this one.
 A perturbation that damages an alias key loses the whole expansion, because `resolveTopicAliasExpansion` is an exact lookup, which is why `clmiate change` searches 2 query terms where `climate change` searches 7.
 And `rankingRules` places `exactness` above `typo`, so a term the corpus contains verbatim partitions its clean query's matches from its misspelling's corrected ones: that is the whole of the `topic-neuroscience` regression in the numbers above, where both pages stay on topic at precision 1.0 but share almost no row.
 
-A reported total is floored at the locally reachable pool length: the companion count only counts what cleared the blended cutoff, so on its own it would end the client's pagination walk before the keyword-leg rows.
+A reported total is the locally reachable pool length, after the student's filters narrow it: a count of what cleared the blended cutoff alone would end the client's pagination walk before the keyword-leg rows (#2732, #5101).
 The pool is decided once per query, never by the requested page (#3943).
 It used to be `max(200, offset + pageSize)` rows, so each page past the first 200 rows admitted more and the reported total rose while a student scrolled the same query: `cancers` read 242 on page 1 and 577 on its last page at page size 24.
 Now the head keeps the fixed `HYBRID_CANDIDATE_POOL_SIZE` window for the pool and the keyword leg, so page 1 orders exactly as before, and when either head leg fills that window a deep pool and keyword leg to `RESEARCH_SEARCH_MAX_REACHABLE_RECORDS` supply every further row, appended after the head in their own order.
@@ -503,7 +527,7 @@ The two deep queries cost page latency as first merged, because they ran after e
 ### The legs of a text search run concurrently (#3949)
 
 After the primary pool query settles its fallbacks, every other leg depends only on its final parameters or on the keyword leg, so each starts as soon as what it reads has returned rather than one after another.
-The exhaustive count, each disjunctive facet query, the keyword leg, and, when the head pool filled its window, the deep pool start together.
+The keyword leg and, when the head pool filled its window, the deep pool start together.
 When the keyword leg returns, after its `'last'` retry, the semantic leg, the top-row match-position re-read, the deep keyword leg, and a deep pool the keyword leg alone made necessary start together.
 The semantic leg stays gated on a non-empty keyword leg, because the count query outlasts the keyword leg anyway, so the gate costs no wall time and saves a query on zero-keyword searches.
 Each leg keeps its own fallback and its own `degraded` contribution, applied after all of them settle.
@@ -548,6 +572,9 @@ Every k and weight swept beat the keyword-first merge, and a semantic weight of 
 Two guards shape the fused list.
 When the all-words keyword leg of a multi-word query is empty, it is re-run with `matchingStrategy: 'last'`, so a phrase no row carries in full (`immigration policy`, or a `queryOnly` alias word such as `kids` inside a phrase) still has keyword evidence to anchor the fusion.
 It was measured as part of the design: without it, concept queries scored 0.74 rather than 0.80 and question-style queries 0.65 rather than 0.72 nDCG@10 on the development set.
+`last` never drops the first word, so one word no row carries at the front of the query (`xyzzy medieval plague podcast`) still emptied the keyword leg and with it the whole search, while the same word typed last was dropped harmlessly.
+So when the `last` retry is empty too, each of the first ten query words (Meilisearch reads no further) is searched for alone, every word but the last probed whole because only a query's last word is prefix-matched, and when some match no row the keyword leg re-runs, both strategies, over the words that do match, in the order they were typed; the deep keyword leg and the name-match re-read use that same text.
+Measured on Development, the leading-word variant of `medieval plague podcast` went from 1 served row to 10, sharing 9 of the topic query's top 10; `journey:eval --case=unmatched-word-keeps-topic-results` asserts that a topic query with an unmatched word added at the front, middle, or end shares a top row with the topic query and reports the overlap as a rate.
 A keyword leg still empty after that runs no semantic leg, so a query that matches nothing keeps the thresholded path and its #823 noise protection.
 When the best keyword hit matches every query word at the start of a word in a name, with at least one whole-word match, semantic-only rows are withheld and the keyword leg's own order is served (`keywordLegTopHitIsNameMatch`), because the semantic neighbours of a name are other people with similar names and carry no signal about which same-named row is the person.
 The names read are `leadProfessorNames`, `professorNames`, and the entity title (`name`, `displayName`), because many faculty rows are titled after their person, and when the guard was measured their lead names were often not indexed (#3745): with titles excluded, the guard fired on none of 10 held-out name queries and person-name nDCG@10 fell from 0.750 to 0.580 (#3853).
@@ -558,7 +585,7 @@ The check reads those four fields through `_matchesPosition` on the first surviv
 Positions cover every searchable attribute, retrieved or not, which is why the topic veto cannot be computed locally from the hit.
 Measured on Development, match positions took a 200-row keyword query from about 40ms to 130-160ms and a 5,000-row one from about 100ms to 410ms, while the one-row re-read costs about 45ms and runs beside the semantic leg.
 A re-read that returns a different row, because the index changed between the two queries, gives the check no positions and so serves the fused order; a failed re-read on a fused search marks it degraded.
-A withheld result reports only the rows it serves as its total, because the companion count still includes the withheld rows.
+A withheld result reports only the rows it serves as its total.
 A failed semantic leg falls back to the keyword-first order and marks the search degraded; `floorWeakSemanticOnlyHits` and `promoteExactAliasFieldMatches` now run only on that fallback path.
 A whole-query shorthand that keeps its typed alias (`ai`) still searches topic fields keyword-only and is unchanged.
 
@@ -572,6 +599,14 @@ A free-text-guarded shorthand is a one-way synonym: `cv` expands to `computer vi
 That is an index settings change, so it reaches search only after the settings are pushed and the index rebuilt.
 The synonym was not the whole defect: index-time `studentSearchTerms` tagged rows with the computer-vision cluster from a bare "CV" in prose ("Download CV", "his CV lists over 100 publications"), 9 of the 12 such rows on Development.
 A bare `cv` now triggers only when the same field also carries vision vocabulary (`CV_CORROBORATING_CONTEXT_PATTERN`), never a department or title elsewhere on the row and never a lone generic word such as `imaging`, `visual`, or `detection`, which none of those 9 did and a lab abbreviating its field ("Our CV group builds algorithms for object detection") does; the phrases `computer vision` and `computational vision` trigger on their own (#3853).
+
+### "More like this" ranks on meaning, not on a shared name
+
+The detail page's similar-research rail is `listSimilarResearchEntities`, which asks Meilisearch's `searchSimilarDocuments` for the 40 nearest stored vectors and serves the first six that pass the live serve gate.
+The embedder's document template opens with the row's name and its professors' names, so a thinly described row's nearest vectors were other people sharing a first or last name: measured on Development over the first 40 default-browse rows, 13 of 240 rail cards shared a person-name word with the viewed row and 3 rails were led by one, and a history-of-medicine page led with same-surname English and Law faculty.
+A neighbour sharing a person-name word (`personNameWordKeys` over `leadProfessorNames` and `professorNames`, read from the viewed row's index document, ignoring surname particles and generational suffixes via `isPersonNameParticleOrSuffixToken`) is now ranked after every neighbour that does not, keeping the embedding order within each group, which brought both figures to 0 with no re-embedding.
+Removing names from the embedder template would fix it at the source, but it re-embeds every document and the same template serves the search leg, so it is a search-wide change rather than a rail change.
+`journey:eval --case=similar-rail-ranks-topics-above-names` reads the rail for the first 40 default-browse rows, asserts that no shared-name card ranks above one that does not, and reports both rates.
 
 ### A student's working-style words are not the corpus's (#2715)
 
@@ -620,6 +655,8 @@ A word is corrected only when all of these hold:
 
 - It is not a protected query word: a stop word, a question-frame or institution-context word, an alias or synonym key, or a `disableOnWords` entry (`SPELLING_PROTECTED_QUERY_TERMS` in `researchGroupService.ts`), because the alias layer already owns `orgo` and a correction would take it away.
 - It does not appear in a name field (`name`, `displayName`, `leadProfessorNames`, `professorNames`), however rarely, because a rare surname is exactly the shape of a typo and rewriting it hides the person searched for.
+- It does not start a person's name (`leadProfessorNames`, `professorNames`) and is not within the allowed edits of one, because a surname typed in part or with one wrong letter is a name being looked up: a four- or five-letter surname prefix became the corpus word one edit away (one became `non` and served 373 rows, none the person), and a given name with a one-letter surname typo became the given name plus an unrelated topic word, each hiding the person Meilisearch's own prefix and typo matching would have found; `journey:eval --case=person-name-lookup-reaches-the-person` measured 8 of 22 such queries respelled before the guard and none after. Lab and center titles are not person names, so `canser` still becomes `cancer`.
+- It was not typed in capitals, because a capitalised word is an acronym the student means exactly: `CEID` became `reid`. This rule lives in `correctSearchQuerySpelling`, so program search keeps acronyms too.
 - It appears in no served document, and the replacement appears in at least three; a word the corpus carries even once is never rewritten, because a rare correctly spelled topic word would lose the only rows that match it.
 - The replacement is within one edit for a word of four to eight letters and two edits for nine or more, counting a swapped pair of letters as one edit; the nearer candidate wins, then the more frequent, then the alphabetically first.
 
@@ -647,7 +684,7 @@ Over 1,190 held-out single-edit typos of corpus words the rule recovered 93% (1,
 
 ### Program search corrects misspellings and matches unfinished words (#4537)
 
-Program search (`searchFellowships` in `server/src/services/fellowshipService.ts`) stays on MongoDB `$text` rather than moving to Meilisearch.
+Program search (`searchFellowships` in `server/src/services/fellowshipService.ts`) stays on MongoDB rather than moving to Meilisearch; since #5118 it matches and ranks in process rather than through `$text` (below).
 The visible catalog is about 181 rows, so a second index would add a reindex step to every Beta and Production promotion for little gain.
 Measured through the route on Development, a query serving the same rows before and after took the same time (`research` 220ms then 207ms, `study abroad` 201ms then 205ms, averages of five); `Com` rose from 65ms to 249ms because it now serves 112 rows instead of none.
 
@@ -657,8 +694,7 @@ Two things were missing, and both showed up in the queries students typed in Pro
 - **Spelling.** The query runs through `correctProgramSearchQuerySpelling` (`programSearchSpellingVocabulary.ts`) first, with a vocabulary built from served programs and cached for ten minutes.
   Besides the research rules, a word is never rewritten when the research corpus carries it in three or more rows (`econ` must not become `icon`), or when it starts a longer word in either corpus, because the search box searches as the student types and an unfinished word is not a typo (`fres` is `freshman`, not `fees`).
   Until the research vocabulary has loaded, or while it cannot load, program search fails closed and searches the typed spelling, so the same warm-up rule as research search applies to a script that calls `searchFellowships` directly.
-- **Prefixes.** Alongside `$text`, a second query requires every typed word of two or more letters, stop words aside, to start a word in one of the searchable fields (`programQueryWordPrefixClauses`).
-  The two are merged by id: `$text` matches first in their existing relevance-then-sort order, then prefix-only matches in sort order, and the total is the size of the union, so paging walks one stable list.
+- **Prefixes.** A typed word of two or more letters, stop words aside, also matches any word it starts in one of the searchable fields, so an unfinished word finds programs; #5118 moved this rule into `programSearchRelevance.ts`.
 
 The response carries `queryCorrection` exactly as research search does, the page shows "Showing results for X. Search instead for Y" under the search box (`client/src/components/shared/SearchSpellingNotice.tsx`, shared with `/research`), and choosing the typed spelling sends `correctSpelling=false` until the student edits the query.
 
@@ -670,6 +706,41 @@ Measured on Development through `GET /api/programs/search`, before to after:
 - The program journey cases (`programs-*`, `fellowships-*`) pass, 37 of 37 invariants, including the stable text-query total and the every-row-once walk.
 
 Some zero-result queries remain zero because no program covers the subject (`neurology`, `Machine`), which is coverage rather than search.
+
+### Program search requires every typed word and ranks title matches first (#5118)
+
+`$text` ORs its terms, and the query also carried every alias of any topic subject it named, so `economics` served 61 programs and `economics summer` served 119, and `economics` pulled in programs that only say `policy` or `psychology`.
+The text index weighted a title word like a description word, and the page then regrouped the results into deadline sections and sorted each by deadline, so the exact title `Blue Center` was second and `Computer Science Research Internship Program` was 32nd of 40 for `computer science`.
+
+`searchFellowships` now reads the filtered catalog (172 visible programs, about 290KB of searchable text on Development) and hands it to `rankProgramSearch` in `server/src/services/programSearchRelevance.ts`:
+
+- A program matches when every content word of the query (stop words and single letters dropped) starts a word in a searchable field or shares its light stem (`economics` and `economic`, `studies` and `study`, `sciences` and `science`), so adding a word narrows the list except in three cases below that can serve a program the shorter query did not: a query that is a subject's own name or abbreviation, a query that is one of a subject's aliases, and the fallback for three or more words.
+  An abbreviation alias (`ai`, `ml`, `nlp`) matches whole words only, because `ai` starts `aid`.
+  A student's year word (`freshman`) is satisfied by the words of the year the source files (`first year`).
+- A topic word is not widened to its sibling fields: `economics` no longer serves `psychology`.
+  A query that is a subject's own name (`artificial intelligence`) or abbreviation also serves programs naming any of that subject's aliases, after the programs that carry the typed words.
+  A query that is one of a subject's aliases (`machine learning`) widens to the subject only when no program carries the typed words, because no program says `machine learning` and the AI programs are the honest answer.
+- A query of three or more words that no program carries in full serves the programs missing only one word, so a long question does not go empty; two-word queries never fall back to one word, which is what served the European Studies grant for `machine learning`.
+  The fallback is never silent: the response carries `queryMatch: 'allButOneWord'`, and the page says no program mentions every word under any sort and, on the default sort, lists those programs under "Close matches" instead of "Best matches" (`economics summer abroad` serves 16 close matches while `economics summer` serves 5 full ones).
+- Ranking: every-word matches first, then subject matches, then the one-word-short fallback; within each, a title equal to the query, then a title carrying the query as a phrase, then a title carrying every word, then a weighted field score (title 8, summary, competition type, purpose and student-facing category 3, eligibility 2, long text 1), then the requested sort.
+
+The page keeps that order: a result set that answers a search renders as one "Best matches" section, with archive records still apart, instead of deadline sections, because each card already shows whether it is open, closing soon or closed.
+`resultsRankedByRelevance` in the client reducer records whether the current results answered a search; an explicit sort choice still regroups and sorts as before.
+
+Measured on Development, before to after, through `GET /api/programs/search` for counts and the rendered page for order, judging the top five shown by whether the program's own text targets every concept in the query:
+
+| Query | Programs | Relevant in top five | Rank of the program titled with the query |
+|---|---|---|---|
+| `economics` | 61 to 11 | 1/5 to 4/5 | |
+| `economics summer` | 119 to 5 | 0/5 to 3/5 | |
+| `Blue Center` | 31 to 1 | 1/5 to 1/1 | 2 to 1 |
+| `machine learning` | 17 to 2 | 1/5 to 2/2 | |
+| `computer science` | 40 to 6 | 0/5 to 4/5 | 32 to 1 |
+| `history humanities research` | 158 to 20 | 1/5 to 4/5 | |
+
+Mean precision of what the page shows first went from 0.13 to 0.83.
+Median route time over five runs fell from between 302ms and 694ms to between 274ms and 370ms, because the page fetch no longer reads up to 100 full documents a query used to serve.
+The text index on `fellowships` stays declared; removing it is a schema change with its own issue.
 
 ## Data shape rules
 

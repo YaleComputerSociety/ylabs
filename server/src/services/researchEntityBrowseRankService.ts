@@ -64,6 +64,7 @@ export interface RecomputeBrowseRankResult {
   updated: number;
   stamped: number;
   scoreDrifted: number;
+  hostingFlagDrifted: number;
   refusedNewerScorer: number;
   indexSyncFailures: number;
   indexSyncDeferred?: number;
@@ -98,6 +99,7 @@ export async function recomputeBrowseRankForEntities(
       updated: 0,
       stamped: 0,
       scoreDrifted: 0,
+      hostingFlagDrifted: 0,
       refusedNewerScorer: 0,
       indexSyncFailures: 0,
       scoresByEntityId,
@@ -114,6 +116,7 @@ export async function recomputeBrowseRankForEntities(
   let updated = 0;
   let stamped = 0;
   let scoreDrifted = 0;
+  let hostingFlagDrifted = 0;
   let refusedNewerScorer = 0;
   let indexSyncFailures = 0;
   let indexSyncDeferred = 0;
@@ -139,6 +142,7 @@ export async function recomputeBrowseRankForEntities(
     const servedFieldsUnchanged = scoreUnchanged && hostingUnchanged;
     const stampUnchanged = storedScorerVersion(entity) === scorerVersion;
     if (!scoreUnchanged) scoreDrifted += 1;
+    if (!hostingUnchanged) hostingFlagDrifted += 1;
     if (servedFieldsUnchanged && stampUnchanged) continue;
     if (options.dryRun) {
       if (servedFieldsUnchanged) stamped += 1;
@@ -179,6 +183,7 @@ export async function recomputeBrowseRankForEntities(
     updated,
     stamped,
     scoreDrifted,
+    hostingFlagDrifted,
     refusedNewerScorer,
     indexSyncFailures,
     ...(indexSyncDeferred > 0 ? { indexSyncDeferred } : {}),

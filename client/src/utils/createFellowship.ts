@@ -31,6 +31,7 @@ export function createFellowship(data: any): Fellowship {
     cardSummary: typeof data.cardSummary === 'string' ? data.cardSummary : undefined,
     description: data.description || '',
     applicationInformation: data.applicationInformation || '',
+    applicationMaterials: Array.isArray(data.applicationMaterials) ? data.applicationMaterials : [],
     eligibility: data.eligibility || '',
     restrictionsToUseOfAward: data.restrictionsToUseOfAward || '',
     additionalInformation: data.additionalInformation || '',
@@ -46,6 +47,8 @@ export function createFellowship(data: any): Fellowship {
     // own "unconfirmed, verify at source" warning (#3904).
     deadlineProjectedNextCycle: data.deadlineProjectedNextCycle === true,
     deadlineStale: data.deadlineStale === true,
+    deadlineTextConflict:
+      typeof data.deadlineTextConflict === 'string' ? data.deadlineTextConflict : null,
     contactName: data.contactName || '',
     contactEmail: data.contactEmail || '',
     contactPhone: data.contactPhone || '',
@@ -55,6 +58,8 @@ export function createFellowship(data: any): Fellowship {
     purpose: data.purpose || [],
     globalRegions: data.globalRegions || [],
     citizenshipStatus: data.citizenshipStatus || [],
+    citizenshipCondition:
+      typeof data.citizenshipCondition === 'string' ? data.citizenshipCondition : null,
     sourceName: data.sourceName || '',
     sourceUrl: data.sourceUrl || '',
     sourceLinkHealth: data.sourceLinkHealth || undefined,

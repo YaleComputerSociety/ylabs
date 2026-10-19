@@ -21,13 +21,17 @@ import {
   classifyHarvestedResearchHomeName,
   entityKeyNamesOnlyThisPerson,
   NO_SURNAME_ROSTER,
+  personIdentityTokens,
   researchHomeIdentityTokens,
   eponymMatchesIdentity,
   eponymousLabNameSurnameCandidates,
+  isInadmissibleProfileLinkedHomeName,
+  isNonIdentifyingLinkLabelName,
   nameDenotesOrganization,
+  stripResearchHomeNameLinkChrome,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
-import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
+import { isNavMenuChromeTitle, isPageHeadingTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
@@ -43,8 +47,11 @@ import {
   isInstitutionalPublicityPageUrl,
   isMapOrDirectionsUrl,
   isMultiTenantAcademicHostRootUrl,
+  isOffsiteInstitutionPersonProfileUrl,
+  isPersonProfileOrDirectoryUrl,
   isPressOrNewsHostUrl,
   isProfileOrPeopleDirectoryPath,
+  isSharedPeopleRosterUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../../utils/researchHomeWebsiteUrl';
 import {
@@ -82,6 +89,7 @@ import {
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
+import { PERSON_SCOPED_RESEARCH_ENTITY_TYPES } from '../../models/storedVocabularies';
 import { memberObservationsForEntityKey, type MemberRole } from './centersInstitutesScraper';
 import {
   buildCenterRosterHealthSnapshot,
@@ -172,6 +180,7 @@ export interface OfficialProfileResearchHome {
   entityType: 'CENTER' | 'INSTITUTE' | 'LAB' | 'INITIATIVE';
   score: number;
   leadershipEvidenced: boolean;
+  acronymExpansion?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -503,6 +512,110 @@ export function leadPersonalHomepageUrl(entity: Record<string, any>, personName:
     }
   }
   return '';
+}
+
+/**
+ * The row's own stored website when it can be the lead's personal site on any host, or
+ * empty. Only a faculty research row qualifies, because adopting a led group renames the
+ * row and a lab or organization already carries its own name. A row whose website this
+ * lane wrote is the exception: its evidence page is the candidate instead, so a re-run
+ * re-reads the personal site it adopted from rather than the home it adopted. The URL is
+ * never an official profile, a directory or roster page, another institution's person
+ * page, a shared host's root, or a press or publicity page, because each of those is an
+ * institution's page rather than the person's own. Whether the page is the lead's is
+ * decided after the read, by `personalSiteNamesItsLead`, because nothing in a personal
+ * domain's URL says whose it is.
+ */
+export function leadPersonalSiteCandidateUrl(entity: Record<string, any>): string {
+  const provenance = entity.fieldProvenance?.websiteUrl;
+  const cited =
+    provenance?.sourceName === SOURCE_NAME
+      ? [provenance.sourceUrl]
+      : textValue(entity.entityType) === 'FACULTY_RESEARCH_AREA'
+        ? [entity.websiteUrl, entity.website]
+        : [];
+  const officialProfileUrls = new Set(officialProfileUrlsForEntity(entity));
+  for (const value of uniqueStrings(cited)) {
+    try {
+      const url = new URL(value);
+      if (!/^https?:$/i.test(url.protocol)) continue;
+      url.hash = '';
+      const candidate = url.toString();
+      if (
+        officialProfileUrls.has(normalizeOfficialProfileUrl(candidate)) ||
+        YALE_PERSONAL_HOME_DIRECTORY_URL_RE.test(candidate) ||
+        isOfficialYalePersonPageUrl(candidate) ||
+        isPersonProfileOrDirectoryUrl(candidate) ||
+        isOffsiteInstitutionPersonProfileUrl(candidate) ||
+        isSharedPeopleRosterUrl(candidate) ||
+        isMultiTenantAcademicHostRootUrl(candidate) ||
+        isPressOrNewsHostUrl(candidate) ||
+        isInstitutionalPublicityPageUrl(candidate)
+      ) {
+        continue;
+      }
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return '';
+}
+
+const PERSONAL_SITE_TITLE_SEPARATOR_RE = /\s+[|\u2013\u2014\u00b7:-]\s+|\s*[|\u00b7]\s*/;
+const PERSONAL_SITE_HONORIFIC_WORDS: ReadonlySet<string> = new Set([
+  'dr',
+  'prof',
+  'professor',
+  'phd',
+]);
+
+function titleSegmentIsThePersonsName(segment: string, givenName: string, surname: string) {
+  const words = normalizeName(segment)
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+  if (!words.includes(surname) || !words.includes(givenName)) return false;
+  const nameWords = new Set(
+    normalizeName(`${givenName} ${surname}`)
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter(Boolean),
+  );
+  return words.every(
+    (word) => nameWords.has(word) || word.length === 1 || PERSONAL_SITE_HONORIFIC_WORDS.has(word),
+  );
+}
+
+/**
+ * Whether a fetched page is the lead's own personal site: its `<title>`, `og:site_name`
+ * or first heading is the lead's name and nothing else, apart from initials and an
+ * honorific. A lab's or a colleague's site names a lab or another person there, and a
+ * department page names the department.
+ */
+export function personalSiteNamesItsLead(html: string, personName: unknown): boolean {
+  const { first, last } = splitName(textValue(personName));
+  const givenName =
+    normalizeName(first)
+      .toLowerCase()
+      .split(/[^a-z]+/)[0] || '';
+  const surname =
+    normalizeName(last)
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .pop() || '';
+  if (!givenName || !surname) return false;
+  const $ = cheerio.load(html);
+  const headings = [
+    textValue($('title').first().text()),
+    textValue($('meta[property="og:site_name"]').attr('content')),
+    textValue($('h1').first().text()),
+  ];
+  return headings.some((heading) =>
+    heading
+      .split(PERSONAL_SITE_TITLE_SEPARATOR_RE)
+      .some((segment) => titleSegmentIsThePersonsName(segment, givenName, surname)),
+  );
 }
 
 export function shouldQueueEntityForPiBackfill(entity: Record<string, any>): boolean {
@@ -850,6 +963,14 @@ function hasExternalScholarProfileCallout(value: string): boolean {
   );
 }
 
+function isAdmissibleOfficialProfileTitle(value: string): boolean {
+  return (
+    officialProfileTitlePattern.test(value) &&
+    !isNavMenuChromeTitle(value) &&
+    !isPageHeadingTitle(value)
+  );
+}
+
 function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
   const selectors = [
     '[class*="title"]',
@@ -862,7 +983,7 @@ function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
     for (const el of elements) {
       const value = cleanOfficialProfileTitle($(el).text() || $(el).attr('content') || '');
       if (!value || /^information for$/i.test(value)) continue;
-      if (officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value)) return value;
+      if (isAdmissibleOfficialProfileTitle(value)) return value;
     }
   }
   return '';
@@ -974,11 +1095,13 @@ function jsonLdProfiles($: cheerio.CheerioAPI): Array<Record<string, any>> {
 }
 
 function canonicalResearchHomeName(value: unknown): string {
-  return stripTrailingResearchHomeDescription(
-    textValue(value)
-      .replace(/\s*\(([A-Z][A-Z0-9&/ -]{1,24})\)\s*$/g, '')
-      .replace(/^Director of (?:the )?/i, '')
-      .trim(),
+  return stripResearchHomeNameLinkChrome(
+    stripTrailingResearchHomeDescription(
+      textValue(value)
+        .replace(/\s*\(([A-Z][A-Z0-9&/ -]{1,24})\)\s*$/g, '')
+        .replace(/^Director of (?:the )?/i, '')
+        .trim(),
+    ),
   );
 }
 
@@ -1419,7 +1542,7 @@ export function readOrganizationDirectorProfile(
   }
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+      isAdmissibleOfficialProfileTitle,
     ) || '';
   return { subjectKey, statedMember, claim: { name, role, profileUrl: canonicalUrl, title } };
 }
@@ -1624,21 +1747,72 @@ function cleanProfileCardLabWebsiteLabel(value: string): string {
   );
 }
 
+/**
+ * The title of the profile's lab-website card, read on its own. The card's flattened text
+ * glues the title to the blurb under it ("The Quill LabDistributed models of ..."), and a
+ * blurb that does not open on a description verb survives every strip as part of the name.
+ * Undefined when the link is not in such a card, so other page shapes keep the text path.
+ */
+function profileLabCardTitle(link: cheerio.Cheerio<any>): string | undefined {
+  const card = link.closest('[class*="profile-details-lab"]');
+  const title = card.find('[class*="profile-details-lab__title"]').first();
+  return title.length > 0 ? textValue(title.text()) : undefined;
+}
+
+function namesOnlyThePerson(name: string, personName: string): boolean {
+  const personTokens = personIdentityTokens(personName);
+  const words = name
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}'’-]+/u)
+    .filter(Boolean);
+  return words.length > 0 && words.every((word) => personTokens.includes(word));
+}
+
+function leavesLabWebsiteSlotUnnamed(label: string, profileName: string): boolean {
+  return (
+    !label ||
+    /^View\s+Lab\s+Website$/i.test(label) ||
+    isNonIdentifyingLinkLabelName(label) ||
+    genericOrganizationName(label) ||
+    namesOnlyThePerson(label, profileName)
+  );
+}
+
+function admissibleLabWebsiteSlotName(label: string, profileName: string): string {
+  return leavesLabWebsiteSlotUnnamed(label, profileName) ||
+    isInadmissibleProfileLinkedHomeName(label)
+    ? ''
+    : label;
+}
+
+/**
+ * An untitled slot falls back to "<person> Lab". A titled card whose title names no
+ * organization ("Lab Website", "n/a", "About Us", the person alone) adopts nothing: its
+ * links went to personal sites, code repositories, bio pages and department pages, so a
+ * minted "<person> Lab" there would be a claim the profile never made.
+ */
 function profileLinkedLabWebsiteName(
   rawName: string,
   context: string,
   profileName: string,
+  cardTitle?: string,
 ): string {
+  if (cardTitle !== undefined) {
+    const title = canonicalResearchHomeName(
+      dedupeRepeatedProfileCardLabel(cleanProfileCardLabWebsiteLabel(cardTitle).trim()),
+    );
+    return admissibleLabWebsiteSlotName(title, profileName);
+  }
   const labelText = cleanProfileCardLabWebsiteLabel(
     textValue(context || rawName)
       .replace(/View\s+Lab\s+Website\b[\s\S]*$/i, '')
       .replace(/\b(?:Research at a Glance|News|Academic Achievements)\b[\s\S]*$/i, ''),
   ).trim();
   const label = canonicalResearchHomeName(dedupeRepeatedProfileCardLabel(labelText));
-  if (label && !/^View\s+Lab\s+Website$/i.test(label) && !genericOrganizationName(label)) {
-    return label;
+  if (leavesLabWebsiteSlotUnnamed(label, profileName)) {
+    return profileName ? `${profileName} Lab` : '';
   }
-  return profileName ? `${profileName} Lab` : '';
+  return admissibleLabWebsiteSlotName(label, profileName);
 }
 
 function disallowedProfileLinkedResearchHome(name: string, url: string): boolean {
@@ -1809,8 +1983,11 @@ function profileLinkedLabWebsitesFromHtml(
     if (/\/(?:internal-medicine|intmed)\/ctra\//i.test(new URL(url).pathname)) return;
     const name = isEponymousGroupLink
       ? canonicalResearchHomeName(rawName)
-      : ledGroupName || profileLinkedLabWebsiteName(rawName, context, profileName);
-    if (!name || genericOrganizationName(name)) return;
+      : ledGroupName ||
+        profileLinkedLabWebsiteName(rawName, context, profileName, profileLabCardTitle(link));
+    if (!name || genericOrganizationName(name) || isInadmissibleProfileLinkedHomeName(name)) {
+      return;
+    }
     if (disallowedProfileLinkedResearchHome(name, url)) return;
     const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
     if (
@@ -1846,7 +2023,7 @@ function linkedResearchHomesFromHtml(
 
     const rawName = textValue(link.text());
     const name = canonicalResearchHomeName(rawName);
-    if (!name || genericOrganizationName(name)) return;
+    if (!name || genericOrganizationName(name) || isInadmissibleProfileLinkedHomeName(name)) return;
     const url = publicOfficialYaleResearchHomeUrl(link.attr('href'), profileUrl);
     if (!url) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
@@ -1912,6 +2089,7 @@ export function extractOfficialProfileResearchHomes(
     const name = canonicalResearchHomeName(rawName);
     const url = publicOfficialYaleResearchHomeUrl(record.url || record['@id'], profileUrl);
     if (!name || !url || genericOrganizationName(name)) continue;
+    if (isInadmissibleProfileLinkedHomeName(name)) continue;
     if (disallowedProfileLinkedResearchHome(name, url)) continue;
     const classification = classifyResearchHome(name, url);
     if (!classification) continue;
@@ -1980,11 +2158,80 @@ function homeNamesAnotherPersonsLab(
   home: OfficialProfileResearchHome,
   personName: unknown,
 ): boolean {
+  if (acronymExpansionNamesIdentity(home.acronymExpansion, personIdentityTokens(personName))) {
+    return false;
+  }
+  const identityTokens = researchHomeIdentityTokens({ personName, slug: entity.slug });
   return claimsAnotherPersonsLabByUrlPath({
     harvestedName: home.name,
     websiteUrl: home.url,
-    identityTokens: researchHomeIdentityTokens({ personName, slug: entity.slug }),
+    identityTokens,
   });
+}
+
+const ACRONYM_LAB_NAME_RE = /^(?:[Tt]he\s+)?([A-Z]{2,7})\s+([Ll]ab|[Ll]aboratory|[Gg]roup)$/;
+const ACRONYM_CONNECTOR_WORDS: ReadonlySet<string> = new Set(['of', 'and', 'for', 'in', 'on', '&']);
+
+export function isAcronymLabName(name: unknown): boolean {
+  return ACRONYM_LAB_NAME_RE.test(textValue(name));
+}
+
+/**
+ * The phrase an acronym lab name abbreviates, as a page spells it out, or empty. Each capitalised word gives
+ * one letter in order, connectors give none, and the phrase must end in the name's own
+ * head noun, so a run of capitalised words that merely happens to share initials does not
+ * count.
+ */
+export function acronymLabNameExpansion(name: unknown, pageText: string): string {
+  const match = ACRONYM_LAB_NAME_RE.exec(textValue(name));
+  if (!match) return '';
+  const [, acronym, headNoun] = match;
+  const words = textValue(pageText)
+    .split(' ')
+    .map((word) => word.replace(/^[^\p{L}&]+|[^\p{L}&]+$/gu, ''))
+    .filter(Boolean);
+  for (let start = 0; start < words.length; start += 1) {
+    let letters = '';
+    let end = start;
+    for (; end < words.length && letters.length < acronym.length; end += 1) {
+      const word = words[end];
+      if (end > start && ACRONYM_CONNECTOR_WORDS.has(word.toLowerCase())) continue;
+      if (word.charAt(0) !== acronym.charAt(letters.length)) break;
+      if (word === acronym) break;
+      letters += word.charAt(0);
+    }
+    if (letters !== acronym) continue;
+    if (words[end]?.toLowerCase() !== headNoun.toLowerCase()) continue;
+    return words.slice(start, end + 1).join(' ');
+  }
+  return '';
+}
+
+function acronymExpansionNamesIdentity(
+  expansion: string | undefined,
+  identityTokens: string[],
+): boolean {
+  if (!expansion || identityTokens.length === 0) return false;
+  const words = expansion
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+  return words.some((word) => identityTokens.includes(word));
+}
+
+const BLOCK_LEVEL_SELECTOR =
+  'address, article, aside, blockquote, br, dd, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul';
+
+/**
+ * Body text of a page for the acronym-expansion read, without script and style text.
+ */
+export function pageBodyText(html: string): string {
+  const $ = cheerio.load(html);
+  $('script, style, noscript').remove();
+  $(BLOCK_LEVEL_SELECTOR).before(' ').after(' ');
+  return textValue($('body').text() || $.root().text());
 }
 
 /**
@@ -2026,7 +2273,8 @@ export type ProfileLinkedHomeRefusal =
   | 'names-another-persons-lab'
   | 'names-a-colleagues-lab'
   | 'institutional-home-on-a-grant-shell'
-  | 'institutional-home-on-a-person-keyed-shell';
+  | 'institutional-home-on-a-person-keyed-shell'
+  | 'organization-home-on-a-faculty-research-row';
 
 /**
  * Whether a home named "<Surname> Lab" names a colleague: the surname belongs to a known
@@ -2061,17 +2309,87 @@ export function profileLinkedHomeRefusal(
   if (linksAnOrganizationThePersonDoesNotLead(home, personName)) {
     return 'affiliated-organization-without-leadership';
   }
+  if (home.entityType !== 'LAB') {
+    const personRowRefusal = organizationHomeOnAPersonRowRefusal(entity, personName);
+    if (personRowRefusal) return personRowRefusal;
+  }
   if (home.entityType === 'LAB' || !classifyResearchHome(home.name, home.url)) {
     return homeNamesAnotherPersonsLab(entity, home, personName)
       ? 'names-another-persons-lab'
       : null;
   }
+  return null;
+}
+
+const FACULTY_RESEARCH_ROW_TYPES: ReadonlySet<string> = new Set(
+  [...PERSON_SCOPED_RESEARCH_ENTITY_TYPES].filter((entityType) => entityType !== 'LAB'),
+);
+
+/**
+ * The live `entityType` values other sources assert for a row this lane once retyped, set on
+ * every selected row before the research-home step reads it. The row's stored type is then
+ * this lane's own earlier claim, and judging the row on it would let a past retype exempt the
+ * row from the guard that should have refused it.
+ */
+export const ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD = '__entityTypesFromOtherSources';
+
+const ROW_TYPE_FIELDS = 'entityType fieldProvenance.entityType';
+
+function rowTypesIndependentOfThisLane(entity: Record<string, any>): string[] {
+  if (entity.fieldProvenance?.entityType?.sourceName !== SOURCE_NAME) {
+    return [textValue(entity.entityType)];
+  }
+  return uniqueStrings(
+    Array.isArray(entity[ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD])
+      ? entity[ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD]
+      : [],
+  );
+}
+
+/**
+ * Owner decision 2026-10-17: a person who directs or co-founds an organization keeps two
+ * rows, their own faculty research row and the organization's row with them as its
+ * director. So an organization a profile links never becomes the name, type or kind of the
+ * person's row, whatever the profile says about who leads it; the organization's own row
+ * gets the director through this lane's organization-director mode. A lab-typed home is
+ * the person's own lab and is judged on the lab arm instead.
+ */
+function organizationHomeOnAPersonRowRefusal(
+  entity: Record<string, any>,
+  personName: unknown,
+): ProfileLinkedHomeRefusal | null {
   if (GRANT_DERIVED_PI_SHELL_SLUG_RE.test(textValue(entity.slug))) {
     return 'institutional-home-on-a-grant-shell';
   }
-  return entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName })
-    ? 'institutional-home-on-a-person-keyed-shell'
+  if (entityKeyNamesOnlyThisPerson({ slug: entity.slug, personName })) {
+    return 'institutional-home-on-a-person-keyed-shell';
+  }
+  return rowTypesIndependentOfThisLane(entity).some((entityType) =>
+    FACULTY_RESEARCH_ROW_TYPES.has(entityType.toUpperCase()),
+  )
+    ? 'organization-home-on-a-faculty-research-row'
     : null;
+}
+
+/**
+ * A refusal emits nothing by default, which left every organization this lane adopted onto
+ * a person's row before the guard reached it live and winning. These refusals state the
+ * refused name, so resolve withdraws this lane's older name for the row and its type and
+ * kind fall with it. The website is left as it is: whether an organization's site may stand
+ * as the person's research website is a separate question from the row's identity.
+ */
+const PERSON_ROW_ORGANIZATION_REFUSALS: ReadonlySet<string> = new Set<ProfileLinkedHomeRefusal>([
+  'institutional-home-on-a-grant-shell',
+  'institutional-home-on-a-person-keyed-shell',
+  'organization-home-on-a-faculty-research-row',
+]);
+
+export function refusedPersonRowOrganizationObservations(
+  entity: Record<string, any>,
+  home: OfficialProfileResearchHome,
+  evidenceUrl: string,
+): ObservationInput[] {
+  return [refusedResearchHomeNameObservation(entity, home, evidenceUrl)];
 }
 
 /**
@@ -2753,7 +3071,7 @@ export function extractOfficialProfileIdentity(
 
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
+      isAdmissibleOfficialProfileTitle,
     ) || '';
   if (!title) return null;
 
@@ -3309,7 +3627,9 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
 
   const [entities, leadRosterByEntity] = await Promise.all([
     ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
-      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
+      .select(
+        `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
+      )
       .lean(),
     currentLeadRosterEntriesByEntity(entityIds, LEAD_MEMBER_ROLES),
   ]);
@@ -3373,7 +3693,7 @@ export async function selectVisibleProfileBioTargets(
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   })
-    .select('_id website websiteUrl sourceUrls')
+    .select(`_id website websiteUrl sourceUrls ${ROW_TYPE_FIELDS}`)
     .lean();
   const entitiesById = new Map((entities as any[]).map((entity) => [idValue(entity._id), entity]));
 
@@ -3475,7 +3795,7 @@ async function selectProfileDescriptionTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...identityFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
 
@@ -3692,6 +4012,47 @@ export async function annotateEntitiesWithSourceObservationUrls(
   }));
 }
 
+export async function annotateEntitiesWithEntityTypesFromOtherSources(
+  entities: Array<Record<string, any>>,
+): Promise<Array<Record<string, any>>> {
+  const retypedByThisLane = entities.filter(
+    (entity) => entity.fieldProvenance?.entityType?.sourceName === SOURCE_NAME,
+  );
+  if (retypedByThisLane.length === 0) return entities;
+
+  const typesByEntity = new Map<string, Set<string>>();
+  for (const scope of observationEntityScopeChunks(retypedByThisLane)) {
+    const rows = await Observation.find({
+      entityType: 'researchEntity',
+      superseded: { $ne: true },
+      field: 'entityType',
+      sourceName: { $ne: SOURCE_NAME },
+      $or: observationEntityScopeClauses(scope),
+    })
+      .select('entityId entityKey value')
+      .lean();
+    for (const row of rows as Array<Record<string, any>>) {
+      const value = textValue(row.value);
+      if (!value) continue;
+      for (const key of [idValue(row.entityId), textValue(row.entityKey)].filter(Boolean)) {
+        if (!typesByEntity.has(key)) typesByEntity.set(key, new Set());
+        typesByEntity.get(key)!.add(value);
+      }
+    }
+  }
+
+  return entities.map((entity) => {
+    if (entity.fieldProvenance?.entityType?.sourceName !== SOURCE_NAME) return entity;
+    return {
+      ...entity,
+      [ENTITY_TYPES_FROM_OTHER_SOURCES_FIELD]: uniqueStrings([
+        ...(typesByEntity.get(idValue(entity._id || entity.id)) || []),
+        ...(typesByEntity.get(textValue(entity.slug)) || []),
+      ]),
+    };
+  });
+}
+
 export async function annotateProfileDescriptionPreferredSourceEvidence(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
@@ -3735,39 +4096,101 @@ export async function annotateProfileDescriptionPreferredSourceEvidence(
   });
 }
 
+/**
+ * Set on a row the selector reached only because its own website may be the lead's
+ * personal site. Such a row is read for the led-group sentence on that site and for
+ * nothing else, because its profile was never in this step's population and the profile
+ * arms have not been measured on it. A row whose website this lane wrote stays in the
+ * profile population and keeps every arm.
+ */
+export const PERSONAL_SITE_ONLY_TARGET_FIELD = '__personalSiteOnly';
+
+const RESEARCH_HOME_PROFILE_TARGET_FIELDS = `_id slug name displayName website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl ${ROW_TYPE_FIELDS}`;
+
+function readsOnlyItsPersonalSite(entity: Record<string, any>, targeted: boolean): boolean {
+  return (
+    !targeted &&
+    !isProfileResearchHomeTarget(entity) &&
+    Boolean(leadPersonalSiteCandidateUrl(entity))
+  );
+}
+
+function isProfileResearchHomeTarget(entity: Record<string, any>): boolean {
+  const websiteUrl = textValue(entity.websiteUrl);
+  return (
+    (!websiteUrl && !textValue(entity.website)) ||
+    entity.fieldProvenance?.websiteUrl?.sourceName === SOURCE_NAME ||
+    YALE_PERSONAL_HOME_DIRECTORY_URL_RE.test(websiteUrl)
+  );
+}
+
 async function selectResearchHomeProfileTargets(
   limit: number,
   targetKeys: string[] = [],
 ): Promise<Array<Record<string, any>>> {
-  const targetFilter =
-    targetKeys.length > 0
-      ? targetKeyFilter(targetKeys)
-      : {
-          $or: [
-            {
-              $and: [
-                {
-                  $or: [
-                    { websiteUrl: { $exists: false } },
-                    { websiteUrl: null },
-                    { websiteUrl: '' },
-                  ],
-                },
-                {
-                  $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
-                },
-              ],
-            },
-            { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
-            { websiteUrl: YALE_PERSONAL_HOME_DIRECTORY_URL_RE },
-          ],
-        };
-
-  const entities = await recentlyObservedResearchEntities(
-    { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments fieldProvenance.websiteUrl',
+  if (targetKeys.length > 0) {
+    return researchHomeProfileTargetsWithLeads(
+      await recentlyObservedResearchEntities(
+        { archived: { $ne: true }, ...targetKeyFilter(targetKeys) },
+        RESEARCH_HOME_PROFILE_TARGET_FIELDS,
+        limit,
+      ),
+      limit,
+      true,
+    );
+  }
+  const profileTargets = await researchHomeProfileTargetsWithLeads(
+    await recentlyObservedResearchEntities(
+      {
+        archived: { $ne: true },
+        $or: [
+          {
+            $and: [
+              {
+                $or: [{ websiteUrl: { $exists: false } }, { websiteUrl: null }, { websiteUrl: '' }],
+              },
+              {
+                $or: [{ website: { $exists: false } }, { website: null }, { website: '' }],
+              },
+            ],
+          },
+          { 'fieldProvenance.websiteUrl.sourceName': SOURCE_NAME },
+          { websiteUrl: YALE_PERSONAL_HOME_DIRECTORY_URL_RE },
+        ],
+      },
+      RESEARCH_HOME_PROFILE_TARGET_FIELDS,
+      limit,
+    ),
+    limit,
+    false,
+  );
+  if (profileTargets.length >= limit) return profileTargets;
+  const personalSiteCandidates = await recentlyObservedResearchEntities(
+    {
+      archived: { $ne: true },
+      entityType: 'FACULTY_RESEARCH_AREA',
+      'fieldProvenance.websiteUrl.sourceName': { $ne: SOURCE_NAME },
+      $and: [
+        { websiteUrl: /^https?:\/\//i },
+        { websiteUrl: { $not: YALE_PERSONAL_HOME_DIRECTORY_URL_RE } },
+      ],
+    },
+    RESEARCH_HOME_PROFILE_TARGET_FIELDS,
     limit,
   );
+  const personalSiteTargets = await researchHomeProfileTargetsWithLeads(
+    personalSiteCandidates.filter((entity) => leadPersonalSiteCandidateUrl(entity)),
+    limit - profileTargets.length,
+    false,
+  );
+  return [...profileTargets, ...personalSiteTargets];
+}
+
+async function researchHomeProfileTargetsWithLeads(
+  entities: Array<Record<string, any>>,
+  limit: number,
+  targeted: boolean,
+): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return [];
 
   const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
@@ -3822,7 +4245,12 @@ async function selectResearchHomeProfileTargets(
 
   return entitiesWithObservationUrls
     .filter((entity) => officialProfileUrlsForEntity(entity).length > 0)
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((entity) =>
+      readsOnlyItsPersonalSite(entity, targeted)
+        ? { ...entity, [PERSONAL_SITE_ONLY_TARGET_FIELD]: true }
+        : entity,
+    );
 }
 
 /**
@@ -3927,7 +4355,7 @@ async function selectLeadDirectWebsiteTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
   if (entities.length === 0) return [];
@@ -4018,7 +4446,7 @@ async function selectSourceUrlWebsiteTargets(
 
   const entities = await recentlyObservedResearchEntities(
     { archived: { $ne: true }, ...targetFilter },
-    '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
+    `_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments ${ROW_TYPE_FIELDS}`,
     limit,
   );
   if (entities.length === 0) return [];
@@ -4236,6 +4664,36 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
   private readonly readHtml = (url: string, useCache: boolean, sourceName: string) =>
     fetchRecordedBy(this.pageReads, this.htmlFetcher)(url, useCache, sourceName);
 
+  /**
+   * The home with the phrase its acronym name abbreviates, read from the page that
+   * linked it and then from the home's own page. An acronym in a lab's URL path reads as
+   * a person to the path eponym check, so the lead's own acronym lab is refused as
+   * somebody else's unless a page spells the acronym out with the lead's name in it.
+   */
+  private async homeWithAcronymExpansion(
+    home: OfficialProfileResearchHome,
+    evidenceUrl: string,
+    evidenceHtml: string,
+    ctx: ScraperContext,
+    awaitFetchTurn: () => Promise<void>,
+  ): Promise<OfficialProfileResearchHome> {
+    const fromEvidence = acronymLabNameExpansion(home.name, pageBodyText(evidenceHtml));
+    if (fromEvidence) return { ...home, acronymExpansion: fromEvidence };
+    if (home.url === evidenceUrl) return home;
+    try {
+      await awaitFetchTurn();
+      const homeHtml = await this.readHtml(home.url, ctx.options.useCache, this.name);
+      const fromHome = acronymLabNameExpansion(home.name, pageBodyText(homeHtml));
+      return fromHome ? { ...home, acronymExpansion: fromHome } : home;
+    } catch (err: any) {
+      ctx.log('Acronym lab page fetch failed', {
+        profileUrl: home.url,
+        error: sanitizeLogValue(err),
+      });
+      return home;
+    }
+  }
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     this.pageReads = new LanePageReads();
     const yaleDirectoryNetids = await loadYaleDirectoryNetids();
@@ -4318,7 +4776,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         : []),
     ];
     const seenEntities = new Set<string>();
-    const entities = selectedEntities
+    const uniqueEntities = selectedEntities
       .filter((entity) => {
         const key = idValue(entity._id) || textValue(entity.slug);
         if (!key || seenEntities.has(key)) return false;
@@ -4326,10 +4784,15 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         return true;
       })
       .slice(0, limit);
+    const entities = runProfileResearchHomeBackfill
+      ? await annotateEntitiesWithEntityTypesFromOtherSources(uniqueEntities)
+      : uniqueEntities;
     let emitted = 0;
     let observed = 0;
     let homesAdopted = 0;
     let homesAdoptedAsHostLabWebsite = 0;
+    let personalSitesRead = 0;
+    let personalSitesNotNamingTheLead = 0;
     const homesRefusedByReason: Record<string, number> = {};
     let fetchAttempts = 0;
 
@@ -4532,10 +4995,17 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               yaleDirectoryNetids,
               expectedPeople: entity.leadUsers,
             });
-            let [home] = extractOfficialProfileResearchHomes(html, profileUrl);
+            const personalSiteOnly = entity[PERSONAL_SITE_ONLY_TARGET_FIELD] === true;
+            let [home] = personalSiteOnly
+              ? []
+              : extractOfficialProfileResearchHomes(html, profileUrl);
             let homeEvidenceUrl = profileUrl;
-            const homepageUrl =
+            let homeEvidenceHtml = html;
+            const yaleHomepageUrl =
               !home && identity ? leadPersonalHomepageUrl(entity, identity.displayName) : '';
+            const personalSiteUrl =
+              !home && identity && !yaleHomepageUrl ? leadPersonalSiteCandidateUrl(entity) : '';
+            const homepageUrl = yaleHomepageUrl || personalSiteUrl;
             if (homepageUrl && homepageUrl !== profileUrl) {
               try {
                 await awaitFetchTurn();
@@ -4544,12 +5014,23 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                   ctx.options.useCache,
                   this.name,
                 );
-                [home] = extractLeadHomepageResearchHomes(
-                  homepageHtml,
-                  homepageUrl,
-                  identity?.displayName || '',
-                );
-                if (home) homeEvidenceUrl = homepageUrl;
+                const pageIsTheLeads =
+                  !personalSiteUrl || personalSiteNamesItsLead(homepageHtml, identity?.displayName);
+                if (personalSiteUrl) {
+                  if (pageIsTheLeads) personalSitesRead += 1;
+                  else personalSitesNotNamingTheLead += 1;
+                }
+                [home] = pageIsTheLeads
+                  ? extractLeadHomepageResearchHomes(
+                      homepageHtml,
+                      homepageUrl,
+                      identity?.displayName || '',
+                    )
+                  : [];
+                if (home) {
+                  homeEvidenceUrl = homepageUrl;
+                  homeEvidenceHtml = homepageHtml;
+                }
               } catch (err: any) {
                 ctx.log('Lead homepage fetch failed', {
                   entityId: officialProfileDocumentId(entity._id),
@@ -4558,30 +5039,53 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 });
               }
             }
+            const refusalOf = async (candidate: OfficialProfileResearchHome) =>
+              (await websiteUrlOwnedByAnotherEntity(candidate.url, entity))
+                ? 'website-owned-by-another-entity'
+                : profileLinkedHomeRefusal(
+                    entity,
+                    candidate,
+                    identity?.displayName,
+                    await knownPersonSurnamesForRun(),
+                  );
             // Named so the run can report WHY a home was withheld. A silent refusal is
             // indistinguishable from a guard that never ran: this lane withholds by
             // emitting nothing, so absence of a graft in the observation log is evidence
             // about the corpus rather than about the guard, and neither the #1484 nor the
             // #3529 arm could be told apart from a profile that simply linked nothing
             // contentious (#3537).
-            const homeRefusal: string | null = !home
+            let homeRefusal: string | null = !home
               ? null
               : !identity
                 ? 'no-profile-identity'
-                : (await websiteUrlOwnedByAnotherEntity(home.url, entity))
-                  ? 'website-owned-by-another-entity'
-                  : profileLinkedHomeRefusal(
-                      entity,
-                      home,
-                      identity.displayName,
-                      await knownPersonSurnamesForRun(),
-                    );
+                : await refusalOf(home);
+            if (
+              home &&
+              homeRefusal === 'names-another-persons-lab' &&
+              isAcronymLabName(home.name)
+            ) {
+              const expanded = await this.homeWithAcronymExpansion(
+                home,
+                homeEvidenceUrl,
+                homeEvidenceHtml,
+                ctx,
+                awaitFetchTurn,
+              );
+              if (expanded.acronymExpansion) {
+                home = expanded;
+                homeRefusal = await refusalOf(home);
+              }
+            }
             if (homeRefusal === 'names-a-colleagues-lab' && home) {
               observations.push(...hostLabWebsiteOnlyObservations(entity, home, homeEvidenceUrl));
               homesAdoptedAsHostLabWebsite += 1;
             } else if (homeRefusal) {
               homesRefusedByReason[homeRefusal] = (homesRefusedByReason[homeRefusal] ?? 0) + 1;
-              if (
+              if (home && PERSON_ROW_ORGANIZATION_REFUSALS.has(homeRefusal)) {
+                observations.push(
+                  ...refusedPersonRowOrganizationObservations(entity, home, homeEvidenceUrl),
+                );
+              } else if (
                 home &&
                 LINK_WITHDRAWING_HOME_REFUSALS.has(homeRefusal) &&
                 rowStoresWebsite(entity, home.url)
@@ -4593,7 +5097,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             } else if (identity && home) {
               observations.push(...entityResearchHomeToObservations(entity, home, homeEvidenceUrl));
               homesAdopted += 1;
-            } else if (identity && profileAttestsItsLabWebsiteIsGone(html, profileUrl, entity)) {
+            } else if (
+              identity &&
+              !personalSiteOnly &&
+              profileAttestsItsLabWebsiteIsGone(html, profileUrl, entity)
+            ) {
               observations.push(emptyLabWebsiteSlotObservation(entity, profileUrl));
               homesRefusedByReason['profile-no-longer-links-the-stored-website'] =
                 (homesRefusedByReason['profile-no-longer-links-the-stored-website'] ?? 0) + 1;
@@ -4680,6 +5188,8 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       adopted: homesAdopted,
       adoptedAsHostLabWebsite: homesAdoptedAsHostLabWebsite,
       refused: homesRefusedByReason,
+      personalSitesRead,
+      personalSitesNotNamingTheLead,
     });
 
     const pageHealth = await emitLanePageHealthForCitedPages(
@@ -4707,6 +5217,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         `Processed ${entities.length} official profile records; ` +
         `adopted ${homesAdopted} profile-linked research homes` +
         `, ${homesAdoptedAsHostLabWebsite} colleague-lab websites only` +
+        `, read ${personalSitesRead} lead personal sites (${personalSitesNotNamingTheLead} not naming the lead)` +
         (refusalSummary ? `, refused ${refusalSummary}` : ', refused none') +
         (organizationDirectorTargets.length > 0
           ? `; claimed ${organizationDirectorsClaimed} of ${organizationDirectorTargets.length} lead-less organization directors from their own profiles.`

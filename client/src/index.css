@@ -176,6 +176,10 @@ code {
     outline-offset: -2px;
   }
 
+  [type='search']::-webkit-search-cancel-button {
+    margin-inline-start: 0.5rem;
+  }
+
   h1,
   h2,
   h3,

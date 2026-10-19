@@ -117,3 +117,42 @@ test('--probe-hosts still runs the probe from the image without cloning', () => 
   );
   assert.match(probe, new RegExp(`pwd=${box.appDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `));
 });
+
+const RUN_ID = 'f'.repeat(24);
+const RESUME_SHA = 'b'.repeat(40);
+
+test('--resume-weekly-run checks out the recorded commit, not beta HEAD, and continues that run', () => {
+  const box = sandbox();
+  const result = runEntrypoint(
+    box,
+    '--resume-weekly-run',
+    RUN_ID,
+    RESUME_SHA,
+    '--confirm-weekly-development-sweep',
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, new RegExp(`resuming run ${RUN_ID} at its recorded commit ${RESUME_SHA}`));
+  assert.doesNotMatch(box.calls(), /git ls-remote/);
+  assert.match(box.calls(), new RegExp(`git -C \\S+ checkout --quiet --detach ${RESUME_SHA}`));
+  const calls = yarnCalls(box);
+  assert.match(
+    calls[1],
+    new RegExp(
+      `^yarn --cwd server scrape:sweep:weekly-development --resume-run ${RUN_ID} --confirm-weekly-development-sweep \\| pwd=\\S+/ylabs SEARCH_INDEX_WRITES=deferred SWEEP_TARGET_SHA=${RESUME_SHA} MEILISEARCH_HOST=unset$`,
+    ),
+  );
+});
+
+test('--resume-weekly-run refuses a malformed run id or commit before cloning', () => {
+  for (const args of [
+    ['--resume-weekly-run'],
+    ['--resume-weekly-run', 'not-an-id', RESUME_SHA],
+    ['--resume-weekly-run', RUN_ID, 'abc123'],
+  ]) {
+    const box = sandbox();
+    const result = runEntrypoint(box, ...args, '--confirm-weekly-development-sweep');
+    assert.equal(result.status, 2, `${args.join(' ')}: ${result.stderr}`);
+    assert.match(result.stderr, /\[weekly-sweep-resume\] REFUSING TO START/);
+    assert.equal(box.calls(), '');
+  }
+});

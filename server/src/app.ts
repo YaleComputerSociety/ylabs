@@ -233,7 +233,13 @@ const app = express()
 
 app.use('/api', notFoundHandler);
 
-app.get('/{*clientPath}', async (req, res) => {
+const isPageRequest = (req: express.Request): boolean =>
+  req.method === 'GET' || req.method === 'HEAD';
+
+// Path-less on purpose: a named wildcard route decodes the path and answers a
+// malformed percent sequence with a 400 before resolvePageShell can 404 it.
+app.use(async (req, res, next) => {
+  if (!isPageRequest(req)) return next();
   if (!shouldServeSpaFallback(req)) {
     return sendStaticNotFound(res);
   }

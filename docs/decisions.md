@@ -5,6 +5,157 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: A Merged-In Loser's PI Attribution Names A Leadless Survivor's Lead (#5339)
+
+This narrows field class 1 of the 2026-09-28 #3609 entry, where the lead fields are the survivor's own.
+A merge leaves the roster that lists the person reading the loser's key, so a survivor whose own lanes state no PI had no live lead evidence at all and stayed on `missing_lead` behind a lead the merge itself established.
+Measured on Development on 2026-10-18: of 1,635 live survivors whose merged-in losers carry a live PI attribution, 109 state none of their own, 5 of them are held on `missing_lead`, and for 101 of the other 104 the loser's attribution resolves to the person the survivor's existing lead edge already names.
+
+Decided:
+
+- **A loser's `inferredPiUserKey` and `inferredPiUserId` reach the survivor only while the survivor states no PI attribution of its own and holds no lead lock.**
+  A survivor that states its own never takes a loser's, so a merge cannot put a second person beside the lead its own lane read; every other identity field stays the survivor's own.
+  The losers must also name one person, and that person must be the only lead the survivor already holds on a live `PI` or `DIRECTOR` edge from any lane, so neither a disagreeing pair of losers nor another lane's lead can end with two leads.
+  An attribution that resolves to an archived researcher names nobody who can lead, so it neither reaches the survivor nor counts as a second person; on Development the motivating row's loser carried a retired mailbox-shaped key beside the roster's current key.
+- **The person-mint gate counts a merged-in loser's attribution as its survivor's** only when the survivor's own merged read (`mergedSurvivorEvidence`) admits it, so locks, refusals and invalidated runs decide both the same way, because the archived loser was the only row naming the person and the mint refused it as a dead entity's word.
+- It is a derivation on every resolve: no field is written outside the ordinary projection and nothing is locked.
+
+## 2026-10-18: A Lab Page That Invites Undergraduates Earns A Quoted Badge (#5288)
+
+The owner chose a three-step scale for how strongly a lab invites undergraduates, with no badge at the default step.
+"Actively hiring" means the lab's own page says it is recruiting undergraduates now: "currently hiring", "actively recruiting", "we are looking for", "we have openings", "positions are available".
+"Welcomes undergrads" means the page explicitly asks undergraduates to get in touch: "we welcome undergraduates", "always looking for", "interested undergraduates should email", an RA form.
+Reaching out if interested is the norm for every Yale lab, so the default carries no badge and the constant reach-out prompt covers it.
+A row shows at most one badge, the higher step its own page supports, and the detail page shows the quote that backs it with its page.
+
+This is a narrow exception to the rule that the detail header carries no computed verdict or access-summary badge, not a reversal of it.
+Nothing is computed: the badge repeats what the lab's own page states, so it is never inferred from a roster, hosting history, a generic join page or "students welcome" wording.
+
+The `lab-site-undergrad-invitation` lane reads each lab site's home page and up to four linked join, people or opportunities pages, and makes no model call.
+`server/src/scrapers/utils/undergradInvitation.ts` judges each sentence that names undergraduates.
+It refuses closed or filled wording, past or roster lines, course, degree and program mentions, other groups' hiring, and awards.
+It also refuses a stated term that has passed ("Fall 2019 - Summer 2020"), whether in the sentence or in a short heading block directly above it, while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
+The lane refuses a quote that three or more rows share, because that is a department or program page repeated across faculty rows rather than one lab's invitation, and it skips a page `quotePageIsAboutAnotherEntity` places on another entity.
+The shared count spans the stored live observations as well as the current run, so a narrow run cannot serve a program page, and a refused row asserts no value so a later run withdraws a quote an earlier one emitted.
+A row with an unreadable linked page states no absence, and emits an invitation found on the pages that loaded only when it is an active opening or the row has no live quote, because a transient fetch failure is not evidence that an invitation is gone or weaker.
+
+Measured by hand-reading in the session that built it: against 85 graded quotes from Development, the extractor agreed on every one, and against the full source pages of 80 graded rows it agreed on 77.
+The 3 misses are pages whose fetched HTML does not carry the text, and none was a wrong badge.
+Across 96 pages of profiles and lab sites with no invitation it flagged one, which was a real invitation the hand-read had missed.
+Those are the pages the rules were tuned on, so the precision of record is a fresh graded sample of served rows after the first Development run, recorded on #5288.
+A sample of 45 faculty profiles and 45 lab sites the undergraduate lane had not credited found no invitation, so coverage is bounded by what labs publish, not by the reader.
+
+## 2026-10-18: The Undergraduate Mention Quote Is No Longer Shown (#5309)
+
+Decision (owner, 2026-10-18): the detail page no longer shows the "Mentions undergraduate research" quote, and the API no longer serves `undergradEvidenceQuote` or `undergradEvidenceSourceUrl` on any route.
+This supersedes the 2026-10-12 and 2026-10-11 quote-display entries below.
+Measured on Development (2026-10-18), 117 rows showed a quote, and about 43 of them were an explicit invitation to undergraduates by the `textInvitesUndergraduates` detector.
+The rest were member bios, which the roster name list carries (#5039, #5278), or passing mentions of teaching or mentorship that a student cannot act on and that read as a claim the lab did not make.
+The quote is model output deciding what a student reads, which #5296 retires.
+"Has hosted undergraduate researchers" never read the quote (#3593), so no row loses the badge.
+The stored field, the lane that writes it and its admission guards stay, because an explicit invitation quote returns beside the badge designed in #5288.
+The `undergrad-evidence-quote-precision` journey case is retired with the quote rather than left passing over an empty population; its last measurement was 42/50 = 0.84.
+
+## 2026-10-18: Every Scraper Lane Is Deterministic; A Model Helps Only At Materialization (#5296)
+
+The owner decided that every scraper and lane is deterministic, because the work is web scraping and crawling and a web page is deterministic input.
+A lane fetches, crawls and parses with code and stores what the page says as cited observations, so the same page always produces the same observations.
+A language model may help only later, at materialization, and then under three rules: it reads stored observations only and never fetches, its answer is cached by an input hash so a re-run makes no new paid call, and its output is derived, labelled and re-derivable rather than written back as an observation.
+
+Four lanes called a model on 2026-10-18: `lab-microsite-undergrad-llm` (manual-only), `center-director-llm`, `center-affiliation-llm` and `lab-microsite-description-llm` (weekly sweep).
+Each is replaced one at a time and measured on a frozen page set against the lane it replaces before that lane is retired; #5296 holds the order.
+
+The first replacement is the hosted-undergraduates badge.
+A reviewed official roster that lists an undergraduate now counts as hosting evidence (#5233), the extractor reads every undergraduate section and refuses non-Yale students (#5292, #5341), and 36 rosters the record-only derivation (#5294) built were checked against their pages and added to the allowlist (#5337, #5356), which holds 173 labs.
+Of 276 badged rows on Development, 171 rest on a roster, 20 on a fellowship recipient list and 85 on `lab-microsite-undergrad-llm` alone.
+The owner chose to keep those 85 served and freeze the lane rather than drop them: it is not run again, and each badge it holds gives way as a deterministic roster or recipient list covers the row.
+An agent-graded sample of 30 rows resting on that lane alone found the badge right on 25 of 29 gradable rows and the stored count right on 18, so the detail page states no advised count (#5260).
+
+## 2026-10-18: A Description That Narrates Its Own Sources Is Not A Research Statement (#5281)
+
+A served description must say what is studied and must not narrate its own sources (owner decision, 2026-10-12, #5020).
+A row with no research statement is held, while a thin but accurate research line still serves (owner decision, 2026-10-11).
+On 2026-10-18 the owner chose to hold one served faculty research row whose only text narrated its sources.
+That row is a class rather than a case, so `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names `source-narration`: text that reports what a page, profile, site or listing says ("Course and department pages describe ...", "The profile lists ...", "The site focuses on ...") or opens on "According to ...".
+The quality bar refuses it for both the body and the card, and `cardStatesResearchItself` no longer counts such a card as stating the research, so it is never served in place of a body.
+A body that narrates its sources falls back to the row's research card as #5109 does for joining instructions and event narration, and a row with neither is held by the existing gate reasons.
+
+The text is refused only when every sentence narrates a source, so research prose that cites its page and then states the work keeps its body.
+The source document has to be the sentence's subject and has to be marked as a source, by a determiner, by a possessive name of up to four words, by a closed run of source qualifiers such as course, department or faculty, or by a bare "Pages" or "Profile" opening the sentence.
+So "studies how news sites report elections" is research about sites, and "quantum materials feature exotic states" is research about materials, rather than narration.
+
+Measured on Development on 2026-10-18: of 50,344 live description observations, 64 are source narration, all from `lab-microsite-undergrad-llm` (24 cards, 40 bodies).
+Walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code, 5 served texts on 4 rows narrated their sources and only the one held by the owner's decision stopped serving at the route; 2 rows now serve their stored research card in place of the narrated text.
+The student-visibility gate dry run attributes 2 served rows becoming held, the owner's row and one whose card narrates its source site beside a body that describes the site's offerings, and 2 held rows becoming served through the existing card fallback; every other verdict change predates the fix.
+No text is written: the data operation is a gate apply on Development for those rows, and a rematerialize is not run because each affected row would wait on card synthesis, which another session owns.
+
+## 2026-10-18: Beta And Production Carry No Archived Research Rows (#5148)
+
+This supersedes the slim-tombstone entry below the same day: the owner chose live rows only over slim stubs, confirmed in both sessions that built them.
+A student-facing environment needs exactly two things from a merge: an old slug that redirects, and a saved plan that follows its lab.
+Both are facts about the survivor, so each live row carries `mergedFrom: [{ slug, entityId, mergedAt, archivedReason }]`, derived from Development's tombstones by one writer (the `survivor-alias-derivation` sweep stage) and re-derived by the Development-to-Beta copy at copy time, so no environment can hold a list older than the merges it no longer has rows for.
+The copy filters `research_entities` to live rows and drops the rows that hang off archived ones; Beta-to-Production copies Beta as is.
+The old-slug redirect falls back to `mergedFrom.slug`, `research-plans:retarget-merged` resolves an id no row carries through `mergedFrom.entityId`, and a saved plan on such an id reads as merged, or as retired when no survivor names it, since a serving environment cannot tell a retired row from a deleted one.
+This is not the retired redirect ledger: that was a second collection written beside the rows and it drifted, whereas `mergedFrom` is derived from the tombstones on every sweep and every copy.
+Development keeps its full archive, and the Beta-to-Development refresh still carries it back from the swap backup.
+Decision (owner, 2026-10-18): Development keeps its archive permanently, and deleting it (#5189) is not planned.
+The archive is working memory for the engine, not dead weight: it routes 191,965 observations filed under merged slugs to their survivors, refuses re-mints of merged duplicates, and stops 893 of the 1,644 retired rows from being minted again from their own stored observations (measured by `research-entity:measure-retired-remint`).
+Replacing those jobs would mean moving five key resolvers, merged-in evidence and benchmark replay onto `mergedFrom`, retiring stored observations, and adding lane refusals, to remove about 5,000 rows no student sees; Beta and Production already hold none.
+
+## 2026-10-18: Beta And Production Carry Slim Archived Tombstones (#5208)
+
+Development's engine needs every full archived row: re-scraped evidence for a merged duplicate routes to its survivor through the tombstone, and an archived slug is what stops the same duplicate being minted again (#3029).
+Beta and Production never mint or resolve evidence, and every serving path that reads an archived row reads only its id, slug, name, archive reason and `canonicalGroupId`, so copying 5,359 full archived rows and the signals, role assignments and relationships hanging off them shipped data no serving surface reads.
+Decision (owner, 2026-10-18): the Development-to-Beta copy reduces an archived row to that slim shape and leaves its dependent rows in Development, and Beta-to-Production copies Beta as is.
+A separate redirect map was rejected because the retired redirect ledger drifted from the rows it described (#3027); the slim row is still the tombstone, so there is one source of the mapping.
+Two consequences are enforced in code.
+The Beta-to-Development refresh carries Development's full archive back from the swap backup, because one plain refresh would otherwise replace it with slim rows.
+Plans are environment-local (#5092), so a merge recorded in Development can only carry Development's plans; each promotion's remote phase therefore runs `research-plans:retarget-merged` in the target, which moves a saved plan from a merged target to its live survivor.
+A saved plan on an archived target now reads as merged or retired rather than as held and returning.
+
+## 2026-10-18: Re-Expose The Hosted-Undergraduates Browse Filter (#5123)
+
+Five of six simulated student sessions on 2026-10-18 asked to filter `/research` by the "Has hosted undergraduate researchers" badge, which #1884 had removed as a control while the server kept the `hostsUndergrads` filter.
+The filter is the badge, not a way in: it reads the same historical predicate, `entityHasHostedUndergraduates`, so the 2026-10-02 rule that no browse filter offers a way in still holds.
+The index field is derived from that predicate when the index document is built rather than copied from the stored flag, so a writer that changes `pastUndergradAdvisees` or `currentUndergradCount` without recomputing the flag cannot make the filter and the badge disagree.
+Measured on Development on 2026-10-18, 227 served rows carry the badge and the stored flag, the index field and the served badge agreed on all 227.
+The control is a toggle in the filter rail and the mobile filter sheet, round-trips as `undergrad=1`, and shows its `hostsUndergrads` facet count, which is counted over the same population as the results (#5101).
+
+## 2026-10-18: Joining Instructions, Event Narration, Cut-Off Titles And Verb Chips Are Not Content (#5109)
+
+A served research summary says what a group studies.
+Two more body shapes passed the description quality bar and served as a row's summary although neither says that, so `nonResearchBodyShape` in `server/src/utils/descriptionNonResearchBodyShape.ts` names them and the quality bar refuses each for both the body and the card.
+
+- **`joining-instructions`**: a page's "prospective students" paragraph, saying who to contact, which program to apply to or where openings are posted.
+- **`event-narration`**: news about the group, meaning talks or keynotes given, awards received or papers accepted, with announcement filler such as "More details to come soon".
+
+Each is refused only when every sentence is of that kind, so research prose that closes with a joining line or mentions an award keeps its body.
+An event sentence must open on the event, within its first 60 characters, because later in a sentence the same words are usually a research object ("who wins awards") or one clause among several kinds of work.
+The resolver's quality demotion then falls back to the next admissible candidate, and when the row has none the serve path serves the row's research card as its body rather than withholding the row, because a thin but accurate description serves (2026-10-04); a card that states no research is not served in its place.
+
+Two fragment classes are refused at ingest, at materialize and at serve.
+A person title cut off at a dangling connective ("Professor of") is a fragment (`isTruncatedPersonTitle` in `server/src/utils/titleHygiene.ts`), so a complete title from another observation wins; the institute affiliates roster that produced it now reads the title the emphasised span starts and the sibling link or text completes.
+A method chip made only of verb forms from a closed research-verb lexicon, led by a third-person verb, or a bare evaluative adjective names no technique (`isBareVerbOrAdjectiveMethodLabel` in `server/src/utils/researchAreaLabelHygiene.ts`); the lexicon is closed because many gerunds and base forms ("modeling", "sequencing", "design") are technique nouns.
+
+Measured on Development on 2026-10-18 by walking all 3,706 served rows through `getResearchGroupDetail` with the old and new code: 3 served bodies changed, all 3 joining instructions or keynote narration, and each now serves the row's research text; 223 method chips left 150 rows, every one a verb, a verb-led clause or an evaluative adjective; 3 rows lost a cut-off lead title; no row stopped serving and no card changed.
+Across all live description observations the two shapes flag 6 texts, and across all live person title observations the fragment rule flags 37, all from one roster read.
+
+The method and description arms are serve-time.
+The stored body, the stored methods and the stored person title follow when the affected rows are next materialized.
+
+## 2026-10-17: A Person Who Leads An Organization Keeps Two Rows (#5283)
+
+Decision (owner, 2026-10-17, reaffirmed 2026-10-18): when a person directs or co-founds an organization (a program, collaborative, center, initiative or core), the directory keeps two rows, the person's own faculty research row and the organization's row with the person attached as its director.
+A person's row is never renamed and retyped into the organization they lead, however plainly their profile states the leadership.
+`profileLinkedHomeRefusal` in `official-profile-pi-backfill` enforces it at the write: on a person row (a grant shell, a key that names only the lead, or a row every other source calls faculty research) any home that is not lab-typed is refused, and the refusal states the refused name so resolve withdraws an adoption made before the guard reached the row.
+A lab-typed home is the person's own lab and is still adopted, and the organization's own row gets its director through the organization-director mode (#5093).
+Measured on Development on 2026-10-18 with the lane's research-home dry run over 2,000 rows: 6 rows planned an organization type, 5 of them person rows, and with the fix none does while the one organization-keyed row is unchanged.
+Before the fix, 14 live person rows carried an organization name and type this lane had written; the re-read refuses 10 of them and emits nothing for the other 4, so those adoptions stay live and are recorded on the issue.
+The owner approved three follow-ups on 2026-10-18, which carry the same rule past that one lane.
+`ysm-faculty-directory` reads the same lab slot and now names the row "<person> Faculty Research" unless the slot is lab-shaped (`isLabShapedResearchHome`), keeping the site as the row's website; on Development that re-plans 25 rows, and every linked page was read and is an organization, program, section, core, project, condition page or another person's lab.
+The materializer applies the rule to the profile lane's stored claims on every resolve (`server/src/scrapers/personRowOrganizationClaims.ts`): a read that typed a person row as anything but a lab is withdrawn, the lane's type counts only beside a name from the same read, and a row whose every source has withdrawn its organization name and type is re-derived as its lead's faculty research, or as a lab when another source still names it as one.
+A rematerialize dry run over the 313 live rows carrying the lane's type, or its name or type provenance, changed 8 rows, every one a person row the lane had retyped into an organization.
+
 ## 2026-10-17: Accounts Are Environment-Local (#5088)
 
 Decision (owner, 2026-10-17): Development, Beta and Production each keep their own `accounts`, made by sign-ins in that environment, and only the research corpus is shared by promotion.
@@ -48,12 +199,16 @@ A quote such as "contact [email redacted] and inquire about opportunities" hid a
 Decision (owner, 2026-10-14): the undergraduate quote fields (`undergradEvidenceQuote`, `undergradRoleEvidenceQuote`, `undergradConstraintQuote`, `contactInstructionsQuote`) keep the email addresses and phone numbers of the page they quote, and the detail page serves them as written.
 The owner first kept phone numbers redacted, then reversed that the same day for the same reason: the lab publishes them on the cited page.
 The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
-Descriptions, signal excerpts, logs and the search index keep redacting both.
+Logs, analytics and search queries, admin and user input, and config keep redacting both.
+The same owner decision extends to the rest of the scraped public text outside research descriptions (#5046): program and fellowship prose and link labels, signal excerpts, a row's ways in, grants, honors and funding agencies, course-credit evidence, and the search index's quote fields all keep the contact details their page publishes.
+Research descriptions (`shortDescription`, `fullDescription`) still redact and drop contact sentences until the description pipeline redesign (#5020) decides them, and names, titles and labels that contain an address are still refused as malformed.
+Two content rules that look like redaction stay, because they are about where a sentence belongs rather than hiding it: eligibility text drops a contact direction, which names who to ask rather than who may apply (#4177), and a profile bio drops leading contact chrome.
 A quote that carries a contact detail but states no instruction to use it is refused: it is a slice of a people page listing members with their own emails, such as an "Undergraduate Students" heading followed by names and addresses, not evidence of how to reach the lab (`quoteListsPeopleWithTheirContactDetails`).
 On Development that was 7 of the 12 quotes that had contacts restored, and the roster section, not the quote, is where a lab's undergraduates are listed.
 
 ## 2026-10-12: The Undergraduate Quote Shows Only On The Detail Page (#5022)
 
+Superseded on 2026-10-18 by "The Undergraduate Mention Quote Is No Longer Shown (#5309)".
 This narrows where the 2026-10-11 entry below renders a quote, and keeps everything else it decided.
 On the browse card the quote was the heaviest block, a label, up to 140 characters of quote and a source link, on about a third of cards, and it was the one item a student had to read and judge rather than scan.
 At 0.84 precision about one quote in six is wrong, which suits the surface where a student is evaluating one row closely more than the surface they skim.
@@ -62,6 +217,7 @@ The search response still carries `undergradEvidenceQuote`, because the `undergr
 
 ## 2026-10-11: The Browse Card Shows An Undergraduate Quote With Its Page, Not A Hosting Claim (#3569)
 
+Superseded on 2026-10-18 by "The Undergraduate Mention Quote Is No Longer Shown (#5309)".
 #3607 took the undergraduate badge off the browse card when #3569 measured its quotes at 18/50 = 0.36 badge precision (95% Wilson 0.24 to 0.50), because showing a quote then would have published model-written text with a citation attached.
 After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 like-for-like re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with grounding 49/50.
 That is the middling case #3569 committed to in advance, where the badge carries its evidence rather than asserting, and the owner chose that option.

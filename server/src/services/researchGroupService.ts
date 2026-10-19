@@ -13,11 +13,9 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  officialRosterUndergraduateStatuses,
-  type OfficialRosterUndergraduateStatus,
-} from '../models/storedVocabularies';
+import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
+import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
@@ -47,7 +45,6 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
-  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
@@ -55,6 +52,8 @@ import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
+import { isLaneDiscoveryEndpointUrl, servedGrantPageUrl } from '../utils/laneDiscoveryEndpointUrl';
+import { servedCurrentFunding } from './servedCurrentFunding';
 import {
   IDENTITY_LEAD_DIRECTS_ORGANIZATION,
   leadRoleDirectsTheOrganization,
@@ -68,7 +67,23 @@ import {
   normalizeOfficialProfileDestination,
   resolveLeadOfficialProfileUrl,
 } from './leadProfileIdentity';
-import { buildResearchGroupFilterString, ResearchGroupFilterInput } from './researchGroupFilters';
+import {
+  buildResearchGroupFilterString,
+  candidateMatchesStudentFilters,
+  HOSTS_UNDERGRADS_INDEX_FIELD,
+  ResearchGroupFilterInput,
+  tallyCandidateFacetDistribution,
+  visibilityScopeOnly,
+} from './researchGroupFilters';
+import {
+  entityHasHostedUndergraduates,
+  listedRosterUndergraduate,
+  servableRosterSnapshot,
+} from './hostedUndergraduates';
+import {
+  type AppliedStudentFilters,
+  resolveStudentFilterValuesInScope,
+} from './researchFilterVocabulary';
 import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
@@ -98,9 +113,12 @@ import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
 } from '../utils/researchEntityDeceasedLead';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelationshipEndpoints';
+import {
+  isPageLeadsOwnFacultyResearch,
+  servedRelationshipLabel,
+} from './researchDetailRelatedRows';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SearchUnavailableError } from '../utils/errors';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
@@ -108,7 +126,7 @@ import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
 } from '../utils/personNameLifespan';
-import { sanitizePersonName } from '../utils/personNameHygiene';
+import { isPersonNameParticleOrSuffixToken, sanitizePersonName } from '../utils/personNameHygiene';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
@@ -168,6 +186,7 @@ import { unexpiredSignalClause } from './servedSignalExpiry';
  */
 export interface PublicLeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
+  leadPersonIdsByEntityId?: ReadonlyMap<string, readonly string[]>;
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<string, Readonly<EmeritusWayInDecision>>;
@@ -195,6 +214,7 @@ export const optionalPublicLeadMemberNames = async (
   options: PublicLeadMemberNameReadOptions = {},
 ): Promise<PublicLeadMemberNameRead> => {
   const byEntityId = new Map<string, readonly string[]>();
+  const leadPersonIdsByEntityId = new Map<string, readonly string[]>();
   const identityLeadDirectorEntityIds = new Set<string>();
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
@@ -212,6 +232,8 @@ export const optionalPublicLeadMemberNames = async (
       );
       const leadNames = publicLeadMemberNames(leadMembers);
       if (leadNames.length > 0) byEntityId.set(entityId, leadNames);
+      const leadPersonIds = leadPersonIdsOf(leadMembers);
+      if (leadPersonIds.length > 0) leadPersonIdsByEntityId.set(entityId, leadPersonIds);
       if (identityLeadDirectsOrganization(leadMembers)) identityLeadDirectorEntityIds.add(entityId);
       if (options.withEmeritusWayIn) {
         emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers) });
@@ -226,6 +248,7 @@ export const optionalPublicLeadMemberNames = async (
     : undefined;
   return {
     byEntityId,
+    leadPersonIdsByEntityId,
     identityLeadDirectorEntityIds,
     unavailable: false,
     ...(emeritusWayInByEntityId ? { emeritusWayInByEntityId } : {}),
@@ -251,6 +274,17 @@ const PUBLIC_TEAM_ROLES: ReadonlySet<string> = new Set([
   'undergrad',
   'staff',
 ]);
+
+function leadPersonIdsOf(members: Array<{ role: string; row?: Record<string, any> }>): string[] {
+  return Array.from(
+    new Set(
+      members
+        .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+        .map((member) => String(member.row?.identityKey || ''))
+        .filter(Boolean),
+    ),
+  );
+}
 
 function leadTitlesOf(members: Array<{ user?: any; role: string }>): unknown[] {
   return members
@@ -506,6 +540,7 @@ export interface ResearchGroupSearchOptions {
   // its semantic leg to a budget written for public traffic.
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
+  resolveFilterValues?: boolean;
 }
 
 export interface ResearchSearchQueryCorrection {
@@ -521,6 +556,7 @@ export interface ResearchGroupSearchResult {
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  appliedFilters?: AppliedStudentFilters;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -549,6 +585,8 @@ const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 // query fetches a fixed candidate pool of this size (independent of the requested
 // page size) and paginates locally against the already-stable ordering. See #1064.
 export const HYBRID_CANDIDATE_POOL_SIZE = 200;
+// Meilisearch ignores every query word past the tenth.
+const MEILISEARCH_QUERY_WORD_LIMIT = 10;
 // A candidate-pool hit is never served. It is reduced to its id, and the served
 // row is re-read from Mongo by `_id`, so retrieving whole indexed documents for a
 // 200-row pool moved 2.2-2.6MB per query to discard nearly all of it. Measured
@@ -560,13 +598,20 @@ export const HYBRID_CANDIDATE_POOL_SIZE = 200;
 // read, so adding a helper that reads another indexed field means adding it here
 // or that helper silently sees `undefined`: `promoteExactAliasFieldMatches` reads
 // `departments` and `researchAreas`, and everything else keys on the id.
+// The student filters and facets of a locally paginated search are applied to
+// these hits too, so every field `candidateMatchesStudentFilters` and
+// `tallyCandidateFacetDistribution` read must be listed (#5101).
 // `_rankingScoreDetails` is response metadata rather than a document attribute,
 // so `floorWeakSemanticOnlyHits` and `dropCoincidentalTypoOnlyHits` keep working
 // (verified against the running index, not assumed). See #3185.
 const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'id',
+  'kind',
+  'entityType',
+  'schools',
   'departments',
   'researchAreas',
+  HOSTS_UNDERGRADS_INDEX_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
@@ -1464,7 +1509,25 @@ export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
   { filterKey: 'entityType', meiliField: 'entityType' },
 ];
 
-export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = ['schools', 'departments', 'entityType'];
+export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
+  'schools',
+  'departments',
+  'entityType',
+  HOSTS_UNDERGRADS_INDEX_FIELD,
+];
+
+// A toggle needs no disjunctive query: with it on, its own count under the other
+// filters is the conjunctive one Meilisearch already returns.
+const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
+  filterKey: keyof ResearchGroupFilterInput;
+  indexField: string;
+}> = [
+  ...DISJUNCTIVE_RESEARCH_FACETS.map(({ filterKey, meiliField }) => ({
+    filterKey,
+    indexField: meiliField,
+  })),
+  { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
+];
 
 const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [
@@ -1507,14 +1570,18 @@ export async function searchResearchGroupsViaMeili(
     options.correctSpelling === false
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
-  const result = await searchResearchGroupsForQuery(
+  const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
+  const searched = await searchResearchGroupsForQuery(
     spelling.query,
-    filters,
+    studentFilters.filters,
     page,
     pageSize,
     sort,
     options,
   );
+  const result = studentFilters.applied
+    ? { ...searched, appliedFilters: studentFilters.applied }
+    : searched;
   if (spelling.corrections.length === 0) return result;
   return {
     ...result,
@@ -1524,6 +1591,25 @@ export async function searchResearchGroupsViaMeili(
     },
   };
 }
+
+const resolveStudentFiltersAgainstCorpus = async (
+  filters: ResearchGroupFilterInput,
+  options: ResearchGroupSearchOptions,
+): ReturnType<typeof resolveStudentFilterValuesInScope> => {
+  const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const filtersNamedValues = Boolean(safeFilters.school?.length || safeFilters.departments?.length);
+  if (
+    !filtersNamedValues ||
+    options.lowQualityFirst === true ||
+    options.resolveFilterValues === false
+  ) {
+    return { filters };
+  }
+  return resolveStudentFilterValuesInScope(safeFilters, {
+    archived: { $ne: true },
+    ...mongoVisibilityFilter(safeFilters, options.includeNonPublic === true),
+  });
+};
 
 async function searchResearchGroupsForQuery(
   query: string,
@@ -1666,14 +1752,18 @@ async function searchResearchGroupsForQuery(
     searchParams.sort = sortConfig;
   }
 
-  const index = withMeiliAvailabilityGuard(await getMeiliSearchIndex('researchentities'));
+  const meiliIndex = await getMeiliSearchIndex('researchentities');
+  const index = withMeiliAvailabilityGuard(meiliIndex);
+  // A companion query's failure degrades only its own response, so it must not open
+  // the breaker that answers every search after it with a 503 (#5347).
+  const optionalIndex = withMeiliAvailabilityGuard(meiliIndex, 'optional');
   let embedderStateUnknown = false;
   let semanticLegUnaffordable = false;
   if (!isBrowseAllQuery) {
     if (normalizedQuery.aliasExpansionKeepsShorthand) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
     } else {
-      const embedderState = await readResearchEntitySearchEmbedderState(index);
+      const embedderState = await readResearchEntitySearchEmbedderState(optionalIndex);
       embedderStateUnknown = embedderState === 'unknown';
       if (embedderState === 'configured') {
         searchParams.hybrid = {
@@ -1733,7 +1823,18 @@ async function searchResearchGroupsForQuery(
   // large enough to force an exhaustive scan (see the companion count query
   // below, which forces that scan on every request). See #885.
   const paginateHybridPoolLocally = searchParams.rankingScoreThreshold !== undefined;
+  // A locally paginated search serves a fused pool whose legs are top-K windows,
+  // so membership under a filter is not the unfiltered membership narrowed: the
+  // semantic leg drawn from one department admits that whole department. The pool
+  // is therefore built under the visibility scope alone and the student's filters
+  // narrow it here, which makes every facet count, tallied over the same pool,
+  // the number of results applying it returns (#5101).
+  const candidatePoolFilterString = paginateHybridPoolLocally
+    ? buildResearchGroupFilterString(visibilityScopeOnly(visibilityScopedFilters))
+    : filterString;
   if (paginateHybridPoolLocally) {
+    searchParams.filter = candidatePoolFilterString;
+    delete searchParams.facets;
     searchParams.page = 1;
     searchParams.hitsPerPage = HYBRID_CANDIDATE_POOL_SIZE;
     delete searchParams.limit;
@@ -1839,40 +1940,15 @@ async function searchResearchGroupsForQuery(
     }
   };
 
-  // The per-page totalHits and facetDistribution above only become exhaustive
-  // once Meilisearch has scanned deep enough to have examined every candidate
-  // that could pass rankingScoreThreshold, so a shallow first page can still
-  // report the pre-threshold estimate/distribution over the whole k-NN
-  // candidate pool. Run one companion query deep enough to force the
-  // exhaustive, threshold-aware count and facet distribution regardless of
-  // which page was actually requested. See #885, #941.
-  const exhaustiveCountSearch =
-    finalSearchParams.rankingScoreThreshold !== undefined
-      ? settleSearch<Record<string, any>>(() =>
-          index.search(meiliQueryText, {
-            filter: filterString,
-            hybrid: finalSearchParams.hybrid,
-            ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
-            rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
-            ...(finalSearchParams.matchingStrategy
-              ? { matchingStrategy: finalSearchParams.matchingStrategy }
-              : {}),
-            page: 1,
-            hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-            attributesToRetrieve: ['id'],
-            ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
-          }),
-        )
-      : null;
-
   // For any facet the request is actively filtering on, recompute its
   // distribution disjunctively (excluding only its own filter clause) so the
   // dropdown keeps every sibling option and its comparative counts under the
   // other active filters. Without this, a conjunctive distribution collapses
   // the facet to just the chosen value, turning the filter into a dead end.
-  // Each supplementary query mirrors the primary query's mode (hybrid +
-  // threshold, topic-alias attribute scoping, or plain browse) so counts stay
-  // consistent; a failure degrades to the conjunctive counts for that facet.
+  // Each supplementary query mirrors the primary query's mode (topic-alias
+  // attribute scoping or plain browse) so counts stay consistent; a failure
+  // degrades to the conjunctive counts for that facet. A locally paginated
+  // search tallies its facets over its own pool instead.
   const searchFacetDistributionForFilter = async (
     overrideFilterString: string,
     facetFields: string[],
@@ -1884,17 +1960,8 @@ async function searchResearchGroupsForQuery(
     if (finalSearchParams.matchingStrategy) {
       params.matchingStrategy = finalSearchParams.matchingStrategy;
     }
-    if (finalSearchParams.rankingScoreThreshold !== undefined) {
-      params.hybrid = finalSearchParams.hybrid;
-      if (finalSearchParams.vector) params.vector = finalSearchParams.vector;
-      params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
-      params.page = 1;
-      params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
-      params.attributesToRetrieve = ['id'];
-    } else {
-      params.limit = 0;
-    }
-    const result = (await index.search(meiliQueryText, params)) as {
+    params.limit = 0;
+    const result = (await optionalIndex.search(meiliQueryText, params)) as {
       facetDistribution?: Record<string, Record<string, number>>;
     };
     return result?.facetDistribution;
@@ -1906,7 +1973,7 @@ async function searchResearchGroupsForQuery(
       )
     : [];
   const disjunctiveFacetSearches = Promise.all(
-    activeDisjunctiveFacets.map(({ filterKey, meiliField }) =>
+    (paginateHybridPoolLocally ? [] : activeDisjunctiveFacets).map(({ filterKey, meiliField }) =>
       settleSearch(() =>
         searchFacetDistributionForFilter(
           buildResearchGroupFilterString(
@@ -1946,16 +2013,17 @@ async function searchResearchGroupsForQuery(
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
   const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
   const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
-    filter: filterString,
+    filter: candidatePoolFilterString,
     ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
     ...(matchingStrategy ? { matchingStrategy } : {}),
   });
   const searchKeywordLeg = async (
+    keywordText: string,
     matchingStrategy?: string,
     hitsPerPage: number = HYBRID_CANDIDATE_POOL_SIZE,
   ): Promise<any[]> => {
     try {
-      const keywordLegResult = await index.search(meiliQueryText, {
+      const keywordLegResult = await optionalIndex.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showRankingScoreDetails: true,
         attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -1973,13 +2041,14 @@ async function searchResearchGroupsForQuery(
   // Match positions cost more than the rest of a 200-row keyword query, and only
   // the first surviving hit's are read, so that one row is re-read with them (#3949).
   const searchKeywordLegTopHitMatches = async (
+    keywordText: string,
     matchingStrategy: string | undefined,
     keywordLegRawHits: any[],
   ): Promise<{ hit: any; failed: boolean } | null> => {
     const topHit = dropCoincidentalTypoOnlyHits(keywordLegRawHits).hits[0];
     if (!topHit) return null;
     try {
-      const topHitResult = await index.search(meiliQueryText, {
+      const topHitResult = await optionalIndex.search(keywordText, {
         ...keywordLegParams(matchingStrategy),
         showMatchesPosition: true,
         attributesToRetrieve: [
@@ -2004,32 +2073,81 @@ async function searchResearchGroupsForQuery(
   // copy is a coincidental typo, and it keeps the pool's position, because the
   // keyword relevance is the part that was garbage. Dropping it instead would
   // lose a match the search had already recovered. See #2732.
-  const keywordLegSearch = (async (): Promise<{
+  type KeywordLegOutcome = {
+    keywordText: string;
     matchingStrategy: string | undefined;
     rawHits: any[];
-  }> => {
-    if (!runsHybridLegs) return { matchingStrategy: undefined, rawHits: [] };
-    const allWordsHits = await searchKeywordLeg(finalSearchParams.matchingStrategy);
+  };
+  const servesNoKeywordRow = (hits: any[]) => dropCoincidentalTypoOnlyHits(hits).hits.length === 0;
+  const searchKeywordLegWords = async (keywordText: string): Promise<KeywordLegOutcome> => {
+    const allWordsHits = await searchKeywordLeg(keywordText, finalSearchParams.matchingStrategy);
     // A phrase no single row carries in full ("immigration policy", "wind power")
     // left the keyword leg empty, so the fusion had nothing to anchor it. Rows
     // matching the phrase's leading words are the next best evidence; a query
     // matching nothing at all still takes the thresholded path below. Measured as
     // part of the design: removing it cost concept queries 0.80 to 0.74 and
     // question-style queries 0.72 to 0.65 nDCG@10 on the development set. See #3797.
-    if (
-      dropCoincidentalTypoOnlyHits(allWordsHits).hits.length === 0 &&
-      finalSearchParams.matchingStrategy === 'all'
-    ) {
-      return { matchingStrategy: 'last', rawHits: await searchKeywordLeg('last') };
+    if (servesNoKeywordRow(allWordsHits) && finalSearchParams.matchingStrategy === 'all') {
+      return {
+        keywordText,
+        matchingStrategy: 'last',
+        rawHits: await searchKeywordLeg(keywordText, 'last'),
+      };
     }
-    return { matchingStrategy: finalSearchParams.matchingStrategy, rawHits: allWordsHits };
+    return {
+      keywordText,
+      matchingStrategy: finalSearchParams.matchingStrategy,
+      rawHits: allWordsHits,
+    };
+  };
+  // `last` never drops the first word, so one word no row carries at the front of
+  // the query ("xyzzy medieval plague podcast") emptied the keyword leg, and with it
+  // the whole search, while the same word typed last was dropped harmlessly. Such a
+  // word is searched for alone, and when no row matches it the rest of the query is
+  // searched as if it had not been typed.
+  // Meilisearch matches only a query's last word as a prefix, so every other word is
+  // probed whole, which a trailing space asks for: probed alone, the first word of
+  // "pure math" reached "purely" by prefix and was kept, though no row carries it.
+  const wordsSomeRowMatches = async (words: string[]): Promise<string[]> => {
+    const distinctWords = [...new Set(words)];
+    const lastWord = words[words.length - 1];
+    const probeText = (word: string) => (word === lastWord ? word : `${word} `);
+    const matched = await Promise.all(
+      distinctWords.map(
+        async (word) => !servesNoKeywordRow(await searchKeywordLeg(probeText(word), 'all', 1)),
+      ),
+    );
+    const matchedWords = new Set(distinctWords.filter((_word, position) => matched[position]));
+    return words.filter((word) => matchedWords.has(word));
+  };
+  const keywordLegSearch = (async (): Promise<KeywordLegOutcome> => {
+    if (!runsHybridLegs) {
+      return { keywordText: meiliQueryText, matchingStrategy: undefined, rawHits: [] };
+    }
+    const typedWordsOutcome = await searchKeywordLegWords(meiliQueryText);
+    if (
+      !servesNoKeywordRow(typedWordsOutcome.rawHits) ||
+      typedWordsOutcome.matchingStrategy !== 'last'
+    ) {
+      return typedWordsOutcome;
+    }
+    const searchedWords = meiliQueryText
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, MEILISEARCH_QUERY_WORD_LIMIT);
+    if (searchedWords.length <= 1) return typedWordsOutcome;
+    const matchedWords = await wordsSomeRowMatches(searchedWords);
+    if (matchedWords.length === 0 || matchedWords.length === searchedWords.length) {
+      return typedWordsOutcome;
+    }
+    return searchKeywordLegWords(matchedWords.join(' '));
   })();
 
   const semanticLegSearch = keywordLegSearch.then(({ rawHits }) =>
     runsSemanticLeg && dropCoincidentalTypoOnlyHits(rawHits).hits.length > 0
       ? settleSearch<Record<string, any>>(() =>
-          index.search(meiliQueryText, {
-            filter: filterString,
+          optionalIndex.search(meiliQueryText, {
+            filter: candidatePoolFilterString,
             hybrid: { ...finalSearchParams.hybrid, semanticRatio: 1 },
             ...(finalSearchParams.vector ? { vector: finalSearchParams.vector } : {}),
             attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
@@ -2052,7 +2170,7 @@ async function searchResearchGroupsForQuery(
   const { facets: _facets, ...poolParams } = finalSearchParams;
   const searchDeepPool = () =>
     settleSearch<Record<string, any>>(() =>
-      index.search(meiliQueryText, {
+      optionalIndex.search(meiliQueryText, {
         ...poolParams,
         page: 1,
         hitsPerPage: RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
@@ -2064,17 +2182,20 @@ async function searchResearchGroupsForQuery(
       : keywordLegSearch.then(({ rawHits }) =>
           deepCandidatePoolWanted(rawHits) ? searchDeepPool() : null,
         );
-  const deepKeywordLegSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
-    runsHybridLegs && deepCandidatePoolWanted(rawHits)
-      ? searchKeywordLeg(matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
-      : [],
+  const deepKeywordLegSearch = keywordLegSearch.then(
+    ({ keywordText, matchingStrategy, rawHits }) =>
+      runsHybridLegs && deepCandidatePoolWanted(rawHits)
+        ? searchKeywordLeg(keywordText, matchingStrategy, RESEARCH_SEARCH_MAX_REACHABLE_RECORDS)
+        : [],
   );
-  const keywordLegTopHitSearch = keywordLegSearch.then(({ matchingStrategy, rawHits }) =>
-    runsSemanticLeg ? searchKeywordLegTopHitMatches(matchingStrategy, rawHits) : null,
+  const keywordLegTopHitSearch = keywordLegSearch.then(
+    ({ keywordText, matchingStrategy, rawHits }) =>
+      runsSemanticLeg
+        ? searchKeywordLegTopHitMatches(keywordText, matchingStrategy, rawHits)
+        : null,
   );
 
   const [
-    exhaustiveCountOutcome,
     disjunctiveFacetOutcomes,
     keywordLeg,
     semanticLegOutcome,
@@ -2082,7 +2203,6 @@ async function searchResearchGroupsForQuery(
     deepPoolOutcome,
     deepKeywordLegRawHits,
   ] = await Promise.all([
-    exhaustiveCountSearch,
     disjunctiveFacetSearches,
     keywordLegSearch,
     semanticLegSearch,
@@ -2090,25 +2210,6 @@ async function searchResearchGroupsForQuery(
     deepPoolSearch,
     deepKeywordLegSearch,
   ]);
-
-  if (exhaustiveCountOutcome?.error !== undefined) {
-    console.error(
-      'Optional exhaustive hybrid total-hits count failed:',
-      sanitizeLogValue(exhaustiveCountOutcome.error),
-    );
-    degraded = true;
-  } else if (exhaustiveCountOutcome) {
-    const exhaustiveCountResult = exhaustiveCountOutcome.value;
-    if (typeof exhaustiveCountResult?.totalHits === 'number') {
-      searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
-    }
-    if (exhaustiveCountResult?.facetDistribution) {
-      searchResult = {
-        ...searchResult,
-        facetDistribution: exhaustiveCountResult.facetDistribution,
-      };
-    }
-  }
 
   const { estimatedTotalHits, totalHits, facetDistribution: rawFacetDistribution } = searchResult;
   const resolvedTotalHits = totalHits ?? estimatedTotalHits;
@@ -2136,16 +2237,24 @@ async function searchResearchGroupsForQuery(
 
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
-  const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
-    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
+  const toClientFacetDistribution = (
+    rawDistribution: Record<string, Record<string, number>> | undefined,
+  ): Record<string, Record<string, number>> | undefined => {
+    if (!rawDistribution) return rawDistribution;
+    const {
+      schools,
+      researchAreas,
+      [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
+      ...rest
+    } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
+      ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
     };
-  })();
+  };
 
   const genuineKeywordLegHits = dropCoincidentalTypoOnlyHits(keywordLeg.rawHits).hits;
 
@@ -2237,13 +2346,29 @@ async function searchResearchGroupsForQuery(
     ? appendUnlistedHits(candidatePoolHead.hits, deepCandidatePoolOrder.hits)
     : candidatePoolHead.hits;
   const droppedCoincidentalHits = (deepCandidatePoolOrder ?? candidatePoolHead).dropped;
+  const servedPool = paginateHybridPoolLocally
+    ? reorderedPool.filter((hit: Record<string, unknown>) =>
+        candidateMatchesStudentFilters(hit, safeFilters),
+      )
+    : reorderedPool;
   // The reorder helpers run across the whole fixed candidate pool so the ordering
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const orderedHits = paginateHybridPoolLocally
-    ? reorderedPool.slice(offset, offset + safePageSize)
+    ? servedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
+  const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
+    ({ indexField }) =>
+      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(indexField) ||
+      activeDisjunctiveFacets.some(({ meiliField }) => meiliField === indexField),
+  );
+  const rawServedFacetDistribution = paginateHybridPoolLocally
+    ? safeOptions.includeFacets
+      ? tallyCandidateFacetDistribution(reorderedPool, safeFilters, facetsTalliedOverPool)
+      : undefined
+    : disjunctiveRawFacetDistribution;
+  const facetDistribution = toClientFacetDistribution(rawServedFacetDistribution);
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
@@ -2280,22 +2405,15 @@ async function searchResearchGroupsForQuery(
     };
   });
 
-  // The companion count above counts what cleared the blended cutoff, so it omits
-  // the keyword-leg rows merged into the pool. Those rows are reachable by paging
-  // through the pool, and the client stops its pagination walk once a short page
-  // reaches the reported total, so the locally reachable pool is a floor on the
-  // count rather than something the count may fall below. See #2732.
-  // Withheld semantic-only rows still count in the companion total, so a withheld
-  // result reports only the rows it can serve.
-  const locallyReachableHits = paginateHybridPoolLocally ? reorderedPool.length : 0;
-  const companionTotalHits =
-    typeof resolvedTotalHits === 'number' && !withholdSemanticOnlyRows
-      ? resolvedTotalHits - droppedCoincidentalHits
-      : 0;
+  // A locally paginated search reports exactly the pool it pages through and
+  // tallies its facets over, so the total, the facet counts and the rows a
+  // student can reach are one population (#2732, #5101). Every other search
+  // reports Meilisearch's own count for the filtered query.
+  const meiliTotalHits =
+    typeof resolvedTotalHits === 'number' ? resolvedTotalHits - droppedCoincidentalHits : 0;
   const adjustedTotalHits = Math.max(
     normalizedHits.length,
-    locallyReachableHits,
-    companionTotalHits,
+    paginateHybridPoolLocally ? servedPool.length : meiliTotalHits,
   );
 
   return addResearchEntitySearchAliases(
@@ -2697,22 +2815,15 @@ export interface PublicRosterUndergraduate {
 
 const MAX_PUBLIC_ROSTER_UNDERGRADUATES = 150;
 
-const boundedRosterText = (value: unknown, maxLength: number): string => {
-  const text = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
-  return text.length <= maxLength ? text : '';
-};
-
 const rosterYear = (value: unknown): number | undefined => {
   const year = Number(value);
   return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : undefined;
 };
 
 function publicRosterUndergraduate(value: any): PublicRosterUndergraduate | null {
-  const name = boundedRosterText(value?.name, 80);
-  const status = value?.status;
-  if (!name || !(officialRosterUndergraduateStatuses as readonly string[]).includes(status)) {
-    return null;
-  }
+  const listed = listedRosterUndergraduate(value);
+  if (!listed) return null;
+  const { name, status } = listed;
   const startYear = rosterYear(value?.startYear);
   const endYear = rosterYear(value?.endYear);
   const profileUrl = publicHttpUrl(value?.profileUrl);
@@ -2731,9 +2842,8 @@ export function publicRosterUndergraduates(
   enrichment: any,
   now = new Date(),
 ): PublicRosterUndergraduate[] {
-  const snapshot = enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
-  if (!['current', 'partial'].includes(snapshot?.state)) return [];
-  if (!Array.isArray(snapshot?.undergraduates)) return [];
+  const snapshot = servableRosterSnapshot(enrichment);
+  if (!snapshot) return [];
   const freshnessExpiresAt = new Date(snapshot?.freshnessExpiresAt || 0).getTime();
   const currentIsFresh = Number.isFinite(freshnessExpiresAt) && freshnessExpiresAt >= now.getTime();
   return snapshot.undergraduates
@@ -2841,6 +2951,32 @@ const SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL = 40;
 // neighbors so the section stays absent unless a genuinely similar home exists.
 const SIMILAR_RESEARCH_ENTITY_SIMILARITY_THRESHOLD = 0.35;
 
+export const personNameWordKeys = (document: unknown): Set<string> => {
+  const record = (document ?? {}) as Record<string, unknown>;
+  return new Set(
+    PERSON_FIELD_ATTRIBUTES.flatMap((attribute) => {
+      const value = record[attribute];
+      return Array.isArray(value) ? value : [value];
+    })
+      .filter((value): value is string => typeof value === 'string')
+      .flatMap((value) => foldLatinDiacritics(value.toLowerCase()).split(/[^a-z0-9]+/))
+      .filter((word) => word.length >= 2 && !isPersonNameParticleOrSuffixToken(word)),
+  );
+};
+
+// The embedded document text opens with the row's name and its professors' names,
+// so a thinly described row's nearest vectors were other people sharing a first or
+// last name: a history-of-medicine page recommended same-surname English and Law
+// faculty above its own field's historians. A neighbour sharing a person-name word
+// with the viewed row is ranked after every neighbour that does not, keeping the
+// embedding order within each group, so names never decide what is similar.
+const rankSharedPersonNamesLast = <T>(hits: readonly T[], viewedNameWords: Set<string>): T[] => {
+  if (viewedNameWords.size === 0) return [...hits];
+  const sharesAName = (hit: T) =>
+    [...personNameWordKeys(hit)].some((word) => viewedNameWords.has(word));
+  return [...hits.filter((hit) => !sharesAName(hit)), ...hits.filter(sharesAName)];
+};
+
 const firstServableDistinctCandidates = <T extends Record<string, any>>(
   orderedCandidateIds: readonly string[],
   candidateEntities: readonly T[],
@@ -2894,20 +3030,24 @@ const publicRelationshipForResearchDetail = (
   relatedResearchEntityId: relatedResearchEntity?.id || relatedResearchEntity?.slug,
   relatedResearchEntitySlug: relatedResearchEntity?.slug,
   relationshipType: relationship.relationshipType,
-  label: relationship.label,
+  label: servedRelationshipLabel(relatedResearchEntity),
   evidenceStrength: relationship.evidenceStrength,
   sourceUrl: publicHttpUrl(relationship.sourceUrl),
   confidence: relationship.confidence,
   lastObservedAt: relationship.lastObservedAt,
 });
 
-export async function listResearchEntityRelationshipPayload(entityId: unknown): Promise<{
+export async function listResearchEntityRelationshipPayload(
+  entityId: unknown,
+  { pageLeadPersonIds = [] }: { pageLeadPersonIds?: readonly string[] } = {},
+): Promise<{
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   affiliatedRelationships: any[];
   affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
+  pageLeadOwnResearchEntityKeys: string[];
 }> {
   const safeEntityId = normalizeResearchGroupObjectId(entityId);
   if (!safeEntityId) {
@@ -2918,6 +3058,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
       affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
+      pageLeadOwnResearchEntityKeys: [],
     };
   }
 
@@ -2999,8 +3140,28 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     }),
   );
 
+  const pageLeads = new Set(pageLeadPersonIds);
+  const pageLeadOwnFacultyResearchIds = new Set(
+    publicRelatedEntities
+      .filter((relatedEntity) =>
+        isPageLeadsOwnFacultyResearch(
+          relatedEntity,
+          relatedLeadNameRead.leadPersonIdsByEntityId?.get(
+            researchGroupDocumentId(relatedEntity._id),
+          ),
+          pageLeads,
+        ),
+      )
+      .map((relatedEntity) => researchGroupDocumentId(relatedEntity._id)),
+  );
+  const servedRelatedRelationships = relatedRelationships.filter(
+    (relationship) =>
+      !pageLeadOwnFacultyResearchIds.has(
+        researchGroupDocumentId(relationship.targetResearchEntityId),
+      ),
+  );
   const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
-    relatedEntityIds,
+    servedRelatedRelationships.map((relationship) => relationship.targetResearchEntityId),
     publicEntitiesByInternalId,
   );
   const affiliatedResearchEntities = dedupePublicResearchEntitiesInOrder(
@@ -3009,7 +3170,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
   );
 
   return {
-    entityRelationships: relatedRelationships
+    entityRelationships: servedRelatedRelationships
       .map((relationship) => ({
         relationship,
         relatedResearchEntity: publicEntitiesByInternalId.get(
@@ -3041,6 +3202,12 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       returned: affiliatedResearchEntities.length,
       truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
     },
+    pageLeadOwnResearchEntityKeys: Array.from(pageLeadOwnFacultyResearchIds).flatMap(
+      (internalId) => {
+        const entity = publicEntitiesByInternalId.get(internalId);
+        return entity ? [entity.slug, entity.id].filter(Boolean) : [];
+      },
+    ),
   };
 }
 
@@ -3084,6 +3251,14 @@ export async function listSimilarResearchEntities(
     `studentVisibilityTier IN [${publicStudentVisibilityTiers.map((tier) => `"${tier}"`).join(', ')}]`,
   ].join(' AND ');
 
+  const viewedPersonNameWords = (async () =>
+    personNameWordKeys(
+      await (index as any).getDocument(entityId, { fields: PERSON_FIELD_ATTRIBUTES }),
+    ))().catch((error: unknown) => {
+    console.error('Similar research name read failed:', sanitizeLogValue(error));
+    return new Set<string>();
+  });
+
   let hits: any[];
   try {
     const result = await (index as any).searchSimilarDocuments({
@@ -3091,7 +3266,7 @@ export async function listSimilarResearchEntities(
       embedder: RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
       limit: SIMILAR_RESEARCH_ENTITY_CANDIDATE_POOL,
       filter: visibilityFilter,
-      attributesToRetrieve: ['id', 'slug'],
+      attributesToRetrieve: ['id', 'slug', ...PERSON_FIELD_ATTRIBUTES],
       showRankingScore: true,
     });
     hits = Array.isArray(result?.hits) ? result.hits : [];
@@ -3113,7 +3288,7 @@ export async function listSimilarResearchEntities(
 
   const orderedCandidateIds: string[] = [];
   const seenCandidateIds = new Set<string>();
-  for (const hit of hits) {
+  for (const hit of rankSharedPersonNamesLast(hits, await viewedPersonNameWords)) {
     if (!hit || typeof hit !== 'object') continue;
     if (
       typeof hit._rankingScore === 'number' &&
@@ -3402,9 +3577,7 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 const MAX_PUBLIC_DETAIL_TEXT_LENGTH = 5000;
 
 const publicString = (value: unknown): string | undefined =>
-  typeof value === 'string'
-    ? redactDirectContactInfo(value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH))
-    : undefined;
+  typeof value === 'string' ? value.slice(0, MAX_PUBLIC_DETAIL_TEXT_LENGTH) : undefined;
 
 const publicResearchDetailSourceUrl = (value: unknown, entity?: any): string | undefined => {
   const url = publicHttpUrl(value);
@@ -3533,6 +3706,11 @@ export const publicResearchDetailGroup = (group: any) => {
     sourceFieldContributions: buildSourceFieldContributions(
       publicGroup.fieldProvenance,
       (url) => !isDisallowedResearchEntitySourceUrl(url, publicGroup),
+      undefined,
+      (url) =>
+        isLaneDiscoveryEndpointUrl(url)
+          ? servedGrantPageUrl(servedCurrentFunding(publicGroup).recentGrants, url)
+          : url,
     ),
   };
 };
@@ -3690,8 +3868,23 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
   });
 
   const canonicalSlug = typeof canonical?.slug === 'string' ? canonical.slug.trim() : '';
-  if (!canonicalSlug || canonicalSlug === normalizedSlug) return null;
-  return canonicalSlug;
+  if (canonicalSlug && canonicalSlug !== normalizedSlug) return canonicalSlug;
+  if (mergedShell) return null;
+  return servableSurvivorSlugByMergedFromSlug(normalizedSlug);
+}
+
+// Beta and Production carry no archived rows once promotion copies live rows only
+// (#5148), so an old slug is resolved from the survivor that lists it in `mergedFrom`.
+async function servableSurvivorSlugByMergedFromSlug(slug: string): Promise<string | null> {
+  const survivors = (await ResearchEntity.find({
+    'mergedFrom.slug': slug,
+    archived: { $ne: true },
+  })
+    .limit(2)
+    .lean()) as Array<Record<string, any>>;
+  if (survivors.length !== 1 || !isPubliclyServableCanonicalTarget(survivors[0])) return null;
+  const survivorSlug = String(survivors[0].slug).trim();
+  return survivorSlug === slug ? null : survivorSlug;
 }
 
 export type ResearchDetailWithholdingCheck =
@@ -3699,10 +3892,21 @@ export type ResearchDetailWithholdingCheck =
 
 export interface ResearchDetailOperatorPreview {
   studentVisibilityTier: string;
-  studentVisibilityReasons: string[];
+  studentVisibilityBlockingReasons: string[];
+  studentVisibilitySignalReasons: string[];
   studentVisibilitySuppressionReason?: string;
   withheldBy: ResearchDetailWithholdingCheck[];
 }
+
+const operatorPreviewReasons = (
+  reasons: unknown,
+): Pick<
+  ResearchDetailOperatorPreview,
+  'studentVisibilityBlockingReasons' | 'studentVisibilitySignalReasons'
+> => {
+  const { blocking, signals } = partitionStudentVisibilityReasons(reasons);
+  return { studentVisibilityBlockingReasons: blocking, studentVisibilitySignalReasons: signals };
+};
 
 export async function getResearchGroupDetail(
   slug: string,
@@ -3854,11 +4058,17 @@ export async function getResearchGroupDetail(
       .map((signal) => publicAccessSignalForResearchDetail(signal, group))
       .filter(servedAccessSignalStandsWithItsPage),
   );
-  const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
+  const { pageLeadOwnResearchEntityKeys, ...relationshipPayload } =
+    await listResearchEntityRelationshipPayload((group as any)._id, {
+      pageLeadPersonIds: leadPersonIdsOf(dedupedMembersWithRows),
+    });
   const structuralRelationExclusionKeys = [
-    ...relationshipPayload.relatedResearchEntities,
-    ...relationshipPayload.affiliatedResearchEntities,
-  ].flatMap((related) => [related.slug, related.id]);
+    ...[
+      ...relationshipPayload.relatedResearchEntities,
+      ...relationshipPayload.affiliatedResearchEntities,
+    ].flatMap((related) => [related.slug, related.id]),
+    ...pageLeadOwnResearchEntityKeys,
+  ];
   const similarResearchEntities = await listSimilarResearchEntities(group as Record<string, any>, {
     excludeEntityKeys: structuralRelationExclusionKeys,
   });
@@ -3883,14 +4093,14 @@ export async function getResearchGroupDetail(
     // lead set. That switched off the #2913 key-names-only-this-person arm for the one
     // surface a student lands on: 8 served rows titled themselves with an organization
     // their lead merely directs (#3132, the #2240 browse-versus-detail shape).
-    { leadMemberNames },
+    { leadMemberNames, hasHostedUndergraduates: entityHasHostedUndergraduates(group as any) },
   );
   if (withheldBy.length === 0) return detail;
   return {
     ...detail,
     operatorPreview: {
       studentVisibilityTier: String((group as any).studentVisibilityTier ?? ''),
-      studentVisibilityReasons: ((group as any).studentVisibilityReasons ?? []) as string[],
+      ...operatorPreviewReasons((group as any).studentVisibilityReasons),
       studentVisibilitySuppressionReason:
         (group as any).studentVisibilitySuppressionReason || undefined,
       withheldBy,

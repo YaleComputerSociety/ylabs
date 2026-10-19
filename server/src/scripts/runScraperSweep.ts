@@ -171,7 +171,13 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },
+  {
+    name: 'center-member-profile-research',
+    phase: 'relationships',
+    readsRowsWrittenBy: ['centers-institutes-index'],
+  },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
+  { name: 'lab-site-undergrad-invitation', phase: 'content-access' },
   { name: 'research-area-source-extractor', phase: 'content-access' },
   { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
@@ -301,6 +307,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'data-quality'
     | 'integrity-gate'
     | 'trust-contract'
+    | 'survivor-alias-derivation'
     | 'archived-cleanup'
     | 'dead-data-prune';
   status: 'succeeded' | 'failed';
@@ -1811,6 +1818,13 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     judgeResult: judgeTrustContractResult,
   },
   {
+    name: 'survivor-alias-derivation',
+    command: 'research-entity:derive-survivor-aliases',
+    artifactName: 'development-survivor-alias-derivation.json',
+    buildArgs: () => ['--apply', '--confirm-derive-survivor-aliases'],
+    isEnabled: () => true,
+  },
+  {
     name: 'archived-cleanup',
     command: 'research-entity:cleanup-archived',
     artifactName: 'development-archived-cleanup.json',
@@ -1918,6 +1932,15 @@ function judgementDiagnostics(judgement: StageJudgement): PostRunStageDiagnostic
   };
 }
 
+export function recordedSucceededStage<T extends { name: string; status: string }>(
+  recorded: unknown,
+  name: string,
+): T | undefined {
+  const stage = recorded as T | undefined;
+  if (!stage || typeof stage !== 'object') return undefined;
+  return stage.name === name && stage.status === 'succeeded' ? stage : undefined;
+}
+
 function reconstructDevelopmentStage(
   planned: PlannedPostRunStage,
   baseline: Record<string, number> | undefined,
@@ -1988,6 +2011,15 @@ async function runDevelopmentPostRunStages(
         exitCode: 0,
         ...resumed,
       });
+      continue;
+    }
+    const recordedStage = recordedSucceededStage<DevelopmentPostRunStage>(
+      ctx?.store.recordedResult(stepId),
+      planned.name,
+    );
+    if (recordedStage) {
+      console.log(`\n[post-run] ${planned.name} (resume: already done, from the run record)`);
+      stages.push(recordedStage);
       continue;
     }
     if (ctx?.store.isDone(stepId)) {
@@ -2065,16 +2097,7 @@ async function runDevelopmentPostRunStages(
       if (failureTail) diagnostics.failureTail = failureTail;
     }
     reportPostRunStageOutcome('post-run', planned.name, error, diagnostics);
-    if (ctx) {
-      if (error) {
-        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logFailed(stepId, exitCode, logPath);
-      } else {
-        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logDone(stepId, exitCode);
-      }
-    }
-    stages.push({
+    const stage: DevelopmentPostRunStage = {
       name: planned.name,
       status: error ? 'failed' : 'succeeded',
       artifactPath: planned.artifactPath,
@@ -2083,7 +2106,17 @@ async function runDevelopmentPostRunStages(
       ...(error ? { error } : {}),
       ...diagnostics,
       ...delta,
-    });
+    };
+    if (ctx) {
+      if (error) {
+        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
+        ctx.logger.logFailed(stepId, exitCode, logPath);
+      } else {
+        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now(), undefined, stage);
+        ctx.logger.logDone(stepId, exitCode);
+      }
+    }
+    stages.push(stage);
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
@@ -2272,6 +2305,17 @@ async function runFellowshipPostRunStages(
         });
         continue;
       }
+      const recordedStage = recordedSucceededStage<FellowshipPostRunStage>(
+        ctx.store.recordedResult(stepId),
+        planned.name,
+      );
+      if (recordedStage) {
+        console.log(
+          `\n[fellowship-post-run] ${planned.name} (resume: already done, from the run record)`,
+        );
+        stages.push(recordedStage);
+        continue;
+      }
       console.warn(
         `[fellowship-post-run] ${planned.name} was marked done but its report artifact is missing or invalid; re-running`,
       );
@@ -2307,16 +2351,7 @@ async function runFellowshipPostRunStages(
       if (failureTail) diagnostics.failureTail = failureTail;
     }
     reportPostRunStageOutcome('fellowship-post-run', planned.name, error, diagnostics);
-    if (ctx) {
-      if (error) {
-        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logFailed(stepId, exitCode, logPath);
-      } else {
-        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now());
-        ctx.logger.logDone(stepId, exitCode);
-      }
-    }
-    stages.push({
+    const stage: FellowshipPostRunStage = {
       name: planned.name,
       status: error ? 'failed' : 'succeeded',
       ...(planned.artifactPath ? { artifactPath: planned.artifactPath } : {}),
@@ -2324,7 +2359,17 @@ async function runFellowshipPostRunStages(
       ...sweepStepTiming(stageStartedAt, clock()),
       ...(error ? { error } : {}),
       ...diagnostics,
-    });
+    };
+    if (ctx) {
+      if (error) {
+        ctx.store.markFailed(stepId, 'stage', exitCode, ctx.now());
+        ctx.logger.logFailed(stepId, exitCode, logPath);
+      } else {
+        ctx.store.markDone(stepId, 'stage', exitCode, ctx.now(), undefined, stage);
+        ctx.logger.logDone(stepId, exitCode);
+      }
+    }
+    stages.push(stage);
   }
   return {
     status: stages.some((stage) => stage.status === 'failed') ? 'failed' : 'succeeded',
@@ -2484,6 +2529,16 @@ export async function runScraperSweep(
     };
   };
 
+  const succeededRowFromRecordedResult = (
+    source: ScraperSweepSource,
+    recorded: unknown,
+  ): ScraperSweepRunRow | undefined => {
+    const row = recorded as ScraperSweepRunRow | undefined;
+    if (!row || typeof row !== 'object') return undefined;
+    if (row.sourceName !== source.name || row.status !== 'succeeded') return undefined;
+    return row;
+  };
+
   const runSource = async (
     source: ScraperSweepSource,
     index: number,
@@ -2492,10 +2547,9 @@ export async function runScraperSweep(
     const artifactPath = artifactPathFor(source, index);
     const stepId = sourceStepId(source.name);
     if (store.isDone(stepId)) {
-      const resumedRow = succeededRowFromArtifact(
-        source,
-        store.recordedArtifactPath(stepId) || artifactPath,
-      );
+      const resumedRow =
+        succeededRowFromArtifact(source, store.recordedArtifactPath(stepId) || artifactPath) ??
+        succeededRowFromRecordedResult(source, store.recordedResult(stepId));
       if (resumedRow) {
         console.log(
           `\n[${index + 1}/${sweepSources.length}] ${source.phase}: ${source.name} (resume: already done)`,
@@ -2534,7 +2588,7 @@ export async function runScraperSweep(
           ...outcome.artifact,
           ...attemptRecord,
         };
-        store.markDone(stepId, 'source', outcome.exitCode, now(), artifactPath);
+        store.markDone(stepId, 'source', outcome.exitCode, now(), artifactPath, rows[index]);
         logger.logDone(stepId, outcome.exitCode);
         if (attempt > 1) {
           console.log(

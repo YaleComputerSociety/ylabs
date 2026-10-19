@@ -184,6 +184,20 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(enriched?.identifiers?.netid).toBe('realpi1');
   });
 
+  it('re-derives a stored page-heading title instead of keeping it (#5323)', async () => {
+    const headed = await attachedResearcher('headed1', 'Avery Heading', {
+      profile: { title: 'Research Affiliates' },
+    });
+    await seedDirectoryIdentity('headed1', 'Avery', 'Heading', 'Faculty Impact Award');
+
+    await materializeEntity('user', { entityKey: 'headed1' }, {});
+    expect((await enrichedResearcher(headed._id))?.profile?.title).toBeUndefined();
+
+    await seedDirectoryIdentity('headed1', 'Avery', 'Heading', 'Professor of Ecology');
+    await materializeEntity('user', { entityKey: 'headed1' }, {});
+    expect((await enrichedResearcher(headed._id))?.profile?.title).toBe('Professor of Ecology');
+  });
+
   it('does not mint a researcher when an account exists but no researcher backs it', async () => {
     await Account.create({ netid: 'loginonly1', email: 'loginonly1@yale.edu', status: 'ACTIVE' });
 
@@ -834,6 +848,112 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(await Researcher.countDocuments({})).toBe(before);
     });
 
+    const seedLeadlessSurvivorOfNamingEntity = async () => {
+      const survivor = await ResearchEntity.create({
+        slug: 'some-lab-survivor-fixture',
+        name: 'Some Lab',
+        entityType: 'LAB',
+        kind: 'lab',
+        archived: false,
+      });
+      await ResearchEntity.updateOne(
+        { slug: NAMING_ENTITY_SLUG },
+        { $set: { canonicalGroupId: survivor._id } },
+      );
+      return survivor;
+    };
+
+    it('mints when the archived attributor is merged into a survivor that states no lead of its own', async () => {
+      await seedNamingResearchEntity(true);
+      await seedLeadlessSurvivorOfNamingEntity();
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      expect(await Researcher.countDocuments({})).toBe(before + 1);
+    });
+
+    it('mints when the merged-in attributor also carries a key that names an archived researcher', async () => {
+      await seedNamingResearchEntity(true);
+      await seedLeadlessSurvivorOfNamingEntity();
+      await Researcher.create({
+        displayName: 'Grace Hopper',
+        identifiers: { netid: 'retired1' },
+        status: 'UNKNOWN',
+        archived: true,
+      });
+      await seedPiAttribution('netid:retired1');
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+    });
+
+    it('refuses when the merged-in attributor survivor states its own lead', async () => {
+      await seedNamingResearchEntity(true);
+      const survivor = await seedLeadlessSurvivorOfNamingEntity();
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: survivor.slug,
+        field: 'inferredPiUserKey',
+        value: 'dept:physics:other-person',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://example.invalid/roster',
+        confidence: 0.7,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it('refuses when the merged-in attributor survivor has its lead locked', async () => {
+      await seedNamingResearchEntity(true);
+      const survivor = await seedLeadlessSurvivorOfNamingEntity();
+      await ResearchEntity.updateOne(
+        { _id: survivor._id },
+        { $set: { manuallyLockedFields: ['inferredPiUserKey'] } },
+      );
+      await seedRosterIdentity('dept:physics:grace-hopper', 'Grace', 'Hopper');
+      await seedPiAttribution('dept:physics:grace-hopper');
+
+      const before = await Researcher.countDocuments({});
+      const result = await materializeEntity(
+        'user',
+        { entityKey: 'dept:physics:grace-hopper' },
+        {},
+      );
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+      expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
     it('refuses an ambiguous name, so a name the corpus already holds twice is not duplicated', async () => {
       await seedNamingResearchEntity();
       await Researcher.create({ displayName: 'Jian Wang' });
@@ -1093,6 +1213,42 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
       expect(result.skipped).toBe('resolved-netid-already-claimed');
       expect(result.created).toBe(false);
       expect(await Researcher.countDocuments({})).toBe(before);
+    });
+
+    it.each([
+      ['the bare alias', 'edsger.fixture'],
+      ['the Yale address', 'Edsger.Fixture@yale.edu'],
+    ])('mints when the roster stored the lead as %s (#4697)', async (_label, storedKey) => {
+      await seedDirectoryEmail('netid:wx456', 'edsger.fixture@yale.edu');
+      await seedRosterIdentity('netid:edsger.fixture', 'Edsger', 'Fixture');
+      await seedNamingResearchEntity();
+      await seedPiAttribution(storedKey);
+
+      const result = await materializeEntity('user', { entityKey: 'netid:edsger.fixture' }, {});
+
+      expect(result.skipped).toBeUndefined();
+      expect(result.created).toBe(true);
+      const minted = await Researcher.findOne({ displayName: 'Edsger Fixture' }).lean<{
+        identifiers?: { netid?: string };
+      }>();
+      expect(minted?.identifiers?.netid).toBe('wx456');
+    });
+
+    it('does not read an attribution naming a longer alias as naming this one', async () => {
+      await seedDirectoryEmail('netid:wx456', 'edsger.fixture@yale.edu');
+      await seedRosterIdentity('netid:edsger.fixture', 'Edsger', 'Fixture');
+      await seedNamingResearchEntity();
+      await seedPiAttribution('edsger.fixture2@yale.edu');
+
+      const result = await materializeEntity('user', { entityKey: 'netid:edsger.fixture' }, {});
+
+      expect(result.skipped).toBe('directory-identity-without-research-signal');
+    });
+
+    it('resolves past a grant lane key that carries the same address', async () => {
+      await seedDirectoryEmail('netid:yz789', 'barbara.fixture@yale.edu');
+      await seedDirectoryEmail('nsf-pi:barbara fixture', 'barbara.fixture@yale.edu');
+      expect(await netidForRosterEmailAlias('barbara.fixture')).toBe('yz789');
     });
   });
 });

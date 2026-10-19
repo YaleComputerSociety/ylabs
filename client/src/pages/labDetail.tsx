@@ -17,27 +17,39 @@ import {
  * props and render. This keeps the page consistent with the
  * `pages/profile.tsx` pattern.
  */
-import { useContext, useEffect, useReducer, useRef, useState } from 'react';
+import { useContext, useEffect, useId, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
 import ResearchProfileSkeleton, {
+  researchProfileBodyGridClassName,
+  researchProfileBodyMainClassName,
   researchProfileColumnClassName,
+  researchProfileContactRailClassName,
   researchProfileGridClassName,
   researchProfilePageClassName,
+  researchProfileSummaryCardClassName,
 } from '../components/labs/ResearchProfileSkeleton';
+import { undergraduateMemberEvidence } from '../utils/undergraduateMemberEvidence';
+import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
+import ResearchResultsBackLink from '../components/research/ResearchResultsBackLink';
+import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
 import LabMembersList from '../components/labs/LabMembersList';
 import NotFound from './notFound';
+import SessionLoginPrompt from '../components/shared/SessionLoginPrompt';
+import { searchQueryFromResearchSlug } from '../utils/researchSlugSearchQuery';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
+import { ExternalLinkIcon } from '../components/shared/icons';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
+import UndoRemovalBanner from '../components/shared/UndoRemovalBanner';
+import useUndoableRemoval from '../hooks/useUndoableRemoval';
 import OperatorPreviewNotice from '../components/labs/OperatorPreviewNotice';
 import FavoriteButton from '../components/shared/FavoriteButton';
-import { pastUndergradAdviseesSummary } from '../utils/pastUndergradAdvisees';
 import useFavorites from '../hooks/useFavorites';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
@@ -52,6 +64,7 @@ import {
   findSourceLinkHealthEntry,
   isLikelyUnavailableSourceLink,
   isSameActionDestination,
+  isSameActionHost,
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
@@ -61,7 +74,12 @@ import {
   servedResearchWebsiteUrl,
   resolveOutreachOfficialSource,
   vettedJoinPageUrls,
+  ACCESS_SIGNAL_SOURCE_CONTEXTS,
+  isCitableAccessSignal,
+  joinPageLinkLabel,
 } from '../utils/researchDetailSources';
+import { formatGrantSummary } from '../utils/grantAgencyNames';
+import LeadRoleExplanation from '../components/research/LeadRoleExplanation';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
 import { formatTitleCaseLabel, formatTopicChipLabel } from '../utils/displayText';
@@ -73,6 +91,7 @@ import {
   relationshipTypeLabel,
   researchEntityTitle,
   researchWebsiteCtaLabel,
+  researchWebsiteLabel,
   sanitizeResearchEntityCopy,
   summarySectionLabel,
 } from '../utils/researchEntityCopy';
@@ -90,10 +109,7 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
-import {
-  UNDERGRAD_QUOTE_LABEL,
-  undergradQuoteEvidenceFromEntity,
-} from '../utils/undergradQuoteEvidence';
+import { undergradInvitationFromEntity } from '../utils/undergradInvitation';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -103,17 +119,34 @@ const buildYaleDirectorySearchUrl = (name?: string): string => {
   return `${YALE_DIRECTORY_URL}?query=${encodeURIComponent(trimmed)}`;
 };
 const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
+const RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR = 'Research profile needs a fresh login.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="yr-kicker mb-3">{children}</h2>
 );
 
+type RelatedProfileOpenState = ReturnType<typeof researchProfileOpenState> &
+  ReturnType<typeof deeperResearchResultsReturnState>;
+
+const PRINCIPAL_INVESTIGATOR_HEADING = /^Principal Investigators?$/;
+
+const LeadSectionHeading = ({ heading }: { heading: string }) => (
+  <>
+    <SectionHeading>{heading}</SectionHeading>
+    {PRINCIPAL_INVESTIGATOR_HEADING.test(heading) && (
+      <LeadRoleExplanation plural={heading.endsWith('s')} />
+    )}
+  </>
+);
+
 const RelatedResearchEntitiesSection = ({
   relationships,
   relatedResearchEntities,
+  relatedProfileOpenState,
 }: {
   relationships: LabEntityRelationship[];
   relatedResearchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
 }) => {
   const relationshipByEntityKey = new Map(
     relationships.flatMap((relationship) =>
@@ -142,7 +175,7 @@ const RelatedResearchEntitiesSection = ({
             <Link
               key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
-              state={researchProfileOpenState('related_research')}
+              state={relatedProfileOpenState}
               className="block rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
             >
               <div className="flex flex-wrap gap-2">
@@ -171,8 +204,10 @@ const RelatedResearchEntitiesSection = ({
 
 const AffiliatedResearchEntitiesSection = ({
   affiliatedResearchEntities,
+  relatedProfileOpenState,
 }: {
   affiliatedResearchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
 }) => (
   <section>
     <SectionHeading>Affiliated with</SectionHeading>
@@ -203,7 +238,7 @@ const AffiliatedResearchEntitiesSection = ({
           <Link
             key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
-            state={researchProfileOpenState('related_research')}
+            state={relatedProfileOpenState}
             className={`${className} hover:border-line-strong hover:shadow-yr-raised`}
           >
             {content}
@@ -220,8 +255,10 @@ const AffiliatedResearchEntitiesSection = ({
 
 const SimilarResearchEntitiesSection = ({
   similarResearchEntities,
+  relatedProfileOpenState,
 }: {
   similarResearchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
 }) => (
   <section>
     <SectionHeading>More like this</SectionHeading>
@@ -231,7 +268,7 @@ const SimilarResearchEntitiesSection = ({
         <Link
           key={entity.slug || entity.id}
           to={`/research/${safeRouteSegment(entity.slug)}`}
-          state={researchProfileOpenState('related_research')}
+          state={relatedProfileOpenState}
           className="block rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised yr-focus-ring"
         >
           <div className="flex flex-wrap gap-2">
@@ -331,7 +368,9 @@ const ResearchPlanSaveButton = ({
         {isSaved ? 'Saved to Dashboard' : 'Save research plan'}
       </span>
       <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-        Keep private notes and reach out later
+        {isSaved
+          ? 'Press again to remove it. You can undo.'
+          : 'Keep private notes and reach out later'}
       </span>
     </span>
     <span className="sr-only" role="status">
@@ -368,27 +407,6 @@ const PendingSaveActionSlot = () => (
     </span>
   </div>
 );
-
-/**
- * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
- * since the chip conveys breadth, not specific awards. (Relocated from the
- * retired contact-route card so the decision summary owns the evidence signals.)
- */
-const formatGrantSummary = (group: any): string | null => {
-  const grants = group.recentGrants || [];
-  if (grants.length === 0) return null;
-  const counts: Record<string, number> = {};
-  for (const g of grants) {
-    const agency = (g.agency || '').trim();
-    if (!agency) continue;
-    counts[agency] = (counts[agency] || 0) + 1;
-  }
-  const parts = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([agency, n]) => `${n}× ${agency}`);
-  if (parts.length === 0) return null;
-  return `Funded: ${parts.join(', ')}`;
-};
 
 const emeritusResearchLabel = (group: any): string => {
   if (isCreativePracticeEntity(group)) return 'Emeritus faculty';
@@ -466,8 +484,8 @@ const DecisionSummary = ({
     if (description) return;
     void captureClientError(new Error('Public research description invariant failed'));
   }, [description, group._id, group.slug]);
-  const grantSummary = formatGrantSummary(group);
-  const pastAdvisees = pastUndergradAdviseesSummary(group.pastUndergradAdvisees);
+  const grantSummary = formatGrantSummary(group.recentGrants);
+  const pastAdvisees = formatPastAdvisees(group, rosterListsUndergraduates);
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
@@ -494,12 +512,9 @@ const DecisionSummary = ({
   const wayInWithheld = group.wayInWithheld === true;
   const hasActionablePath =
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
-  const undergradQuote =
-    wayInWithheld || rosterListsUndergraduates
-      ? undefined
-      : undergradQuoteEvidenceFromEntity(group);
+  const invitation = wayInWithheld ? undefined : undergradInvitationFromEntity(group);
   const hasEvidenceList =
-    Boolean(grantSummary) || Boolean(pastAdvisees) || Boolean(honors.recent || honors.other);
+    Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const actionLinks = resolveResearchDetailActionLinks({
@@ -543,9 +558,21 @@ const DecisionSummary = ({
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
   const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
   const activityCheckUrl = actionLinks.activityCheckUrl;
+  const outboundNoteId = useId();
+  const joinLinkLeavesWebsite =
+    Boolean(joinPageLinkUrl) && !isSameActionHost(joinPageLinkUrl, websiteUrl);
+  const outboundNote = showsWebsiteCta
+    ? joinLinkLeavesWebsite
+      ? `Opens the ${researchWebsiteLabel(group)}, or a page about joining on another site, in a new tab, outside y/labs.`
+      : `Opens the ${researchWebsiteLabel(group)} in a new tab, outside y/labs.`
+    : showsProfileButton && !offersOrgEngagementPage && !applyPageUrl
+      ? 'Opens the official Yale profile in a new tab, outside y/labs.'
+      : getInvolvedHasOwnAction
+        ? 'Opens their own page in a new tab, outside y/labs.'
+        : 'Opens the Yale Directory in a new tab, outside y/labs.';
   return (
-    <section className="rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
+    <>
+      <section className={researchProfileSummaryCardClassName}>
         <div>
           <SectionHeading>{summarySectionLabel(group)}</SectionHeading>
           {description ? (
@@ -571,9 +598,7 @@ const DecisionSummary = ({
           )}
           {topics.length > 0 && (
             <div className="mt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                Best fit for
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Topics</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {topics.map((topic) => (
                   <span
@@ -605,174 +630,197 @@ const DecisionSummary = ({
             </div>
           )}
 
-          {undergradQuote && (
+          {invitation && (
             <figure className="mt-6 max-w-[68ch] border-t border-[var(--yr-line)] pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                {UNDERGRAD_QUOTE_LABEL}
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--yr-green)]">
+                {invitation.label}
               </p>
               <blockquote
-                cite={undergradQuote.sourceUrl}
+                cite={invitation.sourceUrl}
                 className="mt-2 border-l-2 border-line-brand pl-4 text-base leading-relaxed text-ink-soft"
               >
-                <p>&ldquo;{undergradQuote.quote}&rdquo;</p>
+                <p>&ldquo;{invitation.quote}&rdquo;</p>
               </blockquote>
               <figcaption className="mt-2 pl-4.5 text-sm text-muted">
                 Quoted from{' '}
                 <a
-                  href={undergradQuote.sourceUrl}
-                  aria-label={`${undergradQuote.sourceHost} (opens in a new tab)`}
+                  href={invitation.sourceUrl}
+                  aria-label={`${invitation.sourceHost} (opens in a new tab)`}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
-                  className="yr-link yr-focus-ring break-words rounded-control"
+                  className="yr-link yr-focus-ring -my-1.5 inline-block break-words rounded-control py-1.5"
                 >
-                  {undergradQuote.sourceHost}
+                  {invitation.sourceHost}
                 </a>
               </figcaption>
             </figure>
           )}
         </div>
+      </section>
 
-        <div className="divide-y divide-[var(--yr-line)] self-start rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
-          {hasEvidenceList && (
-            <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
-              <ul className="mt-3 space-y-1 text-xs text-muted">
-                {grantSummary && <li>• {grantSummary}</li>}
-                {honors.recent && <li>• {honors.recent}</li>}
-                {honors.other && <li>• {honors.other}</li>}
-                {pastAdvisees && <li>• {pastAdvisees}</li>}
-              </ul>
-            </div>
-          )}
-          {principalInvestigator && (
-            <div className="py-4 first:pt-0 last:pb-0">
-              <SectionHeading>
-                {leadSectionHeading([principalInvestigator], leadRoleLabelForEntity(group, 'pi'))}
-              </SectionHeading>
-              <div>
-                <LabMembersList
-                  members={[principalInvestigator]}
-                  singleColumn
-                  entityDepartments={group.departments}
-                  resolveMemberProfileUrl={() => leadCardProfileUrl}
-                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
-                />
-              </div>
-            </div>
-          )}
-          {wayInWithheld && (
-            <EmeritusCurrentActivityNotice
-              group={group}
-              activityCheckUrl={activityCheckUrl}
-              leadCardLinksProfile={leadCardLinksProfile}
+      <section className={researchProfileContactRailClassName}>
+        {hasEvidenceList && (
+          <div className="py-4 first:pt-0 last:pb-0" aria-label="Research activity evidence">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Evidence</p>
+            <ul className="mt-3 space-y-1 text-xs text-muted">
+              {grantSummary && <li>• {grantSummary}</li>}
+              {honors.recent && <li>• {honors.recent}</li>}
+              {honors.other && <li>• {honors.other}</li>}
+              {pastAdvisees.map((line) => (
+                <li key={line}>• {line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {principalInvestigator && (
+          <div className="py-4 first:pt-0 last:pb-0">
+            <LeadSectionHeading
+              heading={leadSectionHeading(
+                [principalInvestigator],
+                leadRoleLabelForEntity(group, 'pi'),
+              )}
             />
-          )}
-          {!wayInWithheld && showGetInvolvedBlock && (
-            <div className="py-4 first:pt-0 last:pb-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-                How to get involved
-              </p>
-              {showsWebsiteCta ? (
-                <div className="mt-3 flex flex-col gap-2">
+            <div>
+              <LabMembersList
+                members={[principalInvestigator]}
+                singleColumn
+                entityDepartments={group.departments}
+                resolveMemberProfileUrl={() => leadCardProfileUrl}
+                resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+              />
+            </div>
+          </div>
+        )}
+        {wayInWithheld && (
+          <EmeritusCurrentActivityNotice
+            group={group}
+            activityCheckUrl={activityCheckUrl}
+            leadCardLinksProfile={leadCardLinksProfile}
+          />
+        )}
+        {!wayInWithheld && showGetInvolvedBlock && (
+          <div className="py-4 first:pt-0 last:pb-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+              How to get involved
+            </p>
+            {showsWebsiteCta ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={websiteUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  {researchWebsiteCtaLabel(group)}
+
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+                {joinPageLinkUrl && (
                   <a
-                    href={websiteUrl}
+                    href={joinPageLinkUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
+                    className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
                   >
-                    {researchWebsiteCtaLabel(group)}
+                    {joinPageLinkLabel(joinPageLinkUrl)}
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
-                  {joinPageLinkUrl && (
-                    <a
-                      href={joinPageLinkUrl}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center gap-1 self-start rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
-                    >
-                      See how to join
-                      <ArrowRightIcon />
-                    </a>
-                  )}
-                </div>
-              ) : offersOrgEngagementPage && officialSource ? (
-                <>
-                  <p className="mt-1 text-sm leading-relaxed text-ink">
-                    This organization coordinates involvement centrally. Open its get-involved page
-                    to see how undergraduates can take part, then reach out to introduce yourself.
-                  </p>
-                  <div className="mt-3 flex flex-col gap-2">
-                    <a
-                      href={officialSource.url}
-                      target="_blank"
-                      rel={EXTERNAL_LINK_REL}
-                      className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                    >
-                      See how to get involved
-                    </a>
-                  </div>
-                </>
-              ) : applyPageUrl ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={applyPageUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                  >
-                    See how to get involved
-                  </a>
-                </div>
-              ) : showsProfileButton ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={profileUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                  >
-                    Open official profile
-                  </a>
-                </div>
-              ) : offersOfficialPage && officialSource ? (
+                )}
+              </div>
+            ) : offersOrgEngagementPage && officialSource ? (
+              <>
+                <p className="mt-1 text-sm leading-relaxed text-ink">
+                  This organization coordinates involvement centrally. Open its get-involved page to
+                  see how undergraduates can take part, then reach out to introduce yourself.
+                </p>
                 <div className="mt-3 flex flex-col gap-2">
                   <a
                     href={officialSource.url}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                    aria-describedby={outboundNoteId}
                   >
-                    Open the official page
+                    See how to get involved
+                    <ExternalLinkIcon className="shrink-0" size={14} />
                   </a>
                 </div>
-              ) : (
-                <div className="mt-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
-                  <p className="text-sm leading-relaxed text-ink">
-                    {piName
-                      ? `y/labs does not have a direct link for ${piName}${
-                          piAffiliation ? ` (${piAffiliation})` : ''
-                        } yet.`
-                      : 'y/labs does not have a direct link for this research yet.'}
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-muted">
-                    {piName
-                      ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
-                      : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
-                  </p>
-                  <a
-                    href={directorySearchUrl}
-                    target="_blank"
-                    rel={EXTERNAL_LINK_REL}
-                    className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
-                  >
-                    Search the Yale Directory
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
+              </>
+            ) : applyPageUrl ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={applyPageUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  {joinPageLinkLabel(applyPageUrl, 'See how to get involved')}
+
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            ) : showsProfileButton ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  Open official profile
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            ) : offersOfficialPage && officialSource ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={officialSource.url}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  Open the official page
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
+                <p className="text-sm leading-relaxed text-ink">
+                  {piName
+                    ? `y/labs does not have a direct link for ${piName}${
+                        piAffiliation ? ` (${piAffiliation})` : ''
+                      } yet.`
+                    : 'y/labs does not have a direct link for this research yet.'}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-muted">
+                  {piName
+                    ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
+                    : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
+                </p>
+                <a
+                  href={directorySearchUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="yr-pressable mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
+                  aria-describedby={outboundNoteId}
+                >
+                  Search the Yale Directory
+                  <ExternalLinkIcon className="shrink-0" size={14} />
+                </a>
+              </div>
+            )}
+            <p id={outboundNoteId} className="mt-2 text-xs leading-relaxed text-muted">
+              {outboundNote}
+            </p>
+          </div>
+        )}
+      </section>
+    </>
   );
 };
 
@@ -793,7 +841,7 @@ const SourcesSection = ({
    * have (#3341).
    */
   const hasActionContext = sources.some((source) =>
-    source.contexts.some((context) => /\bevidence$/i.test(context)),
+    source.contexts.some((context) => ACCESS_SIGNAL_SOURCE_CONTEXTS.has(context)),
   );
 
   return (
@@ -801,7 +849,7 @@ const SourcesSection = ({
       <div className="border-b border-[var(--yr-line)] px-4 py-3">
         <p className="text-sm text-muted">
           {hasActionContext
-            ? 'These official pages support the profile details and action evidence shown above.'
+            ? 'These official pages support the profile details and the undergraduate information on this page.'
             : describesCreativePractice
               ? 'These official pages support the profile details shown above.'
               : 'These official pages support the research profile details shown above.'}
@@ -818,7 +866,7 @@ const SourcesSection = ({
                     <p className="text-sm font-semibold text-ink">{source.label}</p>
                     {isSameActionDestination(source.url, primaryProfileUrl) && (
                       <span className="inline-flex items-center rounded-card border border-line-brand bg-brand-soft px-1.5 py-0.5 text-xs font-medium text-ink-soft">
-                        opened above
+                        also linked above
                       </span>
                     )}
                     {source.isLikelyUnavailable && (
@@ -868,6 +916,8 @@ const SourcesSection = ({
   );
 };
 
+const PROFILE_NOT_FOUND_STATUSES = new Set([400, 404]);
+
 const LabDetail = () => {
   const { isAuthenticated, isLoading: isAuthLoading } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
@@ -885,6 +935,16 @@ const LabDetail = () => {
   const payloadSlugRef = useRef<string | undefined>(undefined);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
+  const {
+    undoableItem: undoableUnsave,
+    offerUndo,
+    undoRemoval,
+    dismissUndo,
+  } = useUndoableRemoval<{ entityId: string }>();
+  useEffect(() => {
+    dismissUndo();
+  }, [slug, dismissUndo]);
+
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } = useFavorites(
     'researchPlans',
     { enabled: isAuthenticated },
@@ -910,7 +970,7 @@ const LabDetail = () => {
         const finalUrl: string = res.request?.responseURL || '';
         const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
         const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
-        if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
+        if (canonicalSlug && canonicalSlug !== slug) {
           void navigate(`/research/${safeRouteSegment(canonicalSlug)}`, {
             replace: true,
             state: locationStateRef.current,
@@ -925,7 +985,9 @@ const LabDetail = () => {
       })
       .catch((err) => {
         if (isCancel(err) || requestId !== requestIdRef.current) return;
-        if (err?.response?.status === 404) {
+        if (err?.response?.status === 401) {
+          dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR });
+        } else if (PROFILE_NOT_FOUND_STATUSES.has(err?.response?.status)) {
           dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_NOT_FOUND_ERROR });
         } else {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
@@ -948,12 +1010,15 @@ const LabDetail = () => {
   }, [location.key, location.state, payload, slug]);
 
   if (loading && !payload) {
-    return <ResearchProfileSkeleton />;
+    return <ResearchProfileSkeleton leading={<ResearchResultsBackLink />} />;
   }
 
   if (error && !payload) {
     if (error === RESEARCH_PROFILE_NOT_FOUND_ERROR) {
-      return <NotFound />;
+      return <NotFound suggestedQuery={searchQueryFromResearchSlug(slug)} />;
+    }
+    if (error === RESEARCH_PROFILE_LOGIN_REQUIRED_ERROR) {
+      return <SessionLoginPrompt subject="this research profile" />;
     }
     return (
       <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
@@ -1009,11 +1074,19 @@ const LabDetail = () => {
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
+  const undergraduateMembers = undergraduateMemberEvidence({
+    roster,
+    accessSignals: accessSignals.filter(isCitableAccessSignal),
+    currentUndergradCount: group.currentUndergradCount,
+    pastUndergradAdvisees: group.pastUndergradAdvisees,
+    fellowshipRecipients: group.fellowshipRecipients,
+  });
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
     sourceLinkHealth: group.sourceLinkHealth,
     sourceFieldContributions: group.sourceFieldContributions,
+    undergraduateMembers,
   });
   const primaryWebsiteUrl =
     group.websiteUrl &&
@@ -1071,7 +1144,7 @@ const LabDetail = () => {
     singleLeadIsGenuinePrincipalInvestigator,
   );
   const showDedicatedPrincipalInvestigatorSection =
-    leadIdentityUnderReview || principalInvestigators.length !== 1;
+    leadIdentityUnderReview || principalInvestigators.length > 1;
   const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
     officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
   const leadProfilesLinkedInline =
@@ -1087,6 +1160,10 @@ const LabDetail = () => {
     ? [decisionProfileUrl, officialWebsiteUrl]
     : [decisionProfileUrl, decisionSummaryActionLinks.activityCheckUrl];
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
+  const relatedProfileOpenState = {
+    ...researchProfileOpenState('related_research'),
+    ...deeperResearchResultsReturnState(location.state),
+  };
   const handleDetailLinkOpen = (event: React.MouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest('a');
     const href = anchor?.getAttribute('href');
@@ -1135,7 +1212,14 @@ const LabDetail = () => {
       return;
     }
 
-    const saved = await setSavedResearchPlanFavorite(entityId, shouldSave);
+    const change = setSavedResearchPlanFavorite(entityId, shouldSave);
+    if (shouldSave) {
+      dismissUndo();
+    } else {
+      setShowResearchPlanSavedCallout(false);
+      offerUndo({ entityId }, change);
+    }
+    const saved = await change;
     if (saved && shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
@@ -1146,12 +1230,23 @@ const LabDetail = () => {
     <div className={researchProfilePageClassName} onClickCapture={handleDetailLinkOpen}>
       <div className={researchProfileGridClassName}>
         <div className={researchProfileColumnClassName}>
+          <ResearchResultsBackLink />
           {operatorPreview && <OperatorPreviewNotice preview={operatorPreview} />}
           {showResearchPlanSavedCallout && (
             <FirstSaveCallout
               kind="researchPlan"
               onDismiss={() => setShowResearchPlanSavedCallout(false)}
             />
+          )}
+
+          {undoableUnsave?.entityId === group._id && (
+            <UndoRemovalBanner
+              onUndo={() =>
+                void undoRemoval(({ entityId }) => setSavedResearchPlanFavorite(entityId, true))
+              }
+            >
+              Removed from your Dashboard. Undo brings back its notes and stage.
+            </UndoRemovalBanner>
           )}
 
           <LabHeader
@@ -1174,84 +1269,99 @@ const LabDetail = () => {
             }
           />
 
-          <DecisionSummary
-            group={group}
-            profileUrl={decisionProfileUrl}
-            websiteUrl={officialWebsiteUrl}
-            officialSource={outreachOfficialSource}
-            applySource={outreachApplySource}
-            preferOrgEngagementOutreach={preferOrgEngagementOutreach}
-            principalInvestigator={singlePrincipalInvestigator}
-            leadProfilesLinkedInline={leadProfilesLinkedInline}
-            rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
-          />
+          <div className={researchProfileBodyGridClassName}>
+            <DecisionSummary
+              group={group}
+              profileUrl={decisionProfileUrl}
+              websiteUrl={officialWebsiteUrl}
+              officialSource={outreachOfficialSource}
+              applySource={outreachApplySource}
+              preferOrgEngagementOutreach={preferOrgEngagementOutreach}
+              principalInvestigator={singlePrincipalInvestigator}
+              leadProfilesLinkedInline={leadProfilesLinkedInline}
+              rosterListsUndergraduates={(roster.undergraduates?.length ?? 0) > 0}
+            />
 
-          {showDedicatedPrincipalInvestigatorSection && (
-            <section>
-              <SectionHeading>
-                {leadSectionHeading(principalInvestigators, leadRoleLabelForEntity(group, 'pi'))}
-              </SectionHeading>
-              {leadIdentityUnderReview ? (
-                <div
-                  className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-                  role="status"
-                >
-                  <p className="font-semibold">Lead identity under review</p>
-                  <p className="mt-1">
-                    The research information remains available, but this lead and profile link are
-                    not shown until their sources agree.
-                  </p>
-                </div>
-              ) : (
-                <LabMembersList
-                  members={principalInvestigators}
-                  entityDepartments={group.departments}
-                  resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
-                  resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+            <div className={researchProfileBodyMainClassName}>
+              {showDedicatedPrincipalInvestigatorSection && (
+                <section>
+                  <LeadSectionHeading
+                    heading={leadSectionHeading(
+                      principalInvestigators,
+                      leadRoleLabelForEntity(group, 'pi'),
+                    )}
+                  />
+                  {leadIdentityUnderReview ? (
+                    <div
+                      className="rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                      role="status"
+                    >
+                      <p className="font-semibold">Lead not confirmed yet</p>
+                      <p className="mt-1">
+                        The research information remains available, but this lead and profile link
+                        are not shown until their sources agree.
+                      </p>
+                    </div>
+                  ) : (
+                    <LabMembersList
+                      members={principalInvestigators}
+                      entityDepartments={group.departments}
+                      resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
+                      resolveLeadRoleLabel={(role) => leadRoleLabelForEntity(group, role)}
+                    />
+                  )}
+                </section>
+              )}
+
+              <ResearchTeamSection
+                members={members}
+                roster={roster}
+                undergraduateLines={undergraduateMembers.memberLines}
+                leadPersonNames={leadPersonNames}
+              />
+
+              <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
+
+              {hasRelatedResearchEntities && (
+                <RelatedResearchEntitiesSection
+                  relationships={entityRelationships}
+                  relatedResearchEntities={dedupedRelatedResearchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
                 />
               )}
-            </section>
-          )}
 
-          <ResearchTeamSection members={members} roster={roster} />
+              {hasAffiliatedResearchEntities && (
+                <AffiliatedResearchEntitiesSection
+                  affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
+                />
+              )}
 
-          <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
+              {hasSimilarResearchEntities && (
+                <SimilarResearchEntitiesSection
+                  similarResearchEntities={dedupedSimilarResearchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
+                />
+              )}
 
-          {hasRelatedResearchEntities && (
-            <RelatedResearchEntitiesSection
-              relationships={entityRelationships}
-              relatedResearchEntities={dedupedRelatedResearchEntities}
-            />
-          )}
+              {sources.length > 0 && (
+                <section>
+                  <SectionHeading>Sources</SectionHeading>
+                  <SourcesSection
+                    sources={sources}
+                    describesCreativePractice={isCreativePracticeEntity(group)}
+                    primaryProfileUrl={
+                      decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
+                    }
+                  />
+                </section>
+              )}
 
-          {hasAffiliatedResearchEntities && (
-            <AffiliatedResearchEntitiesSection
-              affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
-            />
-          )}
-
-          {hasSimilarResearchEntities && (
-            <SimilarResearchEntitiesSection
-              similarResearchEntities={dedupedSimilarResearchEntities}
-            />
-          )}
-
-          {sources.length > 0 && (
-            <section>
-              <SectionHeading>Sources</SectionHeading>
-              <SourcesSection
-                sources={sources}
-                describesCreativePractice={isCreativePracticeEntity(group)}
-                primaryProfileUrl={
-                  decisionSummaryActionLinks.profileOpenedAbove ? decisionProfileUrl : undefined
-                }
-              />
-            </section>
-          )}
-
-          {isAuthenticated && slug && (
-            <EntityCorrectionReportPanel slug={slug} entityName={researchEntityTitle(group)} />
-          )}
+              {isAuthenticated && slug && (
+                <EntityCorrectionReportPanel slug={slug} entityName={researchEntityTitle(group)} />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

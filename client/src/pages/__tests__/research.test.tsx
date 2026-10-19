@@ -364,9 +364,9 @@ describe('Research page', () => {
     const { container } = renderResearch();
 
     expect(container.textContent).toContain('Search y/labs');
-    expect(container.textContent).toContain('Find a Yale lab that fits you.');
+    expect(container.textContent).toContain('Find Yale research that fits you.');
     expect(container.textContent).toContain(
-      'Search by interest, professor, course topic, method, or question.',
+      'Labs, centers, and faculty research in every field. Search by interest, professor, course topic, method, or question.',
     );
     expect(container.textContent).not.toContain('when the source evidence is strong enough');
     expect(container.textContent).not.toMatch(/\bways? in\b/i);
@@ -838,7 +838,7 @@ describe('Research page', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Core Facility' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Type: Core facility' }));
     await waitFor(() => {
       expect(
         mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
@@ -874,7 +874,7 @@ describe('Research page', () => {
         mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
       ).toEqual(expect.objectContaining({ filters: { entityType: ['CORE_FACILITY'] } })),
     );
-    expect(screen.getByRole('button', { name: 'Remove Type: Core Facility' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Type: Core facility' })).toBeTruthy();
   });
 
   // A retired type (#2219) is the same confidently-labelled empty result set as a
@@ -943,6 +943,140 @@ describe('Research page', () => {
           'entityType',
         );
       });
+  });
+
+  it('rewrites a department the corpus does not hold out of the URL and the chips instead of claiming a coverage gap (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], { appliedFilters: { departments: [] } });
+    });
+
+    render(
+      <MemoryRouter
+        initialEntries={['/research?q=machine+learning&department=Synthetic+Nonexistent+Dept']}
+      >
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning'),
+    );
+    expect(screen.queryByRole('button', { name: /Remove Department/ })).toBeNull();
+    expect(screen.queryByText(/coverage gap/)).toBeNull();
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      1,
+    );
+  });
+
+  it('keeps a department search narrowed to its department rather than letting the server drop it (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?dept=Computer+Science']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const searchBodies = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/research/search')
+      .map(
+        ([, body]) =>
+          body as { filters?: { departments?: string[] }; resolveFilterValues?: boolean },
+      );
+    expect(searchBodies.length).toBeGreaterThan(0);
+    for (const body of searchBodies) {
+      expect(body.filters?.departments).toContain('Computer Science');
+      expect(body.resolveFilterValues).toBe(false);
+    }
+  });
+
+  it('drops a type the page cannot read from the URL (#5146)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&type=NOT_A_TYPE']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning'),
+    );
+  });
+
+  it('filters by hosted undergraduate researchers through the URL, the request, and a removable chip', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          school: { 'Yale College': 8, 'School of Medicine': 4 },
+          hostsUndergrads: { true: 3 },
+        },
+      });
+    });
+    const lastSearchBody = () =>
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1];
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&undergrad=1']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(lastSearchBody()).toEqual(
+        expect.objectContaining({ q: 'machine learning', filters: { hostsUndergrads: true } }),
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
+    await waitFor(() => {
+      expect(lastSearchBody()).toEqual(expect.objectContaining({ filters: {}, page: 1 }));
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (3)' }),
+    );
+    await waitFor(() => {
+      expect(lastSearchBody()).toEqual(
+        expect.objectContaining({ filters: { hostsUndergrads: true }, page: 1 }),
+      );
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=machine+learning&undergrad=1',
+      );
+    });
   });
 
   it('keeps school and department filters compact, URL-backed, and individually clearable', async () => {
@@ -1039,7 +1173,7 @@ describe('Research page', () => {
       expect(screen.getByRole('button', { name: 'Close filters' })).not.toBeDisabled(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Close filters' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all active filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Filters' })).toHaveAttribute(
         'aria-expanded',
@@ -1385,7 +1519,11 @@ describe('Research page', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText('Filter by school')).not.toBeDisabled();
-      expect(screen.queryByLabelText('Filter by department')).toBeNull();
+      expect(
+        within(screen.getByLabelText('Filter by department'))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['All departments', 'Computer Science (1)']);
     });
     const selectedOption = within(screen.getByLabelText('Filter by school')).getByRole('option', {
       name: 'Yale College',
@@ -3026,9 +3164,19 @@ describe('Research landing watched-deadline urgency signal', () => {
     renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
 
     const cta = await screen.findByRole('link', {
-      name: '1 watched program closes within 2 weeks, 1 not started',
+      name: '1 watched program closes within 2 weeks, 1 still marked Saved',
     });
     expect(cta).toHaveAttribute('href', '/dashboard?tab=programs');
+  });
+
+  it('comes after the search box in focus order so it never stands between a student and search', async () => {
+    mockWatchedPrograms([{ _id: 'p1', title: 'STARS', deadline: inWindow }]);
+
+    renderResearch(departments, ['/research'], { netId: 'user1', userType: 'student' } as any);
+
+    const cta = await screen.findByRole('link', { name: /watched program closes within 2 weeks/ });
+    const searchBox = screen.getByRole('searchbox', { name: 'Search y/labs' });
+    expect(searchBox.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('stays silent when no watched deadline is approaching', async () => {
@@ -3038,6 +3186,7 @@ describe('Research landing watched-deadline urgency signal', () => {
 
     await waitFor(() =>
       expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedPrograms', {
+        params: { view: 'deadlines' },
         withCredentials: true,
       }),
     );
@@ -3125,6 +3274,25 @@ describe('Research zero-result recovery', () => {
     expect(acceptedRequest).toBeTruthy();
   });
 
+  it('offers no shorter query and claims no coverage gap when an active filter removed every match', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      if (body.q === 'digital') return researchSearchResponse([researchEntity]);
+      return researchSearchResponse([]);
+    });
+
+    renderRecovery(['/research?q=digital+humanities&undergrad=1']);
+
+    const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
+    await within(region).findByRole('button', { name: 'Browse all research' });
+    expect(within(region).getByRole('button', { name: 'Clear all filters' })).toBeTruthy();
+    expect(within(region).queryByRole('button', { name: /Search .* instead/ })).toBeNull();
+    expect(searchRequests.some((request) => request.suggestionProbe === true)).toBe(false);
+    expect(region.textContent).not.toContain('coverage gap');
+  });
+
   it('hides the relaxed-query retry when the relaxed query would also return nothing', async () => {
     mockSearchResponses((url) =>
       url === '/research/search' ? researchSearchResponse([]) : unexpectedSearchEndpoint(url),
@@ -3193,7 +3361,7 @@ describe('Research zero-result recovery', () => {
     renderRecovery(['/research?q=machine+learning&type=CORE_FACILITY']);
 
     const region = await screen.findByRole('region', { name: 'Ways to recover this search' });
-    fireEvent.click(within(region).getByRole('button', { name: 'Remove Type: Core Facility' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Remove Type: Core facility' }));
 
     expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
@@ -3384,6 +3552,48 @@ describe('Research degraded search notice', () => {
     expect(within(notice).getByRole('button', { name: 'Try again' })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
     expect(document.body.textContent).not.toContain('Your search still works');
+  });
+
+  it('never leaves the previous search rows under filters whose search failed', async () => {
+    let filteredSearchFails = true;
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      const filters = (body.filters ?? {}) as Record<string, unknown>;
+      if (filters.hostsUndergrads === true && filteredSearchFails) return serviceUnavailable();
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          departments: { 'Computer Science': 5, Neuroscience: 3 },
+          hostsUndergrads: { true: 3 },
+        },
+      });
+    });
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (3)' }),
+    );
+
+    const notice = await screen.findByRole('region', { name: degradedNoticeName });
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('No results could be confirmed');
+    expect(
+      screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }),
+    ).toBeTruthy();
+
+    const hostedCheckbox = screen.getByRole('checkbox', {
+      name: 'Has hosted undergraduate researchers',
+    }) as HTMLInputElement;
+    expect(hostedCheckbox.checked).toBe(true);
+    expect(screen.getByText(/Current filter counts are unavailable/)).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Computer Science \(5\)/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Show 1 result/ })).toBeNull();
+
+    filteredSearchFails = false;
+    fireEvent.click(within(notice).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
   });
 });
 

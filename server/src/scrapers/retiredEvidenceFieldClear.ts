@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { liveFieldValueRefusals } from '../utils/researchEntityFieldValueRefusals';
+import { isCoursePageUrl } from '../utils/researchHomeWebsiteUrl';
 import {
   mergedRowEvidenceIdentity,
   mergedRowEvidenceQueryClauses,
@@ -24,6 +25,7 @@ export interface CitedObservation {
   value?: unknown;
   superseded?: unknown;
   rollback?: { rolledBackAt?: unknown } | null;
+  sourceUrl?: unknown;
 }
 
 export type CitedObservationLookup = (observationIds: string[]) => Promise<CitedObservation[]>;
@@ -34,7 +36,10 @@ export const citedObservationsById: CitedObservationLookup = async (observationI
     .map((id) => new mongoose.Types.ObjectId(id));
   if (ids.length === 0) return [];
   return Observation.collection
-    .find({ _id: { $in: ids } }, { projection: { value: 1, superseded: 1, rollback: 1 } })
+    .find(
+      { _id: { $in: ids } },
+      { projection: { value: 1, superseded: 1, rollback: 1, sourceUrl: 1 } },
+    )
     .toArray() as Promise<CitedObservation[]>;
 };
 
@@ -42,7 +47,7 @@ export type LiveFieldValueLookup = (input: {
   stored: Record<string, unknown>;
   mergedInRows: ReadonlyArray<MergedInRowRef>;
   fields: string[];
-}) => Promise<Array<{ field?: unknown; value?: unknown }>>;
+}) => Promise<Array<{ field?: unknown; value?: unknown; sourceUrl?: unknown }>>;
 
 export const liveFieldValuesOnMergedRow: LiveFieldValueLookup = async (input) => {
   const clauses = mergedRowEvidenceQueryClauses([
@@ -58,14 +63,17 @@ export const liveFieldValuesOnMergedRow: LiveFieldValueLookup = async (input) =>
         'rollback.rolledBackAt': { $exists: false },
         $or: clauses,
       },
-      { projection: { field: 1, value: 1 } },
+      { projection: { field: 1, value: 1, sourceUrl: 1 } },
     )
-    .toArray() as Promise<Array<{ field?: unknown; value?: unknown }>>;
+    .toArray() as Promise<Array<{ field?: unknown; value?: unknown; sourceUrl?: unknown }>>;
 };
 
 export function observationIsRetired(observation: CitedObservation): boolean {
   return observation.superseded === true || Boolean(observation.rollback?.rolledBackAt);
 }
+
+const observationIsNoLongerEvidence = (observation: CitedObservation): boolean =>
+  observationIsRetired(observation) || isCoursePageUrl(observation.sourceUrl);
 
 function comparableValue(value: unknown): string {
   return typeof value === 'string' ? value.trim() : JSON.stringify(value ?? null);
@@ -138,7 +146,7 @@ export async function planRetiredEvidenceFieldClears(
     const observation = cited.get(observationId);
     return (
       observation !== undefined &&
-      observationIsRetired(observation) &&
+      observationIsNoLongerEvidence(observation) &&
       statesStoredValue(field, observation.value)
     );
   });
@@ -162,6 +170,7 @@ export async function planRetiredEvidenceFieldClears(
         ],
       })
     )
+      .filter(({ sourceUrl }) => !isCoursePageUrl(sourceUrl))
       .filter(({ field, value }) => statesStoredValue(String(field), value))
       .map(({ field }) => String(field)),
   );

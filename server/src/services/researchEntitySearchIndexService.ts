@@ -20,6 +20,7 @@ import {
 import { getMeiliClient, getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import {
   assertMeiliTaskSucceeded,
+  waitForMeiliTask,
   MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS,
   MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   type MeiliTaskWaitingIndex,
@@ -28,8 +29,10 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { warmControlledVocabularyHeadings } from '../utils/controlledVocabularyHeadings';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
+import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
+import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -210,8 +213,6 @@ const SEARCH_INDEX_TEXT_FIELDS = [
   'shortDescription',
   'fullDescription',
   'description',
-  'undergradEvidenceQuote',
-  'undergradAccessEvidence',
 ] as const;
 
 const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
@@ -556,7 +557,9 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 
   if (Array.isArray(out.methods)) {
-    const methods = normalizeResearchAreaList(out.methods);
+    const methods = normalizeResearchAreaList(
+      out.methods.map((method: unknown) => sanitizeMethodChipLabel(method)).filter(Boolean),
+    );
     if (methods.length > 0) out.methods = methods;
     else delete out.methods;
   }
@@ -575,6 +578,10 @@ export function buildResearchEntitySearchIndexDocument(
   const out: Record<string, any> = {
     ...doc,
     id,
+    // Derived from the row rather than copied from the stored flag, so the
+    // `hostsUndergrads` filter and facet read the predicate the served badge reads
+    // even when a writer changed its inputs without recomputing the flag (#5123).
+    hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
@@ -893,7 +900,7 @@ async function readSwapTaskIfVisible(
 ): Promise<{ status?: string; error?: unknown } | null> {
   if (typeof client.tasks?.waitForTask !== 'function') return null;
   try {
-    return await client.tasks.waitForTask(taskUid, { timeout: timeoutMs });
+    return await waitForMeiliTask(client.tasks, taskUid, timeoutMs);
   } catch (error) {
     if (isMeiliTaskNotFoundError(error)) return null;
     throw error;

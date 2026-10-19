@@ -217,6 +217,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'center-member-profile-research',
+    displayName: 'Center member profile research',
+    description:
+      "Reads the biography and research statement on a center member's own profile page (Yale FDS, the Cowles Foundation, the MacMillan Center councils) and attaches them, as writer evidence only, to the one personal research row that member leads. A page joins to a person only through a centers-roster membership edge whose identity was proven, never by name, and the lane mints no row.",
+    baseUrl: 'https://fds.yale.edu',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
     name: 'directory-alias-resolution',
     displayName: 'Directory alias resolution',
     description:
@@ -507,6 +516,15 @@ const SOURCES: SourceSeed[] = [
       "LLM extraction over each lab's site to determine current undergrad count, openness, and evidence quote.",
     baseUrl: '',
     defaultWeight: 0.5,
+    cadence: 'weekly',
+  },
+  {
+    name: 'lab-site-undergrad-invitation',
+    displayName: 'Lab site undergraduate invitations',
+    description:
+      "Deterministic read of each lab site's home and join pages for a sentence that invites undergraduates: an active opening (actively hiring) or a standing invitation to get in touch (welcomes undergrads). No model call; a quote repeated across three or more rows is a shared program page and is refused.",
+    baseUrl: '',
+    defaultWeight: 0.8,
     cadence: 'weekly',
   },
   {

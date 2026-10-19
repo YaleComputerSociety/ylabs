@@ -30,42 +30,36 @@ import {
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
+  checkPersonNameWordsAreNotRespelled,
   checkQueryRelevance,
+  checkSimilarRailRanksSharedNamesLast,
   checkSortOrdering,
   checkSurvivorWebsiteAttribution,
   checkTitleSortOrdering,
   checkTopicDropAttribution,
-  checkUndergradEvidenceQuoteAttribution,
-  corpusFingerprintMoved,
-  drawSeededSample,
-  fingerprintPopulation,
-  fingerprintQuote,
   resolvePagesToWalk,
   scoreQueryRelevance,
-  scoreUndergradEvidenceJudgements,
   tallyCreativePracticeLabels,
   tallySurvivorWebsites,
   type CorpusFingerprint,
   type CreativePracticeLabelObservation,
   type FacetAgreementObservation,
   type InvariantResult,
+  type PersonNameQueryObservation,
   type QueryEvidenceClass,
   type RateResult,
-  type QuoteAttributionObservation,
   type SurvivorWebsiteObservation,
   type TopicDropObservation,
-  type UndergradEvidenceServedRow,
 } from './journeyEvalMetrics';
 import {
   DEFAULT_TOP_K,
-  DEFAULT_UNDERGRAD_EVIDENCE_LANE,
   type RelevanceMatchers,
   type TopicQueryJudgement,
-  type UndergradEvidenceJudgementSet,
 } from './journeyEvalJudgements';
 
 export interface ServedBrowseResult {
   researchEntities?: unknown[];
+  queryCorrection?: { originalQuery?: string; correctedQuery?: string };
   estimatedTotalHits?: number;
   degraded?: unknown;
   facetDistribution?: Record<string, Record<string, number>>;
@@ -97,17 +91,15 @@ export type ReadLeadMemberNamesFn = (
   storedRows: Array<Record<string, unknown>>,
 ) => Promise<LeadMemberNameRead>;
 
-export interface UndergradEvidenceSampleRequest {
-  seed: string;
-  sampleSize: number;
-  write: (sample: UndergradEvidenceJudgementSet) => Promise<string>;
+export interface SimilarRailRead {
+  viewedNameWords: readonly string[];
+  cards: ReadonlyArray<{ nameWords: readonly string[] }>;
 }
 
 export interface JourneyEvalContext {
   browse: BrowseFn;
+  readSimilarResearchRail?: (rowKey: string) => Promise<SimilarRailRead | null>;
   topicQueryJudgements: TopicQueryJudgement[] | null;
-  undergradEvidenceJudgements?: UndergradEvidenceJudgementSet | null;
-  undergradEvidenceSampleRequest?: UndergradEvidenceSampleRequest;
   readStoredRows: ReadStoredRowsFn;
   readIndexedSortKeys: ReadIndexedSortKeysFn;
   readLeadMemberNames?: ReadLeadMemberNamesFn;
@@ -378,6 +370,65 @@ const facetCountAgreement: JourneyCase = {
           'A browse filtered to one facet value does not fall back to a degraded search path',
           degradedFilteredBrowses === 0,
           { checked: observations.length, degradedFilteredBrowses },
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
+// A text query serves a fused candidate pool, so its facets drifted from its results
+// while a filters-only browse stayed consistent: these two queries read Computer
+// Science (26) against 59 results and Type counts summing to 71 under 255 (#5101).
+export const TEXT_QUERY_FACET_AGREEMENT_QUERIES = ['machine learning', 'cognitive psychology'];
+const TEXT_QUERY_FACET_FIELDS = ['departments', 'entityType'] as const;
+
+const textQueryFacetCountAgreement: JourneyCase = {
+  id: 'text-query-facet-count-agreement',
+  title: 'Under a text query, a facet count matches the total that query returns filtered to it',
+  run: async (context) => {
+    const observations: FacetAgreementObservation[] = [];
+    const typeTotalsThatDisagree: Array<{ query: string; typeCountSum: number; total: number }> =
+      [];
+    for (const query of TEXT_QUERY_FACET_AGREEMENT_QUERIES) {
+      const result = await context.browse({ query, page: 1, pageSize: 1 });
+      const total = result.estimatedTotalHits ?? -1;
+      const typeCountSum = Object.values(result.facetDistribution?.entityType ?? {}).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      if (typeCountSum !== total) typeTotalsThatDisagree.push({ query, typeCountSum, total });
+      for (const field of TEXT_QUERY_FACET_FIELDS) {
+        const topValues = Object.entries(result.facetDistribution?.[field] ?? {})
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, context.facetValuesChecked);
+        for (const [value, facetCount] of topValues) {
+          const filtered = await context.browse({
+            query,
+            filters: { [field]: [value] },
+            page: 1,
+            pageSize: 1,
+          });
+          observations.push({
+            value: `${query} | ${field}=${value}`,
+            facetCount,
+            filteredTotal: filtered.estimatedTotalHits ?? -1,
+          });
+        }
+      }
+    }
+
+    return {
+      invariants: [
+        checkFacetAgreement(observations, {
+          id: 'text-query-facet-count-agrees-with-filtered-total',
+          title: 'Under a text query, a facet value count equals that query filtered to the value',
+        }),
+        buildInvariant(
+          'text-query-type-counts-sum-to-total',
+          'Under a text query, the Type facet counts sum to the reported total',
+          typeTotalsThatDisagree.length === 0,
+          { checked: TEXT_QUERY_FACET_AGREEMENT_QUERIES.length, typeTotalsThatDisagree },
         ),
       ],
       rates: [],
@@ -702,197 +753,6 @@ const topicQueryRelevance: JourneyCase = {
   },
 };
 
-const WALK_PAGE_SIZE = 100;
-
-const walkServedCorpus = async (context: JourneyEvalContext) => {
-  const reachablePages = maxReachableResearchSearchPage(WALK_PAGE_SIZE);
-  const rows: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
-  let estimatedTotalHits = 0;
-  let degradedPages = 0;
-  for (let page = 1; page <= reachablePages; page += 1) {
-    const result = await context.browse({ page, pageSize: WALK_PAGE_SIZE });
-    estimatedTotalHits = result.estimatedTotalHits ?? estimatedTotalHits;
-    if (result.degraded !== false) degradedPages += 1;
-    const pageRows = servedRows(result);
-    for (const row of pageRows) {
-      const key = rowKey(row);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      rows.push(row);
-    }
-    if (pageRows.length < WALK_PAGE_SIZE) break;
-  }
-  return { rows, estimatedTotalHits, degradedPages };
-};
-
-const storedQuoteProvenance = (
-  storedRow: Record<string, unknown> | undefined,
-): { sourceName: string; sourceUrl: string } => {
-  const provenance = (storedRow?.fieldProvenance as Record<string, unknown> | undefined)
-    ?.undergradEvidenceQuote as Record<string, unknown> | undefined;
-  return {
-    sourceName: typeof provenance?.sourceName === 'string' ? provenance.sourceName : '',
-    sourceUrl: typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl : '',
-  };
-};
-
-const undergradEvidenceQuotePrecision: JourneyCase = {
-  id: 'undergrad-evidence-quote-precision',
-  title:
-    'A served undergraduate evidence quote is grounded on its cited page and states an access fact',
-  run: async (context) => {
-    const judgementSet = context.undergradEvidenceJudgements ?? null;
-    const lane = judgementSet?.lane ?? DEFAULT_UNDERGRAD_EVIDENCE_LANE;
-    const corpusBefore = await context.readCorpusFingerprint();
-    const walk = await walkServedCorpus(context);
-    const quoted = walk.rows.filter((row) => hasText(row.undergradEvidenceQuote));
-    const stored = await context.readStoredRows(quoted.map(rowKey));
-    const corpusAfter = await context.readCorpusFingerprint();
-
-    const attribution: QuoteAttributionObservation[] = [];
-    const laneRows: Array<{ row: Record<string, unknown>; sourceUrl: string }> = [];
-    let citingAPage = 0;
-    let skippedStaleIndex = 0;
-    for (const row of quoted) {
-      const storedRow = stored.get(rowKey(row));
-      const provenance = storedQuoteProvenance(storedRow);
-      const servedVersionMatchesStored =
-        Boolean(storedRow) && storedRow?.undergradEvidenceQuote === row.undergradEvidenceQuote;
-      attribution.push({ servedVersionMatchesStored, storedSourceName: provenance.sourceName });
-      if (!servedVersionMatchesStored) {
-        skippedStaleIndex += 1;
-        continue;
-      }
-      if (provenance.sourceUrl) citingAPage += 1;
-      if (provenance.sourceName === lane) laneRows.push({ row, sourceUrl: provenance.sourceUrl });
-    }
-
-    const population: UndergradEvidenceServedRow[] = laneRows.map(({ row }) => ({
-      rowKey: rowKey(row),
-      quoteFingerprint: fingerprintQuote(row.undergradEvidenceQuote as string),
-    }));
-    const populationFingerprint = fingerprintPopulation(population.map((row) => row.rowKey));
-
-    const invariants: InvariantResult[] = [
-      checkUndergradEvidenceQuoteAttribution(attribution, corpusBefore, corpusAfter),
-      buildInvariant(
-        'undergrad-evidence-walk-is-not-degraded',
-        'The corpus walk behind the precision sample never falls back to a degraded search path',
-        walk.degradedPages === 0,
-        { degradedPages: walk.degradedPages },
-      ),
-    ];
-    const rates: RateResult[] = [
-      buildRate(
-        'served-cards-with-an-undergrad-evidence-quote',
-        'Served rows carrying a non-empty undergraduate evidence quote',
-        quoted.length,
-        walk.rows.length,
-      ),
-      buildRate(
-        'undergrad-evidence-quotes-from-the-judged-lane',
-        `Served undergraduate evidence quotes matching their stored row whose provenance is ${lane}`,
-        laneRows.length,
-        quoted.length - skippedStaleIndex,
-      ),
-      buildRate(
-        'undergrad-evidence-quotes-citing-a-page',
-        'Served undergraduate evidence quotes matching their stored row whose provenance cites a source page',
-        citingAPage,
-        quoted.length - skippedStaleIndex,
-      ),
-    ];
-    const notes: Record<string, unknown> = {
-      lane,
-      servedRowsWalked: walk.rows.length,
-      estimatedTotalHits: walk.estimatedTotalHits,
-      population: population.length,
-      skippedStaleIndex,
-      populationFingerprint,
-      corpusMovedDuringWalk: corpusFingerprintMoved(corpusBefore, corpusAfter),
-    };
-
-    const sampleRequest = context.undergradEvidenceSampleRequest;
-    if (sampleRequest) {
-      const drawn = new Set(
-        drawSeededSample(
-          population.map((row) => row.rowKey),
-          sampleRequest.seed,
-          sampleRequest.sampleSize,
-        ),
-      );
-      const sampleRows = laneRows.filter(({ row }) => drawn.has(rowKey(row)));
-      notes.sampleWrittenTo = await sampleRequest.write({
-        lane,
-        seed: sampleRequest.seed,
-        sampleSize: sampleRequest.sampleSize,
-        judgements: sampleRows.map(({ row, sourceUrl }) => ({
-          rowKey: rowKey(row),
-          quoteFingerprint: fingerprintQuote(row.undergradEvidenceQuote as string),
-          quote: row.undergradEvidenceQuote as string,
-          sourceUrl,
-        })),
-      });
-    }
-
-    if (!judgementSet) {
-      invariants.push(
-        buildInconclusiveInvariant(
-          'undergrad-evidence-precision-has-judgements',
-          'The precision case has a judgement set to score against',
-          'No judgement file was supplied, so a precision over it would be a green signal over an empty sample',
-          { judgements: 0 },
-        ),
-      );
-      return { invariants, rates, notes };
-    }
-
-    const score = scoreUndergradEvidenceJudgements(
-      population,
-      judgementSet.judgements,
-      judgementSet.seed,
-      judgementSet.sampleSize,
-    );
-    if (score.verifiable === 0) {
-      invariants.push(
-        buildInconclusiveInvariant(
-          'undergrad-evidence-precision-has-judgements',
-          'The precision case has a judgement set to score against',
-          'No drawn row carries a verdict on its current quote, so a precision over it would be a green signal over an empty sample',
-          {
-            drawn: score.drawn,
-            unjudged: score.unjudged,
-            changed: score.judgementForAChangedQuote,
-          },
-        ),
-      );
-    }
-    rates.push(
-      buildRate(
-        'undergrad-evidence-badge-precision',
-        'Readable judged quotes that are grounded, about the row, and state an undergraduate access fact',
-        score.correct,
-        score.verifiable,
-      ),
-      buildRate(
-        'undergrad-evidence-lane-grounding-precision',
-        'Readable judged quotes found verbatim or near-verbatim on their cited page',
-        score.grounded,
-        score.verifiable,
-      ),
-      buildRate(
-        'undergrad-evidence-backs-hosted-badge-wording',
-        'Judged quotes that back the browse badge wording that the row has hosted undergraduate researchers',
-        score.badgeWordingBacked,
-        score.badgeWordingJudged,
-      ),
-    );
-    notes.score = { seed: judgementSet.seed, sampleSize: judgementSet.sampleSize, ...score };
-    return { invariants, rates, notes };
-  },
-};
-
 const survivorWebsiteAttribution: JourneyCase = {
   id: 'survivor-website-attribution',
   title:
@@ -1003,6 +863,64 @@ const accessWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
+const UNMATCHED_WORD = 'zqxjv';
+const UNMATCHED_WORD_QUERY_PAIRS = [
+  {
+    baselineQuery: 'medieval plague podcast',
+    variantQuery: `${UNMATCHED_WORD} medieval plague podcast`,
+  },
+  { baselineQuery: 'neuroscience', variantQuery: `${UNMATCHED_WORD} neuroscience` },
+  { baselineQuery: 'climate policy', variantQuery: `climate ${UNMATCHED_WORD} policy` },
+  { baselineQuery: 'machine learning', variantQuery: `machine learning ${UNMATCHED_WORD}` },
+];
+
+const unmatchedWordKeepsTopicResults: JourneyCase = {
+  id: 'unmatched-word-keeps-topic-results',
+  title: 'A query word no row carries leaves the rest of the query answering, wherever it is typed',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of UNMATCHED_WORD_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const baselineRows = pairs.reduce((total, pair) => total + pair.baselineKeys.length, 0);
+    const sharedRows = pairs.reduce(
+      (total, pair) =>
+        total + pair.baselineKeys.filter((key) => pair.variantKeys.includes(key)).length,
+      0,
+    );
+    return {
+      invariants: [
+        checkQueryVariantServesTheBaseline(
+          'unmatched-word-shares-the-topic-results',
+          "A topic query with an unmatched word added serves at least one of the topic query's top rows",
+          pairs,
+          corpusBefore,
+          corpusAfter,
+          'sharesABaselineRow',
+        ),
+      ],
+      rates: [
+        buildRate(
+          'unmatched-word-top-row-overlap',
+          'Share of the topic query top rows the query with an unmatched word also serves',
+          sharedRows,
+          baselineRows,
+        ),
+      ],
+    };
+  },
+};
+
 const MESH_DESCRIPTOR_PROBE_QUERIES = [
   'robotics',
   'machine learning',
@@ -1079,20 +997,176 @@ const meshDescriptorRanksBelowOwnEvidence: JourneyCase = {
   },
 };
 
+const PERSON_NAME_SAMPLE_WINDOW = 60;
+const PERSON_NAME_SAMPLE_SIZE = 15;
+const PERSON_NAME_MIN_SURNAME_LENGTH = 6;
+const PERSON_NAME_PREFIX_LENGTH = 5;
+const PERSON_NAME_RANK_DEPTH = 10;
+const PERSON_TITLED_FACULTY_RESEARCH = /^(.+?)\s+Faculty Research$/;
+
+const personNameParts = (storedRow: Record<string, unknown> | undefined) => {
+  if (!storedRow || storedRow.kind !== 'individual' || typeof storedRow.name !== 'string') {
+    return null;
+  }
+  const personTitle = storedRow.name.trim().match(PERSON_TITLED_FACULTY_RESEARCH);
+  if (!personTitle) return null;
+  const words = personTitle[1].split(/\s+/);
+  const surname = words.at(-1) ?? '';
+  if (words.length < 2 || !/^[A-Za-z]+$/.test(surname)) return null;
+  if (surname.length < PERSON_NAME_MIN_SURNAME_LENGTH) return null;
+  return { givenName: words[0], surname };
+};
+
+const withOneLetterDropped = (word: string): string =>
+  word.slice(0, word.length - 2) + word.slice(word.length - 1);
+
+const personNameLookupReachesThePerson: JourneyCase = {
+  id: 'person-name-lookup-reaches-the-person',
+  title:
+    'A partly typed or one-letter-misspelled surname is searched as typed and reaches the person',
+  run: async (context) => {
+    const keys = servedRows(await context.browse({ pageSize: PERSON_NAME_SAMPLE_WINDOW }))
+      .map(rowKey)
+      .filter(Boolean);
+    const storedRows = await context.readStoredRows(keys);
+    const people = keys
+      .map((key) => ({ key, parts: personNameParts(storedRows.get(key)) }))
+      .filter((person): person is { key: string; parts: { givenName: string; surname: string } } =>
+        Boolean(person.parts),
+      )
+      .slice(0, PERSON_NAME_SAMPLE_SIZE);
+    const observations: PersonNameQueryObservation[] = [];
+    for (const { key, parts } of people) {
+      const variants = [
+        {
+          variant: 'prefix' as const,
+          query: parts.surname.slice(0, PERSON_NAME_PREFIX_LENGTH).toLowerCase(),
+          typedSurname: parts.surname.slice(0, PERSON_NAME_PREFIX_LENGTH).toLowerCase(),
+        },
+        {
+          variant: 'typo' as const,
+          query: `${parts.givenName} ${withOneLetterDropped(parts.surname)}`,
+          typedSurname: withOneLetterDropped(parts.surname),
+        },
+      ];
+      for (const { variant, query, typedSurname } of variants) {
+        const result = await context.browse({ query, pageSize: PERSON_NAME_RANK_DEPTH });
+        const corrected = result.queryCorrection?.correctedQuery;
+        const servedKeys = servedRows(result).map(rowKey);
+        observations.push({
+          variant,
+          respelled:
+            typeof corrected === 'string' &&
+            !corrected.toLowerCase().split(/\s+/).includes(typedSurname.toLowerCase()),
+          rank: servedKeys.includes(key) ? servedKeys.indexOf(key) + 1 : null,
+        });
+      }
+    }
+    const reached = (variant: PersonNameQueryObservation['variant']) => {
+      const ofVariant = observations.filter((observation) => observation.variant === variant);
+      return [
+        ofVariant.filter((observation) => observation.rank !== null).length,
+        ofVariant.length,
+      ];
+    };
+    const [prefixReached, prefixQueried] = reached('prefix');
+    const [typoReached, typoQueried] = reached('typo');
+    return {
+      invariants: [checkPersonNameWordsAreNotRespelled(observations)],
+      rates: [
+        buildRate(
+          'surname-prefix-reaches-the-person',
+          'Share of five-letter surname prefixes that serve the person in the top 10',
+          prefixReached,
+          prefixQueried,
+        ),
+        buildRate(
+          'surname-typo-reaches-the-person',
+          'Share of given names with a one-letter-misspelled surname that serve the person in the top 10',
+          typoReached,
+          typoQueried,
+        ),
+      ],
+    };
+  },
+};
+
+const SIMILAR_RAIL_SAMPLE = 40;
+
+const similarRailRanksTopicsAboveNames: JourneyCase = {
+  id: 'similar-rail-ranks-topics-above-names',
+  title: '"More like this" ranks on topics and meaning, not on a shared person name',
+  run: async (context) => {
+    const readRail = context.readSimilarResearchRail;
+    if (!readRail) {
+      return {
+        invariants: [
+          buildInconclusiveInvariant(
+            'similar-rail-ranks-shared-names-last',
+            'A "More like this" card sharing a person name with the viewed row never ranks above a card that does not',
+            'This run cannot read similar-research rails',
+            {},
+          ),
+        ],
+        rates: [],
+      };
+    }
+    const corpusBefore = await context.readCorpusFingerprint();
+    const keys = servedRows(await context.browse({ pageSize: SIMILAR_RAIL_SAMPLE }))
+      .map(rowKey)
+      .filter(Boolean);
+    const rails = [];
+    for (const key of keys) {
+      const rail = await readRail(key);
+      if (!rail) continue;
+      const viewedNames = new Set(rail.viewedNameWords);
+      rails.push({
+        viewedSharesNames: viewedNames.size > 0,
+        cardsShareAName: rail.cards.map((card) =>
+          card.nameWords.some((word) => viewedNames.has(word)),
+        ),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const cards = rails.flatMap((rail) => rail.cardsShareAName);
+    const leadingCards = rails.filter((rail) => rail.cardsShareAName.length > 0);
+    return {
+      invariants: [checkSimilarRailRanksSharedNamesLast(rails, corpusBefore, corpusAfter)],
+      rates: [
+        buildRate(
+          'similar-rail-cards-sharing-a-name',
+          'Share of "More like this" cards that share a person name with the viewed row',
+          cards.filter(Boolean).length,
+          cards.length,
+        ),
+        buildRate(
+          'similar-rail-led-by-a-shared-name',
+          'Share of non-empty rails whose first card shares a person name with the viewed row',
+          leadingCards.filter((rail) => rail.cardsShareAName[0]).length,
+          leadingCards.length,
+        ),
+      ],
+    };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   creativePracticeLabelAttribution,
   facetCountAgreement,
+  textQueryFacetCountAgreement,
   paginationServesDistinctRows,
   textQueryTotalIsStable,
   sortedBrowseKeepsOrder,
   defaultBrowseOrderIsRepeatable,
   titleSortedBrowseFollowsCardTitle,
   topicQueryRelevance,
-  undergradEvidenceQuotePrecision,
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
   accessWordKeepsTopicRanking,
+  unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
+  personNameLookupReachesThePerson,
+  similarRailRanksTopicsAboveNames,
 ];

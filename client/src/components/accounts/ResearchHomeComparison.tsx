@@ -47,11 +47,8 @@ import {
   type ResearchDetailActionLinkContext,
 } from '../../utils/researchDetailActionLinks';
 import { deriveUndergraduateAccessStatus } from '../../utils/undergraduateAccessStatus';
-import { pastUndergradAdviseesSummary } from '../../utils/pastUndergradAdvisees';
-import {
-  UNDERGRAD_QUOTE_LABEL,
-  undergradQuoteEvidenceFromEntity,
-} from '../../utils/undergradQuoteEvidence';
+import { formatPastAdvisees } from '../../utils/pastUndergradAdvisees';
+import { undergradInvitationFromEntity } from '../../utils/undergradInvitation';
 import { CloseIcon } from '../shared/icons';
 
 export interface ComparableResearchHome {
@@ -196,9 +193,9 @@ const involvementLinks = (
 
 const UndergraduateEvidenceCell = ({ entity }: { entity: ResearchEntity }) => {
   const hosting = deriveUndergraduateAccessStatus(entity);
-  const advisees = pastUndergradAdviseesSummary(entity.pastUndergradAdvisees);
-  const quote = undergradQuoteEvidenceFromEntity(entity);
-  if (!hosting && !advisees && !quote) return <UnknownCell />;
+  const advisees = formatPastAdvisees(entity);
+  const quote = entity.wayInWithheld ? undefined : undergradInvitationFromEntity(entity);
+  if (!hosting && advisees.length === 0 && !quote) return <UnknownCell />;
   return (
     <div className="flex flex-col gap-2">
       {hosting && (
@@ -206,10 +203,14 @@ const UndergraduateEvidenceCell = ({ entity }: { entity: ResearchEntity }) => {
           {hosting.label}
         </span>
       )}
-      {advisees && <span className="text-sm text-ink">{advisees}</span>}
+      {advisees.map((line) => (
+        <span key={line} className="text-sm text-ink">
+          {line}
+        </span>
+      ))}
       {quote && (
         <figure className="text-xs leading-relaxed text-ink-soft">
-          <figcaption className="font-semibold text-muted">{UNDERGRAD_QUOTE_LABEL}</figcaption>
+          <figcaption className="font-semibold text-muted">{quote.label}</figcaption>
           <blockquote cite={quote.sourceUrl} className="mt-1">
             &ldquo;{boundedQuote(quote.quote)}&rdquo;
           </blockquote>

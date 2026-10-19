@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isEventNarrationText,
+  isJoiningInstructionsText,
   isRoleBiographyWithoutResearchOrPractice,
+  isSourceNarrationText,
   nonResearchBodyShape,
 } from '../descriptionNonResearchBodyShape';
 import {
@@ -147,6 +150,176 @@ describe('a career narrative of past posts only', () => {
       isRoleBiographyWithoutResearchOrPractice(
         'An expert in gender, health and human rights, Fixture was faculty director of an example center.',
       ),
+    ).toBe(false);
+  });
+});
+
+const joiningInstructions =
+  'Students and researchers interested in joining the Example Lab as an undergraduate research assistant, graduate research assistant, or postdoctoral researcher should contact the lab director directly. The lab will also occasionally post job openings with the Student Employment Office. Prospective doctoral students should apply to the PhD program in Example Biology at the Graduate School.';
+
+const keynoteNarration =
+  'Gives keynote presentations on representation learning and foundation models, focusing on representation learning and foundation models.';
+
+const acceptedPapersNews =
+  '6 papers accepted at an example conference: four method papers and two on multi-table reasoning. More details to come soon!';
+
+describe('a body that says how to join or narrates events (#5109)', () => {
+  it('reads a page of joining instructions as joining instructions', () => {
+    expect(nonResearchBodyShape(joiningInstructions, 'LAB')).toBe('joining-instructions');
+    expect(
+      isJoiningInstructionsText(
+        'If you are a prospective graduate student or postdoc interested in working with me, please reach out and describe your interests and background.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps research prose that closes with a joining line', () => {
+    const researchThenJoin =
+      'The lab studies how bacteriophages evolve to infect new hosts and tests phage therapies against resistant infections. Students interested in joining the lab should contact the lab director.';
+    expect(isJoiningInstructionsText(researchThenJoin)).toBe(false);
+    expect(nonResearchBodyShape(researchThenJoin, 'LAB')).toBeNull();
+  });
+
+  it('reads talk, award and accepted-paper narration as event narration', () => {
+    expect(nonResearchBodyShape(keynoteNarration, 'LAB')).toBe('event-narration');
+    expect(nonResearchBodyShape(acceptedPapersNews, 'LAB')).toBe('event-narration');
+    expect(
+      isEventNarrationText(
+        'The lab director received the example society award for young investigators.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps research whose object is an award or a talk, and a talk named after other work', () => {
+    expect(
+      isEventNarrationText(
+        'Examines how evaluation processes shape organizational and market opportunities, who gets hired, which startups are funded, who wins awards, and how workers are rated.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText(
+        'Writes fiction and nonfiction on industrial farming and national politics; develops screenplays for television; gives talks and workshops internationally.',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps service, outreach and funding prose that shares a verb with joining or event lines', () => {
+    expect(
+      nonResearchBodyShape(
+        'Researchers can submit samples for sequencing through the online portal; the core provides library preparation and data analysis.',
+        'CORE_FACILITY',
+      ),
+    ).toBeNull();
+    expect(
+      isEventNarrationText(
+        'The program delivers community health interventions and addresses tobacco disparities.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText(
+        'The center receives support from federal awards to study coastal flooding.',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps research prose whose wording overlaps an application, a naming or an acceptance', () => {
+    expect(
+      isJoiningInstructionsText(
+        'We are interested in how cells can apply mechanical forces to their surroundings.',
+      ),
+    ).toBe(false);
+    expect(
+      nonResearchBodyShape(
+        'Researchers can contact the facility manager to arrange training on the confocal microscopes.',
+        'CORE_FACILITY',
+      ),
+    ).toBeNull();
+    expect(
+      isEventNarrationText(
+        'Our group works on how new social norms become accepted in communities.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText('Our work examines why some practices are accepted in rural clinics.'),
+    ).toBe(false);
+    expect(
+      isEventNarrationText(
+        'The center was named in honor of its founder and studies coastal flooding.',
+      ),
+    ).toBe(false);
+    expect(
+      isEventNarrationText('Two papers from the lab have been accepted at an example conference.'),
+    ).toBe(true);
+  });
+
+  it('fails the quality bar for both the body and the card', () => {
+    expect(fullDescriptionQuality(joiningInstructions, undefined, 'LAB').flags).toContain(
+      'joining-instructions',
+    );
+    expect(fullDescriptionQuality(keynoteNarration, undefined, 'LAB').isUseful).toBe(false);
+    expect(
+      shortDescriptionQuality(keynoteNarration, joiningInstructions, undefined, {
+        entityType: 'LAB',
+      }).flags,
+    ).toContain('event-narration');
+  });
+});
+
+describe('text that narrates its own sources is not a research statement', () => {
+  const coursePageNarration =
+    'Course and department pages describe study of example reef morphology, phylogenetics, and the diversity of marine life.';
+
+  it('reads page, profile and site narration as source narration', () => {
+    for (const text of [
+      coursePageNarration,
+      'Course and departmental pages describe study of example reef morphology and techniques for studying body plans.',
+      "The example researcher's profile describes clinical research on example vascular disease.",
+      'Faculty profile describes translational research on an example skin disease.',
+      'The profile lists interests in example ecology and climate.',
+      "An Example Named Researcher's profile lists research interests in example history.",
+      "Example Fields' profile describes work on example exposures.",
+      "Pages describe an example scholar's work on an example poet.",
+      'The site focuses on example forecasting models and price effects.',
+      'According to the department page, the group studies example songbirds.',
+      'The program page states that students study example policy. The page also lists example courses.',
+    ]) {
+      expect(isSourceNarrationText(text)).toBe(true);
+    }
+    expect(nonResearchBodyShape(coursePageNarration, 'FACULTY_RESEARCH_AREA')).toBe(
+      'source-narration',
+    );
+  });
+
+  it('keeps research prose that cites its page and then states the work', () => {
+    const citesPageThenStatesResearch =
+      'Her lab page describes work on example songbirds. She studies how juvenile songbirds learn their songs from adult tutors.';
+    expect(isSourceNarrationText(citesPageThenStatesResearch)).toBe(false);
+    expect(nonResearchBodyShape(citesPageThenStatesResearch, 'FACULTY_RESEARCH_AREA')).toBeNull();
+  });
+
+  it('keeps research whose object is a page, a site or a source', () => {
+    for (const text of [
+      'Studies how news sites report elections and how readers judge them.',
+      'The lab studies how web pages describe products to shoppers.',
+      'Examines how archival sources describe colonial trade networks.',
+      'The lab studies evolutionary novelties and their functional morphology.',
+      'Develops methods that identify which sources state reliable facts.',
+      'Two-dimensional materials provide a platform for probing correlated electron physics.',
+      'Quantum materials feature exotic electronic states probed with ultrafast spectroscopy.',
+      'Enzyme active sites show remarkable selectivity, and the group designs catalysts that mimic them.',
+    ]) {
+      expect(isSourceNarrationText(text)).toBe(false);
+    }
+  });
+
+  it('fails the quality bar for both the body and the card', () => {
+    expect(
+      fullDescriptionQuality(coursePageNarration, undefined, 'FACULTY_RESEARCH_AREA').flags,
+    ).toContain('source-narration');
+    expect(
+      shortDescriptionQuality(coursePageNarration, coursePageNarration, undefined, {
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }).isUseful,
     ).toBe(false);
   });
 });

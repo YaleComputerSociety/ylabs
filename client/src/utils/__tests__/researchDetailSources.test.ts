@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  accessSignalSourceContext,
   buildResearchDetailSources,
+  joinPageLinkLabel,
   firstCitedResearchDetailSource,
   isCitableAccessSignal,
   isDepartmentRosterProvenanceUrl,
@@ -63,7 +65,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources[1].label).toBe('program.example.test source');
     expect(sources[1].contexts).toHaveLength(2);
     expect(sources[1].contexts).toEqual(
-      expect.arrayContaining(['Profile source', 'Current Undergrads evidence']),
+      expect.arrayContaining(['Profile source', 'Current undergraduate members']),
     );
   });
 
@@ -312,6 +314,58 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([awardPage]);
   });
 
+  it.each([
+    'https://api.crossref.org/types/grant/works',
+    'https://www.osti.gov/api/v1/records',
+    'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx',
+    'https://awardsearch.neh.gov/',
+  ])('never renders the grant lane endpoint %s as a source (#5261)', (endpoint) => {
+    const grantPage = 'https://doi.org/10.99999/fixture-grant-1';
+
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: '', sourceUrls: [endpoint] },
+      sourceFieldContributions: [
+        { sourceUrl: endpoint, contributions: ['Who leads it'] },
+        { sourceUrl: grantPage, contributions: ['Who leads it'] },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([grantPage]);
+  });
+
+  it('names each NIH RePORTER project so distinct grants never share one label', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/10000001',
+          'https://reporter.nih.gov/project-details/10000002',
+          'https://reporter.nih.gov/project-details/10000003',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual([
+      'NIH RePORTER project 10000001',
+      'NIH RePORTER project 10000002',
+      'NIH RePORTER project 10000003',
+    ]);
+  });
+
+  it('keeps every distinct page under a shared label and tells the rows apart', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: ['https://example.org/grants/alpha', 'https://example.org/grants/beta'],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual([
+      'example.org source (alpha)',
+      'example.org source (beta)',
+    ]);
+  });
+
   it('drops a raw RePORTER API endpoint from the source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
@@ -323,7 +377,7 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(0);
   });
 
-  it('labels the kept NSF award page as NSF Award Search rather than a bare host', () => {
+  it('labels the kept NSF award page by its award rather than a bare host', () => {
     const awardPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
 
     const sources = buildResearchDetailSources({
@@ -333,7 +387,7 @@ describe('buildResearchDetailSources', () => {
       },
     });
 
-    expect(sources.map((source) => source.label)).toEqual(['NSF Award Search']);
+    expect(sources.map((source) => source.label)).toEqual(['NSF award 2535171']);
   });
 
   it('collapses www and bare-host variants of one page into a single source row', () => {
@@ -353,7 +407,11 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(1);
     expect(sources[0].url).toBe('https://lab.example.yale.edu/research');
     expect(sources[0].contexts).toEqual(
-      expect.arrayContaining(['Profile website', 'Profile source', 'Current Undergrads evidence']),
+      expect.arrayContaining([
+        'Profile website',
+        'Profile source',
+        'Current undergraduate members',
+      ]),
     );
   });
 
@@ -401,8 +459,8 @@ describe('buildResearchDetailSources', () => {
     expect(profileRows[0].contexts).toEqual(
       expect.arrayContaining([
         'Profile source',
-        'Current Undergrads evidence',
-        'Past Undergrads evidence',
+        'Current undergraduate members',
+        'Past undergraduate members',
       ]),
     );
   });
@@ -588,6 +646,74 @@ describe('buildResearchDetailSources', () => {
     });
 
     expect(sources.map((source) => source.url)).toEqual(['https://lab.example.test', evidenceUrl]);
+  });
+});
+
+describe('accessSignalSourceContext', () => {
+  it('names every stored access signal type in student wording', () => {
+    expect(accessSignalSourceContext('APPLICATION_FORM_EXISTS')).toBe('Mentions how to join');
+    expect(accessSignalSourceContext('CURRENT_UNDERGRADS')).toBe('Current undergraduate members');
+    expect(accessSignalSourceContext('PAST_UNDERGRADS')).toBe('Past undergraduate members');
+    expect(accessSignalSourceContext('POSTED_OPENING')).toBe('Posted opening');
+    expect(accessSignalSourceContext('CREDIT_FORMALIZATION_POSSIBLE')).toBe('Course credit option');
+    expect(accessSignalSourceContext('FACULTY_SUPERVISES_STUDENT_PROJECTS')).toBe(
+      'Supervises student projects',
+    );
+  });
+
+  it('never title-cases an unlisted enum into a chip', () => {
+    expect(accessSignalSourceContext('SOME_NEW_SIGNAL')).toBe('Undergraduate access');
+    expect(accessSignalSourceContext(undefined)).toBe('Undergraduate access');
+  });
+});
+
+describe('joinPageLinkLabel', () => {
+  it('promises a join page only when the address reads as one', () => {
+    expect(joinPageLinkLabel('https://lab.example.test/join-us')).toBe('See how to join');
+    expect(joinPageLinkLabel('https://lab.example.test/opportunities')).toBe('See how to join');
+    expect(joinPageLinkLabel('https://lab.example.test/prospective-students')).toBe(
+      'See how to join',
+    );
+    expect(joinPageLinkLabel('https://lab.example.test/positions.html')).toBe('See how to join');
+  });
+
+  it('says what a page is when its address names something else', () => {
+    expect(joinPageLinkLabel('https://lab.example.test/press')).toBe(
+      'Read what they say about joining',
+    );
+    expect(joinPageLinkLabel('https://lab.example.test/news/2025/award')).toBe(
+      'Read what they say about joining',
+    );
+  });
+
+  it('judges a page by its own address segment, not by a parent segment', () => {
+    for (const nestedUrl of [
+      'https://lab.example.test/sample-join-lab/press',
+      'https://lab.example.test/careers/news/2025',
+      'https://lab.example.test/apply/about/',
+    ]) {
+      expect(joinPageLinkLabel(nestedUrl)).toBe('Read what they say about joining');
+    }
+    expect(joinPageLinkLabel('https://lab.example.test/about/join-us/')).toBe('See how to join');
+  });
+
+  it('never promises a join page over a member roster', () => {
+    for (const rosterUrl of [
+      'https://lab.example.test/students',
+      'https://lab.example.test/undergraduates',
+      'https://lab.example.test/members/undergraduates',
+    ]) {
+      expect(joinPageLinkLabel(rosterUrl)).toBe('Read what they say about joining');
+    }
+  });
+
+  it('keeps a caller-chosen label for a join-shaped page', () => {
+    expect(joinPageLinkLabel('https://lab.example.test/join', 'See how to get involved')).toBe(
+      'See how to get involved',
+    );
+    expect(joinPageLinkLabel('https://lab.example.test/press', 'See how to get involved')).toBe(
+      'Read what they say about joining',
+    );
   });
 });
 
@@ -1809,14 +1935,38 @@ describe('buildResearchDetailSources source attribution', () => {
     expect(sources[0].contexts).toEqual(['Profile source']);
   });
 
-  it('leaves a website or evidence context alone, since those already say what they are', () => {
+  it('shows what the research website backs after its own role', () => {
     const sources = buildResearchDetailSources({
       group: { websiteUrl: LAB, sourceUrls: [] },
-      sourceFieldContributions: [{ sourceUrl: LAB, contributions: ['Research summary'] }],
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Research summary', 'Topics', 'Research website'] },
+      ],
+    });
+
+    expect(sources[0].contexts).toEqual(['Profile website', 'Research summary', 'Topics']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('does not repeat the research website label when the website is also a cited source', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [LAB] },
+      sourceFieldContributions: [
+        { sourceUrl: LAB, contributions: ['Research summary', 'Topics', 'Research website'] },
+      ],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].contexts).toEqual(['Profile website', 'Research summary', 'Topics']);
+    expect(sources[0].label).toBe('Research website');
+  });
+
+  it('keeps the research website row to its role when it backs nothing else', () => {
+    const sources = buildResearchDetailSources({
+      group: { websiteUrl: LAB, sourceUrls: [] },
+      sourceFieldContributions: [],
     });
 
     expect(sources[0].contexts).toEqual(['Profile website']);
-    expect(sources[0].label).toBe('Research website');
   });
 
   it('ignores an attribution entry with no usable label', () => {

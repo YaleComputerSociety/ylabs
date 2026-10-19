@@ -1,4 +1,3 @@
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { withoutContactDirections } from '../utils/contactDirection';
 import {
   sanitizeCatalogDescription,
@@ -13,6 +12,9 @@ import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
 import { programAudience } from '../services/programAudience';
 import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
+import { programTextDeadlineConflict } from '../utils/programDeadlineText';
+import { formatServedAwardAmount } from '../utils/awardAmountFormat';
+import { programCitizenshipCondition } from '../utils/programCitizenshipCondition';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -52,19 +54,16 @@ const publicProgramLinks = (
           const url = publicSpecificProgramUrl(record.url, sourceUrl);
           if (!url) return [];
           const humanLabel = humanizeProgramLinkLabel(rawLabel, url);
-          const label = humanLabel ? redactDirectContactInfo(humanLabel) : undefined;
+          const label = humanLabel || undefined;
           return [{ ...(label ? { label } : {}), url }];
         })
         .slice(0, MAX_PROGRAM_LINKS)
     : [];
 
-const publicProgramText = (value: unknown): unknown =>
-  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+const publicProgramText = (value: unknown): unknown => value;
 
 export const publicProgramDescription = (value: unknown): unknown =>
-  typeof value === 'string'
-    ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
-    : value;
+  typeof value === 'string' ? stripRedactionPlaceholders(sanitizeCatalogDescription(value)) : value;
 
 const publicCompensationSummary = (value: unknown): unknown => {
   const cleaned = publicProgramDescription(value);
@@ -72,9 +71,7 @@ const publicCompensationSummary = (value: unknown): unknown => {
 };
 
 const publicProgramTextArray = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
-    : [];
+  Array.isArray(value) ? value.flatMap((item) => (typeof item === 'string' ? [item] : [])) : [];
 
 const publicBestNextStep = (program: any): unknown => {
   const stored = publicProgramDescription(program.bestNextStep);
@@ -189,6 +186,11 @@ export const withProgramAudience = (program: any) =>
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   const departmentResearchGuidance = program.departmentResearchGuidance === true;
+  const summary = publicProgramDescription(program.summary);
+  const description = publicProgramDescription(program.description);
+  const applicationInformation = publicProgramDescription(program.applicationInformation);
+  const eligibility = servedProgramEligibility(program).value;
+  const additionalInformation = publicProgramDescription(program.additionalInformation);
   return {
     _id: id,
     id,
@@ -212,27 +214,43 @@ export const publicProgramForReader = (program: any) => {
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
-    summary: publicProgramDescription(program.summary),
+    summary,
     cardSummary: publicProgramDescription(program.cardSummary),
-    description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramDescription(program.applicationInformation),
-    eligibility: servedProgramEligibility(program).value,
+    description,
+    applicationInformation,
+    eligibility,
     restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
-    additionalInformation: publicProgramDescription(program.additionalInformation),
+    additionalInformation,
     links: publicProgramLinks(program.links, program.sourceUrl),
     applicationLink: servedProgramApplicationLink(program).value,
-    awardAmount: program.awardAmount,
+    awardAmount: formatServedAwardAmount(program.awardAmount),
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
     deadline: program.deadline,
     deadlineProjectedNextCycle: program.deadlineProjectedNextCycle === true,
     deadlineStale: program.deadlineStale === true,
+    deadlineTextConflict:
+      programTextDeadlineConflict(
+        program.deadline,
+        [summary, description, applicationInformation, eligibility, additionalInformation],
+        {
+          projected: program.deadlineProjectedNextCycle === true,
+          stale: program.deadlineStale === true,
+        },
+      ) ?? null,
     contactOffice: publicProgramText(program.contactOffice),
     yearOfStudy: Array.isArray(program.yearOfStudy) ? program.yearOfStudy : [],
     termOfAward: Array.isArray(program.termOfAward) ? program.termOfAward : [],
     purpose: Array.isArray(program.purpose) ? program.purpose : [],
     globalRegions: Array.isArray(program.globalRegions) ? program.globalRegions : [],
     citizenshipStatus: Array.isArray(program.citizenshipStatus) ? program.citizenshipStatus : [],
+    citizenshipCondition:
+      programCitizenshipCondition([
+        servedProgramEligibility(program).value,
+        publicProgramDescription(program.description),
+        publicProgramDescription(program.applicationInformation),
+        publicProgramDescription(program.additionalInformation),
+      ]) ?? null,
     sourceName: publicProgramText(program.sourceName),
     sourceUrl: publicHttpUrl(program.sourceUrl),
     sourceLinkHealth: publicProgramSourceLinkHealth(program.sourceLinkHealth),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  planNonOwnerPiEdgeRestoration,
   planTraineeRosterArchive,
   planNonOwnerPiEdgeRetirement,
   summarizeNonOwnerPiEdgeRefusals,
@@ -120,5 +121,61 @@ describe('planTraineeRosterArchive', () => {
     const plan = planTraineeRosterArchive([row({ title: 'Professor of Geology' })], isTrainee);
     expect(plan.archive).toEqual([]);
     expect(plan.keptBecause['lead can host']).toBe(1);
+  });
+});
+
+describe('planNonOwnerPiEdgeRestoration (#5323)', () => {
+  const NOTE = 'Retired by this lane.';
+  const retired = (over: Record<string, unknown> = {}) => ({
+    id: 'edge-1',
+    personId: 'person-2',
+    entityId: 'entity-1',
+    reviewStatus: 'DISPUTED',
+    reviewNotes: NOTE,
+    ...over,
+  });
+
+  it('restores an edge this lane retired once the title no longer refuses', () => {
+    expect(
+      planNonOwnerPiEdgeRestoration([retired()], NOTE, isTrainee, titles).map((row) => row.id),
+    ).toEqual(['edge-1']);
+  });
+
+  it('restores on a title the resolver cleared, since silence is not a refusal', () => {
+    const cleared = new Map([['person-3', '']]);
+    expect(
+      planNonOwnerPiEdgeRestoration([retired({ personId: 'person-3' })], NOTE, isTrainee, cleared),
+    ).toHaveLength(1);
+  });
+
+  it('keeps the retirement while the title still refuses', () => {
+    expect(
+      planNonOwnerPiEdgeRestoration([retired({ personId: 'person-1' })], NOTE, isTrainee, titles),
+    ).toEqual([]);
+  });
+
+  it('never reverses another verdict, a cleared dispute, or an edge on a person no longer live', () => {
+    expect(
+      planNonOwnerPiEdgeRestoration(
+        [
+          retired({ reviewNotes: 'Retired by another lane.' }),
+          retired({ reviewStatus: 'CONFIRMED' }),
+          retired({ personId: 'person-gone' }),
+        ],
+        NOTE,
+        isTrainee,
+        titles,
+      ),
+    ).toEqual([]);
+  });
+
+  it('re-derives the same answer on a second run as the retirement half does', () => {
+    const restoredOnce = planNonOwnerPiEdgeRestoration([retired()], NOTE, isTrainee, titles);
+    const replan = planNonOwnerPiEdgeRetirement(
+      restoredOnce.map((row) => edge({ id: row.id, personId: row.personId })),
+      isTrainee,
+      titles,
+    );
+    expect(replan.retire).toEqual([]);
   });
 });

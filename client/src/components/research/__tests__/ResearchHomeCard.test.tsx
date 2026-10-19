@@ -300,64 +300,6 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
   });
 
-  describe('undergraduate quote evidence (#3569)', () => {
-    const SYNTHETIC_QUOTE = 'Undergraduates are welcome to join the lab for summer projects.';
-    const SYNTHETIC_SOURCE = 'https://www.example.yale.edu/join';
-    const quotedHome = (entityOverrides: Partial<ResearchCluster['entities'][number]> = {}) => {
-      const home = researchHome();
-      return {
-        ...home,
-        entities: [
-          {
-            ...home.entities[0],
-            undergradEvidenceQuote: SYNTHETIC_QUOTE,
-            undergradEvidenceSourceUrl: SYNTHETIC_SOURCE,
-            ...entityOverrides,
-          },
-        ],
-      };
-    };
-
-    it.each([
-      ['default', undefined],
-      ['compact', 'compact'],
-    ] as const)(
-      'leaves a served quote to the detail page on the %s card (#5022)',
-      (_label, variant) => {
-        const { container } = render(
-          <MemoryRouter>
-            <ResearchHomeCard home={quotedHome()} variant={variant} />
-          </MemoryRouter>,
-        );
-
-        expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-        expect(container.querySelector('blockquote')).toBeNull();
-        expect(screen.queryByRole('link', { name: /example\.yale\.edu/ })).toBeNull();
-      },
-    );
-
-    it('never turns a quote into the hosted-undergraduates claim', () => {
-      render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome()} variant="compact" />
-        </MemoryRouter>,
-      );
-
-      expect(screen.queryByText('Has hosted undergraduate researchers')).toBeNull();
-    });
-
-    it('keeps the hosted-undergraduates lead line when a quote is also served', () => {
-      render(
-        <MemoryRouter>
-          <ResearchHomeCard home={quotedHome({ hasUndergradHostingEvidence: true })} />
-        </MemoryRouter>,
-      );
-
-      expect(screen.getByText('Has hosted undergraduate researchers')).toBeTruthy();
-      expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    });
-  });
-
   it('does not elevate a fallback contact route to the prominent lead line', () => {
     render(
       <MemoryRouter>
@@ -399,7 +341,9 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Epsilon Data Curation').className).toContain('sm:inline-flex');
     expect(screen.queryByText('Zeta Visualization')).toBeNull();
     expect(screen.getByText('+3 more').className).toContain('sm:hidden');
-    expect(screen.getByText('+1 more').className).toContain('sm:inline-flex');
+    expect(screen.getByText('+1 more').className).toContain('sm:inline');
+    expect(screen.getByText('+3 more').className).not.toContain('yr-pill');
+    expect(screen.getByText('+1 more').className).not.toContain('yr-pill');
   });
 
   it('keeps the compact card topic count visible at every width', () => {
@@ -443,7 +387,7 @@ describe('ResearchHomeCard', () => {
     expect(actionRow?.className.split(/\s+/)).toEqual(expect.arrayContaining(['mt-auto', 'pt-4']));
   });
 
-  it('renders research-area topic chips in blue to match the entity-page "Best fit for" chips', () => {
+  it('renders research-area topic chips in blue to match the entity-page "Topics" chips', () => {
     render(
       <MemoryRouter>
         <ResearchHomeCard

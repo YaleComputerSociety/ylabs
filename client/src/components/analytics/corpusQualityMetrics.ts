@@ -72,7 +72,7 @@ const CORPUS_QUALITY_METRICS: CorpusQualityMetricDefinition[] = [
   {
     metric: 'hasTopic',
     label: 'Has topics',
-    hint: 'Shown to students as "Best fit for", and used by search; never gates',
+    hint: 'Shown to students as "Topics", and used by search; never gates',
     direction: 'higher-is-better',
     fromSnapshot: (row) => row.richness.hasTopic,
   },

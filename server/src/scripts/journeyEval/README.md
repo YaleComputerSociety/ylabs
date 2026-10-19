@@ -13,7 +13,7 @@ Flags:
 
 - `--window=<N>` sets the browse page size each case requests, so it is also the sample size for the rates.
 - `--pages=<N>` sets how many pages the pagination case walks, and how many the program surfaces' text-query and sort cases walk.
-- `--facet-values=<N>` sets how many of the highest-count department facet values the agreement case checks, and how many options of each field the program surfaces' filter-agreement case checks.
+- `--facet-values=<N>` sets how many of the highest-count department facet values the agreement case checks, how many department and Type values the text-query agreement case checks per query, and how many options of each field the program surfaces' filter-agreement case checks.
 - `--case=<id>[,<id>]` runs a subset, which is how you re-run one case while fixing the lane behind it.
 - `--output=<path>` writes the JSON report under `$TMPDIR` or `./tmp`, enforced by `resolveSafeJsonReportOutputPath`.
 
@@ -162,57 +162,11 @@ Keep a private or experimental set outside the repository and point at it with `
 Write the matchers as tightly as the judgement really is.
 Permissive substring lists inflate `precisionAtK`, so a high score against a loose judgement measures the judgement rather than the retrieval.
 
-## Measuring undergraduate evidence quote precision
+## Retired: undergraduate evidence quote precision
 
-The detail page shows `undergradEvidenceQuote` beside its "Mentions undergraduate research" label, and whether a quote is right can only be judged by reading the page it cites.
-The `undergrad-evidence-quote-precision` case turns that reading into a repeatable measurement without putting any judged row in the repository.
-
-It walks the whole reachable browse, keeps the served rows carrying a non-empty quote, and reads each row's stored `fieldProvenance.undergradEvidenceQuote` to find the rows whose quote came from the judged lane, `lab-microsite-undergrad-llm` by default.
-That set is the population, and a sample is drawn from it by ranking each row key on a SHA-256 of `seed:rowKey`, so the same seed over the same population draws the same rows and a row joining the population displaces at most one drawn row.
-
-Drawing and judging are two runs:
-
-```bash
-yarn journey:eval --case=undergrad-evidence-quote-precision \
-  --undergrad-sample-out="$TMPDIR/undergrad-judgements.json" \
-  --undergrad-sample-seed=3569 --undergrad-sample-size=50
-yarn journey:eval --case=undergrad-evidence-quote-precision \
-  --undergrad-judgements="$TMPDIR/undergrad-judgements.json" --output="$TMPDIR/journey.json"
-```
-
-The first writes a template, which is itself a valid judgements file: one entry per drawn row carrying `rowKey`, `quoteFingerprint`, the served `quote`, and the cited `sourceUrl`, with no verdict.
-Fill in `verdict`, and optionally `backsHostedBadgeWording` and `note`, then pass the file back.
-The template names rows and carries their quotes, so it is person-bearing and must stay outside the repository; `--undergrad-sample-out` accepts only a path under `$TMPDIR` or `./tmp`.
-The draw refuses a `--undergrad-sample-out` path that already exists, so re-running it can never replace a file that already carries verdicts.
-A served row whose quote differs from its stored row is left out of the population and the provenance rates and counted as `skippedStaleIndex`, because its stored provenance describes a different quote than the one served.
-
-The flag is separate from `--judgements`, which feeds the topic relevance case a differently shaped file.
-
-A verdict is exactly one of the following, applied in this order so that each row gets one answer:
-
-1. `stale_or_unreachable` when the cited page cannot be read, so grounding cannot be checked.
-2. `not_grounded` when the quote is neither verbatim nor near-verbatim on the cited page or a same-site page it links to. Model commentary such as "no explicit mention of undergraduates on the provided pages" is the common case.
-3. `not_an_undergrad_access_claim` when the quote is on the page but states no fact about undergraduates: generic "students" or "trainees", medical or graduate students only, a job title, a course taught, or a degree program name.
-4. `about_another_entity` when the quote is on the page but describes a different program, center, or department than the row.
-5. `correct` otherwise: grounded, about this row, and stating an undergraduate access fact such as undergraduate members, mentoring, openings, or how to ask.
-
-`backsHostedBadgeWording` answers the narrower question of whether the quote shows the row has hosted undergraduates, as opposed to only saying it is open to them, which is why the detail page labels a quote "Mentions undergraduate research" rather than "Has hosted undergraduate researchers" (`docs/decisions.md`, 2026-10-11).
-
-Every run reports three population rates: the share of served rows carrying a quote, the share of quotes from the judged lane, and the share citing a source page.
-With judgements supplied it adds three precision rates, and none of the six gates.
-
-- `undergrad-evidence-badge-precision` is `correct` over every verdict except `stale_or_unreachable`. It answers whether the browse badge's input is right, so it is the number to read against the badge decision on #3569.
-- `undergrad-evidence-lane-grounding-precision` is every verdict except `not_grounded` and `stale_or_unreachable`, over every verdict except `stale_or_unreachable`. Grounding is checked before any other judgement of a readable quote, so every verdict after it names a quote found on its page, and the rate isolates whether the lane quotes its page at all, which is the lane's own scorecard number.
-- `undergrad-evidence-backs-hosted-badge-wording` is the share of readable judged quotes that show the row has hosted undergraduates.
-
-`stale_or_unreachable` is excluded from every denominator and reported separately in `notes.score.verdicts` as a link-health count.
-All three are precision against the cited source, which makes them a floor on how often the served claim is true rather than a recall figure, and they judge the served output rather than replaying the model.
-The report's `notes.score` carries the verdict counts and a 95% Wilson interval for each, because a precision over 50 rows is a range rather than a point.
-A judgement records the fingerprint of the quote it judged, and a drawn row whose served quote has since changed is counted as `judgementForAChangedQuote` rather than scored, so a verdict never silently transfers to a different quote.
-
-Its invariant is attribution, not equality: every served quote whose stored row describes the same version names a source in its provenance.
-It reports inconclusive when nothing could be compared or when the corpus moved during the walk, on the same one-directional reasoning as the topic case.
-A missing judgements file, or a draw in which no row carries a verdict on its current quote, is inconclusive rather than passing.
+The `undergrad-evidence-quote-precision` case measured the "Mentions undergraduate research" quote on the detail page.
+That quote is no longer served (#5309), so the case was removed rather than left passing over an empty population.
+Its last measurement, 42 of 50 = 0.84, is recorded in `docs/decisions.md`.
 
 ## Why the survivor website case reads the route for one population only
 
@@ -230,7 +184,7 @@ The `fellowships` surface is therefore the same route scoped to `programCategory
 Each surface runs the same seven cases, with ids prefixed by the surface:
 
 - `<surface>-cold-browse-card-contract` asserts that a cold browse fills the page, reports page arithmetic its total implies, and serves an id on every card, and reports the share of cards serving a deadline, a projected deadline, an open application, an apply link, eligibility, and a card summary.
-- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size of 100 and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
+- `<surface>-full-walk-serves-every-row-once` loads every page at the client's page size (`CLIENT_PROGRAM_PAGE_SIZE`, 250) and stops where the client stops, then asserts no row repeats, the distinct rows equal the reported total, and the total is the same on every page.
   The client loads the whole result set before it sorts and groups locally, so a missing or repeated row is a card the student never sees or sees twice.
 - `<surface>-text-query-total-is-stable` walks `--pages` pages of a text query and asserts the same total and no repeats.
 - `<surface>-filter-options-agree-with-filtered-browse` reads the options `getProgramFilterOptions` offers, which is what `GET /api/programs/filters` returns, and asserts that every row a filtered browse serves carries the chosen value, checking the `--facet-values` highest-total options of each field.
@@ -249,6 +203,8 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
   The guard counts and the share of stored values withheld are reported, never gated.
 
 `programs` also runs `programs-student-year-words-reach-sourced-year`, which is not a surface case: it asserts that a query for `freshmen` or `freshman` serves every row a query for `first-year` serves.
+It also runs `programs-an-added-word-narrows-the-results`, which asserts that every program a two-word search serves (`economics summer`) is served by its first word alone (`economics`), because program search requires every typed word (#5118).
+The pair holds only because the two-word query is neither a subject's name, abbreviation, or alias nor three words long, since those queries can also serve programs missing a typed word (`skills/search-data/SKILL.md`, #5118).
 
 The programs corpus is small enough that three cases walk all of it, so their rates are over the whole served surface rather than the top of a ranking, and `--window` changes only the cold-browse rates.
 A stored row whose `updatedAt` is later than the walk's start describes a different version than the one served, so it is counted as `skippedStaleIndex` and left out, and the corpus fingerprint over the program collection makes a failure inconclusive when the collection moved during the case, on the same one-directional reasoning as the research cases.

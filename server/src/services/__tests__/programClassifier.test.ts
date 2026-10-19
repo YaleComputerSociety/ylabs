@@ -827,6 +827,20 @@ describe('classifyProgram senior research funding reads its mentor requirement o
   );
 
   it.each([
+    'A letter of recommendation from your Yale faculty advisor outlining support of the research project and commitment to mentoring the student.',
+    'The letter should demonstrate the commitment of the faculty advisor to support the student efforts as described in the abstract of proposed activities.',
+    'Ask for a faculty advisor reference stipulating the importance for your study, research, language programs, or travel.',
+  ])(
+    'reads an adviser letter tied to the project as a requirement (#5229): %s',
+    (applicationInformation) => {
+      expect(
+        classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
+          .requiresMentorBeforeApply,
+      ).toBe(true);
+    },
+  );
+
+  it.each([
     'It is the applicant’s responsibility to see that the complete application, including letter of recommendation and transcripts, reaches us by the deadline.',
     'Students will also need to provide a letter of recommendation written by a Yale faculty member.',
     'A letter of recommendation from a faculty member who knows you well.',
@@ -853,6 +867,68 @@ describe('classifyProgram senior research funding reads its mentor requirement o
         classifyProgram({ title: 'Fixture Memorial Fund', applicationInformation })
           .requiresMentorBeforeApply,
       ).toBe(false);
+    }
+  });
+});
+
+describe('classifyProgram reads a program that excludes Yale students as out of scope (#5242)', () => {
+  it('sends a summer program that says Yale students are not eligible to archive review', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Graduating seniors, graduate students, and Yale students are not eligible.',
+      }),
+    ).toMatchObject({ studentFacingCategory: 'Archive / review', programKind: 'OTHER' });
+  });
+
+  it('keeps a program that only limits one Yale benefit', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Yale students are not eligible for program housing but may apply.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
+  it('keeps a program that only closes one benefit to Yale students', () => {
+    expect(
+      classifyProgram({
+        title: 'Fixture Summer Undergraduate Research Program',
+        description: 'A summer research program in the environmental sciences.',
+        eligibility: 'Open to all undergraduates. Program housing is not open to Yale students.',
+      }).studentFacingCategory,
+    ).not.toBe('Archive / review');
+  });
+
+  it('does not read an exclusion of one Yale school as excluding every Yale student', () => {
+    for (const eligibility of [
+      'Open to GSAS doctoral students. Yale College students are not eligible.',
+      'Open to GSAS doctoral students. Yale undergraduate students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Graduate Research Fellowship',
+          description: 'A research fellowship in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
+    }
+  });
+
+  it('keeps a Yale-only program that says non-Yale students are not eligible', () => {
+    for (const eligibility of [
+      'Open to Yale College juniors; non-Yale students are not eligible.',
+      'Open to Yale College juniors; non Yale students are not eligible.',
+    ]) {
+      expect(
+        classifyProgram({
+          title: 'Fixture Summer Undergraduate Research Program',
+          description: 'A summer research program in the environmental sciences.',
+          eligibility,
+        }).studentFacingCategory,
+      ).not.toBe('Archive / review');
     }
   });
 });

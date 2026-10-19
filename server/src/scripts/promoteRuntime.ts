@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -68,6 +68,23 @@ export function promptLine(question: string): Promise<string | null> {
   });
 }
 
+export function remoteBranchHead(branch: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      ['ls-remote', 'origin', `refs/heads/${branch}`],
+      { cwd: path.resolve(SERVER_ROOT, '..') },
+      (error, stdout) => {
+        if (error)
+          return reject(new Error(`git ls-remote origin ${branch} failed: ${error.message}`));
+        const sha = stdout.trim().split(/\s+/)[0] ?? '';
+        if (!/^[0-9a-f]{40}$/.test(sha)) return reject(new Error(`origin has no branch ${branch}`));
+        resolve(sha);
+      },
+    );
+  });
+}
+
 export function createPromotionWorkDir(target: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `ylabs-promote-${target}-`));
 }
@@ -83,5 +100,6 @@ export function baseRuntimeDeps(target: string): PromoteDeps {
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8')),
     workDir,
     prompt: promptLine,
+    branchHead: remoteBranchHead,
   };
 }

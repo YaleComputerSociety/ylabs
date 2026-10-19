@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UserContext from '../../contexts/UserContext';
@@ -41,7 +41,7 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
     useEffect(() => {
       onSummaryChange?.(programSummary);
     }, [onSummaryChange]);
-    return <section>Program watch list</section>;
+    return <section>Watched programs list</section>;
   };
 
   return { default: MockProgramWatch };
@@ -79,12 +79,12 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Dashboard (2)' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Program Watch (1)' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Saved research (2)' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Watched programs (1)' })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: /Saved Searches/ })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Interests' })).toBeNull();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 watched program/)).toBeTruthy();
   });
@@ -94,8 +94,8 @@ describe('Dashboard page', () => {
     programSummary = { count: null };
     renderDashboard('student');
 
-    expect(screen.getByRole('tab', { name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Program Watch' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Saved research' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Watched programs' })).toBeTruthy();
     expect(screen.queryByText(/0 research plans/)).toBeNull();
     expect(screen.queryByText(/0 watched programs/)).toBeNull();
     expect(screen.queryByText('Save research to start planning')).toBeNull();
@@ -104,8 +104,8 @@ describe('Dashboard page', () => {
   it('lets an account switch between the Dashboard and Program Watch surfaces', () => {
     renderDashboard('student');
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (1)' });
     expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
     expect(programTab.getAttribute('aria-selected')).toBe('false');
 
@@ -117,8 +117,8 @@ describe('Dashboard page', () => {
   it('wires each tab to its panel and applies roving tabindex', () => {
     renderDashboard('student');
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (1)' });
     const [dashboardPanel, programPanel] = screen.getAllByRole('tabpanel', { hidden: true });
 
     expect(dashboardTab.getAttribute('aria-controls')).toBe(dashboardPanel.id);
@@ -137,8 +137,8 @@ describe('Dashboard page', () => {
   it('moves focus and activates the surface with arrow-key navigation', () => {
     renderDashboard('student');
 
-    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (1)' });
     dashboardTab.focus();
 
     fireEvent.keyDown(dashboardTab, { key: 'ArrowRight' });
@@ -179,9 +179,9 @@ describe('Dashboard page', () => {
     renderDashboard('student');
 
     const cta = screen.getByRole('button', {
-      name: '2 watched programs close within 2 weeks, 1 not started',
+      name: '2 watched programs close within 2 weeks, 1 still marked Saved',
     });
-    const programTab = screen.getByRole('tab', { name: 'Program Watch (3)' });
+    const programTab = screen.getByRole('tab', { name: 'Watched programs (3)' });
     expect(programTab.getAttribute('aria-selected')).toBe('false');
 
     fireEvent.click(cta);
@@ -196,11 +196,62 @@ describe('Dashboard page', () => {
     expect(screen.queryByText(/close within/)).toBeNull();
   });
 
+  it('keeps the selected tab in the URL so a reload returns to it', () => {
+    const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Dashboard />
+          <LocationProbe />
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const dashboardTab = screen.getByRole('tab', { name: 'Saved research (2)' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Watched programs (1)' }));
+    expect(screen.getByTestId('location').textContent).toBe('?tab=programs');
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Watched programs (1)' }), { key: 'Home' });
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('location').textContent).toBe('');
+  });
+
+  it('follows an in-app link that changes the tab param while mounted', () => {
+    const ProgramsLink = () => <Link to="/dashboard?tab=programs">Go to programs</Link>;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <UserContext.Provider
+          value={{
+            isLoading: false,
+            isAuthenticated: true,
+            user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+            checkContext: vi.fn(),
+          }}
+        >
+          <Dashboard />
+          <ProgramsLink />
+        </UserContext.Provider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: 'Go to programs' }));
+    expect(
+      screen.getByRole('tab', { name: 'Watched programs (1)' }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
   it('deep-links to the Program Watch tab via a tab query param', () => {
     renderDashboard('student', ['/dashboard?tab=programs']);
 
     expect(
-      screen.getByRole('tab', { name: 'Program Watch (1)' }).getAttribute('aria-selected'),
+      screen.getByRole('tab', { name: 'Watched programs (1)' }).getAttribute('aria-selected'),
     ).toBe('true');
   });
 
@@ -209,7 +260,7 @@ describe('Dashboard page', () => {
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.queryByText('Profile editor')).toBeNull();
     expect(screen.queryByText('Faculty profile center')).toBeNull();
     expect(

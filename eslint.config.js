@@ -99,6 +99,43 @@ export default [
     },
   },
   {
+    files: ['client/src/**/*.ts', 'client/src/**/*.tsx'],
+    // Students read every date in New Haven time, so a student-facing surface formats
+    // a date only through utils/newYorkDate.ts or the program date helpers built on it.
+    // A UTC formatter showed a roster read on a New York evening as the next day (#5301).
+    // Admin and analytics surfaces are operator tools with their own declared zones.
+    ignores: [
+      '**/__tests__/**',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      'client/src/utils/newYorkDate.ts',
+      'client/src/utils/programDates.ts',
+      'client/src/utils/csvExport.ts',
+      'client/src/components/admin/**',
+      'client/src/components/analytics/**',
+      'client/src/**/Admin*',
+      'client/src/**/Analytics*',
+      'client/src/**/admin*',
+      'client/src/**/analytics*',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          "MemberExpression[object.name='Intl'][property.name='DateTimeFormat']",
+          'CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]',
+          "CallExpression[callee.property.name='toLocaleString'][arguments.length>0]",
+          "CallExpression[callee.property.name='toLocaleString'][callee.object.type='NewExpression'][callee.object.callee.name='Date']",
+          'CallExpression[callee.property.name=/^get(Month|Date|Day|Hours|Minutes)$/]',
+        ].map((selector) => ({
+          selector,
+          message:
+            'A student-facing date renders in America/New_York. Format it with client/src/utils/newYorkDate.ts or the program date helpers in client/src/utils/programDates.ts.',
+        })),
+      ],
+    },
+  },
+  {
     files: ['scripts/**/*.mjs', 'client/scripts/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2023,

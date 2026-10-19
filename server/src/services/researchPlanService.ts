@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { resolveResearchEntityCanonicalByTombstone } from './researchEntityCanonicalTombstone';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { ResearchEntity, ResearchPlan } from '../models/index';
 import { readPrograms } from './programService';
@@ -19,9 +20,12 @@ import {
 } from './researchEntityPublicDescription';
 import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityDescriptionText';
 import { leadGuardedServingInput, optionalPublicLeadMemberNames } from './researchGroupService';
-import { servedResearchEntityCardForRow } from './researchEntityDto';
+import {
+  decideServedResearchEntityCreativePractice,
+  servedResearchEntityCardForRow,
+} from './researchEntityDto';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { NotFoundError } from '../utils/errors';
+import { ConflictError, NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
 
 const RESEARCH_ENTITY_TARGET_KIND = 'RESEARCH_ENTITY' as const;
@@ -66,22 +70,25 @@ export interface SavedResearchEntitySummary {
   shortDescription?: string;
   description?: string;
   hasUndergradHostingEvidence?: boolean;
+  creativePractice?: true;
 }
 
 /**
  * Why a saved plan's target is not on the served list.
  *
- * `REMOVED` is terminal: no `ResearchEntity` carries that id, so nothing will bring
- * the item back and the owner's only move is to remove it. `UNAVAILABLE` is not: the
- * record exists and is archived, held by the visibility gate, or failing the
- * public-description invariant, any of which can be reversed by a repair or a
- * re-gate, so the plan and its private notes are worth keeping.
+ * `RETIRED` means the record is archived with no live survivor, or no `ResearchEntity`
+ * carries that id and no survivor names it, and the owner's only move is to remove it.
+ * The two are one reason because Beta and Production hold no archived rows (#5148), so
+ * there they cannot be told apart. `UNAVAILABLE` is not terminal: the record exists and
+ * is held by the visibility gate or failing the public-description invariant, either of
+ * which can be reversed by a repair or a re-gate, so the plan and its private notes are
+ * worth keeping.
  *
  * Distinguishing the two is the whole point. Before this, both were dropped from the
  * payload AND from the saved count, so a student could not tell an item they had
  * removed from one the corpus had stopped serving (#2174).
  */
-export type UnavailableSavedResearchEntityReason = 'REMOVED' | 'UNAVAILABLE';
+export type UnavailableSavedResearchEntityReason = 'UNAVAILABLE' | 'MERGED' | 'RETIRED';
 
 /**
  * The id and the reason, and deliberately nothing else. A record that failed the
@@ -126,6 +133,7 @@ export interface ResearchPlanView {
 }
 
 export interface ResearchPlanInput {
+  expectedUpdatedAt?: unknown;
   stage?: unknown;
   privateNotes?: unknown;
   note?: unknown;
@@ -313,6 +321,12 @@ const activateResearchPlan = async (
   );
 };
 
+const planTimestampIso = (value: unknown): string | undefined => {
+  if (!value) return undefined;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+};
+
 export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
     typeof doc.stage === 'string' && researchPlanStageSet.has(doc.stage as ResearchPlanStage)
@@ -327,7 +341,7 @@ export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchP
     checklist: serializeStoredChecklist(doc.checklist),
     deadlines: serializeStoredDeadlines(doc.deadlines),
     exportPreferences: normalizeExportPreferences(doc.exportPreferences),
-    updatedAt: doc.updatedAt ? new Date(String(doc.updatedAt)).toISOString() : undefined,
+    updatedAt: planTimestampIso(doc.updatedAt),
   };
 };
 
@@ -397,6 +411,9 @@ export const savedResearchEntitySummary = (
     ...(entity.school ? { school: String(entity.school) } : {}),
     ...(shortDescription ? { shortDescription } : {}),
     ...servedUndergraduateAccessFields(entity),
+    ...(decideServedResearchEntityCreativePractice(entity, leadMemberNames).creativePractice
+      ? { creativePractice: true as const }
+      : {}),
   };
 };
 
@@ -409,6 +426,26 @@ interface PartitionedSavedResearchEntities {
   servableEntities: Array<Record<string, any>>;
   unavailableSavedResearchEntities: UnavailableSavedResearchEntity[];
 }
+
+// Beta and Production hold no archived rows (#5148), so a saved id that no row carries is
+// a merge when a live survivor names it in `mergedFrom`, and otherwise cannot be told
+// apart from a retired row.
+const idsNamedInMergedFrom = async (ids: readonly string[]): Promise<Set<string>> => {
+  if (ids.length === 0) return new Set();
+  const survivors = (await ResearchEntity.find({
+    archived: { $ne: true },
+    'mergedFrom.entityId': { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select('mergedFrom.entityId')
+    .lean()) as Array<{ mergedFrom?: Array<{ entityId?: unknown }> }>;
+  const wanted = new Set(ids);
+  return new Set(
+    survivors
+      .flatMap((survivor) => survivor.mergedFrom ?? [])
+      .map((entry) => (serializedDocumentId(entry.entityId) || '').toLowerCase())
+      .filter((id) => wanted.has(id)),
+  );
+};
 
 /**
  * The servable records for these target ids, in id order, alongside the ids that
@@ -428,7 +465,7 @@ const partitionSavedResearchEntities = async (
   const entities = await ResearchEntity.find({
     _id: { $in: normalizedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
-    .select(`${savedResearchEntityProjection} archived studentVisibilityTier`)
+    .select(`${savedResearchEntityProjection} archived studentVisibilityTier canonicalGroupId`)
     .lean();
   const verdictById = new Map(
     entities.map((entity: any) => [
@@ -437,12 +474,26 @@ const partitionSavedResearchEntities = async (
     ]),
   );
 
+  const mergedIntoSurvivor = await idsNamedInMergedFrom(
+    normalizedIds.filter((id) => !verdictById.has(id)),
+  );
+
   const servableEntities: Array<Record<string, any>> = [];
   const unavailableSavedResearchEntities: UnavailableSavedResearchEntity[] = [];
   for (const id of normalizedIds) {
     const verdict = verdictById.get(id);
     if (!verdict) {
-      unavailableSavedResearchEntities.push({ _id: id, reason: 'REMOVED' });
+      unavailableSavedResearchEntities.push({
+        _id: id,
+        reason: mergedIntoSurvivor.has(id) ? 'MERGED' : 'RETIRED',
+      });
+    } else if (verdict.entity.archived === true) {
+      unavailableSavedResearchEntities.push({
+        _id: id,
+        reason: (await resolveResearchEntityCanonicalByTombstone(verdict.entity))
+          ? 'MERGED'
+          : 'RETIRED',
+      });
     } else if (!verdict.serves) {
       unavailableSavedResearchEntities.push({ _id: id, reason: 'UNAVAILABLE' });
     } else {
@@ -659,6 +710,34 @@ export const removeSavedResearchEntities = async (
   return getSavedResearchEntitySlugs(netid);
 };
 
+/**
+ * A write that names the version it was edited from is refused when the stored plan has
+ * moved past it, so a tab holding an older stage or note cannot silently replace a newer
+ * one written from another tab.
+ */
+const expectedPlanVersion = (plan: ResearchPlanInput): Date | undefined => {
+  const raw = isPlainRecord(plan) ? plan.expectedUpdatedAt : undefined;
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) throw badRequestError('Invalid expectedUpdatedAt');
+  return parsed;
+};
+
+const updatePlanAtVersion = async (
+  filter: Record<string, unknown>,
+  update: Record<string, unknown>,
+  expected: Date | undefined,
+  notFoundMessage: string,
+): Promise<void> => {
+  const guarded = expected ? { ...filter, updatedAt: { $lte: expected } } : filter;
+  const result = await ResearchPlan.updateOne(guarded, { $set: update }, { runValidators: true });
+  if (result.matchedCount) return;
+  if (expected && (await ResearchPlan.exists(filter))) {
+    throw new ConflictError('Plan changed since it was loaded');
+  }
+  throw new NotFoundError(notFoundMessage);
+};
+
 export const updateSavedResearchEntityPlan = async (
   netid: any,
   entityId: string,
@@ -680,10 +759,12 @@ export const updateSavedResearchEntityPlan = async (
     }
     return getSavedResearchEntityPlans(netid);
   }
-  const result = await ResearchPlan.updateOne(filter, { $set: update }, { runValidators: true });
-  if (!result.matchedCount) {
-    throw new NotFoundError('Saved research entity not found');
-  }
+  await updatePlanAtVersion(
+    filter,
+    update,
+    expectedPlanVersion(plan),
+    'Saved research entity not found',
+  );
   return getSavedResearchEntityPlans(netid);
 };
 
@@ -819,9 +900,6 @@ export const updateWatchedProgramPlan = async (
     }
     return getWatchedProgramPlans(netid);
   }
-  const result = await ResearchPlan.updateOne(filter, { $set: update }, { runValidators: true });
-  if (!result.matchedCount) {
-    throw new NotFoundError('Watched program not found');
-  }
+  await updatePlanAtVersion(filter, update, expectedPlanVersion(plan), 'Watched program not found');
   return getWatchedProgramPlans(netid);
 };

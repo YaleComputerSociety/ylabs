@@ -629,53 +629,67 @@ describe('researchEntityDto', () => {
     expect(dto.websiteUrl).toBe('http://het.yale.edu/');
   });
 
-  it('serves the email and phone number in an evidence quote as written', () => {
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-evidence-redaction',
-      slug: 'evidence-redaction-lab',
-      name: 'Evidence Redaction Lab',
-      undergradEvidenceQuote:
-        'Interested students can email private-contact@yale.edu or call 203-432-1234.',
+  describe('the undergraduate invitation badge', () => {
+    const row = (undergradInvitation: unknown) =>
+      toPublicResearchEntityDto({
+        id: 'entity-invitation',
+        slug: 'invitation-lab',
+        name: 'Invitation Lab',
+        websiteUrl: 'https://invitation.example.edu/',
+        undergradInvitation,
+      });
+
+    it('serves the level, the quote and the page it came from', () => {
+      expect(
+        row({
+          level: 'actively_hiring',
+          quote: 'We are actively recruiting undergraduate researchers.',
+          sourceUrl: 'https://invitation.example.edu/join',
+        }).undergradInvitation,
+      ).toEqual({
+        level: 'actively_hiring',
+        quote: 'We are actively recruiting undergraduate researchers.',
+        sourceUrl: 'https://invitation.example.edu/join',
+      });
     });
 
-    expect(dto.undergradEvidenceQuote).toBe(
-      'Interested students can email private-contact@yale.edu or call 203-432-1234.',
-    );
+    it('serves an email address in the quote as written (#5042)', () => {
+      const served = row({
+        level: 'welcomes_undergrads',
+        quote: 'Interested undergraduates should email someone@example.edu with a CV.',
+        sourceUrl: 'https://invitation.example.edu/join',
+      }).undergradInvitation as { quote: string } | undefined;
+      expect(served?.quote).toContain('someone@example.edu');
+    });
+
+    it.each([
+      [
+        'an unknown level',
+        {
+          level: 'open',
+          quote: 'We welcome undergraduates.',
+          sourceUrl: 'https://invitation.example.edu/',
+        },
+      ],
+      [
+        'an empty quote',
+        { level: 'welcomes_undergrads', quote: ' ', sourceUrl: 'https://invitation.example.edu/' },
+      ],
+      [
+        'a non-http source',
+        {
+          level: 'welcomes_undergrads',
+          quote: 'We welcome undergraduates.',
+          sourceUrl: 'javascript:alert(1)',
+        },
+      ],
+      ['no value', null],
+    ])('withholds %s', (_label, value) => {
+      expect(row(value).undergradInvitation).toBeUndefined();
+    });
   });
 
-  it('withholds a quote that lists members with their own contact details (#5041)', () => {
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-people-listing',
-      slug: 'people-listing-lab',
-      name: 'People Listing Lab',
-      undergradEvidenceQuote:
-        'Undergraduate Students Jane Doe jdoe@example.edu John Roe jroe@example.edu',
-    });
-    expect(dto.undergradEvidenceQuote).toBeUndefined();
-  });
-
-  it("withholds the model's search note so it cannot back the undergraduate badge (#3683)", () => {
-    const note = toPublicResearchEntityDto({
-      id: 'entity-search-note',
-      slug: 'search-note-lab',
-      name: 'Search Note Lab',
-      undergradEvidenceQuote:
-        'No explicit mention of undergraduate students was found on the provided pages.',
-    });
-    expect(note.undergradEvidenceQuote).toBeUndefined();
-
-    const alumni = toPublicResearchEntityDto({
-      id: 'entity-alumni-quote',
-      slug: 'alumni-quote-lab',
-      name: 'Alumni Quote Lab',
-      undergradEvidenceQuote: 'Former undergraduate researchers include three Yale College alumni.',
-    });
-    expect(alumni.undergradEvidenceQuote).toBe(
-      'Former undergraduate researchers include three Yale College alumni.',
-    );
-  });
-
-  describe('the page an undergraduate quote cites (#3569)', () => {
+  describe('the undergraduate mention quote (#5309)', () => {
     const quotedRow = {
       id: 'entity-cited-quote',
       slug: 'cited-quote-lab',
@@ -687,42 +701,23 @@ describe('researchEntityDto', () => {
           sourceUrl: 'https://example.yale.edu/join',
         },
       },
+      pastUndergradAdvisees: [{ year: 2024, programName: 'Summer Program', count: 2 }],
     };
 
-    it('serves the cited page beside a served quote on detail and browse', () => {
-      expect(toPublicResearchEntityDto({ ...quotedRow }).undergradEvidenceSourceUrl).toBe(
-        'https://example.yale.edu/join',
-      );
-      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...quotedRow }] });
-      expect(researchEntities[0].undergradEvidenceQuote).toBe(quotedRow.undergradEvidenceQuote);
-      expect(researchEntities[0].undergradEvidenceSourceUrl).toBe('https://example.yale.edu/join');
-    });
-
-    it('serves no cited page when the quote itself is withheld', () => {
-      const note = toPublicResearchEntityDto({
-        ...quotedRow,
-        undergradEvidenceQuote:
-          'No explicit mention of undergraduate students was found on the provided pages.',
-      });
-      expect(note.undergradEvidenceQuote).toBeUndefined();
-      expect(note).not.toHaveProperty('undergradEvidenceSourceUrl');
-    });
-
-    it('serves no cited page that is not a public http url', () => {
-      const dto = toPublicResearchEntityDto({
-        ...quotedRow,
-        fieldProvenance: {
-          undergradEvidenceQuote: { sourceName: 'synthetic-quote-lane', sourceUrl: 'file:///etc' },
-        },
-      });
-      expect(dto.undergradEvidenceQuote).toBe(quotedRow.undergradEvidenceQuote);
-      expect(dto).not.toHaveProperty('undergradEvidenceSourceUrl');
-    });
-
-    it('withholds the quote and its page when an emeritus lead withholds the way in', () => {
-      const dto = toPublicResearchEntityDto({ ...quotedRow, wayInWithheld: true });
+    it('serves neither the quote nor its page on detail, even for an admissible stored quote', () => {
+      const dto = toPublicResearchEntityDto({ ...quotedRow });
       expect(dto).not.toHaveProperty('undergradEvidenceQuote');
       expect(dto).not.toHaveProperty('undergradEvidenceSourceUrl');
+      expect(dto.hasUndergradHostingEvidence).toBe(true);
+    });
+
+    it('serves neither on a browse hit or the detail alias', () => {
+      const { researchEntities } = addResearchEntitySearchAliases({ hits: [{ ...quotedRow }] });
+      expect(researchEntities[0]).not.toHaveProperty('undergradEvidenceQuote');
+      expect(researchEntities[0]).not.toHaveProperty('undergradEvidenceSourceUrl');
+      const { researchEntity } = addResearchEntityDetailAlias({ group: { ...quotedRow } });
+      expect(researchEntity).not.toHaveProperty('undergradEvidenceQuote');
+      expect(researchEntity).not.toHaveProperty('undergradEvidenceSourceUrl');
     });
   });
 
@@ -762,6 +757,35 @@ describe('researchEntityDto', () => {
     expect(retiredCount.hasUndergradHostingEvidence).toBeUndefined();
   });
 
+  describe('an official roster that lists undergraduates (#5232)', () => {
+    const rosterRow = {
+      id: 'entity-official-roster',
+      slug: 'official-roster-lab',
+      name: 'Official Roster Lab',
+      rosterEnrichment: {
+        state: 'current',
+        observedAt: new Date('2020-01-01T00:00:00Z'),
+        freshnessExpiresAt: new Date('2020-02-01T00:00:00Z'),
+        undergraduates: [{ name: 'Synthetic Student', status: 'past' }],
+      },
+    };
+
+    it('serves the hosted flag on the list card without serving the roster', () => {
+      const [card] = addResearchEntitySearchAliases({ hits: [rosterRow] }).researchEntities;
+      expect(card.hasUndergradHostingEvidence).toBe(true);
+      expect(card).not.toHaveProperty('rosterEnrichment');
+    });
+
+    it('takes the verdict a narrowing caller read from the whole row', () => {
+      const { rosterEnrichment: _withheld, ...narrowed } = rosterRow;
+      expect(toPublicResearchEntityDto(narrowed).hasUndergradHostingEvidence).toBeUndefined();
+      expect(
+        toPublicResearchEntityDto(narrowed, { hasHostedUndergraduates: true })
+          .hasUndergradHostingEvidence,
+      ).toBe(true);
+    });
+  });
+
   describe('undergraduate access fields no lane fills (#3579)', () => {
     const storedRow = {
       id: 'entity-unfilled-access',
@@ -789,9 +813,8 @@ describe('researchEntityDto', () => {
       for (const field of unfilledFields) expect(researchEntities[0]).not.toHaveProperty(field);
     });
 
-    it('still serves the evidence quote and past advisees exactly as stored', () => {
+    it('still serves past advisees exactly as stored', () => {
       const detail = toPublicResearchEntityDto({ ...storedRow });
-      expect(detail.undergradEvidenceQuote).toBe(storedRow.undergradEvidenceQuote);
       expect(detail.pastUndergradAdvisees).toEqual(storedRow.pastUndergradAdvisees);
       expect(detail.hasUndergradHostingEvidence).toBe(true);
     });
@@ -842,7 +865,7 @@ describe('researchEntityDto', () => {
     ]);
   });
 
-  it('redacts direct contact details recursively from public text fields', () => {
+  it('redacts names, labels and descriptions but serves the contact a way in publishes (#5046)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-recursive-redaction',
       slug: 'recursive-redaction-lab',
@@ -864,9 +887,7 @@ describe('researchEntityDto', () => {
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
     expect(dto).not.toHaveProperty('planningContext');
-    expect(dto.waysIn).toEqual([{ label: 'Email [email redacted] to ask about openings.' }]);
-    expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
-    expect(JSON.stringify(dto)).not.toContain('203-555-1212');
+    expect(dto.waysIn).toEqual([{ label: 'Email hidden@example.edu to ask about openings.' }]);
   });
 
   it('strips glued "YSM Researcher" role-label boilerplate from researchAreas chips (#742)', () => {
@@ -2147,7 +2168,7 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     'Department',
     'School',
     'Name',
-    'Lead identity',
+    'Who leads it',
   ];
   const creditedLabels = (row: Record<string, unknown>): string[] =>
     (
@@ -2198,7 +2219,7 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
     const labels = creditedLabels({ departments: ['Earth & Planetary Sciences'] });
     expect(labels).not.toContain('Research summary');
     expect(labels).toContain('Name');
-    expect(labels).toContain('Lead identity');
+    expect(labels).toContain('Who leads it');
   });
 
   it('drops the research-summary credit when the only card is built from topics', () => {

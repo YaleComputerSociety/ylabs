@@ -7,6 +7,7 @@ import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import UserContext from '../../contexts/UserContext';
 import FellowshipSearchContextProvider from '../FellowshipSearchContextProvider';
 import FellowshipModal from '../../components/fellowship/FellowshipModal';
+import { useProgramSearchUrlSync } from '../../hooks/useProgramSearchUrlSync';
 import { Fellowship } from '../../types/types';
 import { createFellowship } from '../../utils/createFellowship';
 import axios from '../../utils/axios';
@@ -28,6 +29,11 @@ vi.mock('../../utils/appDialogs', () => ({ showAlert: vi.fn(), confirmAction: vi
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
+};
+
+const ProgramSearchUrlSync = () => {
+  useProgramSearchUrlSync();
+  return null;
 };
 
 const renderProvider = (userType: 'student' | 'admin' = 'student') =>
@@ -53,6 +59,7 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
                 <p data-testid="search-exhausted">{String(context.searchExhausted)}</p>
                 <p data-testid="load-error">{String(context.loadError)}</p>
                 <p data-testid="is-loading">{String(context.isLoading)}</p>
+                <p data-testid="miss-one-word">{String(context.resultsMissOneWord)}</p>
                 <p data-testid="query-correction">
                   {context.queryCorrection
                     ? `${context.queryCorrection.originalQuery}>${context.queryCorrection.correctedQuery}`
@@ -115,12 +122,12 @@ describe('FellowshipSearchContextProvider program routes', () => {
     await waitFor(() => {
       expect(screen.getByTestId('program-kind-count').textContent).toBe('1');
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/programs/search?query=&page=1&pageSize=100'),
+        expect.stringContaining('/programs/search?query=&page=1&pageSize=250'),
       );
     });
   });
 
-  it('reports loading while the filter options are still pending, before any search is sent', async () => {
+  it('sends the first search without waiting for the filter options', async () => {
     let resolveFilters: (value: unknown) => void = () => {};
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/programs/filters') {
@@ -134,22 +141,26 @@ describe('FellowshipSearchContextProvider program routes', () => {
     renderProvider();
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/programs/filters');
-    });
-    expect(screen.getByTestId('is-loading').textContent).toBe('true');
-    expect(mockedAxios.get).not.toHaveBeenCalledWith(expect.stringContaining('/programs/search'));
-
-    await act(async () => {
-      resolveFilters({ data: {} });
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.stringContaining('/programs/search?query=&page=1'),
+      );
     });
     await waitFor(() => {
       expect(screen.getByTestId('is-loading').textContent).toBe('false');
     });
+
+    await act(async () => {
+      resolveFilters({ data: {} });
+    });
+    const searches = mockedAxios.get.mock.calls.filter(([url]) =>
+      String(url).startsWith('/programs/search'),
+    );
+    expect(searches).toHaveLength(1);
   });
 
   it('loads the full result set into context on first paint so an apply-now program on a later page is not gated behind pagination', async () => {
-    const total = 133;
-    const pageSize = 100;
+    const pageSize = 250;
+    const total = pageSize + 33;
     const openDeadline = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
     const makeRecord = (index: number) =>
       index === total - 1
@@ -188,7 +199,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
     expect(screen.getByTestId('fellowship-titles').textContent).toContain('Open Late Program');
     expect(screen.getByTestId('search-exhausted').textContent).toBe('true');
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      expect.stringContaining('/programs/search?query=&page=2&pageSize=100'),
+      expect.stringContaining('/programs/search?query=&page=2&pageSize=250'),
     );
   });
 
@@ -216,6 +227,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
           }}
         >
           <FellowshipSearchContextProvider>
+            <ProgramSearchUrlSync />
             <FellowshipSearchContext.Consumer>
               {(context) => (
                 <div>
@@ -534,9 +546,95 @@ describe('FellowshipSearchContextProvider spelling correction (#4537)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Search typed spelling' }));
     await waitFor(() => {
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining('query=sophmore&page=1&pageSize=100&correctSpelling=false'),
+        expect.stringContaining('query=sophmore&page=1&pageSize=250&correctSpelling=false'),
       );
       expect(screen.getByTestId('query-correction').textContent).toBe('');
+    });
+  });
+});
+
+describe('FellowshipSearchContextProvider before sign-in is known', () => {
+  const renderWhileSignInLoads = (initialEntry: string) => {
+    const probe = (
+      <FellowshipSearchContext.Consumer>
+        {(context) => <p data-testid="query">{context.queryString}</p>}
+      </FellowshipSearchContext.Consumer>
+    );
+    const tree = (isLoading: boolean) => (
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <UserContext.Provider
+          value={{
+            isLoading,
+            isAuthenticated: !isLoading,
+            user: isLoading ? undefined : ({ userType: 'student' } as any),
+            checkContext: vi.fn(),
+          }}
+        >
+          <FellowshipSearchContextProvider>{probe}</FellowshipSearchContextProvider>
+        </UserContext.Provider>
+      </MemoryRouter>
+    );
+    const view = render(tree(true));
+    return { resolveSignIn: () => view.rerender(tree(false)) };
+  };
+
+  const searchCalls = () =>
+    mockedAxios.get.mock.calls.filter(([url]) => String(url).startsWith('/programs/search'));
+
+  it('starts the search and filter requests while the sign-in check is still running', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === '/programs/filters' ? {} : { results: [], total: 0 } }),
+    );
+
+    const { resolveSignIn } = renderWhileSignInLoads('/programs');
+
+    await waitFor(() => expect(searchCalls()).toHaveLength(1));
+    expect(searchCalls()[0][1]).toEqual({ skipAuthRequiredEvent: true });
+    expect(mockedAxios.get).toHaveBeenCalledWith('/programs/filters', {
+      skipAuthRequiredEvent: true,
+    });
+
+    resolveSignIn();
+    await act(async () => {});
+    expect(searchCalls()).toHaveLength(1);
+  });
+
+  it('searches a deep link with its URL query on the first request', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve({ data: url === '/programs/filters' ? {} : { results: [], total: 0 } }),
+    );
+
+    renderWhileSignInLoads('/programs?q=marine');
+
+    expect(screen.getByTestId('query').textContent).toBe('marine');
+    await waitFor(() => expect(searchCalls()).toHaveLength(1), { timeout: 3000 });
+    expect(String(searchCalls()[0][0])).toContain('query=marine');
+  });
+});
+
+describe('FellowshipSearchContextProvider close matches', () => {
+  it('records that the results match all but one typed word', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') return Promise.resolve({ data: {} });
+      if (url.includes('query=sophmore')) {
+        return Promise.resolve({
+          data: {
+            results: [{ _id: 'p1', title: 'Program' }],
+            total: 1,
+            queryMatch: 'allButOneWord',
+          },
+        });
+      }
+      return Promise.resolve({ data: { results: [], total: 0 } });
+    });
+
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('is-loading').textContent).toBe('false'));
+    expect(screen.getByTestId('miss-one-word').textContent).toBe('false');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Type misspelling' }));
+    await waitFor(() => expect(screen.getByTestId('miss-one-word').textContent).toBe('true'), {
+      timeout: 3000,
     });
   });
 });

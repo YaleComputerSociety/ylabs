@@ -165,6 +165,7 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\bmust have as (?:a |an )?${MENTOR_NOUN} (?:a )?(?:member of the )?faculty\\b`,
     `\\bagreed to (?:be|serve as) (?:the |your |a )?${MENTOR_NOUN}\\b`,
     `\\b(?:written )?commitment from (?:a |an |the )?(?:yale )?faculty member\\b`,
+    `\\bcommitment of (?:the |your |a )?(?:yale )?faculty ${MENTOR_NOUN}\\b`,
     `\\bname of (?:your|the) (?:faculty )?${MENTOR_NOUN}\\b`,
     `\\bdeveloped with (?:a |an )?(?:potential )?${MENTOR_ROLE}\\b`,
     `\\b(?:signature|approval|endorsement) (?:of|from) (?:the applicant['’]s |your |a |an |the )?[^.]{0,60}?${MENTOR_NOUN}\\b[^.]{0,20}\\b(?:is |are )?required\\b`,
@@ -173,9 +174,9 @@ const MENTOR_REQUIREMENT_SENTENCE = new RegExp(
     `\\bmust be supervised by (?:a |an |the )?(?:members? of the )?(?:yale )?faculty\\b`,
     `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN} who (?:will|would) (?:supervise|oversee|advise)\\b`,
     `\\b${MENTOR_NOUN}\\b[^.]{0,40}\\b(?:has |have )?agreed to (?:work with|supervise|advise|oversee)\\b`,
-    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,20}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
+    `\\b(?:faculty |research |project |thesis )?${MENTOR_NOUN}(?:['’]s)? (?:letter of )?(?:reference|letter|statement)[^.]{0,30}\\b(?:stipulat|endors|approv|support)\\w*[^.]{0,40}\\b(?:your |the |their |a )?(?:proposed )?(?:project|essay|research)\\b`,
     `\\bletter approving the (?:proposed )?(?:project|research) from (?:a |the )?(?:member of the )?(?:yale )?faculty\\b`,
-    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed (?:project|research)|project|essay|proposal)\\b`,
+    `\\bletters? (?:(?:of|or) (?:recommendation|reference|support) )?\\(?from (?:a |an |the |your )?(?:yale )?faculty (?:members?|${MENTOR_NOUN})\\b[^.]{0,60}?\\b(?:relat|relevant|knowledg|familiar|connected|involved|supervis|support)\\w*[^.]{0,30}?\\b(?:your |the |their |this )?(?:proposed (?:project|research)|project|essay|proposal)\\b`,
     `\\bfrom (?:your|their|the applicant['’]s) (?:own )?(?:senior essay|senior thesis|senior project|thesis|essay|project|research|dissertation) (?:${MENTOR_NOUN}|directors?)\\b`,
   ].join('|'),
   'i',
@@ -250,7 +251,7 @@ const GRADUATE_PROFESSIONAL_AUDIENCE =
 // An audience of researchers who are not Yale students at all is out of scope for a Yale
 // student research surface, so it stays archive review even when the record is research-shaped.
 const NON_YALE_STUDENT_AUDIENCE =
-  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale/;
+  /historians, medical practitioners, and other researchers outside of yale|researchers outside of yale|(?<!non-)(?<!non )\byale students are (?:not eligible|ineligible)(?: to apply)?(?=[.;,]|$)/;
 
 const GRADUATE_TRAVEL_RESEARCH =
   /\btravel\b|\babroad\b|\boverseas\b|\bfield research\b|\bfieldwork\b/;

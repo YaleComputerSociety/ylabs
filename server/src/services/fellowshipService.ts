@@ -1,13 +1,8 @@
 /**
  * Service layer for fellowship CRUD, search, and filter operations.
  */
-import { escapeRegex } from '../utils/regex';
-import { foldLatinDiacritics } from '../utils/latinDiacritics';
-import {
-  correctProgramSearchQuerySpelling,
-  PROGRAM_QUERY_STOP_WORDS,
-  PROGRAM_SEARCH_SPELLING_FIELDS,
-} from './programSearchSpellingVocabulary';
+import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
+import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
 import {
   Fellowship,
@@ -46,9 +41,7 @@ import {
 import {
   inferProgramSubjects,
   PROGRAM_TOPIC_TAXONOMY,
-  resolveTopicSubjects,
-  topicAliasesForSubjects,
-  yearOfStudyAliasesForQuery,
+  programSubjectFilterOptions,
   topicRegexForSubjects,
 } from './programTopicService';
 
@@ -71,7 +64,7 @@ const OPERATOR_FELLOWSHIP_SORT_FIELDS = new Set([
 ]);
 const DEFAULT_PUBLIC_FELLOWSHIP_SORT_FIELD = 'deadline';
 const MAX_SEARCH_PAGE = 1000;
-const MAX_SEARCH_PAGE_SIZE = 100;
+const MAX_SEARCH_PAGE_SIZE = 250;
 const MAX_SEARCH_QUERY_LENGTH = 512;
 const MAX_SEARCH_FILTER_VALUES = 50;
 const MAX_SEARCH_FILTER_VALUE_LENGTH = 120;
@@ -251,7 +244,10 @@ const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
 const boundedPublicText = (value: string): string =>
   value.slice(0, MAX_PUBLIC_FELLOWSHIP_TEXT_LENGTH).trim();
 
-const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: string }> =>
+const fellowshipLinks = (
+  links: unknown,
+  labelText: (label: string) => string,
+): Array<{ label?: string; url: string }> =>
   Array.isArray(links)
     ? links.slice(0, MAX_PUBLIC_FELLOWSHIP_LINKS).flatMap((link) => {
         if (!link || typeof link !== 'object') return [];
@@ -260,11 +256,14 @@ const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: str
         if (!url) return [];
         const label =
           typeof record.label === 'string' && boundedPublicText(record.label)
-            ? redactDirectContactInfo(boundedPublicText(record.label))
+            ? labelText(boundedPublicText(record.label))
             : undefined;
         return [{ ...(label ? { label } : {}), url }];
       })
     : [];
+
+const publicFellowshipLinks = (links: unknown): Array<{ label?: string; url: string }> =>
+  fellowshipLinks(links, (label) => label);
 
 const adminFellowshipText = (value: unknown): string | undefined =>
   typeof value === 'string' ? redactDirectContactInfo(boundedPublicText(value)) : undefined;
@@ -280,7 +279,7 @@ const adminFellowshipStringArray = (value: unknown): string[] | undefined => {
 const adminFellowshipLinks = (
   value: unknown,
 ): Array<{ label?: string; url: string }> | undefined =>
-  Array.isArray(value) ? publicFellowshipLinks(value) : undefined;
+  Array.isArray(value) ? fellowshipLinks(value, redactDirectContactInfo) : undefined;
 
 const adminFellowshipDate = (value: unknown): Date | undefined => {
   if (value === null || value === '') return undefined;
@@ -308,15 +307,13 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
     const prose = CATALOG_SANITIZED_FELLOWSHIP_FIELDS.has(field)
       ? sanitizeCatalogDescription(value, { evergreenizeDates: false })
       : value;
-    return redactDirectContactInfo(boundedPublicText(prose));
+    return boundedPublicText(prose);
   }
 
   if ((field === 'prepSteps' || field === 'applicationMaterials') && Array.isArray(value)) {
     return value
       .slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS)
-      .flatMap((item) =>
-        typeof item === 'string' ? [redactDirectContactInfo(boundedPublicText(item))] : [],
-      );
+      .flatMap((item) => (typeof item === 'string' ? [boundedPublicText(item)] : []));
   }
 
   if (PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS.has(field)) {
@@ -502,6 +499,11 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   if (served.deadline) publicFellowship.deadline = served.deadline;
   if (served.stale) {
     delete publicFellowship.deadline;
+    delete publicFellowship.applicationOpenDate;
+  }
+  const openDate = toValidDate(publicFellowship.applicationOpenDate);
+  if (served.projectedNextCycle && openDate && openDate.getTime() < now.getTime()) {
+    // The opening date belongs to the cycle the projected deadline replaced (#5239).
     delete publicFellowship.applicationOpenDate;
   }
   if (served.duplicateWindow?.applicationOpenDate) {
@@ -866,24 +868,9 @@ export const deleteFellowship = async (id: any) => {
   }
 };
 
-const PROGRAM_WORD_PREFIX_MIN_LENGTH = 2;
-const PROGRAM_WORD_PREFIX_STOP_WORDS: ReadonlySet<string> = new Set(PROGRAM_QUERY_STOP_WORDS);
-
-// MongoDB `$text` matches whole stemmed words only, so a student typing into the live search
-// box sees nothing until the word is finished: `Com` matched no program while 87 carry a word
-// starting with it. Every typed word must start some word in the program. See #4537.
-export const programQueryWordPrefixClauses = (query: string): Record<string, unknown>[] =>
-  [...new Set(foldLatinDiacritics(query.toLowerCase()).match(/[a-z0-9]+/g) ?? [])]
-    .filter(
-      (token) =>
-        token.length >= PROGRAM_WORD_PREFIX_MIN_LENGTH &&
-        !PROGRAM_WORD_PREFIX_STOP_WORDS.has(token),
-    )
-    .map((token) => ({
-      $or: PROGRAM_SEARCH_SPELLING_FIELDS.map((field) => ({
-        [field]: { $regex: `(?:^|[^a-z0-9])${escapeRegex(token)}`, $options: 'i' },
-      })),
-    }));
+// A program that states no value for a facet is unknown rather than excluded, so a facet
+// filter keeps it and the page says the official page decides (#5130, #5235).
+const facetNotStated = (field: string) => ({ [field]: { $in: [null, []] } });
 
 export const searchFellowships = async (params: {
   query?: string;
@@ -978,16 +965,6 @@ export const searchFellowships = async (params: {
     filter.studentVisibilityTier = { $in: publicStudentVisibilityTiers };
   }
 
-  const querySubjects = resolveTopicSubjects([safeQuery]);
-  const queryTopicAliases = topicAliasesForSubjects(querySubjects);
-  if (safeQuery) {
-    const searchTerms = [
-      safeQuery,
-      ...queryTopicAliases,
-      ...yearOfStudyAliasesForQuery(safeQuery),
-    ].filter(Boolean);
-    filter.$text = { $search: searchTerms.join(' ') };
-  }
   if (safeSubjects.length > 0) {
     const subjectPattern = topicRegexForSubjects(safeSubjects);
     filter.$or = [
@@ -1004,20 +981,18 @@ export const searchFellowships = async (params: {
     ].map((field) => ({ [field]: { $regex: subjectPattern, $options: 'i' } }));
   }
 
-  if (safeYearOfStudy.length > 0) {
-    filter.yearOfStudy = { $in: safeYearOfStudy };
-  }
-  if (safeTermOfAward.length > 0) {
-    filter.termOfAward = { $in: safeTermOfAward };
-  }
-  if (safePurpose.length > 0) {
-    filter.purpose = { $in: safePurpose };
-  }
-  if (safeGlobalRegions.length > 0) {
-    filter.globalRegions = { $in: safeGlobalRegions };
-  }
-  if (safeCitizenshipStatus.length > 0) {
-    filter.citizenshipStatus = { $in: safeCitizenshipStatus };
+  for (const [field, values] of [
+    ['yearOfStudy', safeYearOfStudy],
+    ['termOfAward', safeTermOfAward],
+    ['purpose', safePurpose],
+    ['globalRegions', safeGlobalRegions],
+    ['citizenshipStatus', safeCitizenshipStatus],
+  ] as const) {
+    if (values.length === 0) continue;
+    filter.$and = [
+      ...(filter.$and ?? []),
+      { $or: [{ [field]: { $in: values } }, facetNotStated(field)] },
+    ];
   }
   if (safeProgramCategory.length > 0) {
     filter.programCategory = { $in: safeProgramCategory };
@@ -1075,40 +1050,20 @@ export const searchFellowships = async (params: {
     };
   }
 
-  const { $text: _textClause, ...filterWithoutText } = filter;
-  const prefixClauses = programQueryWordPrefixClauses(safeQuery);
-  const [textMatches, prefixMatches] = await Promise.all([
-    Fellowship.find(filter, { _id: 1, score: { $meta: 'textScore' } })
-      .sort({ score: { $meta: 'textScore' }, ...fieldSortOptions })
-      .lean(),
-    prefixClauses.length > 0
-      ? Fellowship.find(
-          { ...filterWithoutText, $and: [...(filterWithoutText.$and ?? []), ...prefixClauses] },
-          { _id: 1 },
-        )
-          .sort(fieldSortOptions)
-          .lean()
-      : Promise.resolve([]),
-  ]);
-  const scoreById = new Map<string, number>(
-    (textMatches as any[]).map((match) => [String(match._id), match.score]),
-  );
-  const orderedIds = [
-    ...new Set([...(textMatches as any[]), ...(prefixMatches as any[])].map((m) => String(m._id))),
-  ];
+  const candidates = (await Fellowship.find(filter, {
+    _id: 1,
+    ...Object.fromEntries(PROGRAM_SEARCH_FIELDS.map((field) => [field, 1])),
+  })
+    .sort(fieldSortOptions)
+    .lean()) as Array<Record<string, unknown>>;
+  const ranked = rankProgramSearch(safeQuery, candidates);
+  const orderedIds = ranked.programs.map((candidate) => String(candidate._id));
   const pageIds = orderedIds.slice(skip, skip + pageSize);
   const pageDocuments = pageIds.length
     ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
     : [];
   const documentById = new Map(pageDocuments.map((document) => [String(document._id), document]));
-  const fellowships = pageIds
-    .map((id) => documentById.get(id))
-    .filter(Boolean)
-    .map((document) =>
-      scoreById.has(String(document._id))
-        ? { ...document, score: scoreById.get(String(document._id)) }
-        : document,
-    );
+  const fellowships = pageIds.map((id) => documentById.get(id)).filter(Boolean);
 
   return {
     fellowships: servePrograms(fellowships),
@@ -1117,6 +1072,7 @@ export const searchFellowships = async (params: {
     pageSize,
     totalPages: Math.ceil(orderedIds.length / pageSize),
     ...(queryCorrection ? { queryCorrection } : {}),
+    ...(ranked.missingOneWord ? { queryMatch: 'allButOneWord' as const } : {}),
   };
 };
 
@@ -1157,6 +1113,6 @@ export const getFilterOptions = async () => {
     programKind: programKindOptions.filter(Boolean).sort(),
     entryMode: entryModeOptions.filter(Boolean).sort(),
     studentFacingCategory: studentFacingCategoryOptions.filter(Boolean).sort(),
-    subjects: PROGRAM_TOPIC_TAXONOMY.map((topic) => topic.subject),
+    subjects: programSubjectFilterOptions(),
   };
 };

@@ -1,10 +1,10 @@
 /**
  * Dashboard page. Every signed-in account sees the same read view organized into
- * two surfaces:
- *   - Dashboard: the saved research an account is tracking (canonical
+ * two tabs:
+ *   - Saved research: the saved research an account is tracking (canonical
  *     ResearchPlan RESEARCH_ENTITY targets), with notes and the always-available
  *     next step of opening a home to find its official profile and reach out.
- *   - Program Watch: the programs and fellowships an account is watching
+ *   - Watched programs: the programs and fellowships an account is watching
  *     (canonical ResearchPlan PROGRAM targets), with deadline, accepting status,
  *     and eligibility.
  * There is no faculty self-edit surface and no faculty/student branching; public
@@ -29,23 +29,40 @@ type ProgramSummary = {
 };
 
 const SURFACES: DashboardSurface[] = ['dashboard', 'programs'];
+const DEFAULT_SURFACE: DashboardSurface = 'dashboard';
+
+const surfaceFromParam = (value: string | null): DashboardSurface =>
+  SURFACES.find((candidate) => candidate === value) ?? DEFAULT_SURFACE;
 
 const withCount = (label: string, count: number | null): string =>
   count === null ? label : `${label} (${count})`;
 
 const Dashboard = () => {
   useDocumentTitle('Dashboard');
-  const [searchParams] = useSearchParams();
-  const tabParam = searchParams.get('tab') as DashboardSurface | null;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSurface = surfaceFromParam(searchParams.get('tab'));
+  const writeSurfaceToUrl = (next: DashboardSurface) =>
+    setSearchParams(
+      (current) => {
+        const params = new URLSearchParams(current);
+        if (next === DEFAULT_SURFACE) params.delete('tab');
+        else params.set('tab', next);
+        return params;
+      },
+      { replace: true },
+    );
   const {
     activeTab: surface,
     activateTab: activateSurface,
+    followTab: followSurface,
     handleTabKeyDown,
     registerTab,
-  } = useRovingTabs<DashboardSurface>(
-    SURFACES,
-    tabParam && SURFACES.includes(tabParam) ? tabParam : 'dashboard',
-  );
+  } = useRovingTabs<DashboardSurface>(SURFACES, requestedSurface, writeSurfaceToUrl);
+  const [followedSurface, setFollowedSurface] = useState(requestedSurface);
+  if (followedSurface !== requestedSurface) {
+    setFollowedSurface(requestedSurface);
+    followSurface(requestedSurface);
+  }
   const [savedResearchCount, setSavedResearchCount] = useState<number | null>(null);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: null });
 
@@ -86,7 +103,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'dashboard')}
             >
-              {withCount('Dashboard', savedResearchCount)}
+              {withCount('Saved research', savedResearchCount)}
             </button>
             <button
               type="button"
@@ -100,7 +117,7 @@ const Dashboard = () => {
               onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'programs')}
             >
-              {withCount('Program Watch', programSummary.count)}
+              {withCount('Watched programs', programSummary.count)}
             </button>
           </div>
         </div>

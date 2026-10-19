@@ -192,7 +192,7 @@ Client route guards:
 |-------|---------|
 | `PrivateRoute` | Auth required. |
 | `AdminRoute` | Admin only, keyed off the server-provided `user.isAdmin`. |
-| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. |
+| `PublicRoute` | Renders for logged-out and authenticated users alike, without waiting for the `/api/check` session check, so a public page's first request starts at once. Auth-dependent UI on these pages reads `isLoading` itself and holds its slot invisible until the check resolves. The one exception is the `Navbar`, which shows the signed-in navigation while the check is pending when `client/src/utils/lastKnownSession.ts` records that the last answer was signed in, and still holds the account and sign-out controls invisible until it resolves. |
 | `UnprivateRoute` | No auth required. |
 
 Because a public page now runs before the check answers, client research analytics has three states rather than two.
@@ -204,6 +204,7 @@ Treating unknown as enabled would post a guest's first browse impression to `/an
 `normalizeReturnPath` in `client/src/utils/returnPath.ts` reduces `state.from` to a same-origin path or an empty string.
 `SignInButton` applies it before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
 `/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
+Any `401` dispatches `HTTP_AUTH_REQUIRED_EVENT` (`client/src/utils/httpStatusEvents.ts`), and `UserContextProvider` answers it by signing the client out, so a login link raised by an expired session reaches the CAS sign-in instead of bouncing off `/login` back to the page that failed.
 
 ## Validation middleware
 
@@ -257,6 +258,8 @@ The SPA fallback writes per-page share metadata into the shell, because link pre
 `/`, `/research`, `/programs` and `/about` get a page title and a query-free canonical URL on `https://yalelabs.io` whatever the request host.
 `/research/:slug` reads the row through `getResearchGroupDetail` with no operator authority, so it can only show what the anonymous detail endpoint serves, which is `student_ready` rows: the served title, the served short description, and the canonical page.
 A description carrying an email address or phone number is dropped rather than shared, and no member, roster or contact field is ever read.
+The SPA fallback is a path-less `GET`/`HEAD` handler rather than a named wildcard route, because Express decodes a route parameter and answers a malformed percent sequence such as `%zz` with a JSON `400` before the resolver runs.
+An undecodable path therefore gets the same shell as any other unknown path, and an undecodable `/research/:slug` answers `404` (#5219).
 A slug the endpoint withholds or does not know answers `404` with the generic shell, a merged shell answers `301` to its canonical page, and a lookup that throws or outlasts `PAGE_SHELL_LOOKUP_TIMEOUT_MS` serves the unmodified shell with `200`.
 Each normalized slug's `200`, `404` or `301` resolution is cached in memory for `PAGE_SHELL_CACHE_TTL_MS` (five minutes), at most `PAGE_SHELL_CACHE_MAX_ENTRIES` slugs with the oldest evicted first, and concurrent requests for one slug share a single in-flight detail read.
 A lookup that throws or times out is never cached, so the next request reads again.
@@ -397,6 +400,7 @@ Custom errors in `server/src/utils/errors.ts`:
 | `NotFoundError` | 404 |
 | `ObjectIdError` | 404 |
 | `IncorrectPermissionsError` | 403 |
+| `ConflictError` | 409 |
 | `SearchUnavailableError` | 503, with `Retry-After` |
 
 The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, an unavailable MongoDB (lost topology, server selection or socket timeout) to 503 with `Retry-After`, and everything else to 500.

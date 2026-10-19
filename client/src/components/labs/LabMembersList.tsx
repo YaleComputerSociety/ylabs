@@ -17,7 +17,8 @@ import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDep
 import { DepartmentNameRecord } from '../../utils/departmentNames';
 import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
-import { ExternalLinkIcon } from '../shared/icons';
+import { ExternalLinkIcon, MailIcon } from '../shared/icons';
+import { personInitials } from '../../utils/personInitials';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -93,7 +94,7 @@ const LabMemberCard = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
-  const initials = `${user.fname?.charAt(0) || ''}${user.lname?.charAt(0) || ''}`.toUpperCase();
+  const initials = personInitials(fullName);
   const profileImageHref = safeHttpUrl(user.image_url);
   const departmentLabel = canonicalizeResearcherDepartmentLabel(
     user.primary_department || user.primaryDepartment,
@@ -112,109 +113,156 @@ const LabMemberCard = ({
 
   const isExternalLink = Boolean(profileUrl);
   const isInteractive = isExternalLink;
-  const baseClassName = `group flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition-colors ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  const layoutClassName = singleColumn ? 'flex flex-col gap-2' : 'flex items-center gap-3';
+  const cardShellClassName = 'rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3';
+  const baseClassName = `group ${cardShellClassName} transition-colors ${layoutClassName}`;
   const linkClassName = `${baseClassName} hover:border-line-brand hover:bg-brand-soft yr-focus-ring`;
-  const identityBody = (
-    <>
-      <div className="flex-shrink-0">
-        {profileImageHref && !imageFailed ? (
-          <img
-            src={profileImageHref}
-            alt={fullName}
-            referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
-            onError={() => setImageFailed(true)}
-            loading="lazy"
-            decoding="async"
-            className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
-          />
-        ) : (
-          <div
-            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
-          >
-            {initials || fullName.charAt(0).toUpperCase() || '?'}
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p
-          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-ink ${isInteractive ? 'group-hover:text-brand' : ''}`}
-        >
-          {fullName}
-        </p>
-        {user.title && (
-          <p className={`${singleColumn ? 'leading-snug' : 'truncate'} text-xs text-muted`}>
-            {user.title}
-          </p>
-        )}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <span
-            className={`${singleColumn ? 'rounded-control leading-snug' : 'rounded-full'} px-1.5 py-0.5 text-xs font-medium ${rolePillClassName}`}
-          >
-            {roleLabel}
-          </span>
-          {user.emeritus && LEAD_ROLES.has(role) && (
-            <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
-              Emeritus
-            </span>
-          )}
-          {departmentLabel && (
-            <span
-              className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-xs text-ink-soft`}
-            >
-              {departmentLabel}
-            </span>
-          )}
-        </div>
-        {isExternalLink && (
-          <p className="mt-1.5 text-xs font-medium text-brand group-hover:underline">
-            View official profile
-          </p>
-        )}
-      </div>
-      {isExternalLink && (
-        <ExternalLinkIcon
-          className="flex-shrink-0 text-muted transition-colors group-hover:text-brand"
-          size={14}
+  const avatar = (
+    <div className="flex-shrink-0">
+      {profileImageHref && !imageFailed ? (
+        <img
+          src={profileImageHref}
+          alt={fullName}
+          referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
+          onError={() => setImageFailed(true)}
+          loading="lazy"
+          decoding="async"
+          className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
         />
+      ) : (
+        <div
+          className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-linear-to-br/srgb from-brand-soft to-line-brand font-semibold text-brand`}
+        >
+          {initials || '?'}
+        </div>
       )}
+    </div>
+  );
+  const name = (
+    <p
+      className={`${singleColumn ? 'text-sm leading-snug' : 'truncate text-sm'} font-semibold text-ink ${isInteractive ? 'group-hover:text-brand' : ''}`}
+    >
+      {fullName}
+    </p>
+  );
+  const title = user.title && (
+    <p className={`${singleColumn ? 'leading-snug' : 'truncate'} text-xs text-muted`}>
+      {user.title}
+    </p>
+  );
+  const chips = (
+    <div className={`${singleColumn ? '' : 'mt-1.5'} flex flex-wrap items-center gap-1.5`}>
+      <span
+        className={`rounded-full px-2 py-0.5 text-xs font-medium ${singleColumn ? 'whitespace-nowrap' : ''} ${rolePillClassName}`}
+      >
+        {roleLabel}
+      </span>
+      {user.emeritus && LEAD_ROLES.has(role) && (
+        <span className="rounded-full bg-gold-soft px-2 py-0.5 text-xs font-medium text-[var(--yr-gold-deep)]">
+          Emeritus
+        </span>
+      )}
+      {departmentLabel && (
+        <span
+          className={`${singleColumn ? 'max-w-full whitespace-normal rounded-control leading-snug' : 'max-w-[10rem] truncate rounded-full'} bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs text-ink-soft`}
+        >
+          {departmentLabel}
+        </span>
+      )}
+    </div>
+  );
+  const profileLinkLabel = isExternalLink && (
+    <p
+      className={`${singleColumn ? '' : 'mt-1.5'} text-xs font-medium text-brand group-hover:underline`}
+    >
+      View official profile
+    </p>
+  );
+  const externalLinkIcon = isExternalLink && (
+    <ExternalLinkIcon
+      className={`flex-shrink-0 text-muted transition-colors group-hover:text-brand ${singleColumn ? 'mt-0.5 self-start' : ''}`}
+      size={14}
+    />
+  );
+  const identityBody = singleColumn ? (
+    <>
+      <div className="flex items-center gap-3">
+        {avatar}
+        <div className="min-w-0 flex-1">{name}</div>
+        {externalLinkIcon}
+      </div>
+      {title}
+      {chips}
+      {profileLinkLabel}
+    </>
+  ) : (
+    <>
+      {avatar}
+      <div className="min-w-0 flex-1">
+        {name}
+        {title}
+        {chips}
+        {profileLinkLabel}
+      </div>
+      {externalLinkIcon}
     </>
   );
-  const identityCard =
-    isExternalLink && profileUrl ? (
-      <a
-        href={profileUrl}
-        target="_blank"
-        rel={EXTERNAL_LINK_REL}
-        aria-label={`Open ${fullName}'s official profile`}
-        className={linkClassName}
-      >
-        {identityBody}
-      </a>
+  const hasContactLinks = Boolean(orcidUrl || resolvedEmailHref);
+  const emailAddress = resolvedEmailHref
+    .replace(/^mailto:/i, '')
+    .split('?')[0]
+    .trim();
+  const profileLink = (className: string) => (
+    <a
+      href={profileUrl}
+      target="_blank"
+      rel={EXTERNAL_LINK_REL}
+      aria-label={`Open ${fullName}'s official profile`}
+      className={className}
+    >
+      {identityBody}
+    </a>
+  );
+  if (!hasContactLinks) {
+    return isExternalLink && profileUrl ? (
+      profileLink(linkClassName)
     ) : (
       <div className={baseClassName}>{identityBody}</div>
     );
-  const sideLinkClassName =
-    'yr-focus-ring self-start rounded-control px-1 text-xs font-medium text-muted hover:text-brand hover:underline';
-  if (!orcidUrl && !resolvedEmailHref) return identityCard;
+  }
   return (
-    <div className="flex flex-col gap-1">
-      {identityCard}
-      {orcidUrl && (
-        <a
-          href={orcidUrl}
-          target="_blank"
-          rel={EXTERNAL_LINK_REL}
-          aria-label={`Open ${fullName}'s ORCID record`}
-          className={sideLinkClassName}
-        >
-          ORCID {user.orcid}
-        </a>
+    <div className={cardShellClassName} data-member-card="">
+      {isExternalLink && profileUrl ? (
+        profileLink(
+          `group -m-1.5 rounded-control p-1.5 transition-colors hover:bg-brand-soft yr-focus-ring ${layoutClassName}`,
+        )
+      ) : (
+        <div className={layoutClassName}>{identityBody}</div>
       )}
-      {resolvedEmailHref && (
-        <a href={resolvedEmailHref} aria-label={`Email ${fullName}`} className={sideLinkClassName}>
-          {user.email}
-        </a>
-      )}
+      <div className="mt-2 flex flex-col border-t border-[var(--yr-line)] pt-1">
+        {resolvedEmailHref && (
+          <a
+            href={resolvedEmailHref}
+            aria-label={`Email ${fullName} at ${emailAddress}`}
+            title={emailAddress}
+            className="yr-focus-ring yr-pressable inline-flex min-h-11 max-w-full items-center gap-2 self-start rounded-control text-sm font-medium text-brand underline-offset-4 hover:underline"
+          >
+            <MailIcon className="flex-shrink-0" size={16} />
+            <span className="min-w-0 truncate">{emailAddress}</span>
+          </a>
+        )}
+        {orcidUrl && (
+          <a
+            href={orcidUrl}
+            target="_blank"
+            rel={EXTERNAL_LINK_REL}
+            aria-label={`Open ${fullName}'s ORCID record`}
+            className="yr-focus-ring yr-pressable inline-flex min-h-11 items-center self-start rounded-control text-xs font-medium text-muted hover:text-brand hover:underline"
+          >
+            ORCID {user.orcid}
+          </a>
+        )}
+      </div>
     </div>
   );
 };
@@ -227,16 +275,7 @@ const LabMembersList = ({
   resolveLeadRoleLabel,
 }: LabMembersListProps) => {
   const { departments, departmentPillEligibleLabels } = useConfig();
-  if (!members || members.length === 0) {
-    return (
-      <div className="rounded-card border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
-        <p className="text-sm font-semibold text-ink">No principal investigator is attached yet</p>
-        <p className="mx-auto mt-1 max-w-xl text-sm leading-relaxed text-ink-soft">
-          Check the official profile for current leadership.
-        </p>
-      </div>
-    );
-  }
+  if (!members || members.length === 0) return null;
 
   // Don't mutate the prop.
   const sorted = [...members]

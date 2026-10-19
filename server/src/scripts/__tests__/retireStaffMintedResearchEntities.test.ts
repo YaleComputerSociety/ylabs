@@ -10,6 +10,7 @@ import {
   identityProfileUrlOf,
   parseRetireStaffMintedEntitiesArgs,
   populatedWebsiteFieldsOf,
+  recordRefusalsInScope,
 } from '../retireStaffMintedResearchEntities';
 
 const IDENTITY = 'https://medicine.example.edu/profile/a-person/';
@@ -279,5 +280,53 @@ describe('the arguments the research sweep builds for the staff-minted-retiremen
     expect(command).toBe('research-entity:retire-staff-minted-entities');
     const parsed = parseRetireStaffMintedEntitiesArgs(scriptArgs);
     expect(parsed).toMatchObject({ apply: true, confirm: true, output: stage!.artifactPath });
+  });
+});
+
+describe('recordRefusalsInScope', () => {
+  const refused = [
+    { id: 'a'.repeat(24), reason: 'title-owns-research' as const },
+    { id: 'b'.repeat(24), reason: 'no-identity-profile-url' as const },
+  ];
+  const candidates = [
+    { id: 'a'.repeat(24), storedTitles: ['Fixture Analyst Title'] },
+    { id: 'b'.repeat(24), storedTitles: [] },
+  ];
+
+  it('names the refusal, identity source and titles of each requested record', () => {
+    expect(
+      recordRefusalsInScope({
+        refused,
+        recordIds: ['a'.repeat(24)],
+        identitySourceById: new Map([['a'.repeat(24), 'mint-key' as const]]),
+        candidates,
+      }),
+    ).toEqual([
+      {
+        id: 'a'.repeat(24),
+        reason: 'title-owns-research',
+        identitySource: 'mint-key',
+        storedTitles: ['Fixture Analyst Title'],
+      },
+    ]);
+  });
+
+  it('reports no record list for an unscoped run and marks an unresolved identity', () => {
+    expect(
+      recordRefusalsInScope({
+        refused,
+        recordIds: undefined,
+        identitySourceById: new Map(),
+        candidates,
+      }),
+    ).toEqual([]);
+    expect(
+      recordRefusalsInScope({
+        refused,
+        recordIds: ['b'.repeat(24)],
+        identitySourceById: new Map(),
+        candidates,
+      })[0].identitySource,
+    ).toBe('none');
   });
 });

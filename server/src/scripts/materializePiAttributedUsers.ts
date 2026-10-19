@@ -5,7 +5,10 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  materializeEntity,
+  userEntityKeyForInferredPiUserKey,
+} from '../scrapers/entityMaterializer';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -13,6 +16,7 @@ import {
   classifyPiAttributedUserOutcome,
   mintOnlyOutcomeWithoutApply,
   parseMaterializePiAttributedUsersArgs,
+  piAttributedUserKeyCandidates,
   shouldApplyAfterMintOnlyProbe,
   summarizePiAttributedUserRows,
   type PiAttributedUserRow,
@@ -54,7 +58,11 @@ async function main(): Promise<void> {
       .filter(Boolean),
   );
 
-  const candidates = [...new Set(attributedKeys.filter((key) => userKeys.has(key)))].sort();
+  const candidates = piAttributedUserKeyCandidates(
+    attributedKeys,
+    userKeys,
+    userEntityKeyForInferredPiUserKey,
+  );
   const visiting = args.limit ? candidates.slice(0, args.limit) : candidates;
 
   const rows: PiAttributedUserRow[] = [];

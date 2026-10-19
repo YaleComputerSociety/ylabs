@@ -3,6 +3,9 @@ import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
 import {
+  HOSTED_UNDERGRADUATES_CHIP_VALUE,
+  HOSTED_UNDERGRADUATES_LABEL,
+  NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE,
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
@@ -21,19 +24,32 @@ interface ResearchFilterDisclosureProps {
   selectedEntityType: string;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedHostsUndergrads?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
   onEntityTypeChange: (value: string) => void;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
+  onHostsUndergradsChange?: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   operatorControls?: ReactNode;
   operatorActiveCount?: number;
+  resultCount?: number;
+  resultCountPending?: boolean;
+  onShowResults?: () => void;
+  isLoadingOptions?: boolean;
 }
+
+const resultCountFormatter = new Intl.NumberFormat('en-US');
+
+const showResultsLabel = (count: number | undefined): string =>
+  count === undefined
+    ? 'Show results'
+    : `Show ${resultCountFormatter.format(count)} ${count === 1 ? 'result' : 'results'}`;
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
   Object.entries(values || {})
@@ -51,18 +67,24 @@ const ResearchFilterDisclosure = ({
   selectedEntityType,
   selectedSchool,
   selectedDepartment,
+  selectedHostsUndergrads = false,
   isApplying,
   hasFacetError,
   departmentLabel,
   onEntityTypeChange,
   onSchoolChange,
   onDepartmentChange,
+  onHostsUndergradsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
   onOpenChange,
   operatorControls,
   operatorActiveCount = 0,
+  resultCount,
+  resultCountPending = false,
+  onShowResults,
+  isLoadingOptions = false,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -79,8 +101,12 @@ const ResearchFilterDisclosure = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
-  const firstFieldRef = useRef<HTMLSelectElement | null>(null);
+  const firstFieldRef = useRef<HTMLElement | null>(null);
+  const setFirstFieldNode = useCallback((node: HTMLElement | null) => {
+    firstFieldRef.current = node;
+  }, []);
   const panelId = useId();
+  const hostsUndergradsNoteId = useId();
 
   const positiveEntityTypes = useMemo(
     () =>
@@ -110,22 +136,36 @@ const ResearchFilterDisclosure = ({
     () => withSelectedOption(positiveDepartments, selectedDepartment),
     [positiveDepartments, selectedDepartment],
   );
-  const showEntityType = positiveEntityTypes.length > 1 || Boolean(selectedEntityType);
-  const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
-  const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
+  const showEntityType = positiveEntityTypes.length > 0 || Boolean(selectedEntityType);
+  const showSchool = positiveSchools.length > 0 || Boolean(selectedSchool);
+  const showDepartment = positiveDepartments.length > 0 || Boolean(selectedDepartment);
+  const servedHostsUndergradsCount = facetDistribution.hostsUndergrads?.true;
+  const hostsUndergradsCount = Number.isFinite(servedHostsUndergradsCount)
+    ? servedHostsUndergradsCount
+    : undefined;
+  const noHostedUndergraduateEvidence = hostsUndergradsCount === 0 && !selectedHostsUndergrads;
+  const showHostsUndergrads =
+    Boolean(onHostsUndergradsChange) &&
+    (hostsUndergradsCount !== undefined || selectedHostsUndergrads);
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
-    Number(Boolean(selectedDepartment));
+    Number(Boolean(selectedDepartment)) +
+    Number(selectedHostsUndergrads);
   const triggerCount = activeCount + operatorActiveCount;
   const visibleFields = (
     [
+      showHostsUndergrads && 'hostsUndergrads',
       showEntityType && 'entityType',
       showSchool && 'school',
       showDepartment && 'department',
     ] as const
-  ).filter((field): field is 'entityType' | 'school' | 'department' => Boolean(field));
-  const firstVisibleField = visibleFields[0];
+  ).filter((field): field is 'entityType' | 'school' | 'department' | 'hostsUndergrads' =>
+    Boolean(field),
+  );
+  const firstVisibleField = visibleFields.find(
+    (field) => field !== 'hostsUndergrads' || !noHostedUndergraduateEvidence,
+  );
   const visibleFacetKey = visibleFields.join(':');
 
   const getFocusableElements = () =>
@@ -194,9 +234,12 @@ const ResearchFilterDisclosure = ({
 
   const emptyMessage = hasFacetError
     ? 'Filter options could not load with this search. Active filters can still be cleared.'
-    : isApplying
+    : isApplying || isLoadingOptions
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
+
+  const facetCountSuffix = (count: number | undefined): string =>
+    hasFacetError || count === undefined ? '' : ` (${count})`;
 
   const facetCountWarning = hasFacetError && visibleFields.length > 0 && (
     <p className="rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -204,65 +247,94 @@ const ResearchFilterDisclosure = ({
     </p>
   );
 
+  const selectFieldLabelClassName = isSidebar
+    ? 'grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 text-sm font-medium text-ink'
+    : 'block min-w-0 text-sm font-medium text-ink';
+  const selectClassName = `yr-focus-ring ${isSidebar ? '' : 'mt-1 '}min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink`;
+
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
       <div className="min-w-0 space-y-4">
+        {showHostsUndergrads && (
+          <div className="min-w-0">
+            <label className="flex min-h-11 min-w-0 items-start gap-3 text-sm font-medium text-ink">
+              <input
+                ref={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
+                type="checkbox"
+                checked={selectedHostsUndergrads}
+                disabled={noHostedUndergraduateEvidence}
+                aria-describedby={noHostedUndergraduateEvidence ? hostsUndergradsNoteId : undefined}
+                onChange={(event) => onHostsUndergradsChange?.(event.target.checked)}
+                className="yr-focus-ring mt-0.5 h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
+              />
+              <span className={`min-w-0 ${noHostedUndergraduateEvidence ? 'text-muted' : ''}`}>
+                {HOSTED_UNDERGRADUATES_LABEL}
+                {facetCountSuffix(hostsUndergradsCount)}
+              </span>
+            </label>
+            {noHostedUndergraduateEvidence && (
+              <p id={hostsUndergradsNoteId} className="ml-8 text-xs leading-relaxed text-muted">
+                {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
+              </p>
+            )}
+          </div>
+        )}
         {showEntityType && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             Type
             <select
-              ref={firstVisibleField === 'entityType' ? firstFieldRef : undefined}
+              ref={firstVisibleField === 'entityType' ? setFirstFieldNode : undefined}
               aria-label="Filter by type"
               value={selectedEntityType}
               onChange={(event) => onEntityTypeChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              className={selectClassName}
             >
               <option value="">All types</option>
               {entityTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label || researchEntityTypeFilterLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
             </select>
           </label>
         )}
         {showSchool && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             School
             <select
-              ref={firstVisibleField === 'school' ? firstFieldRef : undefined}
+              ref={firstVisibleField === 'school' ? setFirstFieldNode : undefined}
               aria-label="Filter by school"
               value={selectedSchool}
               onChange={(event) => onSchoolChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              className={selectClassName}
             >
               <option value="">All schools</option>
               {schoolOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
             </select>
           </label>
         )}
         {showDepartment && (
-          <label className="block min-w-0 text-sm font-medium text-ink">
+          <label className={selectFieldLabelClassName}>
             Department
             <select
-              ref={firstVisibleField === 'department' ? firstFieldRef : undefined}
+              ref={firstVisibleField === 'department' ? setFirstFieldNode : undefined}
               aria-label="Filter by department"
               value={selectedDepartment}
               onChange={(event) => onDepartmentChange(event.target.value)}
-              className="yr-focus-ring mt-1 min-h-11 w-full min-w-0 rounded-control border border-[var(--yr-line-control)] bg-white px-3 text-base text-ink"
+              className={selectClassName}
             >
               <option value="">All departments</option>
               {departmentOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {departmentLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
+                  {facetCountSuffix(option.count)}
                 </option>
               ))}
             </select>
@@ -285,41 +357,55 @@ const ResearchFilterDisclosure = ({
     </button>
   );
 
-  const activeChips = activeCount > 0 && (
-    <div
-      className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
-      aria-label="Active research filters"
-    >
-      {selectedEntityType && (
-        <ActiveFilterChip
-          axis="Type"
-          value={researchEntityTypeFilterLabel(selectedEntityType)}
-          onRemove={() => onEntityTypeChange('')}
-        />
-      )}
-      {selectedSchool && (
-        <ActiveFilterChip
-          axis="School"
-          value={selectedSchool}
-          onRemove={() => onSchoolChange('')}
-        />
-      )}
-      {selectedDepartment && (
-        <ActiveFilterChip
-          axis="Department"
-          value={departmentLabel(selectedDepartment)}
-          onRemove={() => onDepartmentChange('')}
-        />
-      )}
-      <button
-        type="button"
-        onClick={onClearAll}
-        className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+  const activeChips = (besideTrigger: boolean) =>
+    activeCount > 0 && (
+      <div
+        className={
+          besideTrigger
+            ? '-my-1 -ml-1 flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto p-1 *:max-w-full *:shrink-0'
+            : 'mt-2 flex min-w-0 max-w-full flex-wrap gap-2'
+        }
+        aria-label="Active research filters"
       >
-        Clear all active filters
-      </button>
-    </div>
-  );
+        {selectedEntityType && (
+          <ActiveFilterChip
+            axis="Type"
+            value={researchEntityTypeFilterLabel(selectedEntityType)}
+            onRemove={() => onEntityTypeChange('')}
+          />
+        )}
+        {selectedSchool && (
+          <ActiveFilterChip
+            axis="School"
+            value={selectedSchool}
+            onRemove={() => onSchoolChange('')}
+          />
+        )}
+        {selectedDepartment && (
+          <ActiveFilterChip
+            axis="Department"
+            value={departmentLabel(selectedDepartment)}
+            onRemove={() => onDepartmentChange('')}
+          />
+        )}
+        {selectedHostsUndergrads && (
+          <ActiveFilterChip
+            axis="Undergraduates"
+            value={HOSTED_UNDERGRADUATES_CHIP_VALUE}
+            onRemove={() => onHostsUndergradsChange?.(false)}
+          />
+        )}
+        {besideTrigger && (
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+          >
+            Clear all filters
+          </button>
+        )}
+      </div>
+    );
 
   if (isSidebar) {
     return (
@@ -342,14 +428,14 @@ const ResearchFilterDisclosure = ({
           {filterFields}
           {clearAllButton}
         </div>
-        {activeChips}
+        {activeChips(false)}
       </section>
     );
   }
 
   return (
-    <div className="mt-3 min-w-0 max-w-full">
-      <div className="relative min-w-0 max-w-full">
+    <div className="mt-3 flex min-w-0 max-w-full items-center gap-2">
+      <div className="relative min-w-0 max-w-full shrink-0">
         <button
           ref={triggerRef}
           type="button"
@@ -442,12 +528,35 @@ const ResearchFilterDisclosure = ({
                   </section>
                 )}
               </div>
+              <div className="sticky bottom-0 border-t border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeFilters();
+                    onShowResults?.();
+                  }}
+                  className="yr-focus-ring yr-pressable grid min-h-11 w-full place-items-center rounded-control bg-[var(--yr-blue)] px-4 text-sm font-semibold text-white hover:bg-brand-navy"
+                >
+                  <span
+                    aria-hidden={resultCountPending || undefined}
+                    className={`yr-num col-start-1 row-start-1 ${resultCountPending ? 'invisible' : ''}`}
+                  >
+                    {showResultsLabel(resultCount)}
+                  </span>
+                  <span
+                    aria-hidden={resultCountPending ? undefined : true}
+                    className={`col-start-1 row-start-1 ${resultCountPending ? '' : 'invisible'}`}
+                  >
+                    Updating results…
+                  </span>
+                </button>
+              </div>
             </div>
           </>
         )}
       </div>
 
-      {activeChips}
+      {activeChips(true)}
     </div>
   );
 };

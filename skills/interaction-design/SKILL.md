@@ -128,7 +128,7 @@ These are open, and they are open because only a student can close them.
 Do not invent an answer and encode it.
 
 - **Does search lead, or does browse?**
-`/research` currently asserts both: a serif "Find a Yale lab that fits you." over a search box whose Search button, pressed while empty, only shows a hint ("Type a topic, professor, or lab to search."), above a grid that is already populated.
+`/research` currently asserts both: a serif "Find Yale research that fits you." over a search box whose Search button, pressed while empty, only shows a hint ("Type a topic, professor, or lab to search."), above a grid that is already populated.
 The page tells the student to search and simultaneously demonstrates that browsing works.
 One of those should lead.
 - **What does a student scan first on a card?**
@@ -147,6 +147,7 @@ It came back on 2026-10-11 in the form the threshold called for.
 After #3592 kept only quotes found on a fetched page, the re-measure read 0.84 (0.71 to 0.92), which is middling rather than high, so the card shows the quote itself under "Mentions undergraduate research" with the page it is quoted from, and the student judges it.
 The label says less than the old one on purpose: only half the correct quotes show undergraduates were hosted, so "Has hosted undergraduate researchers" stays reserved for roster and advisee evidence (`docs/decisions.md`, 2026-10-11).
 On 2026-10-12 the quote left the card for the detail page, where it reads at full width below the topics, because on the card it was the heaviest block and the one a student could not scan (#5022).
+On 2026-10-18 the owner removed the quote from the detail page too (#5309): of 117 shown, about 43 were explicit invitations, and the rest were member bios that belong in the roster list or passing mentions a student cannot act on.
 
 Three lessons for this file, which is why this entry is long.
 

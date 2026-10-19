@@ -7,6 +7,10 @@
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
+  inferredPiKeyNamesRoleOrUnitMailbox,
+  userKeyNamesRoleOrUnitMailbox,
+} from './roleMailboxUserKey';
+import {
   isProfileTemplateChrome,
   withoutProfileTemplateWidgets,
 } from '../utils/profileTemplateChrome';
@@ -98,6 +102,9 @@ import {
   personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
   isOffSitePageTitleForPersonScopedName,
+  isLabShapedResearchHome,
+  isRefusedProfileLinkedHomeName,
+  nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
@@ -139,6 +146,7 @@ import {
   listResearchEntityMergedInRows,
   resolveResearchEntityCanonicalByTombstone,
   type MergedInResearchEntityRow,
+  type ResearchEntityTombstoneNode,
 } from '../services/researchEntityCanonicalTombstone';
 import { isLowTrustAreaShellSlug } from '../utils/researchEntityShellSlug';
 import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
@@ -224,6 +232,17 @@ import {
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import {
+  isPersonRowForProfileHomeClaims,
+  profileHomeClaimKey,
+  profileHomeOrganizationClaimKeys,
+  withoutPersonRowOrganizationHomeClaims,
+  type ProfileHomeClaimObservation,
+} from './personRowOrganizationClaims';
+import {
+  storedFieldIsCreditedToACoursePage,
+  withoutCoursePageEvidence,
+} from './coursePageEvidenceScreen';
+import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
 } from './personProfileTopicScreen';
@@ -261,7 +280,11 @@ import {
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
-import { stripTitleFieldLabel } from '../utils/titleHygiene';
+import {
+  isPageHeadingTitle,
+  isTruncatedPersonTitle,
+  stripTitleFieldLabel,
+} from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
@@ -299,13 +322,16 @@ import { splitName } from './utils/scraperHelpers';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import {
   isBoilerplatePlatformHostUrl,
+  isCoursePageUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
   isInstitutionalAdvancementUrl,
   isMapOrDirectionsUrl,
   isPostingPageUrl,
   recordSpecificApplicationPortalIdentity,
+  isLinkedPublicationOrDocumentUrl,
   researchHomeWebsiteUrlWriteRefusal,
+  withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
 import { namesAPostingRatherThanResearch } from '../utils/postingName';
@@ -360,6 +386,7 @@ import {
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
 import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
+import { personPagesNameDifferentPeople } from './utils/officialProfilePageIdentityConflict';
 import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterDirectorRetirementsFromRun } from './centerDirectorRetirement';
@@ -445,6 +472,13 @@ import {
 
 interface MaterializeOptions {
   dryRun?: boolean;
+  /**
+   * Plan as if these archived research rows were already deleted, so a dry run answers
+   * whether deleting a retired row would let the next resolve mint it again (#5189).
+   * `dryRun` is required: the option asks a question, and a projection planned against a
+   * row that still exists must never reach a write.
+   */
+  treatArchivedResearchEntitiesAsAbsent?: ReadonlySet<string>;
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: CardSynthesizer;
@@ -1229,22 +1263,30 @@ const PROFILE_HOME_PAIRED_IDENTITY_FIELDS = new Set(['entityType', 'kind']);
  * live, so person rows kept serving as the linked CENTER or INITIATIVE (#3886). The lane cannot
  * withdraw the type itself: a refusal is not an absence, and an enum field is not declarable for
  * retraction (`fieldRetraction.ts`). So the pairing is read here, on every resolve, instead.
+ *
+ * The pairing is per read rather than per row: a read whose name was refused at ingest still
+ * restated the type, and an older read's name kept that newer type live (#5283).
  */
-export function withoutUnpairedProfileHomeIdentity<
-  T extends { sourceName?: unknown; field?: unknown; value?: unknown },
->(observations: T[], fieldValueRefusals: unknown): T[] {
-  const laneNamesTheRow = observations.some(
-    (observation) =>
-      observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
-      observation.field === 'name' &&
-      textValue(observation.value).length > 0 &&
-      !valueIsRefused(fieldValueRefusals, 'name', observation.value),
+export function withoutUnpairedProfileHomeIdentity<T extends ProfileHomeClaimObservation>(
+  observations: T[],
+  fieldValueRefusals: unknown,
+): T[] {
+  const namedClaims = new Set(
+    observations
+      .filter(
+        (observation) =>
+          observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+          observation.field === 'name' &&
+          textValue(observation.value).length > 0 &&
+          !valueIsRefused(fieldValueRefusals, 'name', observation.value),
+      )
+      .map(profileHomeClaimKey),
   );
-  if (laneNamesTheRow) return observations;
   return observations.filter(
     (observation) =>
       observation.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE ||
-      !PROFILE_HOME_PAIRED_IDENTITY_FIELDS.has(String(observation.field)),
+      !PROFILE_HOME_PAIRED_IDENTITY_FIELDS.has(String(observation.field)) ||
+      namedClaims.has(profileHomeClaimKey(observation)),
   );
 }
 
@@ -1777,6 +1819,18 @@ const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
   'undergraduateLogisticsCurrentAvailability',
 ]);
 
+/**
+ * A name this lane stored before it refused that shape at the name step. A refusal retracts
+ * nothing, so the stored value stays live (#5226). The type and kind it was paired with then
+ * fall through `withoutUnpairedProfileHomeIdentity`.
+ */
+function isInadmissibleProfileHomeName(observation: MaterializerObservationLike): boolean {
+  return (
+    (observation.field === 'name' || observation.field === 'displayName') &&
+    isRefusedProfileLinkedHomeName(observation.value, observation.sourceName)
+  );
+}
+
 export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
   observation: MaterializerObservationLike,
@@ -1791,6 +1845,21 @@ export function shouldIgnoreObservationForEntityMaterialization(
     return true;
   }
   if (entityType === 'user' && isOfficialProfileBioChromeObservation(observation)) {
+    return true;
+  }
+  if (
+    entityType === 'user' &&
+    (observation.field === 'website' || observation.field === 'websiteUrl') &&
+    isCoursePageUrl(observation.value)
+  ) {
+    return true;
+  }
+  if (
+    entityType === 'user' &&
+    observation.field === 'title' &&
+    typeof observation.value === 'string' &&
+    (isTruncatedPersonTitle(observation.value) || isPageHeadingTitle(observation.value))
+  ) {
     return true;
   }
   if (
@@ -1820,6 +1889,25 @@ export function shouldIgnoreObservationForEntityMaterialization(
     isResearchEntityObservationType(entityType) &&
     isGrantLaneObservationOutsideEnrichment(observation)
   ) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field === 'inferredPiUserKey' &&
+    inferredPiKeyNamesRoleOrUnitMailbox(
+      userEntityKeyForInferredPiUserKey(observation.value),
+      observation,
+    )
+  ) {
+    return true;
+  }
+  // A course page describes a class, so nothing read off it is evidence about a research
+  // entity: dropping it here keeps an already-stored course name, type or description
+  // inert on every resolve without a lock (#5213).
+  if (isResearchEntityObservationType(entityType) && isCoursePageUrl(observation.sourceUrl)) {
+    return true;
+  }
+  if (isResearchEntityObservationType(entityType) && isInadmissibleProfileHomeName(observation)) {
     return true;
   }
   if (
@@ -2081,6 +2169,9 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
     state: enrichment.state,
     memberKeys,
     sourceUrl,
+    ...(textValue(enrichment.configOrigin)
+      ? { configOrigin: textValue(enrichment.configOrigin) }
+      : {}),
     ...(undergraduates.length > 0 ? { undergraduates } : {}),
     ...(textValue(enrichment.alumniSourceUrl)
       ? { alumniSourceUrl: textValue(enrichment.alumniSourceUrl) }
@@ -2090,6 +2181,9 @@ const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | und
     freshnessExpiresAt,
   };
 };
+
+const rosterConfigOrigin = (enrichment: Record<string, unknown>): string =>
+  textValue(enrichment.configOrigin) || 'static';
 
 export function rosterEnrichmentWithRetainedSuccessfulSnapshot(
   value: unknown,
@@ -2104,7 +2198,8 @@ export function rosterEnrichmentWithRetainedSuccessfulSnapshot(
   const retained =
     successfulRosterSnapshot(existing) ||
     successfulRosterSnapshot(objectRecord(existing.lastSuccessfulSnapshot));
-  return retained ? { ...enrichment, lastSuccessfulSnapshot: retained } : enrichment;
+  const sameOrigin = retained && rosterConfigOrigin(retained) === rosterConfigOrigin(enrichment);
+  return sameOrigin ? { ...enrichment, lastSuccessfulSnapshot: retained } : enrichment;
 }
 
 const RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE =
@@ -2154,7 +2249,8 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(
       // serve-time predicate misses the search-list DTO, so refusing it here is what
       // actually empties the stored field (#3184).
       !isMapOrDirectionsUrl(url) &&
-      !isBoilerplatePlatformHostUrl(url),
+      !isBoilerplatePlatformHostUrl(url) &&
+      !isCoursePageUrl(url),
   );
   if (!entityIdentity) return kept;
   const entityForMatch: ResearchEntityIdentity = {
@@ -2355,7 +2451,12 @@ export function bestMaterializationProvenanceSourceUrl(
         )
       : ranked,
   );
-  return Array.isArray(sanitized) ? (sanitized[0] as string | undefined) : undefined;
+  if (!Array.isArray(sanitized)) return undefined;
+  // A paper or file a lane read only to verify the lead is not the page to cite when a
+  // profile or roster page also produced the row; it stays the fallback when nothing
+  // else did, where the caller still refuses it unless a served field was read from it (#5114).
+  return (sanitized.find((url) => !isLinkedPublicationOrDocumentUrl(url)) ?? sanitized[0]) as
+    string | undefined;
 }
 
 /**
@@ -3411,7 +3512,11 @@ export async function planInferredPiMembership(
     if (facts) leads.push(facts);
   }
 
-  const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
+  const piKeyObservations = observations.filter(
+    (obs) =>
+      obs.field === 'inferredPiUserKey' &&
+      !inferredPiKeyNamesRoleOrUnitMailbox(userEntityKeyForInferredPiUserKey(obs.value), obs),
+  );
   let entityName: string | undefined;
   const loadEntityName = async (): Promise<string> => {
     entityName ??= textValue(
@@ -3488,11 +3593,22 @@ export async function resolveNetidForRosterEmailAlias(
   ).lean()) as Array<{ entityKey?: unknown }>;
   const netids = uniqueStrings(
     matches
-      .map((match) => userLookupValueForInferredPiUserKey(match.entityKey).toLowerCase())
+      .map((match) => netidNamedByUserEntityKey(match.entityKey))
       .filter((netid) => Boolean(netid) && netid !== local),
   );
   if (netids.length === 1) return { status: 'resolved', netid: netids[0] };
   return { status: netids.length > 1 ? 'ambiguous' : 'absent' };
+}
+
+/**
+ * The netid a `user` entityKey names, or nothing when the key belongs to another namespace.
+ * A grant lane keys its people `nsf-pi:<name>` and carries their address as an `email`
+ * observation, so reading every key as a netid made that name a second netid for the alias
+ * and turned a resolvable alias `ambiguous`.
+ */
+export function netidNamedByUserEntityKey(entityKey: unknown): string {
+  const netid = userLookupValueForInferredPiUserKey(entityKey).toLowerCase();
+  return NAMESPACED_USER_KEY_PATTERN.test(netid) || /\s/.test(netid) ? '' : netid;
 }
 
 export async function netidForRosterEmailAlias(alias: string): Promise<string | undefined> {
@@ -5528,7 +5644,7 @@ async function findEntityDocByIdentifier(
  * carry. Skip create when those aren't present rather than throwing a Mongoose
  * ValidationError that would abort the whole materialization run.
  */
-function hasRequiredFieldsForCreate(
+export function hasRequiredFieldsForCreate(
   entityType: ObservedEntityType,
   insert: Record<string, unknown>,
 ): boolean {
@@ -5654,6 +5770,84 @@ const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
   'studentVisibilitySuppressionReason',
   'studentVisibilityReviewNote',
 ]);
+
+// A loser's PI attribution may name the survivor's lead only while the survivor states
+// none of its own, because a merge leaves the roster that lists the person reading the
+// loser's key, and a survivor with no lead of its own would otherwise be held on
+// `missing_lead` by a lead the merge itself established. The person-mint gate asks
+// `mergedSurvivorEvidence` itself, so both read one condition.
+const MERGED_LOSER_PI_LEAD_FIELDS: ReadonlySet<string> = new Set([
+  'inferredPiUserKey',
+  'inferredPiUserId',
+]);
+
+const PI_LEAD_LOCK_FIELDS: ReadonlySet<string> = new Set([...MERGED_LOSER_PI_LEAD_FIELDS, 'lead']);
+
+async function personNamedByPiAttribution(
+  attribution: any,
+  entityName: () => Promise<string>,
+): Promise<string> {
+  if (attribution.field === 'inferredPiUserId') {
+    return normalizeMaterializerObjectId(textValue(attribution.value)) || `id:${attribution.value}`;
+  }
+  const resolution = await resolveInferredPiUserKey(attribution.value, entityName);
+  return resolution.status === 'matched' && resolution.researcherId
+    ? String(resolution.researcherId)
+    : `key:${textValue(attribution.value)}`;
+}
+
+async function liveResearcherIdsAmong(personIds: readonly unknown[]): Promise<Set<string>> {
+  const objectIds = personIds
+    .map((personId) => toMaterializerObjectId(personId))
+    .filter((personId): personId is mongoose.Types.ObjectId => Boolean(personId));
+  if (objectIds.length === 0) return new Set();
+  const live = (await Researcher.find({ _id: { $in: objectIds }, archived: { $ne: true } })
+    .select('_id')
+    .lean()) as Array<{ _id: unknown }>;
+  return new Set(live.map((researcher) => String(researcher._id)));
+}
+
+// The losers must name one person, and that person must be the only lead the survivor
+// already holds from any lane, so a merge never puts a second lead beside the first.
+// An attribution that resolves to an archived researcher names nobody who can lead, so
+// it neither counts as a second person nor reaches the survivor: a roster's retired
+// mailbox-shaped key would otherwise veto the person the same roster names today.
+async function loserLeadAttributionsTheSurvivorTakes(
+  survivorId: mongoose.Types.ObjectId,
+  survivorName: string,
+  attributions: any[],
+): Promise<any[]> {
+  if (attributions.length === 0) return [];
+  const named = [];
+  for (const attribution of attributions) {
+    named.push({
+      attribution,
+      person: await personNamedByPiAttribution(attribution, async () => survivorName),
+    });
+  }
+  const resolvedPeople = named
+    .map(({ person }) => person)
+    .filter((person) => mongoose.isValidObjectId(person));
+  const livePeople = await liveResearcherIdsAmong(resolvedPeople);
+  const usable = named.filter(
+    ({ person }) => !mongoose.isValidObjectId(person) || livePeople.has(person),
+  );
+  const people = new Set(usable.map(({ person }) => person));
+  if (people.size !== 1) return [];
+  const [person] = people;
+  const heldLeads = await liveResearcherIdsAmong(
+    (await RoleAssignment.distinct('personId', {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': survivorId,
+      role: { $in: SCHOOL_INHERITANCE_LEAD_ROLES },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    })) as unknown[],
+  );
+  return [...heldLeads].every((held) => held === person)
+    ? usable.map(({ attribution }) => attribution)
+    : [];
+}
 
 // These lanes fork a lab identity (`name`, `kind`, `entityType`, `websiteUrl`) on
 // one profile link, so once one of them has typed the survivor from the survivor's
@@ -5798,6 +5992,37 @@ export async function mergedSurvivorEvidence(
   const survivorTypeIsLocked =
     Array.isArray(survivor.manuallyLockedFields) &&
     survivor.manuallyLockedFields.includes('entityType');
+  const survivorLeadIsLocked =
+    Array.isArray(survivor.manuallyLockedFields) &&
+    survivor.manuallyLockedFields.some((field: unknown) => PI_LEAD_LOCK_FIELDS.has(String(field)));
+  const survivorStatesItsOwnPiLead = [...loadedObservations, ...kept].some(
+    (observation: any) =>
+      !loserOrigin(observation) && MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')),
+  );
+  const loserLeadAttributions =
+    survivorLeadIsLocked || survivorStatesItsOwnPiLead
+      ? []
+      : [...loadedObservations, ...kept].filter(
+          (observation: any) =>
+            loserOrigin(observation) &&
+            MERGED_LOSER_PI_LEAD_FIELDS.has(String(observation.field || '')) &&
+            !valueIsRefused(
+              survivor.fieldValueRefusals,
+              String(observation.field),
+              observation.value,
+            ),
+        );
+  const takenLoserLeadIds = new Set(
+    (
+      await loserLeadAttributionsTheSurvivorTakes(
+        survivorId,
+        textValue(survivor.name),
+        loserLeadAttributions,
+      )
+    ).map((observation: any) => String(observation._id)),
+  );
+  const loserNamesLeadOfLeadlessSurvivor = (observation: any): boolean =>
+    takenLoserLeadIds.has(String(observation._id));
   const survivorOwnsItsWebsite =
     !survivorTypeIsLocked &&
     [...loadedObservations, ...kept].some(
@@ -5931,6 +6156,7 @@ export async function mergedSurvivorEvidence(
       if (survivorReadOnARoster) return false;
     }
     if (loserCorroboratesUnbackedSurvivorType(observation)) return true;
+    if (loserNamesLeadOfLeadlessSurvivor(observation)) return true;
     if (SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field)) return false;
     if (survivorOwnsItsWebsite && LAB_IDENTITY_WEBSITE_FIELDS.has(field)) {
       droppedLoserWebsiteValues.push(observation.value);
@@ -6065,7 +6291,7 @@ async function observationsMergedIntoLiveSurvivor(
     routedSurvivor?.hit
       ? routedSurvivor.value
       : await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-          .select('_id slug fieldValueRefusals manuallyLockedFields')
+          .select('_id slug name fieldValueRefusals manuallyLockedFields')
           .lean()
   ) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
@@ -6322,18 +6548,63 @@ function normalizedResearcherProfileText(
   return normalized.slice(0, bound).trim() || undefined;
 }
 
+async function mergedSurvivorTakesLoserLeadAttribution(
+  loser: ResearchEntityTombstoneNode,
+  entityType: ObservedEntityType,
+  userEntityKey: string,
+): Promise<boolean> {
+  const canonical = await resolveResearchEntityCanonicalByTombstone(loser);
+  if (!canonical) return false;
+  const survivor = (await ResearchEntity.findOne({ _id: canonical._id, archived: { $ne: true } })
+    .select('_id slug name fieldValueRefusals manuallyLockedFields')
+    .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
+  if (!survivor) return false;
+  const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
+    await Observation.find({
+      entityType,
+      ...materializationReadScopeFilter(),
+      $or: [
+        { entityId: canonical._id },
+        ...(textValue(survivor.slug)
+          ? [{ entityKey: textValue(survivor.slug), entityId: null }]
+          : []),
+      ],
+    }).lean(),
+    await invalidatedScrapeRunIds(),
+  );
+  const { observations } = await mergedSurvivorEvidence(entityType, survivor, ownObservations);
+  return observations.some(
+    (observation: any) =>
+      observation.field === 'inferredPiUserKey' &&
+      userEntityKeyForInferredPiUserKey(observation.value) === userEntityKey,
+  );
+}
+
 /**
  * A folded dept-roster shell is archived without superseding its observations
  * (`foldDeptRosterShellIntoCanonicalResearchEntity`), so a live `inferredPiUserKey` can
  * outlive the entity that asserted it. The lead materializer already requires a live
  * entity (`inferredPiLeadReclaim`), and minting a person on a dead entity's word would
- * create a record no entity can ever use.
+ * create a record no entity can ever use. A merged-in loser's attribution is the
+ * exception: its survivor resolves over it while stating no lead of its own
+ * (`mergedSurvivorEvidence`), so the person it names is the lead that survivor uses.
  */
 async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Promise<boolean> {
-  const attributions = (await Observation.find(
-    { field: 'inferredPiUserKey', value: userEntityKey, superseded: false },
-    { entityKey: 1, entityId: 1 },
-  ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown }>;
+  const attributions = (
+    (await Observation.find(
+      {
+        field: 'inferredPiUserKey',
+        value: { $in: inferredPiUserKeyValuesThatCouldName(userEntityKey) },
+        superseded: false,
+      },
+      { entityType: 1, entityKey: 1, entityId: 1, value: 1 },
+    ).lean()) as Array<{
+      entityType?: ObservedEntityType;
+      entityKey?: unknown;
+      entityId?: unknown;
+      value?: unknown;
+    }>
+  ).filter((attribution) => userEntityKeyForInferredPiUserKey(attribution.value) === userEntityKey);
   const slugs = uniqueStrings(attributions.map((attribution) => attribution.entityKey));
   const entityIds = attributions
     .map((attribution) => normalizeMaterializerObjectId(attribution.entityId))
@@ -6342,7 +6613,54 @@ async function liveResearchEntityNamesUserKeyAsLead(userEntityKey: string): Prom
   if (slugs.length > 0) namingEntity.push({ slug: { $in: slugs } });
   if (entityIds.length > 0) namingEntity.push({ _id: { $in: entityIds } });
   if (namingEntity.length === 0) return false;
-  return Boolean(await ResearchEntity.exists({ archived: { $ne: true }, $or: namingEntity }));
+  const named = (await ResearchEntity.find({ $or: namingEntity })
+    .select('_id slug archived canonicalGroupId')
+    .lean()) as unknown as ResearchEntityTombstoneNode[];
+  if (named.some((entity) => entity.archived !== true)) return true;
+  for (const loser of named.filter((entity) => entity.canonicalGroupId)) {
+    const attribution = attributions.find(
+      (candidate) =>
+        textValue(candidate.entityKey) === loser.slug ||
+        normalizeMaterializerObjectId(candidate.entityId) === String(loser._id),
+    );
+    if (
+      attribution?.entityType &&
+      (await mergedSurvivorTakesLoserLeadAttribution(loser, attribution.entityType, userEntityKey))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A name match is a guess, and the person page the evidence cites is a per-person identifier,
+ * so a candidate whose own official page on that site is a different person's page is
+ * refused (#5324). Joining it renames the record after the observed person while it keeps
+ * the other person's page, which is how a same-surname stranger came to be served as a lead.
+ */
+function officialPersonPagesContradictNameMatch(observations: any[], candidate: any): boolean {
+  const storedOfficialUrls = (Array.isArray(candidate?.profileLinks) ? candidate.profileLinks : [])
+    .filter((link: ResearcherProfileLink) => link?.kind === 'YALE_OFFICIAL')
+    .map((link: ResearcherProfileLink) => String(link.url ?? ''));
+  return personPagesNameDifferentPeople(
+    officialUserProfileUrlsFromObservations(observations),
+    storedOfficialUrls,
+  );
+}
+
+/**
+ * A roster stores the lead it names as `netid:<alias>`, the bare alias or the Yale address
+ * (#4697), and `userEntityKeyForInferredPiUserKey` reads all three as one `user` key. Matching
+ * only the `netid:` spelling refused every lead whose roster stored one of the other two.
+ */
+function inferredPiUserKeyValuesThatCouldName(userEntityKey: string): Array<string | RegExp> {
+  const payload = userEntityKey.match(/^netid:(.+)$/)?.[1];
+  if (!payload || !BARE_ROSTER_ALIAS_PATTERN.test(payload)) return [userEntityKey];
+  return [
+    userEntityKey,
+    new RegExp(`^(?:netid:)?${escapeRegex(payload)}(?:@(?:[a-z0-9-]+\\.)*yale\\.edu)?$`, 'i'),
+  ];
 }
 
 export interface UserIdentityJoinResult {
@@ -6374,9 +6692,10 @@ export async function joinUserIdentityToExistingResearcher(
   obs: any[],
   now: Date = new Date(),
 ): Promise<UserIdentityJoinResult> {
-  const materializationObs = obs.filter(
-    (o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o),
-  );
+  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
+  const materializationObs = keyNamesAnOfficeMailbox
+    ? []
+    : obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o));
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -6391,9 +6710,10 @@ export async function joinUserIdentityToExistingResearcher(
     return value && servedUserNameField(field, value);
   };
 
-  const netid =
-    normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
-    normalizedAccountNetid(resolvedValue('netid'));
+  const netid = keyNamesAnOfficeMailbox
+    ? undefined
+    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+      normalizedAccountNetid(resolvedValue('netid')));
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
@@ -6429,8 +6749,11 @@ export async function joinUserIdentityToExistingResearcher(
       resolution.status === 'absent' ||
       (resolution.status === 'ambiguous' && resolution.everyCandidateNamesSomeoneElse === true);
     if (resolution.status === 'matched' && resolution.researcherId) {
-      researcher = await Researcher.findById(resolution.researcherId);
-      if (researcher) identityJoin = 'person-name';
+      const nameMatch = await Researcher.findById(resolution.researcherId);
+      if (nameMatch && !officialPersonPagesContradictNameMatch(materializationObs, nameMatch)) {
+        researcher = nameMatch;
+        identityJoin = 'person-name';
+      }
     }
   }
   /**
@@ -6529,6 +6852,9 @@ async function materializeUserIdentityToResearcher(
     skipped: reason,
   });
 
+  if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs)) {
+    return skipped('office-mailbox-user-key');
+  }
   const join = await joinUserIdentityToExistingResearcher(
     identifier,
     obs,
@@ -6655,6 +6981,10 @@ async function materializeUserIdentityToResearcher(
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
     }
+  }
+  if (!title && isPageHeadingTitle(researcher.profile.title)) {
+    researcher.profile.title = undefined;
+    fieldsWritten += 1;
   }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
   const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
@@ -7425,6 +7755,22 @@ function enforceResearchEntityNameAuthority(input: {
   nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
+  const withdrawnRetype = reclassifyWithdrawnProfileHomeOrganizationRetype({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    materializationObs: input.materializationObs,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
+  });
+  const personRow = isPersonRowForProfileHomeClaims(
+    { slug: entityDoc?.slug, leadPersonName: input.nameIdentityAuthority.leadPersonName },
+    input.materializationObs,
+  );
+  const servesAsFacultyResearch =
+    personRow &&
+    textValue(set.entityType ?? entityDoc?.entityType).toUpperCase() === 'FACULTY_RESEARCH_AREA';
   const recordIdentity = {
     entityType: set.entityType ?? entityDoc?.entityType,
     kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
@@ -7437,8 +7783,8 @@ function enforceResearchEntityNameAuthority(input: {
   // provenance that candidate would bring with it. Judging a candidate against
   // the outgoing value's URL would clear another person's eponymous lab whenever
   // the refused value happened to come from somewhere else.
-  const servedProvenanceSourceUrl = (field: string): unknown =>
-    objectRecord(set[`fieldProvenance.${field}`] ?? entityDoc?.fieldProvenance?.[field]).sourceUrl;
+  const servedProvenance = (field: string): Record<string, unknown> =>
+    objectRecord(set[`fieldProvenance.${field}`] ?? entityDoc?.fieldProvenance?.[field]);
   // A candidate with no matching observation provenance (a manual value) has no
   // URL of its own, so the record's own linked site is the last corroboration
   // available rather than letting the foreign-lab check fail open.
@@ -7458,6 +7804,7 @@ function enforceResearchEntityNameAuthority(input: {
     isPlaceholderEntityName(candidateName) ||
     namesAPostingRatherThanResearch(candidateName) ||
     isPostingPageUrl(websiteUrl) ||
+    isCoursePageUrl(websiteUrl) ||
     // An external platform's brand names no research home, and it is refused here
     // as well as at ingest for the same reason filler is: an already-stored
     // "Google Scholar" is re-projected from its own active observation on every
@@ -7503,7 +7850,7 @@ function enforceResearchEntityNameAuthority(input: {
       siteDeclaredOwnNames,
     });
 
-  let fieldsWritten = 0;
+  let fieldsWritten = withdrawnRetype ? 1 : 0;
   const storedSiteDeclaredOwnNames: unknown[] = Array.isArray(entityDoc?.siteDeclaredOwnNames)
     ? entityDoc.siteDeclaredOwnNames
     : [];
@@ -7515,9 +7862,15 @@ function enforceResearchEntityNameAuthority(input: {
   for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
     if (input.manuallyLockedFields.includes(field)) continue;
     const servedValue = set[field] ?? entityDoc?.[field];
+    const provenance = servedProvenance(field);
     if (
       !textValue(servedValue) ||
-      !namesNothingUsable(servedValue, servedProvenanceSourceUrl(field))
+      (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
+        !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
+        !(
+          (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
+          isWithdrawnProfileHomeName(servedValue, provenance.sourceName, input.materializationObs)
+        ))
     ) {
       continue;
     }
@@ -7590,6 +7943,29 @@ function enforceResearchEntityNameAuthority(input: {
     }
   }
 
+  // A person's row projected as faculty research serves its own name, on every resolve rather
+  // than only the one that retypes it, so a display name left from the lab or organization it
+  // was typed as, or re-resolved from a live observation, can neither keep that identity nor be
+  // suffixed into a hybrid of the two by the derivations below (#5283). A display name carrying
+  // the lead's own name (an eponymous lab, a spelling of the person) is the person's and stays.
+  if (servesAsFacultyResearch && !input.manuallyLockedFields.includes('displayName')) {
+    const displayName = textValue(set.displayName ?? entityDoc?.displayName);
+    if (
+      displayName &&
+      displayName !== textValue(set.name ?? entityDoc?.name) &&
+      !nameCarriesPersonIdentity(displayName, input.nameIdentityAuthority.leadPersonName)
+    ) {
+      delete set.displayName;
+      delete set['fieldProvenance.displayName'];
+      delete confidenceByField.displayName;
+      if (textValue(entityDoc?.displayName)) {
+        unset.displayName = '';
+        unset['fieldProvenance.displayName'] = '';
+        fieldsWritten++;
+      }
+    }
+  }
+
   // Runs after the refusals so a grafted bare person name is replaced by a ranked
   // candidate first and only what survives is normalized. The value is the same one
   // the roster scrapers write, so a row whose only name observation is a bare person
@@ -7652,6 +8028,15 @@ function enforceResearchEntityNameAuthority(input: {
     labAssertedByLiveObservation,
     leadPersonName: input.nameIdentityAuthority.leadPersonName,
     siteStatedLabName,
+  });
+  fieldsWritten += reclassifyUnstatedOrganizationTypeOnFacultyResearchName({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    materializationObs: input.materializationObs,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
   });
   fieldsWritten += reclassifyEvidencedFacultyResearchAsLab({
     set,
@@ -7958,6 +8343,149 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
     set.displayName = derivedName;
   }
   return 1;
+}
+
+const FACULTY_RESEARCH_NAME_SUFFIX = /\sFaculty Research$/;
+
+const ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED = new Set(['CENTER', 'INITIATIVE', 'INSTITUTE']);
+
+/**
+ * A row titled "<person> Faculty Research" whose organizational type no live
+ * observation states is that person's faculty research, so it is re-derived as
+ * `FACULTY_RESEARCH_AREA` on every resolve, with no lock.
+ *
+ * The type is what #3886 left behind: `official-profile-pi-backfill` asserted a linked
+ * home's name, kind and type as one claim, the name half was retired, and
+ * `withoutUnpairedProfileHomeIdentity` now withdraws the type half on every resolve.
+ * A withdrawn type resolves to nothing rather than to a rival, and a merged row's
+ * losers may not state a survivor-owned field, so the stored graft persisted with no
+ * evidence behind it while the name, which only a person-scoped roster composes,
+ * said faculty research. A live observation of the type, an operator edit included,
+ * keeps the row as it is, unless the operator has refused that type on the row.
+ *
+ * The suffix alone does not make a row person-scoped, so every word before it has to
+ * be a word of the lead's own name, as for `reclassifyUnbackedLabAsFacultyResearch`;
+ * an organization whose name ends the same way, or a leadless row, keeps its type.
+ */
+function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  materializationObs: MaterializerObservationLike[];
+  leadPersonName: unknown;
+}): number {
+  const { set, unset, confidenceByField, entityDoc } = input;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return 0;
+  }
+  const projected = documentAsProjected(set, unset, entityDoc);
+  const type = textValue(projected.entityType).toUpperCase();
+  if (!ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED.has(type)) return 0;
+  const names = [projected.name, projected.displayName].map(textValue).filter(Boolean);
+  const namesTheLeadsFacultyResearch = (name: string) =>
+    FACULTY_RESEARCH_NAME_SUFFIX.test(name) &&
+    eponymNamesOnlyTheLead(name.replace(FACULTY_RESEARCH_NAME_SUFFIX, ''), input.leadPersonName);
+  if (names.length === 0 || !names.every(namesTheLeadsFacultyResearch)) return 0;
+  const typeIsStated = input.materializationObs.some(
+    (observation) =>
+      observation.field === 'entityType' &&
+      textValue(observation.value).toUpperCase() === type &&
+      !valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', observation.value),
+  );
+  if (typeIsStated) return 0;
+
+  set.entityType = 'FACULTY_RESEARCH_AREA';
+  set.kind = mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA');
+  for (const field of ['entityType', 'kind']) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  return 1;
+}
+
+/**
+ * A row `official-profile-pi-backfill` retyped into an organization keeps the stored name,
+ * type and kind once every observation behind them is withdrawn, because a withdrawn field
+ * resolves to nothing rather than to a rival. On a person's row that is the retype the owner
+ * ruled out (2026-10-17, #5283), so the row is re-derived as faculty research on every resolve,
+ * with no lock, and the name authority then replaces the lane's withdrawn name. A row that keeps
+ * a lab-shaped name some other source still states is that lab, so it is re-derived as `LAB`. A live
+ * observation of the stored type, an operator edit included, keeps the row as it is.
+ */
+function reclassifyWithdrawnProfileHomeOrganizationRetype(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  materializationObs: MaterializerObservationLike[];
+  leadPersonName: unknown;
+}): boolean {
+  const { set, unset, confidenceByField, entityDoc } = input;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return false;
+  }
+  if ('entityType' in set) return false;
+  const storedType = textValue(entityDoc?.entityType).toUpperCase();
+  if (!ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED.has(storedType)) return false;
+  if (entityDoc?.fieldProvenance?.entityType?.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE) {
+    return false;
+  }
+  const storedTypeIsStated = input.materializationObs.some(
+    (observation) =>
+      observation.field === 'entityType' &&
+      textValue(observation.value).toUpperCase() === storedType &&
+      !valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', observation.value),
+  );
+  if (storedTypeIsStated) return false;
+  if (
+    !isPersonRowForProfileHomeClaims(
+      { slug: entityDoc?.slug, leadPersonName: input.leadPersonName },
+      input.materializationObs,
+    )
+  ) {
+    return false;
+  }
+  const keptName = set.name ?? entityDoc?.name;
+  const keptNameProvenance = objectRecord(
+    set['fieldProvenance.name'] ?? entityDoc?.fieldProvenance?.name,
+  );
+  const keepsItsOwnLabName =
+    !isWithdrawnProfileHomeName(
+      keptName,
+      keptNameProvenance.sourceName,
+      input.materializationObs,
+    ) && isLabShapedResearchHome(keptName);
+  const personRowType = keepsItsOwnLabName ? 'LAB' : 'FACULTY_RESEARCH_AREA';
+  set.entityType = personRowType;
+  set.kind = mapEntityTypeToResearchGroupKind(personRowType);
+  for (const field of ['entityType', 'kind']) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  return true;
+}
+
+const comparableName = (value: unknown): string =>
+  textValue(value).replace(/\s+/g, ' ').toLowerCase();
+
+function isWithdrawnProfileHomeName(
+  servedValue: unknown,
+  provenanceSourceName: unknown,
+  materializationObs: MaterializerObservationLike[],
+): boolean {
+  if (provenanceSourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE) return false;
+  const served = comparableName(servedValue);
+  return !materializationObs.some(
+    (observation) =>
+      observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+      (observation.field === 'name' || observation.field === 'displayName') &&
+      comparableName(observation.value) === served,
+  );
 }
 
 function eponymNamesOnlyTheLead(eponym: string, leadPersonName: unknown): boolean {
@@ -9155,6 +9683,23 @@ export async function projectFromLog(
       set.sourceUrls = readmittedCitations;
       fieldsWritten++;
     }
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const citedThisPass = Array.isArray(set.sourceUrls)
+        ? (set.sourceUrls as unknown[])
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? (entityDoc?.sourceUrls as unknown[])
+          : [];
+      const projected = documentAsProjected(set, unset, entityDoc);
+      const keptCitations = withoutUncreditedCreditOnlyCitations(
+        citedThisPass,
+        projected.fieldProvenance,
+        projected,
+      );
+      if (keptCitations.length !== citedThisPass.length) {
+        set.sourceUrls = keptCitations;
+        fieldsWritten++;
+      }
+    }
     if (yaleStatusCacheIsWritable({ manuallyLockedFields })) {
       const populatedYaleStatusField = (setValue: unknown, docValue: unknown): unknown => {
         if (typeof setValue === 'string') return setValue.trim().length > 0 ? setValue : docValue;
@@ -9223,10 +9768,18 @@ export async function projectFromLog(
             currentSourceUrls,
           ),
         );
-        if (provenanceSourceUrl) {
+        const projected = documentAsProjected(set, unset, entityDoc);
+        const citableProvenanceSourceUrl =
+          provenanceSourceUrl &&
+          withoutUncreditedCreditOnlyCitations(
+            [provenanceSourceUrl],
+            projected.fieldProvenance,
+            projected,
+          )[0];
+        if (citableProvenanceSourceUrl) {
           set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
             ...currentSourceUrls,
-            provenanceSourceUrl,
+            citableProvenanceSourceUrl,
           ]);
           fieldsWritten++;
         }
@@ -9577,6 +10130,9 @@ export async function materializeEntity(
   // Structural, not a convention: a projection derived with locks ignored reaching
   // the write below is exactly the silent unfreeze that re-opening a lock is a
   // separate reviewed operation to prevent (#2612).
+  if (options.treatArchivedResearchEntitiesAsAbsent && !options.dryRun) {
+    throw new Error('materializeEntity treatArchivedResearchEntitiesAsAbsent requires dryRun');
+  }
   if (options.reviseRevisitableFieldLocks && !options.dryRun) {
     throw new Error('materializeEntity reviseRevisitableFieldLocks requires dryRun');
   }
@@ -9705,6 +10261,13 @@ export async function materializeEntity(
     obs,
     options.chunkPrefetch,
   );
+  if (
+    entityDoc?.archived === true &&
+    options.treatArchivedResearchEntitiesAsAbsent?.has(String(entityDoc._id))
+  ) {
+    entityDoc = null;
+    entityIdString = undefined;
+  }
   if (entityDoc) entityIdString = String(entityDoc._id);
 
   // A merged shell's canonicalGroupId tombstone is the durable record that this
@@ -9946,10 +10509,9 @@ export async function materializeEntity(
   }
 
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    obs = withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc);
-    researchAreaEvidenceObservations = withoutPersonProfileTopicsOnOrganizationRow(
-      researchAreaEvidenceObservations,
-      entityDoc,
+    obs = withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc));
+    researchAreaEvidenceObservations = withoutCoursePageEvidence(
+      withoutPersonProfileTopicsOnOrganizationRow(researchAreaEvidenceObservations, entityDoc),
     );
   }
 
@@ -10015,10 +10577,30 @@ export async function materializeEntity(
     isResearchEntityObservationType(entityType) || entityType === 'fellowship'
       ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
       : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
+  const profileHomeOrganizationClaims = isResearchEntityObservationType(entityType)
+    ? profileHomeOrganizationClaimKeys(gonePageWithdrawal.observations)
+    : new Set<string>();
+  const personRowOrganizationClaims =
+    profileHomeOrganizationClaims.size > 0 &&
+    entityDoc &&
+    isPersonRowForProfileHomeClaims(
+      {
+        slug: entityDoc.slug,
+        leadPersonName:
+          options.nameIdentityAuthority?.leadPersonName ??
+          (await loadResearchEntityLeadPersonName(entityDoc._id ?? entityIdString)),
+      },
+      gonePageWithdrawal.observations,
+    )
+      ? profileHomeOrganizationClaims
+      : new Set<string>();
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
     ? withoutLaneRefusedWebsiteUrls(
         withoutLaneRefusedResearchHomeNames(
-          gonePageWithdrawal.observations,
+          withoutPersonRowOrganizationHomeClaims(
+            gonePageWithdrawal.observations,
+            personRowOrganizationClaims,
+          ),
           laneScopedRowIdentities,
         ),
         laneScopedRowIdentities,
@@ -10236,6 +10818,7 @@ export async function materializeEntity(
   const storedResearchAreasEvidenceRetired =
     researchAreasHaveNoLiveEvidence &&
     (storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
+      storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
   const projection = await projectFromLog(entityType, {

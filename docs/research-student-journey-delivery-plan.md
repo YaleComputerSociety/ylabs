@@ -59,7 +59,7 @@ Progressive disclosure should keep early discovery quiet and move detail into th
   Access context may only break close relevance ties within a bounded server-owned rule.
 - Show at most one sparse, claim-specific, positive planning signal on an entity card.
 - Do not add a parallel results stream, persistent access controls, generic scores, or negative unknown labels.
-- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`, and issue `#2527` then removed the `hasDocumentedWayIn` projection behind the latter outright; the sparse positive card signal remains server-owned, derived from the entity access summary rather than a persistent access-oriented filter, and neither revives the retired unsupported undergraduate-evidence filter.
+- The `Has hosted undergrads before` and `Documented way in` browse controls were retired from research discovery under issue `#1884`, and issue `#2527` then removed the `hasDocumentedWayIn` projection behind the latter outright; the sparse positive card signal remains server-owned, derived from the entity access summary rather than a persistent access-oriented filter. Issue `#5123` re-exposed a hosted-undergraduates toggle (`undergrad=1`) that filters on the same predicate as the "Has hosted undergraduate researchers" badge, a historical fact rather than a way in; `docs/decisions.md` 2026-10-18 owns why.
 
 ## Status Definitions
 

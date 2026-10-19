@@ -11,9 +11,9 @@ const SERVED_FIELD_CONTRIBUTION_LABELS: Record<string, string> = {
   researchAreas: 'Topics',
   methods: 'Methods',
   websiteUrl: 'Research website',
-  inferredPiUserId: 'Lead identity',
-  inferredPiUserKey: 'Lead identity',
-  leadProfessorPublicKey: 'Lead identity',
+  inferredPiUserId: 'Who leads it',
+  inferredPiUserKey: 'Who leads it',
+  leadProfessorPublicKey: 'Who leads it',
   departments: 'Department',
   school: 'School',
   name: 'Name',
@@ -26,6 +26,23 @@ export const SERVED_FIELD_CONTRIBUTION_LABEL_SET = new Set(
 
 export const MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS = 8;
 
+/**
+ * Labelled provenance keys that are never stored on a ResearchEntity row: the lead
+ * fields feed the roster derivation and `description` is a legacy summary key. A
+ * materialize pass can still project one by name, so reading it as a row value
+ * would let the stored citations keep a page the served DTO withholds (#5210).
+ */
+const CONTRIBUTION_FIELDS_NOT_STORED_ON_ROW = new Set([
+  'description',
+  'inferredPiUserId',
+  'inferredPiUserKey',
+  'leadProfessorPublicKey',
+]);
+
+export function contributionFieldIsStoredOnRow(field: string): boolean {
+  return !CONTRIBUTION_FIELDS_NOT_STORED_ON_ROW.has(field);
+}
+
 export function servedFieldContributionLabel(field: unknown): string | undefined {
   return typeof field === 'string' ? SERVED_FIELD_CONTRIBUTION_LABELS[field] : undefined;
 }
@@ -35,7 +52,7 @@ export function servedFieldContributionLabel(field: unknown): string | undefined
  * with a label (#3922). A provenance entry is history and outlives the value it
  * recorded, so several clear arms empty `websiteUrl` or resolve `departments` to
  * nothing while the entry stays; crediting the page then tells a student it
- * supplied something the row does not show. `Lead identity` and `Name` are absent
+ * supplied something the row does not show. `Who leads it` and `Name` are absent
  * because the lead is served on the roster outside this payload and a row always
  * serves a name.
  */
@@ -75,14 +92,18 @@ export interface SourceFieldContribution {
 export function buildSourceFieldContributions(
   fieldProvenance: unknown,
   allowSourceUrl: (url: string) => boolean,
+  fieldHoldsValue: (field: string) => boolean = () => true,
+  citedPageFor: (sourceUrl: string) => string | undefined = (sourceUrl) => sourceUrl,
 ): SourceFieldContribution[] {
   const entries = provenanceEntries(fieldProvenance);
   const byUrl = new Map<string, Set<string>>();
 
   for (const [field, provenance] of entries) {
     const label = servedFieldContributionLabel(field);
-    if (!label) continue;
-    const sourceUrl = typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl.trim() : '';
+    if (!label || !fieldHoldsValue(field)) continue;
+    const recordedUrl =
+      typeof provenance?.sourceUrl === 'string' ? provenance.sourceUrl.trim() : '';
+    const sourceUrl = recordedUrl ? citedPageFor(recordedUrl) : undefined;
     if (!sourceUrl || !allowSourceUrl(sourceUrl)) continue;
     const bucket = byUrl.get(sourceUrl);
     if (bucket) bucket.add(label);

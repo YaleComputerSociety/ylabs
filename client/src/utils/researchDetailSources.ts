@@ -1,4 +1,8 @@
 import {
+  memberSignalStatus,
+  type UndergraduateMemberEvidence,
+} from './undergraduateMemberEvidence';
+import {
   comparePersonProfileUrls,
   isCrossSchoolDirectoryProfileUrl,
   isIdentifierRecordUrl,
@@ -66,6 +70,7 @@ export interface BuildResearchDetailSourcesInput {
   accessSignals?: DetailSourceSignal[];
   sourceLinkHealth?: DetailSourceLinkHealth[];
   sourceFieldContributions?: DetailSourceFieldContribution[];
+  undergraduateMembers?: UndergraduateMemberEvidence;
 }
 
 export interface ResearchDetailSource {
@@ -178,6 +183,11 @@ export const normalizeActionDestination = (url?: string | null): string | null =
   }
 };
 
+export const isSameActionHost = (first?: string | null, second?: string | null): boolean => {
+  const firstHost = normalizeActionDestination(first)?.split('/')[0];
+  return Boolean(firstHost) && firstHost === normalizeActionDestination(second)?.split('/')[0];
+};
+
 export const labelizeResearchDetailValue = (value?: string): string =>
   (value || 'Unknown')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -260,15 +270,36 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
   }
 };
 
-const RAW_DATA_API_HOSTS = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
+// Mirrors `isLaneDiscoveryEndpointUrl` in server/src/utils/laneDiscoveryEndpointUrl.ts;
+// changing the arms here requires updating that copy.
+const API_HOST_PREFIX = 'api.';
+const API_HOSTS = new Set(['eutils.ncbi.nlm.nih.gov']);
+const API_PATH_PREFIXES = ['/api/', '/europepmc/webservices/'];
+const AWARD_SEARCH_FORM_HOSTS = new Set(['pamspublic.science.energy.gov']);
+const AWARD_SEARCH_FORM_LEAF = /^awardsearch[a-z]*\.aspx$/i;
+const AWARD_SEARCH_HOME_HOSTS = new Set(['awardsearch.neh.gov']);
+
+const isAwardSearchEntryPage = (host: string, url: URL): boolean => {
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (AWARD_SEARCH_HOME_HOSTS.has(host)) return segments.length === 0 && !url.search;
+  if (!AWARD_SEARCH_FORM_HOSTS.has(host)) return false;
+  return AWARD_SEARCH_FORM_LEAF.test(segments[segments.length - 1] ?? '');
+};
 
 export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
-  const normalized = normalizeSourceUrl(url);
-  if (!normalized) return false;
+  const safe = safeHttpUrl(url);
+  if (!safe) return false;
 
   try {
-    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
-    return RAW_DATA_API_HOSTS.has(host);
+    const parsed = new URL(safe);
+    const host = parsed.hostname
+      .toLowerCase()
+      .replace(/^www\./, '')
+      .replace(/\.$/, '');
+    if (host.startsWith(API_HOST_PREFIX) || API_HOSTS.has(host)) return true;
+    const path = `${parsed.pathname.toLowerCase().replace(/\/+$/, '')}/`;
+    if (API_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+    return isAwardSearchEntryPage(host, parsed);
   } catch {
     return false;
   }
@@ -514,6 +545,68 @@ export const isOrgEngagementSourceUrl = (url?: string | null): boolean =>
 
 const isApplyOrJoinSourceUrl = (url?: string | null): boolean =>
   sourcePathMatches(url, APPLY_OR_JOIN_PATH);
+
+/**
+ * The materializer admits a join route by what the page says, wherever it sits on the site,
+ * so a lab's invitation to undergraduates can be cited from its press or news page. The
+ * page is a fair citation; a label promising a join page over it is not. Only the final
+ * segment names the page, so a join word in a parent segment (often a lab's own slug) does not count.
+ */
+const JOIN_SHAPED_PATH =
+  /(^|[-/_])(get[-_]?involved|join(?:ing)?(?:[-_]us)?|participate|volunteer|become[-_]a[-_]member|opportunit(?:y|ies)|openings?|positions?|vacanc(?:y|ies)|apply|applications?|prospective(?:[-_]students?)?|recruit(?:ing|ment)?|careers?|jobs?)([-_.][^/]*)?$/i;
+
+export const isJoinShapedSourceUrl = (url?: string | null): boolean =>
+  sourcePathMatches(url, JOIN_SHAPED_PATH);
+
+export const JOIN_PAGE_LINK_LABEL = 'See how to join';
+export const JOIN_NOTE_LINK_LABEL = 'Read what they say about joining';
+
+export const joinPageLinkLabel = (
+  url?: string | null,
+  joinShapedLabel: string = JOIN_PAGE_LINK_LABEL,
+): string => (isJoinShapedSourceUrl(url) ? joinShapedLabel : JOIN_NOTE_LINK_LABEL);
+
+const ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS: Record<string, string> = {
+  POSTED_OPENING: 'Posted opening',
+  CREDIT_FORMALIZATION_POSSIBLE: 'Course credit option',
+  PAST_UNDERGRADS: 'Past undergraduate members',
+  CURRENT_UNDERGRADS: 'Current undergraduate members',
+  FACULTY_SUPERVISES_STUDENT_PROJECTS: 'Supervises student projects',
+  APPLICATION_FORM_EXISTS: 'Mentions how to join',
+};
+
+const UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT = 'Undergraduate access';
+
+const FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT = 'Fellowship recipients';
+
+export const ACCESS_SIGNAL_SOURCE_CONTEXTS: ReadonlySet<string> = new Set([
+  ...Object.values(ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS),
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT,
+  FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT,
+]);
+
+/**
+ * A member chip names the members the page shows, so it reads the same evidence as the
+ * research team section (`undergraduateMemberEvidence`). A member signal the section does
+ * not render is still a citation, under the generic access label rather than a roster's.
+ */
+export const memberSignalSourceContext = (
+  signal: DetailSourceSignal,
+  undergraduateMembers?: UndergraduateMemberEvidence,
+): string => {
+  const status = memberSignalStatus(signal.signalType);
+  if (!status || !undergraduateMembers) return accessSignalSourceContext(signal.signalType);
+  if (status === 'past' && undergraduateMembers.citesFellowshipRecipients(signal.sourceUrl)) {
+    return FELLOWSHIP_RECIPIENTS_SOURCE_CONTEXT;
+  }
+  return undergraduateMembers.shownStatuses.has(status)
+    ? accessSignalSourceContext(signal.signalType)
+    : UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
+};
+
+export const accessSignalSourceContext = (signalType?: string): string =>
+  ACCESS_SIGNAL_SOURCE_CONTEXT_LABELS[(signalType || '').toUpperCase()] ||
+  UNLISTED_ACCESS_SIGNAL_SOURCE_CONTEXT;
 
 // Mirrors `PERSON_SCOPED_RESEARCH_ENTITY_TYPES` in
 // server/src/models/storedVocabularies.ts, including the retired types a stored
@@ -1225,7 +1318,13 @@ export const sourceLabelForUrl = (url: string): string => {
       return 'Undergraduate initiatives page';
     }
     if (host === 'nsf.gov' && path.startsWith('/awardsearch')) {
-      return 'NSF Award Search';
+      const awardId = parsed.searchParams.get('AWD_ID')?.trim();
+      return awardId ? `NSF award ${awardId}` : 'NSF Award Search';
+    }
+    const nihProjectId =
+      host === 'reporter.nih.gov' && path.match(/^\/project-details\/([^/]+)/)?.[1];
+    if (nihProjectId) {
+      return `NIH RePORTER project ${decodeURIComponent(nihProjectId).toUpperCase()}`;
     }
     if (host.endsWith('yale.edu')) {
       return titleFromPath(parsed.pathname);
@@ -1283,11 +1382,49 @@ export const firstCitedResearchDetailSource = (
   sources: ResearchDetailSource[],
 ): ResearchDetailSource | undefined => sources.find((source) => !source.isAttributionOnly);
 
+const sourcePathHint = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const leaf = parsed.pathname.split('/').filter(Boolean).pop();
+    return leaf ? decodeURIComponent(leaf).slice(0, 40) : '';
+  } catch {
+    return '';
+  }
+};
+
+const withDistinctLabels = <T extends { url: string; label: string }>(sources: T[]): T[] => {
+  const groups = new Map<string, T[]>();
+  sources.forEach((source) =>
+    groups.set(source.label, [...(groups.get(source.label) ?? []), source]),
+  );
+  const distinctLabelBySource = new Map<T, string>();
+  groups.forEach((group, label) => {
+    if (group.length < 2) return;
+    const hints = group.map((source) => sourcePathHint(source.url));
+    const hintsAreDistinct = hints.every(Boolean) && new Set(hints).size === hints.length;
+    group.forEach((source, index) =>
+      distinctLabelBySource.set(
+        source,
+        `${label} (${hintsAreDistinct ? hints[index] : `${index + 1} of ${group.length}`})`,
+      ),
+    );
+  });
+  return sources.map((source) => {
+    const label = distinctLabelBySource.get(source);
+    return label ? { ...source, label } : source;
+  });
+};
+
+const RESEARCH_WEBSITE_SOURCE_CONTEXT = 'Profile website';
+
+const RESEARCH_WEBSITE_CONTRIBUTION_LABEL = 'Research website';
+
 export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
   sourceLinkHealth = [],
   sourceFieldContributions = [],
+  undergraduateMembers,
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
   /**
@@ -1313,10 +1450,20 @@ export const buildResearchDetailSources = ({
     if (existing) labels.forEach((label) => existing.includes(label) || existing.push(label));
     else contributionsByDedupeKey.set(key, [...labels]);
   });
-  const contextsFor = (normalizedUrl: string, context: string): string[] => {
+  const contextsFor = (
+    normalizedUrl: string,
+    context: string,
+    existingContexts: string[] = [],
+  ): string[] => {
+    const isResearchWebsiteRow =
+      context === RESEARCH_WEBSITE_SOURCE_CONTEXT ||
+      existingContexts.includes(RESEARCH_WEBSITE_SOURCE_CONTEXT);
+    const contributed = (
+      contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '') ?? []
+    ).filter((label) => !isResearchWebsiteRow || label !== RESEARCH_WEBSITE_CONTRIBUTION_LABEL);
+    if (context === RESEARCH_WEBSITE_SOURCE_CONTEXT) return [context, ...contributed];
     if (context !== GENERIC_PROFILE_SOURCE_CONTEXT) return [context];
-    const contributed = contributionsByDedupeKey.get(sourceDedupeKey(normalizedUrl) || '');
-    return contributed && contributed.length ? contributed : [context];
+    return contributed.length ? contributed : [context];
   };
 
   const addSource = (url: string | undefined, context: string, attributionOnly = false) => {
@@ -1333,13 +1480,14 @@ export const buildResearchDetailSources = ({
 
     const existing = sources.get(key);
     /**
-     * A contribution only ever creates a row. It never edits one an earlier pass made,
-     * because a `Profile website` or evidence row already states what it is and the repo
-     * deliberately does not append contribution labels to those.
+     * A contribution only ever creates a row. It never edits one an earlier pass made: an
+     * evidence row already states what it is, and the research website row takes its
+     * contributions when it is made, after its own role, because a research summary,
+     * topics or methods read off that site are otherwise backed by no row at all.
      */
     if (existing && attributionOnly) return;
 
-    const contexts = contextsFor(normalized, context);
+    const contexts = contextsFor(normalized, context, existing?.contexts);
     if (existing) {
       contexts.forEach((entry) => {
         if (!existing.contexts.includes(entry)) existing.contexts.push(entry);
@@ -1353,7 +1501,7 @@ export const buildResearchDetailSources = ({
     sources.set(key, {
       url: normalized,
       label:
-        context === 'Profile website'
+        context === RESEARCH_WEBSITE_SOURCE_CONTEXT
           ? 'Research website'
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts,
@@ -1363,12 +1511,12 @@ export const buildResearchDetailSources = ({
     });
   };
 
-  addSource(group?.websiteUrl, 'Profile website');
+  addSource(group?.websiteUrl, RESEARCH_WEBSITE_SOURCE_CONTEXT);
   group?.sourceUrls?.forEach((url) => addSource(url, GENERIC_PROFILE_SOURCE_CONTEXT));
 
   accessSignals.forEach((signal) => {
     if (!isCitableAccessSignal(signal)) return;
-    addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
+    addSource(signal.sourceUrl, memberSignalSourceContext(signal, undergraduateMembers));
   });
 
   /**
@@ -1415,5 +1563,5 @@ export const buildResearchDetailSources = ({
         Number(right.isLikelyUnavailable || right.isPrivateNetworkOnly),
     );
 
-  return withPersonProfilesRanked(withHealth, entityRankingContext(group));
+  return withDistinctLabels(withPersonProfilesRanked(withHealth, entityRankingContext(group)));
 };

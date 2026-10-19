@@ -17,6 +17,7 @@ import {
   renderSetupProblems,
   missingWeeklyRunIds,
   weeklyRunCoverage,
+  operatorBuildDecision,
 } from '../promoteCore';
 import type { StoredWeeklySweepRun } from '../weeklySweepRunsReportCore';
 
@@ -257,6 +258,7 @@ describe('remote phase', () => {
     const labels = remotePhaseSteps('beta', { confirmBetaBackup: true }).map((step) => step.label);
     expect(labels).toEqual([
       'verify database names',
+      'retarget saved plans',
       'visibility gate',
       'data quality',
       'integrity gate',
@@ -276,11 +278,28 @@ describe('remote phase', () => {
     const steps = remotePhaseSteps('production');
     expect(steps.map((step) => step.label)).toEqual([
       'verify database names',
+      'retarget saved plans',
       'visibility gate',
       'search reindex',
       'production smoke',
     ]);
-    expect(steps[2].env).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
+    expect(steps.find((step) => step.label === 'search reindex')!.env).toEqual({
+      CONFIRM_PROD_SCRAPE: 'true',
+    });
+  });
+
+  it('re-points saved plans to merge survivors in each environment before the gate (#5208)', () => {
+    for (const target of ['beta', 'production'] as const) {
+      const step = remotePhaseSteps(target).find((s) => s.label === 'retarget saved plans')!;
+      expect(step.args).toEqual([
+        'research-plans:retarget-merged',
+        '--apply',
+        '--confirm-research-plan-retarget',
+      ]);
+    }
+    expect(
+      remotePhaseSteps('production').find((s) => s.label === 'retarget saved plans')!.env,
+    ).toEqual({ CONFIRM_PROD_SCRAPE: 'true' });
   });
 
   it('lets the reindex choose its mode unless a full rebuild is forced, and records its result', () => {
@@ -388,5 +407,44 @@ describe('Render setup', () => {
     expect(
       renderServiceProblems('beta', { suspended: 'not_suspended', rootDir: '', branch: 'beta' }),
     ).toEqual([]);
+  });
+});
+
+describe('operatorBuildDecision', () => {
+  const head = 'c'.repeat(40);
+
+  it('needs no deploy when the live build is the branch head', () => {
+    expect(operatorBuildDecision('beta', head, head)).toMatchObject({ needsDeploy: false });
+  });
+
+  it('needs a deploy when the live build is older or missing', () => {
+    expect(operatorBuildDecision('production', head, 'd'.repeat(40))).toMatchObject({
+      needsDeploy: true,
+      headCommit: head,
+    });
+    expect(operatorBuildDecision('production', head, undefined).needsDeploy).toBe(true);
+  });
+});
+
+describe('production restore point on the remote phase', () => {
+  it('passes --meili-restore-point to the job as PFR3_MEILI_RESTORE_POINT', () => {
+    const args = parsePromoteProductionArgs(
+      ['--meili-restore-point', 'meili-dump-20261018-184026162'],
+      new Date('2026-10-18T00:00:00Z'),
+    );
+    expect(
+      remotePhaseStartCommand('production', {
+        confirmBetaBackup: false,
+        meiliRestorePoint: args.meiliRestorePoint,
+      }),
+    ).toBe(
+      'PFR3_MEILI_RESTORE_POINT=meili-dump-20261018-184026162 yarn --cwd server promote:remote-phase --environment production',
+    );
+  });
+
+  it('refuses a restore point that could carry shell syntax', () => {
+    expect(() =>
+      parsePromoteProductionArgs(['--meili-restore-point', 'x;rm -rf /'], new Date()),
+    ).toThrow('--meili-restore-point must be');
   });
 });
