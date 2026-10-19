@@ -60,7 +60,7 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
 - `lab-microsite-undergrad-llm` stays manual-only for runtime rather than precision, by owner decision on 2026-10-11 (#3569, #3636).
   #3569 first measured its served `undergradEvidenceQuote` badge precision at 18/50 = 0.36 (95% Wilson interval 0.24 to 0.50), mostly because the model's own absence notes were stored as quotes, so the browse badge was withdrawn (#3607).
   After #3592 required a stored quote to appear on a page the lane fetched, the 2026-09-29 re-measure judged all 50 drawn served quotes and read 42/50 = 0.84 (0.71 to 0.92), with 25/50 showing that undergraduates were hosted.
-  The detail page shows the quote beside a "Mentions undergraduate research" label and the page it is quoted from, and the browse card shows none (`docs/decisions.md`, 2026-10-11 and 2026-10-12).
+  The quote is stored but no longer served or shown on any surface (`docs/decisions.md`, 2026-10-18, #5309); an explicit invitation quote returns beside the badge designed in #5288.
   It is the slowest lane: about 4 to 19 labs per minute over 4,808 labs projects to 4 to 20 hours, against a weekly sweep of about 8 hours and Render's 12-hour job limit.
   So it is run scoped by hand when the quotes need refreshing, and a manual run also refreshes its description emits.
 

@@ -45,17 +45,7 @@ import {
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
-import {
-  isModelSearchNote,
-  isRosterLineRatherThanAStatement,
-  RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE,
-  UNDERGRAD_MICROSITE_LANE,
-} from '../scrapers/undergradEvidenceQuoteValidation';
-import {
-  quotePageIsAboutAnotherEntity,
-  quoteStatesAnUndergraduateAccessFact,
-} from '../scrapers/undergradQuoteRelevance';
-import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
+import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -526,7 +516,6 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'school',
   'schools',
   'currentUndergradCount',
-  'undergradEvidenceQuote',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -555,7 +544,7 @@ export interface PublicResearchEntityDtoOptions {
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradEvidenceQuote']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn']);
 
 const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set([
   'waysIn',
@@ -685,24 +674,6 @@ function derivePublicResearchEntityDto(
         // when the two echo each other the body is the half to keep, consistent
         // with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
-        continue;
-      }
-      if (field === 'undergradEvidenceQuote') {
-        const provenance = group.fieldProvenance?.undergradEvidenceQuote;
-        const fromMicrositeLane = provenance?.sourceName === UNDERGRAD_MICROSITE_LANE;
-        const withheld =
-          isModelSearchNote(group[field]) ||
-          isRosterLineRatherThanAStatement(group[field]) ||
-          quoteListsPeopleWithTheirContactDetails(group[field]) ||
-          provenance?.sourceName === RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE ||
-          (fromMicrositeLane &&
-            (!quoteStatesAnUndergraduateAccessFact(group[field]) ||
-              quotePageIsAboutAnotherEntity(provenance?.sourceUrl, group)));
-        if (!withheld) {
-          dto[field] = String(group[field]).slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-          const quoteSourceUrl = publicHttpUrl(provenance?.sourceUrl);
-          if (quoteSourceUrl) dto.undergradEvidenceSourceUrl = quoteSourceUrl;
-        }
         continue;
       }
       if (field === 'currentUndergradCount') {

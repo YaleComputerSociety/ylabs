@@ -1032,39 +1032,15 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
-  it('shows the whole undergraduate quote with the page it is quoted from (#3569)', async () => {
-    const longQuote = `${'Undergraduate students contribute to field and lab work '.repeat(5)}end.`;
+  it('never shows an undergraduate quote, even from a payload that still carries one (#5309)', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
-        undergradEvidenceQuote: longQuote,
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.getByText('Mentions undergraduate research')).toBeTruthy();
-    expect(container.querySelector('blockquote')?.textContent).toBe(`\u201c${longQuote}\u201d`);
-    expect(
-      screen
-        .getByRole('link', { name: 'example.yale.edu (opens in a new tab)' })
-        .getAttribute('href'),
-    ).toBe('https://example.yale.edu/join');
-    expect(screen.queryByLabelText('Research activity evidence')).toBeNull();
-    await expectNoAxeViolations(container);
-  });
-
-  it('shows no undergraduate quote when the way in is withheld for an emeritus lead', async () => {
-    const { container } = renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-        emeritusLed: true,
-        wayInWithheld: true,
+        ...({
+          undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
+          undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
+        } as object),
       },
     });
 
@@ -1072,6 +1048,7 @@ describe('LabDetail page', () => {
 
     expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
     expect(container.querySelector('blockquote')).toBeNull();
+    expect(screen.queryByText(/Quoted from/)).toBeNull();
   });
 
   it('shows the undergraduate count its Sources chip cites when no named roster is served', async () => {
@@ -1131,14 +1108,10 @@ describe('LabDetail page', () => {
     await expectNoAxeViolations(container);
   });
 
-  it('lists the roster undergraduates instead of the quote when the lab page names them', async () => {
+  it('lists the roster undergraduates when the lab page names them', async () => {
     const { container } = renderLabDetail({
       ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Listed Undergrad Undergraduate Email',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/people',
-      },
+      group: basePayload.group,
       roster: {
         status: 'current',
         returned: 0,
@@ -1151,8 +1124,6 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    expect(container.querySelector('blockquote')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Undergraduate researchers' })).toBeTruthy();
     expect(screen.getByText('Listed Undergrad')).toBeTruthy();
     await expectNoAxeViolations(container);
@@ -1186,30 +1157,6 @@ describe('LabDetail page', () => {
     const text = container.textContent || '';
     expect(text).toContain('Mentored 1 Fixture Scholars II recipient (2025)');
     expect(text).not.toMatch(/advised (\d+ )?undergrad/i);
-  });
-
-  it.each([
-    ['no quote', { undergradEvidenceQuote: undefined }],
-    ['a blank quote', { undergradEvidenceQuote: '   ' }],
-    ['a quote with no cited page', { undergradEvidenceSourceUrl: undefined }],
-    ['a quote citing a non-http page', { undergradEvidenceSourceUrl: 'javascript:alert(1)' }],
-  ])('shows no undergraduate quote for %s', async (_label, overrides) => {
-    const { container } = renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        undergradEvidenceQuote: 'Undergraduates are welcome to join the lab.',
-        undergradEvidenceSourceUrl: 'https://example.yale.edu/join',
-        ...overrides,
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.queryByText('Mentions undergraduate research')).toBeNull();
-    expect(container.querySelector('blockquote')).toBeNull();
-    expect(screen.queryByText(/Quoted from/)).toBeNull();
-    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
   });
 
   it('points to the lab website instead of a dead end when there is no profile or email', async () => {
