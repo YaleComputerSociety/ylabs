@@ -133,13 +133,33 @@ describe('LabSiteUndergradInvitationScraper', () => {
     expect(emitted).toEqual([expect.objectContaining({ entityKey: 'one-faculty', value: null })]);
   });
 
-  it('emits nothing for a row when a linked page could not be read', async () => {
+  it('states no absence for a row when a linked page could not be read', async () => {
     const { emitted, result } = await run(
       { 'https://delta.example.edu/': html('We study cells.', '<a href="/join">Join us</a>') },
       [lab('delta-lab', 'https://delta.example.edu/')],
     );
     expect(emitted).toEqual([]);
-    expect(result.notes).toContain('1 rows skipped because a linked page was unreadable');
+    expect(result.notes).toContain(
+      '1 rows with no invitation skipped because a linked page was unreadable',
+    );
+  });
+
+  it('still emits an invitation found on the pages that did load', async () => {
+    const { emitted } = await run(
+      {
+        'https://epsilon.example.edu/': html(
+          'We welcome undergraduate students to join our lab.',
+          '<a href="/join">Join us</a>',
+        ),
+      },
+      [lab('epsilon-lab', 'https://epsilon.example.edu/')],
+    );
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'epsilon-lab',
+        value: expect.objectContaining({ level: 'welcomes_undergrads' }),
+      }),
+    ]);
   });
 
   it('keeps the stronger invitation across the home and join pages', async () => {

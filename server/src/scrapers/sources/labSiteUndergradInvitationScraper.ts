@@ -195,12 +195,12 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
           fetchFailed += 1;
           return;
         }
-        if (!labPages.complete) {
+        const invitation = strongestInvitationOnPages(labPages.pages, lab, now);
+        if (!labPages.complete && !invitation) {
           partialReads += 1;
           return;
         }
         read.set(lab.slug, lab);
-        const invitation = strongestInvitationOnPages(labPages.pages, lab, now);
         if (invitation) invitations.set(lab.slug, invitation);
       },
     );
@@ -231,7 +231,7 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
       const level = (observation.value as ServedUndergradInvitation | null)?.level;
       if (level) counts[level] += 1;
     }
-    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${partialReads} rows skipped because a linked page was unreadable`;
+    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${partialReads} rows with no invitation skipped because a linked page was unreadable`;
     ctx.log(notes);
     return { observationCount: observations.length, entitiesObserved: read.size, notes };
   }
