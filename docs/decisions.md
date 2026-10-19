@@ -59,6 +59,15 @@ Across all live description observations the two shapes flag 6 texts, and across
 The method and description arms are serve-time.
 The stored body, the stored methods and the stored person title follow when the affected rows are next materialized.
 
+## 2026-10-17: A Person Who Leads An Organization Keeps Two Rows (#5283)
+
+Decision (owner, 2026-10-17, reaffirmed 2026-10-18): when a person directs or co-founds an organization (a program, collaborative, center, initiative or core), the directory keeps two rows, the person's own faculty research row and the organization's row with the person attached as its director.
+A person's row is never renamed and retyped into the organization they lead, however plainly their profile states the leadership.
+`profileLinkedHomeRefusal` in `official-profile-pi-backfill` enforces it at the write: on a person row (a grant shell, a key that names only the lead, or a row every other source calls faculty research) any home that is not lab-typed is refused, and the refusal states the refused name so resolve withdraws an adoption made before the guard reached the row.
+A lab-typed home is the person's own lab and is still adopted, and the organization's own row gets its director through the organization-director mode (#5093).
+Measured on Development on 2026-10-18 with the lane's research-home dry run over 2,000 rows: 6 rows planned an organization type, 5 of them person rows, and with the fix none does while the one organization-keyed row is unchanged.
+Before the fix, 14 live person rows carried an organization name and type this lane had written; the re-read refuses 10 of them and emits nothing for the other 4, so those adoptions stay live and are recorded on the issue.
+
 ## 2026-10-17: Accounts Are Environment-Local (#5088)
 
 Decision (owner, 2026-10-17): Development, Beta and Production each keep their own `accounts`, made by sign-ins in that environment, and only the research corpus is shared by promotion.

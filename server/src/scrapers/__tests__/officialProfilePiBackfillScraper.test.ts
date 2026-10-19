@@ -2026,15 +2026,40 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(home).toMatchObject({ kind: 'initiative', entityType: 'INITIATIVE' });
     });
 
-    it('still adopts the untyped home onto a shell keyed only to that person', () => {
+    it('never retypes a shell keyed only to that person into the untyped organization', () => {
       const [home] = extractOfficialProfileResearchHomes(
         cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
         cardProfileUrl,
       );
-      expect(home).toMatchObject({ entityType: 'INITIATIVE' });
-      for (const slug of ['ysm-faculty-quinn-marlowfixture', 'nih-pi-quinn-marlowfixture']) {
-        expect(profileLinkedHomeRefusal({ slug }, home, 'Quinn Marlowfixture')).toBeNull();
-      }
+      expect(home).toMatchObject({ entityType: 'INITIATIVE', leadershipEvidenced: true });
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'ysm-faculty-quinn-marlowfixture' },
+          home,
+          'Quinn Marlowfixture',
+        ),
+      ).toBe('institutional-home-on-a-person-keyed-shell');
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'nih-pi-quinn-marlowfixture' },
+          home,
+          'Quinn Marlowfixture',
+        ),
+      ).toBe('institutional-home-on-a-grant-shell');
+    });
+
+    it('still adopts the untyped home onto a row keyed to the organization', () => {
+      const [home] = extractOfficialProfileResearchHomes(
+        cardHtml('Fixture Imaging Research', 'https://fixtureimaging.yale.edu/'),
+        cardProfileUrl,
+      );
+      expect(
+        profileLinkedHomeRefusal(
+          { slug: 'fixture-imaging-research', entityType: 'LAB' },
+          home,
+          'Quinn Marlowfixture',
+        ),
+      ).toBeNull();
     });
 
     it('keeps a research team named as a group a lab', () => {
@@ -4384,8 +4409,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const result = await scraper.run(profileResearchHomeContextFor(emitted));
 
-    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
-    expect(emitted).toHaveLength(0);
+    expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
+    expect(emitted.map((o) => o.field)).toEqual(['refusedResearchHomeName']);
   });
 
   it('keeps the PI evidence of a default run when the profile-linked home is refused', async () => {
