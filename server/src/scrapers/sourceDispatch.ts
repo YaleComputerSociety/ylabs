@@ -57,9 +57,6 @@ export const RETIRED_SOURCE_NAMES: string[] = [
   // USAspending publishes no principal-investigator field, so the lane could never attach
   // an award to a research row and wrote 0 observations in every run it made.
   'federal-award-usaspending',
-  // Folded into the `fds` affiliates config of `dept-faculty-roster` (#5282), which reads the
-  // same member profile pages.
-  'center-member-profile-research',
   ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
 ];
 
