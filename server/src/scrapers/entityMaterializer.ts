@@ -218,7 +218,10 @@ import {
   isDirectoryGraftCitation,
   planDirectoryGraftCitationRetraction,
 } from './directoryGraftCitations';
-import { planRefusedStoredWebsiteUrlClear } from './refusedStoredWebsiteUrl';
+import {
+  planRefusedStoredWebsiteUrlClear,
+  planWithheldLegacyWebsiteClear,
+} from './refusedStoredWebsiteUrl';
 import {
   isDroppedLoserWebsite,
   planSurvivorOwnedWebsiteClear,
@@ -333,6 +336,7 @@ import {
   isCoursePageUrl,
   isDirectoryLoaderUrl,
   isFacetedOrSectionIndexUrl,
+  isInadmissiblePersonWebsiteUrl,
   isInstitutionalAdvancementUrl,
   isMapOrDirectionsUrl,
   isPostingPageUrl,
@@ -1866,7 +1870,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
   if (
     entityType === 'user' &&
     (observation.field === 'website' || observation.field === 'websiteUrl') &&
-    isCoursePageUrl(observation.value)
+    isInadmissiblePersonWebsiteUrl(observation.value)
   ) {
     return true;
   }
@@ -7296,6 +7300,10 @@ async function materializeUserIdentityToResearcher(
     researcher.profile.title = undefined;
     fieldsWritten += 1;
   }
+  if (isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl)) {
+    researcher.profile.websiteUrl = undefined;
+    fieldsWritten += 1;
+  }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
   const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
     (link: ResearcherProfileLink) => link.kind === 'ORCID',
@@ -9760,6 +9768,31 @@ export async function projectFromLog(
     };
     clearLoserOnlySurvivorWebsite('website');
     clearLaneWithdrawnWebsite('website');
+    const withheldLegacyWebsite = planWithheldLegacyWebsiteClear({
+      stored: entityDoc,
+      staged: set,
+      identity: {
+        name: set.name ?? entityDoc?.name,
+        displayName: set.displayName ?? entityDoc?.displayName,
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+      },
+      lockedFields: manuallyLockedFields,
+    });
+    if (withheldLegacyWebsite.skipped) {
+      console.log(
+        `[withheld-legacy-website] kept a withheld website: ${withheldLegacyWebsite.skipped}`,
+      );
+    }
+    if (withheldLegacyWebsite.declineStaged) {
+      console.log('[withheld-legacy-website] declined a resolved website the payload withholds');
+      delete set.website;
+    }
+    if (withheldLegacyWebsite.clearStored) {
+      console.log('[withheld-legacy-website] cleared a stored website the payload withholds');
+      set.website = '';
+      fieldsWritten++;
+    }
     if (!manuallyLockedFields.includes('websiteUrl')) {
       // The vocabulary that already knows this URL is not a research home now stops
       // the write instead of only annotating an audit (#3167). It screens the

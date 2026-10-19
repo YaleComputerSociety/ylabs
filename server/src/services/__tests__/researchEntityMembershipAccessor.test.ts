@@ -88,6 +88,19 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.websiteUrl).toBeUndefined();
   });
 
+  it.each([
+    'https://medicine.example.test/fixturedept/clinical-service/fixture/',
+    'https://www.yalemedicine.org/departments/fixture-care-center',
+    'https://fixturelab.example.test/jobs/',
+  ])('never carries %s as a member website (#5376)', async (websiteUrl) => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, { websiteUrl }, 'gh012');
+
+    const [entry] = await getResearchEntityRoster(entityId);
+
+    expect(entry.websiteUrl).toBeUndefined();
+  });
+
   it('reads the roster email from the researcher identifiers', async () => {
     const entityId = new mongoose.Types.ObjectId();
     const personId = await seedMember(entityId, undefined, 'cd456');

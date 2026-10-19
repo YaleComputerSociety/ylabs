@@ -1215,6 +1215,40 @@ export function isPatientCarePageCitedAsResearchWebsite(
   return isPatientCarePageUrl(value) && isPersonScopedHostTenant(entity);
 }
 
+/**
+ * A page a research row's `website` or `websiteUrl` is never served as, because it is some
+ * other kind of page: a shared host's root, a collective's page cited by a person, a press
+ * article, a map or publicity page, a posting, a course or a patient-care page. The detail
+ * payload withholds one and the materializer clears a stored legacy `website` holding one
+ * (#5376), so the stored and the served field cannot disagree. A person's profile page is
+ * deliberately absent: the detail page reads one in `website` as the lead's official
+ * profile link.
+ */
+export function isWithheldResearchWebsiteUrl(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  return (
+    isMultiTenantAcademicHostRootUrl(value, entity) ||
+    isUmbrellaPageCitedByPerson(value, entity) ||
+    isPressOrNewsHostUrl(value) ||
+    isMapOrDirectionsUrl(value) ||
+    isInstitutionalPublicityPageUrl(value) ||
+    isPostingPageCitedAsResearchWebsite(value, entity) ||
+    isCoursePageUrl(value) ||
+    isPatientCarePageCitedAsResearchWebsite(value, entity)
+  );
+}
+
+/**
+ * A page that is never a person's own website: a course, a posting or a patient-care page
+ * (#5213, #5364). Read on a lead's member website at the user materializer, the roster
+ * accessor and the member serializers (#5376).
+ */
+export function isInadmissiblePersonWebsiteUrl(value: unknown): boolean {
+  return isCoursePageUrl(value) || isPostingPageUrl(value) || isPatientCarePageUrl(value);
+}
+
 // Organization shapes whose identity is the collective that publishes a site rather
 // than a tenant of it, so the site the collective's name designates is its own
 // research home. Deliberately an ALLOWLIST and not the negation of
