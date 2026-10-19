@@ -148,6 +148,14 @@ export const formatShortProgramDate = (
 
 export const formatProgramCalendarDate = (date: Date): string => calendarDateFormatter.format(date);
 
+export const formatProjectedProgramDate = (
+  value: string | null | undefined,
+  fallback = 'Date not specified',
+): string => {
+  const date = parseProgramDate(value);
+  return date ? calendarDateFormatter.format(date) : fallback;
+};
+
 export const programStatedClockLabel = (deadline: Date): string | null =>
   isDateOnlyProgramDeadline(deadline)
     ? null

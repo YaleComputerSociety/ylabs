@@ -186,6 +186,7 @@ describe('fellowshipStatus', () => {
 
     expect(status.kind).toBe('projectedNextCycle');
     expect(status.label).toBe('Projected next cycle');
+    expect(status.detail).toBe('Est. next deadline ~Feb 17, 2027 - unconfirmed, verify at source');
     expect(status.isCurrentlyRelevant).toBe(true);
     expect(status.isApplicationWindowOpen).toBe(false);
   });
