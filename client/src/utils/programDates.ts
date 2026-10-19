@@ -1,20 +1,17 @@
+import { NEW_YORK_TIME_ZONE, newYorkCalendarDateFormatter } from './newYorkDate';
+
 /**
  * Program dates are stated in New Haven time, so they render in America/New_York for
  * every reader. Mirrors `server/src/utils/programDeadlineInstant.ts`: a stated time has
  * minute precision, so a deadline ending in `:59.999` stated no time, and an opening at
  * New York midnight reads the same as its date alone.
  */
-export const PROGRAM_TIME_ZONE = 'America/New_York';
+export const PROGRAM_TIME_ZONE = NEW_YORK_TIME_ZONE;
 const PROGRAM_TIME_ZONE_LABEL = 'ET';
 
 export type ProgramDateBoundary = 'deadline' | 'opens';
 
-const calendarDateFormatter = new Intl.DateTimeFormat('en-US', {
-  timeZone: PROGRAM_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-});
+const calendarDateFormatter = newYorkCalendarDateFormatter;
 
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: PROGRAM_TIME_ZONE,

@@ -5,6 +5,7 @@ import type {
   LabRosterDisclosure,
   LabRosterUndergraduate,
 } from '../../types/labDetail';
+import { formatNewYorkCalendarDate } from '../../utils/newYorkDate';
 import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
 import type { UndergraduateMemberLine } from '../../utils/undergraduateMemberEvidence';
 
@@ -21,13 +22,6 @@ const GROUPS: Array<{ role: LabMemberRole; label: string }> = [
 
 const displayName = (member: LabMember): string =>
   member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
-
-const observedLabel = (value?: string): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
-};
 
 const PAST_UNDERGRADUATES_SHOWN_FIRST = 6;
 
@@ -231,7 +225,7 @@ export default function ResearchTeamSection({
     undergraduateLines.some((line) => line.status === 'current');
   const sourceUrl = safeHttpUrl(roster.sourceUrl);
   const alumniSourceUrl = safeHttpUrl(roster.alumniSourceUrl);
-  const dateLabel = observedLabel(roster.observedAt);
+  const dateLabel = formatNewYorkCalendarDate(roster.observedAt);
 
   return (
     <section aria-labelledby="research-team-heading">

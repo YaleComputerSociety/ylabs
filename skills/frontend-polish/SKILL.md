@@ -109,6 +109,8 @@ Debounce free-text search inputs with `client/src/hooks/useDebouncedCallback.ts`
 Key a search on its request identity instead: `FellowshipSearchContextProvider` compares the built URL with the last one it sent, so only a real change in query, filter, or sort searches again.
 - A failed load stays an error until the student acts or a retry succeeds, and a count or tile with no data behind it shows a placeholder rather than a zero.
 The student-journey smoke counts first-page program searches per visit and fails when the load error disappears for a frame with no input.
+- Every student-facing date renders in America/New_York through `client/src/utils/newYorkDate.ts` or the program date helpers built on it, because a UTC formatter showed a roster read on a New York evening as the next day (#5301).
+`studentFacingDateTimeZoneGuard.test.ts` fails on any other date formatter outside the admin and analytics surfaces.
 - Empty states say what the surface is for and offer the next action.
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.
