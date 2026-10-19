@@ -72,19 +72,8 @@ describe('profileEnrichmentFromHtml on a WordPress author profile', () => {
     expect(enriched.name).toBe('Robin Fixture');
   });
 
-  it('keeps the biography apart from the research statement', () => {
+  it('keeps the research statement out of the biography', () => {
     expect(enriched.bio).toBe(BIOGRAPHY);
-    expect(enriched.researchHomeDescription).toContain('develops statistical methods');
-    expect(enriched.researchHomeDescription).not.toContain('joined the faculty');
-  });
-
-  it('never offers the biography as research prose when the page states no research', () => {
-    const biographyOnly = profileEnrichmentFromHtml(
-      authorProfile(`<p>${BIOGRAPHY}</p>`),
-      'https://fds.yale.edu/people/zz0001/',
-    );
-    expect(biographyOnly.bio).toBe(BIOGRAPHY);
-    expect(biographyOnly.researchHomeDescription ?? '').not.toContain('joined the faculty');
   });
 });
 

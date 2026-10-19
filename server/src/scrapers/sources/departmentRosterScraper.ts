@@ -26,7 +26,7 @@
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
-import { wordpressAuthorProfileSections } from '../utils/wordpressAuthorProfile';
+import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
   buildFetchAttemptMetrics,
@@ -3554,11 +3554,8 @@ export function profileEnrichmentFromHtml(
     $,
     isMeshIndexedProfileUrl(canonicalUrl),
   );
-  const authorProfile = wordpressAuthorProfileSections($);
-  const bio = authorProfile?.biography ?? extractBioFromHtml($);
-  const officialProse = authorProfile?.researchStatement
-    ? groundedProfileDescriptionFromText(authorProfile.researchStatement)
-    : extractGroundedProfileDescription(html);
+  const bio = wordpressAuthorProfileBiography($) ?? extractBioFromHtml($);
+  const officialProse = extractGroundedProfileDescription(html);
   const declaredName = personNameFromProfileHtml($);
   const statedLabName = declaredName
     ? labNameStatedForPerson({
@@ -3606,14 +3603,6 @@ function extractGroundedProfileDescription(
   if (!fullDescription) return undefined;
   const shortDescription = sanitizeResearchEntityDescription(extracted.shortDescription);
   return { fullDescription, shortDescription };
-}
-
-function groundedProfileDescriptionFromText(
-  text: string,
-): { fullDescription: string; shortDescription: string } | undefined {
-  const $ = cheerio.load('<main></main>');
-  $('main').append($('<p></p>').text(text));
-  return extractGroundedProfileDescription($.html());
 }
 
 /**
