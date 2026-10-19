@@ -359,7 +359,7 @@ const ResearchFilterDisclosure = ({
       <div
         className={
           besideTrigger
-            ? '-my-1 -ml-1 flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto p-1 *:max-w-[16rem] *:shrink-0'
+            ? '-my-1 -ml-1 flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto p-1 *:max-w-full *:shrink-0'
             : 'mt-2 flex min-w-0 max-w-full flex-wrap gap-2'
         }
         aria-label="Active research filters"

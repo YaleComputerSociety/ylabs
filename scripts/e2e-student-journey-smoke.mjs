@@ -706,6 +706,16 @@ await step(
         barHeight !== null && barHeight <= 72,
         `The sticky filter bar is ${barHeight}px tall at 390x664 with one filter active; it should stay one row (72px or less) so results keep the screen (#5305).`,
       );
+      const chipOverflow = await phonePage.evaluate(() => {
+        const strip = document.querySelector('[aria-label="Active research filters"]');
+        const chip = strip?.querySelector('button[aria-label^="Remove Department:"]');
+        if (!strip || !chip) return null;
+        return Math.round(chip.getBoundingClientRect().right - strip.getBoundingClientRect().right);
+      });
+      assert(
+        chipOverflow !== null && chipOverflow <= 0,
+        `The department chip ends ${chipOverflow}px past the edge of the phone chip strip, so its remove control is cut off (#5305).`,
+      );
     } finally {
       await phonePage.close();
     }
