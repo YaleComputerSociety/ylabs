@@ -217,6 +217,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'center-profile-research-rows',
+    displayName: 'Center profile research rows',
+    description:
+      "Mints a faculty-research row, citing the member's own center profile page, for an identity-proven center member who leads no personal row and whose profile states research they do now. Manual-only and out of the sweep until the owner reviews the rows a run plans.",
+    baseUrl: '',
+    defaultWeight: 0.7,
+    cadence: 'monthly',
+  },
+  {
     name: 'center-member-profile-research',
     displayName: 'Center member profile research',
     description:

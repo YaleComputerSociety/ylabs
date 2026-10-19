@@ -37,7 +37,7 @@ export const CENTER_MEMBER_PROFILE_LANE_CONFIGS: readonly CenterMemberProfileLan
   { profileHost: 'macmillan.yale.edu', profileExtractor: macmillanPersonProfileExtractor },
 ];
 
-const hostOf = (url: string): string => {
+export const hostOf = (url: string): string => {
   try {
     return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
   } catch {
@@ -47,7 +47,7 @@ const hostOf = (url: string): string => {
 
 export type PageFetcher = (url: string) => Promise<string>;
 
-const fetchPage: PageFetcher = async (url) =>
+export const fetchCenterProfilePage: PageFetcher = async (url) =>
   (await fetchPageWithPolicy(url, { timeoutMs: FETCH_TIMEOUT_MS })).html;
 
 const objectIds = (ids: readonly string[]): mongoose.Types.ObjectId[] =>
@@ -134,7 +134,7 @@ export class CenterMemberProfileResearchScraper implements IScraper {
 
   constructor(
     private readonly laneConfigs: readonly CenterMemberProfileLaneConfig[] = CENTER_MEMBER_PROFILE_LANE_CONFIGS,
-    private readonly pageFetcher: PageFetcher = fetchPage,
+    private readonly pageFetcher: PageFetcher = fetchCenterProfilePage,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
