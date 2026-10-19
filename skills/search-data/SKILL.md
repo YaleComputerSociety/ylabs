@@ -96,6 +96,7 @@ Measured on 2026-10-03 against a throwaway paused Meilisearch with the Developme
 
 When the primary Meilisearch query still throws after `searchWithFallbacks` has applied its recoverable degradations, `searchResearchGroupsViaMeili` throws `SearchUnavailableError`, and the error handler answers `503` with a `Retry-After` hint.
 The client already renders any failed browse or search as the limited-search notice with its retry action (#4188, #4266), so no client change rides on this.
+A failed search also clears the rows the page kept on screen while it was applying filters, because those rows answer the previous request and the new filters may exclude them; while filter counts are unavailable the filter panel keeps the active values but shows no per-option counts and no result count (#5346).
 There used to be a Mongo fallback that read every public row and ran the public-description gate over each one in process, and it was removed rather than bounded, for these measured reasons, against Development with Meilisearch unreachable:
 
 - The gate is synchronous CPU: 11.3 s for the 3,444 tier-admitted rows (about 2 ms a row), after a 2.9 s read of 37 MB of documents.
@@ -107,7 +108,8 @@ Sharing one gated set across requests would keep those documents resident: the m
 - It was reached on 0 of 208 Development searches in 30 days, so it was an expensive path nothing exercised.
 
 After the change the same three requests answer `503` in 1 ms to 3 ms with no measurable event-loop block, and healthy searches are unchanged.
-The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so only a failed primary query answers `503`.
+The companion queries a search sends after the primary one still keep their own fallbacks and mark the response degraded, so within one request only a failed primary query answers `503`.
+A companion query's connection failure still opens the breaker described above, so the searches after it answer `503` until the cooldown passes (#5347).
 Do not reintroduce an in-process corpus scan on the request path as a substitute for the index.
 The bound is per HTTP request, so settings and document tasks are unaffected: those requests only enqueue, and `waitForMeiliTask` in `server/src/utils/meiliTask.ts` polls `getTask` with its own overall timeout.
 It does not call the client's `waitForTask`, because meilisearch 0.62 gives every poll one shared abort signal and its per-request timeout leaves a listener on it per poll, which flooded rebuild logs with `MaxListenersExceededWarning`.

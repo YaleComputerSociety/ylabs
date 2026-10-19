@@ -937,6 +937,10 @@ const Research = () => {
         setSearchDegraded(true);
         setHasFacetError(true);
         setSearchExhausted(true);
+        // Rows kept on screen while filters applied answer the previous request, so
+        // leaving them under the new filters would show results those filters exclude.
+        setSearchResultResearchEntities([]);
+        setGroupedResults(emptyGroupedResults(resultQueryLabel));
         void trackResearchEvent({
           eventType: 'research_search',
           payload: {
@@ -1726,7 +1730,7 @@ const Research = () => {
     onHostsUndergradsChange: (hostsUndergrads: boolean) => applyStudentFilters({ hostsUndergrads }),
     onClearAll: () =>
       applyStudentFilters({ school: '', department: '', entityType: '', hostsUndergrads: false }),
-    resultCount: Math.max(searchTotal, activeClusters.length),
+    resultCount: hasFacetError ? undefined : Math.max(searchTotal, activeClusters.length),
     resultCountPending: searchLoading,
     onShowResults: scrollToResults,
   };

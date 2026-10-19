@@ -3553,6 +3553,48 @@ describe('Research degraded search notice', () => {
     expect(screen.queryByRole('region', { name: 'Ways to recover this search' })).toBeNull();
     expect(document.body.textContent).not.toContain('Your search still works');
   });
+
+  it('never leaves the previous search rows under filters whose search failed', async () => {
+    let filteredSearchFails = true;
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      const filters = (body.filters ?? {}) as Record<string, unknown>;
+      if (filters.hostsUndergrads === true && filteredSearchFails) return serviceUnavailable();
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          departments: { 'Computer Science': 5, Neuroscience: 3 },
+          hostsUndergrads: { true: 3 },
+        },
+      });
+    });
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (3)' }),
+    );
+
+    const notice = await screen.findByRole('region', { name: degradedNoticeName });
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('No results could be confirmed');
+    expect(
+      screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }),
+    ).toBeTruthy();
+
+    const hostedCheckbox = screen.getByRole('checkbox', {
+      name: 'Has hosted undergraduate researchers',
+    }) as HTMLInputElement;
+    expect(hostedCheckbox.checked).toBe(true);
+    expect(screen.getByText(/Current filter counts are unavailable/)).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /Computer Science \(5\)/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Show 1 result/ })).toBeNull();
+
+    filteredSearchFails = false;
+    fireEvent.click(within(notice).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+  });
 });
 
 describe('Research spelling correction notice', () => {
