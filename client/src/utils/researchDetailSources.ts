@@ -1012,7 +1012,6 @@ const eligibleOutreachSources = (
     if (isUmbrellaPageCitedByPersonUrl(source.url, entityType)) return false;
     if (isPressOrNewsSourceUrl(source.url)) return false;
     if (isMapOrPublicityPageSourceUrl(source.url)) return false;
-    if (isRefusedResearchWebsitePageUrl(source.url, entityType)) return false;
     /**
      * This slot means "this research's own website". Once the page links a person's
      * profile, another profile is the wrong KIND of thing for it, not merely a
@@ -1086,7 +1085,7 @@ export const resolveOutreachOfficialSource = (
     entityType,
     rankingContext,
     leadPersonNames,
-  );
+  ).filter((source) => !isRefusedResearchWebsitePageUrl(source.url, entityType));
   if (eligible.length === 0) return undefined;
 
   if (entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entityType)) {

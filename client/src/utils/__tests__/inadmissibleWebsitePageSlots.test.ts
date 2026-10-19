@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveResearchDetailActionLinkContext } from '../researchDetailActionLinks';
 import {
   resolveDecisionProfileUrl,
+  resolveOutreachApplySource,
   resolveOutreachOfficialSource,
   type ResearchDetailSource,
 } from '../researchDetailSources';
@@ -44,6 +45,13 @@ describe('the headline official-page action refuses the pages the server withhol
     expect(
       resolveOutreachOfficialSource([source(COURSE_PAGE)], [], false, 'CENTER'),
     ).toBeUndefined();
+  });
+
+  it('still offers a lab its own vetted posting page as the place to apply', () => {
+    expect(
+      resolveOutreachApplySource([source(POSTING_PAGE)], [], false, 'LAB', {}, [], [POSTING_PAGE])
+        ?.url,
+    ).toBe(POSTING_PAGE);
   });
 
   it('never ranks a patient-care page as the lead profile action', () => {
