@@ -59,6 +59,16 @@ describe('extractUndergradInvitation', () => {
     'We are recruiting undergraduate students for Summer 2024.',
     'Positions in the lab include post-baccalaureate associates and undergraduate research assistants.',
     'We are looking for talented postdocs to join our group at Yale.',
+    'We are delighted to welcome undergraduate Alex Example to the lab!',
+    'Undergraduate Trainee in both labs. Welcome Sam!',
+    'Welcome to the 2024 Summer Undergraduate Research Scholars',
+    'The center welcomes new class of undergraduate fellows',
+    '9/20/17 - Welcome to Jordan Example, a visiting undergraduate researcher.',
+    'My undergraduate research was about cell biology but I am always interested in regeneration!',
+    'On campus, she joined an outreach group where undergraduates teach classes to visiting students.',
+    'We welcome applicants whose experience comes from field work, undergraduate research, and internships.',
+    'Undergraduate students interested in their courses or senior thesis advising should feel free to reach out.',
+    'We are seeking six undergrad students to join us in a yearlong program (May 26-July 18, 2025).',
   ])('gives no badge to: %s', (text) => {
     expect(level(text)).toBeNull();
   });

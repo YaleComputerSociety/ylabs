@@ -16,13 +16,21 @@ const MAX_CLASSIFIED_CHARS = 650;
 const MAX_HEADING_CHARS = 40;
 
 const NOT_AN_AUDIENCE_MENTION =
-  /\bundergrad\w*\s+(?:degree|studies|study|education|courses?|program(?:me)?s?|majors?|teaching|curricul\w*|prizes?|admissions?|advis(?:er|or)s?|dean)\b|\bdirector\s+of\s+undergrad\w*|\b(?:teach|teaches|teaching|taught|lectur\w*)\b[^.]{0,80}\bundergrad|\b(?:during|after|through)\s+(?:(?:my|his|her|their|your)\s+)?undergrad|\b(?:for|in|from)\s+(?:my|his|her|their|your)\s+undergrad|\bas\s+an\s+undergrad\w*\b|\b(?:BA|BS|B\.A\.|B\.S\.)[-\s/]+(?:BS[-\s/]+)?MPH\b/i;
+  /\bundergrad\w*\s+(?:degree|studies|study|education|courses?|program(?:me)?s?|majors?|teaching|curricul\w*|prizes?|admissions?|advis(?:er|or)s?|dean)\b|\bdirector\s+of\s+undergrad\w*|\b(?:teach|teaches|teaching|taught|lectur\w*)\b[^.]{0,80}\bundergrad|\b(?:during|after|through)\s+(?:(?:my|his|her|their|your)\s+)?undergrad|\b(?:my|his|her|their)\s+undergrad|\bundergrad\w*\s+teach|\bexperience\s+(?:comes\s+)?from\b[^.]{0,80}\bundergrad|\bas\s+an\s+undergrad\w*\b|\b(?:BA|BS|B\.A\.|B\.S\.)[-\s/]+(?:BS[-\s/]+)?MPH\b/i;
 
 const CLOSED_OR_DECLINED =
   /\b(?:no\s+longer|not\s+(?:currently\s+)?(?:accepting|recruiting|hiring|taking|seeking|looking)|(?:have|has)\s+(?:all\s+)?been\s+filled|(?:are|is)\s+(?:now\s+)?(?:filled|closed)|no\s+(?:open\s+)?(?:positions|openings|spots)|(?:unable|not\s+able)\s+to\s+(?:take|accept|host|supervise)|cannot\s+(?:take|accept|host|supervise)|do\s+not\s+(?:take|accept|host))\b/i;
 
 const PAST_OR_DESCRIPTIVE =
   /\b(?:former|formerly|previously|alumni|alumnus|alumna|have\s+hosted|has\s+hosted|have\s+mentored|has\s+mentored|joined\s+the\s+lab)\b/i;
+
+const NEWS_ITEM =
+  /\b(?:delighted|pleased|happy|excited|thrilled|proud)\s+to\s+welcome\b|\bwelcomes?\s+(?:a\s+|our\s+)?(?:new|back)\b|\bwelcome\s+(?:to\s+)?(?:the\s+)?20\d\d\b|^\s*\d{1,2}\/\d{1,2}\/\d{2,4}\b/i;
+
+const WELCOMES_A_NAMED_PERSON =
+  /\b[Ww]elcome\s+(?:to\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s*(?:[!,(]|$)/;
+
+const COURSE_ADVISING = /\b(?:in|about)\s+(?:their|his|her|my|our)\s+courses\b|\badvising\b/i;
 
 const ROSTER_ENTRY =
   /\b(?:first|second|third|fourth|senior|junior)[-\s]year\s+undergrad|\bclass\s+of\s+20\d\d\b|\b(?:is|was)\s+an?\s+(?:\w+\s+){0,2}undergrad\w*|\bbachelor\w*\s+(?:and|or|&)\s+master|,\s*undergrad\w*\s+at\s+(?:yale|the\s+university)\b/i;
@@ -68,8 +76,8 @@ const WELCOME_CUES = [
   /\bfill\s+out\s+(?:this|our|the)\b/i,
 ];
 
-const SEASON_YEAR =
-  /\b(?:(spring|summer|fall|autumn|winter)\s+(?:semester\s+|term\s+|of\s+)?(20\d\d)|(20\d\d)\s*[-/]\s*(?:20)?(\d\d)\s+(?:academic\s+)?(?:year|school\s+year))\b/gi;
+const STATED_TERM =
+  /\b(?:(?<season>spring|summer|fall|autumn|winter)\s+(?:semester\s+|term\s+|of\s+)?(?<seasonYear>20\d\d)|(?<month>january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{1,2},?\s+)?(?<monthYear>20\d\d)|(?<startYear>20\d\d)\s*[-/]\s*(?:20)?(?<endYearSuffix>\d\d)\s+(?:academic\s+)?(?:year|school\s+year))\b/gi;
 
 const SEASON_END_MONTH: Record<string, number> = {
   spring: 5,
@@ -79,19 +87,41 @@ const SEASON_END_MONTH: Record<string, number> = {
   winter: 2,
 };
 
-function termEndsInFuture(match: RegExpMatchArray, now: Date): boolean {
-  const [, season, seasonYear, startYear, endYearSuffix] = match;
-  if (season && seasonYear) {
-    const end = new Date(Date.UTC(Number(seasonYear), SEASON_END_MONTH[season.toLowerCase()], 0));
-    return end.getTime() >= now.getTime();
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+function termEnd(groups: Record<string, string | undefined>): Date {
+  if (groups.season && groups.seasonYear) {
+    return new Date(
+      Date.UTC(Number(groups.seasonYear), SEASON_END_MONTH[groups.season.toLowerCase()], 0),
+    );
   }
-  const endYear = Number(String(startYear).slice(0, 2) + endYearSuffix);
-  return new Date(Date.UTC(endYear, 5, 30)).getTime() >= now.getTime();
+  if (groups.month && groups.monthYear) {
+    return new Date(
+      Date.UTC(Number(groups.monthYear), MONTHS.indexOf(groups.month.toLowerCase()) + 1, 0),
+    );
+  }
+  const endYear = Number(String(groups.startYear).slice(0, 2) + groups.endYearSuffix);
+  return new Date(Date.UTC(endYear, 5, 30));
 }
 
 export function statedTermIsPast(sentence: string, now: Date): boolean {
-  const terms = Array.from(sentence.matchAll(SEASON_YEAR));
-  return terms.length > 0 && !terms.some((term) => termEndsInFuture(term, now));
+  const terms = Array.from(sentence.matchAll(STATED_TERM));
+  return (
+    terms.length > 0 && !terms.some((term) => termEnd(term.groups ?? {}).getTime() >= now.getTime())
+  );
 }
 
 interface InvitationCandidate {
@@ -198,6 +228,8 @@ export function classifyInvitationSentence(
 ): UndergradInvitationLevel | null {
   if (sentence.length > MAX_CLASSIFIED_CHARS) return null;
   if (CLOSED_OR_DECLINED.test(sentence) || PAST_OR_DESCRIPTIVE.test(sentence)) return null;
+  if (NEWS_ITEM.test(sentence) || WELCOMES_A_NAMED_PERSON.test(sentence)) return null;
+  if (COURSE_ADVISING.test(sentence)) return null;
   if (NOT_THIS_LAB.test(sentence) || ROSTER_ENTRY.test(sentence)) return null;
   if (AWARD_NOT_A_POSITION.test(sentence) && !LAB_MEMBERSHIP.test(sentence)) return null;
   if (statedTermIsPast(`${precedingText} ${sentence}`, now)) return null;
