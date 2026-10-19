@@ -5,8 +5,7 @@ export const researchProfilePageClassName =
 export const researchProfileGridClassName = 'grid grid-cols-1 gap-6 lg:gap-8';
 export const researchProfileColumnClassName =
   'lg:mx-auto lg:w-full lg:max-w-5xl space-y-6 sm:space-y-8';
-export const researchProfileBodyGridClassName =
-  'grid grid-cols-1 gap-6 sm:gap-8 md:flow-root';
+export const researchProfileBodyGridClassName = 'grid grid-cols-1 gap-6 sm:gap-8 md:flow-root';
 export const researchProfileSummaryCardClassName =
   'min-w-0 rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5 md:float-left md:mb-8 md:w-[calc(100%-19.25rem)]';
 export const researchProfileContactRailClassName =
