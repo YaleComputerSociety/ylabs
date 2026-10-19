@@ -11,6 +11,7 @@ import { RoleAssignment } from '../models/roleAssignment';
 import { researchEntityIdentityTokens } from '../scrapers/utils/personProfileEntityMatch';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { servedSiteLeadVerdicts } from '../utils/leadContradictedByNamesake';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -123,7 +124,7 @@ async function loadClashEntities(
     _id: { $in: clashEntityIds.map((id) => new mongoose.Types.ObjectId(id)) },
     archived: { $ne: true },
   })
-    .select('_id slug name displayName')
+    .select('_id slug name displayName websiteUrl website leadVerification')
     .lean()) as unknown as Array<Record<string, any>>;
 
   const rows: SurnameClashEntityRow[] = [];
@@ -131,6 +132,7 @@ async function loadClashEntities(
   for (const entity of entityDocs) {
     const entityId = serializedDocumentId(entity._id);
     if (!entityId) continue;
+    const siteVerdicts = servedSiteLeadVerdicts(entity);
     rows.push({
       entityId,
       identityTokens: researchEntityIdentityTokens({
@@ -138,7 +140,10 @@ async function loadClashEntities(
         displayName: entity.displayName,
         slug: entity.slug,
       }),
-      leads: leadsByEntityId.get(entityId) || [],
+      leads: (leadsByEntityId.get(entityId) || []).map((lead) => {
+        const servedSiteVerdict = siteVerdicts.get(lead.personId);
+        return servedSiteVerdict ? { ...lead, servedSiteVerdict } : lead;
+      }),
     });
     slugByEntityId.set(entityId, String(entity.slug || ''));
   }
