@@ -1356,3 +1356,170 @@ describe('round-five roster rules (#5245)', () => {
     });
   });
 });
+
+describe('derived roster precision (#5296)', () => {
+  const observedAt = new Date('2026-10-18T12:00:00Z');
+  const headingConfig = (
+    currentSectionLabels: string[],
+    pastSectionLabels: string[] = [],
+  ): OfficialRosterConfig => ({
+    researchEntityKey: 'dept-fixture-precision',
+    url: 'https://precisionlab.yale.edu/people',
+    template: 'heading-list',
+    currentSectionLabels,
+    pastSectionLabels,
+  });
+  const listed = (html: string, rosterConfig: OfficialRosterConfig) =>
+    extractOfficialResearchHomeRoster(html, rosterConfig, observedAt).undergraduates.map(
+      ({ name, status }) => `${name}:${status}`,
+    );
+  const subTable = (group: string, rows: string[][]) => `<table><tbody>
+    <tr><th>${group}</th><th>Dates in Lab</th><th>Matriculated</th><th>Current Position</th></tr>
+    ${rows.map((cells) => `<tr>${cells.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')}
+  </tbody></table>`;
+
+  describe('an alumni section split into sub-groups', () => {
+    const mixedLabel = 'Postgrads, Yale Undergrads, Visiting Programs, Other Colleges, High School';
+    const html = `<html><body><main><h2>Lab Alumni</h2><h3>${mixedLabel}</h3>
+      ${subTable('Postgrads', [['Avery Quill', '2019-2021', 'Fixture School of Medicine', 'Physician']])}
+      ${subTable('Yale Undergrads', [
+        ['Harper Wren', '2018-2020', 'Yale College', 'Scientist'],
+        ['Rowan Thistle', '2016-2018', 'Fixture Law School', 'Attorney'],
+      ])}
+      ${subTable('Summer Bridge and Post-Bac Programs', [['Jordan Alder', '2015', 'Fixture Medical School', 'Physician']])}
+      ${subTable('Undergrads from Other Universities', [['Sasha Ember', '2014', 'Elsewhere University', 'Engineer']])}
+      ${subTable('Summer High School Students', [['Morgan Fern', '2013', 'Elsewhere College', 'Student']])}
+    </main></body></html>`;
+
+    it('takes each person from their own sub-table and keeps only the Yale undergraduates', () => {
+      expect(listed(html, headingConfig([], [mixedLabel]))).toEqual([
+        'Harper Wren:past',
+        'Rowan Thistle:past',
+      ]);
+    });
+
+    it('records the section as separated by sub-group', () => {
+      expect(
+        extractOfficialResearchHomeRoster(html, headingConfig([], [mixedLabel]), observedAt)
+          .subgroupedSectionLabels,
+      ).toEqual([mixedLabel]);
+    });
+
+    it('leaves out a sub-heading that names other schools', () => {
+      const page = `<html><body><main><h2>Former Members</h2>
+        <h3>Yale Undergraduates</h3><ul><li>Harper Wren, 2019</li></ul>
+        <h3>Undergrads from Other Universities</h3><ul><li>Sasha Ember, 2019</li></ul>
+      </main></body></html>`;
+      expect(
+        listed(
+          page,
+          headingConfig([], ['Yale Undergraduates', 'Undergrads from Other Universities']),
+        ),
+      ).toEqual(['Harper Wren:past']);
+    });
+  });
+
+  describe('another school on the person own line or biography', () => {
+    it('leaves out a student whose biography says they attend another school', () => {
+      const html = `<html><body><main><h2>Research Assistants</h2>
+        <h3>Avery Quill</h3><p>Undergraduate Research Assistant</p>
+        <p>Avery is an incoming sophomore at Elsewhere College, Fixture University. She studies memory.</p>
+        <h3>Harper Wren</h3><p>Undergraduate Research Assistant</p>
+        <p>Harper is a junior at Yale majoring in Psychology, and spent a summer at Elsewhere University.</p>
+        <h3>Rowan Thistle</h3><p>Undergraduate Research Assistant</p>
+        <p>Rowan is a sophomore undergraduate student from College Station, Texas, majoring in physics.</p>
+        <h3>Jordan Alder</h3><p>Undergraduate Researcher</p>
+        <p>Jordan visited the lab from Fixtureland to analyse field data.</p>
+      </main></body></html>`;
+      expect(listed(html, headingConfig(['Research Assistants']))).toEqual([
+        'Harper Wren:current',
+        'Rowan Thistle:current',
+      ]);
+    });
+
+    it('reads another school from the line itself, and a Yale residential college as Yale', () => {
+      const html = `<html><body><main><h2>Undergraduate Students</h2><ul>
+        <li>Avery Quill, Elsewhere University B.S. candidate</li>
+        <li>Harper Wren: (fall 2019-spring 2020) undergraduate researcher (ESCU) &#8212; continued to graduate school at Fixture College</li>
+        <li>Rowan Thistle, 2019, Mount Fixture College</li>
+        <li>Jordan Alder – UC Fixtureville undergraduate class of 2018</li>
+        <li>Sasha Ember (Murray College; B.S. 2026)</li>
+        <li>Morgan Fern, undergraduate researcher &#8212; now at Elsewhere College</li>
+      </ul></main></body></html>`;
+      expect(listed(html, headingConfig(['Undergraduate Students']))).toEqual([
+        'Sasha Ember:past',
+        'Morgan Fern:current',
+      ]);
+    });
+
+    it('reads a university as the home school only on a current listing', () => {
+      const current = `<html><body><main><h2>Undergraduate Students</h2><ul>
+        <li>Avery Quill, Elsewhere University</li></ul></main></body></html>`;
+      const alumni = `<html><body><main><h2>Undergraduate Alumni</h2><ul>
+        <li>Avery Quill, 2019, Elsewhere University</li></ul></main></body></html>`;
+      expect(listed(current, headingConfig(['Undergraduate Students']))).toEqual([]);
+      expect(listed(alumni, headingConfig([], ['Undergraduate Alumni']))).toEqual([
+        'Avery Quill:past',
+      ]);
+    });
+
+    it('leaves out a summer research program student with no Yale class year', () => {
+      const html = `<html><body><main><h2>Undergraduate Researchers</h2><ul>
+        <li>Avery Quill (Yale Institute Summer Undergraduate Research Experience student, 2026)</li>
+        <li>Harper Wren (Yale, '27) - Summer Undergraduate Research Program</li>
+      </ul></main></body></html>`;
+      expect(listed(html, headingConfig(['Undergraduate Researchers']))).toEqual([
+        'Harper Wren:current',
+      ]);
+    });
+  });
+
+  describe('status from the entry own label', () => {
+    it('lists an entry labelled as lab alumni as past inside a current block', () => {
+      const html = `<html><body><main><h2>Our Team</h2>
+        <h4>Avery Quill</h4><p>Yale College Student, Lab Alumna</p>
+        <h4>Harper Wren</h4><p>Yale College Student</p>
+        <h4>Rowan Thistle</h4><p>Yale College Summer Student Lab alumnus</p>
+      </main></body></html>`;
+      expect(listed(html, headingConfig(['Our Team']))).toEqual([
+        'Avery Quill:past',
+        'Harper Wren:current',
+        'Rowan Thistle:past',
+      ]);
+    });
+
+    it('does not read an alumni toggle after a person as that person label', () => {
+      const html = `<html><body><main><h3>Undergraduate Researchers</h3>
+        <div><h5>Avery Quill</h5></div>
+        <div class="text-center"><a data-toggle="collapse" href="#alumni">Lab Alumni</a></div>
+        <div id="alumni"><h3>Postdocs</h3><div><h5>Harper Wren</h5>current position: Professor</div></div>
+      </main></body></html>`;
+      expect(listed(html, headingConfig(['Undergraduate Researchers']))).toEqual([
+        'Avery Quill:current',
+      ]);
+    });
+
+    it('lists a person past when an alumni section lists them again with a next position', () => {
+      const html = `<html><body><main><h2>People</h2>
+        <p><strong>Avery Quill</strong><br />Junior</p>
+        <p><strong>Harper Wren</strong><br />Sophomore</p>
+        <h2>Alumni</h2><ul>
+          <li>Avery Quill (undergrad) - graduate research assistant, Elsewhere University</li>
+          <li>Harper Wren (undergrad)</li>
+        </ul></main></body></html>`;
+      expect(listed(html, headingConfig(['People'], ['Alumni']))).toEqual([
+        'Harper Wren:current',
+        'Avery Quill:past',
+      ]);
+    });
+  });
+
+  it('does not read a first-person biography prompt as the person role', () => {
+    const html = `<html><body><main><h2>Team</h2>
+      <p>Postgraduate Associate</p>
+      <h2>Avery Quill</h2><h3>My undergraduate research involved ...</h3>
+      <p>soil microbiomes.</p>
+    </main></body></html>`;
+    expect(listed(html, headingConfig(['Team']))).toEqual([]);
+  });
+});
