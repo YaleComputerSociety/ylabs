@@ -38,6 +38,7 @@ import { isOrganizationalResearchEntity } from '../utils/researchEntityOrganizat
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   isResearchAreaEchoDescription,
+  isStudiesResearchAreaEchoDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -655,7 +656,10 @@ function cardServedInPlaceOfANonResearchBody(
     return '';
   }
   const card = textValue(representation.servedCard) || textValue(entity.shortDescription);
-  return cardStatesResearchItself(card) ? card : '';
+  return cardStatesResearchItself(card) &&
+    !isStudiesResearchAreaEchoDescription(card, entity.researchAreas)
+    ? card
+    : '';
 }
 
 /**

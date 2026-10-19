@@ -889,4 +889,16 @@ describe('a row whose only text narrates its sources is held', () => {
     expect(representation.entity.fullDescription).toBe(card);
     expect(researchEntityServesPublicDetail(entity)).toBe(true);
   });
+  it('withholds a narrating body rather than serve the topic line built from its chips', () => {
+    const entity = {
+      ...facultyRow(
+        "Example's profile describes work in example ecology. The profile also lists interests in example ecology.",
+        '',
+      ),
+      researchAreas: ['Ecology'],
+    };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.invariant.pass).toBe(false);
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
 });
