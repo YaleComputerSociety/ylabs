@@ -24,7 +24,12 @@ import {
   isDepartmentResearchGuidance,
   programKindLabel,
 } from '../../utils/programJourney';
-import { programCitizenshipSummary, NOT_STATED_LABEL } from '../../utils/programBoard';
+import {
+  applicationTextNamesProgramContact,
+  programCitizenshipSummary,
+  NOT_STATED_LABEL,
+  PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE,
+} from '../../utils/programBoard';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
@@ -174,7 +179,7 @@ const FellowshipModal = ({
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
   const audienceLabel = programAudienceLabel(fellowship.audience);
   const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
-    ? 'Yes, secure a mentor before applying'
+    ? 'Yes, line up your own mentor before applying'
     : noMentorFirstAnswer(programLetterRequirement(fellowship), fellowship.mentorMatching);
 
   const handleFilterClick = (filterType: ModalFilterType, value: string) => {
@@ -719,6 +724,12 @@ const FellowshipModal = ({
                             className="text-sm leading-relaxed text-ink-soft"
                           />
                         )}
+                        {fellowship.requiresMentorBeforeApply &&
+                          applicationTextNamesProgramContact(fellowship.applicationInformation) && (
+                            <p className="text-xs leading-relaxed text-muted">
+                              {PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE}
+                            </p>
+                          )}
                         {applicationHref && (
                           <a
                             href={applicationHref}
