@@ -389,7 +389,14 @@ export type PromotionCopyDryRunArtifact =
 
 type OperatorQueueCollection = 'research' | 'programs';
 
-const reviewDecisionReasons = new Set(['application_source_only', 'formalization_only']);
+const reviewDecisionReasons = new Set([
+  'application_source_only',
+  'archive_review',
+  'duplicate_risk',
+  'exact_url_duplicate_risk',
+  'formalization_only',
+  'not_undergraduate_relevant',
+]);
 
 const programStudentReadyGatingReasons = new Set([
   'missing_official_source',
@@ -416,7 +423,7 @@ export const splitOperatorSampleReasons = (
     : [];
   return {
     blockerReasons: stored.filter(
-      (reason) => classifyOperatorQueueReason(reason, collection) === 'blocking',
+      (reason) => classifyOperatorQueueReason(reason, collection) !== 'evidence',
     ),
     signalReasons: stored.filter(
       (reason) => classifyOperatorQueueReason(reason, collection) === 'evidence',

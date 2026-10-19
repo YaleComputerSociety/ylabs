@@ -31,19 +31,22 @@ describe('adminOperatorBoardService', () => {
     expect(classifyOperatorQueueReason('public_description_invariant_failed')).toBe('blocking');
     expect(classifyOperatorQueueReason('non_research_program')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
+    expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
     expect(classifyOperatorQueueReason('application_source_only')).toBe('review');
+    expect(classifyOperatorQueueReason('archive_review')).toBe('review');
+    expect(classifyOperatorQueueReason('duplicate_risk')).toBe('review');
+    expect(classifyOperatorQueueReason('exact_url_duplicate_risk')).toBe('review');
     expect(classifyOperatorQueueReason('concrete_next_step')).not.toBe('evidence');
     expect(classifyOperatorQueueReason('source_backed_description')).toBe('evidence');
     expect(classifyOperatorQueueReason('operator_override')).toBe('review');
   });
 
-  it('classifies every canonical hard blocker as blocking, never review', () => {
+  it('sends canonical hard blockers that need no operator decision to the repair lane', () => {
     for (const hard of [
-      'not_undergraduate_relevant',
-      'archive_review',
-      'duplicate_risk',
-      'exact_url_duplicate_risk',
+      'public_description_invariant_failed',
+      'citations_identify_no_person',
+      'external_award_cycle_stale',
     ]) {
       expect(classifyOperatorQueueReason(hard)).toBe('blocking');
       expect(classifyOperatorQueueReason(hard, 'programs')).toBe('blocking');
@@ -57,7 +60,7 @@ describe('adminOperatorBoardService', () => {
     }
   });
 
-  it('splits sample reasons with the same classification as the queue lanes', () => {
+  it('lists every reason that is not a signal under the sample blockers', () => {
     const reasons = [
       'missing_lead',
       'formalization_only',
@@ -68,11 +71,22 @@ describe('adminOperatorBoardService', () => {
       'missing_lead',
     ];
     expect(splitOperatorSampleReasons(reasons, 'research')).toEqual({
-      blockerReasons: ['missing_lead'],
+      blockerReasons: [
+        'missing_lead',
+        'formalization_only',
+        'application_source_only',
+        'operator_override',
+      ],
       signalReasons: ['missing_official_source', 'official_source'],
     });
     expect(splitOperatorSampleReasons(reasons, 'programs')).toEqual({
-      blockerReasons: ['missing_lead', 'missing_official_source'],
+      blockerReasons: [
+        'missing_lead',
+        'formalization_only',
+        'application_source_only',
+        'operator_override',
+        'missing_official_source',
+      ],
       signalReasons: ['official_source'],
     });
     expect(splitOperatorSampleReasons(undefined, 'research')).toEqual({
