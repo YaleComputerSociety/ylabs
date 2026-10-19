@@ -4028,6 +4028,39 @@ describe('a name-only group joining a lead lab to a lead-less row of the same na
     const plan = buildResearchEntityPiDedupePlan(sameNameRows());
     expect(plan.map((group) => group.canonicalEntityId)).toEqual(['member-row']);
   });
+
+  it('never folds a faculty research row its lead leads into a lead-less home of that name', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'pi-ortolan',
+        normalizedName: 'ortolan lab',
+        personLedEntityIds: ['lead-fra'],
+        entities: [
+          {
+            id: 'lead-fra',
+            slug: 'faculty-research-area-wren-ortolan',
+            name: 'Ortolan Lab',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            sourceUrls: ['https://medicine.example.edu/profile/wren-ortolan/'],
+          },
+          {
+            id: 'member-row',
+            slug: 'ysm-faculty-juno-vega',
+            name: 'Ortolan Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://www.ortolanlab.example.org/',
+            sourceUrls: ['https://www.ortolanlab.example.org/'],
+          },
+        ],
+      },
+    ]);
+    expect(plan.flatMap((group) => group.duplicateEntityIds)).not.toContain('lead-fra');
+    expect(
+      plan.filter((group) => group.dedupeCategory === 'profile_area_shell_with_concrete_home'),
+    ).toEqual([]);
+  });
 });
 
 describe('buildResearchEntityPiDedupePlan center carve-out', () => {

@@ -777,13 +777,18 @@ function buildProfileAreaShellDuplicateGroup(
   if (duplicateShells.length === 0 || concreteHomes.length === 0) return null;
 
   const canonical = [...concreteHomes].sort((a, b) => {
+    const byPersonLed = personLedRank(row, b) - personLedRank(row, a);
+    if (byPersonLed !== 0) return byPersonLed;
     const byAppointment = primaryAppointmentRank(row, b) - primaryAppointmentRank(row, a);
     if (byAppointment !== 0) return byAppointment;
     const byScore = canonicalScore(b) - canonicalScore(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
   })[0];
-  const duplicates = duplicateShells.filter((entity) => entity.id !== canonical.id);
+  const duplicates = duplicateShells.filter(
+    (entity) =>
+      entity.id !== canonical.id && personLedRank(row, entity) <= personLedRank(row, canonical),
+  );
   if (duplicates.length === 0) return null;
 
   const group = buildGroupFromCluster(
