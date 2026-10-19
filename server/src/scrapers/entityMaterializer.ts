@@ -102,6 +102,7 @@ import {
   personIdentityTokens,
   isExternalScholarlyPlatformLinkLabelName,
   isOffSitePageTitleForPersonScopedName,
+  isLabShapedResearchHome,
   isRefusedProfileLinkedHomeName,
   namesAResearchGroupRatherThanAPerson,
 } from '../utils/researchHomeNameIdentityAuthority';
@@ -228,6 +229,13 @@ import {
 } from './rowKeyedContactEvidence';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
+import {
+  isPersonRowForProfileHomeClaims,
+  profileHomeClaimKey,
+  profileHomeOrganizationClaimKeys,
+  withoutPersonRowOrganizationHomeClaims,
+  type ProfileHomeClaimObservation,
+} from './personRowOrganizationClaims';
 import {
   storedFieldIsCreditedToACoursePage,
   withoutCoursePageEvidence,
@@ -1253,22 +1261,30 @@ const PROFILE_HOME_PAIRED_IDENTITY_FIELDS = new Set(['entityType', 'kind']);
  * live, so person rows kept serving as the linked CENTER or INITIATIVE (#3886). The lane cannot
  * withdraw the type itself: a refusal is not an absence, and an enum field is not declarable for
  * retraction (`fieldRetraction.ts`). So the pairing is read here, on every resolve, instead.
+ *
+ * The pairing is per read rather than per row: a read whose name was refused at ingest still
+ * restated the type, and an older read's name kept that newer type live (#5283).
  */
-export function withoutUnpairedProfileHomeIdentity<
-  T extends { sourceName?: unknown; field?: unknown; value?: unknown },
->(observations: T[], fieldValueRefusals: unknown): T[] {
-  const laneNamesTheRow = observations.some(
-    (observation) =>
-      observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
-      observation.field === 'name' &&
-      textValue(observation.value).length > 0 &&
-      !valueIsRefused(fieldValueRefusals, 'name', observation.value),
+export function withoutUnpairedProfileHomeIdentity<T extends ProfileHomeClaimObservation>(
+  observations: T[],
+  fieldValueRefusals: unknown,
+): T[] {
+  const namedClaims = new Set(
+    observations
+      .filter(
+        (observation) =>
+          observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+          observation.field === 'name' &&
+          textValue(observation.value).length > 0 &&
+          !valueIsRefused(fieldValueRefusals, 'name', observation.value),
+      )
+      .map(profileHomeClaimKey),
   );
-  if (laneNamesTheRow) return observations;
   return observations.filter(
     (observation) =>
       observation.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE ||
-      !PROFILE_HOME_PAIRED_IDENTITY_FIELDS.has(String(observation.field)),
+      !PROFILE_HOME_PAIRED_IDENTITY_FIELDS.has(String(observation.field)) ||
+      namedClaims.has(profileHomeClaimKey(observation)),
   );
 }
 
@@ -7540,6 +7556,15 @@ function enforceResearchEntityNameAuthority(input: {
   nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
+  const withdrawnRetype = reclassifyWithdrawnProfileHomeOrganizationRetype({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    materializationObs: input.materializationObs,
+    leadPersonName: input.nameIdentityAuthority.leadPersonName,
+  });
   const recordIdentity = {
     entityType: set.entityType ?? entityDoc?.entityType,
     kind: set.kind ?? input.derivedKind ?? entityDoc?.kind,
@@ -7619,7 +7644,7 @@ function enforceResearchEntityNameAuthority(input: {
       siteDeclaredOwnNames,
     });
 
-  let fieldsWritten = 0;
+  let fieldsWritten = withdrawnRetype ? 1 : 0;
   const storedSiteDeclaredOwnNames: unknown[] = Array.isArray(entityDoc?.siteDeclaredOwnNames)
     ? entityDoc.siteDeclaredOwnNames
     : [];
@@ -7635,7 +7660,11 @@ function enforceResearchEntityNameAuthority(input: {
     if (
       !textValue(servedValue) ||
       (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
-        !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName))
+        !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
+        !(
+          withdrawnRetype &&
+          isWithdrawnProfileHomeName(servedValue, provenance.sourceName, input.materializationObs)
+        ))
     ) {
       continue;
     }
@@ -8146,6 +8175,88 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
     if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
   }
   return 1;
+}
+
+/**
+ * A row `official-profile-pi-backfill` retyped into an organization keeps the stored name,
+ * type and kind once every observation behind them is withdrawn, because a withdrawn field
+ * resolves to nothing rather than to a rival. On a person's row that is the retype the owner
+ * ruled out (2026-10-17, #5283), so the row is re-derived as faculty research on every resolve,
+ * with no lock, and the name authority then replaces the lane's withdrawn name. A row that keeps
+ * a lab-shaped name some other source still states is that lab, so it is re-derived as `LAB`. A live
+ * observation of the stored type, an operator edit included, keeps the row as it is.
+ */
+function reclassifyWithdrawnProfileHomeOrganizationRetype(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  materializationObs: MaterializerObservationLike[];
+  leadPersonName: unknown;
+}): boolean {
+  const { set, unset, confidenceByField, entityDoc } = input;
+  if (['entityType', 'kind', 'name'].some((field) => input.manuallyLockedFields.includes(field))) {
+    return false;
+  }
+  if ('entityType' in set) return false;
+  const storedType = textValue(entityDoc?.entityType).toUpperCase();
+  if (!ORGANIZATION_TYPES_A_PERSON_ROW_WAS_GRAFTED.has(storedType)) return false;
+  if (entityDoc?.fieldProvenance?.entityType?.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE) {
+    return false;
+  }
+  const storedTypeIsStated = input.materializationObs.some(
+    (observation) =>
+      observation.field === 'entityType' &&
+      textValue(observation.value).toUpperCase() === storedType &&
+      !valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', observation.value),
+  );
+  if (storedTypeIsStated) return false;
+  if (
+    !isPersonRowForProfileHomeClaims(
+      { slug: entityDoc?.slug, leadPersonName: input.leadPersonName },
+      input.materializationObs,
+    )
+  ) {
+    return false;
+  }
+  const keptName = set.name ?? entityDoc?.name;
+  const keptNameProvenance = objectRecord(
+    set['fieldProvenance.name'] ?? entityDoc?.fieldProvenance?.name,
+  );
+  const keepsItsOwnLabName =
+    !isWithdrawnProfileHomeName(
+      keptName,
+      keptNameProvenance.sourceName,
+      input.materializationObs,
+    ) && isLabShapedResearchHome(keptName);
+  const personRowType = keepsItsOwnLabName ? 'LAB' : 'FACULTY_RESEARCH_AREA';
+  set.entityType = personRowType;
+  set.kind = mapEntityTypeToResearchGroupKind(personRowType);
+  for (const field of ['entityType', 'kind']) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  return true;
+}
+
+const comparableName = (value: unknown): string =>
+  textValue(value).replace(/\s+/g, ' ').toLowerCase();
+
+function isWithdrawnProfileHomeName(
+  servedValue: unknown,
+  provenanceSourceName: unknown,
+  materializationObs: MaterializerObservationLike[],
+): boolean {
+  if (provenanceSourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE) return false;
+  const served = comparableName(servedValue);
+  return !materializationObs.some(
+    (observation) =>
+      observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+      (observation.field === 'name' || observation.field === 'displayName') &&
+      comparableName(observation.value) === served,
+  );
 }
 
 function eponymNamesOnlyTheLead(eponym: string, leadPersonName: unknown): boolean {
@@ -10237,10 +10348,30 @@ export async function materializeEntity(
     isResearchEntityObservationType(entityType) || entityType === 'fellowship'
       ? withoutGoneLanePageObservations(obs, laneScopedRowIdentities)
       : { observations: obs, withdrawnValuesByField: new Map<string, unknown[]>() };
+  const profileHomeOrganizationClaims = isResearchEntityObservationType(entityType)
+    ? profileHomeOrganizationClaimKeys(gonePageWithdrawal.observations)
+    : new Set<string>();
+  const personRowOrganizationClaims =
+    profileHomeOrganizationClaims.size > 0 &&
+    entityDoc &&
+    isPersonRowForProfileHomeClaims(
+      {
+        slug: entityDoc.slug,
+        leadPersonName:
+          options.nameIdentityAuthority?.leadPersonName ??
+          (await loadResearchEntityLeadPersonName(entityDoc._id ?? entityIdString)),
+      },
+      gonePageWithdrawal.observations,
+    )
+      ? profileHomeOrganizationClaims
+      : new Set<string>();
   const laneWebsiteWithdrawal = isResearchEntityObservationType(entityType)
     ? withoutLaneRefusedWebsiteUrls(
         withoutLaneRefusedResearchHomeNames(
-          gonePageWithdrawal.observations,
+          withoutPersonRowOrganizationHomeClaims(
+            gonePageWithdrawal.observations,
+            personRowOrganizationClaims,
+          ),
           laneScopedRowIdentities,
         ),
         laneScopedRowIdentities,

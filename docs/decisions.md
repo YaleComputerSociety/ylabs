@@ -121,6 +121,10 @@ A person's row is never renamed and retyped into the organization they lead, how
 A lab-typed home is the person's own lab and is still adopted, and the organization's own row gets its director through the organization-director mode (#5093).
 Measured on Development on 2026-10-18 with the lane's research-home dry run over 2,000 rows: 6 rows planned an organization type, 5 of them person rows, and with the fix none does while the one organization-keyed row is unchanged.
 Before the fix, 14 live person rows carried an organization name and type this lane had written; the re-read refuses 10 of them and emits nothing for the other 4, so those adoptions stay live and are recorded on the issue.
+The owner approved three follow-ups on 2026-10-18, which carry the same rule past that one lane.
+`ysm-faculty-directory` reads the same lab slot and now names the row "<person> Faculty Research" unless the slot is lab-shaped (`isLabShapedResearchHome`), keeping the site as the row's website; on Development that re-plans 25 rows, and every linked page was read and is an organization, program, section, core, project, condition page or another person's lab.
+The materializer applies the rule to the profile lane's stored claims on every resolve (`server/src/scrapers/personRowOrganizationClaims.ts`): a read that typed a person row as anything but a lab is withdrawn, the lane's type counts only beside a name from the same read, and a row whose every source has withdrawn its organization name and type is re-derived as its lead's faculty research, or as a lab when another source still names it as one.
+A rematerialize dry run over the 313 live rows carrying the lane's type, or its name or type provenance, changed 8 rows, every one a person row the lane had retyped into an organization.
 
 ## 2026-10-17: Accounts Are Environment-Local (#5088)
 
