@@ -1131,6 +1131,15 @@ Another lane's assertion of the link resolves normally, and the stored value is 
 The same pass declines to promote that link back from a citation, because a clear that the citation promotion refills on the same pass does not hold.
 Nothing is written to the observation log and the refusal is never projected onto the row, so a second pass over an unchanged corpus plans nothing.
 
+### A patient-care page is never a research website (#5364)
+
+A page for patients is refused as the research website of a lab or person-scoped row by one shared predicate, `isPatientCarePageUrl` in `utils/researchHomeWebsiteUrl.ts`.
+It covers any page on a clinical-practice or hospital host and any page under a patient or clinical-care path segment, and it exempts a path that carries a research or lab segment.
+The refusal is `patient-care-page`, a write-blocking arm of `researchHomeWebsiteUrlDecision`, so the materializer drops a lane's assertion and `planRefusedStoredWebsiteUrlClear` clears a stored one on the next resolve with no lock.
+The website backfill's promote and unservable arms and the detail payload consult the same predicate, and so do the harvest-side screens: the shared name authority, the roster lane's lab-link extractor and entry boundary, the official-profile lane's research-home screen, and the lab-site search's clinical-directory filter.
+An organization row keeps its own clinic page, the scope the umbrella-page rule uses.
+It is a stored-data fix: the data operation is `research-entity:rematerialize` scoped to the rows whose stored `websiteUrl` matches, a re-gate of any row whose tier changes, a re-read through the detail route, and a Development search sync.
+
 ### Fellowship field absence: how a program lane withdraws a value (#4230)
 
 A fellowship lane could not withdraw a value it used to assert, and three mechanisms each ruled themselves out.
