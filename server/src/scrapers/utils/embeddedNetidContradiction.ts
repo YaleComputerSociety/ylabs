@@ -37,7 +37,7 @@ function netidInProfileUrl(value: unknown): string | undefined {
   if (!raw) return undefined;
   try {
     const url = new URL(raw);
-    if (!url.hostname.endsWith('yale.edu')) return undefined;
+    if (url.hostname !== 'yale.edu' && !url.hostname.endsWith('.yale.edu')) return undefined;
     const slug = url.pathname.match(PROFILE_SLUG)?.[1];
     return slug ? initialledNetidSuffix(slug.split('-')) : undefined;
   } catch {
@@ -78,15 +78,15 @@ export function netidsEmbeddedInUserEvidence(
 /**
  * Whether a name-matched candidate holds a netid that none of the netids the evidence spells
  * out is. A candidate stamped with an alias rather than a bare netid is read through the netid
- * the alias ends in. A netid belongs to one person, so evidence that names a different one is about a
- * namesake, however well the names agree.
+ * the alias ends in, and one whose alias ends in none holds no netid to contradict. A netid
+ * belongs to one person, so evidence that names a different one is about a namesake, however
+ * well the names agree.
  */
 export function embeddedNetidContradictsCandidate(
   embeddedNetids: ReadonlySet<string>,
   candidateNetid: unknown,
 ): boolean {
-  const held = lowerText(candidateNetid);
-  if (!held || embeddedNetids.size === 0) return false;
-  const heldNetids = [held, netidInAlias(held, { bareNetid: false })];
-  return !heldNetids.some((netid) => netid && embeddedNetids.has(netid));
+  if (embeddedNetids.size === 0) return false;
+  const heldNetid = netidInAlias(candidateNetid, { bareNetid: true });
+  return heldNetid !== undefined && !embeddedNetids.has(heldNetid);
 }

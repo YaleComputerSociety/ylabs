@@ -28,6 +28,7 @@ describe('netidsEmbeddedInUserEvidence', () => {
         { field: 'email', value: 'qvale2@yale.edu' },
         { field: 'profileUrl', value: 'https://medicine.yale.edu/profile/quinn-vale/' },
         { field: 'profileUrl', value: 'https://example.org/profile/quinn-vale-qv584/' },
+        { field: 'profileUrl', value: 'https://notyale.edu/profile/quinn-vale-qv584/' },
         { field: 'profileUrl', value: 'https://medicine.yale.edu/profile/quinn-vale2/' },
         { field: 'profileUrl', value: 'https://medicine.yale.edu/profile/mara-ann-vale2/' },
         { field: 'email', value: 'quinn.vale.zz584@yale.edu' },
@@ -46,5 +47,9 @@ describe('embeddedNetidContradictsCandidate', () => {
     expect(embeddedNetidContradictsCandidate(new Set(), 'qv376')).toBe(false);
     expect(embeddedNetidContradictsCandidate(new Set(['qv376']), 'quinn.vale.qv376')).toBe(false);
     expect(embeddedNetidContradictsCandidate(new Set(['qv584']), undefined)).toBe(false);
+  });
+
+  it('keeps a candidate whose stored identifier is a letters-only alias, which holds no netid', () => {
+    expect(embeddedNetidContradictsCandidate(new Set(['qv584']), 'quinn.vale')).toBe(false);
   });
 });
