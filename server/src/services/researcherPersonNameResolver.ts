@@ -149,17 +149,7 @@ export async function resolveResearcherIdForPersonName(
     return { status: 'matched', researcherId: asResearcherId(exact[0].candidate._id) };
   }
   if (exact.length > 1) return { status: 'ambiguous' };
-
-  if (firstToken.length > 1) {
-    const prefix = first.toLowerCase();
-    const byPrefix = candidates.filter(({ parsed }) =>
-      parsed.first.toLowerCase().startsWith(prefix),
-    );
-    if (byPrefix.length === 1) {
-      return { status: 'matched', researcherId: asResearcherId(byPrefix[0].candidate._id) };
-    }
-    if (byPrefix.length > 1) return { status: 'ambiguous' };
-  }
+  // No prefix rule: a complete short given name is a prefix of a stranger's longer one (#5324).
 
   if (candidates.length === 0) return { status: 'absent' };
   const everyCandidateNamesSomeoneElse = candidates.every(

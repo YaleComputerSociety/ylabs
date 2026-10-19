@@ -68,6 +68,10 @@ On Development the name resolver then returns `ambiguous` for 2,062 of the 5,053
 Only `YALE_OFFICIAL` counts. `LAB_ABOUT` names a lab a whole group shares and `profile.websiteUrl` can hold the same borrowed lab URL, so neither identifies an individual.
 The join reaches 63 keys on Development, 48 of them ties the name resolver refused, and it fails closed on the two shapes that would graft: a page more than one live researcher carries, and an observed name that contradicts the page's owner (113 keys).
 Like the email join it fills only, never overrules, and never renames the researcher, because the page vouched for which person this is rather than for what that person is called.
+The same page evidence also overrules a name match (#5324).
+A `person-name` join is refused when the observed evidence cites a canonical CMS person page on the same host as the candidate's own `YALE_OFFICIAL` page, the two are different pages, and their slugs share a surname but no given name, short form, or concatenated spelling: two person pages on one site name two people.
+The name resolver has no given-name prefix rule for the same reason the slug matcher below has none, because a complete short given name is a prefix of a stranger's longer one; on Development the prefix branch reached 6 observed names and every one paired two different given names.
+A person-name join renames the record and overwrites its title, so either graft served a same-surname stranger as the lead of the page owner's row, and the page owner's own netid-keyed evidence renames it back on its next materialization.
 It matches the stored link on host and path rather than the literal string, so a scheme, a `www.` label, a trailing slash or a tracking query does not hide a researcher who already carries the same page.
 `observations:materialize-profile-page-joined-users` re-offers stored evidence to the join, because the join otherwise fires only while a scrape ingests `user` observations.
 
