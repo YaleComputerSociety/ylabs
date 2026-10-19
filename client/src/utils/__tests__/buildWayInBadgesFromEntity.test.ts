@@ -26,6 +26,46 @@ describe('buildWayInBadgesFromEntity', () => {
    * predicate the browse filter and saved plans also read, so a field the server
    * does not count, such as a roster count it holds out, must not light the badge.
    */
+  it('leads with the invitation the lab page states, ahead of hosting', () => {
+    expect(
+      buildWayInBadgesFromEntity(
+        entity({
+          hasUndergradHostingEvidence: true,
+          undergradInvitation: {
+            level: 'actively_hiring',
+            quote: 'We are actively recruiting undergraduate researchers.',
+            sourceUrl: 'https://lab.example.edu/join',
+          },
+        }),
+      ),
+    ).toEqual(['Actively hiring', 'Undergrad evidence']);
+    expect(
+      buildWayInBadgesFromEntity(
+        entity({
+          undergradInvitation: {
+            level: 'welcomes_undergrads',
+            quote: 'We welcome undergraduate students.',
+            sourceUrl: 'https://lab.example.edu/',
+          },
+        }),
+      ),
+    ).toEqual(['Welcomes undergrads']);
+  });
+
+  it('shows no invitation badge without a citable page', () => {
+    expect(
+      buildWayInBadgesFromEntity(
+        entity({
+          undergradInvitation: {
+            level: 'actively_hiring',
+            quote: 'We are hiring undergraduates.',
+            sourceUrl: 'javascript:alert(1)',
+          },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it('does not re-derive hosting from a current undergraduate count', () => {
     expect(buildWayInBadgesFromEntity(entity({ currentUndergradCount: 3 }))).toEqual([]);
   });

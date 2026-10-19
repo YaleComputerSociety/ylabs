@@ -1,6 +1,10 @@
 import { servedCitationIsWithheld } from './servedCitationPolicy';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  undergradInvitationLevels,
+  type UndergradInvitationLevel,
+} from '../models/storedVocabularies';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS,
@@ -46,6 +50,8 @@ import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntit
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
+import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
+import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
 import {
   MAX_PUBLIC_SOURCE_FIELD_CONTRIBUTIONS,
   SERVED_FIELD_CONTRIBUTION_LABEL_SET,
@@ -508,6 +514,30 @@ export function publicFellowshipRecipients(value: unknown): PublicFellowshipReci
     .slice(0, MAX_PUBLIC_FELLOWSHIP_RECIPIENTS);
 }
 
+export interface PublicUndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
+}
+
+export function publicUndergradInvitation(
+  value: unknown,
+  group: Parameters<typeof quotePageIsAboutAnotherEntity>[1],
+): PublicUndergradInvitation | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { level, quote, sourceUrl } = value as Record<string, unknown>;
+  if (!undergradInvitationLevels.includes(level as UndergradInvitationLevel)) return undefined;
+  if (typeof quote !== 'string' || !quote.trim()) return undefined;
+  const servedUrl = publicHttpUrl(sourceUrl);
+  if (!servedUrl || quotePageIsAboutAnotherEntity(servedUrl, group)) return undefined;
+  if (quoteListsPeopleWithTheirContactDetails(quote)) return undefined;
+  return {
+    level: level as UndergradInvitationLevel,
+    quote: quote.trim().slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+    sourceUrl: servedUrl,
+  };
+}
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',
@@ -516,6 +546,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'school',
   'schools',
   'currentUndergradCount',
+  'undergradInvitation',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -544,7 +575,7 @@ export interface PublicResearchEntityDtoOptions {
 
 const LIST_TRIMMED_DETAIL_ONLY_FIELDS = new Set(['fullDescription', 'recentGrants', 'leadHonors']);
 
-const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn']);
+const WAY_IN_FIELDS_WITHHELD_FOR_EMERITUS_LEAD = new Set(['waysIn', 'undergradInvitation']);
 
 const CONTACT_SHOWN_PUBLIC_FIELDS: ReadonlySet<string> = new Set([
   'waysIn',
@@ -674,6 +705,11 @@ function derivePublicResearchEntityDto(
         // when the two echo each other the body is the half to keep, consistent
         // with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
+        continue;
+      }
+      if (field === 'undergradInvitation') {
+        const invitation = publicUndergradInvitation(group[field], group);
+        if (invitation) dto[field] = invitation;
         continue;
       }
       if (field === 'currentUndergradCount') {

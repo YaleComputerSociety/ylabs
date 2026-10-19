@@ -88,6 +88,14 @@ export interface ResearchEntitySourceLinkHealth {
   httpsLandingUrl?: string;
 }
 
+export type UndergradInvitationLevel = 'actively_hiring' | 'welcomes_undergrads';
+
+export interface UndergradInvitation {
+  level: UndergradInvitationLevel;
+  quote: string;
+  sourceUrl: string;
+}
+
 export interface ResearchGroup {
   _id: string;
   // Meilisearch hits return `id` rather than `_id`. The search endpoint also
@@ -114,6 +122,8 @@ export interface ResearchGroup {
   schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
+  /** A sentence on the lab's own page inviting undergraduates, with how strongly it invites. */
+  undergradInvitation?: UndergradInvitation;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
   fellowshipRecipients?: FellowshipRecipient[];

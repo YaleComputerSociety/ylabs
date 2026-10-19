@@ -5,6 +5,31 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-18: A Lab Page That Invites Undergraduates Earns A Quoted Badge (#5288)
+
+The owner chose a three-step scale for how strongly a lab invites undergraduates, with no badge at the default step.
+"Actively hiring" means the lab's own page says it is recruiting undergraduates now: "currently hiring", "actively recruiting", "we are looking for", "we have openings", "positions are available".
+"Welcomes undergrads" means the page explicitly asks undergraduates to get in touch: "we welcome undergraduates", "always looking for", "interested undergraduates should email", an RA form.
+Reaching out if interested is the norm for every Yale lab, so the default carries no badge and the constant reach-out prompt covers it.
+A row shows at most one badge, the higher step its own page supports, and the detail page shows the quote that backs it with its page.
+
+This is a narrow exception to the rule that the detail header carries no computed verdict or access-summary badge, not a reversal of it.
+Nothing is computed: the badge repeats what the lab's own page states, so it is never inferred from a roster, hosting history, a generic join page or "students welcome" wording.
+
+The `lab-site-undergrad-invitation` lane reads each lab site's home page and up to four linked join, people or opportunities pages, and makes no model call.
+`server/src/scrapers/utils/undergradInvitation.ts` judges each sentence that names undergraduates.
+It refuses closed or filled wording, past or roster lines, course, degree and program mentions, other groups' hiring, and awards.
+It also refuses a stated term that has passed ("Fall 2019 - Summer 2020"), while a future term ("positions will be available in Spring 2027") is an active opening even beside a past apply-by date, which the owner judged a typo and which is not served as a claim.
+The lane refuses a quote that three or more rows share, because that is a department or program page repeated across faculty rows rather than one lab's invitation, and it skips a page `quotePageIsAboutAnotherEntity` places on another entity.
+The shared count spans the stored live observations as well as the current run, so a narrow run cannot serve a program page, and a refused row asserts no value so a later run withdraws a quote an earlier one emitted.
+A row with an unreadable linked page emits nothing, because a transient fetch failure is not evidence that an invitation is gone.
+
+Measured by hand-reading in the session that built it: against 85 graded quotes from Development, the extractor agreed on every one, and against the full source pages of 80 graded rows it agreed on 77.
+The 3 misses are pages whose fetched HTML does not carry the text, and none was a wrong badge.
+Across 96 pages of profiles and lab sites with no invitation it flagged one, which was a real invitation the hand-read had missed.
+Those are the pages the rules were tuned on, so the precision of record is a fresh graded sample of served rows after the first Development run, recorded on #5288.
+A sample of 45 faculty profiles and 45 lab sites the undergraduate lane had not credited found no invitation, so coverage is bounded by what labs publish, not by the reader.
+
 ## 2026-10-18: The Undergraduate Mention Quote Is No Longer Shown (#5309)
 
 Decision (owner, 2026-10-18): the detail page no longer shows the "Mentions undergraduate research" quote, and the API no longer serves `undergradEvidenceQuote` or `undergradEvidenceSourceUrl` on any route.
