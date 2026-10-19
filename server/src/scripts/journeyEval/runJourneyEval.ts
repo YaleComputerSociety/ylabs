@@ -11,10 +11,7 @@ import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './jou
 import { programJourneyCases } from './journeyEvalProgramCases';
 import { fellowshipJourneyCases } from './journeyEvalFellowshipCases';
 import { buildProgramJourneyContext } from './programJourneyContext';
-import {
-  parseTopicQueryJudgements,
-  type TopicQueryJudgement,
-} from './journeyEvalJudgements';
+import { parseTopicQueryJudgements, type TopicQueryJudgement } from './journeyEvalJudgements';
 import {
   summarizeInvariants,
   type InvariantResult,
