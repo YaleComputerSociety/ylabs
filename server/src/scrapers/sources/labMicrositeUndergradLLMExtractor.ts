@@ -245,7 +245,7 @@ export const LAB_UNDERGRAD_SYSTEM_PROMPT = UNDERGRAD_EXTRACTION_PROMPT;
  * prompt. Strips `<script>`, `<style>`, `<noscript>`, collapses whitespace,
  * and truncates to MAX_PROMPT_CHARS so we stay well below model context.
  */
-const PAGE_CHROME_SELECTOR =
+export const PAGE_CHROME_SELECTOR =
   'script, style, noscript, svg, iframe, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs';
 
 /**

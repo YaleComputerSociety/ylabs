@@ -1,6 +1,8 @@
+import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models';
 import { Observation } from '../../models/observation';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
+import { extractElementTextWithLineBreaks } from '../utils/htmlText';
 import { mapWithConcurrency, resolveSourceConcurrency } from '../utils/mapWithConcurrency';
 import { quotePageIsAboutAnotherEntity } from '../undergradQuoteRelevance';
 import {
@@ -13,8 +15,7 @@ import {
   candidateLabFromResearchEntityDoc,
   defaultFetchPage,
   discoverSubPageUrls,
-  htmlToPromptText,
-  htmlToRosterText,
+  PAGE_CHROME_SELECTOR,
   pagesWithinEntityScope,
   selectLabsToProcess,
   UNDERGRAD_LLM_CANDIDATE_FILTER,
@@ -82,8 +83,21 @@ async function defaultLiveInvitationQuoteFinder(): Promise<Map<string, string>> 
   return quotes;
 }
 
+function blockLinesWithout(html: string, removedSelector: string): string {
+  try {
+    const $ = cheerio.load(html);
+    $(removedSelector).remove();
+    return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0]);
+  } catch {
+    return '';
+  }
+}
+
 function pageText(html: string): string {
-  return htmlToRosterText(html) || htmlToPromptText(html);
+  return (
+    blockLinesWithout(html, PAGE_CHROME_SELECTOR) ||
+    blockLinesWithout(html, 'script, style, noscript, svg, iframe')
+  );
 }
 
 export function strongestInvitationOnPages(
@@ -195,12 +209,12 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
           fetchFailed += 1;
           return;
         }
-        if (!labPages.complete) {
+        const invitation = strongestInvitationOnPages(labPages.pages, lab, now);
+        if (!labPages.complete && !invitation) {
           partialReads += 1;
           return;
         }
         read.set(lab.slug, lab);
-        const invitation = strongestInvitationOnPages(labPages.pages, lab, now);
         if (invitation) invitations.set(lab.slug, invitation);
       },
     );
@@ -231,7 +245,7 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
       const level = (observation.value as ServedUndergradInvitation | null)?.level;
       if (level) counts[level] += 1;
     }
-    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${partialReads} rows skipped because a linked page was unreadable`;
+    const notes = `read ${read.size}/${labs.length} lab sites; actively hiring ${counts.actively_hiring}, welcomes undergrads ${counts.welcomes_undergrads}; ${sharedRefused} refused as a quote shared by ${SHARED_QUOTE_ENTITY_THRESHOLD}+ rows; ${fetchFailed} home pages unreadable; ${partialReads} rows with no invitation skipped because a linked page was unreadable`;
     ctx.log(notes);
     return { observationCount: observations.length, entitiesObserved: read.size, notes };
   }

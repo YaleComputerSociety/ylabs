@@ -45,6 +45,8 @@ const ACTIVE_CUES = [
 const STANDING_QUALIFIER =
   /\b(?:always|often|constantly|continually|regularly|occasionally|generally|typically)\b/i;
 const CONDITIONAL_AVAILABILITY = /\b(?:if|whether)\s+(?:there\s+(?:are|is)|any)\b/i;
+const INDEPENDENT_CLAUSE_BREAK =
+  /;|,?\s+(?:but|while|whereas)\s+|,\s+and\s+(?=(?:\w+\s+){0,2}(?:are|is|can|may|should|will)\b)/i;
 
 const WELCOME_CUES = [
   /\bwelcom(?:e|es|ed|ing)\b/i,
@@ -127,7 +129,10 @@ function clauseEnd(text: string, matchIndex: number): number {
 
 function candidates(rawText: string): InvitationCandidate[] {
   const found: InvitationCandidate[] = [];
-  for (const sentence of normalizeJoinRouteText(rawText).split(SENTENCE_BOUNDARY)) {
+  const sentences = rawText
+    .split(/\n+/)
+    .flatMap((block) => normalizeJoinRouteText(block).split(SENTENCE_BOUNDARY));
+  for (const sentence of sentences) {
     const audienceMatches = Array.from(sentence.matchAll(AUDIENCE_GLOBAL));
     if (audienceMatches.length === 0) {
       if (sentence.length <= MAX_SENTENCE_CHARS) found.push({ sentence, precedingText: '' });
@@ -162,6 +167,17 @@ function namesUndergraduateAudience(sentence: string): boolean {
   );
 }
 
+function activeOpeningIsForUndergraduates(sentence: string): boolean {
+  const sentenceNamesAudience = namesUndergraduateAudience(sentence);
+  return sentence
+    .split(INDEPENDENT_CLAUSE_BREAK)
+    .some(
+      (clause) =>
+        ACTIVE_CUES.some((cue) => cue.test(clause)) &&
+        (!sentenceNamesAudience || namesUndergraduateAudience(clause)),
+    );
+}
+
 export function classifyInvitationSentence(
   sentence: string,
   now: Date,
@@ -175,7 +191,7 @@ export function classifyInvitationSentence(
   const active =
     !STANDING_QUALIFIER.test(sentence) &&
     !CONDITIONAL_AVAILABILITY.test(sentence) &&
-    ACTIVE_CUES.some((cue) => cue.test(sentence));
+    activeOpeningIsForUndergraduates(sentence);
   if (active) return 'actively_hiring';
   return WELCOME_CUES.some((cue) => cue.test(sentence)) ? 'welcomes_undergrads' : null;
 }
