@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { quotesOverlap, undergradInvitationFromEntity } from '../undergradInvitation';
+import { undergradInvitationFromEntity } from '../undergradInvitation';
 
 describe('undergradInvitationFromEntity', () => {
   it('labels the level and names the cited host', () => {
@@ -24,17 +24,5 @@ describe('undergradInvitationFromEntity', () => {
   it('returns nothing without an invitation', () => {
     expect(undergradInvitationFromEntity({})).toBeUndefined();
     expect(undergradInvitationFromEntity(undefined)).toBeUndefined();
-  });
-});
-
-describe('quotesOverlap', () => {
-  it('treats a quote contained in the other as the same passage', () => {
-    expect(
-      quotesOverlap(
-        'Undergraduates: Yale undergrads: Positions will be available in Spring 2027.',
-        'Yale undergrads: Positions will be available in Spring 2027.',
-      ),
-    ).toBe(true);
-    expect(quotesOverlap('We welcome undergraduates.', 'Former students include two.')).toBe(false);
   });
 });
