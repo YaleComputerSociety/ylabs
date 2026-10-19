@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -2557,9 +2557,10 @@ describe('LabDetail page', () => {
     );
   });
 
-  it('keeps the lead rail beside the page body rather than inside the summary card', async () => {
+  it('puts the way in under the summary and keeps the lead rail beside it', async () => {
     renderLabDetail({
       ...basePayload,
+      group: { ...basePayload.group, websiteUrl: 'https://example.test/lab' },
       members: [
         {
           role: 'pi',
@@ -2591,51 +2592,14 @@ describe('LabDetail page', () => {
       .closest('section') as HTMLElement;
     const rail = summaryCard.nextElementSibling as HTMLElement;
     const body = rail.nextElementSibling as HTMLElement;
-    expect(summaryCard.textContent).not.toContain('How to get involved');
+    expect(summaryCard.textContent).toContain('How to get involved');
+    expect(rail.textContent).not.toContain('How to get involved');
     expect(summaryCard.textContent).not.toContain('Jordan Researcher');
     expect(rail.textContent).toContain('Jordan Researcher');
+    expect(rail.className).toContain('md:row-start-1');
+    expect(rail.className).not.toContain('self-start');
     expect(body.textContent).toContain('Affiliated with');
-  });
-
-  it('gives the lead rail the rendered summary card height so their bottom edges can align', async () => {
-    let summaryCardHeight = 320;
-    const resizeCallbacks: ResizeObserverCallback[] = [];
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        constructor(callback: ResizeObserverCallback) {
-          resizeCallbacks.push(callback);
-        }
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    );
-    const boundingRectSpy = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(() => ({ height: summaryCardHeight }) as DOMRect);
-
-    try {
-      renderLabDetail();
-      await screen.findByText(DEFAULT_ENTITY_NAME);
-
-      const summaryCard = screen
-        .getByRole('heading', { name: 'Research summary' })
-        .closest('section') as HTMLElement;
-      const rail = summaryCard.nextElementSibling as HTMLElement;
-      await waitFor(() =>
-        expect(rail.style.getPropertyValue('--summary-card-height')).toBe('320px'),
-      );
-
-      summaryCardHeight = 480;
-      act(() => {
-        resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver));
-      });
-      expect(rail.style.getPropertyValue('--summary-card-height')).toBe('480px');
-    } finally {
-      boundingRectSpy.mockRestore();
-      vi.unstubAllGlobals();
-    }
+    expect(body.className).toContain('md:col-span-2');
   });
 
   it('does not link an affiliation summary without a navigable slug', async () => {
