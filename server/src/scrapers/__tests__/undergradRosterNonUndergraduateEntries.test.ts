@@ -205,6 +205,45 @@ describe('other-school entries the derivation measurement found (#5416)', () => 
     ).toEqual(['Avery Quill:past']);
   });
 
+  it('reads a table column of residential colleges as Yale', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Students</h2><table>
+          <tr><td>Avery Quill</td><td>Branford College</td></tr>
+          <tr><td>Rowan Thistle</td><td>Silliman College</td></tr>
+          <tr><td>Ellis Juniper</td><td>Pauli Murray College</td></tr>
+        </table>`),
+        config({ currentSectionLabels: ['Undergraduate Students'] }),
+      ),
+    ).toEqual(['Avery Quill:current', 'Rowan Thistle:current', 'Ellis Juniper:current']);
+  });
+
+  it('reads a table column of Yale-NUS College as another school', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Students</h2><table>
+          <tr><td>Avery Quill</td><td>Yale University</td></tr>
+          <tr><td>Rowan Thistle</td><td>Yale-NUS College</td></tr>
+          <tr><td>Ellis Juniper</td><td>Yale-NUS College</td></tr>
+        </table>`),
+        config({ currentSectionLabels: ['Undergraduate Students'] }),
+      ),
+    ).toEqual(['Avery Quill:current']);
+  });
+
+  it('never reads a headed column of where alumni went next as their home school', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Alumni</h2><table>
+          <tr><th>Name</th><th>Years</th><th>Current Position</th></tr>
+          <tr><td>Avery Quill</td><td>2019-2021</td><td>Elsewhere University</td></tr>
+          <tr><td>Rowan Thistle</td><td>2018-2020</td><td>Fixture Institute of Technology</td></tr>
+        </table>`),
+        config({ currentSectionLabels: [], pastSectionLabels: ['Undergraduate Alumni'] }),
+      ),
+    ).toEqual(['Avery Quill:past', 'Rowan Thistle:past']);
+  });
+
   it('withholds a former member who left to finish an undergraduate degree elsewhere', () => {
     expect(
       listed(
@@ -294,6 +333,26 @@ describe('undergraduates whose class year has passed (#5416)', () => {
         }),
       ),
     ).toEqual(['Rowan Thistle:past', 'Avery Quill:current']);
+  });
+
+  it('never reads a high-school class year in a biography as the Yale class year', () => {
+    expect(
+      listed(
+        profileGrid(
+          'Undergraduate Students',
+          profileCard(
+            'Avery Quill',
+            '',
+            '<p>Avery is a Yale College first-year. Avery graduated from Harbor High School, class of 2025.</p>',
+          ),
+        ),
+        config({
+          template: 'profile-grid',
+          currency: 'section-label',
+          currentSectionLabels: ['Undergraduate Students'],
+        }),
+      ),
+    ).toEqual(['Avery Quill:current']);
   });
 
   it('reads a class year bulleted under a name heading as that person’s own', () => {

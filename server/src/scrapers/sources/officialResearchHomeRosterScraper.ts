@@ -239,8 +239,9 @@ function readProfileGridSections($: cheerio.CheerioAPI): RosterSection[] {
               title: normalizedText(card.find('.profile-grid-item__title').first().text()),
               profileHref:
                 card.find('a.profile-grid-item__link-details').first().attr('href') || '',
-              bio: normalizedText(card.find('.profile-grid-item__bio-container').first().text())
-                .slice(0, BIO_MAX_LENGTH),
+              bio: normalizedText(
+                card.find('.profile-grid-item__bio-container').first().text(),
+              ).slice(0, BIO_MAX_LENGTH),
             };
           }),
         tableRows: [],
@@ -323,18 +324,21 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
         .map((cell) => normalizedText($(cell).text())),
     )
     .filter((cells) => cells.length > 0);
-  const schoolColumn = schoolColumnIndex(rows, [nameColumn, positionColumn, departureColumn]);
+  const schoolColumn =
+    headers.length === 0
+      ? schoolColumnIndex(rows, [nameColumn, positionColumn, departureColumn])
+      : -1;
   return rows.map((cells) => ({
-      name: cells[nameColumn] || (headers.length === 0 ? cells.find(Boolean) || '' : ''),
-      position: positionColumn >= 0 ? cells[positionColumn] || '' : '',
-      departure:
-        departureColumn >= 0
-          ? cells[departureColumn] || ''
-          : cells.find((cell, index) => index !== nameColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
-            '',
-      ...(group ? { group } : {}),
-      ...(schoolColumn >= 0 && cells[schoolColumn] ? { school: cells[schoolColumn] } : {}),
-    }));
+    name: cells[nameColumn] || (headers.length === 0 ? cells.find(Boolean) || '' : ''),
+    position: positionColumn >= 0 ? cells[positionColumn] || '' : '',
+    departure:
+      departureColumn >= 0
+        ? cells[departureColumn] || ''
+        : cells.find((cell, index) => index !== nameColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
+          '',
+    ...(group ? { group } : {}),
+    ...(schoolColumn >= 0 && cells[schoolColumn] ? { school: cells[schoolColumn] } : {}),
+  }));
 }
 
 const WHOLE_SCHOOL_NAME =
@@ -826,7 +830,11 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       if (/^\s*(?:\u00a0\s*){4,}/.test(node.text())) return;
       if (tagName === 'li') {
         const line = normalizedText(node.text());
-        if (describedHeading && CLASS_YEAR_PHRASE.test(line) && line.length <= DESCRIPTOR_LINE_MAX) {
+        if (
+          describedHeading &&
+          CLASS_YEAR_PHRASE.test(line) &&
+          line.length <= DESCRIPTOR_LINE_MAX
+        ) {
           describedHeading.years = `${describedHeading.years} ${line}`.trim();
           nameHeading = describedHeading;
           return;
@@ -965,7 +973,12 @@ const BIO_CLASS_YEAR = /\bclass of ((?:19|20)\d{2})\b/gi;
 
 /** "A class of 2025 Yale College student" on a page read in 2026 has graduated. */
 const bioClassYearHasPassed = (bio: string | undefined, observedAt: Date): boolean => {
-  const years = Array.from((bio ?? '').matchAll(BIO_CLASS_YEAR), (match) => Number(match[1]));
+  const years = (bio ?? '')
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !/\bhigh school\b/i.test(sentence))
+    .flatMap((sentence) =>
+      Array.from(sentence.matchAll(BIO_CLASS_YEAR), (match) => Number(match[1])),
+    );
   return years.length > 0 && Math.max(...years) <= lastCompletedClassYear(observedAt);
 };
 
@@ -1255,6 +1268,9 @@ function bioNamesAnotherSchool(bio: string): boolean {
 }
 
 const YALE_NUS = /\bYale[- ](?:NUS|National University of Singapore)\b/i;
+
+const namesYaleCollege = (school: string): boolean =>
+  (/\bYale\b/i.test(school) || YALE_RESIDENTIAL_COLLEGE.test(school)) && !YALE_NUS.test(school);
 
 const ANOTHER_INSTITUTION_LABEL =
   /\b(?!Yale\b)\p{Lu}[\w&.-]*(?:\s+[\w&.-]+){0,3}\s+(?:University|Institute|College)\b|\b(?:University|Institute) of (?!Yale\b)\p{Lu}|\bGeorgia Tech\b|\b(?:UW|UC|SUNY|CUNY)[- ]\p{Lu}/u;
@@ -1562,8 +1578,8 @@ function extractListedUndergraduates(
         const homeSchool = bracketsNameHomeSchool ? bracketedAffiliation(entry) : undefined;
         const fromAnotherSchool =
           (otherInstitutionSection && !entry.group) ||
-          Boolean(entry.school && !/\bYale\b/i.test(entry.school)) ||
-          Boolean(homeSchool && !/^Yale\b/i.test(homeSchool)) ||
+          Boolean(entry.school && !namesYaleCollege(entry.school)) ||
+          Boolean(homeSchool && !namesYaleCollege(homeSchool)) ||
           listedEntryIsFromAnotherSchool(
             withoutNextPositionAfterName(entry, sectionStatus === 'past'),
             sectionStatus === 'current',
