@@ -10,7 +10,7 @@ export const researchProfileBodyGridClassName =
 export const researchProfileSummaryCardClassName =
   'min-w-0 rounded-card border border-line bg-panel p-4 shadow-yr-raised sm:p-5 md:col-start-1 md:row-start-1';
 export const researchProfileContactRailClassName =
-  'divide-y divide-[var(--yr-line)] rounded-card border border-line bg-[var(--yr-panel-muted)] p-4 shadow-yr-raised md:col-start-2 md:row-start-1';
+  'divide-y divide-[var(--yr-line)] rounded-card border border-line bg-[var(--yr-panel-muted)] p-4 shadow-yr-raised md:col-start-2 md:row-start-1 md:self-start md:rounded-none md:border-0 md:bg-transparent md:px-1 md:pt-1 md:pb-0 md:shadow-none';
 export const researchProfileBodyMainClassName =
   'min-w-0 space-y-6 sm:space-y-8 md:col-span-2 md:row-start-2';
 
@@ -49,7 +49,15 @@ const ResearchProfileSkeleton = ({ leading }: { leading?: ReactNode }) => (
               <SkeletonBar className="mt-3 h-3 w-2/3" />
               <p className="mt-5 text-xs text-muted">Loading research profile</p>
             </div>
-            <div className={`${researchProfileContactRailClassName} h-40 md:h-auto`} />
+            <div className={researchProfileContactRailClassName}>
+              <div className="py-4 first:pt-0 last:pb-0">
+                <SkeletonBar className="h-3 w-20" />
+                <SkeletonBar className="mt-3 h-3 w-full" />
+              </div>
+              <div className="py-4 first:pt-0 last:pb-0">
+                <SkeletonBar className="h-28 w-full" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
