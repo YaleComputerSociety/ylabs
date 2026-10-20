@@ -938,6 +938,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'inferredDirectorTitle',
   'inferredDirectorRole',
   'inferredDirectorProfileUrl',
+  'inferredStaffDirectors',
   'leadVerification',
   'courseCreditRoute',
   // A roster-health snapshot is a source-owned statement about one department at
@@ -1004,6 +1005,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
   'official-profile-pi-backfill': new Set(['entityType', 'kind']),
   'center-member-profile-research': new Set(['researchSummary', 'bio']),
+  'lab-site-research-read': new Set(['researchSummary', 'name', 'displayName']),
 };
 
 export function usesLatestWinsFingerprint(input: {

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setPreGroundingRefusalCutoffForTesting } from '../descriptionExtractionGrounding';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -20,6 +21,9 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
+
+beforeAll(() => setPreGroundingRefusalCutoffForTesting(new Date(0)));
+afterAll(() => setPreGroundingRefusalCutoffForTesting(null));
 
 const MU_LAB_SHORT =
   'Studies the mechanisms of resistance to anti-cancer therapy and novel therapeutic approaches to overcome resistance.';

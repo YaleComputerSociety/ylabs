@@ -37,6 +37,26 @@ Decided:
   A row archived for this reason is restored and rematerialized when an admitted read mints it again.
 - A withdrawn key counts as still listed for the faculty-departure lane, because the person is on the roster.
 
+## 2026-10-19: Lab-Site Descriptions Are Read With Code And Methods Are Not Served (#5296)
+
+The owner decided on 2026-10-19 that method chips stop being served, and that cards move to materialization, written by a model over stored page text and cached by an input hash.
+`lab-site-research-read` replaces `lab-microsite-description-llm` in the sweep, and the model lane is manual-only.
+It reads the same rows and pages through the same URL guards and stores what the page says: the page's research text as `researchSummary` passages the writer reads, topics from approved taxonomy terms and labelled keyword lists, and the page's stated name.
+It writes no body, no card and no methods.
+Measured on a 40-row seeded sample graded against the cited pages, code's research text carried the page's research statement on 30 of 31 pages that had one, and on a fresh 14-row holdout on 11 of 12.
+Its topics were 93% precise on the sample (129 of 139) and 90% on the holdout (27 of 30), against 77% for the model lane's topics.
+The model lane's methods were 60% precise and no page in the sample labelled a methods list a code reader could use, so methods are dropped rather than replaced; they return only if a measured approach wins.
+Stored `methods` values and observations are kept; the DTO, the detail page, the search document and its embedding text, the topic-match and spelling fields, the browse-rank term and the provenance labels no longer read them.
+A body or card the model lane stored before it checked its text against the page (#528, 2026-08-22) is screened from resolution and cleared from the row unless the row's stored page research text carries it verbatim; on 85 sampled rows 6 of 8 such bodies and all 11 such cards were not on their page.
+Topic hand-off (owner decision, 2026-10-19): on a row the code lane has read and found topics for, the model lane's `researchAreas` observations retire and the code topics serve (`scrapers/topicHandOff.ts`); on a row where the code lane found none, the model list keeps serving for now.
+The hand-off has two halves, as the centre hand-offs do: each materialize of a code-lane run retires the model observations on its handed-off rows, and every resolve drops a model list beside a code list, so neither a later model run nor a rematerialize can write it back.
+
+## 2026-10-19: A Staff Or Technical Director Beside The Faculty Director Is Staff (#5296)
+
+The owner decided on 2026-10-19 that on the `center-director` lane a staff or technical director listed beside the faculty director holds the existing STAFF role.
+The read records them only when it settled on a faculty director, as `inferredStaffDirectors`, and the materializer writes each as a non-lead STAFF edge with the lane's provenance when the name resolves to one researcher whose display name agrees.
+A STAFF edge is not yet ended when a later read stops listing the person.
+
 ## 2026-10-19: An Official Roster Address Is Enough To Create A Researcher
 
 The owner decided on 2026-10-19 that an official Yale roster or profile page printing a person's own `first.last@yale.edu` address is enough to create that researcher.

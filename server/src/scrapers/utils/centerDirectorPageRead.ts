@@ -50,7 +50,11 @@ export interface CenterDirectorPageSignals {
 export type CenterDirectorRefusal = 'several-directors' | 'several-heads' | 'several-co-directors';
 
 export type CenterDirectorDecision =
-  | { outcome: 'named'; director: CenterDirectorCandidate }
+  | {
+      outcome: 'named';
+      director: CenterDirectorCandidate;
+      staffDirectors?: CenterDirectorCandidate[];
+    }
   | { outcome: 'ambiguous'; reason: CenterDirectorRefusal; candidateCount: number }
   | { outcome: 'prose-only'; statements: string[]; pageUrl: string }
   | { outcome: 'none' };
@@ -936,6 +940,46 @@ function facultyDirectorAmongDirectors(people: StatedPerson[]): CenterDirectorCa
   return { ...person.candidate, title };
 }
 
+const STAFF_DIRECTOR_TITLE =
+  /\b(?:staff|technical|executive|managing|operations|administrative|program)\s+director\b|\bdirector\s+of\s+(?:operations|administration)\b/i;
+
+/**
+ * Owner decision (2026-10-19, #5296): a staff or technical director listed beside the
+ * faculty director holds the existing STAFF role, a non-lead edge. Only a read that settled
+ * on a faculty director has one, because only there does the page say whose unit it is.
+ */
+function staffDirectorsBesideFacultyDirector(
+  all: readonly CenterDirectorCandidate[],
+  director: CenterDirectorCandidate,
+): CenterDirectorCandidate[] {
+  if (!FACULTY_DIRECTOR_TITLE.test(director.title)) return [];
+  return distinctPeople(all.filter((candidate) => candidate.tier !== 'co'))
+    .filter((person) => !observedPersonNameAgreesWith(person.candidate.name, director.name))
+    .filter((person) => !person.titles.some((title) => FACULTY_DIRECTOR_TITLE.test(title)))
+    .filter((person) =>
+      person.titles.some(
+        (title) =>
+          STAFF_DIRECTOR_TITLE.test(title) ||
+          (person.candidate.tier === 'top' && DIRECTOR_WORD.test(title)),
+      ),
+    )
+    .map((person) => {
+      const title =
+        person.titles.find((entry) => STAFF_DIRECTOR_TITLE.test(entry)) ?? person.candidate.title;
+      return { ...person.candidate, title };
+    });
+}
+
+const named = (
+  all: readonly CenterDirectorCandidate[],
+  director: CenterDirectorCandidate,
+): CenterDirectorDecision => {
+  const staffDirectors = staffDirectorsBesideFacultyDirector(all, director);
+  return staffDirectors.length > 0
+    ? { outcome: 'named', director, staffDirectors }
+    : { outcome: 'named', director };
+};
+
 const REFUSAL_BY_TIER: Record<DirectorTitleTier, CenterDirectorRefusal> = {
   top: 'several-directors',
   head: 'several-heads',
@@ -953,10 +997,10 @@ export function decideCenterDirector(
   const all = pages.flatMap((page) => page.candidates);
   for (const tier of ['top', 'co', 'head'] as const) {
     const people = distinctPeople(all.filter((candidate) => candidate.tier === tier));
-    if (people.length === 1) return { outcome: 'named', director: people[0].candidate };
+    if (people.length === 1) return named(all, people[0].candidate);
     if (people.length > 1) {
       const faculty = tier === 'top' ? facultyDirectorAmongDirectors(people) : null;
-      if (faculty) return { outcome: 'named', director: faculty };
+      if (faculty) return named(all, faculty);
       return { outcome: 'ambiguous', reason: REFUSAL_BY_TIER[tier], candidateCount: people.length };
     }
   }

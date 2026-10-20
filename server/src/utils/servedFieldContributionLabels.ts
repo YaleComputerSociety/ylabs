@@ -9,7 +9,6 @@ const SERVED_FIELD_CONTRIBUTION_LABELS: Record<string, string> = {
   shortDescription: 'Research summary',
   description: 'Research summary',
   researchAreas: 'Topics',
-  methods: 'Methods',
   websiteUrl: 'Research website',
   inferredPiUserId: 'Who leads it',
   inferredPiUserKey: 'Who leads it',
@@ -59,7 +58,6 @@ export function servedFieldContributionLabel(field: unknown): string | undefined
 const SERVED_CONTRIBUTION_LABEL_VALUE_FIELDS: Record<string, readonly string[]> = {
   'Research summary': ['fullDescription', 'shortDescription'],
   Topics: ['researchAreas'],
-  Methods: ['methods'],
   'Research website': ['websiteUrl', 'website'],
   Department: ['departments'],
   School: ['school', 'schools'],
