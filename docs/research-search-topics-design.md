@@ -117,11 +117,11 @@ The 2026-10-18 decision that every lane is deterministic (#5296) splits the work
 - Materializer: when resolving `researchAreas`, it reads the cached reading for the row's current page text (no model call) and judges it then, against that stored text.
   A quote must appear verbatim on the page it names (boundary-anchored matching); every content word of a topic must share an inflectional stem with some word of the row's stored pages, and the field topic needs only its quote.
   A topic that fails is dropped, not repaired, and the deterministic post-filters reject inverted index-heading forms, split fragments, acronym-only chips and bare generic words while keeping the main subject first.
-  Because the filters run here, a filter change re-derives every row at no model cost; the filter contract is recorded on the derived provenance beside the hash of the text the list was derived from.
+  Because the filters run here, a filter change re-derives every row at no model cost; the derived provenance records the full input hash, the hash of the text alone and the filter contract.
   The list is added as a derived candidate labelled `research-page-topics-derived` in `fieldProvenance`, and never written as an observation.
-  A stored list credited to a derivation is withdrawn when the row's current page-text reading exists and its text hashes differently from the text the list was derived from.
-  It is also withdrawn when no current candidate replaces it and either the current reading of that text admits no topic or the filter contract that judged it is no longer current.
-  Without a reading or a cache entry, as on Beta and Production, it is kept unchanged, and so is a list whose text is unchanged when only the prompt or the model changed and no new reading exists yet.
+  A stored list credited to a derivation is withdrawn only when the row's current page-text reading exists and its text hashes differently from the text the list was derived from.
+  A prompt, model or filter change withdraws nothing: the stored list stands until a reading under the new inputs replaces it through normal resolution, so a routine prompt edit cannot empty the corpus before a re-derive.
+  Without a reading or a cache entry, as on Beta and Production, it is kept unchanged.
   A derived reading reaches a row on its next resolve; `research-entity:rematerialize --only-fields=researchAreas` runs that on demand.
 
 Rules:

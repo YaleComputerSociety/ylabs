@@ -132,6 +132,7 @@ export interface DerivedResearchAreaCandidate {
   sourceUrl: string;
   confidence: number;
   observedAt: Date;
+  derivationInputHash: string;
   derivationTextHash: string;
   derivationContract: string;
 }
@@ -139,8 +140,6 @@ export interface DerivedResearchAreaCandidate {
 export interface ResearchPageTopicsState {
   /** The hash of the row's current page text, absent when the row has no page-text reading. */
   currentTextHash?: string;
-  /** The cache holds a current reading of that text and the filters admit none of its topics. */
-  currentReadingAdmitsNoTopic?: boolean;
   candidate?: DerivedResearchAreaCandidate;
 }
 
@@ -166,7 +165,7 @@ export async function researchPageTopicsStateFor(
     { topics: derivation.extractedTopics ?? [], field: derivation.extractedField ?? null },
     pages,
   );
-  if (result.topics.length === 0) return { currentTextHash, currentReadingAdmitsNoTopic: true };
+  if (result.topics.length === 0) return { currentTextHash };
   return {
     currentTextHash,
     candidate: {
@@ -176,6 +175,7 @@ export async function researchPageTopicsStateFor(
       sourceUrl: result.mainTopicSourceUrl || pages[0].url,
       confidence: RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE,
       observedAt: new Date(observedAtMillis(current)),
+      derivationInputHash: inputHash,
       derivationTextHash: currentTextHash,
       derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
     },
@@ -190,12 +190,12 @@ export async function derivedResearchAreaCandidateFor(
 }
 
 /**
- * A stored list credited to a derivation is withdrawn only on positive evidence against it:
- * the row's current page text differs from the text the list was derived from, or, with no
- * current candidate, the current reading of that text admits no topic or the filters that
- * judged the list have since changed. Without a reading or a cache, as on Beta and
- * Production, which receive rows by promotion without either, the stored list stands, and
- * so does a list whose text is unchanged but whose prompt or model has no reading yet.
+ * A stored list credited to a derivation is withdrawn only when the row's current page text
+ * differs from the text the list was derived from. A prompt, model or filter change leaves
+ * it standing until a reading under the new inputs replaces it through normal resolution,
+ * so a routine prompt edit withdraws nothing (owner decision on #5396). Without a reading
+ * or a cache, as on Beta and Production, which receive rows by promotion without either,
+ * the stored list stands too.
  */
 export function storedDerivedResearchAreasAreStale(
   storedProvenance: unknown,
@@ -207,30 +207,31 @@ export function storedDerivedResearchAreasAreStale(
       : {};
   if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
   if (!state.currentTextHash) return false;
-  if (record.derivationTextHash !== state.currentTextHash) return true;
-  if (state.candidate) return false;
-  return (
-    state.currentReadingAdmitsNoTopic === true ||
-    record.derivationContract !== PAGE_QUOTED_TOPICS_FILTER_CONTRACT
-  );
+  return record.derivationTextHash !== state.currentTextHash;
 }
 
 /**
  * The provenance entry for a derived list. It carries no observation id, because no
  * observation states it, and no time, so it is byte-identical on every pass and the
- * projection's no-op check converges. It records the hash of the text it was derived from and
- * the filter contract that judged it. Key order matches `fieldProvenanceSchema`.
+ * projection's no-op check converges. It records the full input hash of the reading, the
+ * hash of the text alone, which decides staleness, and the filter contract that judged it. Key order matches `fieldProvenanceSchema`.
  */
 export function derivedResearchAreaProvenance(
   candidate: Pick<
     DerivedResearchAreaCandidate,
-    'sourceName' | 'sourceUrl' | 'confidence' | 'derivationTextHash' | 'derivationContract'
+    | 'sourceName'
+    | 'sourceUrl'
+    | 'confidence'
+    | 'derivationInputHash'
+    | 'derivationTextHash'
+    | 'derivationContract'
   >,
 ): Record<string, unknown> {
   return {
     sourceName: candidate.sourceName,
     sourceUrl: candidate.sourceUrl,
     confidence: candidate.confidence,
+    derivationInputHash: candidate.derivationInputHash,
     derivationTextHash: candidate.derivationTextHash,
     derivationContract: candidate.derivationContract,
   };

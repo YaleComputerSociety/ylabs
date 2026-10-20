@@ -42,8 +42,12 @@ export const fieldProvenanceSchema = new mongoose.Schema(
       max: 1,
       required: false,
     },
-    // Set only by a materialize-time derivation (#5296): the hash of the text it read and the
-    // contract that judged it, so a stale derived value can be told from a standing one.
+    // Set only by a materialize-time derivation (#5296): the full input hash of the reading,
+    // the hash of the text alone, which decides staleness, and the contract that judged it.
+    derivationInputHash: {
+      type: String,
+      required: false,
+    },
     derivationTextHash: {
       type: String,
       required: false,

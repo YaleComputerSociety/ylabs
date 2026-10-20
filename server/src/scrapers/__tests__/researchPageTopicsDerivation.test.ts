@@ -115,16 +115,24 @@ describe('researchPageTopicsStateFor', () => {
     expect(await researchPageTopicsStateFor([], empty)).toEqual({});
   });
 
-  it('says when the current reading admits no topic, and only then', async () => {
+  it('reports the current text hash whether or not the cache holds a reading', async () => {
     const inputHash = researchTopicsDerivationInputHash(pages);
     const empty = cacheOf([{ inputHash, extractedTopics: [], extractedField: null }]);
     expect(await researchPageTopicsStateFor([pageTextObservation(pages)], empty)).toEqual({
       currentTextHash: researchPageTextHash(pages),
-      currentReadingAdmitsNoTopic: true,
     });
     expect(await researchPageTopicsStateFor([pageTextObservation(pages)], cacheOf([]))).toEqual({
       currentTextHash: researchPageTextHash(pages),
     });
+  });
+
+  it('records both the full input hash and the text-only hash on the candidate', async () => {
+    const inputHash = researchTopicsDerivationInputHash(pages);
+    const lookup = cacheOf([{ inputHash, ...extraction }]);
+    const { candidate } = await researchPageTopicsStateFor([pageTextObservation(pages)], lookup);
+    expect(candidate?.derivationInputHash).toBe(inputHash);
+    expect(candidate?.derivationTextHash).toBe(researchPageTextHash(pages));
+    expect(candidate?.derivationTextHash).not.toBe(inputHash);
   });
 
   it('reads the newest live page text only', () => {
@@ -142,6 +150,7 @@ describe('storedDerivedResearchAreasAreStale', () => {
     sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
     sourceUrl: HOME,
     confidence: 0.85,
+    derivationInputHash: researchTopicsDerivationInputHash(pages),
     derivationTextHash: textHash,
     derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
   };
@@ -156,20 +165,24 @@ describe('storedDerivedResearchAreasAreStale', () => {
     expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(false);
   });
 
-  it('is stale when the current reading of unchanged text admits no topic', () => {
-    expect(
-      storedDerivedResearchAreasAreStale(stored, {
-        currentTextHash: textHash,
-        currentReadingAdmitsNoTopic: true,
+  it('stands when only the prompt or model changed, whatever the current reading says', () => {
+    const fromAnEarlierPrompt = {
+      ...stored,
+      derivationInputHash: researchTopicsDerivationInputHash(pages, {
+        ...CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+        promptHash: 'an-earlier-prompt',
       }),
-    ).toBe(true);
+    };
+    expect(
+      storedDerivedResearchAreasAreStale(fromAnEarlierPrompt, { currentTextHash: textHash }),
+    ).toBe(false);
   });
 
-  it('is stale when other filters judged it and no current candidate replaces it', () => {
+  it('stands when other filters judged it and the text is unchanged', () => {
     const judgedByOtherFilters = { ...stored, derivationContract: 'page-quoted-topics-v0' };
     expect(
       storedDerivedResearchAreasAreStale(judgedByOtherFilters, { currentTextHash: textHash }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('stands when the row has no page-text reading, as on Beta and Production', () => {
@@ -192,13 +205,15 @@ describe('derivedResearchAreaProvenance', () => {
       sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
       sourceUrl: HOME,
       confidence: 0.85,
-      derivationTextHash: 'hash',
+      derivationInputHash: 'input-hash',
+      derivationTextHash: 'text-hash',
       derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
     });
     expect(Object.keys(entry)).toEqual([
       'sourceName',
       'sourceUrl',
       'confidence',
+      'derivationInputHash',
       'derivationTextHash',
       'derivationContract',
     ]);

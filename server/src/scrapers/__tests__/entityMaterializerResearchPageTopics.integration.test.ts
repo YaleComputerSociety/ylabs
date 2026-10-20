@@ -130,7 +130,10 @@ describe('materializeEntity applies a cached research page topics derivation (#5
       extractedField: { topic: 'Marine ecology', quote: 'We study how coastal kelp', url: HOME },
     });
 
-  const storeDerivedList = (textHash: string) =>
+  const storeDerivedList = (
+    textHash: string,
+    inputHash = researchTopicsDerivationInputHash(pages),
+  ) =>
     ResearchEntity.updateOne(
       { slug: SLUG },
       {
@@ -140,6 +143,7 @@ describe('materializeEntity applies a cached research page topics derivation (#5
             sourceName: RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
             sourceUrl: HOME,
             confidence: 0.85,
+            derivationInputHash: inputHash,
             derivationTextHash: textHash,
             derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
           },
@@ -247,8 +251,12 @@ describe('materializeEntity applies a cached research page topics derivation (#5
     });
   });
 
-  it('withdraws a stored derived list once the current reading of its text admits no topic', async () => {
-    await storeDerivedList(researchPageTextHash(pages));
+  it('keeps a list an earlier prompt derived from the same text, whatever the new reading says', async () => {
+    const earlierPrompt = { ...CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS, promptHash: 'old' };
+    await storeDerivedList(
+      researchPageTextHash(pages),
+      researchTopicsDerivationInputHash(pages, earlierPrompt),
+    );
     await seedPageText(pages);
     await seedUnrelatedEvidence();
     await ResearchTopicsDerivation.create({
@@ -257,6 +265,22 @@ describe('materializeEntity applies a cached research page topics derivation (#5
       extractedTopics: [{ topic: 'Coral bleaching', quote: 'coral bleaching events', url: HOME }],
       extractedField: null,
     });
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+
+    const row = await persisted();
+    expect(row?.researchAreas).toEqual(derivedTopics);
+    expect(row?.fieldProvenance?.researchAreas?.sourceName).toBe(
+      RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
+    );
+  });
+
+  it('withdraws a stored derived list when the row now carries different page text', async () => {
+    await storeDerivedList(researchPageTextHash(pages));
+    await seedPageText([
+      { url: HOME, text: 'We now study seagrass meadows and how they store blue carbon.' },
+    ]);
+    await seedUnrelatedEvidence();
 
     await materializeEntity('researchEntity', { entityKey: SLUG });
 
