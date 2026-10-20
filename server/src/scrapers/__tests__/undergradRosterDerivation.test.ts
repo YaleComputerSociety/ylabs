@@ -393,7 +393,7 @@ describe('createUndergradRosterDeriver (#5278)', () => {
   });
 });
 
-describe('derived roster observations and serving (#5278)', () => {
+describe('derived roster observations and serving (#5278, #5413)', () => {
   const previous = process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV];
   afterEach(() => {
     if (previous === undefined) delete process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV];
@@ -429,14 +429,43 @@ describe('derived roster observations and serving (#5278)', () => {
     });
   });
 
-  it('records a derived roster but serves it only behind the flag, and never as the badge', async () => {
+  it('serves a derived roster by default and counts it as hosting (#5413)', async () => {
     const [snapshot] = await runScraper();
     const stored = rosterEnrichmentWithRetainedSuccessfulSnapshot(snapshot.value);
     delete process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV];
-    expect(servableRosterSnapshot(stored)).toBeNull();
-    process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] = 'true';
     expect(servableRosterSnapshot(stored)).not.toBeNull();
+    expect(entityHasHostedUndergraduates({ rosterEnrichment: stored })).toBe(true);
+  });
+
+  it('withholds every derived roster, and its hosting claim, behind the kill switch', async () => {
+    const [snapshot] = await runScraper();
+    const stored = rosterEnrichmentWithRetainedSuccessfulSnapshot(snapshot.value);
+    process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] = 'false';
+    expect(servableRosterSnapshot(stored)).toBeNull();
     expect(entityHasHostedUndergraduates({ rosterEnrichment: stored })).toBe(false);
+  });
+
+  it('drops the hosting claim once the page no longer names an undergraduate', async () => {
+    const [snapshot] = await runScraper();
+    const before = rosterEnrichmentWithRetainedSuccessfulSnapshot(snapshot.value);
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialResearchHomeRosterScraper(
+      [],
+      async () => rosterPage({ People: ['Avery Sample'] }),
+      createUndergradRosterDeriver(async () => [candidate({ hasDerivedRoster: true })], 0, []),
+    );
+    await scraper.run({
+      options: { dryRun: false, useCache: false, release: false, referenceDate: observedAt },
+      emit: async (observations: ObservationInput[]) => {
+        emitted.push(...observations);
+      },
+      log: () => {},
+    } as unknown as ScraperContext);
+    expect(emitted).toHaveLength(1);
+    const after = rosterEnrichmentWithRetainedSuccessfulSnapshot(emitted[0].value, before);
+    delete process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV];
+    expect(servableRosterSnapshot(after)).toBeNull();
+    expect(entityHasHostedUndergraduates({ rosterEnrichment: after })).toBe(false);
   });
 
   it('never keeps a derived roster behind a failed allowlist read', async () => {
