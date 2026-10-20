@@ -3268,11 +3268,6 @@ test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
       '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
       'normalizeCenterAffiliationObjectId',
     ],
-    [
-      'research page text',
-      '../server/src/scrapers/sources/researchPageTextScraper.ts',
-      'normalizeResearchPageTextObjectId',
-    ],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(

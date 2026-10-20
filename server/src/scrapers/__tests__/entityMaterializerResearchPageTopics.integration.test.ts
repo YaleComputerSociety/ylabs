@@ -23,6 +23,7 @@ import { RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME } from '../../models/fieldProv
 import { materializeEntity } from '../entityMaterializer';
 import {
   CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+  researchPageTextHash,
   researchTopicsDerivationInputHash,
 } from '../researchPageTopicsDerivation';
 import { PAGE_QUOTED_TOPICS_FILTER_CONTRACT } from '../utils/pageQuotedResearchTopics';
@@ -129,7 +130,7 @@ describe('materializeEntity applies a cached research page topics derivation (#5
       extractedField: { topic: 'Marine ecology', quote: 'We study how coastal kelp', url: HOME },
     });
 
-  const storeDerivedList = (inputHash: string) =>
+  const storeDerivedList = (textHash: string) =>
     ResearchEntity.updateOne(
       { slug: SLUG },
       {
@@ -139,7 +140,7 @@ describe('materializeEntity applies a cached research page topics derivation (#5
             sourceName: RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
             sourceUrl: HOME,
             confidence: 0.85,
-            derivationInputHash: inputHash,
+            derivationTextHash: textHash,
             derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
           },
         },
@@ -168,7 +169,7 @@ describe('materializeEntity applies a cached research page topics derivation (#5
     expect(row?.fieldProvenance?.researchAreas).toMatchObject({
       sourceName: RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
       sourceUrl: HOME,
-      derivationInputHash: researchTopicsDerivationInputHash(pages),
+      derivationTextHash: researchPageTextHash(pages),
       derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
     });
     expect(row?.fieldProvenance?.researchAreas?.observationId).toBeUndefined();
@@ -209,7 +210,7 @@ describe('materializeEntity applies a cached research page topics derivation (#5
   });
 
   it('keeps a stored derived list unchanged when the row has no page-text reading', async () => {
-    await storeDerivedList(researchTopicsDerivationInputHash(pages));
+    await storeDerivedList(researchPageTextHash(pages));
     await seedUnrelatedEvidence();
 
     await materializeEntity('researchEntity', { entityKey: SLUG });
@@ -221,10 +222,20 @@ describe('materializeEntity applies a cached research page topics derivation (#5
     );
   });
 
-  it('keeps a stored derived list unchanged when its text stands but the cache is absent', async () => {
-    await storeDerivedList(researchTopicsDerivationInputHash(pages));
+  it('keeps a stored derived list unchanged when its text stands but the current prompt has no reading', async () => {
+    await storeDerivedList(researchPageTextHash(pages));
     await seedPageText(pages);
     await seedUnrelatedEvidence();
+    await ResearchTopicsDerivation.create({
+      inputHash: researchTopicsDerivationInputHash(pages, {
+        ...CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+        promptHash: 'an-earlier-prompt',
+      }),
+      ...CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+      promptHash: 'an-earlier-prompt',
+      extractedTopics: [],
+      extractedField: null,
+    });
 
     await materializeEntity('researchEntity', { entityKey: SLUG });
 
@@ -232,8 +243,28 @@ describe('materializeEntity applies a cached research page topics derivation (#5
     expect(row?.researchAreas).toEqual(derivedTopics);
     expect(row?.fieldProvenance?.researchAreas).toMatchObject({
       sourceName: RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
-      derivationInputHash: researchTopicsDerivationInputHash(pages),
+      derivationTextHash: researchPageTextHash(pages),
     });
+  });
+
+  it('withdraws a stored derived list once the current reading of its text admits no topic', async () => {
+    await storeDerivedList(researchPageTextHash(pages));
+    await seedPageText(pages);
+    await seedUnrelatedEvidence();
+    await ResearchTopicsDerivation.create({
+      inputHash: researchTopicsDerivationInputHash(pages),
+      ...CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+      extractedTopics: [{ topic: 'Coral bleaching', quote: 'coral bleaching events', url: HOME }],
+      extractedField: null,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+
+    const row = await persisted();
+    expect(row?.researchAreas ?? []).not.toContain(derivedTopics[0]);
+    expect(row?.fieldProvenance?.researchAreas?.sourceName).not.toBe(
+      RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
+    );
   });
 
   it('is a no-op on a second pass over the same evidence', async () => {

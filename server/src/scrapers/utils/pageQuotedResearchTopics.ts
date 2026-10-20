@@ -6,8 +6,9 @@ import { RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME } from '../../models/fieldProv
 export const PAGE_QUOTED_RESEARCH_TOPICS_SOURCE = RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME;
 
 /**
- * Folded into the derivation's input hash, so a change to the filters below re-derives every
- * row once instead of leaving lists the old filters admitted in place.
+ * Recorded on a derived list's provenance and kept out of the cache key. The filters below
+ * re-judge the cached reading on every resolve, and a stored list judged under another
+ * contract is withdrawn when the current filters admit nothing in its place.
  */
 export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v1';
 

@@ -49,6 +49,13 @@ export const CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS: ResearchTopicsDerivation
   model: RESEARCH_PAGE_TOPICS_MODEL,
 };
 
+/** The identity of the text a reading read, independent of the prompt and the model. */
+export function researchPageTextHash(pages: readonly ResearchPageTextEntry[]): string {
+  return computeContentHash(
+    JSON.stringify(pages.map((page) => ({ url: page.url, text: page.text }))),
+  );
+}
+
 /**
  * The cache key: every input the model reading depends on. Page order is kept, because the
  * stored value's order is what the model reads. The filters are not part of it: they run
@@ -125,13 +132,15 @@ export interface DerivedResearchAreaCandidate {
   sourceUrl: string;
   confidence: number;
   observedAt: Date;
-  derivationInputHash: string;
+  derivationTextHash: string;
   derivationContract: string;
 }
 
 export interface ResearchPageTopicsState {
   /** The hash of the row's current page text, absent when the row has no page-text reading. */
-  currentInputHash?: string;
+  currentTextHash?: string;
+  /** The cache holds a current reading of that text and the filters admit none of its topics. */
+  currentReadingAdmitsNoTopic?: boolean;
   candidate?: DerivedResearchAreaCandidate;
 }
 
@@ -148,17 +157,18 @@ export async function researchPageTopicsStateFor(
   const current = currentResearchPageTextObservation(observations);
   if (!current) return {};
   const pages = researchPageTextEntries(current.value);
-  const currentInputHash = researchTopicsDerivationInputHash(pages);
-  if (pages.length === 0) return { currentInputHash };
-  const derivation = await lookup(currentInputHash);
-  if (!derivation || derivation.inputHash !== currentInputHash) return { currentInputHash };
+  const currentTextHash = researchPageTextHash(pages);
+  if (pages.length === 0) return { currentTextHash };
+  const inputHash = researchTopicsDerivationInputHash(pages);
+  const derivation = await lookup(inputHash);
+  if (!derivation || derivation.inputHash !== inputHash) return { currentTextHash };
   const result = derivePageQuotedResearchTopics(
     { topics: derivation.extractedTopics ?? [], field: derivation.extractedField ?? null },
     pages,
   );
-  if (result.topics.length === 0) return { currentInputHash };
+  if (result.topics.length === 0) return { currentTextHash, currentReadingAdmitsNoTopic: true };
   return {
-    currentInputHash,
+    currentTextHash,
     candidate: {
       field: 'researchAreas',
       value: result.topics,
@@ -166,7 +176,7 @@ export async function researchPageTopicsStateFor(
       sourceUrl: result.mainTopicSourceUrl || pages[0].url,
       confidence: RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE,
       observedAt: new Date(observedAtMillis(current)),
-      derivationInputHash: currentInputHash,
+      derivationTextHash: currentTextHash,
       derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
     },
   };
@@ -180,10 +190,12 @@ export async function derivedResearchAreaCandidateFor(
 }
 
 /**
- * A stored list credited to a derivation is withdrawn only on positive evidence that the
- * text it read is gone: the row has a current page-text reading and its hash differs from
- * the one the list was derived from. Without a reading or a cache, as on Beta and
- * Production, which receive rows by promotion without either, the stored list stands.
+ * A stored list credited to a derivation is withdrawn only on positive evidence against it:
+ * the row's current page text differs from the text the list was derived from, or, with no
+ * current candidate, the current reading of that text admits no topic or the filters that
+ * judged the list have since changed. Without a reading or a cache, as on Beta and
+ * Production, which receive rows by promotion without either, the stored list stands, and
+ * so does a list whose text is unchanged but whose prompt or model has no reading yet.
  */
 export function storedDerivedResearchAreasAreStale(
   storedProvenance: unknown,
@@ -194,27 +206,32 @@ export function storedDerivedResearchAreasAreStale(
       ? (storedProvenance as Record<string, unknown>)
       : {};
   if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
-  if (!state.currentInputHash) return false;
-  return record.derivationInputHash !== state.currentInputHash;
+  if (!state.currentTextHash) return false;
+  if (record.derivationTextHash !== state.currentTextHash) return true;
+  if (state.candidate) return false;
+  return (
+    state.currentReadingAdmitsNoTopic === true ||
+    record.derivationContract !== PAGE_QUOTED_TOPICS_FILTER_CONTRACT
+  );
 }
 
 /**
  * The provenance entry for a derived list. It carries no observation id, because no
  * observation states it, and no time, so it is byte-identical on every pass and the
- * projection's no-op check converges. It records the text hash it was derived from and
+ * projection's no-op check converges. It records the hash of the text it was derived from and
  * the filter contract that judged it. Key order matches `fieldProvenanceSchema`.
  */
 export function derivedResearchAreaProvenance(
   candidate: Pick<
     DerivedResearchAreaCandidate,
-    'sourceName' | 'sourceUrl' | 'confidence' | 'derivationInputHash' | 'derivationContract'
+    'sourceName' | 'sourceUrl' | 'confidence' | 'derivationTextHash' | 'derivationContract'
   >,
 ): Record<string, unknown> {
   return {
     sourceName: candidate.sourceName,
     sourceUrl: candidate.sourceUrl,
     confidence: candidate.confidence,
-    derivationInputHash: candidate.derivationInputHash,
+    derivationTextHash: candidate.derivationTextHash,
     derivationContract: candidate.derivationContract,
   };
 }

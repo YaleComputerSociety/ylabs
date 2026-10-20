@@ -7,6 +7,7 @@ import {
   currentResearchPageTextObservation,
   derivedResearchAreaCandidateFor,
   derivedResearchAreaProvenance,
+  researchPageTextHash,
   researchPageTopicsStateFor,
   researchTopicsDerivationInputHash,
   storedDerivedResearchAreasAreStale,
@@ -78,13 +79,13 @@ describe('researchPageTopicsStateFor', () => {
     const lookup = cacheOf([{ inputHash, ...extraction }]);
     const state = await researchPageTopicsStateFor([pageTextObservation(pages)], lookup);
     expect(lookup).toHaveBeenCalledWith(inputHash);
-    expect(state.currentInputHash).toBe(inputHash);
+    expect(state.currentTextHash).toBe(researchPageTextHash(pages));
     expect(state.candidate).toMatchObject({
       field: 'researchAreas',
       value: ['Kelp forests', 'Marine heatwaves', 'Marine ecology'],
       sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
       sourceUrl: HOME,
-      derivationInputHash: inputHash,
+      derivationTextHash: researchPageTextHash(pages),
       derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
     });
     expect(state.candidate?.observedAt.toISOString()).toBe('2026-10-01T00:00:00.000Z');
@@ -98,7 +99,7 @@ describe('researchPageTopicsStateFor', () => {
     ];
     const state = await researchPageTopicsStateFor([pageTextObservation(changed)], lookup);
     expect(state.candidate).toBeUndefined();
-    expect(state.currentInputHash).toBe(researchTopicsDerivationInputHash(changed));
+    expect(state.currentTextHash).toBe(researchPageTextHash(changed));
   });
 
   it('contributes nothing for cleared text, an empty reading, no cache or no page text', async () => {
@@ -114,6 +115,18 @@ describe('researchPageTopicsStateFor', () => {
     expect(await researchPageTopicsStateFor([], empty)).toEqual({});
   });
 
+  it('says when the current reading admits no topic, and only then', async () => {
+    const inputHash = researchTopicsDerivationInputHash(pages);
+    const empty = cacheOf([{ inputHash, extractedTopics: [], extractedField: null }]);
+    expect(await researchPageTopicsStateFor([pageTextObservation(pages)], empty)).toEqual({
+      currentTextHash: researchPageTextHash(pages),
+      currentReadingAdmitsNoTopic: true,
+    });
+    expect(await researchPageTopicsStateFor([pageTextObservation(pages)], cacheOf([]))).toEqual({
+      currentTextHash: researchPageTextHash(pages),
+    });
+  });
+
   it('reads the newest live page text only', () => {
     const older = pageTextObservation(pages, '2026-09-01T00:00:00Z');
     const newer = pageTextObservation([], '2026-10-01T00:00:00Z');
@@ -124,17 +137,39 @@ describe('researchPageTopicsStateFor', () => {
 });
 
 describe('storedDerivedResearchAreasAreStale', () => {
-  const inputHash = researchTopicsDerivationInputHash(pages);
+  const textHash = researchPageTextHash(pages);
   const stored = {
     sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
     sourceUrl: HOME,
     confidence: 0.85,
-    derivationInputHash: inputHash,
+    derivationTextHash: textHash,
+    derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
   };
 
-  it('is stale only when a current reading exists and hashes differently', () => {
-    expect(storedDerivedResearchAreasAreStale(stored, { currentInputHash: 'other' })).toBe(true);
-    expect(storedDerivedResearchAreasAreStale(stored, { currentInputHash: inputHash })).toBe(false);
+  it('is stale when a current reading exists and its text hashes differently', () => {
+    expect(storedDerivedResearchAreasAreStale(stored, { currentTextHash: 'other' })).toBe(true);
+    expect(storedDerivedResearchAreasAreStale(stored, { currentTextHash: textHash })).toBe(false);
+  });
+
+  it('stands when the text is unchanged but the prompt or model has no reading yet', async () => {
+    const state = await researchPageTopicsStateFor([pageTextObservation(pages)], cacheOf([]));
+    expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(false);
+  });
+
+  it('is stale when the current reading of unchanged text admits no topic', () => {
+    expect(
+      storedDerivedResearchAreasAreStale(stored, {
+        currentTextHash: textHash,
+        currentReadingAdmitsNoTopic: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('is stale when other filters judged it and no current candidate replaces it', () => {
+    const judgedByOtherFilters = { ...stored, derivationContract: 'page-quoted-topics-v0' };
+    expect(
+      storedDerivedResearchAreasAreStale(judgedByOtherFilters, { currentTextHash: textHash }),
+    ).toBe(true);
   });
 
   it('stands when the row has no page-text reading, as on Beta and Production', () => {
@@ -145,7 +180,7 @@ describe('storedDerivedResearchAreasAreStale', () => {
     expect(
       storedDerivedResearchAreasAreStale(
         { sourceName: 'ysm-mesh-keyword' },
-        { currentInputHash: 'other' },
+        { currentTextHash: 'other' },
       ),
     ).toBe(false);
   });
@@ -157,14 +192,14 @@ describe('derivedResearchAreaProvenance', () => {
       sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
       sourceUrl: HOME,
       confidence: 0.85,
-      derivationInputHash: 'hash',
+      derivationTextHash: 'hash',
       derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
     });
     expect(Object.keys(entry)).toEqual([
       'sourceName',
       'sourceUrl',
       'confidence',
-      'derivationInputHash',
+      'derivationTextHash',
       'derivationContract',
     ]);
     expect(entry.sourceName).toBe(RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME);
