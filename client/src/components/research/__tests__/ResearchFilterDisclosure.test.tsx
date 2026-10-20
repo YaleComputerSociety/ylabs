@@ -56,16 +56,14 @@ describe('ResearchFilterDisclosure', () => {
     });
 
     const toggle = screen.getByRole('checkbox', {
-      name: 'Has hosted undergraduate researchers (7)',
+      name: 'Hosted undergrads (7)',
     });
     expect(toggle).not.toBeChecked();
     fireEvent.click(toggle);
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
 
     rerender(<ResearchFilterDisclosure {...props} selectedHostsUndergrads />);
-    expect(
-      screen.getByRole('checkbox', { name: 'Has hosted undergraduate researchers (7)' }),
-    ).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
@@ -74,7 +72,7 @@ describe('ResearchFilterDisclosure', () => {
     renderFilters({ variant: 'sidebar', facetDistribution: { hostsUndergrads: { true: 0 } } });
 
     const toggle = screen.getByRole('checkbox', {
-      name: 'Has hosted undergraduate researchers (0)',
+      name: 'Hosted undergrads (0)',
     });
     expect(toggle).toBeDisabled();
     expect(toggle).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
@@ -91,9 +89,7 @@ describe('ResearchFilterDisclosure', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
-    expect(
-      within(dialog).getByRole('checkbox', { name: 'Has hosted undergraduate researchers (0)' }),
-    ).toBeDisabled();
+    expect(within(dialog).getByRole('checkbox', { name: 'Hosted undergrads (0)' })).toBeDisabled();
     await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
   });
 
