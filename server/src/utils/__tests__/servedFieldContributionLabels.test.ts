@@ -55,7 +55,7 @@ describe('buildSourceFieldContributions', () => {
     expect(result).toEqual([
       {
         sourceUrl: 'https://example.yale.edu/lab/fixture/',
-        contributions: ['Research summary'],
+        contributions: ['Methods', 'Research summary'],
       },
       {
         sourceUrl: 'https://example.yale.edu/profile/fixture/',

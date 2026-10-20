@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import mongoose from 'mongoose';
-import { MongoBulkWriteError, MongoNetworkError, MongoServerError } from 'mongodb';
-import { retryTransientDatabaseWrite } from '../databaseWriteRetry';
+import { MongoNetworkError, MongoServerError } from 'mongodb';
 import {
   isDuplicateIdWriteError,
   isTransientMongoError,
@@ -154,86 +153,5 @@ describe('matchesTransientMongoFailureText', () => {
       ),
     ).toBe(false);
     expect(matchesTransientMongoFailureText(undefined)).toBe(false);
-  });
-});
-
-describe('a network failure the driver wraps in a bulk write error (#5296)', () => {
-  const wrap = (error: Error) => new MongoBulkWriteError(error as never, {} as never);
-
-  it('is transient for a monitor timeout and a failed DNS lookup', () => {
-    expect(
-      isTransientMongoError(
-        wrap(
-          new MongoNetworkError(
-            'Connection to shard:27017 interrupted due to server monitor timeout',
-          ),
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      isTransientMongoError(wrap(new MongoNetworkError('getaddrinfo ENOTFOUND shard.example.net'))),
-    ).toBe(true);
-  });
-
-  it('is not transient when the wrapped failure is a duplicate key', () => {
-    expect(
-      isTransientMongoError(
-        wrap(new MongoServerError({ message: 'E11000 duplicate key error', code: 11000 })),
-      ),
-    ).toBe(false);
-  });
-
-  it('is transient as the bulk write error a run logs, by its message or its labels', () => {
-    for (const message of [
-      'getaddrinfo ENOTFOUND ac-fixture-shard-00-01.example.net',
-      'getaddrinfo EAI_AGAIN ac-fixture-shard-00-01.example.net',
-      'Connection to ac-fixture-shard-00-01.example.net:27017 interrupted due to server monitor timeout',
-      'connection 14 to ac-fixture-shard-00-01.example.net:27017 closed',
-      'read ECONNRESET',
-      'connect ETIMEDOUT 10.0.0.1:27017',
-    ]) {
-      expect(isTransientMongoError(bulkWriteError(message, []))).toBe(true);
-    }
-    expect(
-      isTransientMongoError(
-        Object.assign(new Error('write failed'), {
-          name: 'MongoBulkWriteError',
-          errorLabels: ['NetworkError'],
-        }),
-      ),
-    ).toBe(true);
-  });
-
-  it('keeps a page fetch failure, and a deterministic write error, non-transient', () => {
-    expect(isTransientMongoError(new Error('read ECONNRESET'))).toBe(false);
-    expect(matchesTransientMongoFailureText('page fetch failed: read ECONNRESET')).toBe(false);
-    expect(
-      isTransientMongoError(
-        bulkWriteError('getaddrinfo ENOTFOUND shard.example.net', [
-          { code: 11000, errmsg: 'E11000 duplicate key error collection: observations' },
-        ]),
-      ),
-    ).toBe(false);
-    expect(
-      isTransientMongoError(
-        bulkWriteError('connect ETIMEDOUT', [{ code: 121, errmsg: 'Document failed validation' }]),
-      ),
-    ).toBe(false);
-  });
-
-  it('is retried and recovered by the database write retry', async () => {
-    let calls = 0;
-    const value = await retryTransientDatabaseWrite(
-      async () => {
-        calls += 1;
-        if (calls === 1) {
-          throw wrap(new MongoNetworkError('getaddrinfo ENOTFOUND shard.example.net'));
-        }
-        return 'landed';
-      },
-      { label: 'fixture bulk write', sleep: async () => {} },
-    );
-    expect(value).toBe('landed');
-    expect(calls).toBe(2);
   });
 });

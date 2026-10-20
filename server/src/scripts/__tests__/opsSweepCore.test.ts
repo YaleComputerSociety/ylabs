@@ -77,9 +77,7 @@ describe('rerunSourceProblems', () => {
     const [problem] = rerunSourceProblems(['lab-microsite-description-llm'], false);
     expect(problem).toMatch(/lab-microsite-description-llm is held/);
     expect(problem).toMatch(/#5020/);
-    expect(rerunSourceProblems(['lab-microsite-description-llm'], true)).toEqual([
-      "lab-microsite-description-llm is manual-only and never part of a sweep (scrapers/manualOnlySweepSources.ts), so the sweep's flags do not apply to it",
-    ]);
+    expect(rerunSourceProblems(['lab-microsite-description-llm'], true)).toEqual([]);
   });
 
   it('refuses a held writer lane even with the override, because the sweep never runs it', () => {

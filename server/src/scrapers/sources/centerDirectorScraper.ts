@@ -35,11 +35,10 @@ import {
 import { CENTER_DIRECTOR_LLM_SOURCE_NAME } from './centerDirectorLLMExtractor';
 import {
   CENTER_DIRECTOR_SOURCE_NAME,
-  INFERRED_STAFF_DIRECTORS_FIELD,
   centerDirectorReadSnapshotObservation,
 } from '../centerDirectorReadSnapshot';
 
-export { CENTER_DIRECTOR_SOURCE_NAME, INFERRED_STAFF_DIRECTORS_FIELD };
+export { CENTER_DIRECTOR_SOURCE_NAME };
 
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -217,31 +216,6 @@ export function centerDirectorObservations(
   return observations;
 }
 
-export interface InferredStaffDirector {
-  name: string;
-  title: string;
-  profileUrl?: string;
-}
-
-export function centerStaffDirectorObservation(
-  staffDirectors: readonly CenterDirectorCandidate[],
-  centerEntityKey: string,
-): ObservationInput {
-  const value: InferredStaffDirector[] = staffDirectors.map((person) => ({
-    name: normalizeName(person.name),
-    title: person.title,
-    ...(person.profileUrl ? { profileUrl: person.profileUrl } : {}),
-  }));
-  return {
-    entityType: 'researchEntity',
-    entityKey: centerEntityKey,
-    field: INFERRED_STAFF_DIRECTORS_FIELD,
-    value,
-    sourceUrl: staffDirectors[0].pageUrl,
-    confidenceOverride: DIRECTOR_ROLE_CONFIDENCE,
-  };
-}
-
 type ReadOutcome = CenterDirectorDecision['outcome'] | 'unreadable';
 
 export class CenterDirectorScraper implements IScraper {
@@ -325,9 +299,6 @@ export class CenterDirectorScraper implements IScraper {
       const observations = director ? centerDirectorObservations(director, target.slug) : [];
       const settled =
         director && observations.length > 0 ? { name: director.name, role: director.role } : null;
-      if (settled && decision.outcome === 'named' && decision.staffDirectors?.length) {
-        observations.push(centerStaffDirectorObservation(decision.staffDirectors, target.slug));
-      }
       if (read.pagesRead.length > 0) {
         observations.push(
           centerDirectorReadSnapshotObservation({

@@ -114,6 +114,7 @@ export interface ResearchGroup {
   websiteUrl: string;
   departments: string[];
   researchAreas: string[];
+  methods?: string[];
   keywords?: string[];
   profileResearchAreas?: string[];
   researchAreaSource?: 'PI_PROFILE_FALLBACK';

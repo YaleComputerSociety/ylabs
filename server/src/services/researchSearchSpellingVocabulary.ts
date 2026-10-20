@@ -16,6 +16,7 @@ export const RESEARCH_SEARCH_SPELLING_NAME_FIELDS = [
 
 export const RESEARCH_SEARCH_SPELLING_BODY_FIELDS = [
   'researchAreas',
+  'methods',
   'studentSearchTerms',
   'departments',
   'orgAffiliationLabels',

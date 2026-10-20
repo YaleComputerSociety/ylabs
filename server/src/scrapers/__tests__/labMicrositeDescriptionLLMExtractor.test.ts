@@ -276,7 +276,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     // because `normalizeLead` drops a person subject ahead of a research verb the
     // way it already drops an organization one, and the official body now carries
     // its page-grounded topic (#3923).
-    expect(result).toMatchObject({ observationCount: 3, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -298,7 +298,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
   });
 
-  it('emits no methods, which the owner dropped on 2026-10-19, even when the model names grounded ones', async () => {
+  it('emits only word-grounded methods and drops fabricated ones', async () => {
     const { ctx, emitted } = makeContext();
     ctx.options.only = ['ysm-flow-lab'];
     ctx.options.limit = 1;
@@ -334,8 +334,8 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     await scraper.run(ctx);
 
-    expect(emitted.some((obs) => obs.field === 'methods')).toBe(false);
-    expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+    const methodsObservation = emitted.find((obs) => obs.field === 'methods');
+    expect(methodsObservation?.value).toEqual(['flow cytometry', 'live-cell imaging']);
   });
 
   describe('topics on the official-prose path', () => {

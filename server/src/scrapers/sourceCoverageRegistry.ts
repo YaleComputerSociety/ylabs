@@ -66,15 +66,6 @@ export const sourceCoverageRegistry = {
     notes:
       "Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind, so a person-scoped row cannot keep a faculty-research type while carrying a lab's name.",
   },
-  'lab-site-research-read': {
-    priority: 1,
-    tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      "Reads a research home's own site with code and stores its research text as researchSummary evidence for the description writer, approved-taxonomy and labelled-list topics, and a stated name; never emits access, route, opportunity, description, card or methods evidence.",
-  },
   'lab-site-declared-lead-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',

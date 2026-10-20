@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setPreGroundingRefusalCutoffForTesting } from '../descriptionExtractionGrounding';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -24,9 +23,6 @@ import {
   entityKeyAnchoredObservationsExcludedByEntityIdScope,
   materializeEntity,
 } from '../entityMaterializer';
-
-beforeAll(() => setPreGroundingRefusalCutoffForTesting(new Date(0)));
-afterAll(() => setPreGroundingRefusalCutoffForTesting(null));
 
 type PersistedEntity = { fullDescription?: string };
 

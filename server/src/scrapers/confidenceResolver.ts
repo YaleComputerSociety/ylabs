@@ -188,7 +188,6 @@ const SYNTHESIZED_NAME_SOURCES = new Set([
 // The lab's own site: authoritative for its self-identified brand.
 export const MICROSITE_NAME_SOURCES = new Set([
   'lab-microsite-description-llm',
-  'lab-site-research-read',
   'lab-microsite-undergrad-llm',
 ]);
 
