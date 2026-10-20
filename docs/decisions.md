@@ -17,6 +17,13 @@ Measured on Development on 2026-10-20, the corrected rule plans 42 rows with no 
 A wording predicate that required an active-research sentence was tried and withdrawn: it dropped 4 accepted people and 3 already-approved rows while keeping 5 rejected ones, because the rejected people differ by appointment and program, not by phrasing.
 That difference is visible only by reading the profile, so it stays an operator judgement on each batch, and both lanes stay manual-only.
 
+## 2026-10-20: Derived Undergraduate Rosters Are Shown Without Per-Lab Review (#5413)
+
+The owner decided on 2026-10-20 that every research row answers three questions: whether it has hosted undergraduates, whether it welcomes them now, and, where it has hosted, which undergraduates its own pages name.
+A roster the lane derives from a row's own site, and that passes every publish check, is therefore served automatically, with no per-lab owner review; this supersedes the per-lab review rule of the 2026-10-14 entry below for derived rosters.
+A served derived roster that lists an undergraduate counts as hosting evidence, because the lane re-reads every row with a website on each run and withdraws a roster whose page loads but no longer yields it, so the roster cannot outlive its page, while a read that fails on every page keeps the last successful roster.
+Safety comes from the publish checks, hashed owner denials in `OWNER_DENIED_ROSTER_KEY_DIGESTS`, the `DERIVED_UNDERGRAD_ROSTERS_SERVE=false` kill switch (whose effect on the stored hosting flag and browse rank needs the browse-rank backfill and a search sync), and a fresh agent-graded sample of newly served lists, since the earlier precision figures were measured on the rows the parser was tuned on.
+
 ## 2026-10-19: An Advisory Seat Is Not Center Membership
 
 The owner decided on 2026-10-19 that a seat on a center's advisory committee or scientific advisory board is not membership of that center.
