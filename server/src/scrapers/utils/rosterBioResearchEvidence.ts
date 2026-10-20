@@ -99,8 +99,14 @@ export function rosterBioProfileUrl(person: RosterBioPerson): string {
 const CREDENTIAL_TOKEN =
   /^(?:ph\.?\s?d\.?|m\.?\s?d\.?|m\.?\s?p\.?\s?h\.?|sc\.?\s?d\.?|d\.?\s?phil\.?|ed\.?\s?d\.?|psy\.?\s?d\.?|d\.?\s?n\.?\s?p\.?|r\.?\s?n\.?|m\.?\s?s\.?\s?n\.?|l\.?\s?c\.?\s?s\.?\s?w\.?|aprn|dr\.?|prof\.?|professor)$/i;
 
-const TRAILING_CREDENTIAL_WORD =
-  /^(?:dvm|vmd|ms|msc|msn|mph|mba|ma|mfa|mdiv|jd|llm|rn|np|pa|famia|facs|facp|faan|fache|lcsw|ladc|cnm|crna|mhs|mhsa|dnp|pharmd|dds|dmd|od|abpp)$/i;
+const FELLOWSHIP_CREDENTIAL_WORDS = 'famia|facs|facp|faan|fache|facep|fawm|faium';
+
+const FELLOWSHIP_CREDENTIAL_WORD = new RegExp(`^(?:${FELLOWSHIP_CREDENTIAL_WORDS})$`, 'i');
+
+const TRAILING_CREDENTIAL_WORD = new RegExp(
+  `^(?:dvm|vmd|ms|msc|msn|mph|mba|ma|mfa|mdiv|jd|llm|rn|np|pa|${FELLOWSHIP_CREDENTIAL_WORDS}|lcsw|ladc|cnm|crna|mhs|mhsa|dnp|pharmd|dds|dmd|od|abpp)$`,
+  'i',
+);
 
 const bareToken = (token: string): string => token.replace(/[.,]/g, '');
 
@@ -121,9 +127,25 @@ function credentialFreeTokens(value: unknown): string[] {
 // A roster name without a comma leaves a trailing credential as the whole surname field
 // ("Jane Doe DVM" gives the surname "DVM"), so the trailing credential is read across both
 // fields, keeping two tokens so a short surname that spells a credential survives.
+// A roster that splits "<given> <family>, MD, MPH, FACEP" on its last space stores the whole
+// name and its credential run as the given name and the last credential, title-cased, as
+// the surname ("Facep"). When the given field is already a whole name followed only by
+// credentials, a surname field spelling a fellowship credential is that split-off
+// credential, not a surname.
+function surnameFieldIsSplitOffCredential(person: RosterBioPerson): boolean {
+  const given = typeof person.fname === 'string' ? person.fname.replace(/[\s,]+$/, '') : '';
+  const family = typeof person.lname === 'string' ? person.lname.trim() : '';
+  const head = given.split(',')[0].trim();
+  if (!given.includes(',') || !FELLOWSHIP_CREDENTIAL_WORD.test(family)) return false;
+  if (head.split(/\s+/).filter(Boolean).length < 2) return false;
+  return stripPersonNameCredentialList(given) === head;
+}
+
 export function rosterBioPersonName(person: RosterBioPerson): string {
   const givenTokens = credentialFreeTokens(person.fname);
-  const familyTokens = credentialFreeTokens(person.lname);
+  const familyTokens = surnameFieldIsSplitOffCredential(person)
+    ? []
+    : credentialFreeTokens(person.lname);
   while (givenTokens.length + familyTokens.length > 2) {
     const tokens = familyTokens.length ? familyTokens : givenTokens;
     if (!isTrailingCredential(tokens[tokens.length - 1])) break;
