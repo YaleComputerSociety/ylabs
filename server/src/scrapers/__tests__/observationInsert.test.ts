@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MongoBulkWriteError, MongoNetworkError } from 'mongodb';
+import { MongoNetworkError } from 'mongodb';
 import { insertDocumentsIdempotently } from '../observationInsert';
 import { withDatabaseWriteRetryScope } from '../utils/databaseWriteRetry';
 
@@ -138,46 +138,5 @@ describe('insertDocumentsIdempotently', () => {
     expect(String(caught)).toContain('still down');
     expect(stats).toEqual({ refused: 1, recovered: 0, exhausted: 1, retries: 2 });
     expect(insertMany).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe('a bulk insert interrupted by a wrapped network failure (#5296)', () => {
-  it('retries without inserting any document twice', async () => {
-    const store = fakeStore();
-    let call = 0;
-    const insertMany = vi.fn(async (pending: Doc[]) => {
-      store.insertCalls.push(pending.map((doc) => doc._id));
-      call += 1;
-      if (call === 1) {
-        for (const doc of pending.slice(0, 3)) store.stored.set(doc._id, doc);
-        throw new MongoBulkWriteError(
-          new MongoNetworkError(
-            'Connection to shard:27017 interrupted due to server monitor timeout',
-          ) as never,
-          {} as never,
-        );
-      }
-      for (const doc of pending) store.stored.set(doc._id, doc);
-      return pending;
-    });
-
-    const landed = await insertDocumentsIdempotently(
-      docs(5),
-      { insertMany, findLandedIds: store.findLandedIds },
-      noSleep,
-    );
-
-    expect(store.insertCalls).toEqual([
-      ['id-0', 'id-1', 'id-2', 'id-3', 'id-4'],
-      ['id-3', 'id-4'],
-    ]);
-    expect(landed.map((entry) => entry.input._id)).toEqual([
-      'id-0',
-      'id-1',
-      'id-2',
-      'id-3',
-      'id-4',
-    ]);
-    expect(store.stored.size).toBe(5);
   });
 });

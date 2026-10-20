@@ -1,8 +1,4 @@
 import {
-  DESCRIPTION_EXTRACTION_SOURCE_NAME,
-  PAGE_GROUNDING_VERIFIED_SINCE,
-} from '../scrapers/descriptionExtractionGrounding';
-import {
   SOURCE_CONTENT_HASH_FIELD,
   computeVersionedContentHash,
 } from '../scrapers/contentHashGate';
@@ -520,9 +516,10 @@ export function writtenBodyCardRepairFilter(
  * four or more words to be present in the fetched page text (`groundDescriptionExtraction`,
  * landed in #528). Its `shortDescription` can be a synthesized card, so it is not admitted.
  */
-export const INGEST_VERIFIED_EXTRACTION_SOURCE = DESCRIPTION_EXTRACTION_SOURCE_NAME;
+export const INGEST_VERIFIED_EXTRACTION_SOURCE = 'lab-microsite-description-llm';
 export const INGEST_VERIFIED_EXTRACTION_FIELDS: ReadonlySet<string> = new Set(['fullDescription']);
-export { PAGE_GROUNDING_VERIFIED_SINCE };
+/** When the ingest check reached the lane (#528 merged to beta), so earlier runs were not verified. */
+export const PAGE_GROUNDING_VERIFIED_SINCE = new Date('2026-08-22T19:15:50Z');
 
 interface RecordedRunLike {
   _id: unknown;

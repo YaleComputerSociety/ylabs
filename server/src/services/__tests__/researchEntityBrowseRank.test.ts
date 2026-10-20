@@ -306,10 +306,12 @@ describe('computeResearchEntityBrowseRank', () => {
       }
     });
 
-    it('gives a stored methods list no points, because methods are no longer served', () => {
-      expect(rank({ ...completeEntity(), methods: ['Electrophysiology'] })).toBe(
-        rank(completeEntity()),
+    it('rewards served methods and ignores a methods list the sanitizer empties', () => {
+      const base = rank(completeEntity());
+      expect(rank({ ...completeEntity(), methods: ['Electrophysiology'] }) - base).toBe(
+        __testing.ENRICHMENT_POINTS.methods,
       );
+      expect(rank({ ...completeEntity(), methods: ['   '] })).toBe(base);
     });
 
     const runningGrant = () => ({
@@ -338,10 +340,12 @@ describe('computeResearchEntityBrowseRank', () => {
 
     it('adds the same enrichment points to a lab and a faculty research row', () => {
       const enrichmentGain = (entityType: string) =>
-        rank({ ...completeEntity(), entityType }) -
+        rank({ ...completeEntity(), entityType, methods: ['Electrophysiology'] }) -
         rank({ ...completeEntity(), entityType, websiteUrl: undefined });
       expect(enrichmentGain('FACULTY_RESEARCH_AREA')).toBe(enrichmentGain('LAB'));
-      expect(enrichmentGain('LAB')).toBe(__testing.ENRICHMENT_POINTS.website);
+      expect(enrichmentGain('LAB')).toBe(
+        __testing.ENRICHMENT_POINTS.website + __testing.ENRICHMENT_POINTS.methods,
+      );
     });
   });
 });
