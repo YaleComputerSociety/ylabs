@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -45,12 +45,17 @@ const entityB = {
   sourceUrls: [],
 };
 
-const mockDetailBySlug = (bySlug: Record<string, unknown>) => {
+const mockDetailBySlug = (
+  bySlug: Record<string, unknown>,
+  accessSignalsBySlug: Record<string, unknown[]> = {},
+) => {
   mockedAxios.get.mockImplementation((url: string) => {
     const slug = url.replace('/research/', '');
     const entity = bySlug[slug];
     if (!entity) return Promise.reject(new Error('not found'));
-    return Promise.resolve({ data: { researchEntity: entity } });
+    return Promise.resolve({
+      data: { researchEntity: entity, accessSignals: accessSignalsBySlug[slug] || [] },
+    });
   });
 };
 
@@ -81,6 +86,97 @@ describe('ResearchHomeComparison', () => {
     expect(screen.getByText('Studies autonomous robots.')).toBeTruthy();
 
     await waitFor(() => expect(screen.getAllByText('Unknown').length).toBeGreaterThan(0));
+  });
+
+  it('compares undergraduate evidence and how to get involved from the served detail', async () => {
+    mockDetailBySlug(
+      {
+        'lab-a': {
+          ...entityA,
+          entityType: 'LAB',
+          websiteUrl: 'https://lab-a.example.edu/',
+          hasUndergradHostingEvidence: true,
+          pastUndergradAdvisees: [{ year: 2023 }, { year: 2025, count: 2 }],
+          undergradInvitation: {
+            level: 'welcomes_undergrads',
+            quote: 'Undergraduates join the lab each summer.',
+            sourceUrl: 'https://lab-a.example.edu/team',
+          },
+        },
+        'lab-b': entityB,
+      },
+      {
+        'lab-a': [
+          {
+            signalType: 'APPLICATION_FORM_EXISTS',
+            sourceUrl: 'https://lab-a.example.edu/join',
+            confidence: 'HIGH',
+            confidenceScore: 0.9,
+          },
+        ],
+      },
+    );
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Has hosted undergrads before')).toBeTruthy();
+    expect(screen.getByText('Has advised undergrads (2023–2025)')).toBeTruthy();
+    expect(screen.getByText('Welcomes undergrads')).toBeTruthy();
+    expect(screen.getByText(/Undergraduates join the lab each summer/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole('link', { name: 'Quoted from lab-a.example.edu (opens in a new tab)' })
+        .getAttribute('href'),
+    ).toBe('https://lab-a.example.edu/team');
+    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+      'https://lab-a.example.edu/',
+    );
+    expect(screen.getByRole('link', { name: 'See how to join' }).getAttribute('href')).toBe(
+      'https://lab-a.example.edu/join',
+    );
+
+    const undergradRow = screen.getByRole('rowheader', { name: 'Undergraduate evidence' })
+      .parentElement as HTMLElement;
+    expect(within(undergradRow).getByText('Unknown')).toBeTruthy();
+    const involvementRow = screen.getByRole('rowheader', { name: 'How to get involved' })
+      .parentElement as HTMLElement;
+    expect(within(involvementRow).getByText('Unknown')).toBeTruthy();
+  });
+
+  it('offers the official page the detail page offers when no lead card links a profile', async () => {
+    mockDetailBySlug({
+      'lab-a': {
+        ...entityA,
+        entityType: 'LAB',
+        websiteUrl: '',
+        leadIdentityStatus: 'under_review',
+        sourceUrls: [
+          'https://engineering.example.edu/research/lab-a',
+          'https://engineering.example.edu/groups/lab-a-overview',
+        ],
+      },
+      'lab-b': entityB,
+    });
+
+    render(
+      <MemoryRouter>
+        <ResearchHomeComparison entities={selection} notesByEntityId={{}} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    const involvementRow = (await screen.findByRole('rowheader', { name: 'How to get involved' }))
+      .parentElement as HTMLElement;
+    const officialPage = await within(involvementRow).findByRole('link', {
+      name: 'Open the official page',
+    });
+    expect(officialPage.getAttribute('href')).toMatch(/^https:\/\/engineering\.example\.edu\//);
+    expect(
+      within(involvementRow).queryByRole('link', { name: 'Open official profile' }),
+    ).toBeNull();
   });
 
   it('labels official links by role rather than by URL slug', async () => {

@@ -418,15 +418,17 @@ export async function deriveUndergradRosterForCandidate(
   let passed: { config: OfficialRosterConfig; roster: ExtractedOfficialRoster } | undefined;
   let refused: { reason: DerivedRosterWithheldReason; url: string; size: number } | undefined;
   let lastOutcome = 'no-page';
+  let readAnyPage = false;
   for (let index = 0; index < pages.length && index < DERIVED_ROSTER_MAX_PAGES; index += 1) {
     const url = pages[index];
     let html: string;
     try {
       html = await readPage(url);
     } catch {
-      lastOutcome = 'fetch-failed';
+      if (!readAnyPage) lastOutcome = 'fetch-failed';
       continue;
     }
+    readAnyPage = true;
     if (url === candidate.websiteUrl) {
       const links = labSitePageLinks(html, url);
       pages.push(...links.peoplePages.filter((link) => !pages.includes(link)));
@@ -457,6 +459,13 @@ export async function deriveUndergradRosterForCandidate(
       researchEntityKey: key,
       sourceUrl: refused.url,
       reason: refused.reason,
+    };
+  }
+  if (candidate.hasDerivedRoster && lastOutcome === 'fetch-failed') {
+    return {
+      kind: 'failed',
+      researchEntityKey: key,
+      sourceUrl: candidate.citedUrls[0] || candidate.websiteUrl,
     };
   }
   if (candidate.hasDerivedRoster) {

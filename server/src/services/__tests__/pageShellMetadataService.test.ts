@@ -150,6 +150,11 @@ describe('resolvePageShell', () => {
       status: 200,
       head: { title: 'Programs & Fellowships', canonicalPath: '/programs' },
     });
+    expect(await resolvePageShell('/getting-started', CLIENT_KEY, dependencies())).toEqual({
+      kind: 'page',
+      status: 200,
+      head: { title: 'How to get started in research', canonicalPath: '/getting-started' },
+    });
   });
 
   it('leaves every other page on the unmodified shell', async () => {

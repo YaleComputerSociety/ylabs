@@ -294,10 +294,38 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const lead = screen.getByText('Has hosted undergraduate researchers');
+    const lead = screen.getByText('Hosted undergrads');
     expect(lead.className).toContain('font-semibold');
     expect(lead.className).not.toContain('yr-pill');
     expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
+  });
+
+  it('gives an invitation and the hosting signal the same check treatment, invitation first', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({ wayInBadges: ['Undergrad evidence', 'Actively hiring'] })}
+        />
+      </MemoryRouter>,
+    );
+
+    const signals = screen.getByLabelText('Ways to get involved');
+    const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
+      (node) => node.textContent,
+    );
+    expect(checked).toEqual(['Actively hiring', 'Hosted undergrads']);
+  });
+
+  it('keeps student project evidence a pill even when it is the only signal', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome({ wayInBadges: ['Student project evidence'] })} />
+      </MemoryRouter>,
+    );
+
+    const chip = screen.getByText('Supervises student projects');
+    expect(chip.className).toContain('yr-pill');
+    expect(chip.className).not.toContain('font-semibold');
   });
 
   it('does not elevate a fallback contact route to the prominent lead line', () => {

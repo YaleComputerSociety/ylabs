@@ -1956,6 +1956,7 @@ export type DerivedRosterOutcome =
       roster: ExtractedOfficialRoster;
     }
   | { kind: 'withheld'; researchEntityKey: string; sourceUrl: string; reason: string }
+  | { kind: 'failed'; researchEntityKey: string; sourceUrl: string }
   | { kind: 'not-found'; researchEntityKey: string; reason: string };
 
 export interface DerivedRosterRequest {
@@ -1999,6 +2000,34 @@ export function withheldDerivedRosterObservation(
       state: 'withheld',
       configOrigin: 'derived',
       withheldReason: reason,
+      complete: false,
+      memberCount: 0,
+      withheldCount: 0,
+      duplicateCount: 0,
+      memberKeys: [],
+      undergraduates: [],
+      sourceUrl,
+      observedAt: observedAt.toISOString(),
+      refreshOwner: OFFICIAL_ROSTER_REFRESH_OWNER,
+      refreshCadence: OFFICIAL_ROSTER_REFRESH_CADENCE,
+    },
+    sourceUrl,
+    observedAt,
+  };
+}
+
+export function failedDerivedRosterObservation(
+  researchEntityKey: string,
+  sourceUrl: string,
+  observedAt: Date,
+): ObservationInput {
+  return {
+    entityType: 'researchEntity',
+    entityKey: researchEntityKey,
+    field: 'rosterEnrichment',
+    value: {
+      state: 'failed',
+      configOrigin: 'derived',
       complete: false,
       memberCount: 0,
       withheldCount: 0,
@@ -2146,7 +2175,15 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
                   observedAt,
                 ),
               ]
-            : [];
+            : outcome.kind === 'failed'
+              ? [
+                  failedDerivedRosterObservation(
+                    outcome.researchEntityKey,
+                    outcome.sourceUrl,
+                    observedAt,
+                  ),
+                ]
+              : [];
       if (observations.length === 0) continue;
       await context.emit(observations);
       observationCount += observations.length;
@@ -2163,6 +2200,7 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
       withheldByReason: countBy(
         run.outcomes.flatMap((outcome) => (outcome.kind === 'withheld' ? [outcome.reason] : [])),
       ),
+      failed: run.outcomes.filter((outcome) => outcome.kind === 'failed').length,
       notFoundByReason: countBy(
         run.outcomes.flatMap((outcome) => (outcome.kind === 'not-found' ? [outcome.reason] : [])),
       ),

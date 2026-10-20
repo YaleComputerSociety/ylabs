@@ -4,18 +4,17 @@ interface ActiveFilterChipProps {
   axis: string;
   value: string;
   onRemove: () => void;
+  visibleLabel?: string;
 }
 
-const ActiveFilterChip = ({ axis, value, onRemove }: ActiveFilterChipProps) => (
+const ActiveFilterChip = ({ axis, value, onRemove, visibleLabel }: ActiveFilterChipProps) => (
   <button
     type="button"
     onClick={onRemove}
     aria-label={`Remove ${axis}: ${value}`}
     className="yr-focus-ring inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-ink-soft"
   >
-    <span className="min-w-0 truncate">
-      {axis}: {value}
-    </span>
+    <span className="min-w-0 truncate">{visibleLabel ?? `${axis}: ${value}`}</span>
     <CloseIcon size={12} className="shrink-0" />
   </button>
 );

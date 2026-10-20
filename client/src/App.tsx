@@ -26,6 +26,7 @@ const Fellowships = lazy(() => import('./pages/fellowships'));
 const ResearchDetail = lazy(() => import('./pages/labDetail'));
 const Login = lazy(() => import('./pages/login'));
 const About = lazy(() => import('./pages/about'));
+const GettingStarted = lazy(() => import('./pages/gettingStarted'));
 const Dashboard = lazy(() => import('./pages/dashboard'));
 const LoginError = lazy(() => import('./pages/loginError'));
 const Analytics = lazy(() => import('./pages/analytics'));
@@ -104,6 +105,10 @@ const App = () => {
                           element={<PublicRoute Component={ResearchDetail} />}
                         />
                         <Route path="/about" element={<PublicRoute Component={About} />} />
+                        <Route
+                          path="/getting-started"
+                          element={<PublicRoute Component={GettingStarted} />}
+                        />
                         <Route
                           path="/account"
                           element={<PrivateRoute Component={RetiredAccountRedirect} />}

@@ -68,11 +68,10 @@ const ACCESS_SIGNAL_PRIORITY = [
   'Contact route',
 ];
 
-const ELEVATED_ACCESS_SIGNALS = new Set([
+const UNDERGRAD_ACCESS_SIGNALS = new Set([
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
-  'Student project evidence',
 ]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
@@ -143,11 +142,11 @@ const ResearchHomeCard = ({
     ? home.wayInBadges
     : buildWayInBadgesFromEntity(home.entities[0]);
   const orderedAccessSignals = orderAccessSignals(wayInBadges);
-  const leadAccessSignal = orderedAccessSignals.find((signal) =>
-    ELEVATED_ACCESS_SIGNALS.has(signal),
+  const undergradAccessSignals = orderedAccessSignals.filter((signal) =>
+    UNDERGRAD_ACCESS_SIGNALS.has(signal),
   );
   const secondaryAccessSignals = orderedAccessSignals.filter(
-    (signal) => signal !== leadAccessSignal,
+    (signal) => !UNDERGRAD_ACCESS_SIGNALS.has(signal),
   );
   const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
   const contextLineKeys = new Set(
@@ -403,12 +402,15 @@ const ResearchHomeCard = ({
           className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5"
           aria-label="Ways to get involved"
         >
-          {leadAccessSignal && (
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]">
+          {undergradAccessSignals.map((signal) => (
+            <span
+              key={signal}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--yr-green)]"
+            >
               <CheckIcon className="h-4 w-4 shrink-0" />
-              {accessSignalLabel(leadAccessSignal)}
+              {accessSignalLabel(signal)}
             </span>
-          )}
+          ))}
           {secondaryAccessSignals.slice(0, isCompact ? 2 : undefined).map((badge) => (
             <span key={badge} className="yr-pill yr-pill-green yr-pill-compact px-2 py-0.5">
               {accessSignalLabel(badge)}

@@ -15,10 +15,10 @@ export const DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV = 'DERIVED_UNDERGRAD_ROSTERS_SE
 
 /**
  * A roster the lane derived for a row with a website, rather than one from the reviewed allowlist, is
- * recorded but not served until an owner-graded sample clears it (#5278).
+ * served once it passes the publish checks (owner, 2026-10-20, #5413); `false` is the kill switch.
  */
 export const derivedUndergradRostersServe = (): boolean =>
-  process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] === 'true';
+  process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV] !== 'false';
 
 export function servableRosterSnapshot(
   enrichment: any,
@@ -75,9 +75,10 @@ export function hasPastUndergradAdvisees(value: unknown): boolean {
  * that list it ignores the freshness window: "has hosted" is historical, and the stored
  * copy of this flag must not change with the clock.
  *
- * A derived roster never counts: the lane derives one only for a row that already carries
- * this flag, so counting it would let the roster keep the flag alive after the evidence that
- * earned it is gone (#5278).
+ * A served derived roster counts as well (#5413). The lane attempts every live row with a
+ * website, not only rows that already carry this flag (#5375), and withdraws a derived roster
+ * whose pages load but no longer yield it, so a roster cannot keep the flag alive after its page
+ * stops naming anyone; a read that fails on every page keeps the last successful roster.
  */
 export function entityHasHostedUndergraduates(entity: {
   pastUndergradAdvisees?: unknown;
@@ -86,7 +87,7 @@ export function entityHasHostedUndergraduates(entity: {
   rosterEnrichment?: unknown;
 }): boolean {
   if (hasPastUndergradAdvisees(entity.pastUndergradAdvisees)) return true;
-  if (rosterListsUndergraduates(entity.rosterEnrichment, false)) return true;
+  if (rosterListsUndergraduates(entity.rosterEnrichment)) return true;
   const count = Number(entity.currentUndergradCount);
   return (
     Number.isFinite(count) &&

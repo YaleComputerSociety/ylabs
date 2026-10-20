@@ -74,6 +74,8 @@ Working memory holds roughly four to seven chunks (Miller's Law, and the more mo
 
 - Anything a student needs in order to compare two labs must be visible on both cards at once.
 If they have to open both and remember the first, the comparison surface is the fix, not a better card.
+The dashboard Compare dialog (`ResearchHomeComparison.tsx`) is that surface, and it leads with the two facts students compare on: undergraduate evidence (the hosting status, advised undergraduates, and the cited quote, labelled exactly as the detail page labels it) and how to get involved, resolved through the detail page's own `resolveResearchDetailActionLinks` so the two surfaces cannot offer different ways in (#5106).
+It has no commitment or pay row, because those facts were retired rather than left unfilled (#3088).
 - **Hick's Law**: decision time grows with the number and complexity of options.
 Every filter added to the rail costs every student a little, and pays back only the students who use it.
 - Before adding a facet, check NN/g's test (`nngroup.com/articles/filters-vs-facets/`): faceted navigation costs interface work *and* metadata on every row forever, so confirm the dimension is one students actually sort by.
@@ -94,6 +96,9 @@ Every surface, including an empty result set and an error, offers a next step.
 `ResearchZeroResultRecovery` is this principle implemented; treat it as the pattern rather than the exception.
 A question about getting in ("research for freshmen", "paid summer research") is answered by `/programs`, not by the research corpus, so `/research` links the same query there (`ResearchProgramsHandoff`, #4369): on every empty search, and above results when `queryCarriesProgramsIntent` matches.
 It is a link rather than a redirect, so a real research query that happens to say "summer" is never taken away from the student, and it carries no program data, so it cannot become the removed #1509 module again.
+The general "can I join, what is a PI, what do I write" questions have one answer for every row, so they live on one generic page, `/getting-started`, rather than in per-entity text (#5099).
+Every detail page's "How to get involved" block ends with a link to it, including the minimal block a page shows when its lead card is the only way in, and a principal investigator heading carries a one-line explanation that links to its PI section.
+The page states only advice that holds for any group and points to Yale College's own mentor advice and the programs board for the rest.
 
 A caution specific to this product.
 That component tells the student "This is a data coverage gap, not proof that the department has no undergraduate research."
@@ -144,6 +149,7 @@ So the badge is off the browse card again, and it is off for the right reason th
 It came back on 2026-10-11 in the form the threshold called for.
 After #3592 kept only quotes found on a fetched page, the re-measure read 0.84 (0.71 to 0.92), which is middling rather than high, so the card shows the quote itself under "Mentions undergraduate research" with the page it is quoted from, and the student judges it.
 The label says less than the old one on purpose: only half the correct quotes show undergraduates were hosted, so "Has hosted undergraduate researchers" stays reserved for roster and advisee evidence (`docs/decisions.md`, 2026-10-11).
+On 2026-10-20 that badge was shortened to "Hosted undergrads" and given the same check as the two invitation badges, while student-project and contact signals stay pills (#5405).
 On 2026-10-12 the quote left the card for the detail page, where it reads at full width below the topics, because on the card it was the heaviest block and the one a student could not scan (#5022).
 On 2026-10-18 the owner removed the quote from the detail page too (#5309): of 117 shown, about 43 were explicit invitations, and the rest were member bios that belong in the roster list or passing mentions a student cannot act on.
 

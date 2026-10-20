@@ -17,6 +17,7 @@ import {
   entityKindLabel,
   researchEntityDisplayName,
   researchEntityTitle,
+  researchWebsiteCtaLabel,
   researchWebsiteLabel,
   sanitizeResearchEntityCopy,
 } from '../../utils/researchEntityCopy';
@@ -40,6 +41,14 @@ import {
   trackResearchEvent,
 } from '../../utils/researchAnalytics';
 import { dedupeLeadMembers, memberPersonName } from '../../utils/leadMemberDedupe';
+import {
+  resolveResearchDetailActionLinkContext,
+  resolveResearchDetailActionLinks,
+  type ResearchDetailActionLinkContext,
+} from '../../utils/researchDetailActionLinks';
+import { deriveUndergraduateAccessStatus } from '../../utils/undergraduateAccessStatus';
+import { formatPastAdvisees } from '../../utils/pastUndergradAdvisees';
+import { undergradInvitationFromEntity } from '../../utils/undergradInvitation';
 import { CloseIcon } from '../shared/icons';
 
 export interface ComparableResearchHome {
@@ -63,7 +72,14 @@ type ComparisonColumn =
       base: ComparableResearchHome;
       entity: ResearchEntity;
       leadPersonNames: string[];
+      involvement: InvolvementLink[];
+      wayInWithheld: boolean;
     };
+
+interface InvolvementLink {
+  href: string;
+  label: string;
+}
 
 const MAX_RESEARCH_AREAS = 6;
 const MAX_OFFICIAL_LINKS = 3;
@@ -137,6 +153,112 @@ const officialLinks = (
   return links;
 };
 
+type ReadyComparisonColumn = Extract<ComparisonColumn, { status: 'ready' }>;
+
+const MAX_COMPARE_QUOTE_LENGTH = 200;
+
+const boundedQuote = (quote: string): string => {
+  if (quote.length <= MAX_COMPARE_QUOTE_LENGTH) return quote;
+  const bounded = quote.slice(0, MAX_COMPARE_QUOTE_LENGTH);
+  const lastWordBoundary = bounded.lastIndexOf(' ');
+  return `${(lastWordBoundary > 0 ? bounded.slice(0, lastWordBoundary) : bounded).replace(/[\s,;:.-]+$/, '')}…`;
+};
+
+const involvementLinks = (
+  entity: ResearchEntity,
+  context: ResearchDetailActionLinkContext,
+): InvolvementLink[] => {
+  const actions = resolveResearchDetailActionLinks(context);
+  const links: InvolvementLink[] = [];
+  const add = (href: string | undefined, label: string) => {
+    const safe = safeHttpUrl(href);
+    if (safe && !links.some((link) => link.href === safe)) links.push({ href: safe, label });
+  };
+  if (context.wayInWithheld) {
+    add(actions.activityCheckUrl, 'Open the official page');
+  } else {
+    if (actions.offersOrgEngagementPage)
+      add(context.officialSource?.url, 'See how to get involved');
+    if (actions.offersApplyPage) add(context.applyPageUrl, 'See how to get involved');
+    if (actions.showsWebsiteCta) add(actions.websiteCtaUrl, researchWebsiteCtaLabel(entity));
+    if (actions.offersJoinLinkBesideWebsite) add(context.applyPageUrl, 'See how to join');
+    if (actions.showsProfileButton) add(actions.leadCardProfileUrl, 'Open official profile');
+    if (actions.offersOfficialPage) add(context.officialSource?.url, 'Open the official page');
+  }
+  if (links.length === 0 && actions.leadCardLinksProfile) {
+    add(actions.leadCardProfileUrl, 'Open official profile');
+  }
+  return links;
+};
+
+const UndergraduateEvidenceCell = ({ entity }: { entity: ResearchEntity }) => {
+  const hosting = deriveUndergraduateAccessStatus(entity);
+  const advisees = formatPastAdvisees(entity);
+  const quote = entity.wayInWithheld ? undefined : undergradInvitationFromEntity(entity);
+  if (!hosting && advisees.length === 0 && !quote) return <UnknownCell />;
+  return (
+    <div className="flex flex-col gap-2">
+      {hosting && (
+        <span className="yr-pill yr-pill-blue yr-pill-compact w-fit px-2 py-0.5">
+          {hosting.label}
+        </span>
+      )}
+      {advisees.map((line) => (
+        <span key={line} className="text-sm text-ink">
+          {line}
+        </span>
+      ))}
+      {quote && (
+        <figure className="text-xs leading-relaxed text-ink-soft">
+          <figcaption className="font-semibold text-muted">{quote.label}</figcaption>
+          <blockquote cite={quote.sourceUrl} className="mt-1">
+            &ldquo;{boundedQuote(quote.quote)}&rdquo;
+          </blockquote>
+          <a
+            href={quote.sourceUrl}
+            target="_blank"
+            rel={EXTERNAL_LINK_REL}
+            aria-label={`Quoted from ${quote.sourceHost} (opens in a new tab)`}
+            className="yr-link yr-focus-ring mt-1 inline-block rounded-control"
+          >
+            Quoted from {quote.sourceHost}
+          </a>
+        </figure>
+      )}
+    </div>
+  );
+};
+
+const InvolvementCell = ({
+  links,
+  wayInWithheld,
+}: {
+  links: InvolvementLink[];
+  wayInWithheld: boolean;
+}) => {
+  if (!wayInWithheld && links.length === 0) return <UnknownCell />;
+  return (
+    <div className="flex flex-col gap-1">
+      {wayInWithheld && (
+        <span className="text-sm text-ink">
+          Led by emeritus faculty. Check current activity first.
+        </span>
+      )}
+      {links.map((link) => (
+        <a
+          key={link.href}
+          href={link.href}
+          target="_blank"
+          rel={EXTERNAL_LINK_REL}
+          className="yr-link yr-focus-ring self-start rounded-control text-sm"
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+  );
+};
+
 const UnknownCell = () => <span className="text-xs italic text-muted">Unknown</span>;
 
 const LABEL_COLUMN_WIDTH = '10rem';
@@ -193,12 +315,27 @@ const ResearchHomeComparison = ({
         .get(`/research/${safeRouteSegment(base.slug)}`, { signal: controller.signal })
         .then((response) => {
           if (!active) return;
-          const { researchEntity, members } = normalizeResearchEntityDetailPayload(response.data);
+          const { researchEntity, members, accessSignals } = normalizeResearchEntityDetailPayload(
+            response.data,
+          );
           const leadPersonNames = dedupeLeadMembers(members).map(memberPersonName).filter(Boolean);
+          const actionContext = resolveResearchDetailActionLinkContext({
+            group: researchEntity,
+            members,
+            accessSignals,
+          });
+          const involvement = involvementLinks(researchEntity, actionContext);
           setColumns((current) =>
             current.map((column) =>
               column.base._id === base._id
-                ? { status: 'ready', base, entity: researchEntity, leadPersonNames }
+                ? {
+                    status: 'ready',
+                    base,
+                    entity: researchEntity,
+                    leadPersonNames,
+                    involvement,
+                    wayInWithheld: actionContext.wayInWithheld === true,
+                  }
                 : column,
             ),
           );
@@ -301,11 +438,8 @@ const ResearchHomeComparison = ({
     (entity) => includedNoteIds.has(entity._id) && (notesByEntityId[entity._id] || '').trim(),
   );
 
-  const renderReadyCell = (
-    entity: ResearchEntity,
-    leadPersonNames: readonly string[],
-    field: string,
-  ): ReactNode => {
+  const renderReadyCell = (column: ReadyComparisonColumn, field: string): ReactNode => {
+    const { entity, leadPersonNames } = column;
     if (field === 'type') {
       return <span className="text-sm text-ink">{entityKindLabel(entity)}</span>;
     }
@@ -349,6 +483,12 @@ const ResearchHomeComparison = ({
         <UnknownCell />
       );
     }
+    if (field === 'undergraduates') {
+      return <UndergraduateEvidenceCell entity={entity} />;
+    }
+    if (field === 'involvement') {
+      return <InvolvementCell links={column.involvement} wayInWithheld={column.wayInWithheld} />;
+    }
     if (field === 'links') {
       const links = officialLinks(entity, leadPersonNames);
       return links.length > 0 ? (
@@ -380,15 +520,17 @@ const ResearchHomeComparison = ({
     if (column.status === 'error') {
       return <span className="text-xs italic text-muted">Could not load</span>;
     }
-    return renderReadyCell(column.entity, column.leadPersonNames, field);
+    return renderReadyCell(column, field);
   };
 
   const fieldRows: Array<{ key: string; label: string }> = [
     { key: 'type', label: 'Type' },
+    { key: 'undergraduates', label: 'Undergraduate evidence' },
+    { key: 'involvement', label: 'How to get involved' },
+    { key: 'description', label: 'What they study' },
+    { key: 'researchAreas', label: 'Topics' },
     { key: 'school', label: 'School' },
     { key: 'departments', label: 'Department' },
-    { key: 'researchAreas', label: 'Topics' },
-    { key: 'description', label: 'What they study' },
     { key: 'links', label: 'Official links' },
   ];
 

@@ -42,6 +42,7 @@ import SessionLoginPrompt from '../components/shared/SessionLoginPrompt';
 import { searchQueryFromResearchSlug } from '../utils/researchSlugSearchQuery';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import FellowshipRecipientsSection from '../components/labs/FellowshipRecipientsSection';
+import ReachOutGuideLink from '../components/research/ReachOutGuideLink';
 import LongText from '../components/shared/LongText';
 import ArrowRightIcon from '../components/shared/ArrowRightIcon';
 import { ExternalLinkIcon } from '../components/shared/icons';
@@ -543,13 +544,7 @@ const DecisionSummary = ({
    * homepage where it has one, so the generic page is offered only when no card links
    * a profile.
    */
-  const offersOfficialPage =
-    !wayInWithheld &&
-    Boolean(officialSource) &&
-    !showsWebsiteCta &&
-    !offersOrgEngagementPage &&
-    !applyPageUrl &&
-    !leadCardLinksProfile;
+  const offersOfficialPage = actionLinks.offersOfficialPage;
   const getInvolvedHasOwnAction =
     showsWebsiteCta ||
     offersOrgEngagementPage ||
@@ -651,12 +646,18 @@ const DecisionSummary = ({
             leadCardLinksProfile={leadCardLinksProfile}
           />
         )}
-        {!wayInWithheld && showGetInvolvedBlock && (
+        {!wayInWithheld && (
           <div className="mt-6 border-t border-[var(--yr-line)] pt-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">
               How to get involved
             </p>
-            {showsWebsiteCta ? (
+            {!showGetInvolvedBlock ? (
+              <p className="mt-1 text-sm leading-relaxed text-ink">
+                {leadCardLinksProfile
+                  ? 'Reach out to the lead listed above to introduce yourself and ask whether there is a way to take part.'
+                  : 'Use the official pages listed below to find a contact, then email to introduce yourself.'}
+              </p>
+            ) : showsWebsiteCta ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
                   href={websiteUrl}
@@ -767,9 +768,12 @@ const DecisionSummary = ({
                 </a>
               </div>
             )}
-            <p id={outboundNoteId} className="mt-2 text-xs leading-relaxed text-muted">
-              {outboundNote}
-            </p>
+            {showGetInvolvedBlock && (
+              <p id={outboundNoteId} className="mt-2 text-xs leading-relaxed text-muted">
+                {outboundNote}
+              </p>
+            )}
+            <ReachOutGuideLink />
           </div>
         )}
       </section>
