@@ -143,8 +143,17 @@ describe('roster biography research evidence', () => {
     expect(rosterBioPersonName(person({ fname: 'Alex Example, MD,', lname: 'Fawm' }))).toBe(
       'Alex Example',
     );
+    expect(rosterBioPersonName(person({ fname: 'Alex Example, MD,', lname: 'Faium' }))).toBe(
+      'Alex Example',
+    );
     expect(rosterBioPersonName(person({ fname: 'Alex, MD,', lname: 'Example' }))).toBe(
       'Alex Example',
+    );
+    expect(rosterBioPersonName(person({ fname: 'Alex J., MD,', lname: 'Smith' }))).toBe(
+      'Alex J. Smith',
+    );
+    expect(rosterBioPersonName(person({ fname: 'Mary Ann, MD,', lname: 'Lee' }))).toBe(
+      'Mary Ann Lee',
     );
     expect(rosterBioPersonName(person({ fname: 'Alex Example', lname: 'Ma' }))).toBe(
       'Alex Example Ma',
