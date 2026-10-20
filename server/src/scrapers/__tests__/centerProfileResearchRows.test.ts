@@ -44,12 +44,12 @@ describe('planCenterProfileResearchRows', () => {
     expect(new Set(observations.map((obs) => obs.sourceUrl))).toEqual(new Set([PROFILE]));
   });
 
-  it('refuses a lector, a student, and a member with no research statement', () => {
+  it('refuses a trainee, a student, and a member with no research statement', () => {
     const { planned, skipped } = planCenterProfileResearchRows(
       [
         candidate({
           personId: 'a',
-          title: 'Lector, Synthetic Languages',
+          title: 'Postdoctoral Associate',
           profileUrl: `${PROFILE}-a`,
         }),
         candidate({ personId: 'b', title: 'PhD Student', profileUrl: `${PROFILE}-b` }),
@@ -64,6 +64,14 @@ describe('planCenterProfileResearchRows', () => {
     expect(planned).toEqual([]);
     expect(skipped.non_hosting_title).toBe(2);
     expect(skipped.no_research_statement).toBe(1);
+  });
+
+  it('plans a lector who states current research, since a title is never the gate (#5407)', () => {
+    const { planned } = planCenterProfileResearchRows(
+      [candidate({ title: 'Senior Lector in Synthetic Languages' })],
+      emptyCoverage,
+    );
+    expect(planned).toHaveLength(1);
   });
 
   it('refuses a member with no netid, since the lead could not be resolved', () => {

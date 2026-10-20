@@ -75,12 +75,13 @@ describe('roster biography research evidence', () => {
       'Research Associate 2',
       'Visiting Scholar',
       'PhD Student',
-      'Lector, Synthetic Languages and Literatures',
-      'Senior Lector in Synthetic; Director, Language Program',
     ]) {
       expect(rosterBioTitleVerdict(title)).toBe('non_hosting');
     }
     expect(rosterBioTitleVerdict('Senior Lecturer in Synthetic Studies')).toBe('eligible');
+    expect(rosterBioTitleVerdict('Lector, Synthetic Languages and Literatures')).not.toBe(
+      'non_hosting',
+    );
     expect(rosterBioTitleVerdict('Associate Research Scientist')).toBe('eligible');
     expect(rosterBioTitleVerdict('Associate Research Scholar')).toBe('eligible');
     expect(rosterBioTitleVerdict('Professor of Synthetic Studies')).toBe('eligible');
