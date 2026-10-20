@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setPreGroundingRefusalCutoffForTesting } from '../descriptionExtractionGrounding';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -23,6 +24,9 @@ import {
   isFullDescriptionRestatementOfShortDescription,
 } from '../../utils/researchEntityDescriptionQuality';
 import { materializeEntity } from '../entityMaterializer';
+
+beforeAll(() => setPreGroundingRefusalCutoffForTesting(new Date(0)));
+afterAll(() => setPreGroundingRefusalCutoffForTesting(null));
 
 const STORED_CARD =
   'The group studies how mitochondria are transported along axons and what happens to neurons when that transport fails.';

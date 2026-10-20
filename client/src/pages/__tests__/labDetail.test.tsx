@@ -2855,35 +2855,19 @@ describe('LabDetail page', () => {
     expect(screen.getAllByText('Public Health Research').length).toBeGreaterThan(0);
   });
 
-  it('renders a Methods and techniques section when the entity has methods', async () => {
+  it('renders no methods section even when a stored payload still carries methods', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
         ...basePayload.group,
-        methods: ['historical analysis', 'CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.getByText('Methods and techniques')).toBeTruthy();
-    expect(screen.getByText('Historical Analysis')).toBeTruthy();
-    expect(screen.getByText('CRISPR-Cas9 Gene Editing')).toBeTruthy();
-    expect(screen.getByText('Single-Cell RNA Sequencing')).toBeTruthy();
-  });
-
-  it('omits the Methods and techniques section when the entity has no methods', async () => {
-    renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        methods: [],
-      },
+        ...{ methods: ['historical analysis', 'CRISPR-Cas9 Gene Editing'] },
+      } as typeof basePayload.group,
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByText('Methods and techniques')).toBeNull();
+    expect(screen.queryByText('Historical Analysis')).toBeNull();
   });
 
   it('does not render internal profile completeness copy', async () => {

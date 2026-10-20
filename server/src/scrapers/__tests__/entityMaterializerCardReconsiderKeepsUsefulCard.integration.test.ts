@@ -2,6 +2,7 @@ import { appendFileSync } from 'node:fs';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setPreGroundingRefusalCutoffForTesting } from '../descriptionExtractionGrounding';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -30,6 +31,9 @@ import {
 } from '../../utils/researchEntityDescriptionQuality';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../confidenceResolver';
 import { materializeEntity } from '../entityMaterializer';
+
+beforeAll(() => setPreGroundingRefusalCutoffForTesting(new Date(0)));
+afterAll(() => setPreGroundingRefusalCutoffForTesting(null));
 
 const STORED_USEFUL_CARD =
   "The lab's research focuses on how synaptic plasticity in the hippocampus encodes memory, using electrophysiology and optogenetics to map the circuits involved.";

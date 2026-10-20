@@ -275,9 +275,9 @@ describe('a linked paper or file is not cited as a source', () => {
         },
         entityDoc: facultyResearchRow({
           sourceUrls: [OWN_PROFILE, DEPARTMENT_PDF, SHAREPOINT_CV],
-          methods: ['synthetic fixture assay'],
+          researchAreas: ['synthetic fixture assay'],
           fieldProvenance: {
-            methods: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
+            researchAreas: { sourceName: 'synthetic-source', sourceUrl: DEPARTMENT_PDF },
           },
         }),
       }),

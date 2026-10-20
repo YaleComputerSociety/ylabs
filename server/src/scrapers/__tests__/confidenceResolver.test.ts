@@ -1618,6 +1618,21 @@ describe('researchAreas quoted from the row own pages outrank MeSH and directory
     observedAt: now,
   };
 
+  it('serves the quoted list over a newer, heavier lab-site-research-read list', () => {
+    const codeLane = {
+      field: 'researchAreas',
+      value: ['Coastal ecology'],
+      sourceName: 'lab-site-research-read',
+      confidence: 0.95,
+      observedAt: now,
+    };
+    const resolved = resolveField('researchAreas', [codeLane, quoted], { now });
+    expect(resolved?.value).toEqual(quotedAreas);
+    expect(resolveField('researchAreas', [codeLane, mesh], { now })?.value).toEqual([
+      'Coastal ecology',
+    ]);
+  });
+
   it('serves the quoted list over newer, heavier MeSH and directory lists', () => {
     const resolved = resolveField('researchAreas', [mesh, directory, quoted], { now });
     expect(resolved?.value).toEqual(quotedAreas);

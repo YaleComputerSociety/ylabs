@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setPreGroundingRefusalCutoffForTesting } from '../descriptionExtractionGrounding';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -20,6 +21,9 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
 import { synthesizeGroundedCardDescription } from '../../utils/groundedCardSynthesis';
+
+beforeAll(() => setPreGroundingRefusalCutoffForTesting(new Date(0)));
+afterAll(() => setPreGroundingRefusalCutoffForTesting(null));
 
 const PUBLICATIONS_DUMP_FULL =
   'The Chen Lab studies immune regulation and cancer immunotherapy across many tumor types. Selected Publications:Rivera J, Chen A. (2023) T cell dynamics in the tumor microenvironment. Cell Reports.';

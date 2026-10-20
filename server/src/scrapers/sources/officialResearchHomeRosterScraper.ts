@@ -166,6 +166,7 @@ interface RosterCard {
   name: string;
   title: string;
   profileHref: string;
+  bio?: string;
 }
 
 interface RosterTableRow {
@@ -173,6 +174,7 @@ interface RosterTableRow {
   position: string;
   departure: string;
   group?: string;
+  school?: string;
 }
 
 interface ListedPersonEntry {
@@ -184,6 +186,8 @@ interface ListedPersonEntry {
   group?: string;
   /** Paragraphs under the person's own line, read only for the school they attend. */
   bio?: string;
+  /** A table column that names each person's school, such as "Georgia Institute of Technology". */
+  school?: string;
 }
 
 interface RosterSection {
@@ -235,6 +239,9 @@ function readProfileGridSections($: cheerio.CheerioAPI): RosterSection[] {
               title: normalizedText(card.find('.profile-grid-item__title').first().text()),
               profileHref:
                 card.find('a.profile-grid-item__link-details').first().attr('href') || '',
+              bio: normalizedText(
+                card.find('.profile-grid-item__bio-container').first().text(),
+              ).slice(0, BIO_MAX_LENGTH),
             };
           }),
         tableRows: [],
@@ -306,7 +313,7 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
     /\b(departure|departed|left|years?|dates?)\b/,
     -1,
   );
-  return table
+  const rows = table
     .find('tr')
     .toArray()
     .slice(headerRowIsData ? 1 : 0)
@@ -316,17 +323,40 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
         .toArray()
         .map((cell) => normalizedText($(cell).text())),
     )
-    .filter((cells) => cells.length > 0)
-    .map((cells) => ({
-      name: cells[nameColumn] || (headers.length === 0 ? cells.find(Boolean) || '' : ''),
-      position: positionColumn >= 0 ? cells[positionColumn] || '' : '',
-      departure:
-        departureColumn >= 0
-          ? cells[departureColumn] || ''
-          : cells.find((cell, index) => index !== nameColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
-            '',
-      ...(group ? { group } : {}),
-    }));
+    .filter((cells) => cells.length > 0);
+  const schoolColumn =
+    headers.length === 0
+      ? schoolColumnIndex(rows, [nameColumn, positionColumn, departureColumn])
+      : -1;
+  return rows.map((cells) => ({
+    name: cells[nameColumn] || (headers.length === 0 ? cells.find(Boolean) || '' : ''),
+    position: positionColumn >= 0 ? cells[positionColumn] || '' : '',
+    departure:
+      departureColumn >= 0
+        ? cells[departureColumn] || ''
+        : cells.find((cell, index) => index !== nameColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
+          '',
+    ...(group ? { group } : {}),
+    ...(schoolColumn >= 0 && cells[schoolColumn] ? { school: cells[schoolColumn] } : {}),
+  }));
+}
+
+const WHOLE_SCHOOL_NAME =
+  /^(?:(?:the\s+)?(?:\p{Lu}[\w.&'’-]*\s+){0,4}(?:University|College|Institute)(?:\s+of(?:\s+\p{Lu}[\w.&'’-]*){1,3})?|(?:University|Institute) of(?:\s+\p{Lu}[\w.&'’-]*){1,4})$/u;
+
+/**
+ * A column every filled cell of which is a school's name, such as "Georgia Institute of
+ * Technology" or "Yale University", names the school each person in the row attends; a
+ * column of where people went next mixes companies and roles in with schools.
+ */
+function schoolColumnIndex(rows: string[][], usedColumns: number[]): number {
+  const width = Math.max(0, ...rows.map((cells) => cells.length));
+  for (let column = 0; column < width; column += 1) {
+    if (usedColumns.includes(column)) continue;
+    const filled = rows.map((cells) => cells[column] ?? '').filter(Boolean);
+    if (filled.length >= 2 && filled.every((cell) => WHOLE_SCHOOL_NAME.test(cell))) return column;
+  }
+  return -1;
 }
 
 /**
@@ -766,6 +796,7 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       }
       if (!section) return;
       const awaitingRole = bareNameParagraph;
+      const describedHeading = nameHeading;
       if (normalizedText(node.text())) {
         nameHeading = undefined;
         bareNameParagraph = undefined;
@@ -798,6 +829,16 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       }
       if (/^\s*(?:\u00a0\s*){4,}/.test(node.text())) return;
       if (tagName === 'li') {
+        const line = normalizedText(node.text());
+        if (
+          describedHeading &&
+          CLASS_YEAR_PHRASE.test(line) &&
+          line.length <= DESCRIPTOR_LINE_MAX
+        ) {
+          describedHeading.years = `${describedHeading.years} ${line}`.trim();
+          nameHeading = describedHeading;
+          return;
+        }
         const entry = blockEntry($, node);
         section.listItems.push(entry);
         bulletedEntries.add(entry);
@@ -904,6 +945,7 @@ function listedPersonEntries(section: RosterSection): ListedPersonEntry[] {
       years: row.departure,
       profileHref: '',
       ...(row.group ? { group: row.group } : {}),
+      ...(row.school ? { school: row.school } : {}),
     })),
     ...section.listItems,
   ];
@@ -926,6 +968,19 @@ const DATED_YEAR_FORM = new RegExp(
  * nothing about whether they have left.
  */
 const yearDatesTheListing = (descriptor: string): boolean => DATED_YEAR_FORM.test(descriptor);
+
+const BIO_CLASS_YEAR = /\bclass of ((?:19|20)\d{2})\b/gi;
+
+/** "A class of 2025 Yale College student" on a page read in 2026 has graduated. */
+const bioClassYearHasPassed = (bio: string | undefined, observedAt: Date): boolean => {
+  const years = (bio ?? '')
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !/\bhigh school\b/i.test(sentence))
+    .flatMap((sentence) =>
+      Array.from(sentence.matchAll(BIO_CLASS_YEAR), (match) => Number(match[1])),
+    );
+  return years.length > 0 && Math.max(...years) <= lastCompletedClassYear(observedAt);
+};
 
 function undergraduateStatus(
   sectionStatus: OfficialRosterUndergraduateStatus,
@@ -955,7 +1010,7 @@ const POST_UNDERGRADUATE_ROLE = /\b(?:post-?bac\w*|post[- ]?grad(?:uate)?|postdo
 const LATER_OR_PLANNED =
   /\b(?:now|currently|current(?:ly)?\s+(?:position|at)|last seen|post-?grad(?:uate)? plans?|plans?|goals?|future|(?:md|ph\.?\s?d|md\/ph\.?\s?d|graduate|medical|law|business|doctoral|masters?)\s+(?:programs?|school))\b|(?:\b|(?<=[a-z)]))current(?:ly)?\s*(?:position|institution|affiliation)?\s*:/i;
 const STILL_AN_UNDERGRADUATE =
-  /\b(?:now|currently|current(?: institution| position| affiliation)?\s*:)[^.;]{0,80}?\bundergrad\w*(?:[^.;]{0,40})/gi;
+  /\b(?:now|currently|current(?: institution| position| affiliation)?\s*:|finish\w*(?:\s+up)?\s+(?:at|in)\b)[^.;]{0,80}?\bundergrad\w*(?:[^.;]{0,40})/gi;
 
 /** "Currently an undergraduate at Elsewhere College": still an undergraduate, at another school. */
 const stillAnUndergraduateElsewhere = (text: string): boolean =>
@@ -1121,7 +1176,7 @@ const ANOTHER_SCHOOL_EVIDENCE = [
   /\b[Uu]ndergrad\w*(?:\s+(?:[Ss]tudent|[Rr]esearcher|[Ii]ntern))?\s*\((?:[A-Z]{1,4}U|U[A-Z][A-Za-z]{0,4}|MIT|WPI|RPI)\)/,
   /\bundergrad(?:uate)?(?:\s+\p{L}+){1,2}\s+(?:at|from)\s+(?!Yale\b)\p{Lu}/u,
   new RegExp(
-    `\\b[Uu]ndergrad(?:uate)?s?(?:\\s+(?:[Ss]tudent|[Rr]esearcher|[Ii]ntern))?\\s*,?\\s*${SCHOOL_NAME}`,
+    `\\b[Uu]ndergrad(?:uate)?s?(?:\\s+(?:[Ss]tudent|[Rr]esearcher|[Ii]ntern))?\\s*[,(]?\\s*${SCHOOL_NAME}`,
     'u',
   ),
   new RegExp(`${BACHELORS_DEGREES}\\.?,?\\s+${SCHOOL_NAME_AFTER_SHORT_NAME}`, 'u'),
@@ -1132,6 +1187,7 @@ const ANOTHER_SCHOOL_EVIDENCE = [
     'iu',
   ),
   /\bsummer (?:undergraduate )?(?:research )?(?:intern|scholar|student|fellow|assistant|trainee|participant)\w*\b/i,
+  /(?:^|[,;(|]\s*)summer undergrad\w*\b/i,
   /\bREV?U\b|\bAmgen Scholar|\bLicenciatura\b/,
   /\bHelios\b/,
 ];
@@ -1185,6 +1241,10 @@ const BIO_STANDING_AT_ANOTHER_SCHOOL = new RegExp(
   `\\b(?:freshman|sophomore|junior|senior|first[- ]year|second[- ]year|undergraduate|undergrad|student|major)\\s+(?:(?:at|from|in)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}|at\\s+(?!(?:${RESIDENTIAL_COLLEGE_NAMES})\\b)(?!Yale\\b)\\p{Lu}[\\p{L}'’-]+)`,
   'u',
 );
+const BIO_BACHELORS_FROM_ANOTHER_SCHOOL = new RegExp(
+  `${BACHELORS_DEGREES}\\.?(?:\\s+(?:in|of)\\s+[^;()]{1,60}?)?\\s+(?:from|at)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}`,
+  'u',
+);
 const BIO_VISITOR = /\bvisit(?:ed|s|ing)\s+(?:the\s+|our\s+)?(?:lab|group)\s+from\b/i;
 const YALE_ENROLLMENT =
   /\b(?:at|in|to)\s+Yale\b|\bYale (?:College|University)\b|\bYale\s*['’‘]\d{2}\b/i;
@@ -1195,6 +1255,7 @@ const YALE_ENROLLMENT =
  * at Yale decides nothing.
  */
 function bioNamesAnotherSchool(bio: string): boolean {
+  if (BIO_BACHELORS_FROM_ANOTHER_SCHOOL.test(bio)) return true;
   return bio
     .split(/(?<=[.!?])\s+/)
     .some(
@@ -1208,6 +1269,9 @@ function bioNamesAnotherSchool(bio: string): boolean {
 
 const YALE_NUS = /\bYale[- ](?:NUS|National University of Singapore)\b/i;
 
+const namesYaleCollege = (school: string): boolean =>
+  (/\bYale\b/i.test(school) || YALE_RESIDENTIAL_COLLEGE.test(school)) && !YALE_NUS.test(school);
+
 const ANOTHER_INSTITUTION_LABEL =
   /\b(?!Yale\b)\p{Lu}[\w&.-]*(?:\s+[\w&.-]+){0,3}\s+(?:University|Institute|College)\b|\b(?:University|Institute) of (?!Yale\b)\p{Lu}|\bGeorgia Tech\b|\b(?:UW|UC|SUNY|CUNY)[- ]\p{Lu}/u;
 const OTHER_SCHOOLS_LABEL =
@@ -1217,7 +1281,9 @@ const namesAnotherInstitution = (label: string): boolean =>
   ANOTHER_INSTITUTION_LABEL.test(label) || OTHER_SCHOOLS_LABEL.test(label);
 
 const bracketedAffiliation = (entry: ListedPersonEntry): string | undefined => {
-  const match = /^\s*\(([^)]+)\)/.exec(entry.years);
+  const match = /^\s*,?\s*(?:(?:19|20)\d{2}(?:\s*[-–]\s*(?:19|20)\d{2})?\s*,?\s*)?\(([^)]+)\)/.exec(
+    entry.years,
+  );
   if (!match || /^\s*(?:19|20)\d{2}/.test(match[1])) return undefined;
   if (/\b(?:B\.?\s?S|B\.?\s?A|candidate|major|class)\b/i.test(match[1])) return undefined;
   return match[1].trim();
@@ -1512,7 +1578,8 @@ function extractListedUndergraduates(
         const homeSchool = bracketsNameHomeSchool ? bracketedAffiliation(entry) : undefined;
         const fromAnotherSchool =
           (otherInstitutionSection && !entry.group) ||
-          Boolean(homeSchool && !/^Yale\b/i.test(homeSchool)) ||
+          Boolean(entry.school && !namesYaleCollege(entry.school)) ||
+          Boolean(homeSchool && !namesYaleCollege(homeSchool)) ||
           listedEntryIsFromAnotherSchool(
             withoutNextPositionAfterName(entry, sectionStatus === 'past'),
             sectionStatus === 'current',
@@ -1552,7 +1619,9 @@ function extractListedUndergraduates(
         ? {}
         : span;
     const status =
-      pastNames.has(normalizedLabel(name)) || entryLabelsItselfAlumni(entry)
+      pastNames.has(normalizedLabel(name)) ||
+      entryLabelsItselfAlumni(entry) ||
+      bioClassYearHasPassed(entry.bio, observedAt)
         ? 'past'
         : undergraduateStatus(sectionStatus, { startYear, endYear }, observedAt);
     if (sectionStatus === 'past' && entryNamesNextPosition(entry)) {

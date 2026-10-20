@@ -6,7 +6,7 @@
  * act on first. It ranks on profile completeness (source-backed description, an
  * attached identified lead, an official source URL) reusing the existing
  * quality-state classification so there is one source of truth for those
- * states, then on served enrichment (a live research website, methods, a
+ * states, then on served enrichment (a live research website, a
  * description of substance, a current grant), plus a small umbrella-type
  * demotion. The gate already requires the completeness terms of every served
  * row, so on their own they tie nearly the whole served corpus (#4547).
@@ -102,11 +102,10 @@ const entityTypeRankAdjustment = (
 // Bump on any change to what computeResearchEntityBrowseRank returns for the same input.
 // The service refuses to overwrite a score stamped by a newer version, so a checkout that
 // predates a formula change cannot revert rows a newer checkout already scored (#4642).
-export const BROWSE_RANK_SCORER_VERSION = 3;
+export const BROWSE_RANK_SCORER_VERSION = 4;
 
 const ENRICHMENT_POINTS = {
   website: 8,
-  methods: 5,
   substantialDescription: 3,
   // Zero until grant coverage is even across schools: served grant evidence is mostly
   // NIH, so any positive weight orders browse by our coverage gaps (#4622, #4546).
@@ -123,9 +122,6 @@ const servedEnrichmentPoints = (
   let points = 0;
   if (servesALiveWebsite(entity, served)) points += ENRICHMENT_POINTS.website;
   if (servesASubstantialDescription(served)) points += ENRICHMENT_POINTS.substantialDescription;
-  if (Array.isArray(served.methods) && served.methods.length > 0) {
-    points += ENRICHMENT_POINTS.methods;
-  }
   if (servesACurrentGrant(served)) points += ENRICHMENT_POINTS.currentGrant;
   return points;
 };

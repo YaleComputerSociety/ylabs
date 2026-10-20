@@ -291,6 +291,36 @@ describe('materializeEntity applies a cached research page topics derivation (#5
     );
   });
 
+  it('serves the derived list over the code lane, and the topic hand-off never drops it', async () => {
+    await seedPageText(pages);
+    await seedDerivation(pages);
+    await seedObservation('researchAreas', ['Coastal ecology'], 'lab-site-research-read');
+    await seedObservation('researchAreas', ['Oceanography'], 'lab-microsite-description-llm');
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+
+    const row = await persisted();
+    expect(row?.researchAreas).toEqual(derivedTopics);
+    expect(row?.fieldProvenance?.researchAreas?.sourceName).toBe(
+      RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
+    );
+  });
+
+  it('still lets the code lane take over from model-lane topics when no derived list exists', async () => {
+    await seedObservation('researchAreas', ['Coastal ecology'], 'lab-site-research-read', {
+      confidence: 0.5,
+    });
+    await seedObservation('researchAreas', ['Oceanography'], 'lab-microsite-description-llm', {
+      confidence: 0.95,
+    });
+
+    await materializeEntity('researchEntity', { entityKey: SLUG });
+
+    const row = await persisted();
+    expect(row?.researchAreas).toEqual(['Coastal ecology']);
+    expect(row?.fieldProvenance?.researchAreas?.sourceName).toBe('lab-site-research-read');
+  });
+
   it('is a no-op on a second pass over the same evidence', async () => {
     await seedPageText(pages);
     await seedDerivation(pages);

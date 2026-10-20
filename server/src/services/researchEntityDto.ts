@@ -20,10 +20,7 @@ import {
 } from '../utils/servedResearchAreaGuards';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
-import {
-  sanitizeMethodChipLabel,
-  sanitizeResearchAreaLabel,
-} from '../utils/researchAreaLabelHygiene';
+import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import {
   resolveResearchHomeCardSummary,
   type ResearchHomeCardSummary,
@@ -91,7 +88,6 @@ export interface PublicResearchEntityDto extends Record<string, unknown> {
   entityType?: string;
   departments: string[];
   researchAreas: string[];
-  methods?: string[];
   sourceUrls: string[];
   sourceLinkHealth?: PublicResearchEntitySourceLinkHealth[];
   cardDescription?: ResearchHomeCardSummary;
@@ -249,22 +245,6 @@ export function decideServedResearchEntityCreativePractice(
   leadMemberNames: readonly string[] = [],
 ): Readonly<CreativePracticeDecision> {
   return creativePracticeOfServedCopy(group, servedCopyAndTopics(group, leadMemberNames).served);
-}
-
-function publicMethodsArray(value: unknown, researchAreas: string[]): string[] {
-  const excluded = new Set(researchAreas.map((area) => area.toLowerCase()));
-  const seen = new Set<string>();
-  const methods: string[] = [];
-  for (const raw of stringArray(value)) {
-    const cleaned = publicTextString(sanitizeMethodChipLabel(raw));
-    if (!cleaned) continue;
-    const key = cleaned.toLowerCase();
-    if (excluded.has(key) || seen.has(key)) continue;
-    seen.add(key);
-    methods.push(cleaned);
-    if (methods.length >= MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS) break;
-  }
-  return methods;
 }
 
 function publicHttpUrl(value: unknown): string | undefined {
@@ -740,10 +720,6 @@ function derivePublicResearchEntityDto(
           sourceUrls: group.sourceUrls,
           school: group.school,
         });
-  }
-
-  if (group.methods !== undefined) {
-    dto.methods = publicMethodsArray(group.methods, dto.researchAreas);
   }
 
   if (!options.forList && group.sourceLinkHealth !== undefined) {

@@ -30,6 +30,7 @@ import { StudentGrantsDatabaseScraper } from './sources/studentGrantsDatabaseScr
 import { ProgramOfficialPageScraper } from './sources/programOfficialPageScraper';
 import { LabMicrositeDescriptionLLMExtractor } from './sources/labMicrositeDescriptionLLMExtractor';
 import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergradLLMExtractor';
+import { LabSiteResearchReadScraper } from './sources/labSiteResearchReadScraper';
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { CenterDirectorScraper } from './sources/centerDirectorScraper';
@@ -79,6 +80,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new StudentGrantsDatabaseScraper());
   o.register(new ProgramOfficialPageScraper());
   o.register(new LabMicrositeDescriptionLLMExtractor());
+  o.register(new LabSiteResearchReadScraper());
   o.register(new LabMicrositeUndergradLLMExtractor());
   o.register(new LabSiteUndergradInvitationScraper());
   o.register(new CenterAffiliationLLMExtractor());

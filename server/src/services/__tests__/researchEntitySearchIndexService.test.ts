@@ -365,35 +365,14 @@ describe('researchEntitySearchIndexService', () => {
     ]);
   });
 
-  it('includes clean methods in the search document and drops empty methods lists', () => {
-    const withMethods = buildResearchEntitySearchIndexDocument({
+  it('indexes no methods, which are no longer served (#5296)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-methods',
       name: 'Methods Lab',
       archived: false,
       methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
     });
-    expect(withMethods?.methods).toEqual([
-      'CRISPR-Cas9 Gene Editing',
-      'Single-cell RNA sequencing',
-    ]);
-
-    const withoutMethods = buildResearchEntitySearchIndexDocument({
-      _id: 'entity-no-methods',
-      name: 'No Methods Lab',
-      archived: false,
-      methods: [],
-    });
-    expect(withoutMethods).not.toHaveProperty('methods');
-  });
-
-  it('indexes the methods the detail page serves, not a bare verb chip (#5109)', () => {
-    const doc = buildResearchEntitySearchIndexDocument({
-      _id: 'entity-verb-methods',
-      name: 'Verb Methods Lab',
-      archived: false,
-      methods: ['examines', 'flow cytometry', 'Highly-Controllable'],
-    });
-    expect(doc?.methods).toEqual(['flow cytometry']);
+    expect(doc).not.toHaveProperty('methods');
   });
 
   it('adds curated student topic aliases to searchable index documents', () => {
@@ -786,7 +765,7 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('methods');
     const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
-    expect(searchable).toEqual(expect.arrayContaining(['methods']));
+    expect(searchable).not.toContain('methods');
     expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
     for (const unseenTokenField of ['websiteUrl', 'sourceUrls', 'kind', 'entityType']) {
       expect(searchable).not.toContain(unseenTokenField);
@@ -923,12 +902,12 @@ describe('researchEntitySearchIndexService', () => {
       'professorNames',
       'departments',
       'researchAreas',
-      'methods',
       'shortDescription',
       'fullDescription',
     ]) {
       expect(template).toContain(`{% if doc.${field} %}`);
     }
+    expect(template).not.toContain('doc.methods');
   });
 
   it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {

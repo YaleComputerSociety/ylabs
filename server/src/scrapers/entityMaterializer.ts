@@ -5,6 +5,12 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { evidenceValueTexts } from '../utils/evidenceValueTexts';
+import {
+  DESCRIPTION_EXTRACTION_SOURCE_NAME,
+  isUngroundedPreGroundingExtractionProse,
+  storedPageResearchText,
+} from './descriptionExtractionGrounding';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
   inferredPiKeyNamesRoleOrUnitMailbox,
@@ -294,6 +300,7 @@ import {
 import { planRetiredEvidenceFieldClears } from './retiredEvidenceFieldClear';
 import {
   planCollectivePageStoredDescriptionClears,
+  planPreGroundingStoredDescriptionClears,
   planProfileTemplateChromeStoredDescriptionClears,
   planRefusedStoredDescriptionClears,
 } from './refusedStoredDescription';
@@ -423,11 +430,15 @@ import { grantAwardIdentity } from './utils/grantAwardIdentity';
 import { reconcileRosterMintWithdrawalsFromRun } from './rosterMintWithdrawal';
 import { reconcileBbsTrackRetirementsFromRun } from './bbsTrackRosterRetirement';
 import { reconcileCenterAffiliationHandOffFromRun } from './centerAffiliationHandOff';
+import { reconcileTopicHandOffFromRun, withoutHandedOffModelTopics } from './topicHandOff';
 import {
   reconcileCenterDirectorRetirementsFromRun,
   reconcileCodeLaneDirectorRetirementsFromRun,
 } from './centerDirectorRetirement';
-import { CENTER_DIRECTOR_SOURCE_NAME } from './centerDirectorReadSnapshot';
+import {
+  CENTER_DIRECTOR_SOURCE_NAME,
+  INFERRED_STAFF_DIRECTORS_FIELD,
+} from './centerDirectorReadSnapshot';
 import {
   OFFICIAL_PROFILE_DIRECTOR_LANE,
   reconcileOfficialProfileDirectorRetirementsFromRun,
@@ -810,7 +821,7 @@ const WRITTEN_BODY_CARD_EVIDENCE_FIELDS = new Set([
   'researchSummary',
 ]);
 
-const INGEST_CHECKED_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
+const INGEST_CHECKED_DESCRIPTION_SOURCE = DESCRIPTION_EXTRACTION_SOURCE_NAME;
 
 /**
  * The page text a card is checked against, beside the body it serves with, so a method a
@@ -821,16 +832,18 @@ const INGEST_CHECKED_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
  * one, are removed.
  */
 export function cardDescriptionEvidence(observations: readonly ResolverObservation[]): string[] {
+  const pageResearchText = storedPageResearchText(observations);
   return observations
     .filter(
       (obs) =>
         WRITTEN_BODY_CARD_EVIDENCE_FIELDS.has(obs.field) &&
+        !isUngroundedPreGroundingExtractionProse(obs, pageResearchText) &&
         (!isModelTextSource(obs.sourceName) ||
           (obs.sourceName === INGEST_CHECKED_DESCRIPTION_SOURCE &&
-            obs.field === 'fullDescription')) &&
-        typeof obs.value === 'string',
+            obs.field === 'fullDescription')),
     )
-    .map((obs) => withoutProfileTemplateWidgets(obs.value))
+    .flatMap((obs) => evidenceValueTexts(obs.value))
+    .map((text) => withoutProfileTemplateWidgets(text))
     .filter(Boolean);
 }
 
@@ -4574,6 +4587,81 @@ export async function materializeInferredDirectorMembership(
     userId: researcherId,
     role,
   };
+}
+
+/**
+ * A staff or technical director the code director lane read beside the faculty director
+ * (owner decision 2026-10-19, #5296). Each is written as a non-lead STAFF edge with the
+ * lane's own provenance, only when the name resolves to one researcher whose display name
+ * agrees, and never for the person the same read named as the director.
+ */
+export async function materializeInferredStaffDirectorMemberships(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+): Promise<{ written: number; unresolved: number }> {
+  const result = { written: 0, unresolved: 0 };
+  if (!normalizeMaterializerObjectId(researchEntityId)) return result;
+  const staffObservation = observations.find(
+    (obs) =>
+      textValue(obs.sourceName) === CENTER_DIRECTOR_SOURCE_NAME &&
+      obs.field === INFERRED_STAFF_DIRECTORS_FIELD &&
+      Array.isArray(obs.value),
+  );
+  if (!staffObservation) return result;
+  const directorName = textValue(
+    observations.find(
+      (obs) =>
+        textValue(obs.sourceName) === CENTER_DIRECTOR_SOURCE_NAME &&
+        obs.field === 'inferredDirectorName',
+    )?.value,
+  );
+  const observedAt = staffObservation.observedAt || new Date();
+  const confidence =
+    typeof staffObservation.confidence === 'number' ? staffObservation.confidence : 0.85;
+  for (const entry of staffObservation.value as unknown[]) {
+    const person = (entry ?? {}) as { name?: unknown; profileUrl?: unknown };
+    const name = textValue(person.name);
+    if (!name || (directorName && observedPersonNameAgreesWith(directorName, name))) continue;
+    const profileUrl = textValue(person.profileUrl);
+    const researcher = await findUniqueResearcherByObservedDirectorName(name);
+    if (!researcher?._id) {
+      result.unresolved += 1;
+      continue;
+    }
+    const researcherId = idValue(researcher._id);
+    const enrichment = await canonicalResearcherIdentity(researcherId);
+    if (!observedPersonNameAgreesWith(enrichment.displayName, name)) {
+      result.unresolved += 1;
+      continue;
+    }
+    const personId = toMaterializerObjectId(researcherId);
+    await materializeCanonicalMembership(
+      researchEntityId,
+      {
+        legacyRole: 'staff',
+        displayName: name,
+        isCurrentMember: true,
+        confidence,
+        startedAt: observedAt,
+        rosterProvenance: {
+          sourceName: CENTER_DIRECTOR_SOURCE_NAME,
+          sourceUrl: profileUrl || textValue(staffObservation.sourceUrl) || undefined,
+          profileUrl: profileUrl || undefined,
+          observedAt,
+        },
+      },
+      {
+        netid: enrichment.netid,
+        email: enrichment.email,
+        orcid: enrichment.orcid,
+        displayName: name,
+        hasCanonicalSourceReference: true,
+        ...(personId ? { resolvedPersonId: personId } : {}),
+      },
+    );
+    result.written += 1;
+  }
+  return result;
 }
 
 export function userLookupValueForInferredPiUserKey(value: unknown): string {
@@ -10114,6 +10202,16 @@ export async function projectFromLog(
         tag: 'collective-page-description',
         reason: 'narrated from a department page',
       })),
+      ...planPreGroundingStoredDescriptionClears({
+        stored: entityDoc,
+        staged: set,
+        lockedFields: manuallyLockedFields,
+        pageResearchText: storedPageResearchText(materializationObs),
+      }).map((clear) => ({
+        clear,
+        tag: 'pre-grounding-description',
+        reason: 'stored by the model lane before it checked its text against the page',
+      })),
       ...planProfileTemplateChromeStoredDescriptionClears({
         stored: entityDoc,
         staged: set,
@@ -11215,7 +11313,28 @@ export async function materializeEntity(
     );
   }
 
-  // Read off `obs`, because the set the projection reads has already dropped the page text.
+  const topicHandOffScreened = withoutHandedOffModelTopics(collectivePageScreened);
+  if (topicHandOffScreened.length < collectivePageScreened.length) {
+    console.log(
+      `[topic-hand-off] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        collectivePageScreened.length - topicHandOffScreened.length
+      } model-lane researchAreas candidate(s) the code lane's topics replace`,
+    );
+  }
+  const pageResearchText = storedPageResearchText(topicHandOffScreened);
+  const groundingScreened = topicHandOffScreened.filter(
+    (o: any) => !isUngroundedPreGroundingExtractionProse(o, pageResearchText),
+  );
+  if (groundingScreened.length < topicHandOffScreened.length) {
+    console.log(
+      `[description-pre-grounding] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        topicHandOffScreened.length - groundingScreened.length
+      } model-lane description candidate(s) stored before the lane checked them against their page and not on its stored page text`,
+    );
+  }
+
+  // Read off `obs`, because the projection's set has already dropped the page text, and
+  // appended after the screens above, which judge observations and never a derivation.
   const researchPageTopics = isResearchEntityObservationType(entityType)
     ? await researchPageTopicsStateFor(obs)
     : {};
@@ -11225,7 +11344,7 @@ export async function materializeEntity(
     researchPageTopics,
   );
   const resolverObs: ResolverObservation[] = [
-    ...collectivePageScreened.map((o: any) => ({
+    ...groundingScreened.map((o: any) => ({
       field: o.field,
       value: o.value,
       sourceName: o.sourceName,
@@ -11613,6 +11732,7 @@ export async function materializeEntity(
       if (!skipPostProjectionEvidence) {
         await materializeInferredPiMembership(entityIdString, materializationObs);
         await materializeInferredDirectorMembership(entityIdString, materializationObs);
+        await materializeInferredStaffDirectorMemberships(entityIdString, materializationObs);
       }
       const inheritance = await inheritSchoolFromLeadPi(entityIdString, {
         manuallyLockedFields,
@@ -12121,6 +12241,8 @@ export async function materializeFromRun(
   let staleIndexRowsWithoutId = 0;
   const unbackedResearchAreaOutcomes: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
+  const topicHandOff = await reconcileTopicHandOffFromRun(scrapeRunId, { dryRun: options.dryRun });
+  if (topicHandOff) console.info(`[topic-hand-off] ${JSON.stringify(topicHandOff)}`);
   const { failedDocumentIds } = await withDeferredIndexConfirmation(() =>
     materializeObservedEntitiesInChunks(
       distinct.map((row) => ({

@@ -118,13 +118,15 @@ const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string
 // A list a source outranks whenever the named source states the field, whatever the
 // weights say. MeSH and medical-school directory lists copy index headings that name no
 // row's subject, so a list quoted from the row's own pages wins `researchAreas` over them
-// while they stay stored as evidence and still win when no quoted list exists (#5396).
+// while they stay stored as evidence and still win when no quoted list exists (#5396). The
+// code lane's approved-taxonomy list also gives way to a derived list (owner decision on
+// #5419), and still beats model-lane topics through the topic hand-off where none exists.
 const OUTRANKED_SOURCES_BY_FIELD: Readonly<
   Record<string, { by: ReadonlySet<string>; outranked: ReadonlySet<string> }>
 > = {
   researchAreas: {
     by: new Set([PAGE_QUOTED_RESEARCH_TOPICS_SOURCE]),
-    outranked: new Set(['ysm-mesh-keyword', 'ysm-faculty-directory']),
+    outranked: new Set(['lab-site-research-read', 'ysm-mesh-keyword', 'ysm-faculty-directory']),
   },
 };
 const PROSE_EXTENSION_BONUS = 1.25;
@@ -201,6 +203,7 @@ const SYNTHESIZED_NAME_SOURCES = new Set([
 // The lab's own site: authoritative for its self-identified brand.
 export const MICROSITE_NAME_SOURCES = new Set([
   'lab-microsite-description-llm',
+  'lab-site-research-read',
   'lab-microsite-undergrad-llm',
 ]);
 

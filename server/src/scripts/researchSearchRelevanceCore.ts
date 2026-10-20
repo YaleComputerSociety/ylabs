@@ -148,7 +148,6 @@ export const RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS = [
   'professorNames',
   'departments',
   'researchAreas',
-  'methods',
   'shortDescription',
   'fullDescription',
   'orgAffiliationLabels',

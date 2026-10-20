@@ -18,6 +18,7 @@ import {
 import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResearch';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { withoutProfileTemplateWidgets } from '../utils/profileTemplateChrome';
+import { evidenceValueTexts } from '../utils/evidenceValueTexts';
 import {
   statesPersonalPastFraming,
   restatesPastFramedEvidence,
@@ -145,15 +146,17 @@ export function gatherCoverageSnippets(
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
-    if (!raw) continue;
-    const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
-    if (clean.length < 20) continue;
-    const key = clean.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    snippets.push({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName });
-    if (snippets.length >= MAX_COVERAGE_SNIPPETS) break;
+    for (const text of evidenceValueTexts(obs.value)) {
+      const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(text)));
+      if (!raw) continue;
+      const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
+      if (clean.length < 20) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      snippets.push({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName });
+      if (snippets.length >= MAX_COVERAGE_SNIPPETS) return snippets;
+    }
   }
   return snippets;
 }
