@@ -1,9 +1,4 @@
-const TRANSIENT_ERROR_LABELS = [
-  'RetryableWriteError',
-  'TransientTransactionError',
-  'NetworkError',
-  'ResetPool',
-] as const;
+const TRANSIENT_ERROR_LABELS = ['RetryableWriteError', 'TransientTransactionError'] as const;
 
 const TRANSIENT_ERROR_NAMES = new Set([
   'MongoNetworkError',
@@ -35,18 +30,6 @@ export const TRANSIENT_MONGO_FAILURE_PATTERNS: readonly RegExp[] = [
   /error determining if update will go over space quota/i,
   /\bbuffering timed out after \d+ms/i,
   /\b(?:NotWritablePrimary|PrimarySteppedDown|InterruptedAtShutdown|InterruptedDueToReplStateChange|ShutdownInProgress)\b/,
-];
-
-/**
- * Connection failures a driver error can carry only in its message once a bulk write has
- * wrapped it. Read only on a driver error, never on free log text, because the same words
- * describe a failed page fetch.
- */
-const MONGO_CONNECTION_FAILURE_PATTERNS: readonly RegExp[] = [
-  /\bgetaddrinfo (?:ENOTFOUND|EAI_AGAIN)\b/,
-  /\b(?:ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE)\b/,
-  /interrupted due to server monitor timeout/i,
-  /\bconnection \S+(?: to \S+)? (?:closed|timed out)\b/i,
 ];
 
 export const DETERMINISTIC_MONGO_FAILURE_PATTERNS: readonly RegExp[] = [
@@ -121,13 +104,6 @@ function isDeterministicFailure(code: number | undefined, message: string): bool
 
 function isTransientFailure(name: unknown, code: number | undefined, message: string): boolean {
   if (typeof name === 'string' && TRANSIENT_ERROR_NAMES.has(name)) return true;
-  if (
-    typeof name === 'string' &&
-    name.startsWith('Mongo') &&
-    MONGO_CONNECTION_FAILURE_PATTERNS.some((pattern) => pattern.test(message))
-  ) {
-    return true;
-  }
   if (code !== undefined && TRANSIENT_SERVER_CODES.has(code)) return true;
   return TRANSIENT_MONGO_FAILURE_PATTERNS.some((pattern) => pattern.test(message));
 }
@@ -172,17 +148,7 @@ export function isTransientMongoError(
     return true;
   }
   const cause = asErrorLike(record.cause);
-  if (cause !== undefined && cause !== record && isTransientMongoError(cause, options)) return true;
-  // The driver wraps a network failure inside a bulk write in `MongoBulkWriteError`, which
-  // keeps neither the network error's name nor its labels, only the error itself as
-  // `errorResponse` (#5296: a dropped DNS lookup and a monitor timeout each ended a run).
-  const wrapped = asErrorLike(record.errorResponse);
-  return (
-    wrapped !== undefined &&
-    wrapped !== record &&
-    wrapped instanceof Error &&
-    isTransientMongoError(wrapped, options)
-  );
+  return cause !== undefined && cause !== record && isTransientMongoError(cause, options);
 }
 
 function withoutAbsorbedRetryLogLines(text: string): string {

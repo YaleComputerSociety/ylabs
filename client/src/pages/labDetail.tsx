@@ -84,7 +84,7 @@ import { formatGrantSummary } from '../utils/grantAgencyNames';
 import LeadRoleExplanation from '../components/research/LeadRoleExplanation';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeMailtoHref, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
-import { formatTopicChipLabel } from '../utils/displayText';
+import { formatTitleCaseLabel, formatTopicChipLabel } from '../utils/displayText';
 import {
   decisionHeadingLabel,
   entityKindLabel,
@@ -347,6 +347,9 @@ const detailTopics = (group: any, limit = 6): string[] =>
     .filter((value) => !isGenericTopic(value))
     .slice(0, limit);
 
+const detailMethods = (group: any, limit = 8): string[] =>
+  uniqueCompact([...(group.methods || [])], limit);
+
 const ResearchPlanSaveButton = ({
   isSaved,
   onToggle,
@@ -478,6 +481,7 @@ const DecisionSummary = ({
 }) => {
   const { departments, departmentPillEligibleLabels, getDepartmentByName } = useConfig();
   const topics = detailTopics(group, 5);
+  const methods = detailMethods(group);
   const description = sanitizeResearchEntityCopy(detailDescription(group), group);
   useEffect(() => {
     if (description) return;
@@ -628,6 +632,24 @@ const DecisionSummary = ({
                     className="rounded-card border border-line-brand bg-brand-soft px-2.5 py-1 text-xs font-medium text-brand"
                   >
                     {formatTopicChipLabel(topic)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {methods.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Methods and techniques
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {methods.map((method) => (
+                  <span
+                    key={method}
+                    className="inline-flex items-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-1 text-xs font-medium text-ink-soft"
+                  >
+                    {formatTitleCaseLabel(method)}
                   </span>
                 ))}
               </div>

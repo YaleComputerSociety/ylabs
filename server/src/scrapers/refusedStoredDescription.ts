@@ -44,7 +44,6 @@
 import { isProfileTemplateChrome } from '../utils/profileTemplateChrome';
 import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import { isLlmDescriptionFromDepartmentCollectivePage } from './descriptionSourceOwnership';
-import { isUngroundedPreGroundingExtractionProse } from './descriptionExtractionGrounding';
 
 export const REFUSABLE_STORED_DESCRIPTION_FIELDS = ['fullDescription', 'shortDescription'] as const;
 
@@ -127,48 +126,6 @@ export function planCollectivePageStoredDescriptionClears(input: {
       continue;
     }
     if (field === 'shortDescription' && bodyFromSamePageIsKept(input.stored, credited.sourceUrl)) {
-      continue;
-    }
-    clears.push({
-      field,
-      skipped: input.lockedFields.includes(field) ? 'field-is-locked' : null,
-    });
-  }
-  return clears;
-}
-
-/**
- * Plan clears for a stored description credited to the model description lane from before
- * that lane checked its body against the page, unless the row's stored page research text
- * carries it (`isUngroundedPreGroundingExtractionProse`). The
- * materializer's screen already drops such candidates, but a description that loses every
- * candidate is kept rather than unset, so without this stage the unchecked text stays
- * served. A field this pass staged anew is left to its new value.
- */
-export function planPreGroundingStoredDescriptionClears(input: {
-  stored: Record<string, unknown> | null | undefined;
-  staged?: Record<string, unknown>;
-  lockedFields: readonly string[];
-  pageResearchText?: string;
-}): RefusedStoredDescriptionClear[] {
-  const staged = input.staged ?? {};
-  const provenance = (input.stored?.fieldProvenance ?? {}) as Record<
-    string,
-    { sourceName?: unknown; observedAt?: unknown } | undefined
-  >;
-  const clears: RefusedStoredDescriptionClear[] = [];
-  for (const field of REFUSABLE_STORED_DESCRIPTION_FIELDS) {
-    const stored = input.stored?.[field];
-    if (typeof stored !== 'string' || stored.trim().length === 0) continue;
-    if (field in staged && staged[field] !== stored) continue;
-    const credited = provenance[field];
-    if (
-      !credited ||
-      !isUngroundedPreGroundingExtractionProse(
-        { sourceName: credited.sourceName, field, observedAt: credited.observedAt, value: stored },
-        input.pageResearchText ?? '',
-      )
-    ) {
       continue;
     }
     clears.push({
