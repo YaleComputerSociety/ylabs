@@ -117,6 +117,10 @@ const STATIC_PAGE_HEADS: Record<string, PageShellHead> = {
   '/research': { title: 'Research', canonicalPath: '/research' },
   '/programs': { title: 'Programs & Fellowships', canonicalPath: '/programs' },
   '/about': { title: 'About', canonicalPath: '/about' },
+  '/getting-started': {
+    title: 'How to get started in research',
+    canonicalPath: '/getting-started',
+  },
 };
 
 const UNMODIFIED_SHELL: PageShellResolution = { kind: 'page', status: 200, head: {} };
