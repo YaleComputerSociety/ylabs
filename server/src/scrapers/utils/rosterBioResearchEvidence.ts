@@ -121,9 +121,24 @@ function credentialFreeTokens(value: unknown): string[] {
 // A roster name without a comma leaves a trailing credential as the whole surname field
 // ("Jane Doe DVM" gives the surname "DVM"), so the trailing credential is read across both
 // fields, keeping two tokens so a short surname that spells a credential survives.
+// A roster that splits "<given> <family>, MD, MPH, FACEP" on its last space stores the whole
+// name and its credential run as the given name and the last credential, title-cased, as
+// the surname ("Facep"). When the given field is already a whole name followed only by
+// credentials, a one-word surname field is that split-off credential, not a surname.
+function surnameFieldIsSplitOffCredential(person: RosterBioPerson): boolean {
+  const given = typeof person.fname === 'string' ? person.fname.replace(/[\s,]+$/, '') : '';
+  const family = typeof person.lname === 'string' ? person.lname.trim() : '';
+  const head = given.split(',')[0].trim();
+  if (!given.includes(',') || !/^[A-Za-z]{2,6}$/.test(family)) return false;
+  if (head.split(/\s+/).filter(Boolean).length < 2) return false;
+  return stripPersonNameCredentialList(given) === head;
+}
+
 export function rosterBioPersonName(person: RosterBioPerson): string {
   const givenTokens = credentialFreeTokens(person.fname);
-  const familyTokens = credentialFreeTokens(person.lname);
+  const familyTokens = surnameFieldIsSplitOffCredential(person)
+    ? []
+    : credentialFreeTokens(person.lname);
   while (givenTokens.length + familyTokens.length > 2) {
     const tokens = familyTokens.length ? familyTokens : givenTokens;
     if (!isTrailingCredential(tokens[tokens.length - 1])) break;
