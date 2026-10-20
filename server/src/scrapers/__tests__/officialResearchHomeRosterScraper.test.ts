@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { withheldNameDigest } from '../rosterStrikeDigests';
 import {
   extractAlumniPageUndergraduates,
   extractOfficialResearchHomeRoster,
@@ -799,7 +800,7 @@ describe('owner name judgements', () => {
         url: 'https://judgedlab.yale.edu/people',
         template: 'heading-list',
         currentSectionLabels: ['Undergraduate Students'],
-        withheldNames: ['avery quill'],
+        withheldNameDigests: [withheldNameDigest('avery  QUILL')],
         pastNames: ['Harper Wren'],
       },
       new Date('2026-10-16T12:00:00Z'),

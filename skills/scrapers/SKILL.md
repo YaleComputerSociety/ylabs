@@ -1153,6 +1153,9 @@ A first run on new code only records the first read, so the rows are withdrawn o
 
 #### The other roster gate: `research-homes:audit-rosters`
 
+An owner's refusal of one listed name or of one row's derived roster is stored in `officialRosterConfigs.ts` only as a digest, never as the name or the person-bearing key, because the file is public and a refusal is a judgement about a person.
+Get the digest with `pbpaste | yarn --cwd server research-homes:roster-strike-digest` (add `--denied-key` for a row key) and add it to `withheldNameDigests` or `OWNER_DENIED_ROSTER_KEY_DIGESTS`; `docs/research-data-pipeline.md` owns the scheme and its limits.
+
 `official-research-home-roster` has its own audit, because it is the only lane that claims a named non-lead person is a *current* member (#2412).
 `yarn --cwd server research-homes:audit-rosters` reads each entry of `OFFICIAL_ROSTER_CONFIGS` with the source's own extractor and joins the result to the stored `rosterEnrichment` snapshot and the `RoleAssignment` rows that carry `rosterProvenance.sourceName`.
 It reads the database and writes nothing but its `--output` report.
